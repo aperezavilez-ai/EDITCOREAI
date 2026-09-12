@@ -3,7 +3,11 @@
   "github": {
     "remoteUrl": "https://github.com/aperezavilez-ai/EDITCOREAI.git"
   },
-  "vercel": null,
+  "vercel": {
+    "projectName": "editcoreai",
+    "projectId": "prj_7yoYHyRB6AHAqW3TL4jihIrLNNIU",
+    "linked": true
+  },
   "supabase": {
     "url": "https://supabase.gafcore.com/editcoreai",
     "linked": true
