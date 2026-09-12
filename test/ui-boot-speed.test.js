@@ -1,0 +1,52 @@
+"use strict";
+
+const test = require("node:test");
+const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const path = require("node:path");
+
+test("boot: fast path marca interactive antes del background", () => {
+  const src = fs.readFileSync(path.join(__dirname, "..", "renderer.js"), "utf8");
+  const interactiveAt = src.indexOf('performance.mark?.("editcore-interactive")');
+  const backgroundAt = src.indexOf("bootBackground(");
+  const hydrateAllLoop = /for \(const project of state\.projects\) \{\s*if \(!project\?\.projectRoot\) continue;\s*await hydrateProjectChatsFromDisk/;
+  assert.ok(interactiveAt > 0);
+  assert.ok(backgroundAt > 0);
+  assert.ok(interactiveAt < backgroundAt, "interactive debe marcarse antes de lanzar bootBackground");
+  assert.doesNotMatch(src, hydrateAllLoop);
+  assert.match(src, /requestIdleCallback[\s\S]{0,120}bootBackground/);
+});
+
+test("selectProject: preview no bloquea el clic (background)", () => {
+  const src = fs.readFileSync(path.join(__dirname, "..", "renderer.js"), "utf8");
+  assert.match(src, /Preview \+ gateway en background/);
+  assert.match(src, /void \(async \(\) => \{[\s\S]*?startPreview/);
+});
+
+test("main: createWindow antes de migracion/cerebro en arranque normal", () => {
+  const src = fs.readFileSync(path.join(__dirname, "..", "main.js"), "utf8");
+  const createAt = src.indexOf('createWindow({ windowId: "main" })');
+  const brainAt = src.indexOf("startup:brain-initializing");
+  assert.ok(createAt > 0 && brainAt > createAt);
+  assert.match(src, /UI primero: migraciones\/tareas\/Cerebro/);
+  assert.match(src, /spellcheck:\s*false/);
+});
+
+test("focus ya no refresca catalogo siempre", () => {
+  const src = fs.readFileSync(path.join(__dirname, "..", "renderer.js"), "utf8");
+  assert.doesNotMatch(src, /window\.addEventListener\("focus", refreshVisibleProjectCatalog\)/);
+  assert.match(src, /if \(!\$\("projectsDialog"\)\?\.open\) return/);
+});
+
+test("main: UI no carga monorepo gordo (electron en resources/app)", () => {
+  const src = fs.readFileSync(path.join(__dirname, "..", "main.js"), "utf8");
+  assert.match(src, /function isFatDevAppTree/);
+  assert.match(src, /isLeanHotfixOverlay/);
+  assert.match(src, /startup:skip-fat-app-tree/);
+  assert.match(src, /ui-overlay/);
+  assert.match(src, /startup:ui-last-resort|ERR_FAILED|ui-overlay/);
+  assert.doesNotMatch(
+    src,
+    /Preferir overlay desempaquetado: cargar desde app\.asar/,
+  );
+});

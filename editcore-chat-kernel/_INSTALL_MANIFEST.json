@@ -1,0 +1,352 @@
+[
+  {
+    "path": "classify.js",
+    "bytes": 2327,
+    "sha256": "C8BF475D5649B98482F29A2077FCD6787ABD87F999E0C271331EFAFC15D1A963"
+  },
+  {
+    "path": "index.js",
+    "bytes": 674,
+    "sha256": "AAC618DF3B937DA866128717ED0E94BDE03F3EA83245724A80596E6076F08079"
+  },
+  {
+    "path": "INTEGRAR.txt",
+    "bytes": 1316,
+    "sha256": "A412804D81B0E5DFC6ED90D091CC3AEF1233E31E0630ADA6AEC73A6FDBF1CD03"
+  },
+  {
+    "path": "memory.js",
+    "bytes": 1745,
+    "sha256": "268A8547A3794622CB0B399685D6AF1E227D183360846E31E7754C8E6814D14F"
+  },
+  {
+    "path": "orchestrator.js",
+    "bytes": 6302,
+    "sha256": "1D268F1EF3A106EE0ADB9F6EF858F040CA0920E8B767AA1253287AD26595EDDA"
+  },
+  {
+    "path": "package.json",
+    "bytes": 182,
+    "sha256": "38795B13D0C223B115C7CD36D43D6768331F9956A938F9E2DA1C04C98D24873C"
+  },
+  {
+    "path": "provider.js",
+    "bytes": 938,
+    "sha256": "B580A9F832F44930B27278862D9045651679973CCE83FE8BBAF4A33FB297B767"
+  },
+  {
+    "path": "session.js",
+    "bytes": 866,
+    "sha256": "C2EDC717BF24077105532717F2B511438A9BBBE6B3F9E00DE372CA68DD25E1CF"
+  },
+  {
+    "path": "skills/agent-model-selection/agents/openai.yaml",
+    "bytes": 241,
+    "sha256": "1E80EB246467BE56EF14589D96FEC7B47C335EAF3359F5CF892E50DF90B89EF9"
+  },
+  {
+    "path": "skills/agent-model-selection/SKILL.md",
+    "bytes": 3512,
+    "sha256": "5EB08CB52529FFAF2D55CBEC4FF3F0AB3DB289E8855AB0689B0CC0279FCFBB11"
+  },
+  {
+    "path": "skills/as-browser-testing-with-devtools/SKILL.md",
+    "bytes": 14542,
+    "sha256": "B6C9428515852E76F4CDB396D318AC70C0BC6D6C550415129132B727130B2BCD"
+  },
+  {
+    "path": "skills/as-ci-cd-and-automation/SKILL.md",
+    "bytes": 11371,
+    "sha256": "A4922AB36502CB1512DB8781882E6B11124D4B8D982C747E89FBFC3686C6B467"
+  },
+  {
+    "path": "skills/as-code-review-and-quality/SKILL.md",
+    "bytes": 20558,
+    "sha256": "B1978C9FB79ACAA77B123A84B18400B4DEAA7AD55DC683D85763DF0787F3FC6B"
+  },
+  {
+    "path": "skills/as-code-simplification/SKILL.md",
+    "bytes": 13548,
+    "sha256": "5C9CC6331E0F35DF6BC84776B1DE9A6E8F1348498808FCDD48D434FE04EEE75D"
+  },
+  {
+    "path": "skills/as-debugging-and-error-recovery/SKILL.md",
+    "bytes": 10840,
+    "sha256": "AC0A512BBE3D1AE019C939D17ED5322D7CCFE982ACDD7AA712B984FDB26E93FE"
+  },
+  {
+    "path": "skills/as-documentation-and-adrs/SKILL.md",
+    "bytes": 9785,
+    "sha256": "27DE55FCB4C4602B3EBD9A9D278E06EAA158A31E2B8F858117CAED2DFEE72BB5"
+  },
+  {
+    "path": "skills/as-frontend-ui-engineering/SKILL.md",
+    "bytes": 10714,
+    "sha256": "CD667641DF6895B69DA9F49BE7AE957EAF817FCEC43A5E6B47EB2A550536DEB2"
+  },
+  {
+    "path": "skills/as-git-workflow-and-versioning/SKILL.md",
+    "bytes": 14003,
+    "sha256": "8884AA5629CA57459A77CB9AD20C6A95D543ABE72B66E805536C683D5C0D103C"
+  },
+  {
+    "path": "skills/as-incremental-implementation/SKILL.md",
+    "bytes": 9510,
+    "sha256": "92C5948C9883CCB13EC6D1F31EED01D8061374D9011CE593403BF769977D7818"
+  },
+  {
+    "path": "skills/as-observability-and-instrumentation/SKILL.md",
+    "bytes": 11056,
+    "sha256": "2C873D0D6545DE545A62C207EF91FB3B760224F6108BE88096AA084267379C7F"
+  },
+  {
+    "path": "skills/as-performance-optimization/SKILL.md",
+    "bytes": 15148,
+    "sha256": "0BF8D920B96B0F54FD99080D9FDA47B9399EB58655D4BAF9AE75A057B38A6CA5"
+  },
+  {
+    "path": "skills/as-planning-and-task-breakdown/SKILL.md",
+    "bytes": 7662,
+    "sha256": "78640FF4744B5CCDD540D5A162CF30D9960EE80EE7EF13BEB3DFBBF2F93FA2BB"
+  },
+  {
+    "path": "skills/as-security-and-hardening/SKILL.md",
+    "bytes": 20532,
+    "sha256": "0F01BE5AEB6AAA8B0EA499B2F6C8CC07E38C91631EC0EB0AE81C4FE97C31307E"
+  },
+  {
+    "path": "skills/as-spec-driven-development/SKILL.md",
+    "bytes": 8530,
+    "sha256": "87E47288AA6C9978538ED19F3293302355108771FB8ED92BAE8C5199EA676D80"
+  },
+  {
+    "path": "skills/as-test-driven-development/SKILL.md",
+    "bytes": 16486,
+    "sha256": "60F3F6DF49EAF8518C417512586F78AE3A64C7EAF5CF39E2EDD80EDC2B8916B6"
+  },
+  {
+    "path": "skills/deep-project-analysis/SKILL.md",
+    "bytes": 1707,
+    "sha256": "677A2EB0AE68FACBBB77A741215AA01FF68D9D27A9ACD0E517B367D4EF548D5D"
+  },
+  {
+    "path": "skills/editcore-connect/editcore-connect-SKILL.md",
+    "bytes": 1914,
+    "sha256": "4ADB2583218C1C2D5E57EDBD24DF9E421DB44418834AE8452AAB3543EE291F6F"
+  },
+  {
+    "path": "skills/editcore-connect/SKILL.md",
+    "bytes": 1914,
+    "sha256": "4ADB2583218C1C2D5E57EDBD24DF9E421DB44418834AE8452AAB3543EE291F6F"
+  },
+  {
+    "path": "skills/editcore-self-diagnostics/editcore-self-diagnostics-SKILL.md",
+    "bytes": 1504,
+    "sha256": "F235201A5DDF4D7DA1F0C940CBCCC1B2D31F94FC2C02C12BC7CF6847F53CB50D"
+  },
+  {
+    "path": "skills/editcore-self-diagnostics/SKILL.md",
+    "bytes": 1504,
+    "sha256": "F235201A5DDF4D7DA1F0C940CBCCC1B2D31F94FC2C02C12BC7CF6847F53CB50D"
+  },
+  {
+    "path": "skills/ffmpeg/reference.md",
+    "bytes": 4662,
+    "sha256": "2DEA49F4AA09CEC01504399225BCDB0F6EDB5F1099E3F10E27228A8BA32D3AC0"
+  },
+  {
+    "path": "skills/ffmpeg/SKILL.md",
+    "bytes": 13247,
+    "sha256": "20A0C1E35A683A6BDB2BA978CB822B950B3EAD5D638E84EF711E021E52711D06"
+  },
+  {
+    "path": "skills/frontend-design/project-consistency.md",
+    "bytes": 2547,
+    "sha256": "E0744A05E680949167E1947E7E4AC84ADEE444E4B87F123655A04B80BEB9A442"
+  },
+  {
+    "path": "skills/frontend-design/SKILL.md",
+    "bytes": 4758,
+    "sha256": "E367B9439F21C113E05892E6846D5A162E00D7FE3C10E9920D82877FE1B7DC82"
+  },
+  {
+    "path": "skills/marketing-content-creator/SKILL.md",
+    "bytes": 2500,
+    "sha256": "FB0EA408CC2D28EEBBD70FD5A8B0DD3355AE6D3027F661B0667ABF251F9B1339"
+  },
+  {
+    "path": "skills/moviepy/SKILL.md",
+    "bytes": 13198,
+    "sha256": "1FB5DA859CFAE2954A19A16C2A486A94F148EC1810906C6A69DA120388A02F52"
+  },
+  {
+    "path": "skills/n8n-agents/CHAT_AGENT_PATTERNS.md",
+    "bytes": 13047,
+    "sha256": "ACCB48F6865F0F0048930D6E0A5A436ABBACE6C4AF10E29CF99A4229012BDAED"
+  },
+  {
+    "path": "skills/n8n-agents/EXAMPLES.md",
+    "bytes": 19766,
+    "sha256": "53B442807ECB19DD8DA9C8598AD5E97049B1D45DC5AD27C8715C233D5E957DCC"
+  },
+  {
+    "path": "skills/n8n-agents/HUMAN_REVIEW.md",
+    "bytes": 9442,
+    "sha256": "321A76CB71B08A64BF60398A04B4F29B7166C069C9DE49525E1829AA1802199E"
+  },
+  {
+    "path": "skills/n8n-agents/MEMORY.md",
+    "bytes": 7865,
+    "sha256": "90BD55EDC1B9804BE83CE7E5C1CA4DFEEB835F29975B5FB131B37A4414F3F829"
+  },
+  {
+    "path": "skills/n8n-agents/RAG.md",
+    "bytes": 6513,
+    "sha256": "6581F56B6F37EACD906A7A127ADBADFC8A40357D2B81AFA43BDBEBF7F8F250BB"
+  },
+  {
+    "path": "skills/n8n-agents/README.md",
+    "bytes": 8361,
+    "sha256": "3C2A99CBC1FFA9CE90823F6827878151D8FBE8797C615AD03F440CB19331C8F5"
+  },
+  {
+    "path": "skills/n8n-agents/SKILL.md",
+    "bytes": 23337,
+    "sha256": "31168E2118E4759EB551EC760990EA221FD8E4A18BFEAAB8B8B94A3ED4DC775A"
+  },
+  {
+    "path": "skills/n8n-agents/STRUCTURED_OUTPUT.md",
+    "bytes": 6950,
+    "sha256": "735B4BE7C68E992C07683158D68949B8F8CBD36728242A37972E004A1BF6FBA3"
+  },
+  {
+    "path": "skills/n8n-agents/SUBWORKFLOW_AS_TOOL.md",
+    "bytes": 9129,
+    "sha256": "48749216F7D6410F551D3ABFB89BE52A645E763089035BE22E6849FB14AB0896"
+  },
+  {
+    "path": "skills/n8n-agents/SYSTEM_PROMPT.md",
+    "bytes": 6939,
+    "sha256": "5E5DA03604AF812125BE22DB0EAAFAD36B5BBE420A502346113E30CD61A233B5"
+  },
+  {
+    "path": "skills/n8n-agents/TOOLS.md",
+    "bytes": 11357,
+    "sha256": "F5C73299FB26E478851CED4DDE3A76C8C4157DD34D5856ADD0F25BEC9AADD518"
+  },
+  {
+    "path": "skills/n8n-binary-and-data/AGENT_TOOL_BINARY.md",
+    "bytes": 14807,
+    "sha256": "3629A3FD9EE673E3369F60987A0D4F7450461B0C13260E12689D21FC75D0F076"
+  },
+  {
+    "path": "skills/n8n-binary-and-data/BINARY_BASICS.md",
+    "bytes": 9088,
+    "sha256": "D1915F7DC6BBFA6003CA073073DB61C06C3CF7A06756792C0F3E5F16DC22730A"
+  },
+  {
+    "path": "skills/n8n-binary-and-data/CDN_REQUIREMENT.md",
+    "bytes": 6263,
+    "sha256": "096E6F327DD44BE081C9EBD3038B7E7D99C7081F4885ABFC644AE7E9F4812CF0"
+  },
+  {
+    "path": "skills/n8n-binary-and-data/MERGE_FOR_CONTEXT.md",
+    "bytes": 7325,
+    "sha256": "5821474DD263F9ACC51F71F8EE8D7AB071D859053B5D188A5C24B37C650EDBA7"
+  },
+  {
+    "path": "skills/n8n-binary-and-data/README.md",
+    "bytes": 8578,
+    "sha256": "1EF369D172FD32EEB0B23FDC69C157D92F0DA8DAA99DAF9EFA1C86072FC46C84"
+  },
+  {
+    "path": "skills/n8n-binary-and-data/SKILL.md",
+    "bytes": 15591,
+    "sha256": "7C207909E3E8CC4BA4C182E02DDCD462A64288201B578ADC52F937467EE10CC1"
+  },
+  {
+    "path": "skills/n8n-code-javascript/BUILTIN_FUNCTIONS.md",
+    "bytes": 22298,
+    "sha256": "C1B6BBC92BF5DE2C65CA7DF9497A6F2394947E504FCC92E3F3677CA7D200DF72"
+  },
+  {
+    "path": "skills/n8n-code-javascript/COMMON_PATTERNS.md",
+    "bytes": 31321,
+    "sha256": "8A8685C9BA926194880DA0617565016FC94782AA2C77F7C7B948DB6066D09DDC"
+  },
+  {
+    "path": "skills/n8n-code-javascript/DATA_ACCESS.md",
+    "bytes": 22004,
+    "sha256": "D60BA513C1B3199B853587953DA4627FCD7B1A1610FABB36BEEE79F97EF349FF"
+  },
+  {
+    "path": "skills/n8n-code-javascript/ERROR_PATTERNS.md",
+    "bytes": 21524,
+    "sha256": "1118FF274812B15A082EE6B11E702D7207EDD134269A973EA7BA758DD56F6DE5"
+  },
+  {
+    "path": "skills/n8n-code-javascript/README.md",
+    "bytes": 9660,
+    "sha256": "C569A6E3F35B02ED65954A5355BC43249F5C1B75D1AB6DD0192B2745DB82C795"
+  },
+  {
+    "path": "skills/n8n-code-javascript/SKILL.md",
+    "bytes": 18308,
+    "sha256": "B3C2C2DAF0CD287D27F4CF01CE8F60F233C9BB5A5D4459DE2BFEE50D67A1400B"
+  },
+  {
+    "path": "skills/n8n-code-python/COMMON_PATTERNS.md",
+    "bytes": 21767,
+    "sha256": "9048ADD63A9BE556D645325AC606DEA0CC201D2F69B6BF7696B3E1100953AD25"
+  },
+  {
+    "path": "skills/n8n-code-python/DATA_ACCESS.md",
+    "bytes": 15026,
+    "sha256": "A7E09FE0B0B024454BEF960E626D7122777E0F72ED3D575F26C9C75B4B1CECA7"
+  },
+  {
+    "path": "skills/n8n-code-python/ERROR_PATTERNS.md",
+    "bytes": 13921,
+    "sha256": "D7D5F04F484BEB195E523701B2A16EE99DD71071E630D07C6E1A0115021A333F"
+  },
+  {
+    "path": "skills/n8n-code-python/README.md",
+    "bytes": 9457,
+    "sha256": "2C5B7A02769FD389D9F4D00802D73EEDBF215E392DF6299707DFDBFE49BFC80E"
+  },
+  {
+    "path": "skills/n8n-code-python/SKILL.md",
+    "bytes": 15957,
+    "sha256": "CAE740351F90D8517F6398132D2E7D0775ADF39D528F2BB5E70641DF966CB1EB"
+  },
+  {
+    "path": "skills-catalog.js",
+    "bytes": 2903,
+    "sha256": "F016A3CE67D5CE4735ED5AE732D85D079E494393C8091FE8B16506EE96747FAA"
+  },
+  {
+    "path": "subagents/analyst.js",
+    "bytes": 1232,
+    "sha256": "0DCFB2D756C85B6CBA9EA0639C9A164E0204AB719F618B3789DF5E528534D767"
+  },
+  {
+    "path": "subagents/explorer.js",
+    "bytes": 834,
+    "sha256": "FAAC1A07C1F90BB62EFE5A94F2305533CFEA97652A623BF4792AA50C2B56FA02"
+  },
+  {
+    "path": "subagents/implementer.js",
+    "bytes": 564,
+    "sha256": "BD273A97788F3C5648A02FC61B49A322E47F8B1CD303108913A25127EFAB1FB9"
+  },
+  {
+    "path": "subagents/verifier.js",
+    "bytes": 741,
+    "sha256": "F8E15642AFAA014D275AD98F279D2F7EE88143864A58D2799B8CEDE05AD77F6D"
+  },
+  {
+    "path": "tools.js",
+    "bytes": 4598,
+    "sha256": "5E10AAF662C928DA5A444C49A1884FDAEF83A79C2E3D5BD0BAD0F92C0C10ACC9"
+  }
+]

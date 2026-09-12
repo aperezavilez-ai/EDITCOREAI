@@ -1,0 +1,99 @@
+{
+  "name": "editcoreai",
+  "version": "2.6.7",
+  "description": "EDITCOREAI — IDE con agente (MEAI/APICREDITS)",
+  "author": "EDITCOREAI",
+  "private": true,
+  "main": "main.js",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/aperezavilez-ai/EDITCOREAI.git"
+  },
+  "scripts": {
+    "start": "electron .",
+    "sync": "node scripts/sync-app.js",
+    "test": "node --test test/*.test.js runtime/*.test.js",
+    "test:e2e": "node --test test/e2e-operator.test.js test/forensic-pipeline-e2e.test.js",
+    "test:e2e:electron": "node scripts/forensic-pipeline-electron-e2e.js",
+    "verify:prepackage": "node --test test/pre-package-gate.test.js && npm test",
+    "test:runtime": "node --test runtime/*.test.js",
+    "check": "node --check main.js && node --check preload.js && node --check renderer.js && node --check project-analysis.js && node --check runtime/editcore-claude-adapter.js && node --check runtime/action-registry.js && node --check runtime/ai-core.js && node --check runtime/task-manager.js && node --check runtime/workspace-api.js && node --check runtime/tool-dispatcher.js",
+    "dist:win": "node scripts/build-windows.js",
+    "release:win": "electron-builder --win nsis --x64 --publish always"
+  },
+  "dependencies": {
+    "@xenova/transformers": "^2.17.2",
+    "docx": "^9.7.1",
+    "exceljs": "^4.4.0",
+    "jszip": "^3.10.2",
+    "mammoth": "^1.12.2",
+    "pdf-parse": "^1.1.4",
+    "pdfkit": "^0.20.2",
+    "typescript": "^5.9.3"
+  },
+  "optionalDependencies": {
+    "puppeteer": "^24.2.0"
+  },
+  "devDependencies": {
+    "@electron/asar": "^4.3.0",
+    "electron": "^43.6.0",
+    "electron-builder": "^26.15.3"
+  },
+  "overrides": {
+    "uuid": "11.1.1"
+  },
+  "build": {
+    "appId": "com.editcoreai.app",
+    "productName": "EDITCOREAI",
+    "executableName": "EDITCOREAI",
+    "buildVersion": "2.6.6.0",
+    "artifactName": "EDITCOREAI-Setup.${ext}",
+    "win": {
+      "icon": "assets/logo.ico",
+      "signExecutable": false,
+      "target": [
+        "nsis"
+      ],
+      "artifactName": "EDITCOREAI-Setup.${ext}"
+    },
+    "directories": {
+      "output": "../../release-275"
+    },
+    "files": [
+      "**/*",
+      "!resources/rtk/**",
+      "!resources/app/**",
+      "!resources/app.asar",
+      "!test/**",
+      "!scripts/**",
+      "!phase*-results/**",
+      "!**/*.log",
+      "!*.md",
+      "!node_modules/.cache/**"
+    ],
+    "extraResources": [
+      {
+        "from": "../rtk/rtk.exe",
+        "to": "rtk/rtk.exe"
+      },
+      {
+        "from": "../ui-overlay",
+        "to": "ui-overlay",
+        "filter": [
+          "**/*",
+          "!**/node_modules/**",
+          "!**/electron/**"
+        ]
+      }
+    ],
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "EDITCOREAI",
+      "deleteAppDataOnUninstall": false
+    }
+  },
+  "productName": "EDITCOREAI"
+}

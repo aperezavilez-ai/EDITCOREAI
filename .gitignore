@@ -1,0 +1,51 @@
+# Dependencies & build
+node_modules/
+dist/
+build/
+out/
+.release/
+release/
+release-275/
+*.asar
+*.asar.unpacked/
+
+# Logs & caches
+*.log
+npm-debug.log*
+.cache/
+.turbo/
+.next/
+coverage/
+
+# Env & secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+editcore-secure-config.bin*
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Local EditCore runtime
+.editcore/context.md
+.editcore/memory.md
+.editcore/agent-memory/
+scratch/
+phase4-results/
+verify-debug.log
+_electron-*.log
+_project-boot.log
+
+# Large local blobs
+*.exe
+!EDITCOREAI.exe
+*.dll
+*.pak
+*.dat
+*.bin
+!package-lock.json

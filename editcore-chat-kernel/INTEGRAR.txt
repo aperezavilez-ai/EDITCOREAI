@@ -1,0 +1,42 @@
+NÚCLEO DE CHAT EDITCORE (desde cero)
+====================================
+
+Esto NO reemplaza todo EditCore. Es el árbol que converge en el CHAT.
+
+Copiar la carpeta a:
+  D:\PROGRAMAS IA\EDITCOREAI\editcore-chat-kernel\
+
+Conectar en main.js (IPC del chat), en vez de mandar TODO al adapter viejo:
+
+  const { handleChat, stopChat } = require("./editcore-chat-kernel");
+
+  // al enviar mensaje:
+  const out = await handleChat({
+    message: userText,
+    projectRoot,
+    apiBaseUrl,  // https://api.meai.cloud/v1  o  https://api.apicredits.site/v1
+    apiKey,
+    model,
+    onProgress: (p) => sender.send("agent:progress", p),
+  });
+  return out.text;
+
+  // al botón Alto / palabras alto|cancela|detente:
+  return stopChat(); // "Detenido." sin PROCEDE
+
+Comportamiento:
+- LISTA X / qué contiene Y  → explorer, 1 listado, FIN
+- Analiza + no modifiques   → analyst, máx 8 lecturas, REPORTE + PLAN, FIN
+- corrije…                  → modelo + tools, 1 write por path
+- alto                      → mata sesión, no pide CONTINUA
+- queja / "no te lo pedí"   → CHAT, 0 tools
+
+Subagentes:
+  subagents/explorer.js
+  subagents/analyst.js
+  subagents/implementer.js
+  subagents/verifier.js
+
+Skills: 40 ids en skills-catalog.js (carga SKILL.md del repo si existe).
+Memoria: .editcore/chat-memory/memory.json
+EOF

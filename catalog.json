@@ -1,0 +1,3480 @@
+{
+  "version": 1,
+  "source": "tododeia-community",
+  "items": [
+    {
+      "id": "addyosmani-agent-skills",
+      "name": "addyosmani/agent-skills",
+      "type": "skill",
+      "categories": [
+        "skills",
+        "agents"
+      ],
+      "description": "Coleccion de skills curadas por Addy Osmani para agentes fundamentals de planeacion.",
+      "url": "https://github.com/addyosmani/agent-skills",
+      "owner": "addyosmani",
+      "repo": "agent-skills",
+      "tags": [],
+      "appearsIn": [
+        "5 Proyectos Para Completar Claude"
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "affaan-m-agentshield",
+      "name": "affaan-m/agentshield",
+      "type": "mcp",
+      "categories": [
+        "mcp",
+        "agents",
+        "security"
+      ],
+      "description": "Escanea tu setup de agentes buscando secretos, permisos abiertos, hooks peligrosos y MCP riesgosos.",
+      "url": "https://github.com/affaan-m/agentshield",
+      "owner": "affaan-m",
+      "repo": "agentshield",
+      "license": "MIT",
+      "language": "TypeScript",
+      "tags": [],
+      "appearsIn": [
+        "Setup pro de Claude Code skills..."
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "affaan-m-ecc",
+      "name": "affaan-m/ECC",
+      "type": "skill",
+      "categories": [
+        "skills",
+        "agents",
+        "ai"
+      ],
+      "description": "Meta-harness open source con decenas de agentes, skills, hooks y reglas para potenciar a Claude Code.",
+      "url": "https://github.com/affaan-m/ECC",
+      "owner": "affaan-m",
+      "repo": "ECC",
+      "license": "MIT",
+      "tags": [],
+      "appearsIn": [
+        "Setup pro de Claude Code skills..."
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "affaan-m-everything-claude-code",
+      "name": "affaan-m/everything-claude-code",
+      "type": "skill",
+      "categories": [
+        "mcp",
+        "skills",
+        "agents",
+        "ai"
+      ],
+      "description": "La coleccion de ECC lista para copiar a ~/.claude: agentes, skills, comandos, reglas y configs de MCP.",
+      "url": "https://github.com/affaan-m/everything-claude-code",
+      "owner": "affaan-m",
+      "repo": "everything-claude-code",
+      "license": "MIT",
+      "tags": [],
+      "appearsIn": [
+        "Setup pro de Claude Code skills...",
+        "5 Herramientas Claude",
+        "Top Claude Code Abril 2026"
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "agricidaniel-banana-claude",
+      "name": "AgriciDaniel/banana-claude",
+      "type": "skill",
+      "categories": [
+        "skills",
+        "ai"
+      ],
+      "description": "Skill comunitaria que conecta Claude con Nano Banana para generar imagenes en sesion.",
+      "url": "https://github.com/AgriciDaniel/banana-claude",
+      "owner": "AgriciDaniel",
+      "repo": "banana-claude",
+      "tags": [],
+      "appearsIn": [
+        "5 Skills Para Crear Contenido"
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "agricidaniel-claude-ads",
+      "name": "AgriciDaniel/claude-ads",
+      "type": "skill",
+      "categories": [
+        "skills",
+        "design",
+        "marketing",
+        "security",
+        "ai"
+      ],
+      "description": "Skill comunitaria para auditar campanas de Meta Ads desde Claude reglas de seguridad incluidas.",
+      "url": "https://github.com/AgriciDaniel/claude-ads",
+      "owner": "AgriciDaniel",
+      "repo": "claude-ads",
+      "tags": [],
+      "appearsIn": [
+        "Claude Meta Ads",
+        "Navega y Automatiza",
+        "guia",
+        "Intermedio",
+        "Dale ojos y manos a Claude instala Firecrawl y Playwright CLI para que navegue, lea y automatice cualquier cosa en internet por ti."
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "agricidaniel-claude-seo",
+      "name": "AgriciDaniel/claude-seo",
+      "type": "skill",
+      "categories": [
+        "skills",
+        "marketing",
+        "ai"
+      ],
+      "description": "Skill comunitaria de auditoria SEO para Claude Code analisis de keywords y plan de mejoras.",
+      "url": "https://github.com/AgriciDaniel/claude-seo",
+      "owner": "AgriciDaniel",
+      "repo": "claude-seo",
+      "tags": [],
+      "appearsIn": [
+        "5 Habilidades de Marketing"
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "ahujasid-blender-mcp",
+      "name": "ahujasid/blender-mcp",
+      "type": "mcp",
+      "categories": [
+        "mcp",
+        "ai"
+      ],
+      "description": "MCP que conecta Blender con Claude para modelar 3D usando lenguaje natural.",
+      "url": "https://github.com/ahujasid/blender-mcp",
+      "owner": "ahujasid",
+      "repo": "blender-mcp",
+      "tags": [],
+      "appearsIn": [
+        "Blender MCP Controla Blender co...",
+        "Open Carrusel Tu agente de carruseles",
+        "guia",
+        "Intermedio",
+        "Un agente propio que te crea los carruseles de Instagram solos. Le das tu marca una vez, le describes el post y te exporta las imagenes en el tamano exacto. Todo local, gratis, de la comunidad para la comunidad."
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "airbytehq-airbyte",
+      "name": "airbytehq/airbyte",
+      "type": "repo",
+      "categories": [
+        "data"
+      ],
+      "description": "Plataforma de sincronizacion con cientos de conectores para llevar tus datos a Postgres.",
+      "url": "https://github.com/airbytehq/airbyte",
+      "owner": "airbytehq",
+      "repo": "airbyte",
+      "tags": [],
+      "appearsIn": [
+        "El cerebro de Claude una base d...",
+        "Matriz Viral Claude estudia tus redes, encuentra el patron y escribe tus proximos guiones",
+        "guia",
+        "Intermedio",
+        "Convierte a Claude en tu creador de contenido y tu community manager: con el MCP de Apify baja los videos mas virales de tu cuenta o de 2-3 creadores de referencia , los transcribe todos y arma una Matriz de Contenido Viral que te dice que funciona, que no y por que. Despues escribe guiones nuevos sobre ese patron, los simula antes de publicar y se queda contigo con una rutina semanal. Todo local en Claude Code, con modo Plan para que veas el sistema antes de que exista, sin escribir una linea de codigo."
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "alchaincyf-huashu-design",
+      "name": "alchaincyf/huashu-design",
+      "type": "skill",
+      "categories": [
+        "skills",
+        "design",
+        "ai"
+      ],
+      "description": "Skill MIT que da a Claude Code 7 modos de diseno: prototipos, slide decks, motion, infografias, 3 versiones y critica.",
+      "url": "https://github.com/alchaincyf/huashu-design",
+      "owner": "alchaincyf",
+      "repo": "huashu-design",
+      "license": "MIT",
+      "language": "HTML",
+      "tags": [],
+      "appearsIn": [
+        "El kit de diseno con Claude 5 s...",
+        "Huashu Design 7 tipos de diseno..."
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "anil-matcha-open-generative-ai",
+      "name": "Anil-matcha/Open-Generative-AI",
+      "type": "repo",
+      "categories": [
+        "media"
+      ],
+      "description": "Interfaz unificada para 200+ modelos de imagen y video reemplaza Midjourney + Sora + Veo.",
+      "url": "https://github.com/Anil-matcha/Open-Generative-AI",
+      "owner": "Anil-matcha",
+      "repo": "Open-Generative-AI",
+      "tags": [],
+      "appearsIn": [
+        "Tu Agencia de Marketing con Claud...",
+        "Higgsfield MCP agentes creativos con Seedance 2.0 y GPT Images 2.0",
+        "guia",
+        "Intermedio",
+        "El 29 de abril de 2026 Higgsfield publico su MCP oficial un conector que mete sus modelos de imagen y video adentro de Claude (y de OpenClaw, Hermes Agent, NemoClaw, los nombres con los que ellos llaman a los otros agentes). Aca traduzco el anuncio entero al espanol, dejo los 3 pasos para conectar el URL https://mcp.higgsfield.ai/mcp en Claude, explico que te da Seedance 2.0 y GPT Images 2.0 via agente y dejo prompts iniciales para imagen, video y batch nocturno la frase ancla del lanzamiento es \"let your agents build content while you sleep\". Conectado con Stack IA Creador, Hyperframes y Claude para Trabajo Creativo en la boveda."
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "anthropics-anthropic-cookbook",
+      "name": "anthropics/anthropic-cookbook",
+      "type": "repo",
+      "categories": [
+        "design",
+        "ai"
+      ],
+      "description": "Recetas oficiales de Anthropic patrones, ejemplos y codigo de referencia para construir con Claude.",
+      "url": "https://github.com/anthropics/anthropic-cookbook",
+      "owner": "anthropics",
+      "repo": "anthropic-cookbook",
+      "tags": [],
+      "appearsIn": [
+        "5 Repos Para Volverte AI Engineer",
+        "Anthropic GitHub",
+        "Apify Saca Clientes Ilimitados De Cualquier Red",
+        "guia",
+        "Intermedio",
+        "Deja de buscar clientes a mano. Apify saca listas de dentistas de Google Maps, empresas de LinkedIn, creadores de Instagram o negocios de Facebook y conectado a Claude por MCP, te entrega telefonos, correos y contactos listos para vender sin escribir una linea de codigo."
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "anthropics-anthropic-quickstarts",
+      "name": "anthropics/anthropic-quickstarts",
+      "type": "repo",
+      "categories": [
+        "design",
+        "ai"
+      ],
+      "description": "Plantillas oficiales de Anthropic para arrancar proyectos con Claude en minutos.",
+      "url": "https://github.com/anthropics/anthropic-quickstarts",
+      "owner": "anthropics",
+      "repo": "anthropic-quickstarts",
+      "tags": [],
+      "appearsIn": [
+        "Anthropic GitHub"
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "anthropics-anthropic-sdk-csharp",
+      "name": "anthropics/anthropic-sdk-csharp",
+      "type": "repo",
+      "categories": [
+        "ai"
+      ],
+      "description": "SDK oficial de la API de Anthropic en C#.",
+      "url": "https://github.com/anthropics/anthropic-sdk-csharp",
+      "owner": "anthropics",
+      "repo": "anthropic-sdk-csharp",
+      "tags": [],
+      "appearsIn": [
+        "Anthropic GitHub",
+        "Comienza a Construir",
+        "guia",
+        "Principiante",
+        "Stack gratuito completo para construir y vender paginas web, apps y servicios de automatizacion sin inversion inicial."
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "anthropics-anthropic-sdk-go",
+      "name": "anthropics/anthropic-sdk-go",
+      "type": "repo",
+      "categories": [
+        "ai"
+      ],
+      "description": "SDK oficial de la API de Anthropic en Go.",
+      "url": "https://github.com/anthropics/anthropic-sdk-go",
+      "owner": "anthropics",
+      "repo": "anthropic-sdk-go",
+      "tags": [],
+      "appearsIn": [
+        "Anthropic GitHub"
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "anthropics-anthropic-sdk-php",
+      "name": "anthropics/anthropic-sdk-php",
+      "type": "repo",
+      "categories": [
+        "ai"
+      ],
+      "description": "SDK oficial de la API de Anthropic en PHP.",
+      "url": "https://github.com/anthropics/anthropic-sdk-php",
+      "owner": "anthropics",
+      "repo": "anthropic-sdk-php",
+      "tags": [],
+      "appearsIn": [
+        "Anthropic GitHub"
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "anthropics-anthropic-sdk-python",
+      "name": "anthropics/anthropic-sdk-python",
+      "type": "repo",
+      "categories": [
+        "ai"
+      ],
+      "description": "SDK oficial de la API de Anthropic en Python.",
+      "url": "https://github.com/anthropics/anthropic-sdk-python",
+      "owner": "anthropics",
+      "repo": "anthropic-sdk-python",
+      "tags": [],
+      "appearsIn": [
+        "Anthropic GitHub"
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "anthropics-anthropic-sdk-ruby",
+      "name": "anthropics/anthropic-sdk-ruby",
+      "type": "repo",
+      "categories": [
+        "ai"
+      ],
+      "description": "SDK oficial de la API de Anthropic en Ruby.",
+      "url": "https://github.com/anthropics/anthropic-sdk-ruby",
+      "owner": "anthropics",
+      "repo": "anthropic-sdk-ruby",
+      "tags": [],
+      "appearsIn": [
+        "Anthropic GitHub"
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "anthropics-anthropic-sdk-typescript",
+      "name": "anthropics/anthropic-sdk-typescript",
+      "type": "repo",
+      "categories": [
+        "ai"
+      ],
+      "description": "SDK oficial de la API de Anthropic en TypeScript.",
+      "url": "https://github.com/anthropics/anthropic-sdk-typescript",
+      "owner": "anthropics",
+      "repo": "anthropic-sdk-typescript",
+      "tags": [],
+      "appearsIn": [
+        "Anthropic GitHub"
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "anthropics-claude-code",
+      "name": "anthropics/claude-code",
+      "type": "repo",
+      "categories": [
+        "design",
+        "security",
+        "ai"
+      ],
+      "description": "Repositorio oficial de Claude Code; el plugin security-guidance vive en la carpeta plugins/.",
+      "url": "https://github.com/anthropics/claude-code",
+      "owner": "anthropics",
+      "repo": "claude-code",
+      "tags": [],
+      "appearsIn": [
+        "Plugin de seguridad de Claude r...",
+        "5 Claude Skills necesarias busc...",
+        "Anthropic GitHub",
+        "Claude Disenador Web Perfecto",
+        "Claude Animador Web",
+        "5 Skills de Diseno"
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "anthropics-claude-plugins-official",
+      "name": "anthropics/claude-plugins-official",
+      "type": "repo",
+      "categories": [
+        "ai"
+      ],
+      "description": "Catalogo oficial de Anthropic: los plugins que se instalan con un comando desde Claude Code.",
+      "url": "https://github.com/anthropics/claude-plugins-official",
+      "owner": "anthropics",
+      "repo": "claude-plugins-official",
+      "tags": [],
+      "appearsIn": [
+        "Plugins de Claude Code que son ...",
+        "Claude Code Setup 1 comando ofi...",
+        "Claude Canales",
+        "Claude: De Fabrica a Pro",
+        "Conecta Claude a tus apps Google, Zoom, Shopify, WordPress, Facebook y Higgsfield paso a paso + prompts",
+        "guia"
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "anthropics-courses",
+      "name": "anthropics/courses",
+      "type": "repo",
+      "categories": [
+        "ai"
+      ],
+      "description": "Cursos oficiales de Anthropic para aprender Claude desde cero con certificados.",
+      "url": "https://github.com/anthropics/courses",
+      "owner": "anthropics",
+      "repo": "courses",
+      "tags": [],
+      "appearsIn": [
+        "Anthropic GitHub"
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "anthropics-prompt-eng-interactive-tutorial",
+      "name": "anthropics/prompt-eng-interactive-tutorial",
+      "type": "repo",
+      "categories": [
+        "ai"
+      ],
+      "description": "Tutorial interactivo oficial de prompt engineering por Anthropic.",
+      "url": "https://github.com/anthropics/prompt-eng-interactive-tutorial",
+      "owner": "anthropics",
+      "repo": "prompt-eng-interactive-tutorial",
+      "tags": [],
+      "appearsIn": [
+        "Anthropic GitHub"
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "anthropics-skills",
+      "name": "anthropics/skills",
+      "type": "skill",
+      "categories": [
+        "skills",
+        "design",
+        "ai"
+      ],
+      "description": "Repo oficial de Anthropic con skills de referencia para construir las tuyas.",
+      "url": "https://github.com/anthropics/skills",
+      "owner": "anthropics",
+      "repo": "skills",
+      "tags": [],
+      "appearsIn": [
+        "Sistema de Skills la guia de 33...",
+        "El estudio creativo escondido en ...",
+        "El kit de diseno con Claude 5 s...",
+        "Skill Creator crea tus propias ...",
+        "5 Claude Skills necesarias busc...",
+        "La guia de Skills de 0 a 100 de A..."
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "apify-apify-mcp-server",
+      "name": "apify/apify-mcp-server",
+      "type": "mcp",
+      "categories": [
+        "mcp",
+        "automation",
+        "ai"
+      ],
+      "description": "El servidor MCP oficial de Apify: le da a Claude acceso a miles de actors de scraping desde el chat.",
+      "url": "https://github.com/apify/apify-mcp-server",
+      "owner": "apify",
+      "repo": "apify-mcp-server",
+      "license": "MIT",
+      "language": "TypeScript",
+      "tags": [],
+      "appearsIn": [
+        "Matriz Viral Claude estudia tus...",
+        "Agente de Storytelling convierte cualquier video viral en la plantilla para contar tu historia",
+        "guia",
+        "Principiante",
+        "Un agente en Claude que toma cualquier video viral y te devuelve su formula desmenuzada hook, estructura, ritmo, emocion y cierre convertida en una plantilla para contar tu propia historia. Trae los cinco prompts listos y el camino completo sin programar: bajas el audio con cobalt.tools, lo transcribes en Google AI Studio y sales con el esqueleto de tu proximo video."
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "bayramannakov-claude-reflect",
+      "name": "BayramAnnakov/claude-reflect",
+      "type": "repo",
+      "categories": [
+        "ai"
+      ],
+      "description": "Patron de reflexion sobre el que se basa /aprende el LLM revisa su propio trabajo antes de cerrar.",
+      "url": "https://github.com/BayramAnnakov/claude-reflect",
+      "owner": "BayramAnnakov",
+      "repo": "claude-reflect",
+      "tags": [],
+      "appearsIn": [
+        "Aprende la habilidad que le da ..."
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "asgeirtj-system-prompts-leaks",
+      "name": "asgeirtj/system_prompts_leaks",
+      "type": "knowledge",
+      "categories": [
+        "prompt-engineering",
+        "security",
+        "ai-agents",
+        "prompt-injection",
+        "research",
+        "knowledge"
+      ],
+      "description": "Repositorio CC0 con prompts de sistema extraidos de productos IA. Usar en EDITCOREAI solo como referencia defensiva/educativa para estudiar patrones de agentes, hardening de prompts, permisos, herramientas, memoria y defensas contra prompt injection; no copiar prompts completos, no imitar marcas ni cargar leaks crudos al contexto operativo.",
+      "url": "https://github.com/asgeirtj/system_prompts_leaks",
+      "owner": "asgeirtj",
+      "repo": "system_prompts_leaks",
+      "license": "CC0-1.0",
+      "language": "JavaScript",
+      "tags": [
+        "system-prompts",
+        "prompt-leaks",
+        "prompt-engineering",
+        "prompt-injection",
+        "agent-security",
+        "ai-agents",
+        "codex",
+        "claude-code",
+        "cursor",
+        "copilot",
+        "gemini",
+        "defensive-research",
+        "do-not-copy-verbatim"
+      ],
+      "appearsIn": [
+        "Integracion propuesta por EDITCOREAI para investigacion defensiva de prompts, agentes y protecciones anti prompt-injection",
+        "Uso restringido: referencia comparativa y educativa; no copiar prompts completos ni exponer leaks al usuario/agente operativo"
+      ],
+      "source": "manual-editcore",
+      "status": "candidate",
+      "riskLevel": "medium",
+      "requiresApproval": true,
+      "allowedUse": "Investigacion defensiva y educativa para mejorar prompts, permisos, memoria, tools y defensas contra prompt injection.",
+      "blockedUse": [
+        "Copiar prompts completos de terceros en EDITCOREAI",
+        "Imitar marcas/productos o clonar comportamiento propietario",
+        "Exponer leaks crudos al usuario o al contexto operativo",
+        "Usarlo para evadir protecciones de otros sistemas"
+      ],
+      "safetyNotes": [
+        "Usar solo como referencia comparativa",
+        "Extraer patrones, no contenido verbatim",
+        "Cuidar atribucion/licencia y no convertir leaks en prompt base"
+      ]
+    },
+    {
+      "id": "blader-humanizer",
+      "name": "blader/humanizer",
+      "type": "repo",
+      "categories": [
+        "design",
+        "marketing"
+      ],
+      "description": "Tool que humaniza texto generado por IA quita los tells roboticos antes de publicar.",
+      "url": "https://github.com/blader/humanizer",
+      "owner": "blader",
+      "repo": "humanizer",
+      "tags": [],
+      "appearsIn": [
+        "Claude Copywriter",
+        "Claude Ads",
+        "guia",
+        "Avanzado",
+        "Skill open-source de Claude Code que audita Meta, Google y TikTok con 161 checks y 3 agentes paralelos incluye wizard /ads start y coach continuo /ads next con Ads Health Score 0 100."
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "bloopai-vibe-kanban",
+      "name": "BloopAI/vibe-kanban",
+      "type": "repo",
+      "categories": [
+        "ai"
+      ],
+      "description": "Kanban open-source disenado para vibe coding con Claude Code.",
+      "url": "https://github.com/BloopAI/vibe-kanban",
+      "owner": "BloopAI",
+      "repo": "vibe-kanban",
+      "tags": [],
+      "appearsIn": [
+        "Las Tres Herramientas Claude Code"
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "browser-use-browser-harness",
+      "name": "browser-use/browser-harness",
+      "type": "skill",
+      "categories": [
+        "skills",
+        "automation",
+        "ai"
+      ],
+      "description": "Skill de Claude Code que abre tu Chrome real, ejecuta tareas web y guarda lo aprendido como skill por sitio.",
+      "url": "https://github.com/browser-use/browser-harness",
+      "owner": "browser-use",
+      "repo": "browser-harness",
+      "license": "MIT",
+      "language": "Python",
+      "tags": [],
+      "appearsIn": [
+        "Browser Harness Claude navega I..."
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "browser-use-bux",
+      "name": "browser-use/bux",
+      "type": "agent",
+      "categories": [
+        "agents",
+        "design",
+        "automation",
+        "ai"
+      ],
+      "description": "Agente Claude Code 24/7 con Browser Harness en un VPS, lo controlas por Telegram desde el celular.",
+      "url": "https://github.com/browser-use/bux",
+      "owner": "browser-use",
+      "repo": "bux",
+      "license": "MIT",
+      "language": "Python",
+      "tags": [],
+      "appearsIn": [
+        "Browser Harness Claude navega I...",
+        "Claude Chat, Cowork y Code los 3 modos en una sola app",
+        "guia",
+        "Principiante",
+        "Descargas Claude una vez y traes contigo tres herramientas distintas: Chat con Projects para razonar con tu data, Cowork agentico con Live Artifacts y Computer Use, y Claude Code en la terminal. Esta guia te ensena los tres con las piezas exactas la metafora cascaron/cerebro/datos crudos/brazos para armar un Project, los 5 features de Cowork (Projects, Conectores, Live Artifacts, Scheduled Tasks, Computer Use) con ejemplos reales y un disclosure honesto sobre la activacion de connectors por conversacion, y Claude Code con la magia de las carpetas, Shift+Tab para elegir modo, /model y ultrathink para subir o bajar el razonamiento, /goal para modo autonomo, sesiones en paralelo, y skills + MCPs como enchufes y cuando conviene usar cada uno antes de decidir."
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "chriswiles-claude-code-showcase",
+      "name": "ChrisWiles/claude-code-showcase",
+      "type": "repo",
+      "categories": [
+        "design",
+        "ai"
+      ],
+      "description": "Showcase de configuraciones avanzadas de Claude Code que un equipo dev puede copiar.",
+      "url": "https://github.com/ChrisWiles/claude-code-showcase",
+      "owner": "ChrisWiles",
+      "repo": "claude-code-showcase",
+      "tags": [],
+      "appearsIn": [
+        "5 Skills = Equipo Dev"
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "clerk-javascript",
+      "name": "clerk/javascript",
+      "type": "repo",
+      "categories": [
+        "general"
+      ],
+      "description": "Monorepo oficial con los SDK de Clerk para meter autenticacion en Next.js, React y mas.",
+      "url": "https://github.com/clerk/javascript",
+      "owner": "clerk",
+      "repo": "javascript",
+      "license": "MIT",
+      "language": "TypeScript",
+      "tags": [],
+      "appearsIn": [
+        "Autenticacion y login con Clerk ..."
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "coleam00-archon",
+      "name": "coleam00/Archon",
+      "type": "agent",
+      "categories": [
+        "agents",
+        "memory"
+      ],
+      "description": "Sistema de orquestacion de agentes con tareas paralelas y memoria compartida.",
+      "url": "https://github.com/coleam00/Archon",
+      "owner": "coleam00",
+      "repo": "Archon",
+      "tags": [],
+      "appearsIn": [
+        "5 Proyectos Para Completar Claude"
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "composiohq-awesome-claude-skills",
+      "name": "ComposioHQ/awesome-claude-skills",
+      "type": "skill",
+      "categories": [
+        "skills",
+        "ai"
+      ],
+      "description": "Coleccion curada de 100+ skills para Claude Code.",
+      "url": "https://github.com/ComposioHQ/awesome-claude-skills",
+      "owner": "ComposioHQ",
+      "repo": "awesome-claude-skills",
+      "tags": [],
+      "appearsIn": [
+        "El estudio creativo escondido en ...",
+        "Skill Creator crea tus propias ...",
+        "5 Herramientas Para Tu Primer Dia...",
+        "5 Skills = Equipo Dev",
+        "Viral Script Combo"
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "coreyhaines31-marketingskills",
+      "name": "coreyhaines31/marketingskills",
+      "type": "skill",
+      "categories": [
+        "skills",
+        "marketing",
+        "ai"
+      ],
+      "description": "Stack open-source de 29+ skills de marketing para Claude Code copywriting, SEO, ads, email.",
+      "url": "https://github.com/coreyhaines31/marketingskills",
+      "owner": "coreyhaines31",
+      "repo": "marketingskills",
+      "tags": [],
+      "appearsIn": [
+        "29 Habilidades de Marketing",
+        "5 Habilidades de Marketing",
+        "Replica Disenos Web",
+        "guia",
+        "Intermedio",
+        "Aprende a replicar el diseno de cualquier pagina web usando el skill UI UX Pro Max y Claude Code."
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "crewaiinc-crewai",
+      "name": "crewAIInc/crewAI",
+      "type": "agent",
+      "categories": [
+        "agents"
+      ],
+      "description": "Framework para orquestar agentes especializados con roles y tareas colaborativas.",
+      "url": "https://github.com/crewAIInc/crewAI",
+      "owner": "crewAIInc",
+      "repo": "crewAI",
+      "tags": [],
+      "appearsIn": [
+        "5 Repos Para Volverte AI Engineer"
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "crystaldba-postgres-mcp",
+      "name": "crystaldba/postgres-mcp",
+      "type": "mcp",
+      "categories": [
+        "mcp",
+        "data"
+      ],
+      "description": "Servidor MCP para Postgres con modo solo-lectura, chequeos de salud y tuning de indices.",
+      "url": "https://github.com/crystaldba/postgres-mcp",
+      "owner": "crystaldba",
+      "repo": "postgres-mcp",
+      "license": "MIT",
+      "language": "Python",
+      "tags": [],
+      "appearsIn": [
+        "El cerebro de Claude una base d..."
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "czlonkowski-n8n-mcp",
+      "name": "czlonkowski/n8n-mcp",
+      "type": "mcp",
+      "categories": [
+        "mcp",
+        "ai"
+      ],
+      "description": "Servidor MCP que le da a Claude el catalogo completo de nodos de n8n para generar y validar workflows.",
+      "url": "https://github.com/czlonkowski/n8n-mcp",
+      "owner": "czlonkowski",
+      "repo": "n8n-mcp",
+      "license": "MIT",
+      "language": "TypeScript",
+      "tags": [],
+      "appearsIn": [
+        "n8n + Claude automatizaciones e...",
+        "n8n MCP Conecta Claude a Tu Neg...",
+        "5 Herramientas Claude",
+        "Skill Creator crea tus propias habilidades de Claude",
+        "guia",
+        "Intermedio"
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "d4vinci-scrapling",
+      "name": "D4Vinci/Scrapling",
+      "type": "mcp",
+      "categories": [
+        "mcp",
+        "marketing",
+        "automation"
+      ],
+      "description": "Libreria de scraping open-source con MCP integrado para extraer leads de Google Maps y redes sociales.",
+      "url": "https://github.com/D4Vinci/Scrapling",
+      "owner": "D4Vinci",
+      "repo": "Scrapling",
+      "tags": [],
+      "appearsIn": [
+        "Scrapling Leads Gratis Para Tu ...",
+        "100+ Agentes de IA Gratis Para Tu Negocio",
+        "guia",
+        "Principiante",
+        "Guia del repositorio awesome-llm-apps 100+ agentes de IA en 13 categorias, con prompts para Claude Code que te ayudan a encontrar e instalar los agentes perfectos para tu negocio."
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "davideast-stitch-mcp",
+      "name": "davideast/stitch-mcp",
+      "type": "mcp",
+      "categories": [
+        "mcp",
+        "design",
+        "ai"
+      ],
+      "description": "MCP server para usar Stitch (diseno con IA de Google) desde Claude.",
+      "url": "https://github.com/davideast/stitch-mcp",
+      "owner": "davideast",
+      "repo": "stitch-mcp",
+      "tags": [],
+      "appearsIn": [
+        "5 Skills Para Crear Contenido"
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "davila7-claude-code-templates",
+      "name": "davila7/claude-code-templates",
+      "type": "repo",
+      "categories": [
+        "ai"
+      ],
+      "description": "Templates curados de Claude Code para proyectos comunes.",
+      "url": "https://github.com/davila7/claude-code-templates",
+      "owner": "davila7",
+      "repo": "claude-code-templates",
+      "tags": [],
+      "appearsIn": [
+        "5 Herramientas Para Tu Primer Dia...",
+        "Las Tres Herramientas Claude Code",
+        "5 Proyectos Para Completar Claude",
+        "guia",
+        "Intermedio",
+        "Cinco proyectos gratis de GitHub que completan lo que le falta a Claude por default pensar antes de actuar, seguir reglas de ingenieria, recordar tus sesiones, hacer procesos repetibles, y trabajar en paralelo como un equipo."
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "dietrichgebert-ponytail",
+      "name": "DietrichGebert/ponytail",
+      "type": "repo",
+      "categories": [
+        "ai"
+      ],
+      "description": "Plugin que pone a Claude a escribir el minimo codigo necesario y audita proyectos sobre-cargados.",
+      "url": "https://github.com/DietrichGebert/ponytail",
+      "owner": "DietrichGebert",
+      "repo": "ponytail",
+      "license": "MIT",
+      "language": "JavaScript",
+      "tags": [],
+      "appearsIn": [
+        "Ponytail pon a Claude a dieta d...",
+        "El kit de diseno con Claude 5 skills que reemplazan tus apps de diseno (con el comando de instalacion de cada una)",
+        "guia",
+        "Principiante",
+        "Todos los disenos se parecen si no usas estas habilidades y se nota: el mismo look de IA en todas partes. Esta guia junta las 5 mejores skills de diseno para Claude y las instala igual, con un solo comando (npx skills add). frontend-design de Anthropic hace que Claude se case con tu referencia y no se vaya a lo generico. UI UX Pro Max no te da disenos: le ensena a Claude a disenar con 67 estilos, 161 paletas, 57 pareos de fuentes y 99 guias de UX por industria. La skill de animaciones de Emil Kowalski le ensena movimiento, transiciones y easing fluido y combinada con UI UX Pro Max arma animaciones elegantes para tu web o tu PowerPoint. Huashu Design reemplaza la mayoria de tus apps de diseno desde Claude Code: prototipos de iPhone clickeables, presentaciones PPTX editables y animaciones en MP4. Y la quinta no disena, audita: la skill web-design-guidelines de Vercel revisa tu interfaz contra mas de 100 reglas y te dice los archivos y lineas que estan mal. Truco que aplica a todas: rinden mucho mas con imagenes de referencia. Trae el comando de instalacion de cada una, un prompt copy-paste listo y cross-links a las guias a detalle de Huashu, UI UX Pro Max y las skills de Anthropic y Vercel. Sin escribir codigo."
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "dlt-hub-dlt",
+      "name": "dlt-hub/dlt",
+      "type": "repo",
+      "categories": [
+        "data"
+      ],
+      "description": "Libreria de Python para volcar tus fuentes (Gmail, Slack, CRM) a Postgres con poco codigo.",
+      "url": "https://github.com/dlt-hub/dlt",
+      "owner": "dlt-hub",
+      "repo": "dlt",
+      "license": "Apache-2.0",
+      "language": "Python",
+      "tags": [],
+      "appearsIn": [
+        "El cerebro de Claude una base d..."
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "donchitos-claude-code-game-studios",
+      "name": "Donchitos/Claude-Code-Game-Studios",
+      "type": "agent",
+      "categories": [
+        "agents",
+        "media",
+        "ai"
+      ],
+      "description": "Configuracion de Claude Code para estudios de videojuegos 49 agentes y 72 comandos.",
+      "url": "https://github.com/Donchitos/Claude-Code-Game-Studios",
+      "owner": "Donchitos",
+      "repo": "Claude-Code-Game-Studios",
+      "tags": [],
+      "appearsIn": [
+        "Claude Code Game Studios",
+        "WhatsApp AgentKit",
+        "guia",
+        "Intermedio",
+        "Construye tu propio agente de WhatsApp con IA en menos de 30 minutos. Claude Code escribe todo el codigo por ti solo responde preguntas sobre tu negocio."
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "drona23-claude-token-efficient",
+      "name": "drona23/claude-token-efficient",
+      "type": "repo",
+      "categories": [
+        "ai"
+      ],
+      "description": "Plugin que reduce hasta 75% los tokens que Claude Code consume en cada sesion.",
+      "url": "https://github.com/drona23/claude-token-efficient",
+      "owner": "drona23",
+      "repo": "claude-token-efficient",
+      "tags": [],
+      "appearsIn": [
+        "5 Repos Para No Quemar Tu Cuenta ...",
+        "Claude Token Efficient"
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "emilkowalski-skill",
+      "name": "emilkowalski/skill",
+      "type": "skill",
+      "categories": [
+        "skills",
+        "design",
+        "ai"
+      ],
+      "description": "Skill de Emil Kowalski que le ensena a Claude animaciones y transiciones fluidas para la web.",
+      "url": "https://github.com/emilkowalski/skill",
+      "owner": "emilkowalski",
+      "repo": "skill",
+      "tags": [],
+      "appearsIn": [
+        "El kit de diseno con Claude 5 s..."
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "evomap-evolver",
+      "name": "EvoMap/evolver",
+      "type": "skill",
+      "categories": [
+        "skills",
+        "ai"
+      ],
+      "description": "Skill de auto-mejora Claude aprende de cada sesion y propone mejoras al CLAUDE.md.",
+      "url": "https://github.com/EvoMap/evolver",
+      "owner": "EvoMap",
+      "repo": "evolver",
+      "tags": [],
+      "appearsIn": [
+        "5 Repos Dominando Claude Code",
+        "5 Repos Para Volverte AI Engineer",
+        "guia",
+        "Avanzado",
+        "Cinco repositorios gratis de GitHub que ensenan lo mismo que un bootcamp de dos mil dolares Ollama, LangChain, LlamaIndex, CrewAI y Awesome LLM Apps. Cada uno explicado desde cero: que hace, por que importa, como lo instalas y que construyes con el."
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "eyaltoledano-claude-task-master",
+      "name": "eyaltoledano/claude-task-master",
+      "type": "agent",
+      "categories": [
+        "agents",
+        "ai"
+      ],
+      "description": "Sistema de tareas para Claude Code kanban, asignacion y tracking de proyectos.",
+      "url": "https://github.com/eyaltoledano/claude-task-master",
+      "owner": "eyaltoledano",
+      "repo": "claude-task-master",
+      "tags": [],
+      "appearsIn": [
+        "5 Habilidades Claude"
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "fission-ai-openspec",
+      "name": "Fission-AI/OpenSpec",
+      "type": "repo",
+      "categories": [
+        "general"
+      ],
+      "description": "Framework spec-driven: arma una carpeta con plan, specs y pasos antes de escribir codigo.",
+      "url": "https://github.com/Fission-AI/OpenSpec",
+      "owner": "Fission-AI",
+      "repo": "OpenSpec",
+      "license": "MIT",
+      "language": "TypeScript",
+      "tags": [],
+      "appearsIn": [
+        "Trio de skills para Claude Code ..."
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "florianbruniaux-claude-code-ultimate-guide",
+      "name": "FlorianBruniaux/claude-code-ultimate-guide",
+      "type": "repo",
+      "categories": [
+        "design",
+        "ai"
+      ],
+      "description": "Guia ultimate de Claude Code curada por Florian Bruniaux.",
+      "url": "https://github.com/FlorianBruniaux/claude-code-ultimate-guide",
+      "owner": "FlorianBruniaux",
+      "repo": "claude-code-ultimate-guide",
+      "tags": [],
+      "appearsIn": [
+        "Top Claude Code Abril 2026"
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "forrestchang-andrej-karpathy-skills",
+      "name": "forrestchang/andrej-karpathy-skills",
+      "type": "skill",
+      "categories": [
+        "skills",
+        "ai"
+      ],
+      "description": "Las reglas de Karpathy convertidas en skills de Claude Code.",
+      "url": "https://github.com/forrestchang/andrej-karpathy-skills",
+      "owner": "forrestchang",
+      "repo": "andrej-karpathy-skills",
+      "tags": [],
+      "appearsIn": [
+        "5 Repos Dominando Claude Code",
+        "5 Proyectos Para Completar Claude"
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "garrytan-gbrain",
+      "name": "garrytan/gbrain",
+      "type": "knowledge",
+      "categories": [
+        "memory"
+      ],
+      "description": "El cerebro auto-cableado de Garry Tan 146k paginas en produccion, grafo que se conecta solo.",
+      "url": "https://github.com/garrytan/gbrain",
+      "owner": "garrytan",
+      "repo": "gbrain",
+      "license": "MIT",
+      "language": "TypeScript",
+      "tags": [],
+      "appearsIn": [
+        "Gbrain el segundo cerebro del C...",
+        "Loops en Claude Code el creador de Claude Code ya no escribe prompts, escribe loops y tu puedes con una linea",
+        "guia",
+        "Intermedio",
+        "Boris Cherny, el creador de Claude Code, lo dijo sin rodeos: Yo ya no le escribo prompts a Claude. Tengo loops corriendo que le escriben por mi y deciden que hacer. Mi trabajo es escribir loops . Esta guia te ensena a hacer exactamente eso con una sola linea /loop 10m revisa que mi pagina siga funcionando y avisame si algo se rompe y Claude lo repite solo, sin que vuelvas a pedirlo. Cubre los tres modos verificados contra las docs oficiales: intervalo fijo, el modo dinamico donde Claude elige su propio ritmo y se detiene solito al terminar, y el modo mantenimiento con .claude/loop.md; mas como frenarlo, los limites honestos (corre local con la sesion abierta, expiran a los 7 dias, maximo 50 tareas por sesion) y cuando te conviene su hermano en la nube, /schedule. Incluye 12 loops listos para copiar y un prompt para que Claude te proponga que loops te convienen segun tu trabajo."
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "garrytan-gstack",
+      "name": "garrytan/gstack",
+      "type": "repo",
+      "categories": [
+        "ai"
+      ],
+      "description": "Stack curado de 23 herramientas para que Claude piense, disene, pruebe y publique tu proyecto.",
+      "url": "https://github.com/garrytan/gstack",
+      "owner": "garrytan",
+      "repo": "gstack",
+      "tags": [],
+      "appearsIn": [
+        "G Stack Tu Equipo de IA",
+        "5 Errores que Queman Tu Cuenta de Claude",
+        "guia",
+        "Principiante",
+        "Descubre los 5 errores que estan acabando con tu plan de Claude sin que te des cuenta y como solucionarlos hoy mismo para que tu cuenta te dure el doble."
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "github-spec-kit",
+      "name": "github/spec-kit",
+      "type": "repo",
+      "categories": [
+        "devops",
+        "ai"
+      ],
+      "description": "Toolkit MIT que mete Spec-Driven Development en Claude Code: dictas los specs, el arma el plan y va tachando tareas.",
+      "url": "https://github.com/github/spec-kit",
+      "owner": "github",
+      "repo": "spec-kit",
+      "license": "MIT",
+      "language": "Python",
+      "tags": [],
+      "appearsIn": [
+        "Spec Kit escribi los specs ante...",
+        "Dominar Cowork el manual completo del companero de trabajo de Claude",
+        "guia",
+        "Intermedio",
+        "Manual fundamental de Claude Cowork el entry point para los 4 pasos del script (descargar app desktop, crear proyecto + README con tu bio, conectar Gmail+Notion+Calendar+Drive+Shopify+HubSpot+Microsoft 365, y cuando graduarte a Code con la metafora de las rueditas + honesty note del framing oficial de Anthropic) mas panorama de las 14 features (12 oficiales + 2 derivadas: Projects, Direct Local File Access, Scheduled Tasks, Sub-agent Coordination, Long-running Tasks, Spreadsheets & Presentations, Code Execution Isolation, Permission Modes Ask vs Act, Global + Folder Instructions, Plugins, Skills, Mobile Access, Computer Use, Live Artifacts) con cross-links a las 9 guias hermanas (claude-cowork-code overview, claude-cowork-workflow, live-artifacts-cowork, claude-small-business, claude-microsoft-365, skills-global-o-proyecto, cual-plan-claude, instalar-claude-code, memoria-claude-code) y los gotchas verbatim que Anthropic documenta (usage allocation higher, computer awake + app open, sin Compliance API, memoria scoped no cross-session, sesiones no compartibles, Free no incluye Cowork). Trae 6 combos copy-paste reales con prompts listos: asistente de ventas (Gmail+Calendar+HubSpot), editor de newsletter (Notion+Drive), analista de Shopify, marketing manager con Facebook Ads, asistente personal y researcher."
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "google-gemini-gemini-cli",
+      "name": "google-gemini/gemini-cli",
+      "type": "agent",
+      "categories": [
+        "agents",
+        "design",
+        "ai"
+      ],
+      "description": "Agente de IA open source que mete a Gemini directo en tu terminal para construir y programar.",
+      "url": "https://github.com/google-gemini/gemini-cli",
+      "owner": "google-gemini",
+      "repo": "gemini-cli",
+      "license": "Apache-2.0",
+      "language": "TypeScript",
+      "tags": [],
+      "appearsIn": [
+        "Gemini XPRIZE manual completo +..."
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "google-adk-python",
+      "name": "google/adk-python",
+      "type": "agent",
+      "categories": [
+        "agents"
+      ],
+      "description": "Toolkit en Python para crear, evaluar y desplegar los agentes de IA que operan tu negocio.",
+      "url": "https://github.com/google/adk-python",
+      "owner": "google",
+      "repo": "adk-python",
+      "license": "Apache-2.0",
+      "language": "Python",
+      "tags": [],
+      "appearsIn": [
+        "Gemini XPRIZE manual completo +...",
+        "Spotify + Claude tu DJ personal",
+        "guia",
+        "Principiante",
+        "Claude se conecta a tu Spotify y te arma playlists pero solo si le das un buen prompt. Esta guia trae el paso a paso para conectar Spotify a Claude en 4 clics (Customize Conectores Explorar conectores Conectar) y, sobre todo, como pedir bien: el ejemplo del reel donde un prompt vago dio puro Calle 13 y uno preciso clavo los clasicos del regueton. Incluye la formula del buen prompt musical y prompts listos para copiar (regueton clasico, foco, fiesta, gym, road trip). Sin programar."
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "gsd-build-get-shit-done",
+      "name": "gsd-build/get-shit-done",
+      "type": "skill",
+      "categories": [
+        "skills",
+        "design",
+        "ai"
+      ],
+      "description": "Skill GSD que parte el trabajo en pedacitos chiquitos cada uno con su Claude fresco.",
+      "url": "https://github.com/gsd-build/get-shit-done",
+      "owner": "gsd-build",
+      "repo": "get-shit-done",
+      "tags": [],
+      "appearsIn": [
+        "Las Tres Herramientas Claude Code",
+        "Claude en Piloto Automatico",
+        "Vercel Skills",
+        "guia",
+        "Intermedio",
+        "Guia para encontrar e instalar skills en Claude Code usando skills.sh."
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "hainrixz-abogado-del-diablo",
+      "name": "Hainrixz/abogado-del-diablo",
+      "type": "repo",
+      "categories": [
+        "ai"
+      ],
+      "description": "Plugin de Claude Code que critica a fondo una idea o un proyecto entero y entrega un veredicto.",
+      "url": "https://github.com/Hainrixz/abogado-del-diablo",
+      "owner": "Hainrixz",
+      "repo": "abogado-del-diablo",
+      "license": "MIT",
+      "tags": [],
+      "appearsIn": [
+        "Abogado del Diablo la skill que...",
+        "Claude Opus 4.8 Todo lo nuevo, explicado: effort control, fast mode y dynamic workflows",
+        "guia",
+        "Principiante",
+        "Salio Opus 4.8 (28 de mayo): mas honesto, aguanta tareas largas solo y trae tres controles nuevos, al mismo precio que 4.7. Esta guia te explica en espanol simple que cambio, como usar el slider de effort sin quemar tu plan (cuando subirlo y cuando bajarlo), que es el fast mode (2.5 mas rapido y 3 mas barato) y los dynamic workflows (cientos de subagentes en paralelo). Cierra con por que la honestidad ~4 mayor es la mejora estrella, los numeros clave, ficha tecnica, donde esta disponible y como migrar, prompts copia-pega y una tarjeta para quien usa la API."
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "hainrixz-agente-pagokit",
+      "name": "Hainrixz/agente-pagokit",
+      "type": "agent",
+      "categories": [
+        "agents",
+        "ai"
+      ],
+      "description": "Plugin Claude Code que elige proveedor y escribe checkout, webhook firmado y refunds en tu proyecto.",
+      "url": "https://github.com/Hainrixz/agente-pagokit",
+      "owner": "Hainrixz",
+      "repo": "agente-pagokit",
+      "license": "MIT",
+      "language": "JavaScript",
+      "tags": [],
+      "appearsIn": [
+        "Agente PagoKit Stripe, Mercado ...",
+        "OpenWA + Claude tu propio servidor de WhatsApp corriendo en tu compu con Claude contestando solo",
+        "guia",
+        "Avanzado",
+        "Guia 0-a-100 para montar OpenWA (gateway WhatsApp MIT self-hosted, ~2.3k stars, NestJS) en tu compu, conectar tu numero por QR como WhatsApp Web y armar el puente Node con webhook + HMAC para que Claude lea y conteste solo sin pagar SaaS por mensaje. Cubre los 2 caminos oficiales de instalacion (Docker compose recomendado y Node 22 LTS alternativo) con tabla comparativa, los 3 endpoints REST de OpenWA para crear sesion + arrancarla + obtener QR, seccion dedicada de seguridad (por que numero nuevo, riesgo real de baneo, HMAC, .env), el gap mas grande del reel resuelto con un prompt maestro de 10 requerimientos que Claude Code ejecuta en 5-10 min para armar el bridge completo (Express + HMAC + Anthropic SDK + retry exponencial + .env.example + README), 6 prompts copy-paste en voseo Latam (instalar conectar QR armar bridge definir personalidad probarlo iterar), y 5 trampas honestas (los 3 comandos reales costo de tokens no hay MCP oficial riesgo de baneo 24/7 necesita VPS)."
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "hainrixz-all-deploy",
+      "name": "Hainrixz/all-deploy",
+      "type": "skill",
+      "categories": [
+        "skills",
+        "security",
+        "devops"
+      ],
+      "description": "Skill que detecta tu stack, elige Vercel o Railway, despliega preview y promueve a produccion con un comando.",
+      "url": "https://github.com/Hainrixz/all-deploy",
+      "owner": "Hainrixz",
+      "repo": "all-deploy",
+      "license": "MIT",
+      "language": "Python",
+      "tags": [],
+      "appearsIn": [
+        "Trifecta Perfecta The Architect...",
+        "All Deploy Cierre del Combo",
+        "Agente PagoKit Stripe, Mercado Pago y Lemon Squeezy en un comando",
+        "guia",
+        "Avanzado",
+        "Plugin gratis de Claude Code que escanea tu proyecto, hace 3 preguntas (pais, una vez o suscripcion, metodos locales) y elige Stripe, Mercado Pago, Wompi o Lemon Squeezy segun tu caso. Genera ~14 archivos del checkout completo boton, webhook firmado, portal del cliente, refunds y schema de DB con 5 candados deterministas que bloquean publicar API keys, webhooks sin firma o `.env` fuera de `.gitignore`. Cubre Next.js App Router y Express en Fase 1, con roadmap publica a NestJS, FastAPI, Django, Laravel, Rails, Hono, SvelteKit, Astro y Go. Guia paso a paso explicada en lenguaje simple que es, como se instala, que responder a cada pregunta, que proveedor te conviene segun tus clientes, que hace cada uno de los 14 archivos generados, que protege cada candado, y cuando NO usarlo si tu stack esta fuera de Fase 1."
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "hainrixz-aprende-skill",
+      "name": "Hainrixz/aprende-skill",
+      "type": "skill",
+      "categories": [
+        "skills"
+      ],
+      "description": "Skill que captura aprendizajes de la sesion y los propone para que apruebes antes de persistir.",
+      "url": "https://github.com/Hainrixz/aprende-skill",
+      "owner": "Hainrixz",
+      "repo": "aprende-skill",
+      "license": "MIT",
+      "tags": [],
+      "appearsIn": [
+        "Memoria de Claude 3 trucos para...",
+        "Feedback loop haz que tus promp...",
+        "Aprende la habilidad que le da ...",
+        "Borra la cuenta sin que Apple te rechace el boton 5.1.1, soft delete y anonimizacion (sin esconder datos)",
+        "guia",
+        "Intermedio"
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "hainrixz-auto-crm",
+      "name": "Hainrixz/auto-crm",
+      "type": "repo",
+      "categories": [
+        "ai"
+      ],
+      "description": "CRM open-source que corre 100% local con Claude Code contactos, pipeline, kanban.",
+      "url": "https://github.com/Hainrixz/auto-crm",
+      "owner": "Hainrixz",
+      "repo": "auto-crm",
+      "tags": [],
+      "appearsIn": [
+        "Auto-CRM",
+        "Agency Agents 144 especialistas para Claude Code",
+        "guia",
+        "Intermedio",
+        "Agency Agents (de @msitarzewski) es la coleccion open-source que convierte tu Claude Code en una agencia entera. Trae 144+ agentes especializados organizados en 14 divisiones (Marketing, Ingenieria, Especializados, Game Dev, Diseno, Ventas, Testing, Paid Media, Project Mgmt, Soporte, Spatial Computing, Producto, Finance, Academic) cada agente con su personalidad, su forma de trabajar y sus metricas. Se instala con un comando, vive 100% local en ~/.claude/agents/, es licencia MIT, y los puedes encadenar para flujos completos: del brief al MVP, de la idea de marca a la campana, del prospecto al cierre. Aca te lo explico paso a paso, te dejo el prompt para que Claude Code lo instale por ti, y 10 prompts copy-paste organizados por division para empezar a trabajar hoy."
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "hainrixz-claude-ads",
+      "name": "Hainrixz/claude-ads",
+      "type": "skill",
+      "categories": [
+        "skills",
+        "marketing",
+        "ai"
+      ],
+      "description": "Skill que audita campanas de Meta, Google, TikTok y YouTube con 250+ chequeos por anuncio.",
+      "url": "https://github.com/Hainrixz/claude-ads",
+      "owner": "Hainrixz",
+      "repo": "claude-ads",
+      "tags": [],
+      "appearsIn": [
+        "Cloud Ads Flow Pon un agente a ...",
+        "Tu Agencia de Marketing con Claud...",
+        "Claude Ads",
+        "Master 97% de Codex en 1 hora 5 movimientos para dominar el agente de OpenAI",
+        "guia",
+        "Avanzado"
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "hainrixz-claude-banana",
+      "name": "Hainrixz/claude-banana",
+      "type": "repo",
+      "categories": [
+        "ai"
+      ],
+      "description": "Plugin que conecta Claude con Nano Banana de Google para thumbnails y carruseles en sesion.",
+      "url": "https://github.com/Hainrixz/claude-banana",
+      "owner": "Hainrixz",
+      "repo": "claude-banana",
+      "tags": [],
+      "appearsIn": [
+        "5 Skills Claude para Creators v...",
+        "Claude Banana"
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "hainrixz-claude-cmd",
+      "name": "Hainrixz/claude-cmd",
+      "type": "repo",
+      "categories": [
+        "design",
+        "ai"
+      ],
+      "description": "Instalador de 1 clic para Claude Code en Mac, Windows y Linux; deja un icono Claude Terminal .",
+      "url": "https://github.com/Hainrixz/claude-cmd",
+      "owner": "Hainrixz",
+      "repo": "claude-cmd",
+      "license": "MIT",
+      "language": "Shell",
+      "tags": [],
+      "appearsIn": [
+        "Instala Claude Code en 1 clic d...",
+        "Top 5 plugins de Claude que nadie te ensena Brand Voice, Small Business, Design, Operations y Customer Support que hace cada uno y como instalarlos con capturas reales",
+        "guia",
+        "Principiante",
+        "Si ya pagas Claude, los plugins son lo que le saca el otro 90%. Esta guia explica los cinco que mas valen la pena para quien tiene un negocio Brand Voice (tu voz de marca), Small Business (nominas, cierres y caja), Design (un disenador a tu lado), Operations (tus procesos vueltos guia) y Customer Support (respuestas a tus clientes) con que hace cada uno, un ejemplo de como pedirselo y el paso a paso para instalarlos desde la app, con capturas reales: Personalizar, Plugins personales, el Directorio y el boton Instalar. Sin programar nada."
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "hainrixz-claude-db",
+      "name": "Hainrixz/claude-db",
+      "type": "repo",
+      "categories": [
+        "data",
+        "ai"
+      ],
+      "description": "Plugin de Claude Code que audita, explica y arregla tu base de datos con dos calificaciones",
+      "url": "https://github.com/Hainrixz/claude-db",
+      "owner": "Hainrixz",
+      "repo": "claude-db",
+      "license": "MIT",
+      "tags": [],
+      "appearsIn": [
+        "Claude DB revisa, arregla y arm...",
+        "El kit para sacar informacion de internet con Claude Apify, Scrapingdog y Browser Harness juntas",
+        "guia",
+        "Intermedio",
+        "Todos los que usan Claude para buscar clientes, investigar redes o jalar informacion de internet me lo piden a gritos: las herramientas que convierten a Claude en un saca-informacion. Aqui estan las mejores y lo mas importante como se combinan. Apify saca listas de prospectos de Google Maps, LinkedIn, Facebook o Instagram con telefono y correo (trae $5 de credito gratis al mes); Scrapingdog hace casi lo mismo mas barato y te lo deja en un Excel (con creditos de prueba para arrancar, no gratis para siempre); y Browser Harness le abre a Claude tu Chrome real para espiar los anuncios que corre tu competencia en Facebook e Instagram, con mas de 95 sitios listos. La cuarta herramienta es juntarlas: Scrapingdog o Apify sacan la lista, Claude la organiza y Browser Harness investiga lo mas reciente de cada prospecto una maquina de clientes casi sola. Tres de ellas ya tienen su guia a detalle en la boveda; aqui va cual es cada una, prompts listos para copiar y como armar el flujo completo, sin escribir una linea de codigo."
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "hainrixz-claude-seo-ai",
+      "name": "Hainrixz/claude-seo-ai",
+      "type": "repo",
+      "categories": [
+        "marketing",
+        "ai"
+      ],
+      "description": "Plugin de Claude Code que audita tu web para Google y para los buscadores de IA.",
+      "url": "https://github.com/Hainrixz/claude-seo-ai",
+      "owner": "Hainrixz",
+      "repo": "claude-seo-ai",
+      "license": "MIT",
+      "language": "JavaScript",
+      "tags": [],
+      "appearsIn": [
+        "Claude SEO AI audita tu web par...",
+        "Feedback loop haz que tus prompts y skills de Claude se mejoren solos",
+        "guia",
+        "Principiante",
+        "Llevas 50 veces corriendo el mismo prompt y siempre te da lo mismo? El problema no es tuyo: es que tu prompt no se esta corrigiendo. Aqui montas un feedback loop una seccion de auto-auditoria que pegas al final de cualquier prompt, skill o flujo para que Claude, al terminar, te diga que salio bien, que salio mas o menos y que cambiar para la proxima. Lees, te quedas con lo que sirve, actualizas, y en dos semanas tu flujo da algo 10 veces mejor. Incluye el bloque copy-paste, la estructura, las variantes para skills y flujos, el seguimiento semanal y como automatizarlo con la skill Aprende."
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "hainrixz-claude-skill",
+      "name": "Hainrixz/claude-skill",
+      "type": "skill",
+      "categories": [
+        "skills",
+        "ai"
+      ],
+      "description": "Skill que responde si Claude puede hacer algo y en cual de sus cinco apps hacerlo.",
+      "url": "https://github.com/Hainrixz/claude-skill",
+      "owner": "Hainrixz",
+      "repo": "claude-skill",
+      "license": "Apache-2.0",
+      "language": "Shell",
+      "tags": [],
+      "appearsIn": [
+        "Claude sin E preguntale que pue...",
+        "No inventes problemas, encuentral...",
+        "No inventes problemas, encuentralos prompts para convertir un problema real en una solucion con Claude",
+        "guia",
+        "Principiante",
+        "La verdad incomoda: el negocio, el problema, la oportunidad no la inventas la encuentras. Y casi nadie la encuentra porque ya nadie escucha; le piden ideas a Claude en vez de pedirselas a la gente, y terminan sacando apps que nadie pidio. Esta guia no te dice que construir: te ensena a salir, escuchar un problema real y traerlo a Claude para resolverlo. Es 100% practica pura caja de prompts copia-pega para que tomes un problema que de verdad escuchaste y, paso a paso, lo entiendas a fondo ( a quien le duele?, vale la pena?), investigues como se resuelve hoy, disenes la solucion mas simple posible, veas si se puede automatizar y lo valides con personas reales antes de construir nada. Funciona en el Chat de claude.ai o en Cowork, aunque nunca hayas usado Claude. Va de la mano con la skill Claude sin E: cuando tengas el problema, le preguntas a la skill si Claude puede resolverlo y en cual de sus apps. Sal, encuentra problemas reales no los inventes y comenta cual encontraste."
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "hainrixz-claude-webkit",
+      "name": "Hainrixz/claude-webkit",
+      "type": "repo",
+      "categories": [
+        "design",
+        "automation",
+        "devops",
+        "ai"
+      ],
+      "description": "Toolkit para que Claude Code construya landing pages 6 fases automatizadas + deploy.",
+      "url": "https://github.com/Hainrixz/claude-webkit",
+      "owner": "Hainrixz",
+      "repo": "claude-webkit",
+      "tags": [],
+      "appearsIn": [
+        "Sitio web de $10,000 gratis El ...",
+        "Claude Web Builder",
+        "Top Claude Code Abril 2026",
+        "Claude Design 5 versiones de tu landing o carrusel en minutos (y exporta a Claude Code)",
+        "guia",
+        "Intermedio"
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "hainrixz-construyeconia",
+      "name": "Hainrixz/construyeconia",
+      "type": "repo",
+      "categories": [
+        "design"
+      ],
+      "description": "Stack de plantillas para construir productos con IA siguiendo el patron tododeia.",
+      "url": "https://github.com/Hainrixz/construyeconia",
+      "owner": "Hainrixz",
+      "repo": "construyeconia",
+      "tags": [],
+      "appearsIn": [
+        "Construyendo con IA",
+        "Instant Landing",
+        "guia",
+        "Intermedio",
+        "Sistema para crear una landing completa en una sola ejecucion."
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "hainrixz-cyber-neo",
+      "name": "Hainrixz/cyber-neo",
+      "type": "skill",
+      "categories": [
+        "skills",
+        "agents",
+        "security"
+      ],
+      "description": "Skill que corre cinco subagentes paralelos auditando secretos, dependencias e infra con reporte priorizado.",
+      "url": "https://github.com/Hainrixz/cyber-neo",
+      "owner": "Hainrixz",
+      "repo": "cyber-neo",
+      "license": "MIT",
+      "language": "Python",
+      "tags": [],
+      "appearsIn": [
+        "Trifecta Perfecta The Architect...",
+        "Cyber Neo"
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "hainrixz-editor-pro-max",
+      "name": "Hainrixz/editor-pro-max",
+      "type": "skill",
+      "categories": [
+        "skills",
+        "media",
+        "ai"
+      ],
+      "description": "Skill de edicion de video por lenguaje natural Claude genera codigo Remotion para MP4 profesionales.",
+      "url": "https://github.com/Hainrixz/editor-pro-max",
+      "owner": "Hainrixz",
+      "repo": "editor-pro-max",
+      "tags": [],
+      "appearsIn": [
+        "El estudio creativo escondido en ...",
+        "Editor Pro Max",
+        "5 Habilidades de Marketing",
+        "5 Skills Para Crear Contenido"
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "hainrixz-enpoint-agentkit",
+      "name": "Hainrixz/enpoint-agentkit",
+      "type": "agent",
+      "categories": [
+        "agents"
+      ],
+      "description": "CLI sin dependencias que detecta tu stack y genera un endpoint REST de solo lectura listo para compartir.",
+      "url": "https://github.com/Hainrixz/enpoint-agentkit",
+      "owner": "Hainrixz",
+      "repo": "enpoint-agentkit",
+      "license": "MIT",
+      "language": "JavaScript",
+      "tags": [],
+      "appearsIn": [
+        "Endpoint Agent Kit Abre los end...",
+        "Sitio web de $10,000 gratis El Arquitecto + Agent Webkit, el combo que disena, construye y publica tu pagina",
+        "guia",
+        "Intermedio",
+        "Dos herramientas gratuitas de Hainrixz se encadenan para armar tu pagina o app sin pagarle a una agencia: El Arquitecto te entrevista y entrega un plano completo, y Agent Webkit lo disena, construye y publica con un link en vivo. Incluye los prompts exactos para cada paso."
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "hainrixz-humanizalo",
+      "name": "Hainrixz/humanizalo",
+      "type": "skill",
+      "categories": [
+        "skills",
+        "marketing"
+      ],
+      "description": "Skill bilingue que detecta 40 tells de IA en espanol/ingles y reescribe natural.",
+      "url": "https://github.com/Hainrixz/humanizalo",
+      "owner": "Hainrixz",
+      "repo": "humanizalo",
+      "tags": [],
+      "appearsIn": [
+        "5 Herramientas Para Tu Primer Dia...",
+        "Humanizalo",
+        "5 Skills Para Crear Contenido",
+        "5 Skills Que Cambian Todo"
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "hainrixz-maia-skill",
+      "name": "Hainrixz/maia-skill",
+      "type": "skill",
+      "categories": [
+        "skills",
+        "agents"
+      ],
+      "description": "Skill multi-agente (v2.1) que despliega 5 agentes de IA cripto, acciones, forex y materias primas + estrategia y arma un dashboard interactivo y bilingue. Sin API keys, corre local, educativo.",
+      "url": "https://github.com/Hainrixz/maia-skill",
+      "owner": "Hainrixz",
+      "repo": "maia-skill",
+      "license": "MIT",
+      "language": "TypeScript",
+      "tags": [],
+      "appearsIn": [
+        "MAIA analisis de inversion mult...",
+        "Ponytail pon a Claude a dieta de codigo: que escriba lo minimo y no llene tu app de bugs (gratis)",
+        "guia",
+        "Intermedio",
+        "Claude programa como becario que cobra por linea: le pides 10 lineas y te avienta 500 y ese codigo de mas es el que llena tu app de bugs, la hace mas pesada y mas lenta. Ponytail es un plugin gratis y open-source que pone a Claude a dieta: antes de escribir cualquier linea, busca una razon para NO escribirla ( ya existe?, se resuelve en una linea?) y solo cuando no hay de otra escribe lo minimo que funciona. Segun el repo: hasta ~54% menos codigo, mas rapido y mas barato, sin importar que Claude uses. Lo instalas en Claude Code con dos comandos y trabaja solo en segundo plano; con /ponytail lite, full, ultra u off ajustas que tan estricto es. Y lo mejor: a un proyecto viejo y enredado le corres /ponytail-audit y te dice que te sobra, que te falta y que puedes mejorar, en una lista de lo mas importante a lo menos. Esta guia trae la instalacion copy-paste, los comandos explicados simple y prompts listos para usar sin que tengas que saber programar."
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "hainrixz-skill-vault",
+      "name": "Hainrixz/skill-vault",
+      "type": "skill",
+      "categories": [
+        "skills"
+      ],
+      "description": "Boveda local de skills personales reutilizables organiza, analiza y recomienda.",
+      "url": "https://github.com/Hainrixz/skill-vault",
+      "owner": "Hainrixz",
+      "repo": "skill-vault",
+      "tags": [],
+      "appearsIn": [
+        "Skill Vault",
+        "5 Skills = Equipo Dev",
+        "guia",
+        "Intermedio",
+        "Cinco habilidades gratuitas de Claude Code que juntas te dan un equipo completo de desarrollo planean, construyen, depuran, buscan y optimizan todo por ti."
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "hainrixz-the-architect",
+      "name": "Hainrixz/the-architect",
+      "type": "agent",
+      "categories": [
+        "agents"
+      ],
+      "description": "Meta-agente que te entrevista en cuatro fases y entrega un blueprint markdown de 16 secciones para tu app.",
+      "url": "https://github.com/Hainrixz/the-architect",
+      "owner": "Hainrixz",
+      "repo": "the-architect",
+      "license": "MIT",
+      "tags": [],
+      "appearsIn": [
+        "Sitio web de $10,000 gratis El ...",
+        "Trifecta Perfecta The Architect...",
+        "Platica, Luego Construye",
+        "The Architect"
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "hainrixz-tododeia-animaciones",
+      "name": "Hainrixz/tododeia-animaciones",
+      "type": "skill",
+      "categories": [
+        "skills",
+        "design",
+        "ai"
+      ],
+      "description": "Skill de animaciones web Framer Motion + GSAP guiado por Claude.",
+      "url": "https://github.com/Hainrixz/tododeia-animaciones",
+      "owner": "Hainrixz",
+      "repo": "tododeia-animaciones",
+      "tags": [],
+      "appearsIn": [
+        "Animaciones",
+        "VibeCoding 101",
+        "guia",
+        "Principiante",
+        "Guia de inicio para construir productos con IA desde fundamentos."
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "hainrixz-whatsapp-agentkit",
+      "name": "Hainrixz/whatsapp-agentkit",
+      "type": "agent",
+      "categories": [
+        "agents",
+        "ai"
+      ],
+      "description": "Kit para correr agentes de Claude conectados a WhatsApp Business en menos de 30 minutos.",
+      "url": "https://github.com/Hainrixz/whatsapp-agentkit",
+      "owner": "Hainrixz",
+      "repo": "whatsapp-agentkit",
+      "tags": [],
+      "appearsIn": [
+        "WhatsApp AgentKit",
+        "Top Claude Code Abril 2026",
+        "Construyendo con IA",
+        "guia",
+        "Intermedio",
+        "Ruta practica para pasar de cero a una app publicada usando Codex."
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "haris-musa-excel-mcp-server",
+      "name": "haris-musa/excel-mcp-server",
+      "type": "mcp",
+      "categories": [
+        "mcp",
+        "data",
+        "ai"
+      ],
+      "description": "MCP que da a Claude acceso completo a archivos de Excel lee y edita celdas.",
+      "url": "https://github.com/haris-musa/excel-mcp-server",
+      "owner": "haris-musa",
+      "repo": "excel-mcp-server",
+      "tags": [],
+      "appearsIn": [
+        "5 Habilidades Claude",
+        "Como Hablarle a Claude",
+        "guia",
+        "Principiante",
+        "Deja de recibir respuestas genericas. Aprende los 4 elementos para hablarle a Claude como un profesional y obtener exactamente lo que necesitas."
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "heygen-com-hyperframes",
+      "name": "heygen-com/hyperframes",
+      "type": "repo",
+      "categories": [
+        "media"
+      ],
+      "description": "CLI que convierte HTML/CSS/JS en MP4 con Node y FFmpeg videos hechos por codigo.",
+      "url": "https://github.com/heygen-com/hyperframes",
+      "owner": "heygen-com",
+      "repo": "hyperframes",
+      "license": "Apache-2.0",
+      "tags": [],
+      "appearsIn": [
+        "El estudio creativo escondido en ...",
+        "5 Skills Claude para Creators v...",
+        "Hyperframes Videos con Claude D..."
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "jamiepine-voicebox",
+      "name": "jamiepine/voicebox",
+      "type": "workflow",
+      "categories": [
+        "media",
+        "voice",
+        "accessibility",
+        "mcp",
+        "stt",
+        "tts",
+        "agents"
+      ],
+      "description": "Estudio local-first de voz con clonacion, TTS, STT/Whisper, dictado global, API REST y MCP para que agentes hablen o transcriban. Usar en EDITCOREAI como integracion opcional de voz, con consentimiento explicito para clonar o usar voces y sin impersonacion.",
+      "url": "https://github.com/jamiepine/voicebox",
+      "owner": "jamiepine",
+      "repo": "voicebox",
+      "license": "MIT",
+      "language": "TypeScript",
+      "tags": [
+        "voicebox",
+        "voice",
+        "tts",
+        "stt",
+        "whisper",
+        "dictation",
+        "voice-cloning",
+        "mcp-server",
+        "voicebox.speak",
+        "transcribe",
+        "accessibility",
+        "local-first",
+        "consent-required",
+        "no-impersonation"
+      ],
+      "appearsIn": [
+        "El estudio creativo escondido en ...",
+        "Entrenador con Claude conecta tu salud (Apple Health / Health Connect), dale tu meta y deja que arme tu plan de la semana con tus numeros reales (y que lo baje a tu calendario)",
+        "guia",
+        "Intermedio",
+        "Claude se conecta directo a tu salud y ve tus pasos, tu sueno y tu pulso de verdad: tu le pones la meta y el te arma el plan de toda la semana hecho a tu medida no uno generico de internet , lo baja a tu Google Calendar y cada dia se ajusta a como dormiste y entrenaste. Esta guia trae las instrucciones del proyecto y todos los prompts listos para copiar, el paso a paso con capturas desde el telefono (iPhone y Android), y la version automatizada con Cowork para que se prenda solo cada manana y cada domingo. No reemplaza a un profesional: es una herramienta para mejorar tu salud.",
+        "Integracion propuesta por EDITCOREAI para hablar respuestas, transcribir prompts, dictado del chat y avisos hablados al terminar fases",
+        "Uso responsable: clonar solo voz propia, voces con permiso explicito o material legalmente autorizado; prohibir fraude, phishing, suplantacion, acoso o bypass de autenticacion por voz"
+      ],
+      "source": "tododeia-community",
+      "status": "candidate",
+      "riskLevel": "high",
+      "requiresApproval": true,
+      "allowedUse": "TTS, STT, dictado, accesibilidad y clonacion de voz propia o de voces con permiso explicito.",
+      "blockedUse": [
+        "Suplantar personas sin permiso",
+        "Fraude, phishing, acoso o bypass de autenticacion por voz",
+        "Uso comercial de voz de terceros sin derechos",
+        "Contenido enganoso sin disclosure cuando aplique"
+      ],
+      "safetyNotes": [
+        "Requiere consentimiento explicito para muestras de voz",
+        "Recomendar disclosure de audio sintetico cuando corresponda",
+        "Mantener modelos y capturas locales si el usuario busca privacidad"
+      ]
+    },
+    {
+      "id": "jcodesmore-ai-website-cloner-template",
+      "name": "JCodesMore/ai-website-cloner-template",
+      "type": "repo",
+      "categories": [
+        "design"
+      ],
+      "description": "Template para clonar disenos web con IA extrae layout, estilos y rehace en codigo limpio.",
+      "url": "https://github.com/JCodesMore/ai-website-cloner-template",
+      "owner": "JCodesMore",
+      "repo": "ai-website-cloner-template",
+      "tags": [],
+      "appearsIn": [
+        "Clonador de Paginas",
+        "5 Habilidades Claude",
+        "guia",
+        "Intermedio",
+        "Cinco herramientas gratuitas que convierten a Claude en tu asistente mas productivo: Excel, Obsidian, busqueda web, informacion actualizada y planificacion de proyectos."
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "jordanrendric-claude-video-vision",
+      "name": "jordanrendric/claude-video-vision",
+      "type": "skill",
+      "categories": [
+        "skills",
+        "media",
+        "ai"
+      ],
+      "description": "Skill que analiza reels frame por frame: desglosa hook, tomas, ritmo y transiciones.",
+      "url": "https://github.com/jordanrendric/claude-video-vision",
+      "owner": "jordanrendric",
+      "repo": "claude-video-vision",
+      "tags": [],
+      "appearsIn": [
+        "5 Skills Claude para Creators v...",
+        "6 Mejores Skills Claude Code curado despues de probar mas de 100",
+        "guia",
+        "Principiante",
+        "Las 6 skills que de verdad jalan para todos los que usamos Claude Code: Skill Creator (la fabrica de habilidades), Superpowers (planeacion nivel ingeniero senior antes de tirar linea, 100k+ en GitHub), GSD (parte el trabajo en pedacitos chiquitos con su propio Claude fresco cada uno), /review (revision de codigo built-in y gratis dentro de Claude Code), Context Mode (aplasta la basura del chat para que tu sesion dure 3 horas en lugar de 30 minutos, 56 KB 299 bytes) y Claude Mem (memoria permanente para que ya no le expliques a Claude tu proyecto cada vez que abres una sesion). Cada skill viene con el comando exacto de instalacion, una explicacion corta de que resuelve, y un atajo a la guia completa que ya vive aqui mismo en la boveda. La pagina es tu hub para decidir cual instalar primero segun en que punto estes con Claude Code: recien instalado, ya a diario o construyendo cosas grandes. No tienes que ir a buscar en GitHub ni adivinar parametros pega el comando, vuelve a la guia profunda y usalo."
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "juliusbrussee-caveman",
+      "name": "juliusbrussee/caveman",
+      "type": "skill",
+      "categories": [
+        "skills",
+        "ai"
+      ],
+      "description": "Skill que hace que Claude responda corto y ahorra hasta 75% de tokens.",
+      "url": "https://github.com/juliusbrussee/caveman",
+      "owner": "juliusbrussee",
+      "repo": "caveman",
+      "tags": [],
+      "appearsIn": [
+        "5 Repos Para No Quemar Tu Cuenta ..."
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "kepano-obsidian-skills",
+      "name": "kepano/obsidian-skills",
+      "type": "skill",
+      "categories": [
+        "skills",
+        "memory",
+        "ai"
+      ],
+      "description": "Coleccion de skills de Claude para trabajar adentro de tu vault de Obsidian.",
+      "url": "https://github.com/kepano/obsidian-skills",
+      "owner": "kepano",
+      "repo": "obsidian-skills",
+      "tags": [],
+      "appearsIn": [
+        "Skill Seekers + Obsidian",
+        "Obsidian + Claude",
+        "5 Habilidades Claude",
+        "Claude Web Builder",
+        "guia",
+        "Intermedio"
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "langchain-ai-langchain",
+      "name": "langchain-ai/langchain",
+      "type": "agent",
+      "categories": [
+        "agents",
+        "memory",
+        "ai"
+      ],
+      "description": "Framework para apps de LLMs con chains, agentes y RAG.",
+      "url": "https://github.com/langchain-ai/langchain",
+      "owner": "langchain-ai",
+      "repo": "langchain",
+      "tags": [],
+      "appearsIn": [
+        "5 Repos Para Volverte AI Engineer"
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "lsdefine-genericagent",
+      "name": "lsdefine/GenericAgent",
+      "type": "agent",
+      "categories": [
+        "agents",
+        "design"
+      ],
+      "description": "Framework generico de agentes patron base para construir el tuyo encima.",
+      "url": "https://github.com/lsdefine/GenericAgent",
+      "owner": "lsdefine",
+      "repo": "GenericAgent",
+      "tags": [],
+      "appearsIn": [
+        "5 Repos Dominando Claude Code",
+        "Top Claude Code Abril 2026"
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "mattpocock-skills",
+      "name": "mattpocock/skills",
+      "type": "skill",
+      "categories": [
+        "skills",
+        "design"
+      ],
+      "description": "Coleccion de skills de Matt Pocock; incluye /grill-me, que te interroga antes de construir.",
+      "url": "https://github.com/mattpocock/skills",
+      "owner": "mattpocock",
+      "repo": "skills",
+      "license": "MIT",
+      "language": "Shell",
+      "tags": [],
+      "appearsIn": [
+        "Trio de skills para Claude Code ...",
+        "Matt Pocock Skills los 16 skill...",
+        "5 Herramientas Para Tu Primer Dia...",
+        "5 Skills Tu Equipo de Trabajo c..."
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "mempalace-mempalace",
+      "name": "mempalace/mempalace",
+      "type": "knowledge",
+      "categories": [
+        "memory"
+      ],
+      "description": "CLI 100% local para indexar, buscar y mantener memoria persistente control total sobre cuando guarda.",
+      "url": "https://github.com/mempalace/mempalace",
+      "owner": "mempalace",
+      "repo": "mempalace",
+      "license": "MIT",
+      "tags": [],
+      "appearsIn": [
+        "Memoria infinita para Claude Code..."
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "microsoft-markitdown",
+      "name": "microsoft/markitdown",
+      "type": "repo",
+      "categories": [
+        "data",
+        "ai"
+      ],
+      "description": "Convierte Word, PDF, Excel y URLs de YouTube a Markdown limpio antes de subirlos a Claude Projects.",
+      "url": "https://github.com/microsoft/markitdown",
+      "owner": "microsoft",
+      "repo": "markitdown",
+      "license": "MIT",
+      "language": "Python",
+      "tags": [],
+      "appearsIn": [
+        "Claude Chat, Cowork y Code los ...",
+        "Microsoft MarkItDown",
+        "/goal La Meta Que Claude No Suelta",
+        "guia",
+        "Intermedio",
+        "Anthropic publico /goal en Claude Code: un comando que setea una condicion de completitud y Claude sigue trabajando turno tras turno hasta que un modelo evaluator (Haiku por default) confirme que la meta se cumplio. La guia cubre instalar Claude Code, los 3 requisitos duros (trust dialog del workspace, hooks habilitados, version al dia), como setear / chequear / limpiar / reanudar un /goal, la anatomia de una condicion efectiva con los 3 ingredientes del docs oficial mas el limite de 4000 caracteres, el combo flagship /plan + /goal donde Plan Mode disena el camino y /goal lo ejecuta sin perder el hilo, 5 condiciones listas para copiar (landing de waitlist, refactor de archivo gordo, limpieza de backlog con label bug, JSDoc en src/api y migracion de legacyClient), combinacion con auto mode para ejecucion totalmente desatendida y modo headless con claude -p para cron jobs y CI, comparativa contra /loop y Stop hooks custom, como decide el evaluator y por que solo lee el transcript de la conversacion, y buenas practicas para que la condicion sea verificable y no termine en un loop infinito."
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "microsoft-playwright-cli",
+      "name": "microsoft/playwright-cli",
+      "type": "repo",
+      "categories": [
+        "automation",
+        "ai"
+      ],
+      "description": "CLI oficial de Playwright para automatizacion de navegador desde Claude.",
+      "url": "https://github.com/microsoft/playwright-cli",
+      "owner": "microsoft",
+      "repo": "playwright-cli",
+      "tags": [],
+      "appearsIn": [
+        "4 Superpoderes Claude",
+        "Skill Seekers + Obsidian",
+        "guia",
+        "Intermedio",
+        "Aprende a recopilar contexto de cualquier fuente con Skill Seekers, organizarlo en Obsidian y darselo listo a Claude."
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "microsoft-playwright-mcp",
+      "name": "microsoft/playwright-mcp",
+      "type": "mcp",
+      "categories": [
+        "mcp",
+        "automation",
+        "ai"
+      ],
+      "description": "Deja que Claude maneje el navegador: abre paginas, llena formularios, da clics y toma capturas.",
+      "url": "https://github.com/microsoft/playwright-mcp",
+      "owner": "microsoft",
+      "repo": "playwright-mcp",
+      "license": "Apache-2.0",
+      "language": "TypeScript",
+      "tags": [],
+      "appearsIn": [
+        "Plugins de Claude Code que son ..."
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "microsoft-vibevoice",
+      "name": "microsoft/VibeVoice",
+      "type": "repo",
+      "categories": [
+        "marketing",
+        "media"
+      ],
+      "description": "Modelo open-source de Microsoft para transcripcion de audio/video en 50+ idiomas.",
+      "url": "https://github.com/microsoft/VibeVoice",
+      "owner": "microsoft",
+      "repo": "VibeVoice",
+      "tags": [],
+      "appearsIn": [
+        "Vibe Voice",
+        "Cyber Neo",
+        "guia",
+        "Avanzado",
+        "Agente de ciberseguridad open source para Claude Code escanea 11 dominios de seguridad en tu codigo con 5 subagentes en paralelo y genera un reporte priorizado en tu Desktop."
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "mixedbread-ai-mgrep",
+      "name": "mixedbread-ai/mgrep",
+      "type": "repo",
+      "categories": [
+        "data"
+      ],
+      "description": "Busqueda semantica de codigo y docs que gasta cerca de la mitad de tokens que grep o ripgrep.",
+      "url": "https://github.com/mixedbread-ai/mgrep",
+      "owner": "mixedbread-ai",
+      "repo": "mgrep",
+      "tags": [],
+      "appearsIn": [
+        "Setup pro de Claude Code skills..."
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "mksglu-context-mode",
+      "name": "mksglu/context-mode",
+      "type": "skill",
+      "categories": [
+        "skills",
+        "memory"
+      ],
+      "description": "Skill que aplasta la basura del chat para que tu sesion dure 3 horas en lugar de 30 minutos.",
+      "url": "https://github.com/mksglu/context-mode",
+      "owner": "mksglu",
+      "repo": "context-mode",
+      "tags": [],
+      "appearsIn": [
+        "5 Repos Para No Quemar Tu Cuenta ...",
+        "Menos contexto Claude"
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "mrgoonie-claudekit-skills",
+      "name": "mrgoonie/claudekit-skills",
+      "type": "skill",
+      "categories": [
+        "skills",
+        "ai"
+      ],
+      "description": "Kit de skills curadas para subir Claude Code de fabrica a pro.",
+      "url": "https://github.com/mrgoonie/claudekit-skills",
+      "owner": "mrgoonie",
+      "repo": "claudekit-skills",
+      "tags": [],
+      "appearsIn": [
+        "Claude: De Fabrica a Pro",
+        "Tu Agente Automatico",
+        "guia",
+        "Avanzado",
+        "Crea agentes automaticos con la API de Claude que trabajan 24/7 sin codigo complicado, sin Zapier, sin N8N. Desde cero hasta tu primer agente funcionando."
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "msitarzewski-agency-agents",
+      "name": "msitarzewski/agency-agents",
+      "type": "agent",
+      "categories": [
+        "agents",
+        "ai"
+      ],
+      "description": "144 sub-agentes especializados para Claude Code organizados en 14 divisiones de negocio.",
+      "url": "https://github.com/msitarzewski/agency-agents",
+      "owner": "msitarzewski",
+      "repo": "agency-agents",
+      "license": "MIT",
+      "tags": [],
+      "appearsIn": [
+        "Agency Agents 144 especialistas...",
+        "Claude Meta Ads",
+        "guia",
+        "Intermedio",
+        "Conecta Claude a tu cuenta de Meta Ads paso a paso sin agencia, sin que te bloqueen la cuenta. Instala las reglas de seguridad y deja que Claude maneje tus anuncios."
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "mukul975-anthropic-cybersecurity-skills",
+      "name": "mukul975/Anthropic-Cybersecurity-Skills",
+      "type": "skill",
+      "categories": [
+        "skills",
+        "security",
+        "cybersecurity",
+        "compliance",
+        "threat-hunting",
+        "incident-response",
+        "cloud-security",
+        "ai-security"
+      ],
+      "description": "Biblioteca Apache-2.0 de 817 skills de ciberseguridad para agentes, mapeadas a MITRE ATT&CK, NIST CSF 2.0, MITRE ATLAS, D3FEND, NIST AI RMF y MITRE F3. Usar en EDITCOREAI solo para defensa, auditoria autorizada, pentest con permiso escrito, threat hunting, DFIR, hardening y compliance; contiene tecnicas dual-use/ofensivas que requieren autorizacion explicita.",
+      "url": "https://github.com/mukul975/Anthropic-Cybersecurity-Skills",
+      "owner": "mukul975",
+      "repo": "Anthropic-Cybersecurity-Skills",
+      "license": "Apache-2.0",
+      "language": "Python",
+      "tags": [
+        "cybersecurity",
+        "security-skills",
+        "mitre-attack",
+        "nist-csf",
+        "mitre-atlas",
+        "d3fend",
+        "nist-ai-rmf",
+        "mitre-f3",
+        "threat-hunting",
+        "incident-response",
+        "dfir",
+        "forensics",
+        "cloud-security",
+        "soc",
+        "pentest-authorized",
+        "red-team-authorized",
+        "defensive-security",
+        "dual-use-requires-authorization"
+      ],
+      "appearsIn": [
+        "Integracion propuesta por EDITCOREAI para auditoria defensiva, hardening, compliance, DFIR y threat hunting desde Bodega",
+        "Uso restringido: solo sistemas propios o con autorizacion escrita; no autoejecutar tecnicas ofensivas"
+      ],
+      "source": "manual-editcore",
+      "status": "candidate",
+      "riskLevel": "high",
+      "requiresApproval": true,
+      "allowedUse": "Auditoria defensiva, hardening, compliance, DFIR, threat hunting y pentest solo sobre sistemas propios o con autorizacion escrita.",
+      "blockedUse": [
+        "Explotacion no autorizada",
+        "Phishing real, robo de credenciales o persistencia maliciosa",
+        "C2, evasión o movimiento lateral fuera de laboratorio autorizado",
+        "Uso contra terceros sin reglas de engagement"
+      ],
+      "safetyNotes": [
+        "Contiene tecnicas dual-use/ofensivas",
+        "Preferir modo read-only y recomendaciones antes de ejecutar comandos",
+        "Registrar alcance autorizado antes de cualquier pentest"
+      ]
+    },
+    {
+      "id": "multica-ai-andrej-karpathy-skills",
+      "name": "multica-ai/andrej-karpathy-skills",
+      "type": "skill",
+      "categories": [
+        "skills",
+        "ai"
+      ],
+      "description": "Las 10 reglas de Karpathy para Claude Code traducidas en skills.",
+      "url": "https://github.com/multica-ai/andrej-karpathy-skills",
+      "owner": "multica-ai",
+      "repo": "andrej-karpathy-skills",
+      "tags": [],
+      "appearsIn": [
+        "Top Claude Code"
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "multica-ai-multica",
+      "name": "multica-ai/multica",
+      "type": "repo",
+      "categories": [
+        "design",
+        "ai"
+      ],
+      "description": "Plataforma para correr multiples Claude Codes simultaneamente como equipo.",
+      "url": "https://github.com/multica-ai/multica",
+      "owner": "multica-ai",
+      "repo": "multica",
+      "tags": [],
+      "appearsIn": [
+        "5 Proyectos Para Completar Claude",
+        "5 Repos Para No Quemar Tu Cuenta de Claude",
+        "guia",
+        "Intermedio",
+        "Cinco repos gratis de GitHub que bajan el consumo de tokens en Claude Code hasta 98%. Instalacion en un comando. Tu sesion dura hasta 6 veces mas sin perder calidad."
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "muratcankoylan-agent-skills-for-context-engineering",
+      "name": "muratcankoylan/agent-skills-for-context-engineering",
+      "type": "skill",
+      "categories": [
+        "skills",
+        "agents",
+        "memory"
+      ],
+      "description": "Skills para hacer context engineering en agentes buscar, indexar y mantener foco.",
+      "url": "https://github.com/muratcankoylan/agent-skills-for-context-engineering",
+      "owner": "muratcankoylan",
+      "repo": "agent-skills-for-context-engineering",
+      "tags": [],
+      "appearsIn": [
+        "5 Skills = Equipo Dev",
+        "The Architect",
+        "guia",
+        "Intermedio",
+        "Describele tu idea y El Arquitecto te disena un plano completo de 16 secciones para que Claude Code lo construya sin preguntarte nada."
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "mvanhorn-last30days-skill",
+      "name": "mvanhorn/last30days-skill",
+      "type": "skill",
+      "categories": [
+        "skills",
+        "devops"
+      ],
+      "description": "Skill que jala temas trending de Reddit, X, YouTube, HN y GitHub de los ultimos 30 dias.",
+      "url": "https://github.com/mvanhorn/last30days-skill",
+      "owner": "mvanhorn",
+      "repo": "last30days-skill",
+      "tags": [],
+      "appearsIn": [
+        "El estudio creativo escondido en ...",
+        "5 Skills Claude para Creators v...",
+        "4 Superpoderes Claude",
+        "Investigador Automatico"
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "nextlevelbuilder-ui-ux-pro-max-skill",
+      "name": "nextlevelbuilder/ui-ux-pro-max-skill",
+      "type": "skill",
+      "categories": [
+        "skills",
+        "design"
+      ],
+      "description": "Skill de UI/UX con 67 estilos, 96 paletas y 57 pareos de fuentes para clonar disenos web.",
+      "url": "https://github.com/nextlevelbuilder/ui-ux-pro-max-skill",
+      "owner": "nextlevelbuilder",
+      "repo": "ui-ux-pro-max-skill",
+      "tags": [],
+      "appearsIn": [
+        "El kit de diseno con Claude 5 s...",
+        "Replica Disenos Web",
+        "Disenador Web Definitivo",
+        "5 Herramientas Claude",
+        "Claude Animador Web",
+        "5 Skills Que Cambian Todo"
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "nexu-io-open-design",
+      "name": "nexu-io/open-design",
+      "type": "skill",
+      "categories": [
+        "skills",
+        "design",
+        "ai"
+      ],
+      "description": "Alternativa local-first y open-source a Claude Design 71 estilos de marca y 19 skills.",
+      "url": "https://github.com/nexu-io/open-design",
+      "owner": "nexu-io",
+      "repo": "open-design",
+      "tags": [],
+      "appearsIn": [
+        "Open Design el reemplazo gratis...",
+        "Meta Ads CLI Oficial el conector oficial de Facebook con Claude",
+        "guia",
+        "Intermedio",
+        "El 29 de abril de 2026 Meta publico \"Introducing Ads CLI\", el primer conector oficial de su nuevo marco Ads AI Connectors. Es la forma oficial de dejar que Claude (u otro agente) maneje tus campanas de Facebook e Instagram sin tener que pasar por el Ads Manager. Aca traduzco el anuncio entero al espanol como si tuvieras 5 anos, te muestro paso a paso como conectarlo desde Claude (Conectores Conectores personalizados Facebook), y profundizo despues en los 9 comandos verbatim del CLI (`meta ads campaign list`, `meta ads insights get`, `meta ads dataset connect` y otros) para los que quieran ir mas a fondo. Las 4 superpotencias que ahora desbloqueas: armar campanas desde un brief (siempre nacen en pausa por seguridad), pedirle reportes de que anuncio rindio mejor esta semana, subir catalogos completos de productos sin tocar el Commerce Manager, y rastrear que tu pixel este funcionando bien en cada campana. Conectado con Claude Ads (auditoria profunda) y la guia de Tu Agencia de Marketing con Claude para sacarle el maximo provecho."
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "nidhinjs-prompt-master",
+      "name": "nidhinjs/prompt-master",
+      "type": "skill",
+      "categories": [
+        "skills"
+      ],
+      "description": "Skill que afila prompts antes de mandarlos: 9 dimensiones de intent y reformat por herramienta.",
+      "url": "https://github.com/nidhinjs/prompt-master",
+      "owner": "nidhinjs",
+      "repo": "prompt-master",
+      "license": "MIT",
+      "tags": [],
+      "appearsIn": [
+        "Stack IA Creador Las 6 + el Mas...",
+        "Prompt Master La Skill que Afil...",
+        "5 Herramientas Para Tu Primer Dia...",
+        "Graphify El Mapa, el Cerebro y el Detective de tu Codigo",
+        "guia",
+        "Intermedio"
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "nolly-studio-cult-ui",
+      "name": "nolly-studio/cult-ui",
+      "type": "skill",
+      "categories": [
+        "skills",
+        "design"
+      ],
+      "description": "75 componentes premium para shadcn con animaciones y 2 skills oficiales co-autoreadas con shadcn.",
+      "url": "https://github.com/nolly-studio/cult-ui",
+      "owner": "nolly-studio",
+      "repo": "cult-ui",
+      "license": "MIT",
+      "tags": [],
+      "appearsIn": [
+        "Cult UI 75 componentes para que...",
+        "La guia de Skills de 0 a 100 de Anthropic",
+        "guia",
+        "Principiante",
+        "Entiende que es una skill, subela en cuatro clics desde claude.ai/customize/skills, y arma la siguiente sin escribir codigo tu. Traduccion al espanol natural y reescritura en simple de la guia oficial de Anthropic 'The Complete Guide to Building Skills for Claude' (32 paginas, 6 capitulos). Esta guia resuelve la pregunta mas comun de la comunidad: como se hacen las skills que Claude carga solo cuando aplica y sigue al pie de la letra. La pagina esta pensada para alguien que no programa: 10 secciones en orden logico que arrancan con la analogia de carpeta-con-instrucciones y los 4 archivos opcionales (SKILL.md obligatorio, scripts/, references/, assets/), explican el truco de los 3 niveles de progressive disclosure (frontmatter siempre cargado, cuerpo del SKILL.md cuando aplica, archivos extra solo si Claude los necesita), demuestran el flow real de uso que es lo que la gente pregunta mas (Claude.ai Customize Skills, URL directo claude.ai/customize/skills, Upload del .zip toggle ON, en 4 pasos numerados con CTA primario al panel; alternativa Claude Code copiando la carpeta a ~/.claude/skills/ sin .zip), aclaran la analogia de la cocina para entender cuando combinar skills con MCP (MCP da el acceso a Notion, Linear, Shopify, Gmail; las skills son las recetas), y aterrizan en como crear la tuya: las 4 preguntas a hacerte antes de tirar linea, las 3 categorias de skills que Anthropic ha visto funcionar (creacion de documentos como frontend-design, automatizacion de flujos como skill-creator, mejora de MCP como sentry-code-review), las 5 reglas duras del frontmatter YAML (kebab-case, sin claude/anthropic, sin <>, descripcion con QUE + CUANDO, maximo 1024 chars y 5,000 palabras de SKILL.md), 3 ejemplos de descriptions que funcionan vs 3 que rompen con la razon al lado, los 4 principios para escribir el cuerpo del SKILL.md (especifico y accionable, lo critico al inicio bajo ## CRITICAL, manejo de errores explicito, detalle largo a references/), las 3 areas de testing que Anthropic recomienda (triggering tests con 10-20 queries, functional tests, performance comparison con/sin skill), los 5 patrones probados (workflow secuencial, coordinacion multi-MCP, refinamiento iterativo, seleccion context-aware de tool, inteligencia de dominio embebida) cada uno con cuando usarlo y tecnicas clave, y los 5 errores tipicos con causa+fix (no sube por SKILL.md mal nombrado, no se trigger por description vaga, se trigger demas por description amplia sin negative triggers, Claude no sigue por instrucciones verbosas o ambiguas, lento por skill demasiado grande). Incluye 8 prompts copy-paste para skill-creator y Claude Code en espanol natural (armar tu primera skill desde descripcion en lenguaje natural, revisar un SKILL.md borrador antes de subirlo, armar la carpeta kebab-case con SKILL.md y references/, test de trigger pidiendole a Claude que cite la description, mini test-suite de should-trigger / shouldn't-trigger, refinar la description cuando la skill nunca se carga, mover detalle a references/ cuando el SKILL.md pasa las 5,000 palabras, agregar script de validacion en scripts/ para pasos criticos), un frontmatter YAML minimo en CommandCard como artefacto canonico de copia, y un checklist final de 15 items distribuidos en 3 columnas (antes de empezar, durante el desarrollo, despues de subir). Cero pretension de programador los unicos comandos que el lector escribe son los prompts que pega. Cierra con CTAs primarios a claude.ai/customize/skills y al repo publico anthropics/skills, 3 related guides (40-skills-claude para skills listas para pegar, ecosistema-de-agentes para cuando una skill ya no alcanza, claude-microsoft-365 para skills de productividad), 7 fuentes oficiales (Skills Documentation, Best Practices Guide, Engineering Blog Equipping Agents, Introducing Agent Skills announcement, MCP Documentation, API Reference, anthropics/skills repo) y nota legal de atribucion a la guia original de Anthropic con disclaimer de no afiliacion."
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "nousresearch-hermes-agent",
+      "name": "NousResearch/hermes-agent",
+      "type": "agent",
+      "categories": [
+        "agents"
+      ],
+      "description": "Agent framework de Nous Research que inspiro el ciclo de captura de senales de /aprende.",
+      "url": "https://github.com/NousResearch/hermes-agent",
+      "owner": "NousResearch",
+      "repo": "hermes-agent",
+      "tags": [],
+      "appearsIn": [
+        "Aprende la habilidad que le da ...",
+        "5 Repos Dominando Claude Code",
+        "Top Claude Code Abril 2026"
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "nowork-studio-toprank",
+      "name": "nowork-studio/toprank",
+      "type": "repo",
+      "categories": [
+        "marketing"
+      ],
+      "description": "Diagnostico SEO open-source que conecta a Search Console y Google Ads para detectar trafico perdido.",
+      "url": "https://github.com/nowork-studio/toprank",
+      "owner": "nowork-studio",
+      "repo": "toprank",
+      "tags": [],
+      "appearsIn": [
+        "Tu Agencia de Marketing con Claud..."
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "obra-superpowers",
+      "name": "obra/superpowers",
+      "type": "skill",
+      "categories": [
+        "skills",
+        "ai"
+      ],
+      "description": "Marketplace de skills que le ensena a Claude a planear, probar y depurar como un dev senior.",
+      "url": "https://github.com/obra/superpowers",
+      "owner": "obra",
+      "repo": "superpowers",
+      "license": "MIT",
+      "language": "Shell",
+      "tags": [],
+      "appearsIn": [
+        "Plugins de Claude Code que son ...",
+        "5 Herramientas Claude",
+        "Claude en Piloto Automatico",
+        "5 Skills = Equipo Dev",
+        "Claude: De Fabrica a Pro"
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "ollama-ollama",
+      "name": "ollama/ollama",
+      "type": "repo",
+      "categories": [
+        "ai"
+      ],
+      "description": "Corre LLMs open-source localmente (Llama, Mistral, Qwen) con un solo comando.",
+      "url": "https://github.com/ollama/ollama",
+      "owner": "ollama",
+      "repo": "ollama",
+      "tags": [],
+      "appearsIn": [
+        "5 Repos Para Volverte AI Engineer"
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "openai-codex",
+      "name": "openai/codex",
+      "type": "agent",
+      "categories": [
+        "agents",
+        "ai"
+      ],
+      "description": "El CLI de codigo abierto (Rust) de Codex: el agente de programacion de OpenAI en tu terminal.",
+      "url": "https://github.com/openai/codex",
+      "owner": "openai",
+      "repo": "codex",
+      "license": "Apache-2.0",
+      "language": "Rust",
+      "tags": [],
+      "appearsIn": [
+        "Codex de OpenAI La guia complet...",
+        "Claude Fable 5 La guia completa: el primer modelo Mythos-class para todos",
+        "guia",
+        "Principiante",
+        "El 9 de junio Anthropic lanzo Claude Fable 5, el modelo mas capaz que ha puesto a disposicion del publico: el mismo cerebro que Claude Mythos 5 (la version restringida de Project Glasswing) con una capa de seguridad encima. Esta guia lo explica de 0 a 100 en espanol simple: que significa Mythos-class, la unica diferencia real entre Fable 5 y Mythos 5 (los clasificadores el precio es el mismo), como funcionan los safeguards y el fallback a Opus 4.8, los benchmarks y casos reales verificados (la migracion Ruby de 50 millones de lineas en un dia, Pokemon solo con vision), el precio y la ventana gratis en Pro/Max/Team hasta el 22 de junio, cuando usarlo y cuando NO (la letra chiquita: ~30% mas tokens y turnos de minutos), como activarlo en Claude Code y prompts copia-pega para estrenarlo con tareas grandes."
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "openai-codex-plugin-cc",
+      "name": "openai/codex-plugin-cc",
+      "type": "repo",
+      "categories": [
+        "security",
+        "ai"
+      ],
+      "description": "Plugin oficial que mete los 3 comandos de Codex (review adversarial rescue) adentro de Claude Code en 30 segundos.",
+      "url": "https://github.com/openai/codex-plugin-cc",
+      "owner": "openai",
+      "repo": "codex-plugin-cc",
+      "license": "Apache-2.0",
+      "language": "JavaScript",
+      "tags": [],
+      "appearsIn": [
+        "Claude + Codex en equipo usa lo...",
+        "Claude + Codex Hack",
+        "Claude Small Business 15 habilidades + 15 flujos listos para tu pequeno negocio",
+        "guia",
+        "Intermedio",
+        "El plugin que Anthropic lanzo el 13 de mayo de 2026 mete 15 habilidades + 15 flujos dentro de Cowork para que un pequeno negocio cubra finanzas, ventas, marketing, operaciones, RRHH y atencion al cliente sin contratar especialistas. La guia cubre los 2 caminos para instalarlo (via marketplace de Plugins dentro de Cowork o via landing oficial claude.com/solutions/small-business), las 11 habilidades que Anthropic nombro publicamente (Cazador de facturas, Analizador de margenes, Cierre de mes, Organizador de temporada fiscal, Estratega de contenido, Lanza tu campana, Triador de leads, Revisor de contratos y 3 mas) agrupadas por las 6 categorias oficiales, como armar un proyecto en Cowork con las instrucciones para que las habilidades actuen como agente de tu negocio, los 7 conectores oficiales (QuickBooks, PayPal, HubSpot, Canva, DocuSign, Google Workspace, Microsoft 365) y 4 trampas honestas (requiere Claude Max, vive dentro de Cowork no en Claude Code CLI, las 4 habilidades extra aparecen al instalar, sandbox de Cowork no tiene tus sesiones logueadas)."
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "openbmb-voxcpm",
+      "name": "OpenBMB/VoxCPM",
+      "type": "repo",
+      "categories": [
+        "media"
+      ],
+      "description": "Modelo open-source de TTS para generar voz natural localmente.",
+      "url": "https://github.com/OpenBMB/VoxCPM",
+      "owner": "OpenBMB",
+      "repo": "VoxCPM",
+      "tags": [],
+      "appearsIn": [
+        "Viral Script Combo",
+        "Cambia de Modelo",
+        "guia",
+        "Principiante",
+        "Cuando Claude se siente lento o poco inteligente, el problema puede ser la saturacion del modelo. Aprende a cambiar a modelos anteriores para mejor rendimiento y menor consumo de tokens."
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "panniantong-agent-reach",
+      "name": "Panniantong/Agent-Reach",
+      "type": "workflow",
+      "categories": [
+        "research",
+        "automation",
+        "web",
+        "github",
+        "social",
+        "media",
+        "mcp"
+      ],
+      "description": "CLI/router Python para dar al agente acceso de investigacion a internet: web, GitHub, YouTube, Reddit, Twitter/X, RSS y plataformas sociales. Usar como herramienta opcional de Bodega con modo seguro y autorizacion antes de cookies o cuentas.",
+      "url": "https://github.com/Panniantong/Agent-Reach",
+      "owner": "Panniantong",
+      "repo": "Agent-Reach",
+      "license": "MIT",
+      "language": "Python",
+      "tags": [
+        "agent-reach",
+        "internet-research",
+        "web-reader",
+        "ai-search",
+        "github-research",
+        "youtube-transcript",
+        "reddit",
+        "twitter",
+        "rss",
+        "safe-mode",
+        "cookies-sensitive"
+      ],
+      "appearsIn": [
+        "Integracion propuesta por EDITCOREAI para investigacion web y social desde Bodega",
+        "Instalacion recomendada en modo seguro: no modificar archivos del workspace, no usar sudo y pedir autorizacion para cookies o cuentas"
+      ],
+      "source": "manual-editcore",
+      "status": "candidate",
+      "riskLevel": "high",
+      "requiresApproval": true,
+      "allowedUse": "Investigacion web/social/GitHub/YouTube/RSS para tareas autorizadas, preferentemente en modo seguro y sin cookies salvo permiso explicito.",
+      "blockedUse": [
+        "Extraer o usar cookies/cuentas sin autorizacion",
+        "Scraping abusivo o evasion de controles de plataformas",
+        "Modificar archivos fuera de los directorios propios de Agent-Reach",
+        "Usar sudo o instalar paquetes del sistema sin permiso"
+      ],
+      "safetyNotes": [
+        "Instalar primero en safe mode cuando aplique",
+        "Pedir autorizacion antes de cookies, login o cuentas personales",
+        "Mantener fuera del workspace del proyecto"
+      ]
+    },
+    {
+      "id": "pbakaus-impeccable",
+      "name": "pbakaus/impeccable",
+      "type": "skill",
+      "categories": [
+        "skills",
+        "design"
+      ],
+      "description": "Skill de diseno con +20 comandos que quitan los gestos tipicos de una UI hecha por IA.",
+      "url": "https://github.com/pbakaus/impeccable",
+      "owner": "pbakaus",
+      "repo": "impeccable",
+      "license": "Apache-2.0",
+      "language": "JavaScript",
+      "tags": [],
+      "appearsIn": [
+        "Trio de skills para Claude Code ...",
+        "5 Claude Skills necesarias busca, conecta, navega, audita y disena solo con el comando de instalacion de cada una",
+        "guia",
+        "Intermedio",
+        "Las 5 skills que hacen que Claude Code trabaje casi solo, con el comando de instalacion de cada una y la ruta mas facil para bajarlas todas. Arranca con find-skills, la meta-skill de Vercel que se mete al catalogo, encuentra la habilidad que necesitas y te la instala una vez que la tenes, le pedis en lenguaje natural que busque e instale las otras cuatro. Sigue con mcp-builder de Anthropic, que conecta Claude a cualquier herramienta que uses: vos la describis con palabras y Claude escribe el server MCP por vos (no escribis codigo, pero codigo si hay). Despues agent-browser de Vercel, que le da a Claude un navegador de verdad para entrar a paginas, hacer clic, sacar info y probar tu web como una persona, gastando hasta 10x menos tokens que mandar capturas. Las ultimas dos son de diseno y NO hacen lo mismo: web-design-guidelines de Vercel es el AUDITOR agarra mas de cien reglas de diseno, revisa tu pagina y te dice que esta mal; frontend-design de Anthropic es el GENERADOR trae direcciones esteticas con tipografias ya combinadas para que tu pagina no se vea hecha por IA desde el primer prompt. La guia incluye los comandos directos de las cinco, los prompts para que find-skills instale al resto, el flujo completo de como encajan (busca conecta navega audita disena) y 4 antipatrones honestos de cuando no las necesitas todas. Voseo Latam, sin promesas falsas, verificado contra los repos oficiales."
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "pleaseprompto-notebooklm-skill",
+      "name": "PleasePrompto/notebooklm-skill",
+      "type": "skill",
+      "categories": [
+        "skills",
+        "data",
+        "automation",
+        "media"
+      ],
+      "description": "Skill que automatiza NotebookLM para generar resumenes y audio.",
+      "url": "https://github.com/PleasePrompto/notebooklm-skill",
+      "owner": "PleasePrompto",
+      "repo": "notebooklm-skill",
+      "tags": [],
+      "appearsIn": [
+        "5 Habilidades de Marketing",
+        "Artefactos de Claude",
+        "guia",
+        "Principiante",
+        "Crea apps, dashboards, chatbots y mas directamente en el navegador sin descargar nada ni escribir codigo. Guia completa de los Artefactos de Claude."
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "remotion-dev-remotion",
+      "name": "remotion-dev/remotion",
+      "type": "repo",
+      "categories": [
+        "media",
+        "ai"
+      ],
+      "description": "Libreria para crear videos con codigo React Claude escribe los componentes y los renderiza a MP4.",
+      "url": "https://github.com/remotion-dev/remotion",
+      "owner": "remotion-dev",
+      "repo": "remotion",
+      "license": "TypeScript",
+      "tags": [],
+      "appearsIn": [
+        "El estudio creativo escondido en ..."
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "rmyndharis-openwa",
+      "name": "rmyndharis/OpenWA",
+      "type": "workflow",
+      "categories": [
+        "messaging",
+        "whatsapp",
+        "automation",
+        "crm",
+        "support",
+        "webhooks",
+        "mcp",
+        "api"
+      ],
+      "description": "Gateway WhatsApp self-hosted MIT con REST API, dashboard, multi-sesion, webhooks HMAC, API keys, Docker/NestJS y posible MCP local. Usar en EDITCOREAI como integracion opcional para soporte, CRM, bots y automatizacion de mensajes con numero dedicado, rate limits, no spam y permisos minimos.",
+      "url": "https://github.com/rmyndharis/OpenWA",
+      "owner": "rmyndharis",
+      "repo": "OpenWA",
+      "license": "MIT",
+      "language": "TypeScript",
+      "tags": [
+        "whatsapp",
+        "openwa",
+        "messaging",
+        "chatbot",
+        "crm",
+        "support",
+        "sales",
+        "webhooks",
+        "hmac",
+        "api-key",
+        "multi-session",
+        "dashboard",
+        "docker",
+        "nestjs",
+        "n8n",
+        "mcp-server",
+        "rate-limit",
+        "no-spam"
+      ],
+      "appearsIn": [
+        "OpenWA + Claude tu propio servi...",
+        "Claude Code Setup 1 comando oficial de Anthropic que escanea tu proyecto y te dice que le falta",
+        "guia",
+        "Principiante",
+        "El plugin oficial claude-code-setup (Anthropic, marketplace claude-plugins-official, read-only) escanea tu repo y te recomienda las top 1-2 automatizaciones en 5 categorias: Hooks (auto-format, auto-lint, block sensitive files), Skills (Plan agent, frontend-design), MCP servers (context7, Playwright), Subagents (security, performance, accessibility reviewers) y Slash commands (/test, /pr-review, /explain). La guia cubre los 2 caminos para tener Claude Code v2.x listo (app de escritorio o terminal paso por paso desde cero), como abrir tu proyecto en cada uno con seccion dedicada, el comando exacto para el plugin (/plugin install claude-code-setup@claude-plugins-official) con su fallback marketplace add si te tira not found, 4 prompts copy-paste en espanol Latam (del mas corto del README al mas detallado que pide justificacion contra tu stack), que esperar cuando corre (5 pasos del flow read-only 30-90 segundos tabla de recomendaciones vos decidis) y 6 trampas honestas. No auto-instala nada vos aplicas cada recomendacion una por una.",
+        "Integracion propuesta por EDITCOREAI para conectar WhatsApp con agentes, webhooks seguros y flujos de soporte/ventas",
+        "Uso responsable: numero dedicado, no spam, no bulk abusivo, API key limitada, HMAC en webhooks, rate limit y permisos MCP minimos"
+      ],
+      "source": "tododeia-community",
+      "status": "candidate",
+      "riskLevel": "high",
+      "requiresApproval": true,
+      "allowedUse": "Bots y automatizaciones de WhatsApp para soporte, CRM y ventas con numero dedicado, consentimiento de usuarios y rate limits.",
+      "blockedUse": [
+        "Spam, bulk abusivo o mensajes no solicitados",
+        "Usar numeros personales sin evaluar riesgo de bloqueo",
+        "Webhooks sin firma/HMAC o API keys amplias",
+        "Automatizacion que viole politicas de WhatsApp o leyes aplicables"
+      ],
+      "safetyNotes": [
+        "Usar numero dedicado y permisos minimos",
+        "Activar HMAC en webhooks y limitar API keys",
+        "Aplicar rate limit y logs de auditoria"
+      ]
+    },
+    {
+      "id": "rtk-ai-rtk",
+      "name": "rtk-ai/rtk",
+      "type": "skill",
+      "categories": [
+        "skills",
+        "ai"
+      ],
+      "description": "Skill de optimizacion para reducir tokens en sesiones largas de Claude Code.",
+      "url": "https://github.com/rtk-ai/rtk",
+      "owner": "rtk-ai",
+      "repo": "rtk",
+      "tags": [],
+      "appearsIn": [
+        "5 Repos Para No Quemar Tu Cuenta ..."
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "run-llama-llama-index",
+      "name": "run-llama/llama_index",
+      "type": "repo",
+      "categories": [
+        "data",
+        "ai"
+      ],
+      "description": "Framework de retrieval para conectar LLMs con tus PDFs, SQL y APIs.",
+      "url": "https://github.com/run-llama/llama_index",
+      "owner": "run-llama",
+      "repo": "llama_index",
+      "tags": [],
+      "appearsIn": [
+        "5 Repos Para Volverte AI Engineer"
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "safishamsi-graphify",
+      "name": "safishamsi/graphify",
+      "type": "knowledge",
+      "categories": [
+        "design",
+        "memory"
+      ],
+      "description": "Convierte cualquier carpeta en grafo de conocimiento 71x menos tokens en preguntas de arquitectura.",
+      "url": "https://github.com/safishamsi/graphify",
+      "owner": "safishamsi",
+      "repo": "graphify",
+      "license": "Apache-2.0",
+      "tags": [],
+      "appearsIn": [
+        "Graphify El Mapa, el Cerebro y ...",
+        "Hyperframes Videos con Claude Design",
+        "guia",
+        "Intermedio",
+        "HeyGen libero Hyperframes (open-source, Apache 2.0): un CLI sobre Node y FFmpeg que toma HTML/CSS/JS y lo convierte en MP4, MOV o WebM con alpha. Lo combinas con Claude Design (la superficie nueva en claude.ai/design, gateada por Claude Pro) y describes el video. Claude lo disena, lo programa con GSAP, te empaca el ZIP y tu corres un solo npx hyperframes render al final. Sin Premiere, sin After Effects, sin saber editar. Aqui esta el setup paso a paso, seis prompts copy-paste para los videos mas comunes (intro de canal, demo SaaS, anuncio Instagram, logo reveal, explainer y plantilla de citas), los comandos esenciales y la honestidad sobre que funciona muy bien y que todavia no."
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "scrapegraphai-scrapegraph-ai",
+      "name": "ScrapeGraphAI/Scrapegraph-ai",
+      "type": "knowledge",
+      "categories": [
+        "memory",
+        "automation",
+        "ai"
+      ],
+      "description": "Libreria Python que mete LLMs + grafos para scrapear webs estructuradas con un prompt en lenguaje natural.",
+      "url": "https://github.com/ScrapeGraphAI/Scrapegraph-ai",
+      "owner": "ScrapeGraphAI",
+      "repo": "Scrapegraph-ai",
+      "license": "MIT",
+      "language": "Python",
+      "tags": [],
+      "appearsIn": [
+        "ScrapeGraphAI saca datos de int...",
+        "/team-onboarding pasale tu setup de Claude Code a tu equipo en un mensaje",
+        "guia",
+        "Intermedio",
+        "Anthropic acaba de sacar /team-onboarding: lo corres en tu proyecto, lee tus ultimos 30 dias de uso y arma un manual que tu compa nuevo pega como primer mensaje para arrancar con todo configurado. Esta guia va a fondo en ese comando: que escanea, que te devuelve, cual es la diferencia entre planes (free vs Pro/Max/Team/Enterprise tiene share link), como lo corres bien la primera vez, y lo mas importante 9 prompts para sacarle todo el jugo (limpiar el manual antes de mandarlo, adaptar el tono al perfil del receptor, generar TL;DR, FAQ derivada, reverse audit, comparar setups, planear la junta de onboarding, evaluar la complejidad de tu setup). Cierre con checklist de privacidad y combinaciones con /memory, /skills, /mcp y /init."
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "severity1-claude-code-prompt-improver",
+      "name": "severity1/claude-code-prompt-improver",
+      "type": "repo",
+      "categories": [
+        "ai"
+      ],
+      "description": "Plugin que evalua y mejora prompts antes de mandarlos a Claude Code.",
+      "url": "https://github.com/severity1/claude-code-prompt-improver",
+      "owner": "severity1",
+      "repo": "claude-code-prompt-improver",
+      "tags": [],
+      "appearsIn": [
+        "Mejora Prompts Claude",
+        "Claude Disenador Web Perfecto",
+        "guia",
+        "Intermedio",
+        "Combina 4 herramientas para convertir a Claude en tu disenador web perfecto Frontend Design Skill, Magic UI, shadcn/ui y Playwright CLI trabajando juntos."
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "shanraisshan-claude-code-best-practice",
+      "name": "shanraisshan/claude-code-best-practice",
+      "type": "repo",
+      "categories": [
+        "ai"
+      ],
+      "description": "Mejores practicas comunitarias de Claude Code referencias para los 6 trucos de Boris.",
+      "url": "https://github.com/shanraisshan/claude-code-best-practice",
+      "owner": "shanraisshan",
+      "repo": "claude-code-best-practice",
+      "tags": [],
+      "appearsIn": [
+        "6 Trucos de Boris Opus 4.7",
+        "Claude Opus 4.7 Cuando Si, Cuando No",
+        "guia",
+        "Principiante",
+        "Cuando usar Opus 4.7, cuando quedarte en Opus 4.6 o Sonnet 4.6, y como escribir prompts que no te quemen el plan. Guia en espanol simple."
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "shubhamsaboo-awesome-llm-apps",
+      "name": "Shubhamsaboo/awesome-llm-apps",
+      "type": "agent",
+      "categories": [
+        "agents",
+        "ai"
+      ],
+      "description": "Coleccion curada de 100+ agentes y apps de LLM en 13 categorias.",
+      "url": "https://github.com/Shubhamsaboo/awesome-llm-apps",
+      "owner": "Shubhamsaboo",
+      "repo": "awesome-llm-apps",
+      "tags": [],
+      "appearsIn": [
+        "5 Repos Para Volverte AI Engineer",
+        "100+ Agentes de IA Gratis Para ..."
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "sickn33-antigravity-awesome-skills",
+      "name": "sickn33/antigravity-awesome-skills",
+      "type": "skill",
+      "categories": [
+        "skills",
+        "devops",
+        "ai"
+      ],
+      "description": "Stack curado de 900+ skills para correr una agencia digital completa con Claude Code.",
+      "url": "https://github.com/sickn33/antigravity-awesome-skills",
+      "owner": "sickn33",
+      "repo": "antigravity-awesome-skills",
+      "tags": [],
+      "appearsIn": [
+        "Agencia Digital Completa",
+        "Academia Claude",
+        "guia",
+        "Principiante",
+        "Cursos gratuitos de Anthropic para aprender IA, Claude Code, APIs y mas con certificados oficiales."
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "skills-sh-claude-seo",
+      "name": "skills-sh/claude-seo",
+      "type": "skill",
+      "categories": [
+        "skills",
+        "marketing",
+        "ai"
+      ],
+      "description": "Skill SEO open-source para Claude Code 13 comandos para auditorias y plan de keywords.",
+      "url": "https://github.com/skills-sh/claude-seo",
+      "owner": "skills-sh",
+      "repo": "claude-seo",
+      "tags": [],
+      "appearsIn": [
+        "Claude SEO",
+        "APIs, MCPs y A2A",
+        "guia",
+        "Avanzado",
+        "Guia definitiva de los tres protocolos de IA API (tu y la IA), MCP (la IA y las herramientas) y A2A (la IA y otra IA)."
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "snyk-agent-scan",
+      "name": "snyk/agent-scan",
+      "type": "mcp",
+      "categories": [
+        "mcp",
+        "agents",
+        "design",
+        "security"
+      ],
+      "description": "Detecta agentes y servidores MCP en tu maquina y revisa mas de 15 riesgos como inyeccion de prompts.",
+      "url": "https://github.com/snyk/agent-scan",
+      "owner": "snyk",
+      "repo": "agent-scan",
+      "tags": [],
+      "appearsIn": [
+        "Setup pro de Claude Code skills...",
+        "Plugin de seguridad de Claude revisa tu codigo solo, gratis y oficial",
+        "guia",
+        "Intermedio",
+        "Anthropic tiene un plugin oficial y gratis que hace que Claude revise su propio codigo en busca de huecos de seguridad mientras trabaja y los arregle en la misma sesion. Esta guia lo explica de cero: que es un plugin de Claude Code (en palabras sencillas), que hacen las 3 capas de proteccion de security-guidance y cuando se activa cada una, como instalarlo en 10 segundos, como comprobar que funciona, como ponerle tus propias reglas, y cuanto cuesta y que NO hace. Existe desde octubre de 2025 y casi nadie lo usa."
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "supabase-community-supabase-mcp",
+      "name": "supabase-community/supabase-mcp",
+      "type": "mcp",
+      "categories": [
+        "mcp",
+        "data",
+        "ai"
+      ],
+      "description": "Conecta tus proyectos de Supabase a Claude y otros asistentes por MCP.",
+      "url": "https://github.com/supabase-community/supabase-mcp",
+      "owner": "supabase-community",
+      "repo": "supabase-mcp",
+      "license": "Apache-2.0",
+      "language": "TypeScript",
+      "tags": [],
+      "appearsIn": [
+        "El cerebro de Claude una base d..."
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "syncthing-syncthing",
+      "name": "syncthing/syncthing",
+      "type": "repo",
+      "categories": [
+        "general"
+      ],
+      "description": "Sincronizacion P2P de archivos entre dispositivos sin nube, sin cuentas, sin intermediarios.",
+      "url": "https://github.com/syncthing/syncthing",
+      "owner": "syncthing",
+      "repo": "syncthing",
+      "tags": [],
+      "appearsIn": [
+        "Syncthing Sincroniza Claude Ent...",
+        "5 Herramientas Para Tu Primer Dia Con Claude",
+        "guia",
+        "Principiante",
+        "Las 5 herramientas gratis que instalarias el primer dia si tuvieras que empezar desde cero con Claude hoy desde obligarlo a pensar antes de construir, hasta quitarle el tono robotico, verificar datos, conectarlo con otras apps y convertir ideas sueltas en prompts claros."
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "teng-lin-notebooklm-py",
+      "name": "teng-lin/notebooklm-py",
+      "type": "repo",
+      "categories": [
+        "data",
+        "automation",
+        "media"
+      ],
+      "description": "Cliente Python no oficial para NotebookLM de Google automatiza resumenes y audio.",
+      "url": "https://github.com/teng-lin/notebooklm-py",
+      "owner": "teng-lin",
+      "repo": "notebooklm-py",
+      "tags": [],
+      "appearsIn": [
+        "5 Skills Para Crear Contenido",
+        "Construye Tu App",
+        "guia",
+        "Principiante",
+        "Aprende a construir tu propia app desde cero usando Claude sin saber programar. Tres pasos simples explicados para que cualquiera pueda hacerlo."
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "thedotmack-claude-mem",
+      "name": "thedotmack/claude-mem",
+      "type": "knowledge",
+      "categories": [
+        "data",
+        "memory",
+        "ai"
+      ],
+      "description": "Plugin de Claude Code que captura observaciones por hooks con dashboard local y storage SQLite.",
+      "url": "https://github.com/thedotmack/claude-mem",
+      "owner": "thedotmack",
+      "repo": "claude-mem",
+      "license": "Apache-2.0",
+      "tags": [],
+      "appearsIn": [
+        "Aprende la habilidad que le da ...",
+        "Memoria infinita para Claude Code...",
+        "6 Mejores Skills Claude Code cu...",
+        "5 Repos Dominando Claude Code",
+        "5 Proyectos Para Completar Claude",
+        "5 Herramientas Claude"
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "tirth8205-code-review-graph",
+      "name": "tirth8205/code-review-graph",
+      "type": "knowledge",
+      "categories": [
+        "security",
+        "memory"
+      ],
+      "description": "Genera grafo de revision de codigo antes de mergear PRs menos rondas, menos tokens.",
+      "url": "https://github.com/tirth8205/code-review-graph",
+      "owner": "tirth8205",
+      "repo": "code-review-graph",
+      "tags": [],
+      "appearsIn": [
+        "5 Repos Para No Quemar Tu Cuenta ...",
+        "3 Servicios Para Armar Tu Agencia de IA",
+        "guia",
+        "Intermedio",
+        "Los 3 servicios que paga cada cliente de agencia marketing, leads y ecosistema completo. 7 habilidades open-source de Claude Code y el orden en que se venden para no quemar al cliente."
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "tradesdontlie-tradingview-mcp",
+      "name": "tradesdontlie/tradingview-mcp",
+      "type": "mcp",
+      "categories": [
+        "mcp",
+        "ai"
+      ],
+      "description": "MCP que conecta Claude a TradingView para analisis tecnico, dibujar niveles y configurar alertas.",
+      "url": "https://github.com/tradesdontlie/tradingview-mcp",
+      "owner": "tradesdontlie",
+      "repo": "tradingview-mcp",
+      "tags": [],
+      "appearsIn": [
+        "TradingView + Claude Fin del An...",
+        "Scrapling Leads Gratis Para Tu Negocio",
+        "guia",
+        "Intermedio",
+        "Libreria open source con MCP integrado que extrae informacion de Google Maps, directorios y redes sociales para armar listas de clientes. Claude la instala y la usa por ti con simples prompts sin pagar a agencias de leads."
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "upstash-context7",
+      "name": "upstash/context7",
+      "type": "knowledge",
+      "categories": [
+        "memory",
+        "ai"
+      ],
+      "description": "Inyecta documentacion actualizada en tus prompts para que Claude no use codigo viejo o inventado.",
+      "url": "https://github.com/upstash/context7",
+      "owner": "upstash",
+      "repo": "context7",
+      "license": "MIT",
+      "language": "TypeScript",
+      "tags": [],
+      "appearsIn": [
+        "Plugins de Claude Code que son ...",
+        "5 Habilidades Claude",
+        "Claude: De Fabrica a Pro"
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "vercel-labs-agent-browser",
+      "name": "vercel-labs/agent-browser",
+      "type": "agent",
+      "categories": [
+        "agents",
+        "automation",
+        "devops",
+        "ai"
+      ],
+      "description": "Navegador para Claude Code que reduce hasta 10 el costo de tokens al navegar internet.",
+      "url": "https://github.com/vercel-labs/agent-browser",
+      "owner": "vercel-labs",
+      "repo": "agent-browser",
+      "license": "Apache-2.0",
+      "tags": [],
+      "appearsIn": [
+        "5 Claude Skills necesarias busc...",
+        "Agent Browser de Vercel los ojo...",
+        "Claude Code 0-a-100 de la app a la terminal sin miedo descarga, elegi tu carpeta y empeza a construir",
+        "guia",
+        "Principiante",
+        "La guia definitiva de Claude Code para alguien que nunca lo toco, enfocada PRIMERO en la app de escritorio (porque la mayoria le tiene miedo a la terminal) y DESPUES en la terminal, web y celular. Arranca con la app paso a paso: descargas Claude, abris la seccion Claude Code, empezas una sesion nueva y elegis tu carpeta de trabajo con el boton 'Select folder' cero comandos. Sigue con el tema Git y Node sin mitos: la app trae Claude Code embebido asi que NO necesitas Node, Git solo hace falta en Windows, y Node solo si te vas al camino npm (el instalador nativo no lo pide), con los links oficiales para descargar Git y Node. Sigue con que le podes pedir aunque no programes (ordenar archivos, resumir documentos, armar una web simple, limpiar planillas) y como se ve trabajar adentro de la app una mesa de revision mas que un editor: el visor de cambios donde aprobas antes de aplicar, la barra lateral de sesiones, senalar archivos con @, comandos con /, la vista previa y la terminal integrada. Despues la terminal explicada como lo mismo sin las rueditas (con el instalador oficial curl/PowerShell y el comando claude), los modos de permiso (cuando Claude te pide permiso: el selector por clic en la app y Shift+Tab en la terminal por defecto, aceptar ediciones, solo lectura/plan), correr varias sesiones en paralelo construyendo cosas distintas cada una en su carpeta (y la diferencia con Agent View), Claude Code desde el navegador (claude.ai/code) y desde el celular (apps oficiales + Remote Control), las funciones nuevas que valen la pena tocar con prompt para probar cada una (/goal, /loop, checkpoints, Agent View, Remote Control, memoria), el siguiente nivel que retiene la profundidad tecnica (que es el contexto y como armar tu CLAUDE.md con /init, mas skills, conectores MCP y subagentes explicados en simple) y 4 antipatrones honestos de cuando todavia NO es para vos. Todo verificado contra la documentacion oficial (code.claude.com/docs), actualizado a mayo 2026, sin asumir que sos dev profesional, en voseo Latam natural y sin promesas falsas (Claude Code no esta en el plan gratis: necesitas Pro, Max, Team o Enterprise)."
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "vercel-labs-agent-skills",
+      "name": "vercel-labs/agent-skills",
+      "type": "skill",
+      "categories": [
+        "skills",
+        "agents",
+        "design",
+        "devops",
+        "ai"
+      ],
+      "description": "Skills de Vercel para Claude incluye web-design-guidelines, que audita tu diseno.",
+      "url": "https://github.com/vercel-labs/agent-skills",
+      "owner": "vercel-labs",
+      "repo": "agent-skills",
+      "license": "MIT",
+      "tags": [],
+      "appearsIn": [
+        "El kit de diseno con Claude 5 s...",
+        "5 Claude Skills necesarias busc...",
+        "Claude DB revisa, arregla y arma tu base de datos para que no se te caiga (herramienta gratis)",
+        "guia",
+        "Intermedio",
+        "Tu app por fuera funciona, pero por dentro la base de datos esta hecha un desastre... hasta que borras un usuario y se cae todo. Claude DB es la herramienta gratis que hice para la comunidad: le conectas tu base de datos y te da dos calificaciones que tan bien esta armada y si va a aguantar muchos usuarios , te explica en espanol simple que esta mal y por que (la famosa integridad referencial: que tus datos esten bien amarrados entre si para que nada se rompa), y te lo arregla pidiendote permiso en cada cambio para que tu tengas el control. Y si apenas vas empezando, te hace las preguntas correctas y te arma la base de datos desde cero. Esta guia trae la instalacion copy-paste como plugin de Claude Code y los 10 comandos con prompts listos: revisar (audit), entender (explain), arreglar (fix), disenar desde cero (start) y mas. Funciona con Postgres, MySQL, SQLite, Supabase, MongoDB, Firestore, Redis y varias mas."
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "vercel-labs-skills",
+      "name": "vercel-labs/skills",
+      "type": "skill",
+      "categories": [
+        "skills",
+        "devops",
+        "ai"
+      ],
+      "description": "Coleccion oficial de skills de Vercel Labs para Claude Code instala con npx skills.",
+      "url": "https://github.com/vercel-labs/skills",
+      "owner": "vercel-labs",
+      "repo": "skills",
+      "tags": [],
+      "appearsIn": [
+        "5 Claude Skills necesarias busc...",
+        "Vercel Skills"
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "vinzent03-obsidian-git",
+      "name": "Vinzent03/obsidian-git",
+      "type": "knowledge",
+      "categories": [
+        "memory",
+        "devops"
+      ],
+      "description": "Plugin de Obsidian que sincroniza tu vault con Git sync entre dispositivos sin Obsidian Sync.",
+      "url": "https://github.com/Vinzent03/obsidian-git",
+      "owner": "Vinzent03",
+      "repo": "obsidian-git",
+      "tags": [],
+      "appearsIn": [
+        "Tu JARVIS en Obsidian segundo c...",
+        "Cloud Ads Flow Pon un agente a correr tus Facebook Ads cada lunes (Cowork + Higgsfield + Facebook MCP)",
+        "guia",
+        "Avanzado",
+        "Cloud Ads Flow es la version agentic del workflow de Facebook Ads: tres conectores trabajando juntos dentro de Claude para que el lunes ya no se rompa refrescando Ads Manager. Cowork (built-in en Claude.ai) entra a la biblioteca publica de anuncios de Facebook, filtra por pais y nicho, y te baja los 10 anuncios que llevan mas dias activos los que ya estan vendiendo en tu mercado. De esos identifica los 3 ganadores y los pasa al MCP de Higgsfield, que genera 10 creativos nuevos con tu marca: 5 imagenes y 5 videos cortos en el mismo estilo visual y estructura de hook, pero con tu producto, paleta y tono. Despues el MCP de Facebook crea el campaign en Ads Manager con tu presupuesto y audiencia, sube los 10 creativos como ad sets distintos para A/B testing y enciende las campanas. A los 7 dias el loop semanal arranca solo: revisa quien gano por ROAS, le pide a Higgsfield 5 variantes mas del estilo ganador con angulos de hook distintos, las sube como nuevo ad set y pausa los 5 perdedores. Todo programado en Scheduled Tasks de Cowork para que corra cada lunes a las 9am sin que abras Claude. La pagina explica el flujo completo, el setup de los 3 conectores, los 6 prompts copy-paste (uno por movimiento mas el bridge a auditoria), los 3 tips clave del loop semanal (ROAS no CPM, espera 7 dias antes de iterar, deja que Cowork despierte solo) y cierra con el puente al skill claude-ads del repo Hainrixz/claude-ads el que corres una vez al mes para auditar la cuenta con health score y top 10 issues. La idea: el flow agentic crea, el skill audita; los dos se cruzan una vez al mes."
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "virgiliojr94-book-to-skill",
+      "name": "virgiliojr94/book-to-skill",
+      "type": "skill",
+      "categories": [
+        "skills",
+        "ai"
+      ],
+      "description": "Skill Python que extrae libros (PDF, EPUB, DOCX, MOBI) con Docling y los guarda como habilidad permanente de Claude.",
+      "url": "https://github.com/virgiliojr94/book-to-skill",
+      "owner": "virgiliojr94",
+      "repo": "book-to-skill",
+      "license": "MIT",
+      "language": "Python",
+      "tags": [],
+      "appearsIn": [
+        "Book to Skill converti cualquie...",
+        "Anatomia de Claude proyectos, skills, MCPs, plugins y agentes explicados a nino de 5 anos",
+        "guia",
+        "Principiante",
+        "La guia 0-a-100 de que es cada parte de Claude proyecto, skill, MCP/conector, agente y plugin explicada en lenguaje simple antes de saltar a la practica. Cubre la regla cardinal del 1-sesion-1-meta que casi nadie te dice, las cinco piezas con analogias concretas (cuarto, recetario, cable telefonico, empleado, caja sorpresa), que hace cada una en Claude.ai (web/desktop), Claude Cowork y Claude Code, como combinarlas en un solo proyecto y cuando NO usar cada una. Pensada para alguien que escucho las palabras skill, MCP, plugin y agente en un reel y todavia no entiende que pieza es cual ni que problema resuelve. Sin asumir que sos dev profesional, en espanol natural, con cinco prompts copy-paste y cross-links a las guias hermanas que profundizan cada pieza."
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "voltagent-awesome-design-md",
+      "name": "VoltAgent/awesome-design-md",
+      "type": "agent",
+      "categories": [
+        "agents",
+        "design",
+        "ai"
+      ],
+      "description": "55 archivos design.md de marcas famosas copia uno y Claude disena con ese estilo.",
+      "url": "https://github.com/VoltAgent/awesome-design-md",
+      "owner": "VoltAgent",
+      "repo": "awesome-design-md",
+      "tags": [],
+      "appearsIn": [
+        "Awesome Design MD",
+        "Investigador Automatico",
+        "guia",
+        "Intermedio",
+        "Convierte a Claude en un investigador que busca lo mas nuevo de cualquier tema en Reddit, YouTube, X y mas todo en los ultimos 30 dias."
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "xiaowu0162-longmemeval",
+      "name": "xiaowu0162/LongMemEval",
+      "type": "knowledge",
+      "categories": [
+        "memory",
+        "ai"
+      ],
+      "description": "Benchmark para evaluar memoria de largo plazo en LLMs usado por MemPalace para validar.",
+      "url": "https://github.com/xiaowu0162/LongMemEval",
+      "owner": "xiaowu0162",
+      "repo": "LongMemEval",
+      "tags": [],
+      "appearsIn": [
+        "Memoria infinita para Claude Code...",
+        "Cult UI 75 componentes para que Claude deje de sacarte disenos genericos",
+        "guia",
+        "Intermedio",
+        "Cult UI son 75 componentes premium open-source para shadcn textos animados, botones con efectos brillantes, dynamic island estilo iPhone, hero con texto liquido metalico, fondos animados con shaders mas dos skills oficiales para Claude Code (components-build con 16 reglas + fixing-motion-performance) co-autoradas por Hayden Bleasel y shadcn que descargas a tu proyecto y Claude Code las sigue solo para que tu proxima pagina, dashboard, landing o tienda salga con animaciones de Silicon Valley en lugar del diseno generico de shadcn flat. La guia cubre los 3 pasos de setup (shadcn init Tailwind v4 + motion + clsx + tailwind-merge registry @cult-ui en components.json), 8 prompts copy-paste en espanol natural para que Claude Code instale el setup completo, descargue las 2 skills oficiales al proyecto, agregue un componente puntual respetando branding, audite una pagina entera y proponga reemplazos, arme una landing completa con hero-liquid-metal + text-animate + cosmic-button, arme un dashboard SaaS con bento grid + shader-lens-blur + dynamic-island, arme una seccion iPhone-style con dynamic-island + family-drawer + transparencias, y corra la skill fixing-motion-performance sobre las animaciones del proyecto; la lista de las 12 categorias del registry (textos animados, tipografia pixel, botones, cards, iPhone-style/dynamic, fondos animados, shaders y metalicos, heroes, carousels y 3D, layout y navegacion, AI y prompts, onboarding y forms) con los 4 highlights verificados del script (text-animate, cosmic-button, dynamic-island, hero-liquid-metal); 3 casos de uso aterrizados (landing de producto, dashboard SaaS, seccion iPhone-style); tabla de stack requirements con las 5 dependencias (Tailwind v4 no v3, motion no framer-motion, shadcn @latest o @beta, Next.js 14+, clsx + tailwind-merge); los 5 errores comunes con causa y fix (shadcn no inicializado corre init primero, framer-motion en lugar de motion componentes salen flat sin animacion, Tailwind v3 clases no aplican, sintaxis @cult-ui/ con @latest usa @beta o URL directa, skills no descargadas Claude vuelve a defaults genericos); un checklist final en 3 columnas (4 items antes de empezar, 5 durante el setup, 3 despues del primer commit); y la pull-quote textual del AGENTS.md upstream de Hayden Bleasel + shadcn como atribucion oficial. MIT nolly-studio ~4.2K stars ultimo commit 2026-04-21."
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "youmind-openlab-awesome-gpt-image-2",
+      "name": "YouMind-OpenLab/awesome-gpt-image-2",
+      "type": "repo",
+      "categories": [
+        "general"
+      ],
+      "description": "4,430 prompts gratis para generar imagenes con GPT Image 2 actualizado a diario por la comunidad YouMind.",
+      "url": "https://github.com/YouMind-OpenLab/awesome-gpt-image-2",
+      "owner": "YouMind-OpenLab",
+      "repo": "awesome-gpt-image-2",
+      "license": "CC-BY-4.0",
+      "tags": [],
+      "appearsIn": [
+        "Awesome GPT Image 2 4,430 promp...",
+        "5 Skills Claude para Creators video desde un prompt, tendencias en vivo, imagenes con Banana, desglose de virales y data cruda de IG/FB",
+        "guia",
+        "Intermedio",
+        "Las 5 skills de Claude Code que estan usando los top creators para hacer contenido mas rapido y con data real. Hyperframes para armar videos completos desde un solo prompt animaciones, graficos y subtitulos sin abrir un editor (skill creado por HeyGen). Last 30 Days para sacar tus ideas del feed real: le pones tu tema y te jala lo que la gente esta diciendo en Reddit, X, YouTube, Hacker News y GitHub los ultimos 30 dias (skill de mvanhorn). Claude Banana para conectar Claude con Nano Banana de Google (Gemini 2.5 Flash Image) y generar thumbnails, carruseles y visuales sin salir de la sesion (plugin de Hainrixz). Claude Video Vision para aventarle un reel viral y que Claude se lo vea frame por frame: te desglosa hook, tomas, ritmo y transiciones para que copies la formula con datos en vez de a ojo (skill de jordanrendric). Y Apify, la que casi nadie te cuenta: agarra los posts crudos de Instagram y Facebook likes, comments y copy reales del que esta pegando para que dejes de copiar a ojo y empieces a copiar con data (MCP oficial de apify.com). Cada skill viene con el comando exacto de instalacion, una explicacion corta de que resuelve, el caso de uso tipico, el atajo a la guia completa cuando ya existe en la comunidad y el repo de GitHub para ir a la fuente. Hub pensado para creators que quieren un kit curado de Claude Code para su flujo diario de contenido."
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "yusufkaraaslan-skill-seekers",
+      "name": "yusufkaraaslan/Skill_Seekers",
+      "type": "skill",
+      "categories": [
+        "skills",
+        "ai"
+      ],
+      "description": "Skill que descubre y propone skills relevantes para tu sesion activa de Claude Code.",
+      "url": "https://github.com/yusufkaraaslan/Skill_Seekers",
+      "owner": "yusufkaraaslan",
+      "repo": "Skill_Seekers",
+      "tags": [],
+      "appearsIn": [
+        "Skill Seekers + Obsidian"
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    },
+    {
+      "id": "zhongweili-nanobanana-mcp-server",
+      "name": "zhongweili/nanobanana-mcp-server",
+      "type": "mcp",
+      "categories": [
+        "mcp",
+        "ai"
+      ],
+      "description": "MCP server para conectar Claude con Nano Banana (Gemini 2.5 Flash Image) y generar imagenes.",
+      "url": "https://github.com/zhongweili/nanobanana-mcp-server",
+      "owner": "zhongweili",
+      "repo": "nanobanana-mcp-server",
+      "tags": [],
+      "appearsIn": [
+        "Replica Disenos Web",
+        "Disenador Web Definitivo",
+        "Restaura Tus Fotos",
+        "Disenador Web Definitivo",
+        "guia",
+        "Intermedio"
+      ],
+      "source": "tododeia-community",
+      "status": "candidate"
+    }
+  ]
+}

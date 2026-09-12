@@ -1,0 +1,37 @@
+@echo off
+setlocal
+cd /d "%~dp0"
+
+REM Solo esta carpeta: D:\PROGRAMAS IA\EDITCOREAI  (SIN espacio)
+REM NO es: D:\PROGRAMAS IA\EDITCORE AI  ni LocalAppData\EditCore AI
+
+set "EDITCORE_USER_DATA_PATH=%APPDATA%\EDITCOREAI"
+set "ELECTRON_FORCE_IS_PACKAGED="
+
+echo Carpeta: %cd%
+echo Datos:   %EDITCORE_USER_DATA_PATH%
+echo.
+
+if /I not "%cd%"=="D:\PROGRAMAS IA\EDITCOREAI" (
+  echo AVISO: no estas en D:\PROGRAMAS IA\EDITCOREAI
+  echo Ruta actual: %cd%
+)
+
+if not exist "main.js" (
+  echo ERROR: falta main.js
+  pause
+  exit /b 1
+)
+if not exist "editcore-chat-kernel\index.js" (
+  echo ERROR: falta editcore-chat-kernel en EDITCOREAI
+  pause
+  exit /b 1
+)
+if not exist "node_modules\electron\dist\electron.exe" (
+  echo ERROR: falta Electron. Ejecuta: npm install
+  pause
+  exit /b 1
+)
+
+start "EDITCOREAI" "node_modules\electron\dist\electron.exe" "." --disable-gpu --disable-software-rasterizer --in-process-gpu
+endlocal

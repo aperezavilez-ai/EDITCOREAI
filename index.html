@@ -1,0 +1,566 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: file:; font-src 'self'; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-src http: https: file:;" />
+    <title>EDITCOREAI</title>
+    <link rel="icon" href="./assets/logo.ico" type="image/x-icon" />
+    <link rel="shortcut icon" href="./assets/logo.ico" type="image/x-icon" />
+    <link rel="apple-touch-icon" href="./assets/logo.png" />
+    <link rel="stylesheet" href="./styles.css" />
+    <link rel="stylesheet" href="./logs-panel.css" />
+  </head>
+  <body>
+    <!-- Pantalla de inicio (tipo Cursor): elegir proyecto antes del editor -->
+    <section id="welcomeScreen" class="welcome-screen" hidden aria-hidden="true">
+      <div class="welcome-inner">
+        <div class="welcome-brand">
+          <img src="./assets/logo.svg" class="welcome-logo" alt="EDITCOREAI" />
+          <h1 class="welcome-title">EDITCOREAI</h1>
+          <p class="welcome-subtitle">Elige un proyecto para empezar</p>
+        </div>
+        <div class="welcome-actions" role="group" aria-label="Acciones de proyecto">
+          <button id="welcomeOpenBtn" type="button" class="welcome-action-card">
+            <span class="welcome-action-icon" aria-hidden="true">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M3 7.5A2.5 2.5 0 0 1 5.5 5H9l2 2h7.5A2.5 2.5 0 0 1 21 9.5v7A2.5 2.5 0 0 1 18.5 19h-13A2.5 2.5 0 0 1 3 16.5v-9Z" stroke="currentColor" stroke-width="1.6"/></svg>
+            </span>
+            <span class="welcome-action-text">
+              <strong>Abrir proyecto</strong>
+              <small>Carpeta existente en el disco</small>
+            </span>
+          </button>
+          <button id="welcomeNewBtn" type="button" class="welcome-action-card">
+            <span class="welcome-action-icon" aria-hidden="true">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+            </span>
+            <span class="welcome-action-text">
+              <strong>Nuevo proyecto</strong>
+              <small>Crear carpeta en blanco</small>
+            </span>
+          </button>
+        </div>
+        <div class="welcome-recents">
+          <div class="welcome-recents-head">
+            <h2>Ultimos 4 proyectos</h2>
+            <button id="welcomeViewAllBtn" type="button" class="welcome-link">Ver todos</button>
+          </div>
+          <div id="welcomeRecentList" class="welcome-recent-list" role="list"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Top toolbar: esenciales a la vista; herramientas/publicacion en menus -->
+    <header class="app-toolbar">
+      <div class="toolbar-brand-wrap">
+        <img src="./assets/logo.svg" class="toolbar-logo" alt="EDITCOREAI" />
+        <span class="toolbar-brand">EDITCOREAI</span>
+      </div>
+      <nav class="toolbar-nav" aria-label="Barra principal">
+        <div class="toolbar-group" aria-label="Proyecto">
+          <button id="welcomeHomeBtn" type="button" title="Pantalla de inicio: elegir proyecto">Inicio</button>
+          <button id="toggleProjectsBtn" type="button" title="Lista de proyectos abiertos">Proyectos</button>
+          <button id="newProjectBtn" type="button" title="Crear un proyecto en blanco">Nuevo</button>
+          <button id="saveProjectBtn" type="button" title="Guardar proyecto activo (metadatos + commit local)">Guardar</button>
+          <button id="newWindowBtn" type="button" title="Abrir otra ventana de EDITCOREAI">Ventana +</button>
+        </div>
+        <span class="toolbar-divider" aria-hidden="true"></span>
+        <div class="toolbar-group" aria-label="Cuenta y modelos">
+          <button id="connectionsBtn" type="button" title="GitHub, Vercel y Supabase">Conexiones</button>
+          <button id="providersBtn" type="button" title="Proveedores y modelos de IA">Modelos</button>
+        </div>
+        <span class="toolbar-divider" aria-hidden="true"></span>
+        <div class="toolbar-group" aria-label="Operacion">
+          <button id="logsBtn" type="button" title="Panel de logs (Ctrl+`)">Logs</button>
+          <button id="maintenanceBtn" type="button" title="Estado de todos tus proyectos">Mantenimiento</button>
+          <div class="toolbar-more-wrap">
+            <button id="toolsMoreBtn" type="button" class="toolbar-more-btn" aria-haspopup="menu" aria-expanded="false" title="Herramientas internas">Herramientas ▾</button>
+            <div id="toolsMoreMenu" class="toolbar-more-menu hidden" role="menu" hidden>
+              <button id="brainBtn" type="button" role="menuitem" title="Memoria y skills del Cerebro">Cerebro</button>
+              <button id="inspectorBtn" type="button" role="menuitem" title="Inspector del nucleo EDITCOREAI">Inspector</button>
+              <button id="checkUpdatesMenuBtn" type="button" role="menuitem" title="Buscar version nueva en GitHub Releases">Buscar version (GitHub)</button>
+            </div>
+          </div>
+          <div class="toolbar-more-wrap">
+            <button id="publishMoreBtn" type="button" class="toolbar-more-btn" aria-haspopup="menu" aria-expanded="false" title="Publicacion y deploy">Publicar ▾</button>
+            <div id="publishMoreMenu" class="toolbar-more-menu hidden" role="menu" hidden>
+              <button id="connectServicesBtn" type="button" role="menuitem" title="Enlazar este proyecto a GitHub, Vercel y Supabase">Conectar servicios</button>
+              <button id="provisionBtn" type="button" role="menuitem" title="Preparar: dependencias, GitHub y Vercel">Preparar</button>
+              <button id="publishBtn" type="button" role="menuitem" title="Commit, push y deploy del proyecto activo">Publicar proyecto</button>
+              <button id="deployBtn" type="button" role="menuitem" title="Deploy one-click (Vercel)">Deploy</button>
+            </div>
+          </div>
+        </div>
+        <span class="toolbar-divider" aria-hidden="true"></span>
+        <div class="toolbar-group" aria-label="Utilidad">
+          <button id="undoAgentRunBtn" type="button" title="Deshacer la ultima corrida del agente (restaura archivos)">Deshacer</button>
+          <button id="restoreSnapshotBtn" type="button" title="Restaura el ultimo checkpoint (.editcore/snapshots/)">Restaurar versión anterior</button>
+          <button id="updatesBtn" type="button" title="Recargar EDITCOREAI con el codigo actual (sin cerrar a mano)">Actualizar</button>
+        </div>
+      </nav>
+    </header>
+
+    <!-- Main chat column -->
+    <main>
+      <header class="topbar">
+        <span id="status" class="chat-status">Listo</span>
+        <span id="savingsStatus" class="savings-badge">Cache 0%</span>
+      </header>
+      <div id="chatTabsBar" class="chat-tabs-bar" aria-label="Chats">
+        <span id="agentSpecialistBadge" class="agent-specialist-badge is-idle" hidden aria-live="polite">Agente</span>
+        <div id="chatTabs" class="chat-tabs" role="tablist"></div>
+        <button id="newChatBtn" class="chat-tab-new" type="button" title="Nuevo chat" aria-label="Nuevo chat">+</button>
+        <button id="closeActiveChatBtn" class="chat-tab-trash" type="button" title="Cerrar chat actual" aria-label="Cerrar chat actual">
+          <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M6 2h4l1 1h3v1H2V3h3l1-1zm-2 4h8l-.7 8.1A1 1 0 0 1 10.3 15H5.7a1 1 0 0 1-1-.9L4 6z"/></svg>
+        </button>
+      </div>
+
+      <section id="promptQueue" class="prompt-queue hidden"></section>
+      <section id="agentPlanPanel" class="agent-plan-panel hidden" hidden aria-hidden="true" aria-label="Plan del agente">
+        <div class="agent-plan-head">
+          <strong>Plan</strong>
+          <button id="agentPlanToggle" type="button" class="agent-plan-toggle" title="Ocultar plan">−</button>
+        </div>
+        <ol id="agentPlanTodos" class="agent-plan-todos"></ol>
+        <div id="agentPlanCheckpoints" class="agent-plan-checkpoints"></div>
+      </section>
+      <section id="feed" class="feed"></section>
+
+      <!-- Overlay Modo de Voz GPT-Style: Orbe Gigante Solo en el Centro -->
+      <div id="voiceOverlay" class="voice-overlay hidden" aria-live="polite">
+        <button id="voiceHangupBtn" type="button" class="voice-close-fab" title="Cerrar modo de voz">✕</button>
+        <div class="voice-orb-wrapper">
+          <canvas id="voiceOrbCanvas" width="300" height="300"></canvas>
+        </div>
+        <!-- Elementos ocultos conservados para compatibilidad JS -->
+        <span id="voiceStatusLabel" class="hidden"></span>
+        <div id="voiceSubtitle" class="hidden"></div>
+      </div>
+
+      <form id="chatForm" class="composer">
+        <div class="composer-input-wrap">
+          <div id="attachmentList" class="attachment-list"></div>
+          <textarea id="prompt" rows="3" placeholder="Escribe tu mensaje…"></textarea>
+        </div>
+        <div class="composer-bar">
+          <button id="attachBtn" type="button" title="Adjuntar imagen (o archivo)">+</button>
+          <input id="fileInput" type="file" multiple class="hidden"
+            accept="image/png,image/jpeg,image/webp,.txt,.md,.json,.js,.ts,.tsx,.jsx,.css,.html" />
+          <select id="runMode">
+            <option value="chat">Chat</option>
+            <option value="agent">Agente</option>
+          </select>
+  <button id="permissionsBtn" type="button" aria-haspopup="menu" aria-expanded="false">Permisos</button>
+          <span class="composer-spacer"></span>
+          <div class="model-picker-wrap">
+            <button id="modelPickerBtn" type="button" class="model-picker-btn" aria-haspopup="listbox" aria-expanded="false" title="Seleccionar modelo">
+              <span id="modelPickerLabel">Auto</span>
+              <span class="model-picker-caret" aria-hidden="true">▾</span>
+            </button>
+            <select id="chatModelSelect" class="chat-model-select hidden-select" title="Modelo activo" aria-label="Modelo activo" tabindex="-1">
+              <option value="">Modelo no verificado</option>
+            </select>
+            <div id="modelPickerMenu" class="model-picker-menu hidden" role="listbox" aria-label="Modelos disponibles"></div>
+          </div>
+          <button id="voiceBtn" type="button" class="voice-btn" hidden aria-hidden="true" tabindex="-1" disabled title="Modo de voz desactivado: ME AI / APICredits no ofrecen Whisper STT" aria-label="Modo de voz desactivado">
+            <svg class="voice-mic-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/>
+              <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+              <line x1="12" x2="12" y1="19" y2="22"/>
+            </svg>
+          </button>
+          <button id="stopBtn" type="button" class="hidden" hidden style="display:none!important;" title="Pausar / detener agente" aria-label="Pausar">&#9632;</button>
+          <button id="sendBtn" type="button" title="Enviar" aria-label="Enviar">&#10148;</button>
+        </div>
+        <div id="permissionMenu" class="permission-menu hidden" role="menu" aria-label="Modo de permisos">
+          <button type="button" data-permission="step" role="menuitemradio" aria-checked="true">
+            <strong>Permisos</strong>
+            <span>Pregunta antes de escribir o ejecutar.</span>
+          </button>
+          <button type="button" data-permission="full" role="menuitemradio" aria-checked="false">
+            <strong>Acceso completo</strong>
+            <span>Puede modificar y ejecutar sin preguntar.</span>
+          </button>
+          <button type="button" data-permission="readonly" role="menuitemradio" aria-checked="false">
+            <strong>Solo lectura</strong>
+            <span>Solo puede leer archivos, sin modificar.</span>
+          </button>
+        </div>
+      </form>
+    </main>
+
+    <!-- Splitter chat/browser -->
+    <div id="splitChatBrowser" class="splitter"></div>
+
+    <!-- Browser preview -->
+    <section class="viewer">
+      <div class="viewer-url">
+        <button id="webPreviewBtn" class="preview-mode-btn active" type="button">Web</button>
+        <button id="mobilePreviewBtn" class="preview-mode-btn" type="button">Móvil</button>
+        <button id="previewBackBtn" class="preview-nav-btn" type="button" title="Atrás" aria-label="Atrás" disabled>&#8592;</button>
+        <input id="previewUrl" value="" placeholder="Abre un proyecto para conectar su navegador" />
+        <button id="openPreviewBtn" class="refresh-btn" type="button" title="Actualizar">↻</button>
+        <button id="inspectBrowserBtn" class="preview-inspect-btn" type="button" title="Inspeccionar DOM del preview local">Inspeccionar</button>
+      </div>
+      <div class="viewer-body">
+        <webview id="previewWebview" class="preview-webview" partition="persist:editcore-browser" allowpopups="false" webpreferences="contextIsolation=yes, nodeIntegration=no, sandbox=yes, webSecurity=yes"></webview>
+        <div id="previewHealBanner" class="preview-heal-banner hidden" role="status" aria-live="polite" hidden></div>
+        <div id="previewStatus" class="preview-status">Abre un proyecto con servidor para visualizarlo aqui.</div>
+        <div id="previewRuntimeErrors" class="preview-runtime-errors" hidden></div>
+        <aside id="browserInspectPanel" class="browser-inspect-panel hidden" aria-live="polite">
+          <header class="browser-inspect-head">
+            <strong>Inspeccion local</strong>
+            <button id="closeBrowserInspectBtn" type="button" title="Cerrar">✕</button>
+          </header>
+          <div class="browser-inspect-actions">
+            <input id="browserInspectSelector" type="text" placeholder="CSS selector (ej. #primaryBtn)" autocomplete="off" />
+            <input id="browserInspectText" type="text" placeholder="Texto a escribir" autocomplete="off" />
+            <div class="browser-inspect-action-row">
+              <button id="browserInspectClickBtn" type="button" title="Click en el selector">Click</button>
+              <button id="browserInspectTypeBtn" type="button" title="Escribir texto en el selector">Escribir</button>
+              <button id="browserInspectRefreshBtn" type="button" title="Volver a inspeccionar">↻</button>
+            </div>
+          </div>
+          <pre id="browserInspectBody" class="browser-inspect-body"></pre>
+        </aside>
+      </div>
+    </section>
+
+    <!-- Splitter browser/sidebar -->
+    <div id="splitBrowserProjects" class="splitter"></div>
+
+    <!-- Right sidebar: project files only -->
+    <aside>
+      <div class="brand-row">
+        <button id="pickProjectBtn" class="project-open-btn" type="button">Abrir</button>
+        <button id="closeProjectBtn" class="project-open-btn project-close-btn" type="button" title="Cerrar proyecto sin borrar archivos ni chat guardado" disabled>Cerrar</button>
+      </div>
+      <div class="section-label">Archivos del proyecto</div>
+      <small id="projectPathLabel" class="project-path-label">Sin proyecto</small>
+      <section id="fileList" class="file-list"></section>
+    </aside>
+
+    <!-- ── Dialogs (fuera del grid) ──────────────────────────────────────── -->
+    <div id="modals">
+
+      <dialog id="newProjectDialog">
+        <form method="dialog" id="newProjectForm">
+          <header class="dlg-head">
+            <div><h2 id="newProjectDialogTitle">Nuevo proyecto</h2><p id="newProjectDialogDescription">Crea una carpeta en blanco. Si necesitas un stack concreto, pidelo al agente (las plantillas viven en el Cerebro).</p></div>
+            <button id="closeNewProjectBtn" type="button" class="dlg-close">&#10005;</button>
+          </header>
+          <div class="dlg-body new-project-body">
+            <label class="field-label" for="newProjectName">Nombre</label>
+            <input id="newProjectName" maxlength="80" required placeholder="Mi proyecto" />
+            <label class="field-label" for="newProjectParent">Carpeta de destino</label>
+            <div class="project-parent-row">
+              <input id="newProjectParent" required placeholder="D:\\PROGRAMAS IA" />
+              <button id="pickProjectParentBtn" type="button">Elegir</button>
+            </div>
+            <label class="project-onboard-checkbox">
+              <input type="checkbox" id="newProjectOnboardServices" />
+              Conectar GitHub, Vercel y Supabase al terminar
+            </label>
+            <div id="projectCreateProgress" class="project-create-progress hidden" data-state="idle" aria-live="polite">
+              <div class="project-create-progress-meta">
+                <span id="projectCreateProgressLabel">Preparando</span>
+                <strong id="projectCreateProgressPercent">0%</strong>
+              </div>
+              <div class="project-create-progress-track"><div id="projectCreateProgressFill"></div></div>
+              <pre id="projectCreateLog" class="project-create-log"></pre>
+            </div>
+          </div>
+          <footer class="dlg-actions">
+            <button id="cancelProjectCreateBtn" class="project-create-cancel hidden" type="button">Cancelar</button>
+            <button id="createProjectConfirmBtn" type="submit">Crear</button>
+          </footer>
+        </form>
+      </dialog>
+
+      <dialog id="saveProjectDialog">
+        <form method="dialog" id="saveProjectForm">
+          <header class="dlg-head">
+            <div><h2>Guardar proyecto</h2><p>Confirma la ruta que EDITCOREAI registrara como proyecto activo.</p></div>
+            <button id="closeSaveProjectBtn" type="button" class="dlg-close">&#10005;</button>
+          </header>
+          <div class="dlg-body">
+            <label class="field-label" for="saveProjectLocation">Ruta del proyecto</label>
+            <input id="saveProjectLocation" readonly required />
+          </div>
+          <footer class="dlg-actions">
+            <button id="cancelSaveProjectBtn" type="button">Cancelar</button>
+            <button id="confirmSaveProjectBtn" type="submit">Guardar ahora</button>
+          </footer>
+        </form>
+      </dialog>
+
+      <dialog id="projectsDialog">
+        <form method="dialog" id="projectsForm">
+          <header class="dlg-head">
+            <div><h2>Mis proyectos</h2><p>Proyectos abiertos por ruta, sin carpetas duplicadas.</p></div>
+            <button id="closeProjectsBtn" type="button" class="dlg-close">&#10005;</button>
+          </header>
+          <div class="dlg-body projects-manager">
+            <div class="projects-actions">
+              <button id="projectsOpenExistingBtn" class="btn-outline-teal" type="button">Abrir existente</button>
+              <button id="projectsSaveCurrentBtn" class="btn-outline-teal" type="button">Guardar proyecto</button>
+            </div>
+            <section id="projectsManagerList" class="projects-manager-list"></section>
+          </div>
+        </form>
+      </dialog>
+
+      <div id="apiRuntimeState" hidden aria-hidden="true">
+        <input id="baseUrl" type="hidden" value="https://api.apicredits.site/v1" />
+        <input id="apiKey" type="password" autocomplete="off" />
+        <select id="model"></select>
+        <input id="remember" type="checkbox" checked />
+      </div>
+
+      <!-- Brain / Bodega dialog -->
+      <dialog id="brainDialog">
+        <form method="dialog" id="brainForm">
+          <header class="dlg-head">
+            <div><h2>Bodega del Cerebro</h2><p>Skills, agentes y conectores disponibles para todos los proveedores</p></div>
+            <button id="closeBrainBtn" type="button" class="dlg-close">×</button>
+          </header>
+          <div class="dlg-body brain-body">
+            <div class="brain-search-row"><input id="brainSearch" placeholder="Buscar skills, agentes o conectores…" /><button id="brainSearchBtn" type="button">Buscar</button></div>
+            <div class="brain-repo-row"><input id="brainRepoUrl" placeholder="Pega link de repo GitHub para añadir tool o skill" /><button id="brainInstallRepoBtn" type="button">Añadir repo</button></div>
+            <div class="brain-actions-row"><button id="brainAuditBtn" type="button">Auditar herramientas</button></div>
+            <div id="brainHealth" class="brain-health" data-state="checking"><span class="brain-health-dot"></span><strong>Verificando herramientas…</strong></div>
+            <div id="brainStatus" class="brain-status">Cargando Cerebro…</div>
+            <div id="brainSnapshot" class="brain-snapshot"></div>
+            <section id="brainToolsAudit" class="brain-tools-audit"></section>
+            <section id="brainCatalogList" class="brain-catalog-list"></section>
+          </div>
+        </form>
+      </dialog>
+
+      <!-- Inspector Core dialog -->
+      <dialog id="inspectorDialog">
+        <form method="dialog" id="inspectorForm">
+          <header class="dlg-head">
+            <div><h2>Inspector de EDITCOREAI</h2><p id="inspectorSubtitle">Diagnostico nativo del runtime de EDITCOREAI.</p></div>
+            <button id="closeInspectorBtn" type="button" class="dlg-close">×</button>
+          </header>
+          <div class="dlg-body inspector-body">
+            <div id="inspectorHealth" class="inspector-health" data-state="checking"><span class="inspector-health-dot"></span><strong>Inspector verificando EDITCOREAI</strong></div>
+            <div class="inspector-model-row" id="inspectorModelSelectRow">
+              <div class="inspector-model-selector-group">
+                <label for="inspectorProviderSelect">Proveedor directo:</label>
+                <select id="inspectorProviderSelect" title="Selecciona ME AI Cloud o APICredits (conexion directa)"></select>
+              </div>
+              <div class="inspector-model-selector-group">
+                <label for="inspectorModelSelect">Modelo:</label>
+                <select id="inspectorModelSelect" title="Selecciona el modelo para reparaciones de Inspector"></select>
+              </div>
+            </div>
+            <div id="inspectorApiStatus" class="inspector-api-status ok">Inspector Nativo Autónomo Activo (Modo Local)</div>
+            <div id="inspectorActions" class="inspector-actions" aria-label="Acciones de Inspector Core">
+              <button id="inspectorScanCoreBtn" type="button" data-inspector-action="scan" data-inspector-target="editcore" title="Diagnostica el runtime de EDITCOREAI sin modificar archivos.">Escanear EDITCOREAI</button>
+              <button id="inspectorScanProjectBtn" type="button" data-inspector-action="scan" data-inspector-target="project" title="Diagnostica el proyecto activo sin modificar archivos.">Escanear proyecto</button>
+              <button id="inspectorRepairCoreBtn" type="button" data-inspector-action="repair" data-inspector-target="editcore" title="Checkpoint, corrige hallazgos verificados y valida.">Reparar EDITCOREAI</button>
+              <button id="inspectorRepairProjectBtn" type="button" data-inspector-action="repair" data-inspector-target="project" title="Checkpoint, corrige hallazgos del proyecto y valida.">Reparar proyecto</button>
+              <button id="inspectorCancelBtn" type="button" class="inspector-cancel-btn hidden" data-inspector-action="cancel" title="Cancelar escaneo o reparacion en curso">Cancelar</button>
+            </div>
+            <div id="inspectorProgress" class="inspector-progress" data-state="idle" aria-live="polite">
+              <div class="inspector-progress-meta">
+                <span id="inspectorProgressLabel">Inspector en espera</span>
+                <strong id="inspectorProgressPercent">0%</strong>
+              </div>
+              <div class="inspector-progress-track">
+                <div id="inspectorProgressFill" class="inspector-progress-fill" style="width: 0%;"></div>
+              </div>
+            </div>
+            <section id="inspectorChatPane" class="inspector-pane active">
+              <div id="inspectorFeed" class="inspector-feed"></div>
+              <div class="inspector-composer">
+                <textarea id="inspectorPrompt" rows="3" placeholder="Pregunta por el estado de EDITCOREAI o pide una solucion verificable..."></textarea>
+                <div class="inspector-composer-actions">
+                  <button id="inspectorSendBtn" type="button">Enviar</button>
+                  <button id="inspectorSaveBtn" type="button" class="inspector-save-btn" title="Guarda metadatos y commit local de EDITCOREAI (sin push)">Guardar EDITCOREAI</button>
+                  <button id="inspectorPublishBtn" type="button" class="publish-inspector-btn" title="Publica EDITCOREAI usando Conexiones (GitHub / Vercel)">Publicar EDITCOREAI</button>
+                </div>
+              </div>
+            </section>
+          </div>
+        </form>
+      </dialog>
+
+      <!-- Connections dialog -->
+      <dialog id="connectionsDialog">
+        <form method="dialog" id="connectionsForm">
+          <header class="dlg-head">
+            <div>
+              <h2>Conexiones</h2>
+              <p>Boveda del operador (GitHub, Vercel, Supabase, SSH). El agente las usa desde el chat; al cambiar de proyecto no se reinician.</p>
+            </div>
+            <button id="closeConnectionsBtn" type="button" class="dlg-close">✕</button>
+          </header>
+
+          <div class="connections-body">
+
+            <div class="conn-section">
+              <div class="conn-section-title">GitHub <span class="conn-status" data-service="github">sin conectar</span></div>
+              <div class="oauth-row">
+                <div class="conn-field">
+                  <span>Personal Access Token</span>
+                  <input data-conn="githubToken" type="password" placeholder="ghp_..." />
+                </div>
+                <button type="button" class="conn-connect-btn" data-service="github">Autorizar →</button>
+              </div>
+              <div class="conn-error-detail" data-service="github" style="display:none;color:#e55;font-size:0.8em;margin-top:4px;padding:4px 8px;background:rgba(255,80,80,0.08);border-radius:4px;word-break:break-word;"></div>
+            </div>
+
+              <div class="conn-section">
+              <div class="conn-section-title">Vercel <span class="conn-status" data-service="vercel">sin conectar</span></div>
+              <div class="oauth-row">
+                <div class="conn-field">
+                  <span>Vercel Token</span>
+                  <input data-conn="vercelToken" type="password" placeholder="vercel token" />
+                </div>
+                <button type="button" class="conn-connect-btn" data-service="vercel">Autorizar →</button>
+              </div>
+              <div class="conn-error-detail" data-service="vercel" style="display:none;color:#e55;font-size:0.8em;margin-top:4px;padding:4px 8px;background:rgba(255,80,80,0.08);border-radius:4px;word-break:break-word;"></div>
+            </div>
+
+              <div class="conn-section">
+              <div class="conn-section-title">Supabase propio <span class="conn-status" data-service="selfsupabase">sin conectar</span></div>
+              <div class="conn-grid">
+                <div class="conn-field"><span>URL</span><input data-conn="selfSupabaseUrl" placeholder="https://tu-proyecto.supabase.co" /></div>
+                <div class="conn-field"><span>API Key</span><input data-conn="selfSupabaseKey" type="password" /></div>
+              </div>
+              <div class="conn-grid" style="margin-top:8px">
+                <div class="conn-field"><span>Cloud token (opcional)</span><input data-conn="supabaseCloudToken" type="password" placeholder="sbp_..." /></div>
+                <div class="conn-field"><span>Org ID Cloud (opcional)</span><input data-conn="supabaseOrgId" placeholder="org uuid" /></div>
+              </div>
+              <div class="conn-error-detail" data-service="selfsupabase" style="display:none;color:#e55;font-size:0.8em;margin-top:4px;padding:4px 8px;background:rgba(255,80,80,0.08);border-radius:4px;word-break:break-word;"></div>
+              <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:6px;flex-wrap:wrap">
+                <button type="button" id="createSupabaseProjectBtn" class="conn-connect-btn" title="Crea supabase/ en el proyecto activo">Crear en proyecto</button>
+                <button type="button" class="conn-connect-btn" data-service="selfsupabase">Guardar →</button>
+              </div>
+            </div>
+
+            <div class="conn-section">
+              <div class="conn-section-title">Servidor SSH <span class="conn-status" data-service="ssh">sin conectar</span></div>
+              <div class="conn-grid">
+                <div class="conn-field"><span>Host (usuario@host:puerto)</span><input data-conn="serverHost" placeholder="usuario@host:22" /></div>
+                <div class="conn-field"><span>Ruta clave SSH</span><input data-conn="serverKeyPath" placeholder="C:\ruta\id_rsa" /></div>
+              </div>
+            </div>
+
+          </div>
+
+          <footer class="dlg-footer">
+            <button id="detectConnectionsBtn" type="button" class="btn-outline-teal">Detectar conexiones</button>
+            <button id="validateConnectionsBtn" type="button" class="btn-outline-teal" title="Probar APIs ahora (opcional)">Probar ahora</button>
+            <button id="saveConnectionsBtn" type="submit" class="btn-primary">Guardar conexiones</button>
+          </footer>
+        </form>
+      </dialog>
+
+      <!-- Maintenance / operator dashboard -->
+      <dialog id="maintenanceDialog">
+        <form method="dialog" id="maintenanceForm">
+          <header class="dlg-head">
+            <div>
+              <h2>Mantenimiento de proyectos</h2>
+              <p>Estado Git, deploy, Supabase y ultima publicacion por proyecto.</p>
+            </div>
+            <button id="closeMaintenanceBtn" type="button" class="dlg-close">✕</button>
+          </header>
+          <div class="dlg-body connections-body">
+            <div id="maintenanceSchedulerRow" class="inspector-model-row" style="margin-bottom:12px">
+              <label><input type="checkbox" id="maintenanceAutoEnabled" checked /> Checks automaticos</label>
+              <label style="margin-left:12px">Cada <input id="maintenanceIntervalHours" type="number" min="1" max="168" value="24" style="width:56px" /> h</label>
+              <button id="saveMaintenanceSchedulerBtn" type="button" class="btn-outline-teal" style="margin-left:auto">Guardar</button>
+              <button id="runMaintenanceNowBtn" type="button" class="btn-outline-teal">Ejecutar ahora</button>
+            </div>
+            <div id="maintenanceSchedulerStatus" class="inspector-api-status">Scheduler en espera...</div>
+            <div id="maintenanceSummary" class="inspector-api-status">Cargando estado...</div>
+            <div id="maintenanceList" class="maintenance-list"></div>
+          </div>
+          <footer class="dlg-footer">
+            <button id="refreshMaintenanceBtn" type="button" class="btn-outline-teal">Actualizar</button>
+            <button type="submit" class="btn-primary">Cerrar</button>
+          </footer>
+        </form>
+      </dialog>
+
+      <!-- Models dialog -->
+      <dialog id="providersDialog" class="models-dialog">
+        <form method="dialog" id="providersForm">
+          <header class="dlg-head">
+            <div>
+              <h2>Modelos</h2>
+              <p>Auto en el chat o un modelo fijo. Agrega endpoints OpenAI-compatible con URL, nombre y API key.</p>
+            </div>
+            <button id="closeProvidersBtn" type="button" class="dlg-close" aria-label="Cerrar">✕</button>
+          </header>
+
+          <div class="providers-list">
+            <div id="customProvidersList"></div>
+          </div>
+
+          <footer class="dlg-footer providers-footer">
+            <label class="privacy-toggle" title="Bloquea envio a proveedores cloud">
+              <input id="privacyModeToggle" type="checkbox" />
+              Privacy Mode
+            </label>
+            <button type="button" id="addCustomProviderBtn" class="btn-outline">+ Agregar endpoint</button>
+            <button type="submit" class="btn-primary">Listo</button>
+          </footer>
+        </form>
+      </dialog>
+    </div><!-- #modals -->
+
+    <!-- ════════════════════════════════════════════════════════════════════ -->
+    <!-- PANEL DE LOGS - Claude Code -->
+    <!-- ════════════════════════════════════════════════════════════════════ -->
+    <div id="logsPanel" class="logs-panel collapsed">
+      <div class="logs-panel-header">
+        <div class="logs-panel-tabs">
+          <button class="logs-tab active" data-tab="logs">
+            <span class="tab-icon">📋</span>
+            <span class="tab-label">Logs del Agente</span>
+          </button>
+        </div>
+        <div class="logs-panel-actions">
+          <button class="logs-btn-minimize" title="Minimizar panel">_</button>
+          <button class="logs-btn-close" title="Cerrar panel">×</button>
+        </div>
+      </div>
+      <div class="logs-panel-content">
+        <div id="tab-logs" class="logs-tab-content active">
+          <div class="logs-toolbar">
+            <button class="logs-filter-btn active" data-level="all">Todos</button>
+            <button class="logs-filter-btn" data-level="info">Info</button>
+            <button class="logs-filter-btn" data-level="warn">Avisos</button>
+            <button class="logs-filter-btn" data-level="error">Errores</button>
+            <button class="logs-btn-clear" title="Limpiar logs">Limpiar</button>
+          </div>
+          <div id="logs-output" class="logs-output"></div>
+        </div>
+      </div>
+    </div>
+    <!-- Fin Panel de Logs -->
+
+    <script src="./renderer-markdown.js"></script>
+    <script src="./project-analysis.js"></script>
+    <script src="./runtime/anti-hallucination-policy.js"></script>
+    <script src="./runtime/elite-communication-policy.js"></script>
+    <script src="./runtime/chat-stream-preserve.js"></script>
+    <script src="./runtime/cursor-parity.js"></script>
+    <script src="./runtime/intent-orchestrator.js"></script>
+    <script src="./runtime/intent-unified.js"></script>
+    <script src="./runtime/prompt-job-model.js"></script>
+    <script src="./runtime/project-files-ui.js"></script>
+    <script src="./runtime/agent-plan-view.js"></script>
+    <script src="./auto-model-selection.js"></script>
+    <script src="./renderer.js"></script>
+    <script src="./runtime/voice-orb.js" defer></script>
+    <script src="./runtime/voice-mode.js" defer></script>
+    <script src="./logs-panel.js" defer></script>
+  </body>
+</html>

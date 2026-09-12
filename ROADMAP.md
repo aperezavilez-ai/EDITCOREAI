@@ -1,0 +1,60 @@
+# EDITCOREAI — Roadmap & Arquitectura (v2.6.6)
+
+EDITCOREAI es la plataforma desktop de pair-programming y agentic coding: orquesta subagentes, ejecuta en disco con evidencia y prioriza co-creación (inspecciona el proyecto y dice qué falta, no pide datos que ya están en el repo).
+
+---
+
+## Hitos completados — estado actual (v2.6.6)
+
+### 0. Continuidad del chat (v2.6.6)
+- [x] `procede` / `continua` reabren tareas `COMPLETED`/`FAILED`/`CANCELLED`.
+- [x] No marcar COMPLETED sin mutación real en disco.
+- [x] Planes de análisis → autorización, no “terminado” falso.
+- [x] Dependencias de app actualizadas (Electron 43.6, pdfkit 0.20.2).
+
+### 1. Co-creación: gaps, no interrogatorio
+- [x] Política anti-alucinación: no preguntar lo que se puede leer del disco.
+- [x] Cierre de análisis/scaffold con sección **Qué falta para que funcione**.
+- [x] Solo preguntar secretos / preferencias de negocio ausentes del repo.
+
+### 2. Agente robusto y propositivo
+- [x] Postura propositiva: recomendaciones sí; acciones no solicitadas no.
+- [x] Knowledge pack + skills reales del Cerebro.
+- [x] Contrato plan → ejecutar → verificar; tope de rechazos de cobertura (2).
+- [x] Exposición correcta de `write_file` / `replace_in_file` en EXECUTE/PROCEDE/FOCO.
+
+### 3. Auth pause + stream estable
+- [x] Hard-stop al pedir autorización.
+- [x] Fase UI `awaiting_authorization`.
+- [x] Preservación de informes largos (`chat-stream-preserve`).
+
+### 4. Español legible
+- [x] Política élite V2 con acentos.
+- [x] Chat sin cortes mid-word por CSS.
+
+### 5. Voz / orquestación (runtime; UI mic gated)
+- [x] Orbe + hands-free + STT en runtime.
+- [x] Mic gated si no hay Whisper STT.
+- [x] Subagentes en paralelo y thought stream.
+
+---
+
+## Próximos hitos (v2.7.0+)
+
+### 1. Scope-drift watchdog
+- [ ] Rechazar expansiones no pedidas fuera del contrato de la tarea.
+
+### 2. MCP / agentes remotos
+- [ ] Servidores MCP nativos (GitHub, Supabase, Playwright, Vercel).
+
+### 3. Preview en vivo
+- [ ] Hot-reload interno al aplicar cambios HTML/CSS/JS/React.
+
+### 4. Voz usable end-to-end
+- [ ] Reactivar UI cuando haya STT Whisper real en el stack del usuario.
+
+---
+
+## Gobernanza
+- Aislamiento: `no_supabase` / `gafcore_gateway_only`
+- Validar: `node .project-governance/validate-project-isolation.mjs`

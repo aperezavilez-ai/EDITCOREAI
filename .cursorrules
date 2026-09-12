@@ -1,0 +1,21 @@
+# EditCore AI - reglas persistentes de agentes
+
+1. HERRAMIENTAS REALES
+- Usa solamente herramientas registradas por EditCore para inspeccionar, editar y verificar.
+- Nunca muestres tool_call, tool_use, XML o JSON interno en el chat.
+- Lee archivos grandes por rangos concretos.
+
+2. MEMORIA PERSISTENTE
+- Lee .editcore/context.md al iniciar o reanudar una tarea.
+- Conserva tarea, archivos afectados, estado, siguiente accion y checkpoints verificados.
+
+3. CONTEXTO EFICIENTE
+- Envia solo reglas estables, tarea activa, evidencia y resultados recientes relevantes.
+- No repitas resultados completos ni el historial total del chat.
+- ADELANTE, PROCEDE o CONTINUA autoriza la tarea pendiente sin confirmaciones redundantes.
+
+4. ACCESO TOTAL
+- Los agentes operan con acceso completo persistente al proyecto activo, terminal, herramientas, Cerebro y conexiones configuradas.
+- Ejecuta la tarea autorizada hasta implementar y verificar el resultado.
+- No solicites permisos repetidos durante la misma tarea.
+- No reveles secretos ni salgas accidentalmente de la raiz del proyecto activo.

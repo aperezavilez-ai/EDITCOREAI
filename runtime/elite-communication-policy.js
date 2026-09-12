@@ -1,0 +1,175 @@
+"use strict";
+
+/**
+ * Política inmutable de comunicación estilo modelos de élite (Claude / Gemini / Cursor).
+ * Se inyecta al inicio de todo system prompt de chat y agente en EDITCOREAI.
+ * No es opcional: withEliteCommunicationPolicy siempre antepone el bloque.
+ */
+
+(function exposeEliteCommunicationPolicy(root, factory) {
+  const api = factory();
+  if (typeof module !== "undefined" && module.exports) module.exports = api;
+  if (root) root.EditCoreEliteCommunication = api;
+})(typeof window !== "undefined" ? window : globalThis, function createEliteCommunicationPolicy() {
+  const POLICY_MARKER = "POLITICA_COMUNICACION_ELITE_V2";
+  const LEGACY_MARKERS = [
+    "POLITICA_COMUNICACION_ELITE_V1",
+    "POLITICA_COMUNICACION_ELITE_V2",
+  ];
+
+  const ELITE_COMMUNICATION_POLICY = [
+    `[${POLICY_MARKER}]`,
+    "Directrices de comunicación y razonamiento de Ingeniero Principal:",
+    "",
+    "0) ORTOGRAFÍA Y REDACCIÓN EN ESPAÑOL (OBLIGATORIO):",
+    "- Escribe SIEMPRE en español correcto: tildes (está, también, código, archivo), eñes (año, tamaño) y signos ¿ ¡.",
+    "- PROHIBIDO escribir sin tildes por comodidad (no uses \"espanol\", \"codigo\", \"archivo\" sin tilde cuando corresponda).",
+    "- PROHIBIDO cortar palabras a mitad (\"archi vo\", \"proye-cto\" partido sin guion válido).",
+    "- PROHIBIDO pegar palabras (\"deleditor\", \"enelproyecto\", \"paraelusuario\"). Cada palabra va separada por espacio.",
+    "- Tras punto, coma, dos puntos o cierre de paréntesis deja un espacio antes de la siguiente palabra.",
+    "- Oraciones completas y claras. No comprimas la prosa omitiendo letras o espacios.",
+    "",
+    "1) APERTURA DIRECTA Y CRITERIO HUMANO:",
+    "- PROHIBIDO empezar con saludos o relleno: \"Claro\", \"Por supuesto\", \"Entendido\", \"¡Claro!\", \"Aquí tienes\", \"Voy a...\", \"Perfecto\", \"Excelente pregunta\".",
+    "- La primera oración responde al grano con criterio técnico elevado, claridad y empatía profesional.",
+    "",
+    "2) RAZONAMIENTO ANTES DE ACCIÓN:",
+    "- Antes de código o tool_calls: 1-3 oraciones de razonamiento técnico (qué harás y por qué).",
+    "- Explica el contexto y anticipa dependencias, casos límite y mejores prácticas de arquitectura.",
+    "- Con proyecto abierto: NO preguntes al usuario lo que puedes leer del disco; inspecciona y decide.",
+    "",
+    "3) ESTILO Y FORMATO:",
+    "- Tono profesional, analítico, resolutivo y bien redactado.",
+    "- Markdown limpio: **negritas** solo para ideas clave; listas cortas; tablas solo si comparan opciones.",
+    "- PROHIBIDO cierres vacíos: \"En resumen\", \"Espero que te sirva\", \"¿Hay algo más en lo que pueda ayudarte?\", \"Si necesitas...\".",
+    "- Termina con la solución o el siguiente paso técnico concreto.",
+    "",
+    "4) POSTURA PROPOSITIVA (ingeniero senior, no ejecutor pasivo):",
+    "- Sé directo: primera oración = respuesta o decisión. Sin rodeos.",
+    "- Toma posición: recomienda UNA opción y di por qué, en lugar de listar alternativas neutras.",
+    "- Cierra SIEMPRE con la siguiente acción concreta (archivo/función/comando), no con una pregunta abierta.",
+    "- Si creas o mantienes un proyecto con el usuario: al cerrar lista qué FALTA para que arranque (deps, .env, scripts, endpoints stub, workers, Docker).",
+    "- Si detectas un riesgo real fuera del alcance pedido, menciónalo en una línea y sigue; no lo ejecutes ni abras un análisis nuevo.",
+    "- PROHIBIDO responder solo \"no puedo\" o \"necesito más datos\" o \"dame más información\" si el proyecto está abierto y aún no lo inspeccionaste.",
+    "",
+    "5) CÓDIGO Y DIFFS:",
+    "- Antes de un bloque de código: 1-2 líneas del POR QUÉ del cambio.",
+    "- Código modular, tipado cuando aplique, completo; PROHIBIDO placeholders tipo \"// resto del código aquí\".",
+    "- Prioriza diffs precisos o bloques aplicables al repo; no vuelques archivos enteros sin necesidad.",
+    "- En bloques de código respeta el idioma del lenguaje (inglés de APIs/identificadores). Fuera del código, español correcto.",
+  ].join("\n");
+
+  const FILLER_OPENING = /^(?:¡?\s*)?(?:claro(?:\s+que\s+s[ií])?|por\s+supuesto|entendido|perfecto|excelente(?:\s+pregunta)?|aqu[ií]\s+tienes|con\s+gusto|de\s+acuerdo|ok(?:ay)?|vale|genial|absolutamente|sin\s+problema)\b[!.,:\s]*/i;
+  const FILLER_LINE = /^(?:¡?\s*)?(?:claro(?:\s+que\s+s[ií])?|por\s+supuesto|entendido|perfecto|excelente(?:\s+pregunta)?|aqu[ií]\s+tienes|voy\s+a\s+(?:ayudarte|proceder|hacerlo)|d[eé]jame\s+(?:ver|revisar|ayudarte)|con\s+mucho\s+gusto)\s*[!.]?\s*$/i;
+  const REDUNDANT_CLOSING = /(?:\n|^)\s*(?:en\s+resumen[,:]?|espero\s+que\s+(?:esto\s+)?(?:te\s+)?(?:sirva|ayude|funcione)[^.!\n]*[.!]?|\¿?\s*hay\s+algo\s+m[aá]s\s+en\s+lo\s+que\s+(?:pueda|puedo)\s+ayudarte\s*\??|si\s+necesitas\s+(?:algo\s+m[aá]s|ayuda)[^.!\n]*[.!]?)\s*$/gim;
+
+  function hasElitePolicy(prompt = "") {
+    const text = String(prompt || "");
+    return LEGACY_MARKERS.some((marker) => text.includes(marker));
+  }
+
+  function stripElitePolicyBlocks(prompt = "") {
+    let value = String(prompt || "");
+    for (const marker of LEGACY_MARKERS) {
+      const re = new RegExp(
+        `\\[${marker}\\][\\s\\S]*?(?=\\n\\n\\[POLITICA_|\\n\\n(?=[A-ZÁÉÍÓÚÑ])|$)`,
+        "g",
+      );
+      value = value.replace(re, "").trim();
+    }
+    return value.replace(/\n{3,}/g, "\n\n").trim();
+  }
+
+  /**
+   * Arregla solo defectos mecánicos de prosa (no inventa palabras).
+   * Protege fences ``` y `código inline`.
+   */
+  function normalizeSpanishProse(text = "") {
+    const raw = String(text || "");
+    if (!raw) return raw;
+    const parts = raw.split(/(```[\s\S]*?```|`[^`\n]+`)/g);
+    return parts.map((part, index) => {
+      if (index % 2 === 1) return part; // código intacto
+      let value = part;
+      // Controles invisibles / soft hyphen que parten palabras
+      value = value.replace(/[\u00AD\u200B\u200C\u200D\uFEFF]/g, "");
+      // "pala-\nbra" o "pala- bra" → "palabra"
+      value = value.replace(/([A-Za-zÁÉÍÓÚÜáéíóúüñÑ])-\s*\n\s*([A-Za-zÁÉÍÓÚÜáéíóúüñÑ])/g, "$1$2");
+      value = value.replace(/([A-Za-zÁÉÍÓÚÜáéíóúüñÑ])-\s{1,3}([a-záéíóúüñ]{2,})/g, "$1$2");
+      // Espacio tras !?:,; si falta
+      value = value.replace(/([!?:,;])([A-Za-zÁÉÍÓÚÜáéíóúüñÑ¿¡])/g, "$1 $2");
+      // Tras punto: mayúscula / ¿¡ / palabra con tilde o ñ en algún punto (no tocar main.js)
+      value = value.replace(/\.([¿¡A-ZÁÉÍÓÚÜÑ])/g, ". $1");
+      value = value.replace(/\.([a-z]*[áéíóúüñ][A-Za-zÁÉÍÓÚÜáéíóúüñÑ]*)/g, ". $1");
+      // Espacio antes de ¿ ¡ si van pegados a letra
+      value = value.replace(/([A-Za-zÁÉÍÓÚÜáéíóúüñÑ0-9])([¿¡])/g, "$1 $2");
+      // Espacio tras cierre ) ] } antes de letra
+      value = value.replace(/([)\]}])([A-Za-zÁÉÍÓÚÜáéíóúüñÑ])/g, "$1 $2");
+      // Colapsar espacios/tabs excesivos (no saltos de línea)
+      value = value.replace(/[^\S\n]{2,}/g, " ");
+      // Quitar espacio raro antes de puntuación
+      value = value.replace(/ +([.,;:!?…])/g, "$1");
+      return value;
+    }).join("");
+  }
+
+  function withEliteCommunicationPolicy(systemPrompt = "") {
+    const rootObj = typeof window !== "undefined" ? window : globalThis;
+    let Anti = rootObj?.EditCoreAntiHallucination || null;
+    if (!Anti && typeof require !== "undefined") {
+      try { Anti = require("./anti-hallucination-policy"); } catch { Anti = null; }
+    }
+
+    let rest = stripElitePolicyBlocks(String(systemPrompt || "").trim());
+    if (Anti?.stripAntiHallucinationPolicy) {
+      rest = Anti.stripAntiHallucinationPolicy(rest);
+    } else {
+      rest = rest.replace(/\[POLITICA_ANTIALUCINACION_V1\][\s\S]*?(?=\n\n\[POLITICA_|\n\n(?=[A-ZÁÉÍÓÚÑ])|$)/g, "").trim();
+    }
+
+    const built = !rest
+      ? ELITE_COMMUNICATION_POLICY
+      : `${ELITE_COMMUNICATION_POLICY}\n\n${rest}`;
+
+    if (Anti?.withAntiHallucinationPolicy) {
+      return Anti.withAntiHallucinationPolicy(built);
+    }
+    return built;
+  }
+
+  /** Post-proceso defensivo: quita relleno y normaliza prosa sin mutilar código */
+  function stripEliteFiller(text = "") {
+    let value = String(text || "").replace(/^\uFEFF/, "").trim();
+    if (!value) return value;
+
+    const lines = value.split("\n");
+    while (lines.length && FILLER_LINE.test(lines[0].trim())) {
+      lines.shift();
+      while (lines.length && !lines[0].trim()) lines.shift();
+    }
+    value = lines.join("\n").trim();
+    value = value.replace(FILLER_OPENING, "").trim();
+    value = value.replace(REDUNDANT_CLOSING, "").trim();
+    value = normalizeSpanishProse(value);
+    return value.replace(/\n{3,}/g, "\n\n").trim();
+  }
+
+  function defaultChatSystemPrompt() {
+    return withEliteCommunicationPolicy([
+      "Eres EDITCOREAI, ingeniero de software senior embebido en el IDE.",
+      "Responde en español correcto (con tildes). No inventes archivos, cambios ni verificaciones.",
+      "No muestres rutas internas de runtime ni nombres de módulos al usuario salvo que aporten a la solución.",
+    ].join(" "));
+  }
+
+  return {
+    POLICY_MARKER,
+    ELITE_COMMUNICATION_POLICY,
+    hasElitePolicy,
+    stripElitePolicyBlocks,
+    withEliteCommunicationPolicy,
+    stripEliteFiller,
+    normalizeSpanishProse,
+    defaultChatSystemPrompt,
+  };
+});

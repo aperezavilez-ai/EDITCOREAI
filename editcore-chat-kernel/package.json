@@ -1,0 +1,6 @@
+{
+  "name": "editcore-chat-kernel",
+  "version": "1.0.0",
+  "description": "Núcleo de chat/agentes EditCore: orquestador único, subagentes, memoria, skills",
+  "main": "index.js"
+}
