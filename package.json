@@ -1,6 +1,6 @@
 {
   "name": "editcoreai",
-  "version": "2.6.7",
+  "version": "2.7.0",
   "description": "EDITCOREAI — IDE con agente (MEAI/APICREDITS)",
   "author": "EDITCOREAI",
   "private": true,
@@ -10,7 +10,7 @@
     "url": "https://github.com/aperezavilez-ai/EDITCOREAI.git"
   },
   "scripts": {
-    "start": "electron .",
+    "start": "node scripts/sync-app.js && electron .",
     "sync": "node scripts/sync-app.js",
     "test": "node --test test/*.test.js runtime/*.test.js",
     "test:e2e": "node --test test/e2e-operator.test.js test/forensic-pipeline-e2e.test.js",
@@ -46,7 +46,7 @@
     "appId": "com.editcoreai.app",
     "productName": "EDITCOREAI",
     "executableName": "EDITCOREAI",
-    "buildVersion": "2.6.6.0",
+    "buildVersion": "2.7.0.0",
     "artifactName": "EDITCOREAI-Setup.${ext}",
     "win": {
       "icon": "assets/logo.ico",
@@ -61,8 +61,9 @@
     },
     "files": [
       "**/*",
+      "app/**/*",
+      "src/**/*",
       "!resources/rtk/**",
-      "!resources/app/**",
       "!resources/app.asar",
       "!test/**",
       "!scripts/**",

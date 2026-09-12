@@ -358,7 +358,7 @@ function formatOperatorConnectionsMemory(snapshot = {}) {
   const links = s.projectLinks;
   if (links && typeof links === "object") {
     lines.push("Publicar SIEMPRE usa estas Conexiones de EDITCOREAI (GitHub/Vercel/Supabase/SSH).");
-    lines.push("EditCore AI (con espacio) es otra app independiente: no reutilizar su bóveda en runtime.");
+    lines.push("Otras instalaciones legacy (carpetas con espacio u otros nombres) son apps distintas: no reutilizar su bóveda.");
     lines.push("Enlaces de ESTE proyecto (.editcore/connections.json):");
     if (links.github) lines.push(`  - GitHub proyecto: ${JSON.stringify(stripSecrets(links.github)).slice(0, 240)}`);
     if (links.vercel) lines.push(`  - Vercel proyecto: ${JSON.stringify(stripSecrets(links.vercel)).slice(0, 240)}`);
@@ -369,7 +369,7 @@ function formatOperatorConnectionsMemory(snapshot = {}) {
   lines.push(
         "Regla: si esta CONECTADO, asume que EDITCOREAI ya tiene las credenciales del operador. "
       + "No pidas pegar tokens. Para mutaciones externas (push/deploy/DB) pide confirmacion del usuario. "
-      + "Al publicar usa SIEMPRE las Conexiones de esta app (GitHub/Vercel/Supabase/SSH), nunca EditCore AI. "
+      + "Al publicar usa SIEMPRE las Conexiones de esta app (GitHub/Vercel/Supabase/SSH), nunca bóvedas de otras instalaciones. "
       + "Al cambiar de proyecto estas cuentas GLOBALES siguen vigentes; solo cambian los enlaces del proyecto activo "
       + "(.editcore/connections.json). "
       + "Puedes usar connection_status / service_read / Detectar desde herramientas; no dependas del badge de la UI.",

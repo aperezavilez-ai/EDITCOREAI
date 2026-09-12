@@ -186,12 +186,13 @@ app.commandLine.appendSwitch("disable-http-cache");
 const editCoreAppData = app.getPath("appData");
 const requestedUserData = String(process.env.EDITCORE_USER_DATA_PATH || "").trim();
 const legacyUserDataPaths = [
+  // Rutas antiguas / paralelas solo para import one-shot. Runtime = %APPDATA%\EDITCOREAI.
   path.join(editCoreAppData, "EDITCOREAI"),
   path.join(editCoreAppData, "EditCore AI"),
   path.join(editCoreAppData, "editcore-ai"),
 ];
 const legacySecureKeyMap = {};
-// Identidad de ESTA carpeta (sin espacio). NO reutilizar "EditCore AI".
+// Identidad canónica de ESTE proyecto. Nunca mezclar con otras instalaciones.
 app.setName("EDITCOREAI");
 app.setPath("userData", requestedUserData || path.join(editCoreAppData, "EDITCOREAI"));
 
@@ -933,7 +934,7 @@ async function inspectorRuntimeHealth() {
     target: "editcore-runtime",
     root,
     packaged: app.isPackaged,
-    version: RUNTIME_VERSION || app.getVersion(),
+    version: RUNTIME_VERSION,
     process: {
       uptimeSeconds: Math.round(process.uptime()),
       memoryMb,
@@ -953,7 +954,41 @@ async function inspectorRuntimeHealth() {
 }
 
 const RUNTIME_VERSION = (() => {
-  try { return String(require("./package.json").version || ""); } catch { return ""; }
+  const isJunk = (v) => {
+    const s = String(v || "").trim();
+    return !s || s === "0.0.0" || s === "0.0.0.0";
+  };
+  const tryRead = (file) => {
+    try {
+      const pkg = JSON.parse(fs.readFileSync(file, "utf8"));
+      const v = String(pkg?.version || "").trim();
+      return isJunk(v) ? "" : v;
+    } catch {
+      return "";
+    }
+  };
+  // 1) package junto a main (asar o cwd)
+  try {
+    const v = String(require("./package.json").version || "").trim();
+    if (!isJunk(v)) return v;
+  } catch { /* continue */ }
+  // 2) overlay / resources/app (fuente sincronizada del EXE)
+  const near = [
+    path.join(__dirname, "package.json"),
+    path.join(process.resourcesPath || "", "app", "package.json"),
+    path.join(process.resourcesPath || "", "ui-overlay", "package.json"),
+    path.join(path.dirname(process.execPath || ""), "resources", "app", "package.json"),
+  ];
+  for (const file of near) {
+    const v = tryRead(file);
+    if (v) return v;
+  }
+  // 3) Electron embebido (ignorar 0.0.0 basura de builds rotos)
+  try {
+    const v = String(app.getVersion?.() || "").trim();
+    if (!isJunk(v)) return v;
+  } catch { /* ignore */ }
+  return "2.7.0";
 })();
 
 function resolveUiIndexHtml() {
@@ -3833,7 +3868,7 @@ async function importLocalConnections(input = {}) {
   const connections = { ...(secure["editcore-connections"] || {}) };
   const imported = { github: false, vercel: false, selfsupabase: false, legacy: Boolean(legacyImport?.imported) };
   const sources = {};
-  if (legacyImport?.imported) sources.legacy = "EditCore AI";
+  if (legacyImport?.imported) sources.legacy = "legacy-appdata";
 
   if (!connections.githubToken || !await connectionWorks("github", connections)) {
     const ghPath = "C:\\Program Files\\GitHub CLI\\gh.exe";
@@ -4938,7 +4973,7 @@ ipcMain.handle("project:publish", async (event, input = {}) => {
       message: mode === "editcore"
         ? "Commit + push de EDITCOREAI con el token GitHub de Conexiones (y ASAR si aplica)?"
         : "Commit + push con GitHub de Conexiones, Supabase si aplica, y deploy Vercel con el token de Conexiones?",
-      detail: `${rootPath}\n\nFuente de credenciales: bóveda EDITCOREAI (independiente de EditCore AI).`,
+      detail: `${rootPath}\n\nFuente de credenciales: bóveda EDITCOREAI (independiente de otras carpetas legacy).`,
     });
     if (result.response !== 1) {
       return { ok: false, cancelled: true, message: "Publicacion cancelada por el usuario." };
@@ -5162,7 +5197,7 @@ ipcMain.handle("app:check-updates", async () => {
     packageJson = require("./package.json");
   } catch {}
   return checkForUpdates({
-    currentVersion: RUNTIME_VERSION || packageJson.version || "",
+    currentVersion: RUNTIME_VERSION || packageJson.version || "2.7.0",
     packageJson,
   });
 });
@@ -5174,7 +5209,7 @@ ipcMain.handle("app:open-external", async (_event, url = "") => {
   return { ok: true };
 });
 
-ipcMain.handle("app:version", () => String(RUNTIME_VERSION || ""));
+ipcMain.handle("app:version", () => String(RUNTIME_VERSION || "2.7.0"));
 
 ipcMain.handle("session:load", () => {
   const { loadUiSession } = require("./runtime/ui-session-store");
@@ -6824,7 +6859,7 @@ ipcMain.handle("agent:run", async (event, input = {}) => {
         inspectorRepairMode
           ? [
             "MODO INSPECTOR SELF-REPAIR:",
-            "- Estas reparando EditCore AI mismo, no un proyecto de usuario. projectRoot es la instalacion de EditCore.",
+            "- Estas reparando EDITCOREAI mismo, no un proyecto de usuario. projectRoot es la instalacion de EditCore.",
             "- Ya existe un checkpoint del host con rollback automatico si la validacion detecta regresiones; trabaja con decision.",
             "- Corrige un problema por vez, verifica con npm test o npm run check y continua con el siguiente.",
             "- No repitas el diagnostico: las alertas ya fueron entregadas en el prompt.",

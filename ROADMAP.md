@@ -43,8 +43,9 @@ EDITCOREAI es la plataforma desktop de pair-programming y agentic coding: orques
 - [x] OODA / soft-fail: `replace_in_file` con tolerancia CRLF + auto-relectura; git auxiliar no detiene sesión; `maxSteps` elevado.
 - [x] Prompts GUÍA LÍDER (hoja de ruta 3–5 pasos) en kernel, intent-orchestrator y agent-core.
 - [x] **Acceso completo**: `permissionMode=full` anula `pendingTask`/`CONFIRM`; fuerza escritura autorizada; prohíbe pedir “procede”.
+- [x] Identidad de producto **EDITCOREAI** (sin espacio); sin mezclar con otras instalaciones legacy.
 - [x] Agent Core v0.2.15 + `agent-core/src/classify.js`.
-- [x] Sync al EXE empaquetado (`EDITCORE AI\resources\app`) cuando se libera.
+- [ ] Empaquetado propio desde esta carpeta EDITCOREAI (no sincronizar a otras apps).
 
 ---
 
@@ -63,7 +64,7 @@ EDITCOREAI es la plataforma desktop de pair-programming y agentic coding: orques
 - [ ] Reactivar UI cuando haya STT Whisper real en el stack del usuario.
 
 ### 5. Empaquetado / release
-- [ ] Pipeline de build del `.exe` desde CI (hoy sync manual a `resources\app`).
+- [ ] Pipeline de build del `.exe` **solo** desde la carpeta `EDITCOREAI` (sin mezclar otras instalaciones).
 - [ ] Provisionar tenant Supabase GafCore `/editcoreai` (health 401).
 
 ---

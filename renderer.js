@@ -808,7 +808,7 @@ async function detectConnections() {
     const ok = (report?.validation || []).filter((item) => item.ok).map((item) => item.account || item.service);
     const legacyOk = report?.legacyImport?.imported || report?.imported?.legacy;
     const parts = [];
-    if (legacyOk) parts.push("EditCore AI");
+    if (legacyOk) parts.push("legacy");
     if (ok.length) parts.push(...ok);
     $("status").textContent = parts.length
       ? `Conexiones detectadas: ${parts.join(", ")}`
@@ -2191,7 +2191,7 @@ function createNewChatThread() {
   renderProjects();
   renderChatTabs();
   $("feed").replaceChildren();
-  append("assistant", "Bienvenido a EditCore. ¿Qué haremos hoy?", null, false);
+  append("assistant", "Bienvenido a EDITCOREAI. ¿Qué haremos hoy?", null, false);
   renderAttachments();
   renderPromptQueue();
   scrollFeedToBottom();
@@ -2212,7 +2212,7 @@ function switchChatThread(chatId) {
   renderChatTabs();
   $("feed").replaceChildren();
   if (!state.history.length) {
-    append("assistant", "Bienvenido a EditCore. ¿Qué haremos hoy?", null, false);
+    append("assistant", "Bienvenido a EDITCOREAI. ¿Qué haremos hoy?", null, false);
   } else {
     for (const message of state.history) {
       append(message.role, message.content, message.usage, false, null, message.images || [], message.documents || []);
@@ -2250,7 +2250,7 @@ function closeChatThread(chatId) {
     renderProjects();
     renderChatTabs();
     $("feed").replaceChildren();
-    append("assistant", "Bienvenido a EditCore. ¿Qué haremos hoy?", null, false);
+    append("assistant", "Bienvenido a EDITCOREAI. ¿Qué haremos hoy?", null, false);
     renderAttachments();
     scrollFeedToBottom();
     refreshUndoAgentRunButton();
@@ -2276,7 +2276,7 @@ function closeChatThread(chatId) {
   renderChatTabs();
   $("feed").replaceChildren();
   if (!state.history.length) {
-    append("assistant", "Bienvenido a EditCore. ¿Qué haremos hoy?", null, false);
+    append("assistant", "Bienvenido a EDITCOREAI. ¿Qué haremos hoy?", null, false);
   } else {
     for (const message of state.history) {
       append(message.role, message.content, message.usage, false, null, message.images || [], message.documents || []);
@@ -2597,7 +2597,7 @@ async function answerAgentWorkflowQuestion(project, question) {
     systemPrompt: [
       (window.EditCoreEliteCommunication?.withEliteCommunicationPolicy
         || ((s) => s))([
-        "Eres EditCore, asistente de desarrollo. Responde en español, claro y directo.",
+        "Eres EDITCOREAI, asistente de desarrollo. Responde en español, claro y directo.",
         "Usa SOLO el contexto verificado abajo. No inventes archivos ni cambios.",
         "Responde la pregunta del usuario sin pedir autorizacion otra vez ni generar un plan nuevo.",
         "PROHIBIDO reabrir exploracion del proyecto ni decir Verificacion completada.",
@@ -2936,7 +2936,7 @@ function renderFeed(options = {}) {
   updateCloseProjectButton();
   if (!state.history.length) {
     if (project.chatCleared) return;
-    append("assistant", "Bienvenido a EditCore. ¿Qué haremos hoy?", null, false);
+    append("assistant", "Bienvenido a EDITCOREAI. ¿Qué haremos hoy?", null, false);
     return;
   }
   for (const message of state.history) append(message.role, message.content, message.usage, false, null, message.images || [], message.documents || []);
@@ -4725,7 +4725,7 @@ async function saveEditCoreChanges() {
       result.message || "Guardado completado.",
       "",
       "- Guardar = commit local.",
-      "- Publicar = push/deploy usando **Conexiones** de esta app (independiente de EditCore AI).",
+      "- Publicar = push/deploy usando **Conexiones** de esta app (bóveda EDITCOREAI; sin mezclar otras instalaciones).",
     ].join("\n");
     inspectorAppend("assistant", text);
     inspectorRemember("assistant", text);
@@ -4874,7 +4874,7 @@ function clearActiveProject() {
   renderProjects();
   renderChatThreadSelect();
   $("feed").replaceChildren();
-  append("assistant", "Bienvenido a EditCore. ¿Qué haremos hoy?", null, false);
+  append("assistant", "Bienvenido a EDITCOREAI. ¿Qué haremos hoy?", null, false);
   renderAttachments();
   renderPromptQueue();
   scrollFeedToBottom();
@@ -5504,7 +5504,7 @@ function append(role, text, usage, scroll = true, elapsedSeconds = null, images 
 
   const header = document.createElement("div");
   header.className = "msg-head";
-  header.textContent = role === "user" ? "Tú" : `EditCore AI${elapsedSeconds === null ? "" : ` ${formatElapsed(elapsedSeconds)}`}`;
+  header.textContent = role === "user" ? "Tú" : `EDITCOREAI${elapsedSeconds === null ? "" : ` ${formatElapsed(elapsedSeconds)}`}`;
 
   const body = document.createElement("div");
   body.className = "msg-body";
@@ -5583,7 +5583,7 @@ function appendThinking(statusText = "Pensando...", isAgent = false, runLabel = 
   item.className = "msg assistant thinking-msg";
   const head = document.createElement("div");
   head.className = "msg-head";
-  head.textContent = runLabel ? `EditCore AI · ${runLabel}` : "EditCore AI";
+  head.textContent = runLabel ? `EDITCOREAI · ${runLabel}` : "EDITCOREAI";
   const body = document.createElement("div");
   body.className = "msg-body msg-thinking";
   const primary = document.createElement("div");
@@ -6542,10 +6542,10 @@ function removeThinking(item = null) {
 
 function startResponseTimer(head) {
   if (!head) return () => 0;
-  head.textContent = "EditCore AI";
+  head.textContent = "EDITCOREAI";
   const startedAt = Date.now();
   return () => {
-    head.textContent = "EditCore AI";
+    head.textContent = "EDITCOREAI";
     return Math.floor((Date.now() - startedAt) / 1000);
   };
 }
@@ -7691,7 +7691,7 @@ async function publishChanges(target = "project") {
     return;
   }
 
-  // Publicar siempre desde la bóveda de Conexiones de ESTA app (EDITCOREAI), no EditCore AI.
+  // Publicar siempre desde la bóveda de Conexiones de ESTA app (EDITCOREAI), no EDITCOREAI.
   const conn = loadJson("editcore-connections", {}) || {};
   if (!conn.githubToken) {
     const msg = "Para publicar hace falta GitHub en Conexiones de EDITCOREAI. Abre Conexiones y autoriza el token.";
@@ -8253,7 +8253,7 @@ async function prepareInspectorCorrection() {
   }
   // Inspector aplica la correccion el mismo: adoptar el proyecto y dejar el
   // prompt escrito obligaba al usuario a reenviarlo a mano y el hallazgo se perdia.
-  const project = projectForRoot(targetRoot, /resources[\\/]app$/i.test(targetRoot) ? "EditCore AI" : "");
+  const project = projectForRoot(targetRoot, /resources[\\/]app$/i.test(targetRoot) ? "EDITCOREAI" : "");
   state.activeProjectId = project.id;
   state.projectRoot = targetRoot;
   project.permissionMode = state.permissionMode;
@@ -8270,7 +8270,7 @@ function appendStreaming() {
   item.id = "streamingMsg";
   const head = document.createElement("div");
   head.className = "msg-head";
-  head.textContent = "EditCore AI";
+  head.textContent = "EDITCOREAI";
   const body = document.createElement("div");
   body.className = "msg-body";
   item.append(head, body);
@@ -10275,7 +10275,7 @@ async function executePromptJob(job) {
           job.chatConversationHint,
           job.analysisContext ? (window.EditCoreEliteCommunication?.withEliteCommunicationPolicy
             || ((s) => s))([
-            "Eres EditCore, un asistente de desarrollo experto. Responde siempre en español, de forma directa y basada en evidencia.",
+            "Eres EDITCOREAI, un asistente de desarrollo experto. Responde siempre en español, de forma directa y basada en evidencia.",
             "Las preguntas informativas y de seguimiento no requieren autorizacion. No afirmes que perdiste contexto si la memoria verificada incluye el proyecto.",
             job.analysisContext,
           ].join("\n\n")) : "",
@@ -12034,7 +12034,7 @@ async function checkAppUpdates() {
     appendMessage("assistant", [
       "## Actualizar EditCore",
       "",
-      "Este boton busca **versiones nuevas de EditCore AI** en GitHub Releases (no actualiza tu proyecto).",
+      "Este boton busca **versiones nuevas de EDITCOREAI** en GitHub Releases (no actualiza tu proyecto).",
       "",
       result?.message || "Todavia no hay canal de releases configurado.",
     ].join("\n"));

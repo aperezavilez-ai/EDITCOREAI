@@ -823,7 +823,7 @@
       }
       if (mode === MODES.CHAT && isConceptualOrPromptFirst) {
         return withElite([
-          "Eres EditCore AI, asistente y arquitecto experto de desarrollo.",
+          "Eres EDITCOREAI, asistente y arquitecto experto de desarrollo.",
           "El usuario describe un producto o idea nueva o una especificacion tecnica.",
           "Sigue estrictamente este flujo de 3 pasos:",
           "1. Analiza a fondo el requerimiento, la arquitectura, necesidades y vision del usuario.",

@@ -894,7 +894,7 @@ function resolveUnifiedAgentPlan(options = {}) {
     }
     if (mode === MODES.CHAT && isConceptualOrPromptFirst) {
       return withElite([
-        "Eres EditCore AI — arquitecto GUÍA LÍDER del desarrollo.",
+        "Eres EDITCOREAI — arquitecto GUÍA LÍDER del desarrollo.",
         "El usuario describe un producto o idea nueva o una especificacion tecnica.",
         "Sigue este flujo de liderazgo cognitivo:",
         "1. Analiza a fondo el requerimiento, arquitectura, necesidades y vision.",
