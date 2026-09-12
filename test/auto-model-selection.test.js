@@ -90,8 +90,60 @@ test("Auto elige modelo ligero para chat simple", () => {
 
 test("isAutoModelSelection detecta la opcion Auto", () => {
   assert.equal(AutoModel.isAutoModelSelection(AutoModel.AUTO_MODEL_SELECTION), true);
+  assert.equal(AutoModel.isAutoModelSelection(AutoModel.autoSelectionValue("meai")), true);
+  assert.equal(AutoModel.isAutoModelSelection(AutoModel.autoSelectionValue("apicredits")), true);
   assert.equal(AutoModel.isAutoModelSelection({ value: AutoModel.AUTO_MODEL_SELECTION, dataset: {} }), true);
   assert.equal(AutoModel.isAutoModelSelection({ value: "x", dataset: { auto: "1" } }), true);
+  assert.equal(AutoModel.parseAutoSelectionScope(AutoModel.autoSelectionValue("meai")), "meai");
+  assert.equal(AutoModel.parseAutoSelectionScope(AutoModel.autoSelectionValue("apicredits")), "apicredits");
+  assert.equal(AutoModel.formatAutoLabel("meai"), "Auto · ME AI");
+  assert.equal(AutoModel.formatAutoLabel("apicredits"), "Auto · APICredits");
+});
+
+test("Auto con scope meai no elige APICredits", () => {
+  const mixed = sixteenModelProfiles();
+  const options = mixed.map((profile) => ({
+    providerKey: profile.providerKey,
+    profileId: profile.id,
+    model: profile.model,
+    modelProviderGroup: String(profile.model).split("/", 1)[0],
+  }));
+  for (let i = 0; i < 12; i += 1) {
+    const profile = AutoModel.resolveAutoModelProfile(options, mixed, {
+      prompt: "procede e implementa el fix",
+      isAgent: true,
+      usesProjectTools: true,
+      planAuthorizedExecution: true,
+      autoProviderScope: "meai",
+      lastAutoResolvedModel: i ? `meai/claude-sonnet-4.6` : "",
+      autoUpstreamUsage: { meai: i, apicredits: i },
+      autoModelUsage: {},
+    });
+    assert.match(profile?.model || "", /^meai\//, `turno ${i}: ${profile?.model}`);
+  }
+});
+
+test("Auto con scope apicredits no elige ME AI", () => {
+  const mixed = sixteenModelProfiles();
+  const options = mixed.map((profile) => ({
+    providerKey: profile.providerKey,
+    profileId: profile.id,
+    model: profile.model,
+    modelProviderGroup: String(profile.model).split("/", 1)[0],
+  }));
+  for (let i = 0; i < 12; i += 1) {
+    const profile = AutoModel.resolveAutoModelProfile(options, mixed, {
+      prompt: "procede e implementa el fix",
+      isAgent: true,
+      usesProjectTools: true,
+      planAuthorizedExecution: true,
+      autoProviderScope: "apicredits",
+      lastAutoResolvedModel: i ? `apicredits/claude-fable-5` : "",
+      autoUpstreamUsage: { meai: i, apicredits: i },
+      autoModelUsage: {},
+    });
+    assert.match(profile?.model || "", /^apicredits\//, `turno ${i}: ${profile?.model}`);
+  }
 });
 
 test("Auto omite APICredits con fallos recientes y elige ME AI", () => {

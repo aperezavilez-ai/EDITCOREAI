@@ -385,12 +385,14 @@ function formatOrchestrationBlock(profile = {}) {
       "- Puedes usar codebase_map, symbol_search, semantic_search, run_parallel_explore, inspect_preview, fetch_url y github_* si aportan evidencia.",
       depthLine,
       profile.analysisMode
-        ? "- MODO ANALISIS: PROHIBIDO write_file/replace_in_file de codigo (espera PROCEDE). ROADMAP.md lo actualiza EditCore solo (indice/tokens); TU no lo reescribas. PROHIBIDO npm run lint/test/build y npx eslint/tsc. SERIAL: 1 tool → narra avance → siguiente. Con evidencia suficiente CIERRA el reporte YA."
+        ? (profile.permissionFull
+          ? "- MODO ANALISIS + Acceso completo: sin write de codigo en esta pasada; al cerrar ofrece 2-4 opciones + **Recomendada** (no exijas PROCEDE). ROADMAP.md lo actualiza EditCore solo. PROHIBIDO npm run lint/test/build. SERIAL: 1 tool → narra → siguiente."
+          : "- MODO ANALISIS: PROHIBIDO write_file/replace_in_file de codigo (espera PROCEDE). ROADMAP.md lo actualiza EditCore solo (indice/tokens); TU no lo reescribas. PROHIBIDO npm run lint/test/build y npx eslint/tsc. SERIAL: 1 tool → narra avance → siguiente. Con evidencia suficiente CIERRA el reporte YA.")
         : "- Si no hay ROADMAP.md: analiza el disco y CREALO con el mapa real. PROHIBIDO pedirlo al usuario. Si ya existe: leelo primero y no reexplores el repo entero. Actualizalo al terminar.",
       "- Cerebro: opcional brain_skill deep-project-analysis o brain_search UNA vez; si la skill no existe, continua con disco sin repetir brain_*.",
       "- No inventes stack ni archivos. Cierra con reporte anclado a herramientas.",
       profile.permissionFull && !profile.analysisMode
-        ? "- Acceso completo: run_command permitido para verificaciones reales."
+        ? "- Acceso completo: run_command permitido para verificaciones reales. No pidas PROCEDE durante la tarea; al final ofrece opciones + Recomendada."
         : "- Sin mutaciones ni run_command de entorno salvo que el pedido lo exija.",
     ].filter(Boolean).join("\n");
   }
@@ -899,9 +901,12 @@ function resolveUnifiedAgentPlan(options = {}) {
         "Sigue este flujo de liderazgo cognitivo:",
         "1. Analiza a fondo el requerimiento, arquitectura, necesidades y vision.",
         "2. Presenta tu propuesta tecnica y una hoja de ruta de 3 a 5 pasos ejecutables.",
-        "3. Informa qué harás primero y solicita autorizacion clara:",
-        "   '¿Deseas que proceda con este plan? Responde **PROCEDE** para iniciar la implementación.'",
-        "NO ejecutes herramientas de disco ni busquedas externas hasta que el usuario autorice con PROCEDE.",
+        permissionFull
+          ? "3. Ofrece 2-3 caminos concretos, marca UNO como **Recomendado** con motivo, y pregunta con cual avanzamos (sin exigir la palabra PROCEDE)."
+          : "3. Informa qué harás primero y solicita autorizacion clara: '¿Deseas que proceda con este plan? Responde **PROCEDE** para iniciar la implementación.'",
+        permissionFull
+          ? "Con Acceso completo puedes preparar el plan; no ejecutes tools de disco hasta que el usuario elija una opcion o diga que implementes."
+          : "NO ejecutes herramientas de disco ni busquedas externas hasta que el usuario autorice con PROCEDE.",
       ].join(" "));
     }
     return "";
@@ -915,6 +920,9 @@ function resolveUnifiedAgentPlan(options = {}) {
       "Ante objetivos de alto nivel: genera hoja de ruta de 3-5 pasos, informa al usuario qué harás y ejecuta autónomamente con tools.",
       "Usa el mapa cognitivo real del proyecto; no inventes carpetas src/ o app/ inexistentes.",
       "OODA: ante fallos leves (oldText, git auxiliar), relee y reintenta sin detener la sesión.",
+      permissionFull
+        ? "Acceso completo: no pidas PROCEDE durante la tarea; al FINAL ofrece opciones + **Recomendada**."
+        : "Al cerrar un analisis puedes pedir PROCEDE solo si hay correcciones comprobables.",
     ].join(" "));
 
   return {

@@ -583,7 +583,16 @@ class EditCoreClaudeAdapter {
       input.maxIterations = Math.min(2, Number(input.maxIterations) || 2);
     }
     const depthProfileRaw = resolveAnalysisDepth(String(input.prompt || ""));
-    input.analysisDepth = depthProfileRaw;
+    const permissionFullEarly = input.permissionMode === "full"
+      || input.runProfile?.permissionFull === true
+      || input.orchestratorPlan?.permissionFull === true
+      || input.fullAccess === true;
+    input.analysisDepth = {
+      ...depthProfileRaw,
+      fullAccess: permissionFullEarly,
+      skipAuthCloser: permissionFullEarly || depthProfileRaw.skipAuthCloser === true,
+      nextOptionsCloser: permissionFullEarly || depthProfileRaw.nextOptionsCloser === true,
+    };
     const instructionConstraints = resolveInstructionConstraints(
       String(input.rawUserPrompt || input.originalGoal || input.prompt || ""),
     );
@@ -3527,6 +3536,15 @@ class EditCoreClaudeAdapter {
     const mergedSignal = input.signal
       ? AbortSignal.any([input.signal, stepController.signal])
       : stepController.signal;
+
+    // Circuit Breaker Step 1: Pre-flight check
+    const cbCheck = this._checkCircuitBreaker();
+    if (!cbCheck.allowed) {
+      const error = new Error(cbCheck.reason);
+      error.code = "CIRCUIT_BREAKER_OPEN";
+      throw error;
+    }
+
     try {
       const callPromise = this.providerApi.call({
         model: input.model,
@@ -3607,6 +3625,75 @@ class EditCoreClaudeAdapter {
   }
 
   /**
+   * Circuit Breaker: check if provider calls are allowed.
+   * Step 1 of 4: Pre-flight state check.
+   * Returns { allowed: boolean, reason?: string }
+   */
+  _checkCircuitBreaker() {
+    const cb = this.circuitBreaker;
+    if (!cb) return { allowed: true };
+
+    if (cb.state === "OPEN") {
+      const elapsed = Date.now() - cb.openedAt;
+      if (elapsed >= cb.cooldownMs) {
+        // Transition to HALF_OPEN: allow one probe call
+        cb.state = "HALF_OPEN";
+        this.logger.log?.(`⚡ [CircuitBreaker] OPEN → HALF_OPEN (cooldown ${Math.round(elapsed / 1000)}s elapsed). Probing provider...`);
+        return { allowed: true };
+      }
+      const remaining = Math.round((cb.cooldownMs - elapsed) / 1000);
+      this.logger.warn?.(`⛔ [CircuitBreaker] OPEN — provider calls blocked. Retry in ${remaining}s. (failures: ${cb.failures}/${cb.threshold})`);
+      return {
+        allowed: false,
+        reason: `Circuit breaker OPEN: provider unreachable. ${cb.failures} consecutive failures. Retry in ${remaining}s.`,
+      };
+    }
+
+    return { allowed: true };
+  }
+
+  /**
+   * Circuit Breaker Step 3: Record success — reset failure count, close circuit.
+   */
+  _recordCircuitBreakerSuccess() {
+    const cb = this.circuitBreaker;
+    if (!cb) return;
+    const prevState = cb.state;
+    cb.failures = 0;
+    cb.lastSuccessAt = Date.now();
+    if (cb.state !== "CLOSED") {
+      cb.state = "CLOSED";
+      this.logger.log?.(`✅ [CircuitBreaker] ${prevState} → CLOSED (provider recovered).`);
+    }
+  }
+
+  /**
+   * Circuit Breaker Step 4: Record failure — increment count, open circuit if threshold hit.
+   */
+  _recordCircuitBreakerFailure(error) {
+    const cb = this.circuitBreaker;
+    if (!cb) return;
+    cb.failures += 1;
+    cb.lastFailureAt = Date.now();
+
+    if (cb.state === "HALF_OPEN") {
+      // Probe failed: reopen immediately
+      cb.state = "OPEN";
+      cb.openedAt = Date.now();
+      this.logger.warn?.(`⛔ [CircuitBreaker] HALF_OPEN → OPEN (probe failed: ${String(error?.message || error).slice(0, 120)}).`);
+      return;
+    }
+
+    if (cb.failures >= cb.threshold && cb.state === "CLOSED") {
+      cb.state = "OPEN";
+      cb.openedAt = Date.now();
+      this.logger.warn?.(`⛔ [CircuitBreaker] CLOSED → OPEN (${cb.failures} failures >= threshold ${cb.threshold}). Blocking provider calls for ${Math.round(cb.cooldownMs / 1000)}s.`);
+    } else {
+      this.logger.warn?.(`⚠️ [CircuitBreaker] Failure ${cb.failures}/${cb.threshold}: ${String(error?.message || error).slice(0, 120)}`);
+    }
+  }
+
+  /**
    * Compacta resultado para ahorrar tokens
    */
   compactResult(result) {
@@ -3661,19 +3748,25 @@ MODO ANALISIS (solo lectura de codigo → informe; EditCore actualiza ROADMAP.md
 ${buildDepthReportGuide(input.analysisDepth || resolveAnalysisDepth(input.prompt || ""))}
 1. EditCore YA precargo evidencia real. Usa esa evidencia; no inventes otra estructura.
 2. Si faltan datos: list_files → read_file de codigo listado.
-3. PROHIBIDO: run_command lint/test/build global, write_file/replace_in_file de codigo (espera PROCEDE).
+${permissionFullNow
+    ? "3. Acceso completo activo: NO digas 'espera PROCEDE' ni 'Cuando autorices'. Tras el informe ofrece opciones + **Recomendada**."
+    : "3. PROHIBIDO: run_command lint/test/build global, write_file/replace_in_file de codigo (espera PROCEDE)."}
 4. PROHIBIDO decir que no tienes list_files/read_file/search_files. Nunca pidas pegar archivos.
 5. ROADMAP.md: NO lo uses como fuente de bugs; NO lo reescribas tu. EditCore lo actualiza mid-run y al cierre como indice (ahorro de tokens). PROHIBIDO cerrar el analisis solo citando ROADMAP.md.
 6. Usa CACHE de lecturas (no repitas). Cerebro OPCIONAL y max UNA vez; si brain_skill falla o ya hay ≥10 lecturas, IGNORALO y cierra el reporte YA.
 7. Cubre funcionalidad, viabilidad, errores, soluciones y evidencia. Sin pegar bloques largos de codigo.
-8. Ultima linea: Cuando autorices procedo con las correcciones (omitela si el usuario dijo que no pidas PROCEDE).
+${permissionFullNow
+    ? "8. Cierre: 2-4 opciones de siguiente accion + marca **Recomendada** con motivo; pregunta con cual avanzamos (sin exigir la palabra PROCEDE)."
+    : "8. Ultima linea: Cuando autorices procedo con las correcciones (omitela si el usuario dijo que no pidas PROCEDE)."}
 9. Si el usuario dijo CONTINUA tras un corte por tiempo: NO reinicies el path. Reutiliza evidencia y cierra el REPORTE FINAL.` : `
 
 MODO EJECUCION (permisos del chat — lectura/escritura segun Acceso):
 ${permissionFullNow ? `CONTRATO ACCESO TOTAL (permissionFullNow=${permissionFullNow}):
 1. El usuario autorizo operar en su PC dentro del proyecto/rutas indicadas.
 2. Usa tools reales YA. PROHIBIDO pedir PowerShell/cmd ni decir que no tienes acceso.
-3. Lee → escribe → verifica. Cierra con evidencia de mutacion.` : "Permisos segun el modo del chat."}
+3. PROHIBIDO preguntar '¿Procedo?', 'Escribe procede' o '¿Deseas que proceda?' ANTES o DURANTE la tarea pedida.
+4. Lee → escribe → verifica. Al FINAL (solo cuando termines): ofrece 2-3 opciones siguientes + **Recomendada** con motivo breve.
+5. Cierra con evidencia de mutacion.` : "Permisos segun el modo del chat."}
 1. ORDEN OBLIGATORIO: leer archivo objetivo → replace_in_file/write_file → verificar.
 2. Si el usuario dijo procede/continua, NO re-analices ni inventes un plan nuevo: corrige con herramientas.
 3. Con Acceso completo el usuario autoriza entrar a su PC en las rutas que el indique (absolutas). Usa list_files/read_file/write_file sobre esas rutas. Nunca digas que no tienes acceso al disco.

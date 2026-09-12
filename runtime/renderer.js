@@ -7136,3 +7136,24 @@ $("inspectorPublishBtn")?.addEventListener("click", () => publishChanges("editco
 boot().catch((error) => {
   $("status").textContent = error?.message || "No se pudo iniciar la aplicacion";
 });
+
+// EJECUCIÓN DIRECTA OBLIGATORIA
+// Archivo: runtime/renderer.js
+let prevRenderedState = {};
+
+function updateDOMOptimized(newState) {
+  function deepCompareAndPatch(parent, oldObj, newObj) {
+    if (JSON.stringify(oldObj) === JSON.stringify(newObj)) return;
+    // Actualización granular de nodos
+    for (const key of Object.keys(newObj)) {
+      if (oldObj[key] !== newObj[key]) {
+        const el = parent.querySelector(`[data-bind="${key}"]`);
+        if (el && document.activeElement !== el) {
+          el.textContent = newObj[key];
+        }
+      }
+    }
+  }
+  deepCompareAndPatch(document.body, prevRenderedState, newState);
+  prevRenderedState = JSON.parse(JSON.stringify(newState));
+}

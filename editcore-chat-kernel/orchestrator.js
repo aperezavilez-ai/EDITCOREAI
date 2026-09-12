@@ -15,6 +15,8 @@ const { callChat } = require("./provider");
 const { capture_preview_screenshot, DEFAULT_PREVIEW_URL } = require("./vision-inspector");
 const globalMemory = require("./global-memory");
 const taskQueue = require("./task-queue");
+const TaskQueue = require("./task-queue");
+const globalTaskQueue = new TaskQueue({ concurrency: 2 });
 
 let intentOrchestrator = null;
 try {
@@ -42,12 +44,25 @@ const LEADERSHIP_PROMPT = [
   "ROL: GUÍA LÍDER (inversión del control).",
   "Ante objetivos de alto nivel o solicitudes generales:",
   "1) Genera tu propia hoja de ruta de 3 a 5 pasos concretos (basada en el mapa cognitivo real).",
-  "2) Informa al usuario en 2-4 líneas qué vas a hacer (sin pedir permiso ni esperar confirmación si ya hay autorización o la tarea es exploratoria/análisis).",
+  "2) Informa al usuario en 2-4 líneas qué vas a hacer (sin pedir permiso ni esperar confirmación si ya hay autorización, Acceso completo, o la tarea es exploratoria/análisis).",
   "3) Ejecuta paso a paso de forma autónoma con tools: Observar → Orientar → Decidir → Actuar.",
   "4) No te detengas por fallos leves (oldText desfasado, git auxiliar, carpetas inexistentes): relee contexto cercano y reintenta.",
+  "5) Al TERMINAR (solo al final): ofrece 2-4 opciones de siguiente acción, marca UNA **Recomendada** con motivo breve, y pregunta con cuál avanzamos.",
   "PROHIBIDO inventar carpetas típicas (src/, app/, lib/) si no aparecen en el MAPA COGNITIVO.",
   "PROHIBIDO devolver solo un plan vacío sin ejecutar tools cuando el modo permite herramientas.",
+  "Con Acceso completo: PROHIBIDO pedir PROCEDE/¿Procedo? durante la tarea pedida.",
 ].join("\n");
+
+function nextStepsClosingText({ fullAccess = false, wroteFiles = false } = {}) {
+  if (wroteFiles) {
+    return fullAccess
+      ? "\n\n**Siguientes pasos sugeridos**\n1. **Recomendada:** verificar el cambio en preview/tests.\n2. Continuar con otra corrección relacionada.\n3. Pedir un análisis más amplio del módulo.\n\n¿Con cuál avanzamos?"
+      : "";
+  }
+  return fullAccess
+    ? "Análisis listo.\n\n**Siguientes pasos sugeridos**\n1. **Recomendada:** aplicar las correcciones concretas detectadas.\n2. Revisar solo un archivo/módulo concreto.\n3. Pedir más detalle de un hallazgo.\n\n¿Con cuál opción avanzamos? (puedes decir el número o describir la acción)."
+    : "Se ha completado la lectura y análisis. Si quieres que aplique cambios en disco, escribe **procede** o elige la corrección concreta.";
+}
 
 function ensureCognitiveMap(projectRoot) {
   if (!projectRoot || !projectMapApi?.ensureProjectMap) return null;
@@ -681,8 +696,11 @@ class ChatOrchestrator {
           if (written.length > 0) {
             textOut = `Se aplicaron las modificaciones correctamente en los archivos:\n` +
               written.map((p) => `- \`${p}\``).join("\n");
+            if (accessFull) textOut += nextStepsClosingText({ fullAccess: true, wroteFiles: true });
           } else if (!textOut || textOut === "Listo.") {
-            textOut = "Se ha completado la lectura y análisis de los archivos especificados. Si deseas que aplique los cambios directamente en el código, por favor confirma escribiendo **procede** o **hazlo**.";
+            textOut = nextStepsClosingText({ fullAccess: accessFull, wroteFiles: false });
+          } else if (accessFull && /procede|¿procedo|cuando autorices/i.test(textOut)) {
+            textOut = `${textOut.replace(/\s*(Cuando autorices procedo[^.]*\.?|Escribe\s+\*{0,2}procede\*{0,2}[^.]*\.?|Si deseas que aplique[^.]*\.?)\s*$/gi, "").trim()}${nextStepsClosingText({ fullAccess: true, wroteFiles: false })}`;
           }
 
           return { kind: decision?.kind || "CHAT", text: textOut, steps };
@@ -789,14 +807,14 @@ class ChatOrchestrator {
             result = await tools.execute(name, args, projectRoot, allowWrite, helpers || {});
           }
 
+          const softRecover = recoverSoftToolFailure(name, args, result, projectRoot);
+
           if (Array.isArray(softRecover.stepsExtra) && softRecover.stepsExtra.length && softRecover.recovered) {
-            // Solo registrar el list_files corregido; evita duplicar el step fallido+recuperado
             for (const extra of softRecover.stepsExtra) {
               steps.push(extra);
               this.session.addStep(extra);
             }
             result = softRecover.payload;
-            // No volver a pushar el intento fallido como step principal
             messages.push({
               role: "tool",
               tool_call_id: call.id,
@@ -808,7 +826,6 @@ class ChatOrchestrator {
             result = softRecover.payload;
           }
 
-          // Fallo leve: permitir reintento con args distintos (no bloquear toolHistory por soft).
           const isSoft = result?.soft === true || result?.ooda === "continue"
             || tools.isSoftToolFailure?.(name, result, args);
           if (isSoft && result?.ok === false) {
@@ -872,8 +889,9 @@ class ChatOrchestrator {
       if (written.length > 0) {
         textOut = `Se aplicaron las modificaciones correctamente en los archivos:\n` +
           written.map((p) => `- \`${p}\``).join("\n");
+        if (accessFull) textOut += nextStepsClosingText({ fullAccess: true, wroteFiles: true });
       } else {
-        textOut = "Se ha completado la lectura y análisis de los archivos especificados. Si deseas que aplique los cambios directamente en el código, por favor confirma escribiendo **procede** o **hazlo**.";
+        textOut = nextStepsClosingText({ fullAccess: accessFull, wroteFiles: false });
       }
 
       return { kind: decision?.kind || "EXECUTE", text: textOut, steps, incomplete: false };

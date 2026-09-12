@@ -665,11 +665,75 @@ function renderAttachments() {
 
 // ── Connections ──────────────────────────────────────────────────────────────
 
+function gafcoreProjectSlugFromRoot(projectRoot = "") {
+  const base = String(projectRoot || "").replace(/[\\/]+$/, "").split(/[\\/]/).filter(Boolean).pop() || "";
+  return base
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 48) || "app";
+}
+
+function isGafcoreSupabaseUrl(url = "") {
+  try {
+    return /supabase\.gafcore\.com$/i.test(new URL(String(url || "").trim()).hostname);
+  } catch {
+    return /supabase\.gafcore\.com/i.test(String(url || ""));
+  }
+}
+
+/** Bóveda global: solo origen de plataforma, nunca /taxidriv ni otro path de app. */
+function vaultSafeSupabaseUrl(url = "") {
+  const raw = String(url || "").trim().replace(/\/+$/, "");
+  if (!raw) return "";
+  try {
+    const parsed = new URL(raw);
+    if (/supabase\.gafcore\.com$/i.test(parsed.hostname)) {
+      return `${parsed.protocol}//${parsed.host}`;
+    }
+  } catch { /* ignore */ }
+  return raw;
+}
+
+/** URL que debe verse en el modal: del proyecto abierto, no de otro (taxidriv, etc.). */
+function displaySupabaseUrlForActiveProject(savedUrl = "", projectRoot = "") {
+  const root = String(projectRoot || "").trim();
+  const raw = String(savedUrl || "").trim().replace(/\/+$/, "");
+  if (!raw) {
+    return root ? `https://supabase.gafcore.com/${gafcoreProjectSlugFromRoot(root)}` : "";
+  }
+  if (!isGafcoreSupabaseUrl(raw)) return raw;
+  const origin = vaultSafeSupabaseUrl(raw) || "https://supabase.gafcore.com";
+  if (!root) return origin;
+  return `${origin}/${gafcoreProjectSlugFromRoot(root)}`;
+}
+
 function loadConnections() {
   const saved = loadJson("editcore-connections", {});
+  const display = { ...saved };
+  display.selfSupabaseUrl = displaySupabaseUrlForActiveProject(
+    saved.selfSupabaseUrl,
+    state.projectRoot || "",
+  );
   document.querySelectorAll("[data-conn]").forEach((input) => {
-    input.value = saved[input.dataset.conn] || "";
+    input.value = display[input.dataset.conn] || "";
   });
+  const urlHint = $("selfSupabaseProjectHint");
+  if (urlHint) {
+    const root = String(state.projectRoot || "").trim();
+    if (root && isGafcoreSupabaseUrl(display.selfSupabaseUrl || "https://supabase.gafcore.com")) {
+      urlHint.textContent = `Proyecto activo: ${gafcoreProjectSlugFromRoot(root)} (no se hereda la URL de otro proyecto).`;
+      urlHint.hidden = false;
+    } else {
+      urlHint.textContent = "";
+      urlHint.hidden = true;
+    }
+  }
+  // Limpiar bóveda si aún guarda path ajeno (/taxidriv, ...).
+  const safeVaultUrl = vaultSafeSupabaseUrl(saved.selfSupabaseUrl);
+  if (safeVaultUrl && safeVaultUrl !== String(saved.selfSupabaseUrl || "").replace(/\/+$/, "")) {
+    void saveSecureJson("editcore-connections", { ...saved, selfSupabaseUrl: safeVaultUrl });
+  }
   renderConnectionStatus();
   renderGatewayProjectStatus().catch(() => undefined);
 }
@@ -720,8 +784,12 @@ async function saveConnections() {
       .replace(/\/api\/openai\/v1$/i, "")
       .replace(/\/rest\/v1$/i, "")
       .replace(/\/+$/, "");
+    // Nunca persistir /taxidriv u otro slug en la bóveda global.
+    data.selfSupabaseUrl = vaultSafeSupabaseUrl(data.selfSupabaseUrl) || data.selfSupabaseUrl;
     const urlInput = document.querySelector("[data-conn='selfSupabaseUrl']");
-    if (urlInput) urlInput.value = data.selfSupabaseUrl;
+    if (urlInput) {
+      urlInput.value = displaySupabaseUrlForActiveProject(data.selfSupabaseUrl, state.projectRoot || "");
+    }
   }
   await saveSecureJson("editcore-connections", data);
   await saveSecureJson("editcore-rtk", { enabled: true });
@@ -1056,12 +1124,14 @@ function renderProviderProfiles() {
           await saveProviderProfiles(profiles);
           renderProviderStatus(key);
           if (AutoModel.isAutoModelSelection($("chatModelSelect")?.selectedOptions?.[0])) {
+            const scope = currentAutoProviderScope();
             await saveSecureJson("editcore-chat-config", {
               ...loadJson("editcore-chat-config", {}),
               remember: true,
               modelSelectionMode: "auto",
+              autoProviderScope: scope,
             });
-            setChatModelOptions([], AutoModel.AUTO_MODEL_SELECTION, "", "");
+            setChatModelOptions([], AutoModel.autoSelectionValue(scope), "", "");
           } else {
             setChatModelOptions([], profile.model, key, profile.id);
             await activateProvider({ ...parent, ...profile, providerKey: key, profileId: profile.id });
@@ -1096,6 +1166,18 @@ function modelsForProvider(key) {
 function verifiedProfileForModel(providerKey, model) {
   const profiles = loadProviderProfiles().filter((profile) => ["active", "enabled"].includes(profile.status));
   return profiles.find((profile) => profile.providerKey === providerKey && profile.model === model);
+}
+
+function currentAutoProviderScope() {
+  const selectedOption = $("chatModelSelect")?.selectedOptions?.[0];
+  if (selectedOption && AutoModel.isAutoModelSelection(selectedOption)) {
+    return AutoModel.parseAutoSelectionScope(selectedOption);
+  }
+  const config = loadJson("editcore-chat-config", {});
+  if (config.modelSelectionMode === "auto") {
+    return AutoModel.normalizeAutoProviderScope(config.autoProviderScope);
+  }
+  return "";
 }
 
 function isChatModelAutoMode() {
@@ -1151,10 +1233,15 @@ async function handleProviderFailureForAuto(message, job = {}) {
 
 function resolveActiveChatProfile(context = {}) {
   if (isChatModelAutoMode()) {
-    // Auto debe rotar sobre TODOS los modelos activos del gateway (no el subset del picker).
+    // Auto debe rotar sobre modelos activos del proveedor (scope ME AI / APICredits).
     const options = verifiedChatModelOptions();
-    return AutoModel.resolveAutoModelProfile(options, loadProviderProfiles(), {
+    const profiles = loadProviderProfiles();
+    return AutoModel.resolveAutoModelProfile(options, profiles, {
       ...context,
+      profiles,
+      autoProviderScope: context.autoProviderScope ?? currentAutoProviderScope(),
+      requireAgentTools: context.requireAgentTools === true
+        || Boolean(context.isAgent && context.usesProjectTools),
       capabilities: cachedModelCapabilities,
       lastAutoResolvedModel: state.lastAutoResolvedModel || "",
       autoUpstreamUsage: state.autoUpstreamUsage || { meai: 0, apicredits: 0 },
@@ -1173,6 +1260,32 @@ function resolveActiveChatProfile(context = {}) {
     && ["active", "enabled"].includes(profile.status)
     && profile.model === selectedModel
   ) || null;
+}
+
+function inferChatModeFromModel(model = "") {
+  const value = String(model || "").toLowerCase();
+  if (/claude/.test(value)) return "claude";
+  if (/gpt|o1|o3|o4/.test(value)) return "gpt";
+  return state.mode === "claude" || state.mode === "gpt" ? state.mode : "claude";
+}
+
+async function syncAutoResolvedProvider(profile, { keepPickerOpen = false } = {}) {
+  if (!profile) return null;
+  const modelFields = PromptJobModel?.resolvePromptJobModelFields
+    ? PromptJobModel.resolvePromptJobModelFields(profile, loadJson("editcore-providers", {}), PROVIDERS)
+    : null;
+  if (!modelFields?.apiKey) return null;
+  rememberAutoResolvedProfile(profile);
+  await activateProvider({
+    baseUrl: modelFields.baseUrl,
+    apiKey: modelFields.apiKey,
+    model: modelFields.model,
+    providerKey: modelFields.providerKey,
+    profileId: modelFields.providerProfileId || profile.id,
+    preserveAuto: true,
+  });
+  if (!keepPickerOpen) setModelPickerOpen(false);
+  return modelFields;
 }
 
 function rememberAutoResolvedProfile(profile) {
@@ -1209,12 +1322,12 @@ function updateModelPickerLabel() {
   const label = $("modelPickerLabel");
   if (!label) return;
   if (isChatModelAutoMode()) {
-    label.textContent = "Auto";
+    label.textContent = AutoModel.formatAutoLabel(currentAutoProviderScope());
     return;
   }
   const option = $("chatModelSelect")?.selectedOptions?.[0];
   if (!option || AutoModel.isAutoModelSelection(option) || option.dataset?.configure === "1") {
-    label.textContent = "Auto";
+    label.textContent = AutoModel.formatAutoLabel(currentAutoProviderScope());
     return;
   }
   label.textContent = AutoModel.formatChatModelLabel(option.dataset.model || "", option.dataset.providerKey || "") || "Modelo";
@@ -1271,6 +1384,12 @@ function applyPermissionMode(mode) {
     $("permissionsBtn").dataset.permissionMode = next;
   }
   syncPermissionMenuSelection(next);
+  window.editcoreAgent?.setPermission?.(next).catch(() => undefined);
+  const project = activeProject();
+  if (project) {
+    project.permissionMode = next;
+    saveProjects();
+  }
   return next;
 }
 
@@ -1295,6 +1414,7 @@ function renderModelPickerMenu() {
   menu.replaceChildren();
   const config = loadJson("editcore-chat-config", {});
   const autoActive = isChatModelAutoMode();
+  const activeAutoScope = currentAutoProviderScope();
   let searchTerm = "";
 
   const searchWrap = document.createElement("div");
@@ -1308,25 +1428,39 @@ function renderModelPickerMenu() {
   searchWrap.appendChild(searchInput);
   menu.appendChild(searchWrap);
 
-  const autoRow = document.createElement("div");
-  autoRow.className = "model-picker-auto-row";
-  const autoCopy = document.createElement("div");
-  autoCopy.className = "model-picker-auto-copy";
-  autoCopy.innerHTML = "<strong>Auto</strong><span>Equilibrio entre calidad y velocidad. Ideal para la mayoría de tareas.</span>";
-  const toggle = document.createElement("button");
-  toggle.type = "button";
-  toggle.className = "model-toggle";
-  toggle.setAttribute("role", "switch");
-  toggle.setAttribute("aria-checked", autoActive ? "true" : "false");
-  toggle.setAttribute("aria-label", "Activar selección automática de modelo");
-  toggle.addEventListener("click", (event) => {
-    event.stopPropagation();
-    setAutoModelEnabled(!isChatModelAutoMode()).then(() => {
-      if (!menu.classList.contains("hidden")) renderModelPickerMenu();
+  const autoScopes = [
+    { scope: "meai", title: "Auto · ME AI", hint: "Solo modelos ME AI Cloud." },
+    { scope: "apicredits", title: "Auto · APICredits", hint: "Solo modelos APICredits." },
+  ];
+  autoScopes.forEach(({ scope, title, hint }) => {
+    const autoRow = document.createElement("div");
+    autoRow.className = "model-picker-auto-row";
+    const autoCopy = document.createElement("div");
+    autoCopy.className = "model-picker-auto-copy";
+    autoCopy.innerHTML = `<strong>${title}</strong><span>${hint}</span>`;
+    const toggle = document.createElement("button");
+    toggle.type = "button";
+    toggle.className = "model-toggle";
+    toggle.setAttribute("role", "switch");
+    const on = autoActive && activeAutoScope === scope;
+    toggle.setAttribute("aria-checked", on ? "true" : "false");
+    toggle.setAttribute("aria-label", `Activar ${title}`);
+    toggle.addEventListener("click", (event) => {
+      event.stopPropagation();
+      const currentlyOn = isChatModelAutoMode() && currentAutoProviderScope() === scope;
+      if (currentlyOn) {
+        setAutoModelEnabled(false).then(() => {
+          if (!menu.classList.contains("hidden")) renderModelPickerMenu();
+        });
+        return;
+      }
+      setAutoModelEnabled(true, scope).then(() => {
+        if (!menu.classList.contains("hidden")) renderModelPickerMenu();
+      });
     });
+    autoRow.append(autoCopy, toggle);
+    menu.appendChild(autoRow);
   });
-  autoRow.append(autoCopy, toggle);
-  menu.appendChild(autoRow);
 
   const paintModels = () => {
     menu.querySelector(".model-picker-scroll")?.remove();
@@ -1442,9 +1576,9 @@ function renderModelPickerMenu() {
   paintModels();
 }
 
-async function setAutoModelEnabled(enabled) {
+async function setAutoModelEnabled(enabled, scope = "") {
   if (enabled) {
-    await selectModelFromPicker({ auto: true, keepOpen: true });
+    await selectModelFromPicker({ auto: true, autoScope: scope, keepOpen: true });
     return;
   }
   const config = loadJson("editcore-chat-config", {});
@@ -1454,6 +1588,7 @@ async function setAutoModelEnabled(enabled) {
       ...config,
       remember: true,
       modelSelectionMode: "manual",
+      autoProviderScope: "",
     });
     state.modelSelectionAuto = false;
     state.lastAutoResolvedModel = "";
@@ -1466,13 +1601,14 @@ async function setAutoModelEnabled(enabled) {
   await selectModelFromPicker({ entry, keepOpen: true });
 }
 
-async function selectModelFromPicker({ auto = false, entry, keepOpen = false } = {}) {
+async function selectModelFromPicker({ auto = false, autoScope = "", entry, keepOpen = false } = {}) {
   if (!keepOpen) setModelPickerOpen(false);
   const select = $("chatModelSelect");
   if (!select) return;
   if (auto) {
-    if (select.value !== AutoModel.AUTO_MODEL_SELECTION) {
-      select.value = AutoModel.AUTO_MODEL_SELECTION;
+    const value = AutoModel.autoSelectionValue(autoScope);
+    if (select.value !== value) {
+      select.value = value;
       select.dispatchEvent(new Event("change", { bubbles: true }));
     } else {
       updateModelPickerLabel();
@@ -1665,7 +1801,7 @@ async function bulkAddProviderProfiles(key) {
 }
 
 async function activateProvider({ baseUrl, apiKey, model, providerKey, profileId, preserveAuto = false }) {
-  const resolvedMode = (model || "").startsWith("claude") ? "claude" : "gpt";
+  const resolvedMode = inferChatModeFromModel(model);
   state.mode = resolvedMode;
   $("baseUrl").value = baseUrl || "";
   $("apiKey").value = apiKey || "";
@@ -1688,6 +1824,9 @@ async function activateProvider({ baseUrl, apiKey, model, providerKey, profileId
     providerKey: providerKey || providerKeyForEndpoint(baseUrl),
     providerProfileId: preserveAuto ? String(loadJson("editcore-chat-config", {}).providerProfileId || profileId || "").trim() : String(profileId || "").trim(),
     modelSelectionMode: preserveAuto ? "auto" : "manual",
+    autoProviderScope: preserveAuto
+      ? AutoModel.normalizeAutoProviderScope(loadJson("editcore-chat-config", {}).autoProviderScope)
+      : "",
   });
   const project = activeProject();
   if (project) {
@@ -1700,7 +1839,7 @@ async function activateProvider({ baseUrl, apiKey, model, providerKey, profileId
   updateModeButtons();
   if (preserveAuto) {
     state.modelSelectionAuto = true;
-    setChatModelOptions([], AutoModel.AUTO_MODEL_SELECTION, "", "");
+    setChatModelOptions([], AutoModel.autoSelectionValue(loadJson("editcore-chat-config", {}).autoProviderScope), "", "");
   } else {
     state.modelSelectionAuto = false;
     state.lastAutoResolvedModel = "";
@@ -4535,6 +4674,7 @@ async function selectProject(id, options = {}) {
   touchRecentProjectRoot(selected.projectRoot);
   state.fileListRelativePath = "";
   updateCloseProjectButton();
+  if ($("connectionsDialog")?.open) loadConnections();
   resetPreview("Iniciando servidor del proyecto...");
   $("projectPathLabel").textContent = selected.projectRoot;
   if (options.render !== false) {
@@ -5472,10 +5612,11 @@ function updateStatus() {
   const providerLabel = getProviderLabel();
   const selectedOption = $("chatModelSelect")?.selectedOptions?.[0];
   if (AutoModel.isAutoModelSelection(selectedOption) || state.modelSelectionAuto) {
+    const scope = currentAutoProviderScope();
     const resolved = state.lastAutoResolvedModel
       ? ` → ${AutoModel.formatChatModelLabel(state.lastAutoResolvedModel, "custom:gafcore-gateway")}`
       : "";
-    $("status").textContent = `${providerLabel} via EditCore · Auto${resolved}`;
+    $("status").textContent = `${providerLabel} via EditCore · ${AutoModel.formatAutoLabel(scope)}${resolved}`;
     updateSavings();
     return;
   }
@@ -8979,7 +9120,11 @@ async function send(event) {
     try {
       response = await answerAgentWorkflowQuestion(project, effectivePrompt);
     } catch (error) {
-      response = `${ProjectAnalysis.workflowQuestionContext(project.agentWorkflow, project.analysisMemory)}\n\nNo pude consultar al modelo: ${error?.message || error}\n\nPara aplicar correcciones escribe **procede**, **autorizo** o **continua**.`;
+      response = `${ProjectAnalysis.workflowQuestionContext(project.agentWorkflow, project.analysisMemory)}\n\nNo pude consultar al modelo: ${error?.message || error}\n\n${
+        state.permissionMode === "full"
+          ? "Con Acceso completo: indica la opción recomendada o la acción que quieres aplicar."
+          : "Para aplicar correcciones escribe **procede**, **autorizo** o **continua**."
+      }`;
     }
     const usage = { local_response: true, confirmed_input_tokens: 0, confirmed_output_tokens: 0 };
     append("assistant", response, usage, true, 0);
@@ -8987,7 +9132,9 @@ async function send(event) {
     notifyVoiceAssistant(response);
     notifyVoiceTurnComplete();
     $("prompt").value = "";
-    $("status").textContent = "Pregunta respondida · escribe procede/autorizo/continua para ejecutar";
+    $("status").textContent = state.permissionMode === "full"
+      ? "Pregunta respondida · elige opción o acción siguiente"
+      : "Pregunta respondida · escribe procede/autorizo/continua para ejecutar";
     updateSendButtonState();
     return;
   }
@@ -9327,10 +9474,11 @@ function buildPromptJob(prompt) {
     directReadOnly: plan.directReadOnly,
     planAuthorizedExecution: plan.planAuthorizedExecution,
     needsAnalysisFirst: plan.needsAnalysisFirst,
+    requireAgentTools: Boolean(plan.isAgent && plan.usesProjectTools),
     hasAttachments: state.attachments.length > 0,
     hasImages: state.attachments.some((item) => /^image\/(png|jpeg|webp)$/i.test(item.mimeType)),
   };
-  const selectedProfile = resolveActiveChatProfile(autoContext);
+  let selectedProfile = resolveActiveChatProfile(autoContext);
   if (!selectedProfile) {
     $("status").textContent = autoMode ? "Auto: no hay modelos verificados" : "Selecciona un modelo verificado";
     alert(autoMode
@@ -9340,7 +9488,7 @@ function buildPromptJob(prompt) {
   }
   rememberAutoResolvedProfile(selectedProfile);
 
-  const modelFields = PromptJobModel?.resolvePromptJobModelFields
+  let modelFields = PromptJobModel?.resolvePromptJobModelFields
     ? PromptJobModel.resolvePromptJobModelFields(selectedProfile, loadJson("editcore-providers", {}), PROVIDERS)
     : null;
   if (!modelFields?.apiKey) {
@@ -9349,6 +9497,35 @@ function buildPromptJob(prompt) {
     alert("Falta configurar la API key para este modelo. Por favor, ingresa tu clave en el menú de Configuración.");
     return null;
   }
+
+  // Auto + agente: si eligió un modelo solo-chat, forzar uno con tools del mismo scope.
+  if (autoMode && plan.isAgent && plan.usesProjectTools
+    && typeof AutoModel.isChatOnlyModel === "function"
+    && AutoModel.isChatOnlyModel(modelFields.model)) {
+    const fallback = findAgentCapableProfile({
+      ...modelFields,
+      providerProfileId: selectedProfile.id,
+    }, `${modelFields.providerKey || modelFields.baseUrl}|${modelFields.model}`);
+    if (fallback?.apiKey) {
+      modelFields = fallback;
+      selectedProfile = loadProviderProfiles().find((item) => item.id === fallback.providerProfileId) || selectedProfile;
+      rememberAutoResolvedProfile(selectedProfile);
+    }
+  }
+
+  // Mantener bóveda/formulario alineados con el modelo que Auto acaba de elegir.
+  if (autoMode) {
+    state.mode = inferChatModeFromModel(modelFields.model);
+    void activateProvider({
+      baseUrl: modelFields.baseUrl,
+      apiKey: modelFields.apiKey,
+      model: modelFields.model,
+      providerKey: modelFields.providerKey,
+      profileId: modelFields.providerProfileId || selectedProfile.id,
+      preserveAuto: true,
+    });
+  }
+
   const {
     model,
     apiKey,
@@ -9379,7 +9556,7 @@ function buildPromptJob(prompt) {
     chatConversationHint: plan.chatConversationHint,
     continueAuthorized,
     autoSelectedModel: autoMode,
-    mode: state.mode,
+    mode: inferChatModeFromModel(model),
     baseUrl,
     apiKey,
     model,
@@ -9407,14 +9584,26 @@ function agentCapabilityKey(job) {
 function findAgentCapableProfile(job, excludeKey = "") {
   const profiles = loadProviderProfiles().filter((item) => ["active", "enabled"].includes(item.status) && item.apiKey);
   const options = visibleChatModelOptions(verifiedChatModelOptions());
+  const scope = isChatModelAutoMode() ? currentAutoProviderScope() : "";
+  const inScope = (entryOrProfile) => {
+    if (!scope) return true;
+    const bucket = typeof AutoModel.entryUpstreamBucket === "function"
+      ? AutoModel.entryUpstreamBucket(entryOrProfile)
+      : String(entryOrProfile?.model || "").split("/")[0]?.toLowerCase();
+    if (bucket === scope) return true;
+    const key = String(entryOrProfile?.providerKey || "").toLowerCase();
+    return key === scope;
+  };
   for (const entry of options) {
+    if (!inScope(entry)) continue;
+    if (typeof AutoModel.isChatOnlyModel === "function" && AutoModel.isChatOnlyModel(entry.model)) continue;
     const key = agentCapabilityKey({ providerKey: entry.providerKey, baseUrl: entry.baseUrl, model: entry.model });
     if (!key || key === excludeKey || key === agentCapabilityKey(job)) continue;
     const cap = agentModelCapabilities.get(key);
     const profile = profiles.find((item) => item.id === entry.profileId && item.model === entry.model);
     if (!profile) continue;
     if (cap?.toolOK === false) continue;
-    if (cap?.toolOK || profile.agentToolOK) {
+    if (cap?.toolOK || profile.agentToolOK || profile.agentToolOK !== false) {
       const modelFields = PromptJobModel?.resolvePromptJobModelFields
         ? PromptJobModel.resolvePromptJobModelFields(profile, loadJson("editcore-providers", {}), PROVIDERS)
         : null;
@@ -9422,7 +9611,9 @@ function findAgentCapableProfile(job, excludeKey = "") {
     }
   }
   for (const profile of profiles) {
-    if (!profile.agentToolOK || profile.model === job.model) continue;
+    if (!inScope(profile)) continue;
+    if (typeof AutoModel.isChatOnlyModel === "function" && AutoModel.isChatOnlyModel(profile.model)) continue;
+    if (profile.agentToolOK === false || profile.model === job.model) continue;
     const key = agentCapabilityKey({ providerKey: profile.providerKey, baseUrl: profile.baseUrl, model: profile.model });
     if (!key || key === excludeKey) continue;
     const modelFields = PromptJobModel?.resolvePromptJobModelFields
@@ -10607,9 +10798,20 @@ const APICREDITS_VERIFIED_MODELS = [
 
 async function ensureDefaultModelSelectionMode() {
   const config = loadJson("editcore-chat-config", {});
-  if (config.modelSelectionMode) return;
+  if (config.modelSelectionMode) {
+    // Migrar Auto legacy sin scope → ME AI (primer proveedor).
+    if (config.modelSelectionMode === "auto" && !Object.prototype.hasOwnProperty.call(config, "autoProviderScope")) {
+      await saveSecureJson("editcore-chat-config", { ...config, remember: true, autoProviderScope: "meai" });
+    }
+    return;
+  }
   if (!verifiedChatModelOptions().length) return;
-  await saveSecureJson("editcore-chat-config", { ...config, remember: true, modelSelectionMode: "auto" });
+  await saveSecureJson("editcore-chat-config", {
+    ...config,
+    remember: true,
+    modelSelectionMode: "auto",
+    autoProviderScope: "meai",
+  });
 }
 
 async function boot() {
@@ -11023,13 +11225,32 @@ function wireComposerControls() {
     }
     if (AutoModel.isAutoModelSelection(option)) {
       const config = loadJson("editcore-chat-config", {});
+      const autoProviderScope = AutoModel.parseAutoSelectionScope(option);
       await saveSecureJson("editcore-chat-config", {
         ...config,
         remember: true,
         modelSelectionMode: "auto",
+        autoProviderScope,
       });
       state.modelSelectionAuto = true;
       state.lastAutoResolvedModel = "";
+      // Al activar Auto, anclar ya un modelo con tools del proveedor (evita chat solo-lectura).
+      const bootProfile = resolveActiveChatProfile({
+        isAgent: true,
+        usesProjectTools: true,
+        requireAgentTools: true,
+        autoProviderScope,
+        planAuthorizedExecution: true,
+      });
+      if (bootProfile) {
+        await syncAutoResolvedProvider(bootProfile, { keepPickerOpen: true });
+      } else {
+        updateModelPickerLabel();
+        updateStatus();
+        $("status").textContent = autoProviderScope
+          ? `Auto · ${AutoModel.AUTO_SCOPE_LABELS[autoProviderScope] || autoProviderScope}: sin modelos verificados con tools`
+          : "Auto: sin modelos verificados con tools";
+      }
       updateModelPickerLabel();
       updateStatus();
       return;
@@ -11816,14 +12037,12 @@ function setChatModelOptions(_models = [], selected = "", selectedProviderKey = 
   }
 
   const config = loadJson("editcore-chat-config", {});
-  const wantAuto = config.modelSelectionMode === "auto" || selected === AutoModel.AUTO_MODEL_SELECTION;
-
-  const autoOption = document.createElement("option");
-  autoOption.value = AutoModel.AUTO_MODEL_SELECTION;
-  autoOption.textContent = "Auto";
-  autoOption.dataset.auto = "1";
-  autoOption.title = "EditCore elige el mejor modelo verificado para cada mensaje";
-  select.appendChild(autoOption);
+  const selectedAutoScope = AutoModel.isAutoModelSelection(selected)
+    ? AutoModel.parseAutoSelectionScope(selected)
+    : (config.modelSelectionMode === "auto" ? AutoModel.normalizeAutoProviderScope(config.autoProviderScope) : null);
+  const wantAuto = selectedAutoScope !== null
+    || config.modelSelectionMode === "auto"
+    || selected === AutoModel.AUTO_MODEL_SELECTION;
 
   // Solo mostrar proveedores con perfiles verificados activos
   const providerKeys = [...new Set(options.map((entry) => entry.modelProviderGroup || entry.providerKey))];
@@ -11832,6 +12051,16 @@ function setChatModelOptions(_models = [], selected = "", selectedProviderKey = 
     if (!providerOptions.length) return;
     const group = document.createElement("optgroup");
     group.label = providerOptions[0]?.providerLabel || PROVIDERS[providerKey]?.label || providerKey;
+    const scopedAuto = AutoModel.normalizeAutoProviderScope(providerKey);
+    if (scopedAuto) {
+      const autoOption = document.createElement("option");
+      autoOption.value = AutoModel.autoSelectionValue(scopedAuto);
+      autoOption.textContent = AutoModel.formatAutoLabel(scopedAuto);
+      autoOption.dataset.auto = "1";
+      autoOption.dataset.autoScope = scopedAuto;
+      autoOption.title = `EDITCOREAI elige automáticamente solo entre modelos ${AutoModel.AUTO_SCOPE_LABELS[scopedAuto] || scopedAuto}`;
+      group.appendChild(autoOption);
+    }
     providerOptions.forEach((entry) => {
       const option = document.createElement("option");
       option.value = `${entry.providerKey}:${entry.profileId || "provider"}:${entry.model}`;
@@ -11854,10 +12083,21 @@ function setChatModelOptions(_models = [], selected = "", selectedProviderKey = 
   select.appendChild(configureOption);
 
   select.disabled = false;
-  select.title = wantAuto ? "Auto: elige el mejor modelo verificado por tarea" : "Modelo activo";
+  select.title = wantAuto ? "Auto: elige el mejor modelo verificado por tarea (según proveedor)" : "Modelo activo";
   delete select.dataset.noVerifiedModel;
   if (wantAuto) {
-    select.value = AutoModel.AUTO_MODEL_SELECTION;
+    const scope = selectedAutoScope === null
+      ? AutoModel.normalizeAutoProviderScope(config.autoProviderScope)
+      : selectedAutoScope;
+    const effectiveScope = scope || "meai";
+    const autoValue = AutoModel.autoSelectionValue(effectiveScope);
+    if (![...select.options].some((option) => option.value === autoValue)) {
+      // Scope pedido sin modelos de ese proveedor: caer al Auto del primer grupo disponible.
+      const fallback = [...select.options].find((option) => option.dataset?.auto === "1");
+      select.value = fallback?.value || select.options[0]?.value || "";
+    } else {
+      select.value = autoValue;
+    }
     state.modelSelectionAuto = true;
     updateModelPickerLabel();
     return;
@@ -11879,7 +12119,7 @@ function syncChatModelFromConfig() {
   const key = project?.provider || config.providerKey || providerKeyForEndpoint(config.baseUrl);
   if (config.modelSelectionMode === "auto") {
     state.modelSelectionAuto = true;
-    setChatModelOptions([], AutoModel.AUTO_MODEL_SELECTION, "", "");
+    setChatModelOptions([], AutoModel.autoSelectionValue(config.autoProviderScope), "", "");
     updateStatus();
     return;
   }

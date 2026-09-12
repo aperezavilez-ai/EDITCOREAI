@@ -6,13 +6,15 @@ const { spawnSync } = require("node:child_process");
 const asar = require("@electron/asar");
 
 const appRoot = path.resolve(__dirname, "..");
-const projectRoot = path.resolve(appRoot, "..", "..");
-const releaseDir = path.resolve(projectRoot, "release-275");
-const expectedReleaseDir = path.join(projectRoot, "release-275");
+// Carpeta padre: D:\PROGRAMAS IA  (hermana de EDITCOREAI)
+const workspaceRoot = path.resolve(appRoot, "..");
+const releaseDir = path.resolve(workspaceRoot, "release-275");
+const expectedReleaseDir = path.join(workspaceRoot, "release-275");
 const installerName = "EDITCOREAI-Setup.exe";
-const bundledRtk = path.resolve(appRoot, "..", "rtk", "rtk.exe");
+const bundledRtk = path.resolve(workspaceRoot, "rtk", "rtk.exe");
+const portableDir = path.join(releaseDir, "EDITCOREAI-portable");
 
-if (releaseDir !== expectedReleaseDir || path.dirname(releaseDir) !== projectRoot) {
+if (releaseDir !== expectedReleaseDir || path.dirname(releaseDir) !== workspaceRoot) {
   throw new Error(`Ruta de release insegura: ${releaseDir}`);
 }
 if (!fs.existsSync(bundledRtk) || !fs.statSync(bundledRtk).isFile()) {
@@ -46,7 +48,6 @@ const appVersion = String(pkg.version || "").trim();
 
 const unpackedDir = path.join(releaseDir, "win-unpacked");
 const unpackedExe = path.join(unpackedDir, "EDITCOREAI.exe");
-const rootExe = path.join(projectRoot, "EDITCOREAI.exe");
 if (!fs.existsSync(unpackedExe)) {
   throw new Error(`No se genero la app portable en ${unpackedDir}.`);
 }
@@ -55,8 +56,7 @@ const archivePath = path.join(unpackedDir, "resources", "app.asar");
 if (!fs.existsSync(archivePath)) throw new Error("El empaquetado no genero resources/app.asar.");
 const uiOverlayPacked = path.join(unpackedDir, "resources", "ui-overlay", "index.html");
 if (!fs.existsSync(uiOverlayPacked)) {
-  // Fallback: copiar desde el repo si electron-builder no empaqueto el overlay.
-  const uiOverlaySrc = path.join(projectRoot, "resources", "ui-overlay");
+  const uiOverlaySrc = path.join(workspaceRoot, "ui-overlay");
   const uiOverlayDest = path.join(unpackedDir, "resources", "ui-overlay");
   if (!fs.existsSync(path.join(uiOverlaySrc, "index.html"))) {
     throw new Error("Falta resources/ui-overlay (UI lean requerida para evitar pantalla en blanco).");
@@ -90,46 +90,47 @@ if (mismatches.length) {
 try {
   spawnSync("taskkill", ["/F", "/IM", "EDITCOREAI.exe"], { stdio: "ignore" });
   spawnSync("taskkill", ["/F", "/IM", "electron.exe"], { stdio: "ignore" });
-} catch {}
+} catch { /* ignore */ }
 
+// Portable limpio (no volcar DLLs a D:\ ni a PROGRAMAS IA).
+fs.mkdirSync(portableDir, { recursive: true });
 for (const entry of fs.readdirSync(unpackedDir, { withFileTypes: true })) {
   const destName = entry.name.toLowerCase() === "electron.exe" ? "EDITCOREAI.exe" : entry.name;
   const src = path.join(unpackedDir, entry.name);
-  const dest = path.join(projectRoot, destName);
-  try {
-    fs.cpSync(src, dest, {
-      recursive: true,
-      force: true,
-    });
-  } catch (error) {
-    console.warn(`[build-windows] No se pudo actualizar ${dest}: ${error.message}`);
-  }
+  const dest = path.join(portableDir, destName);
+  fs.cpSync(src, dest, { recursive: true, force: true });
 }
-
-// Asegurar que no quede ningún ejecutable 'electron.exe' duplicado en la raíz
 try {
-  const orphanRootExe = path.join(projectRoot, "electron.exe");
-  if (fs.existsSync(orphanRootExe)) fs.unlinkSync(orphanRootExe);
-} catch {}
+  const orphanPortable = path.join(portableDir, "electron.exe");
+  if (fs.existsSync(orphanPortable)) fs.unlinkSync(orphanPortable);
+} catch { /* ignore */ }
+
+// Copia del EXE portable junto al proyecto fuente para acceso rapido.
+const projectExe = path.join(appRoot, "EDITCOREAI.exe");
+try {
+  fs.copyFileSync(path.join(portableDir, "EDITCOREAI.exe"), projectExe);
+} catch (error) {
+  console.warn(`[build-windows] No se pudo copiar EXE al proyecto: ${error.message}`);
+}
 
 const installDir = path.join(process.env.LOCALAPPDATA || "", "Programs", "EDITCOREAI");
 if (fs.existsSync(installDir)) {
-  for (const entry of fs.readdirSync(unpackedDir, { withFileTypes: true })) {
-    const destName = entry.name.toLowerCase() === "electron.exe" ? "EDITCOREAI.exe" : entry.name;
-    const src = path.join(unpackedDir, entry.name);
-    const dest = path.join(installDir, destName);
+  for (const entry of fs.readdirSync(portableDir, { withFileTypes: true })) {
+    const src = path.join(portableDir, entry.name);
+    const dest = path.join(installDir, entry.name);
     try {
       fs.cpSync(src, dest, { recursive: true, force: true });
     } catch (error) {
-      console.warn(`[build-windows] No se pudo actualizar en instalacion ${dest}: ${error.message}`);
+      console.warn(`[build-windows] No se pudo actualizar instalacion ${dest}: ${error.message}`);
     }
   }
   try {
     const orphanInstallExe = path.join(installDir, "electron.exe");
     if (fs.existsSync(orphanInstallExe)) fs.unlinkSync(orphanInstallExe);
-  } catch {}
+  } catch { /* ignore */ }
 }
 
 console.log(`Release limpio: ${installerPath}`);
 console.log(`Version empaquetada: ${appVersion}`);
-console.log(`App actualizada: ${rootExe}`);
+console.log(`Portable: ${path.join(portableDir, "EDITCOREAI.exe")}`);
+console.log(`EXE proyecto: ${projectExe}`);

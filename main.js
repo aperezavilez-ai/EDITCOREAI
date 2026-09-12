@@ -3460,6 +3460,18 @@ function readConnections() {
     const parsed = new URL(rawUrl);
     if (/supabase\.gafcore\.com$/i.test(parsed.hostname) && String(parsed.pathname || "").replace(/\/+$/, "")) {
       connections.selfSupabaseUrl = `${parsed.protocol}//${parsed.host}`;
+      // Persistir limpieza para que el modal no vuelva a mostrar taxidriv.
+      try {
+        const secure = readSecureState();
+        const stored = secure["editcore-connections"] && typeof secure["editcore-connections"] === "object"
+          ? { ...secure["editcore-connections"] }
+          : {};
+        if (String(stored.selfSupabaseUrl || "").trim() !== connections.selfSupabaseUrl) {
+          stored.selfSupabaseUrl = connections.selfSupabaseUrl;
+          secure["editcore-connections"] = stored;
+          writeSecureState(secure);
+        }
+      } catch { /* ignore */ }
     }
   } catch { /* ignore */ }
   return connections;

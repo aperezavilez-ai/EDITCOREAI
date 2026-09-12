@@ -9,6 +9,49 @@
   const CAPABILITY_FAIL_TTL_MS = 20 * 60 * 1000;
   const SLOW_MODEL_MS = 90_000;
   const UPSTREAM_ORDER = ["meai", "apicredits"];
+  const AUTO_SCOPE_LABELS = { meai: "ME AI", apicredits: "APICredits" };
+
+  function normalizeAutoProviderScope(scope) {
+    const value = String(scope || "").trim().toLowerCase();
+    if (value === "meai" || value === "apicredits") return value;
+    return "";
+  }
+
+  function autoSelectionValue(scope = "") {
+    const normalized = normalizeAutoProviderScope(scope);
+    return normalized ? `${AUTO_MODEL_SELECTION}:${normalized}` : AUTO_MODEL_SELECTION;
+  }
+
+  function parseAutoSelectionScope(optionOrValue) {
+    if (!optionOrValue) return "";
+    if (typeof optionOrValue === "string") {
+      if (optionOrValue === AUTO_MODEL_SELECTION) return "";
+      if (optionOrValue.startsWith(`${AUTO_MODEL_SELECTION}:`)) {
+        return normalizeAutoProviderScope(optionOrValue.slice(AUTO_MODEL_SELECTION.length + 1));
+      }
+      return normalizeAutoProviderScope(optionOrValue);
+    }
+    if (optionOrValue.dataset?.autoScope) {
+      return normalizeAutoProviderScope(optionOrValue.dataset.autoScope);
+    }
+    return parseAutoSelectionScope(optionOrValue.value);
+  }
+
+  function formatAutoLabel(scope = "") {
+    const normalized = normalizeAutoProviderScope(scope);
+    if (!normalized) return "Auto";
+    return `Auto · ${AUTO_SCOPE_LABELS[normalized] || normalized}`;
+  }
+
+  function entryUpstreamBucket(entry) {
+    const fromModel = autoRotationBucket(entry?.model);
+    if (fromModel) return fromModel;
+    const group = String(entry?.modelProviderGroup || "").toLowerCase();
+    if (group === "meai" || group === "apicredits") return group;
+    const key = String(entry?.providerKey || "").toLowerCase();
+    if (key === "meai" || key === "apicredits") return key;
+    return "";
+  }
 
   // Modelos estables conocidos (fallback si no hay catalogo amplio).
   const AUTO_SAFE_MODEL_PATTERNS = [
@@ -181,8 +224,12 @@
 
   function isAutoModelSelection(optionOrValue) {
     if (!optionOrValue) return false;
-    if (typeof optionOrValue === "string") return optionOrValue === AUTO_MODEL_SELECTION;
-    return optionOrValue.dataset?.auto === "1" || optionOrValue.value === AUTO_MODEL_SELECTION;
+    if (typeof optionOrValue === "string") {
+      return optionOrValue === AUTO_MODEL_SELECTION
+        || optionOrValue.startsWith(`${AUTO_MODEL_SELECTION}:`);
+    }
+    return optionOrValue.dataset?.auto === "1"
+      || isAutoModelSelection(String(optionOrValue.value || ""));
   }
 
   function baseTierScore(model) {
@@ -325,6 +372,9 @@
   }
 
   function preferredAutoBucket(context = {}, list = []) {
+    const scoped = normalizeAutoProviderScope(context.autoProviderScope);
+    if (scoped) return scoped;
+
     const available = availableBuckets(list);
     if (!available.size) return "meai";
 
@@ -352,13 +402,13 @@
   function availableBuckets(list) {
     return new Set(
       (Array.isArray(list) ? list : [])
-        .map((entry) => autoRotationBucket(entry?.model))
+        .map((entry) => entryUpstreamBucket(entry))
         .filter(Boolean)
     );
   }
 
   function entriesForBucket(list, bucket) {
-    return (Array.isArray(list) ? list : []).filter((entry) => autoRotationBucket(entry?.model) === bucket);
+    return (Array.isArray(list) ? list : []).filter((entry) => entryUpstreamBucket(entry) === bucket);
   }
 
   function isAgentExecutionContext(context = {}) {
@@ -431,8 +481,11 @@
 
     const role = classifyAutoTaskRole(context);
     const lanes = ROLE_LANES[role] || ROLE_LANES.analyze;
+    const scoped = normalizeAutoProviderScope(context.autoProviderScope);
     const preferred = preferredAutoBucket(context, source);
-    const order = [preferred, ...UPSTREAM_ORDER.filter((bucket) => bucket !== preferred)];
+    const order = scoped
+      ? [scoped]
+      : [preferred, ...UPSTREAM_ORDER.filter((bucket) => bucket !== preferred)];
     const laneOrder = ["primary", "secondary", "reserve"];
 
     for (const bucket of order) {
@@ -449,6 +502,8 @@
       }
 
       // Si el bucket no tiene ningun carril del rol, no inventar pelea: pasa al otro upstream.
+      // Con scope fijo no cruzamos de proveedor.
+      if (scoped) break;
     }
 
     // Ultimo recurso: least-used global sin modelos prohibidos del rol.
@@ -601,6 +656,12 @@
     return score;
   }
 
+  function needsToolCapableAutoModel(context = {}) {
+    if (context.requireAgentTools === true) return true;
+    if (isAgentExecutionContext(context)) return true;
+    return Boolean(context.isAgent && context.usesProjectTools);
+  }
+
   function resolveAutoModelEntry(options, context = {}) {
     const source = Array.isArray(options) ? options.filter(Boolean) : [];
     if (!source.length) return null;
@@ -611,11 +672,24 @@
       const model = String(entry?.model || "").toLowerCase();
       return !(context.excludeModels || []).map((item) => String(item || "").toLowerCase()).includes(model);
     });
+    const scope = normalizeAutoProviderScope(context.autoProviderScope);
+    if (scope) {
+      list = list.filter((entry) => entryUpstreamBucket(entry) === scope);
+    }
     if (!list.length) return null;
 
-    if (isAgentExecutionContext(context)) {
+    // Agente (analisis o ejecucion) NUNCA debe caer en modelos solo-chat (ej. gpt-5.6-sol).
+    if (needsToolCapableAutoModel(context)) {
       const agentCapable = list.filter((entry) => entrySupportsAgentTools(entry, context.capabilities || {}));
       if (agentCapable.length) list = agentCapable;
+      const toolPreferred = list.filter((entry) => {
+        const profiles = Array.isArray(context.profiles) ? context.profiles : [];
+        const profile = profiles.find((item) => item.id === entry.profileId)
+          || profiles.find((item) => item.providerKey === entry.providerKey && item.model === entry.model);
+        if (profile?.agentToolOK === false) return false;
+        return !isChatOnlyModel(entry?.model);
+      });
+      if (toolPreferred.length) list = toolPreferred;
     }
 
     // Si DeepSeek ya va disparado, sacarlo del pool Auto (salvo que sea lo unico).
@@ -647,14 +721,26 @@
   }
 
   function resolveAutoModelProfile(options, profiles, context = {}) {
-    const entry = resolveAutoModelEntry(options, context);
+    const entry = resolveAutoModelEntry(options, {
+      ...context,
+      profiles: Array.isArray(profiles) ? profiles : context.profiles,
+    });
     if (!entry) return null;
-    return (Array.isArray(profiles) ? profiles : []).find((profile) =>
+    const list = Array.isArray(profiles) ? profiles : [];
+    const active = list.filter((profile) =>
+      ["active", "enabled"].includes(String(profile?.status || "").toLowerCase())
+      && profile?.apiKey
+      && profile?.model
+    );
+    return active.find((profile) =>
       profile.id === entry.profileId
       && profile.providerKey === entry.providerKey
       && profile.model === entry.model
-      && ["active", "enabled"].includes(profile.status)
-      && profile.apiKey
+    ) || active.find((profile) =>
+      profile.providerKey === entry.providerKey
+      && profile.model === entry.model
+    ) || active.find((profile) =>
+      profile.id === entry.profileId
     ) || null;
   }
 
@@ -688,6 +774,7 @@
 
   return {
     AUTO_MODEL_SELECTION,
+    AUTO_SCOPE_LABELS,
     CAPABILITY_FAIL_TTL_MS,
     SLOW_MODEL_MS,
     AUTO_SAFE_MODEL_PATTERNS,
@@ -698,11 +785,19 @@
     ROLE_SCORE_BAND,
     DEEPSEEK_MAX_SHARE,
     DEEPSEEK_USAGE_WEIGHT,
+    normalizeAutoProviderScope,
+    autoSelectionValue,
+    parseAutoSelectionScope,
+    formatAutoLabel,
+    needsToolCapableAutoModel,
+    isAgentExecutionContext,
     isAutoModelSelection,
     gatewayUpstreamGroup,
+    entryUpstreamBucket,
     apicreditsModelFamily,
     modelFamily,
     isDeepseekModel,
+    isChatOnlyModel,
     describeModelDuty,
     autoRotationBucket,
     preferredAutoBucket,

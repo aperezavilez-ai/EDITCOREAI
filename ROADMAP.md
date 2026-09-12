@@ -1,10 +1,10 @@
-# EDITCOREAI — Roadmap & Arquitectura (v2.7.0)
+# EDITCOREAI — Roadmap & Arquitectura (v2.8.0)
 
 EDITCOREAI es la plataforma desktop de pair-programming y agentic coding: orquesta subagentes, ejecuta en disco con evidencia y prioriza co-creación (inspecciona el proyecto y dice qué falta, no pide datos que ya estén en el repo).
 
 ---
 
-## Hitos completados — estado actual (v2.7.0)
+## Hitos completados — estado actual (v2.8.0)
 
 ### 0. Continuidad del chat (v2.6.6)
 - [x] `procede` / `continua` reabren tareas `COMPLETED`/`FAILED`/`CANCELLED`.
@@ -37,19 +37,25 @@ EDITCOREAI es la plataforma desktop de pair-programming y agentic coding: orques
 - [x] Mic gated si no hay Whisper STT.
 - [x] Subagentes en paralelo y thought stream.
 
-### 6. Autonomía cognitiva (v2.7.0) — NUEVO
+### 6. Autonomía cognitiva (v2.7.0)
 - [x] Mapa cognitivo `.editcore/project-map.json` (`runtime/project-map.js`); indexado en `project:index-build`.
 - [x] classify / explorer / tools / orchestrator usan el mapa; sin inventar `src/`/`app/` fantasma.
 - [x] OODA / soft-fail: `replace_in_file` con tolerancia CRLF + auto-relectura; git auxiliar no detiene sesión; `maxSteps` elevado.
 - [x] Prompts GUÍA LÍDER (hoja de ruta 3–5 pasos) en kernel, intent-orchestrator y agent-core.
-- [x] **Acceso completo**: `permissionMode=full` anula `pendingTask`/`CONFIRM`; fuerza escritura autorizada; prohíbe pedir “procede”.
+- [x] **Acceso completo**: `permissionMode=full` anula `pendingTask`/`CONFIRM`; fuerza escritura autorizada; prohíbe pedir “procede” durante la tarea.
 - [x] Identidad de producto **EDITCOREAI** (sin espacio); sin mezclar con otras instalaciones legacy.
 - [x] Agent Core v0.2.15 + `agent-core/src/classify.js`.
-- [ ] Empaquetado propio desde esta carpeta EDITCOREAI (no sincronizar a otras apps).
+
+### 7. Estabilidad + Auto por proveedor (v2.8.0) — NUEVO
+- [x] Preview sin spam GPU (`--disable-gpu` retirado); icono `assets/logo.ico` restaurado.
+- [x] Conexiones: Supabase GafCore muestra URL del **proyecto abierto** (no hereda `/taxidriv`).
+- [x] Auto · ME AI y Auto · APICredits (scope por proveedor); ancla perfil/API con tools (no solo-lectura).
+- [x] Acceso completo: al cerrar análisis/ejecución ofrece opciones + **Recomendada** (sin puerta PROCEDE a mitad).
+- [x] Empaquetado desde esta carpeta EDITCOREAI → `../release-275` (portable + Setup).
 
 ---
 
-## Próximos hitos (v2.7.1+)
+## Próximos hitos (v2.8.1+)
 
 ### 1. Scope-drift watchdog
 - [ ] Rechazar expansiones no pedidas fuera del contrato de la tarea.
@@ -58,18 +64,4 @@ EDITCOREAI es la plataforma desktop de pair-programming y agentic coding: orques
 - [ ] Servidores MCP nativos (GitHub, Supabase, Playwright, Vercel).
 
 ### 3. Preview en vivo
-- [ ] Hot-reload interno al aplicar cambios HTML/CSS/JS/React.
-
-### 4. Voz usable end-to-end
-- [ ] Reactivar UI cuando haya STT Whisper real en el stack del usuario.
-
-### 5. Empaquetado / release
-- [ ] Pipeline de build del `.exe` **solo** desde la carpeta `EDITCOREAI` (sin mezclar otras instalaciones).
-- [ ] Provisionar tenant Supabase GafCore `/editcoreai` (health 401).
-
----
-
-## Gobernanza
-- Aislamiento: `no_supabase` / `gafcore_gateway_only`
-- Validar: `node .project-governance/validate-project-isolation.mjs`
-- Fuente canónica de agente: carpeta `EDITCOREAI` → sync a EXE cuando el usuario lo pida.
+- [ ] Preview estable sin ruido de consola Chromium no relevante.

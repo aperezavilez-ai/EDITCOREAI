@@ -17,6 +17,34 @@ const MUTATION_TOOLS = new Set([
 ]);
 const VERIFICATION_COMMAND = /(^|\s)(test|build|lint|(?:--)?check|typecheck)(\s|$)/i;
 
+/**
+ * Diccionario de mapeo de alias (Tool Aliasing Proxy).
+ * Traduce nombres intuitivos que el LLM suele invocar hacia las herramientas nativas del IDE.
+ */
+const TOOL_ALIASES = {
+  "file_search": "list_files",
+  "file_reader": "read_file",
+  "read_multiple_files": "read_file",
+  "search_code": "search_files",
+  "list_directory": "list_files"
+};
+
+function normalizeToolCall(name, input = {}) {
+  const cleanName = String(name || "").trim();
+  const resolvedName = TOOL_ALIASES[cleanName] || cleanName;
+  
+  // Normalización de argumentos para alias específicos
+  let normalizedInput = input && typeof input === "object" ? { ...input } : {};
+  if (cleanName === "file_reader" && normalizedInput.filepath && !normalizedInput.path) {
+    normalizedInput.path = normalizedInput.filepath;
+  }
+  if (cleanName === "file_search" && normalizedInput.directory && !normalizedInput.path) {
+    normalizedInput.path = normalizedInput.directory;
+  }
+  
+  return { name: resolvedName, input: normalizedInput };
+}
+
 function contentText(content) {
   return typeof content === "string" ? content : JSON.stringify(content);
 }
@@ -124,7 +152,6 @@ function compactChatHistory(history = [], options = {}) {
   let used = 0;
   const recentSlice = history.slice(-maxMessages);
   for (const item of recentSlice.reverse()) {
-    // Preserve multimodal content arrays (e.g. messages with images) without corrupting them
     let content;
     if (Array.isArray(item?.content)) {
       content = item.content.map((part) =>
@@ -225,13 +252,6 @@ function agentTaskRequirements(task, canWrite = true, options = {}) {
       baselineVerificationFirst: /^\s*primero\s+ejecuta\b[^.\n]*(?:test|build|lint|check|typecheck)/i.test(value),
     };
   }
-  // A request can mention future corrections while explicitly asking only for a
-  // report/approval first.  Treating that as a write task forces unnecessary
-  // mutation and verification loops before the user has authorized a change.
-  // BUG 3 FIX: analysisOnly necesitaba dos condiciones. "analiza y dame reporte" sin
-  // verbos de cambio debe ser siempre readonly; "analiza y crea el ROADMAP" debe ser
-  // write porque tiene "crea". hasPlanRequest es ahora suficiente sin ser necesario.
-  // "hallazgos a corregir" / "para corregir" = reporte futuro, NO mutacion ahora.
   const hasAnalysisKeyword = /\b(?:solo\s+)?analiz[ae]|\banalisis\b|\breporte\b|\bdiagnostica\b|\baudita\b|\brevisa\b|\bidentifica\s+errores?\b|\bexplora\b|\binspecciona\b|\bhallazgos?\b/i.test(value);
   const asksReportOnly = /\b(?:dame|genera|quiero|necesito|entrega|redacta)?\s*(?:un\s+)?(?:reporte|diagn[oó]stico|an[aá]lisis|hallazgos)\b/i.test(value)
     || /\bhallazgos?\s+a\s+corregir\b/i.test(value)
@@ -305,13 +325,13 @@ function normalizeMutationPath(value, projectRoot = "") {
 }
 
 function classifyAgentStep(step = {}) {
-  if (MUTATION_TOOLS.has(step.name)) return "mutation";
-  if (step.name === "run_command" && VERIFICATION_COMMAND.test(String(step.input?.command || ""))) return "verification";
-  if (DISCOVERY_TOOLS.has(step.name)) return "discovery";
+  const resolvedName = TOOL_ALIASES[step.name] || step.name;
+  if (MUTATION_TOOLS.has(resolvedName)) return "mutation";
+  if (resolvedName === "run_command" && VERIFICATION_COMMAND.test(String(step.input?.command || ""))) return "verification";
+  if (DISCOVERY_TOOLS.has(resolvedName)) return "discovery";
   return "other";
 }
 
-/** Detecta lint/test/build con exit != 0 devuelto como evidencia (no como fallo de tool). */
 function isFailedDiagnosticResult(result) {
   if (result == null) return false;
   if (typeof result === "object") {
@@ -329,7 +349,6 @@ function isFailedDiagnosticResult(result) {
   return match ? Number(match[1]) !== 0 : false;
 }
 
-/** Verificacion que cuenta para completar: tool ejecutada Y exit 0 / sin fallo diagnostico. */
 function verificationStepPassed(step = {}) {
   if (!step || step.ok === false || step.result?.error) return false;
   if (classifyAgentStep(step) !== "verification") return false;
@@ -338,8 +357,9 @@ function verificationStepPassed(step = {}) {
 }
 
 function agentStepSignature(step = {}) {
-  const name = String(step.name || "");
-  const source = step.input && typeof step.input === "object" ? { ...step.input } : {};
+  const normalized = normalizeToolCall(step.name, step.input);
+  const name = String(normalized.name || "");
+  const source = normalized.input && typeof normalized.input === "object" ? { ...normalized.input } : {};
   const input = Object.fromEntries(Object.entries(source).filter(([, value]) => value !== undefined && value !== null && value !== "" && value !== false));
   if (["project_discovery", "codebase_map"].includes(name)) delete input.path;
   return JSON.stringify({ name, input });
@@ -367,8 +387,6 @@ function prepareResumeSteps(steps = [], maxSteps = 10) {
 function createAgentBudget(task, canWrite = true, resumeSteps = [], session = {}) {
   const requirements = agentTaskRequirements(task, canWrite);
   const usefulResume = prepareResumeSteps(resumeSteps).some((step) => ["mutation", "verification"].includes(classifyAgentStep(step)));
-  // A bounded segment keeps IPC/context compact. It is never a task-wide token
-  // ceiling: the renderer resumes from the durable checkpoint in a fresh segment.
   const fileCount = Math.max(0, Number(session.fileCount) || 0);
   const rootEntryCount = Math.max(0, Number(session.rootEntryCount) || 0);
   const packageSignals = Math.max(0, Number(session.packageSignals) || 0);
@@ -376,13 +394,9 @@ function createAgentBudget(task, canWrite = true, resumeSteps = [], session = {}
   const complexity = Math.min(4, Math.floor(fileCount / 80) + Math.floor(rootEntryCount / 20) + Math.min(2, packageSignals) + Math.min(2, taskSignals));
   const usedProviderCalls = Math.max(0, Number(session.usedProviderCalls) || 0);
   const usedNetInputTokens = Math.max(0, Number(session.usedNetInputTokens) || 0);
-  // Los segmentos son ventanas de trabajo, no techos terminales: el renderer
-  // reanuda desde el checkpoint durable. Aumentados para que las tareas largas
-  // no se corten a la mitad y el usuario tenga que repetir manualmente.
   const segmentProviderCalls = Math.min(80, (requirements.write ? 28 : 24) + complexity * 4 + (requirements.exhaustive ? 16 : 0) - (usefulResume ? 2 : 0));
   const segmentNetInputTokens = (requirements.write ? 80_000 : 60_000) + complexity * 8_000 + (requirements.exhaustive ? 20_000 : 0);
   return {
-    // Calls and tokens are segment limits, never a task-wide terminal budget.
     maxProviderCalls: segmentProviderCalls,
     verificationReserve: requirements.write ? 2 : 1,
     maxNetInputTokens: segmentNetInputTokens,
@@ -435,7 +449,8 @@ const VERIFICATION_NOT_FOUND = /not found|no such file|command not found|ENOENT|
 
 function isShallowReadStep(step, projectRoot = "") {
   if (!step || step.ok === false) return false;
-  if (!["read_file", "list_files", "project_discovery"].includes(String(step.name || ""))) return false;
+  const resolvedName = TOOL_ALIASES[step.name] || step.name;
+  if (!["read_file", "list_files", "project_discovery"].includes(resolvedName)) return false;
   if (step.result?.isDirectory === true) return true;
   const rawPath = String(step.input?.path || step.result?.path || "").trim();
   if (!rawPath || rawPath === "." || rawPath === "./") return true;
@@ -458,31 +473,33 @@ function validateAgentCompletion(task, steps = [], canWrite = true, options = {}
   const allSteps = steps.filter((step) => step);
   const readTools = new Set(["project_discovery", "codebase_map", "symbol_search", "dependency_search", "list_files", "read_file", "search_files", "review_diff"]);
   const writeTools = MUTATION_TOOLS;
-  const hasRead = successful.some((step) => readTools.has(step.name));
-  const hasWrite = successful.some((step) => writeTools.has(step.name));
-  const lastWriteIndex = allSteps.reduce((last, step, index) => writeTools.has(step.name) && step.ok !== false && !step.result?.error ? index : last, -1);
+  
+  const getResolvedName = (s) => TOOL_ALIASES[s.name] || s.name;
+
+  const hasRead = successful.some((step) => readTools.has(getResolvedName(step)));
+  const hasWrite = successful.some((step) => writeTools.has(getResolvedName(step)));
+  const lastWriteIndex = allSteps.reduce((last, step, index) => writeTools.has(getResolvedName(step)) && step.ok !== false && !step.result?.error ? index : last, -1);
   const successfulAfterWrite = lastWriteIndex < 0 ? successful : allSteps.slice(lastWriteIndex + 1).filter((step) => step && step.ok !== false && !step.result?.error);
   const hasVerification = successfulAfterWrite.some((step) => verificationStepPassed(step));
-  const hasVisualInspection = successfulAfterWrite.some((step) => step.name === "inspect_preview"
-    || (step.name === "read_file" && requirements.targetFiles.length)
-    || (step.name === "run_command" && /(?:build|lint|dev|preview|check)/i.test(String(step.input?.command || "")) && verificationStepPassed(step)));
+  const hasVisualInspection = successfulAfterWrite.some((step) => getResolvedName(step) === "inspect_preview"
+    || (getResolvedName(step) === "read_file" && requirements.targetFiles.length)
+    || (getResolvedName(step) === "run_command" && /(?:build|lint|dev|preview|check)/i.test(String(step.input?.command || "")) && verificationStepPassed(step)));
+  
   const analysisEvidenceTools = new Set(["symbol_search", "dependency_search", "read_file", "search_files", "review_diff", "run_command"]);
   const projectRoot = options.projectRoot || "";
   const meaningfulSuccessful = successful.filter((step) => !isShallowReadStep(step, projectRoot));
   const analysisEvidence = new Set(meaningfulSuccessful
-    .filter((step) => analysisEvidenceTools.has(step.name))
+    .filter((step) => analysisEvidenceTools.has(getResolvedName(step)))
     .map(agentStepSignature)).size;
-  const hasRealFileRead = meaningfulSuccessful.some((step) => step.name === "read_file" && step.result?.isDirectory !== true);
+  const hasRealFileRead = meaningfulSuccessful.some((step) => getResolvedName(step) === "read_file" && step.result?.isDirectory !== true);
   const changedFiles = new Set(successful
-    .filter((step) => writeTools.has(step.name))
+    .filter((step) => writeTools.has(getResolvedName(step)))
     .map((step) => normalizeMutationPath(step.input?.path, projectRoot))
     .filter(Boolean));
   const missingTargetFiles = requirements.targetFiles.filter((file) => !changedFiles.has(normalizeMutationPath(file, projectRoot)));
   const successfulCommands = new Set(successful.filter((step) => verificationStepPassed(step)).map((step) => String(step.input?.command || "").trim().toLowerCase()));
   const missingVerificationCommands = requirements.verificationCommands.filter((command) => !successfulCommands.has(command));
-  // Accept verification as "attempted" if the agent tried a verify command but it failed
-  // because the project has no test/build/lint scripts configured yet.
-  // Un lint/test con exit != 0 NO cuenta como verificacion pasada (solo como intento fallido).
+  
   const verificationAttempted = !hasVerification && allSteps.slice(Math.max(0, lastWriteIndex + 1)).some((step) => {
     if (classifyAgentStep(step) !== "verification") return false;
     if (isFailedDiagnosticResult(step.result)) return false;
@@ -513,7 +530,7 @@ function validateAgentCompletion(task, steps = [], canWrite = true, options = {}
   if (options.analysisMode === true && !options.planAuthorized && !hasRealFileRead) {
     return { ok: false, reason: "El analisis no puede terminar leyendo solo la carpeta raiz. Usa read_file con archivos concretos (package.json, componentes, servicios)." };
   }
-  const realFileReads = meaningfulSuccessful.filter((step) => step.name === "read_file" && step.result?.isDirectory !== true).length;
+  const realFileReads = meaningfulSuccessful.filter((step) => getResolvedName(step) === "read_file" && step.result?.isDirectory !== true).length;
   let analysisTargetsSatisfied = false;
   if (options.analysisMode === true && !options.planAuthorized) {
     try {
@@ -562,6 +579,8 @@ function validateAgentCompletion(task, steps = [], canWrite = true, options = {}
 
 module.exports = {
   GENERATED_PROJECT_DIRS,
+  TOOL_ALIASES,
+  normalizeToolCall,
   boundToolResult,
   calculateAgentNetInputTokens,
   classifyAgentStep,

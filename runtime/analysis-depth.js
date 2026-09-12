@@ -191,6 +191,19 @@ function buildDepthReportGuide(depthProfile = {}) {
       "## Evidencia",
       "## Cómo lo corregiré",
     ];
+  const nextOptionsCloser = depthProfile.skipAuthCloser === true
+    || depthProfile.fullAccess === true
+    || depthProfile.nextOptionsCloser === true;
+  const closer = nextOptionsCloser
+    ? [
+      "CIERRE (Acceso completo / sin puerta PROCEDE):",
+      "1) Resume hallazgos en 3-6 lineas claras.",
+      "2) Ofrece 2-4 OPCIONES DE SIGUIENTE ACCION numeradas y concretas (que se puede hacer YA).",
+      "3) Marca UNA como **Recomendada** y explica por que en 1-2 frases.",
+      "4) Pregunta con cual opcion avanzamos (sin exigir la palabra PROCEDE).",
+      "PROHIBIDO cerrar solo con: 'Cuando autorices procedo', 'Escribe procede', '¿Procedo?'.",
+    ].join("\n")
+    : "Si HAY correcciones comprobables: ultima linea exacta `Cuando autorices procedo con las correcciones.` Si NO hay: `Sin correcciones comprobables pendientes. No se solicita PROCEDE.`";
   return [
     `PROFUNDIDAD DETECTADA: ${label} (${depthProfile.depth || "standard"}).`,
     depthProfile.orchestrationHint || "",
@@ -210,9 +223,7 @@ function buildDepthReportGuide(depthProfile = {}) {
     ...sections.map((s) => `- ${s}`),
     "- En \"Qué falta para que funcione\": SOLO gaps leidos del disco (package.json, .env.example). Sin inventar Docker/workers si no hay evidencia.",
     "- Tras las secciones: recomienda SOLO correcciones con path+evidencia real; si no hay, no inventes.",
-    depthProfile.skipAuthCloser === true
-      ? "No pidas PROCEDE si el usuario indico que no lo haga; cierra con la recomendacion concreta."
-      : "Si HAY correcciones comprobables: ultima linea exacta `Cuando autorices procedo con las correcciones.` Si NO hay: `Sin correcciones comprobables pendientes. No se solicita PROCEDE.`",
+    closer,
   ].filter(Boolean).join("\n");
 }
 

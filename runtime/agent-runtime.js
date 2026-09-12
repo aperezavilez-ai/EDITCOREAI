@@ -1,8 +1,5 @@
 "use strict";
 
-// ============================================
-// CLAUDE CODE LOGIC - Integrado directamente
-// ============================================
 const { ActionRegistry } = require("./action-registry");
 const { SmartRetry, createCommonStrategies } = require("./smart-retry");
 
@@ -12,22 +9,16 @@ const KEEP_RECENT_PAIRS = 4;
 const PROVIDER_REQUEST_TIMEOUT_MS = 180_000;
 const DEFAULT_MAX_DUPLICATE_BLOCKS = 3;
 
-// ============================================
-// CLAUDE CODE: Configuración de prevención de loops
-// ============================================
 const CLAUDE_CONFIG = {
-  MAX_LOOP_WINDOW: 5,              // Ventana para detectar loops
-  MAX_IDENTICAL_ACTIONS: 2,        // Máximo de acciones idénticas
-  MAX_FAILED_RETRIES: 3,           // Máximo de reintentos fallidos
-  TOKEN_WARNING_THRESHOLD: 0.7,   // 70%
-  TOKEN_CRITICAL_THRESHOLD: 0.9,  // 90%
-  ACTION_CACHE_TTL: 3600000,      // 1 hora
+  MAX_LOOP_WINDOW: 5,
+  MAX_IDENTICAL_ACTIONS: 2,
+  MAX_FAILED_RETRIES: 3,
+  TOKEN_WARNING_THRESHOLD: 0.7,
+  TOKEN_CRITICAL_THRESHOLD: 0.9,
+  ACTION_CACHE_TTL: 3600000,
   MAX_CACHE_ENTRIES: 1000,
 };
 
-// ============================================
-// CLAUDE CODE: Instancias globales
-// ============================================
 let actionRegistry = null;
 let smartRetry = null;
 
@@ -54,41 +45,27 @@ function getSmartRetry() {
 
 const MUTATION_TOOLS = new Set(["write_file", "replace_in_file", "create_project", "service_write"]);
 
-// ============================================
-// CLAUDE CODE: Detección de loops mejorada
-// ============================================
 function detectLoop(steps) {
   if (steps.length < CLAUDE_CONFIG.MAX_LOOP_WINDOW * 2) {
     return false;
   }
-
   const recentActions = steps.slice(-CLAUDE_CONFIG.MAX_LOOP_WINDOW);
   const previousActions = steps.slice(-CLAUDE_CONFIG.MAX_LOOP_WINDOW * 2, -CLAUDE_CONFIG.MAX_LOOP_WINDOW);
-
-  // Comparar secuencias de nombres de acciones
-  const recentSig = recentActions.map(s => s.name).join(",");
-  const previousSig = previousActions.map(s => s.name).join(",");
-
+  const recentSig = recentActions.map((s) => s.name).join(",");
+  const previousSig = previousActions.map((s) => s.name).join(",");
   if (recentSig === previousSig && recentSig) {
     console.warn("🔄 [Claude Code] Loop detectado: misma secuencia de acciones");
     return true;
   }
-
   return false;
 }
 
-// ============================================
-// CLAUDE CODE: Validación preventiva
-// ============================================
 function wasActionExecuted(action, steps) {
   const registry = getActionRegistry();
-
-  // Primero verificar cache del ActionRegistry
   if (registry.wasExecuted(action)) {
     console.log(`⚡ [Claude Code] Acción ya ejecutada (cache): ${action.name}`);
     return true;
   }
-
   return false;
 }
 
@@ -96,8 +73,6 @@ function stepSignature(name, args) {
   return JSON.stringify({ name: String(name || ""), input: args && typeof args === "object" ? args : {} });
 }
 
-// Combina el signal del run con un timeout propio para que ninguna llamada
-// quede colgada indefinidamente.
 function requestSignalFor(runSignal, requestController) {
   const signals = [AbortSignal.timeout(PROVIDER_REQUEST_TIMEOUT_MS)];
   if (runSignal) signals.push(runSignal);
@@ -124,17 +99,13 @@ function compactStepHistory(messages, steps) {
   const oldStepsCount = totalSteps - KEEP_RECENT_PAIRS;
   if (oldStepsCount <= 0) return messages;
 
-  // Keep system + user initial messages, then find where step messages start
   const head = messages.slice(0, 2);
-  // Each step contributes 2-3 messages (assistant+tool, plus optional error)
-  // To be safe, we reconstruct by keeping only the tail instead of trying to slice exactly
   const recentMessages = [];
   let stepsSeen = 0;
 
   for (let i = messages.length - 1; i >= 2; i--) {
     const msg = messages[i];
     recentMessages.unshift(msg);
-    // Count assistant messages with tool_calls as step boundaries
     if (msg.role === "assistant" && msg.tool_calls) {
       stepsSeen++;
       if (stepsSeen >= KEEP_RECENT_PAIRS) break;
@@ -151,7 +122,6 @@ function compactStepHistory(messages, steps) {
   return [...head, summaryMsg, ...recentMessages];
 }
 
-// Detect whether a provider error means it doesn't support tool/function calling at all
 function isToolsUnsupportedError(err) {
   const msg = String(err?.message || err).toLowerCase();
   return (
@@ -172,8 +142,12 @@ class AgentRuntime {
     const messages = [
       { role: "system", content: input.systemPrompt || "Completa la tarea usando las herramientas disponibles." },
     ];
-    const userText = `${await this.context(input)}\n\n${input.prompt || ""}`.trim();
+    // IMPORTANT FIX: Inyecta explícitamente el directorio de trabajo actual (process.cwd()) 
+    // en el contexto del usuario para asegurar que el LLM sepa en todo momento cuál es la raíz válida.
+    const sysContext = `Directorio raíz de trabajo actual: ${process.cwd().replace(/\\/g, "/")}\n\n`;
+    const userText = `${sysContext}${await this.context(input)}\n\n${input.prompt || ""}`.trim();
     const userImages = Array.isArray(input.images) ? input.images.filter((img) => img?.dataUrl) : [];
+    
     if (userImages.length > 0) {
       messages.push({ role: "user", content: [
         { type: "text", text: userText },
@@ -204,30 +178,25 @@ class AgentRuntime {
         provider_calls: 1,
       });
     };
+    
     const totalUsage = () => {
       const totals = usageRows.reduce((total, row) => {
         for (const [key, value] of Object.entries(row)) total[key] = Number(total[key] || 0) + Number(value || 0);
         return total;
       }, { model: input.model || "" });
-      // Tokens netos de entrada: lo realmente facturado descontando cache del proveedor.
       totals.net_input_tokens_estimate = usageRows.reduce((sum, row) => {
         const billed = Number(row.confirmed_input_tokens || row.estimated_input_tokens || 0);
         return sum + Math.max(0, billed - Number(row.provider_cache_read_tokens || 0));
       }, 0);
       return totals;
     };
-    // Techo de contexto: corta la ejecucion cuando el consumo neto de entrada
-    // alcanza el presupuesto, en vez de seguir hasta agotar maxSteps.
+    
     const maxNetInputTokens = Math.max(0, Number(input.maxNetInputTokens) || 0);
-
-    // Firmas de pasos ya ejecutados para frenar bucles identicos.
     const signatureCounts = new Map();
     const maxDuplicateBlocks = Math.max(1, Number(input.maxDuplicateBlocks) || DEFAULT_MAX_DUPLICATE_BLOCKS);
     let blockedDuplicates = 0;
 
     for (let index = 0; index < maxSteps; index += 1) {
-      // Direccion en caliente: el usuario puede inyectar instrucciones mientras
-      // el agente trabaja. Se drena la cola antes de la siguiente llamada.
       if (Array.isArray(input.steering) && input.steering.length) {
         const pending = input.steering.splice(0, input.steering.length);
         for (const direction of pending) {
@@ -241,11 +210,11 @@ class AgentRuntime {
 
       const sendTools = callMode !== "none" ? this.dispatcher.definitions() : [];
       const outgoingMessages = truncateLargeResults(compactStepHistory(messages, steps));
-      // Controller por peticion para que agent:steer pueda redirigir la llamada en vuelo.
       const requestController = new AbortController();
       if (typeof input.onRequestController === "function") input.onRequestController(requestController);
       const signal = requestSignalFor(input.signal, requestController);
       let result;
+      
       try {
         result = await this.aiCore.complete({
           provider: input.provider,
@@ -256,8 +225,6 @@ class AgentRuntime {
           signal,
         });
       } catch (err) {
-        // Una redireccion del usuario no es un fallo: se reintenta el paso con la
-        // instruccion nueva ya en el historial.
         if (isSteerAbort(err)) continue;
 
         if ([429, 500, 502, 503, 504].includes(err?.status) ||
@@ -287,7 +254,6 @@ class AgentRuntime {
 
       recordUsage(result.usage, outgoingMessages, result.text);
 
-      // A context boundary is a durable segment yield, not task failure.
       const usageTotals = totalUsage();
       if (maxNetInputTokens && usageTotals.net_input_tokens_estimate >= maxNetInputTokens) {
         return {
@@ -325,11 +291,9 @@ class AgentRuntime {
 
       if (!fn) return { ok: true, text: result.text, steps, usage: totalUsage() };
 
-      // Freno de llamadas duplicadas: repetir la misma herramienta con los mismos
-      // argumentos no aporta informacion nueva y consume pasos y tokens.
       const signature = stepSignature(fn.name, args);
       const seenCount = signatureCounts.get(signature) || 0;
-      // Las mutaciones no se bloquean: reescribir un archivo puede ser legitimo.
+      
       if (seenCount >= maxDuplicateBlocks && !MUTATION_TOOLS.has(fn.name)) {
         blockedDuplicates += 1;
         messages.push({ role: "assistant", content: result.text || "" });
@@ -347,7 +311,11 @@ class AgentRuntime {
       }
       signatureCounts.set(signature, seenCount + 1);
 
-      const executed = await this.dispatcher.dispatch(fn.name, args, input.context || {});
+      // IMPORTANT FIX: Inyectamos explicitamente process.cwd() en el action context
+      // para que el dispatcher sepa dónde buscar las carpetas físicamente.
+      const actionContext = { ...input.context, rootPath: process.cwd() };
+      const executed = await this.dispatcher.dispatch(fn.name, args, actionContext);
+      
       const step = { index, name: fn.name, input: args, ...executed };
       steps.push(step);
       if (typeof input.onProgress === "function") input.onProgress(step);

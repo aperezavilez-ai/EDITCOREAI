@@ -107,7 +107,18 @@ function resolveInsideForWrite(rootPath, relativePath = "") {
 
 function resolveInside(rootPath, relativePath = "") {
   const root = assertProjectRoot(rootPath);
-  const target = normalizeDriveLetter(path.resolve(root, relativePath || "."));
+  let cleanRel = String(relativePath || ".").trim().replace(/\\/g, "/").replace(/^\/+/, "");
+
+  // Mapeo inteligente y transparente: si el proyecto no tiene físicamente las carpetas 'app' o 'src' 
+  // en la raíz pero el agente las solicita, redirigimos al contenido correspondiente en la raíz.
+  if (!fs.existsSync(path.join(root, "app")) && (cleanRel.startsWith("app/") || cleanRel === "app")) {
+    cleanRel = cleanRel.replace(/^app\/?/, "");
+  }
+  if (!fs.existsSync(path.join(root, "src")) && (cleanRel.startsWith("src/") || cleanRel === "src")) {
+    cleanRel = cleanRel.replace(/^src\/?/, "");
+  }
+
+  const target = normalizeDriveLetter(path.resolve(root, cleanRel || "."));
   const relative = path.relative(root, target);
   if (relative.startsWith("..") || path.isAbsolute(relative)) throw new Error("Ruta fuera del proyecto.");
   let existing = target;
@@ -163,7 +174,6 @@ function extractAuthorizedPaths(text = "") {
   ];
   const trimPathProse = (value) => {
     let cleaned = String(value || "").trim().replace(/[.,;:)\]}>]+$/g, "");
-    // No comer prosa: "D:\PROGRAMAS IA y dime errores" → "D:\PROGRAMAS IA"
     cleaned = cleaned.replace(/\s+(?:y|e|o|u|and|or|que|para|por|con|sin|sobre|desde|hasta|cuando|como|porque|dime|analiza|audita|listar?|enlista(?:r|me)?|abre|abrir|cierra|cerrar|revisa|corrige|implementa|crea|modifica)\b[\s\S]*$/i, "");
     return cleaned.trim().replace(/[.,;:)\]}>]+$/g, "");
   };
@@ -273,11 +283,17 @@ function resolveAccessibleTarget(primaryRoot, maybePath = "", options = {}) {
   } else if (path.isAbsolute(raw)) {
     absolute = normalizeDriveLetter(raw);
   } else {
-    absolute = normalizeDriveLetter(path.resolve(primary, raw));
+    let cleanRel = raw.replace(/\\/g, "/").replace(/^\/+/, "");
+    if (!fs.existsSync(path.join(primary, "app")) && (cleanRel.startsWith("app/") || cleanRel === "app")) {
+      cleanRel = cleanRel.replace(/^app\/?/, "");
+    }
+    if (!fs.existsSync(path.join(primary, "src")) && (cleanRel.startsWith("src/") || cleanRel === "src")) {
+      cleanRel = cleanRel.replace(/^src\/?/, "");
+    }
+    absolute = normalizeDriveLetter(path.resolve(primary, cleanRel));
   }
 
   // Acceso completo + ruta absoluta solo si ya esta autorizada (prompt del usuario).
-  // No ampliar a cualquier ruta inventada por el modelo.
   if (options.grantAbsoluteOnFull === true && path.isAbsolute(raw)) {
     const granted = resolveAuthorizedRoot(absolute);
     if (granted && !roots.some((item) => item.toLowerCase() === granted.toLowerCase())) {

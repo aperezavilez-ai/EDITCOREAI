@@ -394,7 +394,7 @@
           <header class="dlg-head">
             <div>
               <h2>Conexiones</h2>
-              <p>Boveda del operador (GitHub, Vercel, Supabase, SSH). El agente las usa desde el chat; al cambiar de proyecto no se reinician.</p>
+              <p>GitHub, Vercel y SSH son de la bóveda (compartidos). Supabase GafCore usa la URL del <strong>proyecto abierto</strong> (carpeta activa), no la de otro proyecto.</p>
             </div>
             <button id="closeConnectionsBtn" type="button" class="dlg-close">✕</button>
           </header>
@@ -428,7 +428,7 @@
               <div class="conn-section">
               <div class="conn-section-title">Supabase propio <span class="conn-status" data-service="selfsupabase">sin conectar</span></div>
               <div class="conn-grid">
-                <div class="conn-field"><span>URL</span><input data-conn="selfSupabaseUrl" placeholder="https://tu-proyecto.supabase.co" /></div>
+                <div class="conn-field"><span>URL</span><input data-conn="selfSupabaseUrl" placeholder="https://supabase.gafcore.com/tu-proyecto" /><small id="selfSupabaseProjectHint" hidden style="display:block;margin-top:4px;opacity:.75"></small></div>
                 <div class="conn-field"><span>API Key</span><input data-conn="selfSupabaseKey" type="password" /></div>
               </div>
               <div class="conn-grid" style="margin-top:8px">
