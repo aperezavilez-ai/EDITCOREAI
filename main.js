@@ -1,11 +1,7 @@
 const { app, BrowserWindow, ipcMain, dialog, Menu, shell, safeStorage, session, clipboard } = require("electron");
-// GPU off lo antes posible: evita cuelgues en new BrowserWindow en algunos drivers.
+// No forzar --disable-gpu: genera ruido ContextResult::kFatalFailure y degrada estabilidad.
 try {
-  app.disableHardwareAcceleration();
-  app.commandLine.appendSwitch("disable-gpu");
-  app.commandLine.appendSwitch("disable-gpu-compositing");
-  app.commandLine.appendSwitch("disable-software-rasterizer");
-  app.commandLine.appendSwitch("in-process-gpu");
+  app.setName("EDITCOREAI");
 } catch {
   // ignore
 }
@@ -1074,10 +1070,38 @@ function createWindow(options = {}) {
   const windowId = String(options.windowId || crypto.randomUUID());
   const hiddenAcceptance = process.env.EDITCORE_ACCEPTANCE_HIDDEN === "1";
   logStartup(`runtime v${RUNTIME_VERSION} cargado desde ${__dirname}`);
-  const iconPath = resolveUiAsset("assets", "logo.ico");
-  logStartup(`startup:creating-browser-window icon=${iconPath}`);
+  const iconCandidates = [
+    path.join(__dirname, "assets", "logo.ico"),
+    path.join(process.cwd(), "assets", "logo.ico"),
+    resolveUiAsset("assets", "logo.ico"),
+    path.join(__dirname, "assets", "logo.png"),
+    path.join(__dirname, "assets", "editcore-logo.png"),
+  ];
+  let iconPath = "";
+  for (const candidate of iconCandidates) {
+    try {
+      if (candidate && fs.existsSync(candidate) && !String(candidate).includes(".asar")) {
+        iconPath = candidate;
+        break;
+      }
+    } catch { /* continue */ }
+  }
+  if (!iconPath) {
+    for (const candidate of iconCandidates) {
+      try {
+        if (candidate && fs.existsSync(candidate)) {
+          iconPath = candidate;
+          break;
+        }
+      } catch { /* continue */ }
+    }
+  }
+  logStartup(`startup:creating-browser-window icon=${iconPath || "(none)"}`);
   let win;
   try {
+    try {
+      app.setAppUserModelId("com.editcoreai.app");
+    } catch { /* ignore */ }
     const prefs = {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
@@ -1099,11 +1123,14 @@ function createWindow(options = {}) {
       webPreferences: prefs,
     };
     try {
-      if (iconPath && fs.existsSync(iconPath)) winOpts.icon = iconPath;
+      if (iconPath) winOpts.icon = iconPath;
     } catch {
       // sin icono
     }
     win = new BrowserWindow(winOpts);
+    try {
+      if (iconPath && typeof win.setIcon === "function") win.setIcon(iconPath);
+    } catch { /* ignore */ }
   } catch (error) {
     logStartup("startup:browser-window-FAILED", error);
     throw error;
@@ -2401,6 +2428,14 @@ async function startProjectPreview(rootPath, ownerId) {
 }
 
 async function startProjectPreviewNow(safeRoot, ownerId) {
+  const rootNorm = String(safeRoot || "").replace(/[\\/]+$/, "").toLowerCase();
+  if (/[\\/]editcoreai$/.test(rootNorm) || rootNorm.endsWith("editcoreai")) {
+    return {
+      available: false,
+      url: "",
+      message: "EDITCOREAI es una app de escritorio. El panel Web no aplica a este proyecto.",
+    };
+  }
   const runtimeRoot = findRunnableProjectRoot(safeRoot);
   const packagePath = runtimeRoot ? path.join(runtimeRoot, "package.json") : "";
   if (!fs.existsSync(packagePath)) return { available: false, url: "", message: "Este directorio no contiene una aplicacion ejecutable (falta package.json)." };

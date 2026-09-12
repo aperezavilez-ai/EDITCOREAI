@@ -33,5 +33,6 @@ if not exist "node_modules\electron\dist\electron.exe" (
   exit /b 1
 )
 
-start "EDITCOREAI" "node_modules\electron\dist\electron.exe" "." --disable-gpu --disable-software-rasterizer --in-process-gpu
+start "EDITCOREAI" "node_modules\electron\dist\electron.exe" "."
 endlocal
+

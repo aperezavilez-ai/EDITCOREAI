@@ -25,13 +25,21 @@ function isLongRunningCommand(command) {
 }
 
 function detectSevereIssue(chunk, bufferTail) {
-  const fromDetector = detectDevLogIssue(chunk) || detectDevLogIssue(bufferTail);
   const text = `${chunk || ""}\n${bufferTail || ""}`;
+  // Ruido GPU de Electron/Chromium: no es fallo del proyecto
+  if (/gpu_ipc_service|gpu_channel_manager|ContextResult::kFatalFailure|shared context for virtualization/i.test(text)
+    && !/Failed to compile|Module not found|EADDRINUSE|ELIFECYCLE/i.test(text)) {
+    return null;
+  }
+  const fromDetector = detectDevLogIssue(chunk) || detectDevLogIssue(bufferTail);
   if (fromDetector || SEVERE_RE.test(text)) {
     const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
     const hit = (fromDetector && fromDetector.summary)
       || lines.find((l) => SEVERE_RE.test(l))
       || lines.slice(-2).join(" | ");
+    if (/gpu_ipc_service|ContextResult::kFatalFailure|shared context for virtualization/i.test(String(hit))) {
+      return null;
+    }
     const nextServerEnoent = NEXT_SERVER_ENOENT_RE.test(text);
     return {
       kind: nextServerEnoent || /ENOENT|EADDRINUSE|ELIFECYCLE/i.test(text) ? "fatal" : "compile",

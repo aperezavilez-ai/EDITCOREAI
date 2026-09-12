@@ -6,7 +6,7 @@
  */
 
 const COMPILE_RE = /(?:Failed to compile|Build error|Module not found|SyntaxError|TypeError|ReferenceError|TypeScript error|error TS\d+|✘\s*\[ERROR\]|Build failed|Cannot find module|Unexpected token)/i;
-const FATAL_RE = /(?:EADDRINUSE|ENOENT|ELIFECYCLE|Fatal|panic)/i;
+const FATAL_RE = /(?:EADDRINUSE|ENOENT|ELIFECYCLE|\bFatal\b|panic)/i;
 const NEXT_SERVER_ENOENT_RE = /ENOENT[\s\S]{0,180}?[\\/]\.next[\\/]server[\\/]|Cannot find module[\s\S]{0,120}?[\\/]\.next[\\/]server[\\/]|routes-manifest\.json/i;
 
 function detectDevLogIssue(chunk) {

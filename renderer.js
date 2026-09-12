@@ -159,7 +159,14 @@ function isIgnorablePreviewConsoleMessage(message = "") {
     || /content security policy.*unsafe-eval/.test(text)
     || /this renderer process has either no content security policy/.test(text)
     || /devtools failed to load source map/.test(text)
-    || /download the react devtools/.test(text);
+    || /download the react devtools/.test(text)
+    // Ruido Chromium/Electron (no es error del proyecto web)
+    || /gpu_ipc_service|gpu_channel_manager|shared context for virtualization/.test(text)
+    || /contextresult::kfatalfailure/.test(text)
+    || /failed to create shared context/.test(text)
+    || /gl_surface|viz_main_impl|command_buffer/.test(text)
+    || /passthrough is not supported|angle/.test(text)
+    || /autofill\.cc|autofill_agent/.test(text);
 }
 
 function pushPreviewRuntimeError(message = "", level = "error") {
@@ -11550,6 +11557,7 @@ if (window.editcoreProject.onPreviewLog) {
     if (!payload) return;
     if (payload.projectRoot && normalizeProjectRoot(payload.projectRoot) !== normalizeProjectRoot(state.projectRoot)) return;
     if (payload.type === "preview-issue" && payload.issue?.summary) {
+      if (isIgnorablePreviewConsoleMessage(payload.issue.summary)) return;
       pushPreviewRuntimeError(payload.issue.summary, payload.issue.kind === "fatal" ? "error" : "warn");
       $("status").textContent = payload.wakeVerifier
         ? `VERIFIER · ${payload.issue.summary}`.slice(0, 160)
