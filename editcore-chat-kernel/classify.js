@@ -1,15 +1,14 @@
 "use strict";
 
-/** Portero: una sola decisión por mensaje. */
+/** Portero: una sola decisión por mensaje. Acceso completo aware. */
 
 const STOP_RE = /^\s*(?:alto|detente|deténte|cancela|cancelar|stop|para|basta|deten(?:te)?)\s*[.!?]?\s*$/i;
 
-// Confirmación / autorización explícita
 const APPROVAL_RE = /^\s*(?:procede|continua|continúa|hazlo|autorizado|adelante|ejecuta|si|sí|confirmado|procedo|hazlo\s+ya|dale|va|ok)\b[.!?]?\s*$/i;
 
 const CHAT_INFO_RE = /\b(?:para\s+qu[eé]\s+(?:sirve|funciona|es)|qu[eé]\s+(?:hace|es)|qui[eé]n\s+eres|c[oó]mo\s+te\s+llamas|ayuda|hola|buenos\s+d[ií]as|buenas\s+tardes|buenas\s+noches)\b/i;
 
-const TASK_FIX_RE = /\b(?:corrije|corrige|arregla|implementa|aplica|repara|soluciona|crea|escribe|modifica|añade|agrega|cambia|actualiza|haz|hacer|ejecuta|run_command|run|build|tsc|npx|npm)\b/i;
+const TASK_FIX_RE = /\b(?:corrije|corrige|arregla|implementa|aplica|repara|soluciona|crea|escribe|modifica|refactoriza|actualiza|audita|añade|agrega|cambia|haz|hacer|ejecuta|run_command|run|build|tsc|npx|npm)\b/i;
 
 const TASK_ANALYZE_RE = /\b(?:analiza|audita|diagnostica|revisa\s+errores|hallazgos|reporte\s+completo|plan\s+de\s+acci[oó]n)\b/i;
 const TASK_LIST_RE = /\b(?:lista|listar|qu[eé]\s+contiene|qu[eé]\s+hay\s+en|contenido\s+de|muestra\s+(?:la\s+)?carpeta|explora|explorar|explorer|directorio|arbol|árbol)\b/i;
@@ -18,9 +17,20 @@ const TASK_DEPLOY_RE = /\b(?:deploy|publica(?:r)?|vercel)\b/i;
 const BACKGROUND_RE = /\b(?:segundo\s+plano|en\s+background|background|sin\s+esperar)\b/i;
 const TASK_VERIFY_RE = /\b(?:verifica(?:r)?|typecheck|compila(?:r)?|tsc\b)\b/i;
 
-function classify(message) {
+function isFullAccess(opts = {}) {
+  const mode = String(opts.permissionMode || opts.mode || "").toLowerCase().trim();
+  return opts.permissionFull === true
+    || opts.fullAccess === true
+    || mode === "full"
+    || mode === "acceso completo"
+    || mode === "acceso-completo";
+}
+
+function classify(message, opts = {}) {
   const text = String(message || "").trim();
   const background = BACKGROUND_RE.test(text);
+  const full = isFullAccess(opts);
+
   if (!text) {
     return { kind: "CHAT", label: "Chat vacío", allowTools: false, allowWrite: false, background: false };
   }
@@ -28,15 +38,20 @@ function classify(message) {
     return { kind: "STOP", label: "Parada", allowTools: false, allowWrite: false, background: false };
   }
 
-  if (APPROVAL_RE.test(text)) {
+  // Acceso completo: no clasificar como CONFIRM (no hay candado de autorización)
+  if (!full && APPROVAL_RE.test(text)) {
     return { kind: "CONFIRM", label: "Autorización Confirmada", allowTools: true, allowWrite: true, background: false };
+  }
+  if (full && APPROVAL_RE.test(text)) {
+    return { kind: "EXECUTE", label: "Ejecución (Acceso completo)", allowTools: true, allowWrite: true, background: false };
   }
 
   if (TASK_LIST_RE.test(text)) {
     return { kind: "LIST", label: "Listado", allowTools: true, allowWrite: false, background };
   }
 
-  if (CHAT_INFO_RE.test(text)) {
+  // Chat info solo si NO hay verbo de acción (evita degradar "crea X" / "implementa Y")
+  if (CHAT_INFO_RE.test(text) && !TASK_FIX_RE.test(text)) {
     return { kind: "CHAT", label: "Consulta Informativa", allowTools: false, allowWrite: false, background: false };
   }
 
@@ -48,7 +63,13 @@ function classify(message) {
   }
 
   if (TASK_FIX_RE.test(text)) {
-    return { kind: "EXECUTE", label: "Construcción / Ejecución", allowTools: true, allowWrite: true, background };
+    return {
+      kind: "EXECUTE",
+      label: full ? "Construcción / Acceso completo" : "Construcción / Ejecución",
+      allowTools: true,
+      allowWrite: true,
+      background,
+    };
   }
 
   if (TASK_VERIFY_RE.test(text) && background) {
@@ -56,34 +77,83 @@ function classify(message) {
   }
 
   if (TASK_ANALYZE_RE.test(text)) {
+    // "auditar" con acceso completo + intención de fix → EXECUTE
+    if (full && /\b(?:corrige|arregla|implementa|aplica|repara)\b/i.test(text)) {
+      return { kind: "EXECUTE", label: "Auditoría + corrección", allowTools: true, allowWrite: true, background };
+    }
     return { kind: "ANALYZE", label: "Análisis", allowTools: true, allowWrite: false, background };
   }
 
-  if (/^(?:qu[eé]|cual|cuál|donde|dónde|como|cómo)\b/i.test(text) && text.length < 180) {
+  if (/^(?:qu[eé]|cual|cuál|donde|dónde|como|cómo)\b/i.test(text) && text.length < 180 && !TASK_FIX_RE.test(text)) {
     return { kind: "ASK", label: "Pregunta", allowTools: true, allowWrite: false, background };
   }
 
-  return { kind: "CHAT", label: "Chat", allowTools: false, allowWrite: false, background: false };
-}
-
-/** Extrae el directorio ignorando palabras vacías como "el", "la", "directorio", etc. */
-function extractListTarget(message) {
-  const t = String(message || "").trim();
-  
-  // Buscar rutas o referencias explícitas
-  const matchPath = t.match(/(?:directorio|carpeta|folder|en|de)\s+([.\/\\a-zA-Z0-9_\-]+)/i);
-  if (matchPath) {
-    const candidate = matchPath[1].trim();
-    // Ignorar artículos comunes
-    if (!["el", "la", "los", "las", "un", "una", "este", "esta"].includes(candidate.toLowerCase())) {
-      return candidate;
-    }
+  // Acceso completo: no degradar pedidos con acción a CHAT pasivo
+  if (full && TASK_FIX_RE.test(text)) {
+    return { kind: "EXECUTE", label: "Ejecución (Acceso completo)", allowTools: true, allowWrite: true, background };
   }
 
-  // Si contiene un punto aislado o como parámetro
-  if (/\b\.\b/.test(t) || t.includes(" .")) return ".";
-
-  return ".";
+  return {
+    kind: "CHAT",
+    label: "Chat",
+    allowTools: false,
+    allowWrite: false,
+    background: false,
+  };
 }
 
-module.exports = { classify, extractListTarget, STOP_RE, APPROVAL_RE, CHAT_INFO_RE, BACKGROUND_RE };
+function loadProjectMapHelpers() {
+  try {
+    return require("../runtime/project-map");
+  } catch {
+    try {
+      return require("./project-map");
+    } catch {
+      return null;
+    }
+  }
+}
+
+/**
+ * Extrae el directorio ignorando palabras vacías.
+ * Si hay projectRoot, resuelve contra `.editcore/project-map.json`.
+ */
+function extractListTarget(message, projectRoot = null) {
+  const t = String(message || "").trim();
+  let candidate = ".";
+
+  const matchPath = t.match(/(?:directorio|carpeta|folder|en|de)\s+([.\/\\a-zA-Z0-9_\-]+)/i);
+  if (matchPath) {
+    const raw = matchPath[1].trim();
+    if (!["el", "la", "los", "las", "un", "una", "este", "esta"].includes(raw.toLowerCase())) {
+      candidate = raw;
+    }
+  } else if (/\b\.\b/.test(t) || t.includes(" .")) {
+    candidate = ".";
+  }
+
+  const root = String(projectRoot || "").trim();
+  if (!root) return candidate || ".";
+
+  const mapApi = loadProjectMapHelpers();
+  if (!mapApi?.resolveExistingTarget) return candidate || ".";
+
+  try {
+    mapApi.ensureProjectMap?.(root, { maxAgeMs: 5 * 60_000 });
+    const resolved = mapApi.resolveExistingTarget(root, candidate);
+    return resolved?.target || ".";
+  } catch {
+    return candidate || ".";
+  }
+}
+
+module.exports = {
+  classify,
+  extractListTarget,
+  isFullAccess,
+  STOP_RE,
+  APPROVAL_RE,
+  CHAT_INFO_RE,
+  BACKGROUND_RE,
+  TASK_FIX_RE,
+};

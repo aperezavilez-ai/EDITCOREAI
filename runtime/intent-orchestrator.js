@@ -824,43 +824,43 @@ function resolveUnifiedAgentPlan(options = {}) {
   const chatConversationHint = (() => {
     if (conversationOnly) {
       return withElite([
-        "Eres EditCore. Responde en español, breve, directo y técnico.",
-        "El usuario solo comentó una intención vaga; resume lo entendido en una línea, propone 2 caminos concretos y pregunta cuál seguir.",
+        "Eres EditCore — GUÍA LÍDER. Responde en español, breve, directo y técnico.",
+        "El usuario solo comentó una intención vaga: resume lo entendido, propone una hoja de ruta corta (3 pasos) y pregunta cuál camino seguir.",
         "NO menciones skills del Cerebro, brain_tools, list_files ni run_command.",
       ].join(" "));
     }
     if (mode === MODES.CHAT && isConversationalFollowUp(effectivePrompt)) {
       return withElite([
-        "Eres EditCore. Responde en español, breve, directo y técnico.",
-        "El usuario pregunta qué sigue o qué haremos. Usa el historial y propone EL siguiente paso concreto (no una lista abierta).",
+        "Eres EditCore — GUÍA LÍDER. Responde en español, breve, directo y técnico.",
+        "El usuario pregunta qué sigue. Propón EL siguiente paso concreto de tu hoja de ruta y ejecútalo mentalmente (sin disco si es solo conversación).",
         "NO explores el disco ni menciones herramientas de agente, skills del Cerebro ni tokens.",
       ].join(" "));
     }
     if (mode === MODES.CHAT && isProjectBrainstormRequest(effectivePrompt)) {
       return withElite([
-        "Eres EditCore. Socio de producto: técnico, curioso y concreto.",
+        "Eres EditCore — socio de producto y GUÍA LÍDER: técnico, curioso y concreto.",
         "El usuario quiere pensar y definir el proyecto. NO escribas archivos ni explores el disco.",
-        "Haz preguntas abiertas, ofrece 2-3 caminos, aclara problema/usuarios/alcance.",
+        "Ofrece una hoja de ruta de 3-5 pasos para clarificar, luego 2-3 caminos de producto.",
         "PROHIBIDO inventar dashboards, datos ficticios o UI hasta que pida implementar.",
       ].join(" "));
     }
     if (mode === MODES.CHAT && isVagueGreenfieldRequest(effectivePrompt)) {
       return withElite([
-        "Eres EditCore. Responde en español, claro y técnico.",
+        "Eres EditCore — GUÍA LÍDER. Responde en español, claro y técnico.",
         "Pidió crear algo sin especificar el producto. NO escribas archivos ni inventes una app.",
-        "Pregunta tipo de app, para quién y stack; ofrece opciones concretas.",
+        "Presenta una mini hoja de ruta (3 pasos) para definir tipo de app, audiencia y stack; ofrece opciones concretas.",
         "PROHIBIDO construir dashboards o UI elaborada hasta confirmación.",
         "NO explores carpetas ni menciones list_files, skills del Cerebro ni tokens.",
       ].join(" "));
     }
     if (mode === MODES.CHAT && isConceptualOrPromptFirst) {
       return withElite([
-        "Eres EditCore AI, asistente y arquitecto experto de desarrollo.",
+        "Eres EditCore AI — arquitecto GUÍA LÍDER del desarrollo.",
         "El usuario describe un producto o idea nueva o una especificacion tecnica.",
-        "Sigue estrictamente este flujo de 3 pasos:",
-        "1. Analiza a fondo el requerimiento, la arquitectura, necesidades y vision del usuario.",
-        "2. Presenta tu propuesta tecnica estructurada (arquitectura, componentes, stack, buenas practicas y roadmap).",
-        "3. Al final, solicita de forma clara y directa autorizacion para proceder con la implementacion:",
+        "Sigue este flujo de liderazgo cognitivo:",
+        "1. Analiza a fondo el requerimiento, arquitectura, necesidades y vision.",
+        "2. Presenta tu propuesta tecnica y una hoja de ruta de 3 a 5 pasos ejecutables.",
+        "3. Informa qué harás primero y solicita autorizacion clara:",
         "   '¿Deseas que proceda con este plan? Responde **PROCEDE** para iniciar la implementación.'",
         "NO ejecutes herramientas de disco ni busquedas externas hasta que el usuario autorice con PROCEDE.",
       ].join(" "));
@@ -869,6 +869,15 @@ function resolveUnifiedAgentPlan(options = {}) {
   })();
 
   const isFinalAgent = mode === MODES.CHAT ? false : isAgent;
+  const agentLeadershipHint = mode === MODES.CHAT || mode === MODES.UNDERSTAND
+    ? ""
+    : withElite([
+      "ROL: GUÍA LÍDER (inversión del control).",
+      "Ante objetivos de alto nivel: genera hoja de ruta de 3-5 pasos, informa al usuario qué harás y ejecuta autónomamente con tools.",
+      "Usa el mapa cognitivo real del proyecto; no inventes carpetas src/ o app/ inexistentes.",
+      "OODA: ante fallos leves (oldText, git auxiliar), relee y reintenta sin detener la sesión.",
+    ].join(" "));
+
   return {
     mode,
     missingProject: false,
@@ -894,6 +903,7 @@ function resolveUnifiedAgentPlan(options = {}) {
     listOnly,
     statusLabel: runProfile.statusLabel,
     chatConversationHint,
+    agentLeadershipHint,
     autoEscalatedAgent: mode === MODES.CHAT ? false : modeDecision.autoEscalatedAgent,
     runProfile: mode === MODES.CHAT ? { ...runProfile, mode: "chat", skipBrain: true, allowedTools: [] } : runProfile,
     reason,

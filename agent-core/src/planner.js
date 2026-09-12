@@ -10,16 +10,22 @@ const {
   extractSwapSpec,
   extractVerifyCommand,
 } = require("./modes");
+const { isFullAccess } = require("./classify");
 
 /**
  * Planner: decide modo y pasos concretos.
  */
 function planTask(input = {}) {
   const prompt = String(input.prompt || "");
+  const fullAccess = isFullAccess(input);
   const mode = classifyMode(prompt, {
-    allowWrite: input.allowWrite,
-    planAuthorized: input.planAuthorized,
+    allowWrite: fullAccess ? true : input.allowWrite,
+    planAuthorized: fullAccess ? true : input.planAuthorized,
+    planAuthorizedExecution: fullAccess ? true : input.planAuthorizedExecution,
     analysisMode: input.analysisMode,
+    permissionMode: input.permissionMode,
+    permissionFull: fullAccess || input.permissionFull,
+    fullAccess,
   });
   const paths = extractPathsFromPrompt(prompt);
   const createSpec = extractCreateFileSpec(prompt);
@@ -146,6 +152,8 @@ function planTask(input = {}) {
 
   if (mode === "execute") {
     const authorized = input.planAuthorized === true
+      || input.planAuthorizedExecution === true
+      || fullAccess
       || /^\s*(?:procede|adelante|autorizo|contin[uú]a)\b/i.test(prompt);
     if (!authorized) {
       return {
@@ -156,7 +164,7 @@ function planTask(input = {}) {
       };
     }
 
-    const hasExplicitMutationIntent = /\b(crea(?:r)?|corrige|arregla|repara|implementa|modifica|replace|borra|elimina|delete|a[ñn]ade|agrega|actualiza|renombra|fix\b|cambia(?:r)?\s+|escribe\s+el\s+archivo)\b/i.test(prompt)
+    const hasExplicitMutationIntent = /\b(crea(?:r)?|corrige|arregla|repara|implementa|modifica|refactoriza|actualiza|audita|replace|borra|elimina|delete|a[ñn]ade|agrega|renombra|fix\b|cambia(?:r)?\s+|escribe\s+el\s+archivo)\b/i.test(prompt)
       || /SMOKE_AGENT_CORE|SMOKE_MUTATION|replace_in_file|oldText\s*:|delete_file/i.test(prompt)
       || Boolean(swapSpec)
       || (paths.files.length > 0 && /\b(bug|error|falla|roto|rompe|defect)\b/i.test(prompt));

@@ -101,7 +101,7 @@ async function runPlan(plan, input = {}) {
   }
 
   const steps = [];
-  const maxSteps = Math.max(1, Number(input.maxSteps) || 24);
+  const maxSteps = Math.max(1, Number(input.maxSteps) || 36);
   input.onProgress?.({ phase: "model", text: `Agent Core · modo ${plan.mode}` });
 
   if (plan.needsConcreteChange) {

@@ -9,6 +9,8 @@ module.exports = {
   runAgent,
   planTask,
   classifyMode,
+  classify: require("./src/classify").classify,
+  isFullAccess: require("./src/classify").isFullAccess,
   extractPathsFromPrompt,
   extractCreateFileSpec: require("./src/modes").extractCreateFileSpec,
   extractReplaceSpec: require("./src/modes").extractReplaceSpec,

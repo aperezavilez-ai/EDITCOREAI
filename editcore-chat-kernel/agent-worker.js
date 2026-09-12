@@ -74,7 +74,9 @@ async function executeTask({ taskId, taskType, taskData }) {
     if (kind === "explorer") {
       const { runExplorer } = require("./subagents/explorer");
       const { extractListTarget } = require("./classify");
-      const target = data.target || (extractListTarget ? extractListTarget(data.message || "") : ".") || ".";
+      const target = data.target
+        || (extractListTarget ? extractListTarget(data.message || "", projectRoot) : ".")
+        || ".";
       const result = await runExplorer({
         projectRoot,
         target,

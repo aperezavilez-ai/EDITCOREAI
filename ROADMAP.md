@@ -1,10 +1,10 @@
-# EDITCOREAI — Roadmap & Arquitectura (v2.6.6)
+# EDITCOREAI — Roadmap & Arquitectura (v2.7.0)
 
-EDITCOREAI es la plataforma desktop de pair-programming y agentic coding: orquesta subagentes, ejecuta en disco con evidencia y prioriza co-creación (inspecciona el proyecto y dice qué falta, no pide datos que ya están en el repo).
+EDITCOREAI es la plataforma desktop de pair-programming y agentic coding: orquesta subagentes, ejecuta en disco con evidencia y prioriza co-creación (inspecciona el proyecto y dice qué falta, no pide datos que ya estén en el repo).
 
 ---
 
-## Hitos completados — estado actual (v2.6.6)
+## Hitos completados — estado actual (v2.7.0)
 
 ### 0. Continuidad del chat (v2.6.6)
 - [x] `procede` / `continua` reabren tareas `COMPLETED`/`FAILED`/`CANCELLED`.
@@ -24,7 +24,7 @@ EDITCOREAI es la plataforma desktop de pair-programming y agentic coding: orques
 - [x] Exposición correcta de `write_file` / `replace_in_file` en EXECUTE/PROCEDE/FOCO.
 
 ### 3. Auth pause + stream estable
-- [x] Hard-stop al pedir autorización.
+- [x] Hard-stop al pedir autorización (modo step).
 - [x] Fase UI `awaiting_authorization`.
 - [x] Preservación de informes largos (`chat-stream-preserve`).
 
@@ -37,9 +37,18 @@ EDITCOREAI es la plataforma desktop de pair-programming y agentic coding: orques
 - [x] Mic gated si no hay Whisper STT.
 - [x] Subagentes en paralelo y thought stream.
 
+### 6. Autonomía cognitiva (v2.7.0) — NUEVO
+- [x] Mapa cognitivo `.editcore/project-map.json` (`runtime/project-map.js`); indexado en `project:index-build`.
+- [x] classify / explorer / tools / orchestrator usan el mapa; sin inventar `src/`/`app/` fantasma.
+- [x] OODA / soft-fail: `replace_in_file` con tolerancia CRLF + auto-relectura; git auxiliar no detiene sesión; `maxSteps` elevado.
+- [x] Prompts GUÍA LÍDER (hoja de ruta 3–5 pasos) en kernel, intent-orchestrator y agent-core.
+- [x] **Acceso completo**: `permissionMode=full` anula `pendingTask`/`CONFIRM`; fuerza escritura autorizada; prohíbe pedir “procede”.
+- [x] Agent Core v0.2.15 + `agent-core/src/classify.js`.
+- [x] Sync al EXE empaquetado (`EDITCORE AI\resources\app`) cuando se libera.
+
 ---
 
-## Próximos hitos (v2.7.0+)
+## Próximos hitos (v2.7.1+)
 
 ### 1. Scope-drift watchdog
 - [ ] Rechazar expansiones no pedidas fuera del contrato de la tarea.
@@ -53,8 +62,13 @@ EDITCOREAI es la plataforma desktop de pair-programming y agentic coding: orques
 ### 4. Voz usable end-to-end
 - [ ] Reactivar UI cuando haya STT Whisper real en el stack del usuario.
 
+### 5. Empaquetado / release
+- [ ] Pipeline de build del `.exe` desde CI (hoy sync manual a `resources\app`).
+- [ ] Provisionar tenant Supabase GafCore `/editcoreai` (health 401).
+
 ---
 
 ## Gobernanza
 - Aislamiento: `no_supabase` / `gafcore_gateway_only`
 - Validar: `node .project-governance/validate-project-isolation.mjs`
+- Fuente canónica de agente: carpeta `EDITCOREAI` → sync a EXE cuando el usuario lo pida.

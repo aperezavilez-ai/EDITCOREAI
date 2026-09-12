@@ -1,6 +1,6 @@
 "use strict";
 
-const { classify, extractListTarget } = require("./classify");
+const { classify, extractListTarget, isFullAccess } = require("./classify");
 const { ChatSession } = require("./session");
 const { PersistentMemory } = require("./memory");
 const { skillsPrompt, SKILL_IDS } = require("./skills-catalog");
@@ -25,6 +25,103 @@ try {
   } catch (e) {
     intentOrchestrator = null;
   }
+}
+
+let projectMapApi = null;
+try {
+  projectMapApi = require("../runtime/project-map");
+} catch (_) {
+  projectMapApi = null;
+}
+
+/** Límite útil para ciclos Lectura → Modificación → Verificación (OODA). */
+const DEFAULT_MAX_STEPS = 28;
+const AUTHORIZED_MAX_STEPS = 32;
+
+const LEADERSHIP_PROMPT = [
+  "ROL: GUÍA LÍDER (inversión del control).",
+  "Ante objetivos de alto nivel o solicitudes generales:",
+  "1) Genera tu propia hoja de ruta de 3 a 5 pasos concretos (basada en el mapa cognitivo real).",
+  "2) Informa al usuario en 2-4 líneas qué vas a hacer (sin pedir permiso ni esperar confirmación si ya hay autorización o la tarea es exploratoria/análisis).",
+  "3) Ejecuta paso a paso de forma autónoma con tools: Observar → Orientar → Decidir → Actuar.",
+  "4) No te detengas por fallos leves (oldText desfasado, git auxiliar, carpetas inexistentes): relee contexto cercano y reintenta.",
+  "PROHIBIDO inventar carpetas típicas (src/, app/, lib/) si no aparecen en el MAPA COGNITIVO.",
+  "PROHIBIDO devolver solo un plan vacío sin ejecutar tools cuando el modo permite herramientas.",
+].join("\n");
+
+function ensureCognitiveMap(projectRoot) {
+  if (!projectRoot || !projectMapApi?.ensureProjectMap) return null;
+  try {
+    return projectMapApi.ensureProjectMap(projectRoot, { maxAgeMs: 5 * 60_000 })?.map || null;
+  } catch {
+    return projectMapApi.loadProjectMap?.(projectRoot) || null;
+  }
+}
+
+function formatCognitiveBlock(projectRoot) {
+  const map = ensureCognitiveMap(projectRoot);
+  if (projectMapApi?.formatMapForPrompt) return projectMapApi.formatMapForPrompt(map);
+  return "MAPA COGNITIVO: usa list_files('.') — no asumas src/ ni app/.";
+}
+
+/**
+ * Auto-corrección transparente OODA ante fallo leve de herramienta.
+ * Devuelve payload enriquecido para el modelo (sin detener la sesión).
+ */
+function recoverSoftToolFailure(name, args, result, projectRoot) {
+  const soft = tools.isSoftToolFailure?.(name, result, args) || result?.soft === true;
+  if (!soft) return { recovered: false, payload: result };
+
+  const enriched = {
+    ...(result || {}),
+    soft: true,
+    ooda: "continue",
+    guidance: "Fallo leve: NO detengas la sesión. Relee contexto y reintenta con parámetros corregidos.",
+  };
+
+  if (name === "replace_in_file" && args?.path) {
+    try {
+      const read = tools.readFile(projectRoot, args.path, 4000);
+      if (read?.ok) {
+        enriched.autoRead = {
+          path: args.path,
+          content: String(read.content || "").slice(0, 3500),
+        };
+        enriched.guidance = "oldText no coincidió. Usa el contenido de autoRead para construir oldText EXACTO y vuelve a llamar replace_in_file. Continúa el ciclo OODA.";
+      }
+    } catch { /* ignore */ }
+  }
+
+  if (name === "list_files") {
+    try {
+      const resolved = projectMapApi?.resolveExistingTarget?.(projectRoot, args?.path || ".");
+      if (resolved && resolved.target !== args?.path) {
+        const listed = tools.listFiles(projectRoot, resolved.target);
+        return {
+          recovered: listed?.ok === true,
+          payload: {
+            ...listed,
+            soft: true,
+            ooda: "continue",
+            requested: args?.path,
+            resolved: resolved.target,
+            missing: resolved.missing,
+            guidance: `Ruta inexistente corregida vía mapa cognitivo → '${resolved.target}'. Continúa.`,
+          },
+          stepsExtra: listed?.ok
+            ? [{ name: "list_files", input: { path: resolved.target }, result: listed, ok: true, softRecover: true }]
+            : [],
+        };
+      }
+    } catch { /* ignore */ }
+  }
+
+  if (name === "run_command" && /^\s*git\b/i.test(String(args?.command || ""))) {
+    enriched.guidance = "Comando git auxiliar falló (secundario). Ignóralo si no es crítico y continúa la tarea principal.";
+    enriched.secondary = true;
+  }
+
+  return { recovered: false, payload: enriched };
 }
 
 function isVisualUiPath(rel) {
@@ -166,6 +263,11 @@ class ChatOrchestrator {
       autoHeal,
       background,
       runModelTaskFn,
+      allowWrite: inputAllowWrite,
+      permissionMode,
+      permissionFull,
+      fullAccess: inputFullAccess,
+      planAuthorizedExecution: inputPlanAuth,
     } = input;
 
     const rawText = typeof message === "object" && message?.text ? message.text : String(message || "");
@@ -173,7 +275,21 @@ class ChatOrchestrator {
     const textLower = text.toLowerCase();
     const isApprovalText = APPROVAL_WORDS.has(textLower);
 
-    if (this.pendingTask && isApprovalText) {
+    const fullAccess = isFullAccess({
+      allowWrite: inputAllowWrite,
+      permissionMode,
+      permissionFull,
+      fullAccess: inputFullAccess,
+      planAuthorizedExecution: inputPlanAuth,
+      mode: permissionMode,
+    }) || String(permissionMode || "").toLowerCase() === "full";
+
+    // Acceso completo: anular pendingTask / CONFIRM — ejecutar directo
+    if (fullAccess) {
+      this.pendingTask = null;
+    }
+
+    if (!fullAccess && this.pendingTask && isApprovalText) {
       const taskToRun = this.pendingTask;
       this.pendingTask = null;
       onProgress?.({ phase: "start", text: "Autorización confirmada. Ejecutando cambios en disco..." });
@@ -189,13 +305,29 @@ class ChatOrchestrator {
         onProgress,
         allowWrite: true,
         planAuthorizedExecution: true,
-        maxSteps: 10,
+        maxSteps: AUTHORIZED_MAX_STEPS,
         helpers: taskToRun.helpers || helpers,
         authorizedFromPending: true,
+        fullAccess: false,
+        permissionMode,
       });
     }
 
-    let decision = classify(text);
+    let decision = classify(text, {
+      allowWrite: fullAccess || inputAllowWrite === true,
+      permissionMode: fullAccess ? "full" : permissionMode,
+      fullAccess,
+    });
+
+    if (fullAccess) {
+      decision.allowWrite = true;
+      if (decision.kind === "CONFIRM") {
+        decision = { kind: "EXECUTE", label: "Ejecución (Acceso completo)", allowTools: true, allowWrite: true, background: false };
+      }
+      if (decision.kind === "CHAT" && /\b(?:crea|modifica|corrige|implementa|refactoriza|actualiza|audita|arregla|repara|escribe|agrega|añade|cambia)\b/i.test(text)) {
+        decision = { kind: "EXECUTE", label: "Ejecución (Acceso completo)", allowTools: true, allowWrite: true, background: false };
+      }
+    }
 
     if (/\b(?:explora|explorer|directorio|listar|estructura|archivos)\b/i.test(text) && decision.kind === "CHAT") {
       decision = { kind: "LIST", label: "Explorar directorio", allowTools: true, allowWrite: false, background: false };
@@ -209,7 +341,9 @@ class ChatOrchestrator {
         unifiedPlan = intentOrchestrator.resolveUnifiedAgentPlan({
           prompt: text,
           projectOpen: Boolean(projectRoot),
-          allowWrite: decision.allowWrite ?? true,
+          allowWrite: fullAccess ? true : (decision.allowWrite ?? true),
+          permissionMode: fullAccess ? "full" : (permissionMode || "step"),
+          planAuthorizedExecution: fullAccess === true,
           requestedAgent: true,
         });
       }
@@ -219,7 +353,7 @@ class ChatOrchestrator {
 
     if (decision.kind === "STOP") return this.stop();
 
-    if (decision.kind === "CONFIRM") {
+    if (!fullAccess && decision.kind === "CONFIRM") {
       if (!this.pendingTask || !this.pendingTask.message) {
         return {
           kind: "CHAT",
@@ -241,9 +375,10 @@ class ChatOrchestrator {
         onProgress,
         allowWrite: true,
         planAuthorizedExecution: true,
-        maxSteps: 10,
+        maxSteps: AUTHORIZED_MAX_STEPS,
         helpers: taskToRun.helpers || helpers,
         authorizedFromPending: true,
+        permissionMode,
       });
     }
 
@@ -283,7 +418,7 @@ class ChatOrchestrator {
           `[VERIFIER] ${verifNote}`,
           verif?.rollback?.snapshotId ? `Snapshot rollback: ${verif.rollback.snapshotId}` : "",
         ].filter(Boolean).join("\n"),
-        projectRoot, apiBaseUrl, apiKey, model, memory, onProgress, allowWrite: true, maxSteps: 6, helpers,
+        projectRoot, apiBaseUrl, apiKey, model, memory, onProgress, allowWrite: true, maxSteps: 16, helpers,
       });
     }
 
@@ -302,25 +437,26 @@ class ChatOrchestrator {
     }
 
     if (decision.kind === "LIST" || decision.kind === "ASK") {
+      ensureCognitiveMap(projectRoot);
       if (wantsBackground(text, decision, input)) {
         return this.enqueueBackgroundTask({
           decision, message: text, projectRoot, onProgress,
-          extra: { target: extractListTarget(text) || "." },
+          extra: { target: extractListTarget(text, projectRoot) || "." },
         });
       }
-      const target = extractListTarget(text) || ".";
+      const target = extractListTarget(text, projectRoot) || ".";
       this.session.start(decision.kind, projectRoot);
       const out = await runExplorer({ projectRoot, target, onProgress });
       this.session.kill();
-      if (memory) memory.note(`listó ${target}`);
+      if (memory) memory.note(`listó ${out.target || target}`);
 
       // Pasar datos al modelo para que la respuesta sea interactiva y coherente
       if (apiKey) {
         return this.runModelTask({
           decision,
-          message: `El explorador analizó el directorio '${target}' con los siguientes resultados:\n\n${out.summary}\n\nCon base en la estructura encontrada, responde a la solicitud del usuario: "${text}" proponiendo 3 tareas altamente concretas y contextualizadas.`,
+          message: `El explorador analizó el directorio '${out.target || target}' con los siguientes resultados:\n\n${out.summary}\n\nCon base en la estructura encontrada (mapa cognitivo real), responde a la solicitud del usuario: "${text}" proponiendo 3 tareas altamente concretas y contextualizadas.`,
           projectRoot, apiBaseUrl, apiKey, model, memory, onProgress,
-          allowWrite: false, maxSteps: 2, helpers,
+          allowWrite: false, maxSteps: 4, helpers,
         });
       }
 
@@ -370,13 +506,20 @@ class ChatOrchestrator {
       };
     }
 
-    const wantsWrite = decision.allowWrite
-      || unifiedPlan?.mode === intentOrchestrator?.MODES?.EXECUTE;
+    const wantsWrite = fullAccess
+      || decision.allowWrite
+      || unifiedPlan?.mode === intentOrchestrator?.MODES?.EXECUTE
+      || unifiedPlan?.planAuthorizedExecution === true;
 
     if (wantsWrite) {
       if (!apiKey) return { kind: "CHAT", text: "Falta API key para ejecutar modificaciones." };
 
-      onProgress?.({ phase: "start", text: "Ejecutando modificaciones directamente..." });
+      onProgress?.({
+        phase: "start",
+        text: fullAccess
+          ? "Acceso completo: ejecutando sin confirmación…"
+          : "Ejecutando modificaciones directamente...",
+      });
       this.pendingTask = null;
 
       const runner = runModelTaskFn || this.runModelTask.bind(this);
@@ -391,9 +534,11 @@ class ChatOrchestrator {
         onProgress,
         allowWrite: true,
         planAuthorizedExecution: true,
-        maxSteps: 10,
+        maxSteps: AUTHORIZED_MAX_STEPS,
         helpers,
         authorizedFromPending: true,
+        fullAccess,
+        permissionMode: fullAccess ? "full" : permissionMode,
       });
     }
 
@@ -404,13 +549,20 @@ class ChatOrchestrator {
     const {
       decision, message, projectRoot, apiBaseUrl, apiKey, model, memory, onProgress,
       allowWrite, maxSteps, helpers, chatOnly, authorizedFromPending,
+      fullAccess, permissionMode,
     } = opts;
+
+    const accessFull = fullAccess === true
+      || isFullAccess({ allowWrite, permissionMode, fullAccess, planAuthorizedExecution: authorizedFromPending });
 
     this.session.start(decision?.kind || "EXECUTE", projectRoot);
     this.abort = new AbortController();
 
     const toolHistory = new Map();
     let lastVerifyError = null;
+    const cognitiveBlock = (!chatOnly && decision?.kind !== "CHAT")
+      ? formatCognitiveBlock(projectRoot)
+      : "";
 
     const specialist = (!chatOnly && decision?.kind !== "CHAT" && !authorizedFromPending)
       ? dispatchSpecialist(message)
@@ -424,33 +576,47 @@ class ChatOrchestrator {
       ? globalMemory.promptBlock(message, 8)
       : "";
 
+    const noConfirmBlock = (accessFull || authorizedFromPending)
+      ? [
+        "ACCESO COMPLETO / EJECUCIÓN AUTORIZADA:",
+        "PROHIBIDO preguntar: '¿Deseas que proceda?', 'Confirma para aplicar los cambios.', 'Escribe procede.', '¿Procedo?'.",
+        "Ejecuta YA tools: write_file, replace_in_file, run_command. Sin preguntas previas.",
+      ].join("\n")
+      : "";
+
     const system = chatOnly || decision?.kind === "CHAT"
       ? [
         "Eres EDITCOREAI: asistente del IDE. Responde en español, 2-5 frases, directo.",
         "PROHIBIDO: decir que vas a analizar, abrir tools, listar archivos, o inventar pasos de exploración.",
         `Proyecto abierto: ${projectRoot || "(ninguno)"}.`,
       ].filter(Boolean).join("\n\n")
-      : authorizedFromPending
+      : authorizedFromPending || accessFull
         ? [
-          "Eres EditCore Agent. Ejecuta inmediatamente las instrucciones del usuario usando herramientas.",
+          "Eres EditCore Agent — GUÍA LÍDER autónomo.",
+          LEADERSHIP_PROMPT,
+          noConfirmBlock,
           "Ejecuta YA la instrucción con tools (write_file, replace_in_file, run_command).",
-          "PROHIBIDO pedir confirmación, preguntar si procedes o devolver un plan sin hacer cambios.",
+          "Antes de mutar: narra en 2-4 líneas tu hoja de ruta (3-5 pasos) y procede sin pedir confirmación.",
           "PROHIBIDO inventar ROADMAP.md u otras tareas genéricas: solo la instrucción del usuario.",
-          "Sé conciso. Narra en español lo que haces mientras trabajas.",
-          `Permiso de escritura: ${allowWrite ? "SÍ" : "NO"}.`,
+          "Ante fallo leve de tool: relee y reintenta; NUNCA abandones con 'Detenido' por errores secundarios.",
+          `Permiso de escritura: SÍ.${accessFull ? " Acceso completo activo." : ""}`,
+          cognitiveBlock,
           specialistInstruction,
         ].filter(Boolean).join("\n\n")
         : [
-          "Eres EditCore Agent, un entorno de desarrollo autónomo ultra inteligente, sintético y quirúrgico.",
+          "Eres EditCore Agent — entorno autónomo y GUÍA LÍDER del IDE.",
+          LEADERSHIP_PROMPT,
           `Modo actual: ${decision?.kind || "EXECUTE"}. Permiso de escritura: ${allowWrite ? "SÍ" : "NO"}.`,
           specialistInstruction,
           "REGLAS OBLIGATORIAS:",
           "1. Usa SOLO function calling / tools nativas. NUNCA escribas XML como <list_directory>, <read_file>, <execute_command>, <tool_call>.",
-          "2. Analiza con precisión la información leída.",
-          "3. Sé extremadamente conciso al responder. Responde directo a la solución o pregunta sin preámbulos.",
+          "2. Observa el MAPA COGNITIVO antes de explorar; no inventes src/ ni app/.",
+          "3. Sé conciso. Informa la hoja de ruta y actúa.",
           "4. NO repitas exactamente la misma herramienta con los mismos parámetros.",
           "5. Paths relativos al proyecto (ej. package.json), nunca absolutos.",
-          "6. Si ejecutas 'run_command' o un test/build, analiza la salida y aplica corrección inmediata o emite la respuesta final.",
+          "6. Si ejecutas 'run_command' o un test/build, analiza la salida y aplica corrección inmediata (OODA).",
+          "7. Fallos leves (oldText, git auxiliar, list_files de ruta ausente): recupera y continúa; no detengas la sesión.",
+          cognitiveBlock,
           skillsPrompt(projectRoot, decision?.kind, message),
           memory && !authorizedFromPending ? memory.promptBlock() : "",
           globalLearned,
@@ -468,7 +634,7 @@ class ChatOrchestrator {
 
     const steps = [];
     const pendingWrites = new Set();
-    const stepsLimit = Math.max(1, Number(maxSteps) || 8);
+    const stepsLimit = Math.max(1, Number(maxSteps) || DEFAULT_MAX_STEPS);
 
     try {
       for (let i = 0; i < stepsLimit; i++) {
@@ -617,10 +783,39 @@ class ChatOrchestrator {
             result = await tools.execute(name, args, projectRoot, allowWrite, helpers || {});
           }
 
-          const stepData = { name, input: args, result, ok: result?.ok !== false };
+          const softRecover = recoverSoftToolFailure(name, args, result, projectRoot);
+          result = softRecover.payload;
+          if (Array.isArray(softRecover.stepsExtra) && softRecover.stepsExtra.length) {
+            for (const extra of softRecover.stepsExtra) {
+              steps.push(extra);
+              this.session.addStep(extra);
+            }
+          }
+
+          // Fallo leve: permitir reintento con args distintos (no bloquear toolHistory por soft).
+          const isSoft = result?.soft === true || result?.ooda === "continue"
+            || tools.isSoftToolFailure?.(name, result, args);
+          if (isSoft && result?.ok === false) {
+            toolHistory.delete(callKey);
+            onProgress?.({
+              phase: "narration",
+              text: name === "replace_in_file"
+                ? "Ajuste automático: releyendo contexto para reintentar…"
+                : "Fallo leve ignorado; continuando…",
+            });
+          }
+
+          const stepData = {
+            name,
+            input: args,
+            result,
+            ok: result?.ok !== false,
+            soft: isSoft || undefined,
+            softContinue: isSoft || undefined,
+          };
           steps.push(stepData);
           this.session.addStep(stepData);
-          onProgress?.({ phase: "tool", name, input: args, result, ok: result?.ok !== false });
+          onProgress?.({ phase: "tool", name, input: args, result, ok: stepData.ok });
 
           if ((name === "write_file" || name === "replace_in_file") && result?.ok !== false && args.path) {
             pendingWrites.delete(String(args.path));

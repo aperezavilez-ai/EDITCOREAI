@@ -124,7 +124,7 @@ function toolDefsForMode(mode = "explain", allowWrite = false) {
   return readTools;
 }
 
-function systemPromptForMode(mode, allowWrite) {
+function systemPromptForMode(mode, allowWrite, opts = {}) {
   let elite = null;
   try {
     elite = require("../runtime/elite-communication-policy");
@@ -137,13 +137,25 @@ function systemPromptForMode(mode, allowWrite) {
   }
   const wrap = elite?.withEliteCommunicationPolicy
     || ((s) => s);
+  const fullAccess = opts.fullAccess === true || (allowWrite && opts.permissionMode === "full");
   const base = [
-    "Eres EDITCOREAI Agent Core v0.2. Responde SIEMPRE en espanol.",
+    "Eres EDITCOREAI Agent Core v0.2 — GUÍA LÍDER autónomo. Responde SIEMPRE en espanol.",
+    "LIDERAZGO COGNITIVO: ante objetivos de alto nivel, genera hoja de ruta de 3-5 pasos, informa al usuario y ejecuta paso a paso sin esperar confirmaciones extra.",
     "Usa tool_calls reales. PROHIBIDO inventar lecturas/escrituras.",
     "PROHIBIDO cerrar con 'Verificacion completada con evidencia real'.",
     "PROHIBIDO crear *-fixed.js o placeholders.",
     "PROHIBIDO usar ANALISIS_ERRORES o .claude/*.md como evidencia forense.",
+    "MAPA COGNITIVO: usa list_files('.') / rutas reales. PROHIBIDO asumir src/ o app/ si no existen.",
+    "OODA: si replace_in_file falla por oldText, relee el archivo y reintenta. Ignora fallos secundarios de git auxiliares.",
   ];
+  if (fullAccess || (allowWrite && mode === "execute")) {
+    base.push(
+      "MODO ACCESO COMPLETO / EJECUCION AUTORIZADA:",
+      "PROHIBIDO preguntar: '¿Deseas que proceda?', 'Confirma para aplicar los cambios.', 'Escribe procede.', '¿Procedo?', u equivalents.",
+      "NO esperes confirmacion del usuario. Ejecuta YA write_file / replace_in_file / run_command.",
+      "Narra brevemente (2-4 lineas) que haras y aplica las tools de inmediato.",
+    );
+  }
   if (mode === "diagnose") {
     base.push(
       "MODO DIAGNOSTICO (solo lectura): list_files/read_file/search_files.",
@@ -152,17 +164,18 @@ function systemPromptForMode(mode, allowWrite) {
     );
   } else if (mode === "execute") {
     base.push(
-      "MODO EJECUCION: el usuario autorizo cambios.",
+      "MODO EJECUCION: el usuario autorizo cambios (o Acceso completo esta activo).",
+      "Narra brevemente tu hoja de ruta (3-5 pasos) y ejecuta YA.",
       "No esperes oldText del usuario: lee el archivo con read_file y construye replace_in_file con oldText EXACTO del contenido leido.",
       "Puedes hacer varios replace_in_file / write_file en la misma corrida.",
       "Usa delete_file solo si el usuario pide borrar un archivo concreto.",
-      "Si hay tests/verificacion, usa run_command (npm test, node --test, etc.). Si falla, lee el error, corrige y reintenta.",
+      "Si hay tests/verificacion, usa run_command (npm test, node --test, etc.). Si falla, lee el error, corrige y reintenta (ciclo OODA completo).",
       "Si no hay defecto real, di que no hay mutaciones y termina (no inventes cambios).",
       "Al final: ## Evidencia de correccion con tools y paths mutados.",
     );
   } else if (mode === "list" || mode === "explain") {
     base.push(
-      "Lista carpetas con list_files y explica archivos con read_file.",
+      "Lista carpetas con list_files (solo rutas reales del proyecto) y explica archivos con read_file.",
       "Respuesta clara en markdown. Sin meta-cierres.",
     );
   }
@@ -483,7 +496,7 @@ async function runLlmToolLoop(input = {}, options = {}) {
     mode = "explain",
     allowWrite = false,
     seedSteps = [],
-    maxIterations = 8,
+    maxIterations = 16,
     repairHint = "",
   } = options;
 
@@ -495,13 +508,20 @@ async function runLlmToolLoop(input = {}, options = {}) {
   const steps = [...seedSteps];
   let providerCalls = 0;
   const messages = [
-    { role: "system", content: systemPromptForMode(mode, allowWrite) },
+    {
+      role: "system",
+      content: systemPromptForMode(mode, allowWrite, {
+        fullAccess: input.fullAccess === true || input.permissionMode === "full" || input.permissionFull === true,
+        permissionMode: input.permissionMode,
+      }),
+    },
     {
       role: "user",
       content: [
         `PROYECTO: ${input.projectRoot || ""}`,
         `MODO: ${mode}`,
         `PERMISO ESCRITURA: ${allowWrite && mode !== "diagnose" ? "si" : "no"}`,
+        (input.fullAccess || input.permissionMode === "full") ? "ACCESO COMPLETO: si (ejecuta sin pedir procede)" : "",
         "",
         "SOLICITUD:",
         String(input.prompt || ""),
@@ -587,45 +607,77 @@ async function runLlmToolLoop(input = {}, options = {}) {
       });
       try {
         const result = await tools.execute(call.name, call.input || {});
+        const softFail = result && result.ok === false
+          && (/oldText|No existe|ENOENT|not a git repository/i.test(String(result.error || result.stderr || ""))
+            || result.soft === true);
+        let enriched = result;
+        if (softFail && call.name === "replace_in_file" && call.input?.path) {
+          try {
+            const readBack = await tools.execute("read_file", { path: call.input.path });
+            enriched = {
+              ...result,
+              soft: true,
+              ooda: "continue",
+              guidance: "Fallo leve oldText. Usa autoRead y reintenta replace_in_file. No detengas la sesion.",
+              autoRead: readBack,
+            };
+          } catch {
+            enriched = { ...result, soft: true, ooda: "continue" };
+          }
+        }
         const step = {
           name: call.name,
           input: call.input || {},
-          result,
-          ok: true,
+          result: enriched,
+          ok: result?.ok !== false,
+          soft: softFail || undefined,
           index: steps.length,
         };
         steps.push(step);
         input.onProgress?.({
           phase: "tool",
-          stage: "done",
+          stage: softFail ? "soft-fail" : "done",
           name: call.name,
           input: call.input,
-          result,
-          ok: true,
+          result: enriched,
+          ok: step.ok,
           index: steps.length - 1,
         });
-        const compact = typeof result === "string"
-          ? result.slice(0, 6000)
-          : JSON.stringify(result).slice(0, 6000);
+        const compact = typeof enriched === "string"
+          ? enriched.slice(0, 6000)
+          : JSON.stringify(enriched).slice(0, 6000);
         messages.push({ role: "tool", tool_call_id: call.id, content: compact });
       } catch (error) {
         const msg = String(error?.message || error);
+        const soft = /oldText|ENOENT|No existe|not a git repository|git:\s*command/i.test(msg);
         steps.push({
           name: call.name,
           input: call.input || {},
           ok: false,
+          soft: soft || undefined,
           error: msg,
           index: steps.length,
         });
         input.onProgress?.({
           phase: "tool",
-          stage: "failed",
+          stage: soft ? "soft-fail" : "failed",
           name: call.name,
           input: call.input,
           ok: false,
           index: steps.length - 1,
         });
-        messages.push({ role: "tool", tool_call_id: call.id, content: JSON.stringify({ error: msg }) });
+        messages.push({
+          role: "tool",
+          tool_call_id: call.id,
+          content: JSON.stringify({
+            error: msg,
+            soft: soft || undefined,
+            ooda: soft ? "continue" : undefined,
+            guidance: soft
+              ? "Fallo leve: relee contexto y reintenta. No detengas la sesion."
+              : undefined,
+          }),
+        });
       }
     }
   }

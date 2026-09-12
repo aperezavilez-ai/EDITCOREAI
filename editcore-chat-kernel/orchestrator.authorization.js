@@ -43,7 +43,7 @@ class Orchestrator {
         memory: taskToRun.memory,
         onProgress,
         allowWrite: true,
-        maxSteps: 10
+        maxSteps: 32
       });
     }
 
@@ -84,7 +84,7 @@ class Orchestrator {
         memory: taskToRun.memory,
         onProgress,
         allowWrite: true,
-        maxSteps: 10
+        maxSteps: 32
       });
     }
 
@@ -124,7 +124,7 @@ class Orchestrator {
       memory,
       onProgress,
       allowWrite: false,
-      maxSteps: 5
+      maxSteps: 16
     });
   }
 

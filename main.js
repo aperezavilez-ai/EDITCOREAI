@@ -1378,10 +1378,21 @@ ipcMain.handle("editcore:chat", async (_event, input = {}) => {
   const prompt = String(input.prompt || "").trim();
   const baseUrl = normalizeBaseUrl(input.baseUrl, input.providerKey || input.provider || input.mode);
   const rootPath = String(input.projectRoot || "").trim();
+  const permissionHint = String(
+    input.permissionMode
+    || permissionBySender.get(_event?.sender?.id)
+    || permissionMode
+    || "",
+  ).toLowerCase();
+  const fullAccess = permissionHint === "full";
 
   if (!prompt) throw new Error("Escribe un mensaje.");
 
-  const decision = classifyChatKernel(prompt);
+  const decision = classifyChatKernel(prompt, {
+    permissionMode: permissionHint || "step",
+    fullAccess,
+    allowWrite: fullAccess,
+  });
   if (decision.kind === "STOP") {
     const stopped = stopChatKernel();
     return {
@@ -1402,7 +1413,7 @@ ipcMain.handle("editcore:chat", async (_event, input = {}) => {
   const localText = typeof localConversationResponse === "function"
     ? localConversationResponse(prompt)
     : "";
-  if (localText && decision.kind === "CHAT") {
+  if (localText && decision.kind === "CHAT" && !fullAccess) {
     return {
       text: localText,
       cached: true,
@@ -1438,6 +1449,10 @@ ipcMain.handle("editcore:chat", async (_event, input = {}) => {
       apiKey,
       model,
       helpers,
+      allowWrite: fullAccess || permissionHint !== "readonly",
+      permissionMode: permissionHint || permissionMode || "step",
+      fullAccess,
+      planAuthorizedExecution: fullAccess,
       onProgress: (p) => {
         try {
           if (!sender.isDestroyed()) {
@@ -5444,6 +5459,10 @@ ipcMain.handle("agent:run", async (event, input = {}) => {
         apiKey,
         model,
         helpers,
+        allowWrite: permissionHint === "full" || permissionHint !== "readonly",
+        permissionMode: permissionHint || "step",
+        fullAccess: permissionHint === "full",
+        planAuthorizedExecution: permissionHint === "full",
         onProgress: (p) => {
           try {
             if (!event.sender.isDestroyed()) {
@@ -6750,7 +6769,9 @@ ipcMain.handle("agent:run", async (event, input = {}) => {
       allowWrite: canWrite,
       permissionMode: selectedPermission,
       analysisMode,
-      planAuthorized: input.planAuthorized === true,
+      planAuthorized: input.planAuthorized === true || selectedPermission === "full",
+      permissionFull: selectedPermission === "full",
+      fullAccess: selectedPermission === "full",
       fixQueue: Array.isArray(input.fixQueue)
         ? input.fixQueue
         : (Array.isArray(workflowContext?.plan?.fixQueue) ? workflowContext.plan.fixQueue : []),
@@ -7371,6 +7392,13 @@ ipcMain.handle("agent:git-commit", (_event, input = {}) => {
 ipcMain.handle("project:index-build", (_event, input = {}) => {
   const root = assertProjectRoot(String(input.projectRoot || "").trim());
   const index = getCachedProjectIndex(root, { rebuild: true, maxFiles: Number(input.maxFiles) || 4000 });
+  let projectMap = null;
+  try {
+    const { ensureProjectMap } = require("./runtime/project-map");
+    projectMap = ensureProjectMap(root, { force: true });
+  } catch (_) {
+    projectMap = null;
+  }
   return {
     ok: true,
     fileCount: index.fileCount,
@@ -7378,6 +7406,16 @@ ipcMain.handle("project:index-build", (_event, input = {}) => {
     symbolCount: index.symbolCount || 0,
     schemaCount: index.schemaCount || 0,
     builtAt: index.builtAt,
+    projectMap: projectMap?.ok
+      ? {
+          path: ".editcore/project-map.json",
+          dirCount: projectMap.map?.dirCount || 0,
+          fileCount: projectMap.map?.fileCount || 0,
+          rootDirs: (projectMap.map?.rootDirs || []).slice(0, 40),
+          stack: projectMap.map?.stack || [],
+          builtAt: projectMap.map?.builtAt || null,
+        }
+      : null,
   };
 });
 

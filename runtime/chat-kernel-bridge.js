@@ -45,7 +45,18 @@ async function runKernelChat({
   onProgress,
   helpers,
   autoHeal,
+  allowWrite,
+  permissionMode,
+  permissionFull,
+  fullAccess,
+  planAuthorizedExecution,
 }) {
+  const mode = String(permissionMode || "").toLowerCase();
+  const isFull = fullAccess === true
+    || permissionFull === true
+    || mode === "full"
+    || planAuthorizedExecution === true && mode === "full";
+
   return handleChat({
     message,
     projectRoot,
@@ -55,6 +66,11 @@ async function runKernelChat({
     onProgress,
     helpers: helpers || {},
     autoHeal: autoHeal || null,
+    allowWrite: isFull ? true : (allowWrite !== false && mode !== "readonly"),
+    permissionMode: isFull ? "full" : (permissionMode || "step"),
+    permissionFull: isFull,
+    fullAccess: isFull,
+    planAuthorizedExecution: isFull || planAuthorizedExecution === true,
   });
 }
 

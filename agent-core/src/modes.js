@@ -2,46 +2,16 @@
 
 /** @typedef {"list"|"explain"|"diagnose"|"execute"|"chat"} AgentMode */
 
+const { classify: classifyFromModule, isFullAccess } = require("./classify");
+
 /**
  * Clasifica el pedido del usuario en un modo del core.
  * @param {string} prompt
- * @param {{ allowWrite?: boolean, planAuthorized?: boolean, analysisMode?: boolean }} [opts]
+ * @param {{ allowWrite?: boolean, planAuthorized?: boolean, analysisMode?: boolean, permissionMode?: string, permissionFull?: boolean, fullAccess?: boolean }} [opts]
  * @returns {AgentMode}
  */
 function classifyMode(prompt = "", opts = {}) {
-  const text = String(prompt || "").trim();
-  if (!text) return "chat";
-
-  const authorized = opts.planAuthorized === true
-    || /^\s*(?:procede|adelante|autorizo|contin[uú]a)\b/i.test(text);
-
-  // PROCEDE / autorizacion gana al modo diagnostico pegajoso de la UI.
-  // (El worker bloquea writes si allowWrite=false, excepto createSpec explicito.)
-  if (authorized) {
-    return "execute";
-  }
-
-  if (opts.analysisMode === true
-    || /\bNO\s+MODIFI(?:CAR|QUES?)\b|\bMODO:\s*DIAGN|\bDIAGN[OÓ]STICO\b/i.test(text)) {
-    return "diagnose";
-  }
-
-  const wantsList = /\b(enlista(?:r|me)?|listar?|enumerar|muestra(?:me)?\s+(?:los\s+)?archivos|dame\s+(?:los\s+)?archivos)\b/i.test(text);
-  const wantsExplain = /\b(explica|explicar|describ[eéa]|qu[eé]\s+hace|para\s+qu[eé]|c[oó]mo\s+funciona)\b/i.test(text);
-  if (wantsList && wantsExplain) return "explain";
-  if (wantsList && !wantsExplain) return "list";
-  if (wantsExplain) return "explain";
-
-  if (/\b(analiza|audita|diagnostica|revisa|reporte|hallazgos)\b/i.test(text)
-    && !/\b(corrige|repara|arregla|implementa|crea|escribe)\b/i.test(text)) {
-    return "diagnose";
-  }
-
-  if (opts.allowWrite !== false && /\b(corrige|repara|arregla|implementa|crea|escribe|modifica|fix)\b/i.test(text)) {
-    return "execute";
-  }
-
-  return "chat";
+  return classifyFromModule(prompt, opts);
 }
 
 /**
@@ -277,6 +247,7 @@ function extractVerifyCommand(prompt = "") {
 
 module.exports = {
   classifyMode,
+  isFullAccess,
   extractPathsFromPrompt,
   extractCreateFileSpec,
   extractReplaceSpec,

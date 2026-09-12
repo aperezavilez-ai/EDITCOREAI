@@ -62,17 +62,116 @@ function writeFile(root, rel, content) {
   return { ok: true, path: rel, snapshotId: snap.ok ? snap.id : null };
 }
 
-function replaceInFile(root, rel, oldText, newText) {
-  const file = safe(root, rel);
-  if (!fs.existsSync(file)) return { ok: false, error: `No existe: ${rel}` };
-  const current = fs.readFileSync(file, "utf8");
+/**
+ * Localiza oldText con tolerancia leve (CRLF/LF, whitespace de línea).
+ * Fallos leves → el orquestador relee y reintenta sin detener la sesión.
+ */
+function locateOldText(current, oldText) {
   const old = String(oldText ?? "");
   if (!old) return { ok: false, error: "oldText vacío" };
-  if (!current.includes(old)) return { ok: false, error: "oldText no encontrado (debe ser exacto)" };
+  if (current.includes(old)) return { ok: true, match: old, mode: "exact" };
+
+  const normFile = current.replace(/\r\n/g, "\n");
+  const normOld = old.replace(/\r\n/g, "\n");
+  if (normFile.includes(normOld)) {
+    // Preferir el fragmento real del archivo (preserva CRLF si aplica).
+    const idx = current.replace(/\r\n/g, "\n").indexOf(normOld);
+    if (idx >= 0) {
+      // Reconstruir match aproximado por longitud en el original
+      let cursor = 0;
+      let fileIdx = 0;
+      while (cursor < idx && fileIdx < current.length) {
+        if (current[fileIdx] === "\r" && current[fileIdx + 1] === "\n") {
+          cursor += 1;
+          fileIdx += 2;
+        } else {
+          cursor += 1;
+          fileIdx += 1;
+        }
+      }
+      let end = fileIdx;
+      let consumed = 0;
+      while (consumed < normOld.length && end < current.length) {
+        if (current[end] === "\r" && current[end + 1] === "\n") {
+          consumed += 1;
+          end += 2;
+        } else {
+          consumed += 1;
+          end += 1;
+        }
+      }
+      return { ok: true, match: current.slice(fileIdx, end), mode: "crlf" };
+    }
+  }
+
+  const softLines = (s) => s.replace(/\r\n/g, "\n").split("\n").map((l) => l.trimEnd());
+  const fileLines = softLines(current);
+  const oldLines = softLines(old);
+  if (oldLines.length && oldLines.every((l) => l.length || oldLines.length === 1)) {
+    for (let i = 0; i <= fileLines.length - oldLines.length; i += 1) {
+      let hit = true;
+      for (let j = 0; j < oldLines.length; j += 1) {
+        if (fileLines[i + j] !== oldLines[j]) {
+          hit = false;
+          break;
+        }
+      }
+      if (hit) {
+        const rawLines = current.split(/\r?\n/);
+        const slice = rawLines.slice(i, i + oldLines.length).join(current.includes("\r\n") ? "\r\n" : "\n");
+        return { ok: true, match: slice, mode: "trim-end" };
+      }
+    }
+  }
+
+  return {
+    ok: false,
+    error: "oldText no encontrado (debe ser exacto)",
+    soft: true,
+    hint: "Relee el archivo con read_file y reconstruye oldText EXACTO del contenido actual.",
+  };
+}
+
+function replaceInFile(root, rel, oldText, newText) {
+  const file = safe(root, rel);
+  if (!fs.existsSync(file)) return { ok: false, error: `No existe: ${rel}`, soft: true };
+  const current = fs.readFileSync(file, "utf8");
+  const located = locateOldText(current, oldText);
+  if (!located.ok) {
+    return {
+      ok: false,
+      error: located.error,
+      soft: true,
+      path: rel,
+      hint: located.hint || "Relee el archivo y reintenta replace_in_file.",
+      preview: current.slice(0, 1200),
+    };
+  }
   const snap = snapshotBeforeWrite(root, rel, "replace_in_file");
-  const next = current.replace(old, String(newText ?? ""));
+  const next = current.replace(located.match, String(newText ?? ""));
   fs.writeFileSync(file, next, "utf8");
-  return { ok: true, path: rel, replaced: true, snapshotId: snap.ok ? snap.id : null };
+  return {
+    ok: true,
+    path: rel,
+    replaced: true,
+    softMatch: located.mode !== "exact" ? located.mode : undefined,
+    snapshotId: snap.ok ? snap.id : null,
+  };
+}
+
+/** Fallos leves que no deben detener la sesión OODA. */
+function isSoftToolFailure(name, result, args = {}) {
+  if (!result || result.ok !== false) return false;
+  if (result.soft === true) return true;
+  const err = String(result.error || result.stderr || result.message || "");
+  if (name === "replace_in_file" && /oldText|no existe|No existe/i.test(err)) return true;
+  if (name === "list_files" && /No existe|ENOENT/i.test(err)) return true;
+  if (name === "run_command") {
+    const cmd = String(args.command || "");
+    if (/^\s*git\s+(status|diff|log|remote|branch|rev-parse)\b/i.test(cmd)) return true;
+    if (/not a git repository|git:\s*command not found|is not recognized/i.test(err)) return true;
+  }
+  return false;
 }
 
 function searchFiles(root, query, maxHits = 30) {
@@ -384,10 +483,34 @@ const DEFINITIONS = [
   },
 ];
 
+function resolveListPath(root, requested) {
+  try {
+    const mapApi = require("../runtime/project-map");
+    mapApi.ensureProjectMap?.(root, { maxAgeMs: 5 * 60_000 });
+    const resolved = mapApi.resolveExistingTarget(root, requested || ".");
+    return resolved;
+  } catch {
+    return { target: requested || ".", source: "passthrough" };
+  }
+}
+
 async function execute(name, args, root, allowWrite, helpers = {}) {
   const a = args || {};
   switch (name) {
-    case "list_files": return listFiles(root, a.path || ".");
+    case "list_files": {
+      const resolved = resolveListPath(root, a.path || ".");
+      const listed = listFiles(root, resolved.target || ".");
+      if (resolved.missing) {
+        return {
+          ...listed,
+          requested: a.path || ".",
+          resolved: resolved.target,
+          note: `Ruta '${resolved.missing}' no está en el mapa cognitivo; listando '${resolved.target}'. Raíces: ${(resolved.availableRoots || []).slice(0, 20).join(", ")}`,
+          soft: !listed.ok,
+        };
+      }
+      return listed;
+    }
     case "read_file": return readFile(root, a.path);
     case "search_files": return searchFiles(root, a.query || "");
     case "write_file":
@@ -498,6 +621,8 @@ module.exports = {
   rollbackLastChange,
   listSnapshots,
   capture_preview_screenshot,
+  isSoftToolFailure,
+  locateOldText,
   execute,
   DEFINITIONS,
 };
