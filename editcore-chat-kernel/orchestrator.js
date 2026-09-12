@@ -332,6 +332,11 @@ class ChatOrchestrator {
     if (/\b(?:explora|explorer|directorio|listar|estructura|archivos)\b/i.test(text) && decision.kind === "CHAT") {
       decision = { kind: "LIST", label: "Explorar directorio", allowTools: true, allowWrite: false, background: false };
     }
+    if (/\b(?:explica|explicar|lee|leer|describe|resume|revisa|qu[eé]\s+hace)\b/i.test(text)
+      && /(?:[\\/]|\.\w{1,10}\b)/i.test(text)
+      && decision.kind === "CHAT") {
+      decision = { kind: "ASK", label: "Lectura / explicación", allowTools: true, allowWrite: false, background: false };
+    }
 
     if (background === true) decision.background = true;
 
@@ -559,6 +564,7 @@ class ChatOrchestrator {
     this.abort = new AbortController();
 
     const toolHistory = new Map();
+    const softRetryCounts = new Map();
     let lastVerifyError = null;
     const cognitiveBlock = (!chatOnly && decision?.kind !== "CHAT")
       ? formatCognitiveBlock(projectRoot)
@@ -783,26 +789,47 @@ class ChatOrchestrator {
             result = await tools.execute(name, args, projectRoot, allowWrite, helpers || {});
           }
 
-          const softRecover = recoverSoftToolFailure(name, args, result, projectRoot);
-          result = softRecover.payload;
-          if (Array.isArray(softRecover.stepsExtra) && softRecover.stepsExtra.length) {
+          if (Array.isArray(softRecover.stepsExtra) && softRecover.stepsExtra.length && softRecover.recovered) {
+            // Solo registrar el list_files corregido; evita duplicar el step fallido+recuperado
             for (const extra of softRecover.stepsExtra) {
               steps.push(extra);
               this.session.addStep(extra);
             }
+            result = softRecover.payload;
+            // No volver a pushar el intento fallido como step principal
+            messages.push({
+              role: "tool",
+              tool_call_id: call.id,
+              name,
+              content: tools.truncatePayload(result || {}, tools.TOOL_RESULT_CAP || 2000),
+            });
+            continue;
+          } else {
+            result = softRecover.payload;
           }
 
           // Fallo leve: permitir reintento con args distintos (no bloquear toolHistory por soft).
           const isSoft = result?.soft === true || result?.ooda === "continue"
             || tools.isSoftToolFailure?.(name, result, args);
           if (isSoft && result?.ok === false) {
-            toolHistory.delete(callKey);
-            onProgress?.({
-              phase: "narration",
-              text: name === "replace_in_file"
-                ? "Ajuste automático: releyendo contexto para reintentar…"
-                : "Fallo leve ignorado; continuando…",
-            });
+            const softN = (softRetryCounts.get(callKey) || 0) + 1;
+            softRetryCounts.set(callKey, softN);
+            if (softN < 3) {
+              toolHistory.delete(callKey);
+              onProgress?.({
+                phase: "narration",
+                text: name === "replace_in_file"
+                  ? "Ajuste automático: releyendo contexto para reintentar…"
+                  : "Fallo leve ignorado; continuando…",
+              });
+            } else {
+              result = {
+                ...result,
+                soft: true,
+                ooda: "stop-soft-retry",
+                guidance: "Tope de reintentos leves alcanzado para esta acción. Cambia de enfoque o entrega resultado parcial.",
+              };
+            }
           }
 
           const stepData = {

@@ -306,14 +306,27 @@ function isListAndExplainRequest(prompt = "") {
   return wantsList && wantsExplain;
 }
 
+/** Explicar/leer/describir un archivo concreto del disco. */
+function isExplainOrReadFileRequest(prompt = "") {
+  const text = String(prompt || "").trim();
+  if (!text) return false;
+  if (isListAndExplainRequest(text)) return false;
+  const verb = /\b(explica|explicar|lee|leer|describe|describ[eéa]|resume|resumir|revisa|revisar|qu[eé]\s+hace|c[oó]mo\s+funciona|para\s+qu[eé]\s+sirve)\b/i.test(text);
+  if (!verb) return false;
+  if (/\b(corrige|arregla|implementa|crea|modifica|refactoriza|actualiza)\b/i.test(text)) return false;
+  return /(?:[\\/]|\b[a-z0-9_.-]+\.(?:js|ts|tsx|jsx|mjs|cjs|json|md|css|html|py)\b)/i.test(text)
+    || /\b(?:main\.js|package\.json|readme(?:\.md)?)\b/i.test(text);
+}
+
 function isCasualChat(prompt = "", options = {}) {
   const text = String(prompt || "").trim();
   if (!text) return false;
+  if (isListAndExplainRequest(text) || isExplainOrReadFileRequest(text) || isListOnlyRequest(text)) return false;
   if (isProjectIntentComment(text)) return true;
   if (isGreenfieldCreateRequest(text) || isChangeRequest(text)) return false;
   const intent = classifyPromptIntent(text, options.hasAnalysisMemory === true);
   if (intent !== "conversation") return false;
-  return !/\b(analiza|revisa|verifica|investiga|diagnostica|audita|archivo|c[oó]digo|workspace|repositorio|tarea|medias|terminas|dejas|agente|avance|completar)\b/i.test(text);
+  return !/\b(analiza|revisa|verifica|investiga|diagnostica|audita|archivo|archivos?|c[oó]digo|workspace|repositorio|tarea|medias|terminas|dejas|agente|avance|completar|explica|lee|describe)\b/i.test(text);
 }
 
 function formatOrchestrationBlock(profile = {}) {
@@ -497,10 +510,24 @@ function buildProfile(fields = {}) {
   const allowedTools = Array.isArray(fields.allowedTools)
     ? fields.allowedTools
     : (TOOL_ALLOWLIST[fields.mode] || []);
+  let orchestrationBlock = formatOrchestrationBlock(fields);
+  const leadership = fields.mode !== MODES.CHAT
+    && fields.mode !== MODES.UNDERSTAND
+    && fields.conversationOnly !== true
+    ? [
+      "ROL: GUÍA LÍDER (inversión del control).",
+      "Ante objetivos de alto nivel: genera hoja de ruta de 3-5 pasos, informa al usuario qué harás y ejecuta autónomamente con tools.",
+      "Usa el mapa cognitivo real del proyecto; no inventes carpetas src/ o app/ inexistentes.",
+      "OODA: ante fallos leves (oldText, git auxiliar), relee y reintenta sin detener la sesión.",
+    ].join(" ")
+    : "";
+  if (leadership) {
+    orchestrationBlock = [orchestrationBlock, leadership].filter(Boolean).join("\n\n");
+  }
   return {
     ...fields,
     allowedTools,
-    orchestrationBlock: formatOrchestrationBlock(fields),
+    orchestrationBlock,
   };
 }
 
@@ -587,7 +614,16 @@ function resolveUnifiedAgentPlan(options = {}) {
     // Solo PROCEDE/plan aprobado escribe. CONTINUA solo no autoriza mutacion.
     mode = MODES.EXECUTE;
     reason = "plan autorizado";
-  } else if (isConceptualOrPromptFirst && !userAuth) {
+  } else if (isAgent && isListAndExplainRequest(effectivePrompt) && !userAuth) {
+    mode = MODES.DISCOVER;
+    reason = "listar y explicar con tools";
+  } else if (isAgent && isExplainOrReadFileRequest(effectivePrompt) && !userAuth) {
+    mode = MODES.DISCOVER;
+    reason = "leer/explicar archivo";
+  } else if (isConceptualOrPromptFirst && !userAuth
+    && !isListAndExplainRequest(effectivePrompt)
+    && !isExplainOrReadFileRequest(effectivePrompt)
+    && !isListOnlyRequest(effectivePrompt)) {
     // Spec pegada / arquitectura / requerimiento: entender pedido en conversacion primero.
     mode = MODES.CHAT;
     reason = "entender pedido en conversacion";
@@ -607,6 +643,9 @@ function resolveUnifiedAgentPlan(options = {}) {
     mode = MODES.EXECUTE;
     reason = "acceso completo + autorizacion del usuario";
   } else if ((isConversationalFollowUp(effectivePrompt) || isUserDirectiveOrComplaint?.(effectivePrompt)) && !hasAttachments
+    && !isListAndExplainRequest(effectivePrompt)
+    && !isExplainOrReadFileRequest(effectivePrompt)
+    && !isListOnlyRequest(effectivePrompt)
     && !isResumeIncompleteAnalysisRequest(effectivePrompt, {
       resumableTask,
       workflowPhase,
@@ -614,7 +653,7 @@ function resolveUnifiedAgentPlan(options = {}) {
     })
     && !isChangeRequest(effectivePrompt)
     && !isGreenfieldCreateRequest(effectivePrompt)
-    && !/\b(?:crear?|crees?|corregir?|corrijas?|corrijelo|modifica|modifiques|escribir?|escribas?|arreglar?|arregles?|implementar?|implementes?|haz|hacer|funcionar|ejecutar?|ejecuta)\b/i.test(effectivePrompt)) {
+    && !/\b(?:crear?|crees?|corregir?|corrijas?|corrijelo|modifica|modifiques|escribir?|escribas?|arreglar?|arregles?|implementar?|implementes?|haz|hacer|funcionar|ejecutar?|ejecuta|explica|lee|describe|lista)\b/i.test(effectivePrompt)) {
     mode = MODES.CHAT;
     reason = isUserDirectiveOrComplaint?.(effectivePrompt)
       ? "directiva del usuario (sin re-analisis)"
@@ -991,6 +1030,8 @@ return {
   wantsExplicitFilesystemWork,
   isListOnlyRequest,
   isListAndExplainRequest,
+  isExplainOrReadFileRequest,
+  isCasualChat,
   isAnalysisOnlyRequest,
   isResumeIncompleteAnalysisRequest,
   formatOrchestrationBlock,

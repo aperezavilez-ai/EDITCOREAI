@@ -12,6 +12,7 @@ const SKIP_DIRS = new Set([
   ".git", "node_modules", "dist", "build", ".next", "coverage",
   "out", "tmp", "temp", ".cache", "release", "release-275",
   "win-unpacked", "packaged", "app.asar", "app.asar.unpacked",
+  "snapshots", "chat-memory",
 ]);
 
 const MAX_DIRS = 400;
@@ -38,7 +39,11 @@ function walkTree(root, relative = "", depth = 0, acc = { dirs: [], files: [] })
   entries.sort((a, b) => Number(b.isDirectory()) - Number(a.isDirectory()) || a.name.localeCompare(b.name));
   for (const entry of entries) {
     if (SKIP_DIRS.has(entry.name)) continue;
+    // .editcore: solo metadatos livianos; nunca snapshots/.bak
     if (entry.name.startsWith(".") && entry.name !== ".cursor" && entry.name !== ".editcore") continue;
+    if (entry.name === ".editcore" || normalizeRel(relative) === ".editcore") {
+      if (entry.isDirectory() && (entry.name === "snapshots" || entry.name === "chat-memory")) continue;
+    }
     const rel = normalizeRel(relative ? `${relative}/${entry.name}` : entry.name);
     if (entry.isDirectory()) {
       acc.dirs.push(rel);

@@ -6751,6 +6751,19 @@ ipcMain.handle("agent:run", async (event, input = {}) => {
         }
       } catch { /* ignore */ }
     }
+    // H1: inyectar liderazgo cognitivo en el bloque que consume el adapter
+    try {
+      const lead = String(orchestratorPlan?.agentLeadershipHint || "").trim();
+      if (lead && runProfile && typeof runProfile === "object") {
+        runProfile.orchestrationBlock = [runProfile.orchestrationBlock, lead].filter(Boolean).join("\n\n");
+      }
+      if (lead && orchestratorPlan?.runProfile) {
+        orchestratorPlan.runProfile.orchestrationBlock = [
+          orchestratorPlan.runProfile.orchestrationBlock,
+          lead,
+        ].filter(Boolean).join("\n\n");
+      }
+    } catch { /* ignore */ }
     const adapterInput = {
       prompt: enrichedTask,
       rawUserPrompt: task,
@@ -6772,6 +6785,7 @@ ipcMain.handle("agent:run", async (event, input = {}) => {
       planAuthorized: input.planAuthorized === true || selectedPermission === "full",
       permissionFull: selectedPermission === "full",
       fullAccess: selectedPermission === "full",
+      agentLeadershipHint: String(orchestratorPlan?.agentLeadershipHint || "").trim(),
       fixQueue: Array.isArray(input.fixQueue)
         ? input.fixQueue
         : (Array.isArray(workflowContext?.plan?.fixQueue) ? workflowContext.plan.fixQueue : []),

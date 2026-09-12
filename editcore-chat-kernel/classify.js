@@ -12,6 +12,8 @@ const TASK_FIX_RE = /\b(?:corrije|corrige|arregla|implementa|aplica|repara|soluc
 
 const TASK_ANALYZE_RE = /\b(?:analiza|audita|diagnostica|revisa\s+errores|hallazgos|reporte\s+completo|plan\s+de\s+acci[oó]n)\b/i;
 const TASK_LIST_RE = /\b(?:lista|listar|qu[eé]\s+contiene|qu[eé]\s+hay\s+en|contenido\s+de|muestra\s+(?:la\s+)?carpeta|explora|explorar|explorer|directorio|arbol|árbol)\b/i;
+const TASK_READ_RE = /\b(?:explica|explicar|lee|leer|describe|describ[eéa]|resume|resumir|revisa|revisar|qu[eé]\s+hace|c[oó]mo\s+funciona|para\s+qu[eé]\s+sirve)\b/i;
+const PATHISH_RE = /(?:[\\/]|\b[a-z0-9_.-]+\.(?:js|ts|tsx|jsx|mjs|cjs|json|md|css|html|py|rs|go)\b)/i;
 const TASK_GIT_RE = /\b(?:commit|push|git\s+status|haz\s+commit)\b/i;
 const TASK_DEPLOY_RE = /\b(?:deploy|publica(?:r)?|vercel)\b/i;
 const BACKGROUND_RE = /\b(?:segundo\s+plano|en\s+background|background|sin\s+esperar)\b/i;
@@ -50,8 +52,13 @@ function classify(message, opts = {}) {
     return { kind: "LIST", label: "Listado", allowTools: true, allowWrite: false, background };
   }
 
+  // Explicar/leer/describir un archivo concreto → tools (read_file), nunca chat ciego
+  if (TASK_READ_RE.test(text) && PATHISH_RE.test(text) && !TASK_FIX_RE.test(text)) {
+    return { kind: "ASK", label: "Lectura / explicación", allowTools: true, allowWrite: false, background };
+  }
+
   // Chat info solo si NO hay verbo de acción (evita degradar "crea X" / "implementa Y")
-  if (CHAT_INFO_RE.test(text) && !TASK_FIX_RE.test(text)) {
+  if (CHAT_INFO_RE.test(text) && !TASK_FIX_RE.test(text) && !TASK_READ_RE.test(text)) {
     return { kind: "CHAT", label: "Consulta Informativa", allowTools: false, allowWrite: false, background: false };
   }
 
