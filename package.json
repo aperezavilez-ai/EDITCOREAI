@@ -63,11 +63,13 @@
       "**/*",
       "app/**/*",
       "src/**/*",
+      "!.editcore/**",
       "!resources/rtk/**",
       "!resources/app.asar",
       "!test/**",
       "!scripts/**",
       "!phase*-results/**",
+      "!scratch/**",
       "!**/*.log",
       "!*.md",
       "!node_modules/.cache/**"
