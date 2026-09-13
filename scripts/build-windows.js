@@ -105,12 +105,32 @@ try {
   if (fs.existsSync(orphanPortable)) fs.unlinkSync(orphanPortable);
 } catch { /* ignore */ }
 
-// Copia del EXE portable junto al proyecto fuente para acceso rapido.
-const projectExe = path.join(appRoot, "EDITCOREAI.exe");
+// Copia del EXE portable junto al proyecto fuente NO sirve sola (faltan DLLs).
+// Generar acceso rápido vía BAT al portable completo.
+const projectLauncher = path.join(appRoot, "Abrir-EDITCOREAI-PORTABLE.bat");
 try {
-  fs.copyFileSync(path.join(portableDir, "EDITCOREAI.exe"), projectExe);
+  const portableExe = path.join(portableDir, "EDITCOREAI.exe");
+  fs.writeFileSync(
+    projectLauncher,
+    [
+      "@echo off",
+      "setlocal",
+      `cd /d "${portableDir}"`,
+      "start \"\" \"EDITCOREAI.exe\"",
+      "endlocal",
+      "",
+    ].join("\r\n"),
+    "utf8",
+  );
+  // Evitar EXE huérfano en la raíz del repo (rompe al hacer doble clic).
+  const orphanProjectExe = path.join(appRoot, "EDITCOREAI.exe");
+  if (fs.existsSync(orphanProjectExe)) {
+    try { fs.unlinkSync(orphanProjectExe); } catch { /* ignore */ }
+  }
+  console.log(`Launcher: ${projectLauncher}`);
+  console.log(`Portable EXE: ${portableExe}`);
 } catch (error) {
-  console.warn(`[build-windows] No se pudo copiar EXE al proyecto: ${error.message}`);
+  console.warn(`[build-windows] No se pudo crear launcher: ${error.message}`);
 }
 
 const installDir = path.join(process.env.LOCALAPPDATA || "", "Programs", "EDITCOREAI");
@@ -133,4 +153,4 @@ if (fs.existsSync(installDir)) {
 console.log(`Release limpio: ${installerPath}`);
 console.log(`Version empaquetada: ${appVersion}`);
 console.log(`Portable: ${path.join(portableDir, "EDITCOREAI.exe")}`);
-console.log(`EXE proyecto: ${projectExe}`);
+console.log(`Launcher: ${path.join(appRoot, "Abrir-EDITCOREAI-PORTABLE.bat")}`);

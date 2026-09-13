@@ -15,8 +15,6 @@ const { callChat } = require("./provider");
 const { capture_preview_screenshot, DEFAULT_PREVIEW_URL } = require("./vision-inspector");
 const globalMemory = require("./global-memory");
 const taskQueue = require("./task-queue");
-const TaskQueue = require("./task-queue");
-const globalTaskQueue = new TaskQueue({ concurrency: 2 });
 
 let intentOrchestrator = null;
 try {
