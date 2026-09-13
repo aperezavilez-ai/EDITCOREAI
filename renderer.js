@@ -166,12 +166,22 @@ function isIgnorablePreviewConsoleMessage(message = "") {
     || /failed to create shared context/.test(text)
     || /gl_surface|viz_main_impl|command_buffer/.test(text)
     || /passthrough is not supported|angle/.test(text)
-    || /autofill\.cc|autofill_agent/.test(text);
+    || /autofill\.cc|autofill_agent/.test(text)
+    // Ruido del propio EDITCOREAI (desktop), no del preview web del usuario
+    || /cannot find module ['"]?main\.js['"]?/.test(text)
+    || /cannot find module ['"]?preload\.js['"]?/.test(text)
+    || /\bmain\.js\s+error:/.test(text)
+    || /\bpreload\.js\s+error:/.test(text)
+    || /importreportpath/.test(text)
+    || /connectionimportreportpath/.test(text)
+    || /fs\.writefilesync\(importreportpath/.test(text);
 }
 
 function pushPreviewRuntimeError(message = "", level = "error") {
   const text = normalizePreviewConsoleMessage(message);
   if (!text || isIgnorablePreviewConsoleMessage(text)) return;
+  // Sin URL de preview activa: no mostrar panel de errores del navegador.
+  if (!previewExpectedUrl && !$("previewUrl")?.value?.trim()) return;
   previewRuntimeErrors.push({ level, message: text.slice(0, 240), at: Date.now() });
   if (previewRuntimeErrors.length > 40) previewRuntimeErrors.splice(0, previewRuntimeErrors.length - 40);
   renderPreviewRuntimeErrors();
@@ -2485,6 +2495,8 @@ function isPlanAuthorizedExecution(project, prompt, isAgent) {
   // CONTINUA solo reanuda analisis/checkpoint. NO autoriza correcciones.
   // PROCEDE / ADELANTE / AUTORIZO, "continua con correcciones", o pedidos explícitos de CORREGIR/ARREGLAR.
   const strictProceed = /^\s*(?:procede|adelante|autorizo)\b/i.test(text);
+  // Acceso completo: PROCEDE/ADELANTE autoriza siempre (sin depender de fase awaiting).
+  if (strictProceed && state.permissionMode === "full") return true;
   const continuaWithFixes = /^\s*contin[uú]a\b/i.test(text)
     && /\b(correcciones?|cambios?|el plan|la propuesta|implementaci[oó]n|arregla|corrige|corrije|crear?|construir)\b/i.test(text);
   // Usuario pide corregir directamente (con o sin plan previo): "corrije A", "corrige el error", "arregla X"
@@ -11779,6 +11791,7 @@ if (window.editcoreProject.onPreviewLog) {
     if (payload.projectRoot && normalizeProjectRoot(payload.projectRoot) !== normalizeProjectRoot(state.projectRoot)) return;
     if (payload.type === "preview-issue" && payload.issue?.summary) {
       if (isIgnorablePreviewConsoleMessage(payload.issue.summary)) return;
+      if (!previewExpectedUrl && !$("previewUrl")?.value?.trim()) return;
       pushPreviewRuntimeError(payload.issue.summary, payload.issue.kind === "fatal" ? "error" : "warn");
       $("status").textContent = payload.wakeVerifier
         ? `VERIFIER · ${payload.issue.summary}`.slice(0, 160)

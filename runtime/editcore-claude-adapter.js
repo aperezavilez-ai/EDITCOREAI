@@ -1804,7 +1804,11 @@ class EditCoreClaudeAdapter {
 
         // Analisis: si el modelo YA pidio autorizacion, CERRAR YA.
         // No seguir con mas tools ni regenerar (evita "Trabajando..." eterno y reportes pegados).
-        if (input.analysisMode === true && input.allowWrite !== true && narration) {
+        // Acceso completo: NO pausar por PROCEDE (el permiso ya autoriza).
+        const permissionFullNowPause = input.permissionMode === "full"
+          || input.runProfile?.permissionFull === true
+          || input.orchestratorPlan?.permissionFull === true;
+        if (input.analysisMode === true && input.allowWrite !== true && narration && !permissionFullNowPause) {
           const asksAuth = /Cuando autorices procedo|cuando autorices[,:]?\s*procedo|escribe\s*\*?\*?procede/i.test(narration);
           const pendingPlan = isPendingAnalysisPlan(narration)
             || (reportLooksComplete(narration) && asksAuth);

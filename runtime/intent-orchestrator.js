@@ -61,13 +61,14 @@
     if (phase === "awaiting_authorization") return false;
     const phaseOk = ["interrupted", "executing"].includes(phase);
     if (!options.resumableTask && !phaseOk) return false;
+    // PROCEDE / ADELANTE / AUTORIZO = autorizar EJECUCION, nunca reabrir analisis eterno.
+    if (/^\s*(?:procede|adelante|autorizo)\b/i.test(text)) return false;
     // Pedido explicito de correccion/escritura: no forzar analisis.
     if (/\b(corrige|repara|arregla|fix|implementa|crea|escribe|modifica|write_file|replace_in_file)\b/i.test(text)
       && !/\b(reporte|diagn[oó]stico|an[aá]lisis|auditor[ií]a)\b/i.test(text)) {
       return false;
     }
-    return isAuthorization(text)
-      || /\bcontin[uú]a\b/i.test(text)
+    return /\bcontin[uú]a\b/i.test(text)
       || /\b(termina|completa|cierra)\b.*\b(reporte|an[aá]lisis|auditor[ií]a)\b/i.test(text)
       || /\b(por\s+qu[eé]|porque)\b.*\b(detienes|paras|cortas)\b/i.test(text)
       || /\bhaz\s+lo\s+que\s+te\s+pido\b/i.test(text)
@@ -642,6 +643,7 @@ function resolveUnifiedAgentPlan(options = {}) {
     reason = "continuacion autorizada";
   } else if (permissionFull && userAuth && isAgent && allowWrite && !permissionReadonly) {
     // Acceso total + ADELANTE/PROCEDE: ejecutar de verdad (no re-analizar a medias).
+    // Nota: PROCEDE ya no entra en isResumeIncompleteAnalysisRequest (arriba).
     mode = MODES.EXECUTE;
     reason = "acceso completo + autorizacion del usuario";
   } else if ((isConversationalFollowUp(effectivePrompt) || isUserDirectiveOrComplaint?.(effectivePrompt)) && !hasAttachments

@@ -58,6 +58,8 @@ EDITCOREAI es la plataforma desktop de pair-programming y agentic coding: orques
 - [x] `task-queue.js`: shutdown/clear/getStats + export estable `module.exports` + `.TaskQueue`.
 - [x] Pack Windows: carpeta `release\` limpia (solo Setup); `EDITCOREAI.exe` en la **raíz** abre el proyecto raíz (Electron), no release.
 - [x] Abrir app de desarrollo: `EDITCOREAI.exe` o `Abrir-EDITCOREAI.bat` en la raíz.
+- [x] UI: eliminado botón no pedido «Restaurar versión anterior»; preview ignora ruido `main.js`/`preload.js`/importReport.
+- [x] Acceso completo: `PROCEDE` ya no se clasifica como “reanudar análisis” (antes quedaba en DISCOVER eterno).
 
 ---
 
