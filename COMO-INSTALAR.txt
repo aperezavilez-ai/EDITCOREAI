@@ -1,16 +1,20 @@
-EDITCOREAI — carpeta app-extracted completa
-================================================
+EDITCOREAI — cómo abrir / instalar (v2.8.1)
+==========================================
 
-1. Cierra EDITCOREAI.
-2. D:\PROGRAMAS IA\EDITCOREAI\resources\
-3. Renombra app-extracted → app-extracted.backup
-4. Descomprime este ZIP.
-5. Renombra la carpeta interior a: app-extracted
-6. Colócala en resources\app-extracted
-7. Regenera asar:
-   cd "D:\PROGRAMAS IA\EDITCOREAI\resources"
-   Rename-Item app.asar app.asar.old -ErrorAction SilentlyContinue
-   npx --yes @electron/asar pack app-extracted app.asar
-8. abre EDITCOREAI.exe
+El empaquetado vive DENTRO de esta carpeta del proyecto:
 
-Nombre del producto: EDITCOREAI (sin EditFlow).
+  D:\PROGRAMAS IA\EDITCOREAI\release-EDITCOREAI\
+
+Opciones:
+
+1) Portable
+   - Abrir-EDITCOREAI-PORTABLE.bat
+   - O: release-EDITCOREAI\EDITCOREAI-portable\EDITCOREAI.exe
+
+2) Instalador
+   - release-EDITCOREAI\EDITCOREAI-Setup.exe
+
+3) Desarrollo (código + Electron)
+   - Abrir-EDITCOREAI.bat
+
+Producto: EDITCOREAI (no EditCore AI).

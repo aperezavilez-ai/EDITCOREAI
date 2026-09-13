@@ -6,15 +6,16 @@ const { spawnSync } = require("node:child_process");
 const asar = require("@electron/asar");
 
 const appRoot = path.resolve(__dirname, "..");
-// Carpeta padre: D:\PROGRAMAS IA  (hermana de EDITCOREAI)
+// Recursos compartidos siguen en el padre (rtk / ui-overlay).
 const workspaceRoot = path.resolve(appRoot, "..");
-const releaseDir = path.resolve(workspaceRoot, "release-EDITCOREAI");
-const expectedReleaseDir = path.join(workspaceRoot, "release-EDITCOREAI");
+// El release pertenece DENTRO del proyecto EDITCOREAI.
+const releaseDir = path.join(appRoot, "release-EDITCOREAI");
+const expectedReleaseDir = path.join(appRoot, "release-EDITCOREAI");
 const installerName = "EDITCOREAI-Setup.exe";
 const bundledRtk = path.resolve(workspaceRoot, "rtk", "rtk.exe");
 const portableDir = path.join(releaseDir, "EDITCOREAI-portable");
 
-if (releaseDir !== expectedReleaseDir || path.dirname(releaseDir) !== workspaceRoot) {
+if (releaseDir !== expectedReleaseDir || path.dirname(releaseDir) !== appRoot) {
   throw new Error(`Ruta de release insegura: ${releaseDir}`);
 }
 if (!fs.existsSync(bundledRtk) || !fs.statSync(bundledRtk).isFile()) {

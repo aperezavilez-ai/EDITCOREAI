@@ -3,7 +3,7 @@ const fs = require("fs");
 const path = require("path");
 const asar = require("@electron/asar");
 
-const release = path.join("D:", "PROGRAMAS IA", "release-EDITCOREAI");
+const release = path.join(__dirname, "..", "release-EDITCOREAI");
 const portableAsar = path.join(release, "EDITCOREAI-portable", "resources", "app.asar");
 const setup = path.join(release, "EDITCOREAI-Setup.exe");
 const portableExe = path.join(release, "EDITCOREAI-portable", "EDITCOREAI.exe");
@@ -27,3 +27,4 @@ if (bad || !ok || pkg.version !== "2.8.1" || pkg.name !== "editcoreai") {
   process.exit(1);
 }
 console.log("RELEASE_OK");
+console.log("path", release);

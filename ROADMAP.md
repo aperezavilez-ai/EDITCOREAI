@@ -51,13 +51,13 @@ EDITCOREAI es la plataforma desktop de pair-programming y agentic coding: orques
 - [x] Conexiones: Supabase GafCore muestra URL del **proyecto abierto** (no hereda `/taxidriv`).
 - [x] Auto · ME AI y Auto · APICredits (scope por proveedor); ancla perfil/API con tools (no solo-lectura).
 - [x] Acceso completo: al cerrar análisis/ejecución ofrece opciones + **Recomendada** (sin puerta PROCEDE a mitad).
-- [x] Empaquetado desde esta carpeta EDITCOREAI → `../release-EDITCOREAI` (portable + Setup).
+- [x] Empaquetado desde esta carpeta EDITCOREAI → `release-EDITCOREAI` (portable + Setup, dentro del proyecto).
 
 ### 8. Hotfix arranque TaskQueue (v2.8.1) — NUEVO
 - [x] Crash `TaskQueue is not a constructor`: el kernel usa el singleton `require("./task-queue")`, no `new TaskQueue()`.
 - [x] `task-queue.js`: shutdown/clear/getStats + export estable `module.exports` + `.TaskQueue`.
-- [x] Pack Windows: excluye `.editcore/**`; salida en `D:\PROGRAMAS IA\release-EDITCOREAI\` (Setup + portable).
-- [x] Abrir siempre el portable completo (`EDITCOREAI-portable\EDITCOREAI.exe`), no un EXE suelto sin DLLs.
+- [x] Pack Windows: excluye `.editcore/**`; salida **dentro del proyecto** en `EDITCOREAI\release-EDITCOREAI\` (Setup + portable).
+- [x] Abrir siempre el portable completo (`release-EDITCOREAI\EDITCOREAI-portable\EDITCOREAI.exe`), no un EXE suelto sin DLLs.
 
 ---
 
