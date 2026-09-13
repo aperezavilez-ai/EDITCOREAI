@@ -72,6 +72,18 @@ test("analiza unicamente package.json NO abre proyecto 'unicamente'", () => {
   assert.equal(mode.pathGiven, false);
 });
 
+test("analiza porque ... NO abre proyecto 'porque'", () => {
+  const prompt = "analiza porque la ia de fuxion servise no esta funcionando, la ia se alimenta desde el proyecto gafcore gateway";
+  assert.equal(ProjectAnalysis.extractReferencedProjectName(prompt), "");
+  assert.equal(ProjectAnalysis.extractOpenProjectName(prompt), "");
+  const mode = ProjectAnalysis.resolveExecutionMode(prompt, {
+    requestedAgent: true,
+    projectOpen: true,
+  });
+  assert.equal(mode.referencedProjectName, "");
+  assert.equal(mode.missingProject, false);
+});
+
 test("acepta atajo Windows D:PROGRAMAS IA sin barra", () => {
   assert.equal(ProjectAnalysis.hasUsableAbsolutePath("enlistame D:PROGRAMAS IA"), true);
   const hints = ProjectAnalysis.extractAbsolutePathHints("enlistame D:PROGRAMAS IA");
@@ -123,6 +135,42 @@ test("cierra el proyecto no exige ruta ni va al agente como analisis", () => {
     projectOpen: true,
   });
   assert.equal(mode.closeProject, true);
+  assert.equal(mode.missingProject, false);
+});
+
+test("cierra este y abre otro se reconoce como switch de workspace", () => {
+  const prompt = "vamos a trabajar en otro proyecto requiero que cierres este fuxion service y abras el proyecto, editcoreai";
+  assert.equal(ProjectAnalysis.isSwitchProjectRequest(prompt), true);
+  assert.equal(ProjectAnalysis.isCloseProjectRequest(prompt), false);
+  assert.equal(String(ProjectAnalysis.extractSwitchProjectName(prompt) || "").toLowerCase(), "editcoreai");
+  assert.equal(ProjectAnalysis.isSwitchProjectRequest("cierrame este y abrime TAXIDRIV"), true);
+  assert.equal(ProjectAnalysis.extractSwitchProjectName("cierrame este y abrime TAXIDRIV"), "TAXIDRIV");
+  const mode = ProjectAnalysis.resolveExecutionMode(prompt, {
+    requestedAgent: false,
+    projectOpen: true,
+  });
+  assert.equal(mode.switchProject, true);
+  assert.equal(mode.missingProject, false);
+});
+
+test("auditorias largas con cerrar/abrir en prosa NO son switch de workspace", () => {
+  const audit = [
+    "Rol: Auditor Principal de Arquitectura y Estabilidad en EDITCOREAI",
+    "Realiza un analisis integral, profundo y sin concesiones de todo el codigo fuente de EDITCOREAI",
+    "(procesos de Electron main.js, preload.js, carpeta runtime/, manejadores IPC).",
+    "Capacidades de Control de Workspace:",
+    "Verifica si el codigo actual permite cerrar el proyecto activo, guardar/publicar",
+    "de forma atomica y abrir un directorio nuevo, o si carece de dichos metodos.",
+    "Objetivos obligatorios de la auditoria: Mapeo y Validacion de Canales IPC.",
+  ].join("\n");
+  assert.ok(audit.length > 360);
+  assert.equal(ProjectAnalysis.isSwitchProjectRequest(audit), false);
+  assert.equal(ProjectAnalysis.isCloseProjectRequest(audit), false);
+  const mode = ProjectAnalysis.resolveExecutionMode(audit, {
+    requestedAgent: true,
+    projectOpen: true,
+  });
+  assert.equal(mode.switchProject, false);
   assert.equal(mode.missingProject, false);
 });
 

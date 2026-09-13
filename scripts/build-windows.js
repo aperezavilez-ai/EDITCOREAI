@@ -6,11 +6,10 @@ const { spawnSync } = require("node:child_process");
 const asar = require("@electron/asar");
 
 const appRoot = path.resolve(__dirname, "..");
-const workspaceRoot = path.resolve(appRoot, "..");
 const releaseDir = path.join(appRoot, "release");
 const expectedReleaseDir = path.join(appRoot, "release");
 const installerName = "EDITCOREAI-Setup.exe";
-const bundledRtk = path.resolve(workspaceRoot, "rtk", "rtk.exe");
+const bundledRtk = path.resolve(appRoot, "resources", "rtk", "rtk.exe");
 
 if (releaseDir !== expectedReleaseDir || path.dirname(releaseDir) !== appRoot) {
   throw new Error(`Ruta de release insegura: ${releaseDir}`);
@@ -54,7 +53,7 @@ const archivePath = path.join(unpackedDir, "resources", "app.asar");
 if (!fs.existsSync(archivePath)) throw new Error("El empaquetado no genero resources/app.asar.");
 const uiOverlayPacked = path.join(unpackedDir, "resources", "ui-overlay", "index.html");
 if (!fs.existsSync(uiOverlayPacked)) {
-  const uiOverlaySrc = path.join(workspaceRoot, "ui-overlay");
+  const uiOverlaySrc = path.join(appRoot, "resources", "ui-overlay");
   const uiOverlayDest = path.join(unpackedDir, "resources", "ui-overlay");
   if (!fs.existsSync(path.join(uiOverlaySrc, "index.html"))) {
     throw new Error("Falta resources/ui-overlay (UI lean requerida para evitar pantalla en blanco).");

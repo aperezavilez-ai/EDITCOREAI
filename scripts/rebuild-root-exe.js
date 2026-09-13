@@ -34,12 +34,20 @@ if (!csc) {
 
 const outExe = path.join(appRoot, "EDITCOREAI.exe");
 const iconPath = path.join(appRoot, "assets", "logo.ico");
-const args = ["/nologo", "/target:winexe", "/r:System.Windows.Forms.dll", `/out:${outExe}`];
-if (fs.existsSync(iconPath)) args.push(`/win32icon:${iconPath}`);
-args.push(srcPath);
+const iconFallback = path.join(appRoot, "resources", "ui-overlay", "assets", "logo.ico");
+if (!fs.existsSync(iconPath) || fs.statSync(iconPath).size < 1000) {
+  if (!fs.existsSync(iconFallback)) {
+    console.error("Falta assets/logo.ico (logo oficial). No se compila el launcher sin icono.");
+    process.exit(1);
+  }
+  fs.mkdirSync(path.dirname(iconPath), { recursive: true });
+  fs.copyFileSync(iconFallback, iconPath);
+}
+const args = ["/nologo", "/target:winexe", "/r:System.Windows.Forms.dll", `/out:${outExe}`, `/win32icon:${iconPath}`, srcPath];
 
 const result = spawnSync(csc, args, { cwd: appRoot, stdio: "inherit", shell: false });
 if (result.status !== 0) process.exit(result.status || 1);
 
 console.log("EDITCOREAI.exe", outExe);
+console.log("icon", iconPath);
 console.log("version", ver, "fileVersion", winVer);

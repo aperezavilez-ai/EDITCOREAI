@@ -283,20 +283,27 @@ function buildSafeConnectionsSnapshot(options = {}) {
     ? options.projectManifest
     : readProjectLinkManifest(options.projectRoot);
 
+  const operatorNote =
+      "EDITCOREAI = IDE + agente. Conexiones globales (bóveda): GitHub, Vercel, Supabase GafCore (URL por proyecto), SSH. "
+      + "Alimentación de IA de los proyectos: GafCore Gateway (https://gafcore-gateway.vercel.app). "
+      + "En Gateway se CREA el proyecto, se genera la project key (x-project-key) y el endpoint POST /api/v1/chat "
+      + "(o /api/openai/v1). Esa key se configura en Modelos de EDITCOREAI como proveedor GafCore Gateway "
+      + "para que el chat/agente del proyecto consuma modelos ME AI / APICredits vía el gateway. "
+      + "No mezclar: Supabase GafCore (datos) ≠ GafCore Gateway (IA). "
+      + "Con un proyecto abierto, el agente usa el .env de ESE proyecto, no la URL de otro. "
+      + "No pidas tokens si ya estan en boveda o en el .env del proyecto activo.";
+
   const gatewayConfigured = Boolean(
     gatewayLink?.projectId
     || gatewayLink?.projectName
     || gatewayLink?.connectedAt
+    || gatewayLink?.projectKey
     || options.gatewayAdminConfigured === true,
   );
 
   const snapshot = {
     updatedAt: new Date().toISOString(),
-    operatorNote:
-      "Boveda GLOBAL del operador: GitHub, Vercel, SSH y Supabase por proyecto. "
-      + "EDITCOREAI opera en modo local (Inspector Nativo Autónomo). "
-      + "Con un proyecto abierto, el agente usa el .env de ESE proyecto, no la URL de otro. "
-      + "No pidas tokens si ya estan en boveda o en el .env del proyecto activo.",
+    operatorNote,
     github: {
       configured: Boolean(summary.github?.configured),
       account: String(options.accounts?.github || "").trim() || undefined,
@@ -310,7 +317,7 @@ function buildSafeConnectionsSnapshot(options = {}) {
     },
     selfsupabase: {
       configured: Boolean(summary.selfsupabase?.configured),
-      label: "Supabase GafCore",
+      label: "Supabase GafCore (datos)",
       url: String(summary.selfsupabase?.url || connections.selfSupabaseUrl || "").replace(/\/+$/, ""),
       scope: resolved.projectScoped ? "proyecto-activo" : "boveda-global",
       source: resolved.source || undefined,
@@ -325,9 +332,17 @@ function buildSafeConnectionsSnapshot(options = {}) {
       keyConfigured: Boolean(connections.serverKeyPath),
     },
     gafcoreGateway: {
-      configured: false,
-      disabled: true,
-      note: "Gateway retirado — Inspector/kernel local",
+      configured: gatewayConfigured,
+      disabled: false,
+      url: "https://gafcore-gateway.vercel.app",
+      chatEndpoint: "https://gafcore-gateway.vercel.app/api/v1/chat",
+      openaiCompatible: "https://gafcore-gateway.vercel.app/api/openai/v1",
+      header: "x-project-key",
+      projectId: gatewayLink?.projectId || undefined,
+      projectName: gatewayLink?.projectName || undefined,
+      note:
+        "Fuente de IA: crear proyecto en Gateway → copiar project key → Modelos EDITCOREAI (proveedor GafCore Gateway). "
+        + "Los modelos meai/* y apicredits/* se enrutan por el gateway con saldo del proyecto.",
     },
     projectLinks: projectManifest || null,
   };
@@ -341,38 +356,50 @@ function statusLabel(configured) {
 
 function formatOperatorConnectionsMemory(snapshot = {}) {
   const s = snapshot && typeof snapshot === "object" ? snapshot : {};
+  const gw = s.gafcoreGateway || {};
   const lines = [
-    "MEMORIA DE CONEXIONES DEL OPERADOR (fuente de verdad — sin secretos):",
+    "MEMORIA DE CONEXIONES Y DEPENDENCIAS DE EDITCOREAI (fuente de verdad — sin secretos):",
     String(s.operatorNote || "").trim(),
-    `- GitHub: ${statusLabel(s.github?.configured)}${s.github?.account ? ` (cuenta: ${s.github.account})` : ""} — git commit/push y herramientas github_*`,
-    `- Vercel: ${statusLabel(s.vercel?.configured)}${s.vercel?.account ? ` (cuenta: ${s.vercel.account})` : ""}${s.vercel?.defaultProjectId ? ` project=${s.vercel.defaultProjectId}` : ""} — deploy vercel --prod --yes / publicar`,
-    `- Supabase: ${statusLabel(s.selfsupabase?.configured)}${s.selfsupabase?.url ? ` (${s.selfsupabase.url})` : ""}${
+    "",
+    "### Capas",
+    "1) EDITCOREAI (esta app): IDE, agente, preview, Publicar, Inspector, Cerebro.",
+    "2) Conexiones bóveda: GitHub (git), Vercel (deploy), Supabase GafCore (DB por proyecto), SSH (servidor).",
+    "3) GafCore Gateway: alimentación de IA. Dashboard: https://gafcore-gateway.vercel.app/dashboard",
+    "   Flujo: Crear proyecto en Gateway → genera project key → en EDITCOREAI/Modelos se usa como API key del proveedor GafCore Gateway",
+    "   → requests chat/agente van a POST /api/v1/chat con header x-project-key (saldo y modelos del proyecto Gateway).",
+    "",
+    "### Estado actual",
+    `- GitHub: ${statusLabel(s.github?.configured)}${s.github?.account ? ` (cuenta: ${s.github.account})` : ""} — commit/push / Publicar`,
+    `- Vercel: ${statusLabel(s.vercel?.configured)}${s.vercel?.account ? ` (cuenta: ${s.vercel.account})` : ""}${s.vercel?.defaultProjectId ? ` project=${s.vercel.defaultProjectId}` : ""} — deploy / Publicar`,
+    `- Supabase GafCore (datos): ${statusLabel(s.selfsupabase?.configured)}${s.selfsupabase?.url ? ` (${s.selfsupabase.url})` : ""}${
       s.selfsupabase?.scope === "proyecto-activo"
         ? ` [proyecto activo${s.selfsupabase.projectName ? `: ${s.selfsupabase.projectName}` : ""}${s.selfsupabase.source ? ` via ${s.selfsupabase.source}` : ""}]`
-        : " [boveda global — mejor usar .env del proyecto abierto]"
-    } — service_read/service_write, supabase db push`,
+        : " [boveda — URL propia por slug del proyecto abierto]"
+    }`,
     `- Servidor SSH: ${statusLabel(s.server?.configured)}${s.server?.host ? ` (${s.server.host})` : ""}${s.server?.deployPath ? ` deploy=${s.server.deployPath}` : ""}`,
-    `- Inspector/kernel local: process-runner · vision-inspector · global-memory · snapshot (sin Gateway)`,
+    `- GafCore Gateway (IA): ${statusLabel(gw.configured)}${gw.projectName ? ` proyecto=${gw.projectName}` : ""}${gw.url ? ` · ${gw.url}` : ""}`,
+    `  Endpoint: ${gw.chatEndpoint || "https://gafcore-gateway.vercel.app/api/v1/chat"} · header ${gw.header || "x-project-key"}`,
+    `  ${gw.note || ""}`,
   ];
 
   const links = s.projectLinks;
   if (links && typeof links === "object") {
-    lines.push("Publicar SIEMPRE usa estas Conexiones de EDITCOREAI (GitHub/Vercel/Supabase/SSH).");
-    lines.push("Otras instalaciones legacy (carpetas con espacio u otros nombres) son apps distintas: no reutilizar su bóveda.");
+    lines.push("", "Publicar SIEMPRE usa Conexiones de EDITCOREAI (GitHub/Vercel/Supabase/SSH), no otras instalaciones.");
     lines.push("Enlaces de ESTE proyecto (.editcore/connections.json):");
     if (links.github) lines.push(`  - GitHub proyecto: ${JSON.stringify(stripSecrets(links.github)).slice(0, 240)}`);
     if (links.vercel) lines.push(`  - Vercel proyecto: ${JSON.stringify(stripSecrets(links.vercel)).slice(0, 240)}`);
     if (links.supabase) lines.push(`  - Supabase proyecto: ${JSON.stringify(stripSecrets(links.supabase)).slice(0, 240)}`);
     if (links.server) lines.push(`  - Servidor proyecto: ${JSON.stringify(stripSecrets(links.server)).slice(0, 240)}`);
+    if (links.gateway || links.gafcoreGateway) {
+      lines.push(`  - Gateway proyecto: ${JSON.stringify(stripSecrets(links.gateway || links.gafcoreGateway)).slice(0, 240)}`);
+    }
   }
 
   lines.push(
-        "Regla: si esta CONECTADO, asume que EDITCOREAI ya tiene las credenciales del operador. "
-      + "No pidas pegar tokens. Para mutaciones externas (push/deploy/DB) pide confirmacion del usuario. "
-      + "Al publicar usa SIEMPRE las Conexiones de esta app (GitHub/Vercel/Supabase/SSH), nunca bóvedas de otras instalaciones. "
-      + "Al cambiar de proyecto estas cuentas GLOBALES siguen vigentes; solo cambian los enlaces del proyecto activo "
-      + "(.editcore/connections.json). "
-      + "Puedes usar connection_status / service_read / Detectar desde herramientas; no dependas del badge de la UI.",
+    "",
+    "Regla: si esta CONECTADO, asume credenciales en boveda/.env. No pidas pegar tokens. "
+      + "Mutaciones externas (push/deploy/DB) → confirmacion. "
+      + "IA del proyecto activo = Gateway project key en Modelos. Datos = Supabase GafCore URL del slug del proyecto.",
   );
   return lines.filter(Boolean).join("\n");
 }

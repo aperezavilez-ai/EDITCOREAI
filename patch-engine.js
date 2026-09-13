@@ -227,7 +227,7 @@ function applyPatch(projectRoot, filePath, oldText, newText, options = {}) {
   try {
     if (exists && createBackup) backupPath = createLocalBackup(absPath);
     writeFileAtomic(absPath, patchedContent);
-    return {
+    const result = {
       ok: true,
       path: absPath,
       backupPath,
@@ -237,6 +237,23 @@ function applyPatch(projectRoot, filePath, oldText, newText, options = {}) {
       bytesWritten: Buffer.byteLength(patchedContent, "utf8"),
       created: !exists,
     };
+    // Memoria roadmap-first: indexar el cambio sin que el agente reescanee el repo.
+    if (projectRoot && options?.skipMemory !== true) {
+      try {
+        const { noteSuccessfulPatch } = require("./runtime/session-state");
+        const rel = path.isAbsolute(filePath)
+          ? path.relative(path.resolve(projectRoot), absPath).replace(/\\/g, "/")
+          : String(filePath || "").replace(/\\/g, "/");
+        noteSuccessfulPatch(projectRoot, {
+          path: rel,
+          action: exists ? "applyPatch" : "applyPatch:create",
+          summary: options?.summary || (exists ? "patch aplicado" : "archivo creado"),
+        });
+      } catch {
+        // No bloquear el patch si falla el índice.
+      }
+    }
+    return result;
   } catch (error) {
     return { ok: false, error: error.message, checkpoint, backupPath, gitCheckpoint: gitRef };
   }
