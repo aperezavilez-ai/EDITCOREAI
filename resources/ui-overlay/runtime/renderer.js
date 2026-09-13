@@ -48,6 +48,7 @@ const PROVIDER_MODELS = {
   ],
 };
 
+// ME AI: set recomendado para EDITCOREAI (agente + fallbacks).
 const MEAI_PROVIDER_MODELS = [
   "claude-sonnet-4.6",
   "claude-haiku-4-5",
@@ -57,6 +58,8 @@ const MEAI_PROVIDER_MODELS = [
   "deepseek-v4-pro",
   "kimi-k2.6",
 ];
+// APICredits: live GET /v1/models 2026-08-31 (a6-claude + a6-openai).
+// APICredits: live GET /v1/models por key (a6-claude/openai/gemini/grok/deepseek).
 const APICREDITS_PROVIDER_MODELS = [
   "claude-fable-5", "claude-haiku-4-5", "claude-opus-4-7", "claude-opus-4-8",
   "claude-sonnet-4-6", "claude-sonnet-5",
@@ -240,24 +243,65 @@ async function initializeSecureState() {
   const storedProfiles = Array.isArray(secureState["editcore-provider-profiles"])
     ? secureState["editcore-provider-profiles"]
     : [];
-  const gatewayProfiles = storedProfiles.filter((profile) => profile?.providerKey === "custom:gafcore-gateway"
+  const isGatewayProfile = (profile) => {
+    const key = String(profile?.providerKey || "").toLowerCase();
+    const url = String(profile?.baseUrl || "").toLowerCase();
+    return key === "custom:gafcore-gateway" || key.includes("gafcore-gateway") || url.includes("gafcore-gateway");
+  };
+  const isGatewayProvider = (provider) => {
+    const id = String(provider?.id || "").toLowerCase();
+    const url = String(provider?.baseUrl || "").toLowerCase();
+    return id === "gafcore-gateway" || id.includes("gafcore-gateway") || url.includes("gafcore-gateway");
+  };
+  const directProfiles = storedProfiles.filter((profile) => PRIMARY_PROVIDER_KEYS.includes(String(profile?.providerKey || "").toLowerCase())
     && profile?.apiKey && profile?.baseUrl && profile?.model
-    && String(profile.baseUrl).toLowerCase().includes("gafcore-gateway.vercel.app"));
-  const userCustomProfiles = storedProfiles.filter((profile) => profile?.providerKey?.startsWith("custom:")
-    && profile.providerKey !== "custom:gafcore-gateway");
-  const userCustomProviders = (secureState["editcore-custom-providers"] || [])
-    .filter((provider) => provider?.id && provider.id !== "gafcore-gateway");
+    && !isGatewayProfile(profile));
+  const nextProfiles = storedProfiles.filter((profile) => !isGatewayProfile(profile)
+    && (PRIMARY_PROVIDER_KEYS.includes(String(profile?.providerKey || "").toLowerCase())
+      || (String(profile?.providerKey || "").startsWith("custom:") && !isGatewayProfile(profile))));
+  const nextCustomProviders = (secureState["editcore-custom-providers"] || []).filter((provider) => !isGatewayProvider(provider));
   let removedLegacyDirectProviders = false;
-  if (gatewayProfiles.length) {
-    removedLegacyDirectProviders = storedProfiles.some((profile) => PRIMARY_PROVIDER_KEYS.includes(String(profile?.providerKey || "")))
-      || Object.keys(secureState["editcore-providers"] || {}).length > 0;
-    secureState["editcore-provider-profiles"] = [...gatewayProfiles, ...userCustomProfiles];
-    secureState["editcore-providers"] = {};
-    const gafcoreProvider = (secureState["editcore-custom-providers"] || []).find((provider) => provider?.id === "gafcore-gateway");
-    secureState["editcore-custom-providers"] = [
-      ...(gafcoreProvider ? [gafcoreProvider] : []),
-      ...userCustomProviders,
-    ];
+  const chat = secureState["editcore-chat-config"] && typeof secureState["editcore-chat-config"] === "object"
+    ? { ...secureState["editcore-chat-config"] }
+    : {};
+  const chatOnGateway = String(chat.providerKey || "").includes("gafcore-gateway")
+    || String(chat.baseUrl || "").toLowerCase().includes("gafcore-gateway");
+  const preferredDirect = directProfiles.find((p) => p.providerKey === "apicredits" && /fable-5/i.test(String(p.model || "")))
+    || directProfiles.find((p) => p.providerKey === "meai" && /sonnet-4\.6/i.test(String(p.model || "")))
+    || directProfiles.find((p) => p.providerKey === "apicredits")
+    || directProfiles.find((p) => p.providerKey === "meai")
+    || directProfiles[0]
+    || null;
+  const profilesChanged = JSON.stringify(storedProfiles) !== JSON.stringify(nextProfiles);
+  const customChanged = JSON.stringify(secureState["editcore-custom-providers"] || []) !== JSON.stringify(nextCustomProviders);
+  if (profilesChanged || customChanged || chatOnGateway) {
+    removedLegacyDirectProviders = true;
+    secureState["editcore-provider-profiles"] = nextProfiles;
+    secureState["editcore-custom-providers"] = nextCustomProviders;
+    if (preferredDirect) {
+      secureState["editcore-chat-config"] = {
+        ...chat,
+        remember: true,
+        mode: /claude/i.test(preferredDirect.model) ? "claude" : "gpt",
+        providerKey: preferredDirect.providerKey,
+        provider: preferredDirect.providerKey,
+        providerProfileId: preferredDirect.id,
+        model: preferredDirect.model,
+        baseUrl: preferredDirect.baseUrl,
+        apiKey: preferredDirect.apiKey,
+        modelSelectionMode: chat.modelSelectionMode || "manual",
+      };
+    } else if (chatOnGateway) {
+      secureState["editcore-chat-config"] = {
+        ...chat,
+        providerKey: "apicredits",
+        provider: "apicredits",
+        providerProfileId: "",
+        model: "claude-fable-5",
+        baseUrl: "https://api.apicredits.site/v1",
+        apiKey: "",
+      };
+    }
   }
   let compactedSecure = false;
   if (Array.isArray(secureState["editcore-provider-profiles"])) {
@@ -398,77 +442,14 @@ function loadConnections() {
     input.value = saved[input.dataset.conn] || "";
   });
   renderConnectionStatus();
-  renderGatewayProjectStatus().catch(() => undefined);
 }
 
 async function renderGatewayProjectStatus() {
-  const project = activeProject();
-  const badge = document.querySelector('.conn-status[data-service="gafcore"]');
-  const detail = $("gafcoreProjectDetail");
-  if (!badge || !detail) return;
-  if (!project?.projectRoot) {
-    badge.textContent = "abre un proyecto";
-    badge.classList.remove("connected", "error");
-    detail.style.display = "none";
-    return;
-  }
-  const result = await window.editcoreConnections.gatewayProjectStatus({
-    localProjectId: project.id,
-    projectRoot: project.projectRoot,
-  });
-  badge.textContent = result?.connected ? "conectado" : "sin vincular";
-  badge.classList.toggle("connected", Boolean(result?.connected));
-  badge.classList.remove("error");
-  detail.style.display = result?.connected ? "block" : "none";
-  detail.textContent = result?.connected
-    ? `${result.projectName} · ${result.modelCount} modelos · presupuesto USD ${Number(result.balanceUsd || 0).toFixed(2)}`
-    : "";
+  return undefined;
 }
 
 async function connectGatewayProject() {
-  const project = activeProject();
-  if (!project?.projectRoot) throw new Error("Abre o crea un proyecto antes de conectarlo a GafCore Gateway.");
-  const button = $("connectGatewayProjectBtn");
-  const badge = document.querySelector('.conn-status[data-service="gafcore"]');
-  const detail = $("gafcoreProjectDetail");
-  button.disabled = true;
-  badge.textContent = "conectando...";
-  badge.classList.remove("connected", "error");
-  try {
-    const result = await window.editcoreConnections.connectGatewayProject({
-      localProjectId: project.id,
-      projectRoot: project.projectRoot,
-      projectName: projectDisplayName(project),
-      initialBalanceUsd: Number($("gafcoreInitialBalance").value || 0),
-      adminToken: $("gafcoreAdminToken").value.trim(),
-    });
-    $("gafcoreAdminToken").value = "";
-    secureState = await window.editcoreSecureConfig.load();
-    project.gafcoreProjectId = result.projectId;
-    project.gafcoreProjectName = result.projectName;
-    project.gafcoreConnectedAt = result.connectedAt;
-    project.gafcoreModelCount = result.modelCount;
-    project.provider = "custom:gafcore-gateway";
-    project.providerProfileId = `gafcore-gateway:${result.selectedModel}`;
-    project.model = result.selectedModel;
-    project.updatedAt = Date.now();
-    saveProjects();
-    loadConfig();
-    syncChatModelFromConfig();
-    renderProjects();
-    await renderGatewayProjectStatus();
-    detail.style.display = "block";
-    detail.textContent = `${result.reused ? "Proyecto reutilizado" : "Proyecto creado"}: ${result.projectName} · ${result.modelCount} modelos`;
-    $("status").textContent = `${result.projectName} conectado a GafCore Gateway`;
-  } catch (error) {
-    badge.textContent = "error";
-    badge.classList.add("error");
-    detail.style.display = "block";
-    detail.textContent = error?.message || String(error);
-    throw error;
-  } finally {
-    button.disabled = false;
-  }
+  throw new Error("GafCore Gateway fue eliminado. Usa meai o apicredits en Modelos.");
 }
 
 async function saveConnections() {
@@ -545,7 +526,7 @@ function openExternal(url) {
 function connectGitHub() {
   const token = document.querySelector("[data-conn='githubToken']")?.value.trim();
   if (token) { saveConnections(); return; }
-  openExternal("https://github.com/settings/tokens/new?scopes=repo,workflow&description=EditCore");
+  openExternal("https://github.com/settings/tokens/new?scopes=repo,workflow&description=EDITCOREAI");
 }
 
 function connectVercel() {
@@ -2026,7 +2007,7 @@ async function answerAgentWorkflowQuestion(project, question) {
     permissionMode: "readonly",
     history: [],
     systemPrompt: [
-      "Eres EditCore, asistente de desarrollo. Responde en español, claro y directo.",
+      "Eres EDITCOREAI, asistente de desarrollo. Responde en español, claro y directo.",
       "Usa SOLO el contexto verificado abajo. No inventes archivos ni cambios.",
       "Responde la pregunta del usuario sin pedir autorizacion otra vez ni generar un plan nuevo.",
       "No pegues codigo fuente ni bloques ```; explica en prosa.",
@@ -2239,7 +2220,7 @@ function renderFeed(options = {}) {
   renderProjectFiles().catch(() => undefined);
   if (!state.history.length) {
     if (project.chatCleared) return;
-    append("assistant", "Bienvenido a EditCore. ¿Qué haremos hoy?", null, false);
+    append("assistant", "Bienvenido a EDITCOREAI. ¿Qué haremos hoy?", null, false);
     return;
   }
   for (const message of state.history) append(message.role, message.content, message.usage, false, null, message.images || [], message.documents || []);
@@ -2758,24 +2739,16 @@ async function selectProject(id, options = {}) {
     syncChatModelFromConfig();
   }
   const project = activeProject();
-  if (project?.projectRoot && project?.gafcoreProjectId) {
-    try {
-      const gateway = await window.editcoreConnections.activateGatewayProject({
-        localProjectId: project.id,
-        projectRoot: project.projectRoot,
-      });
-      if (gateway?.connected) {
-        secureState = await window.editcoreSecureConfig.load();
-        project.provider = "custom:gafcore-gateway";
-        project.providerProfileId = `gafcore-gateway:${gateway.selectedModel}`;
-        project.model = gateway.selectedModel;
-        saveProjects();
-        loadConfig();
-        syncChatModelFromConfig();
-      }
-    } catch (error) {
-      $("status").textContent = `GafCore Gateway: ${error?.message || String(error)}`;
+  if (project?.gafcoreProjectId || String(project?.provider || "").includes("gafcore-gateway")) {
+    delete project.gafcoreProjectId;
+    delete project.gafcoreProjectName;
+    delete project.gafcoreConnectedAt;
+    delete project.gafcoreModelCount;
+    if (String(project.provider || "").includes("gafcore-gateway")) {
+      project.provider = "";
+      project.providerProfileId = "";
     }
+    saveProjects();
   }
   if (project?.projectRoot) {
     if (selectionId !== projectSelectionId || activeProject()?.id !== project.id) return;
@@ -2865,7 +2838,7 @@ async function confirmCurrentProjectSave(event) {
     showPreviewLoading("Cargando navegador del proyecto...");
     const project = projectForRoot(root);
     const saved = await window.editcoreProject.save({ root, name: projectDisplayName(project) });
-    if (!saved?.ok || !saved?.manifest?.root) throw new Error("EditCore no pudo confirmar la persistencia del proyecto.");
+    if (!saved?.ok || !saved?.manifest?.root) throw new Error("EDITCOREAI no pudo confirmar la persistencia del proyecto.");
     state.projectRoot = root;
     state.activeProjectId = project.id;
     project.updatedAt = Date.now();
@@ -2887,7 +2860,7 @@ function renderProjectTemplateSummary() {
   $("newProjectTemplateDescription").textContent = template.description || "";
   $("newProjectTemplateRequirements").textContent = template.requirements?.length
     ? `Requisitos: ${template.requirements.join(" · ")}`
-    : template.install ? "EditCore instalara dependencias y verificara el proyecto." : "No requiere dependencias externas.";
+    : template.install ? "EDITCOREAI instalara dependencias y verificara el proyecto." : "No requiere dependencias externas.";
 }
 
 async function loadProjectTemplates() {
@@ -2969,7 +2942,7 @@ async function createProjectFromDialog(event) {
     if (!created) return;
     if ($("newProjectDialog").dataset.mode === "save") {
       const saved = await window.editcoreProject.save({ root: created.root, name: created.name });
-      if (!saved?.ok || !saved?.manifest?.root) throw new Error("El proyecto se creo, pero EditCore no confirmo su persistencia.");
+      if (!saved?.ok || !saved?.manifest?.root) throw new Error("El proyecto se creo, pero EDITCOREAI no confirmo su persistencia.");
     }
     const project = projectForRoot(created.root, created.name);
     state.activeProjectId = project.id;
@@ -3175,7 +3148,7 @@ function updateStatus() {
     const resolved = state.lastAutoResolvedModel
       ? ` → ${AutoModel.formatChatModelLabel(state.lastAutoResolvedModel, "custom:gafcore-gateway")}`
       : "";
-    $("status").textContent = `${providerLabel} via EditCore · Auto${resolved}`;
+    $("status").textContent = `${providerLabel} via EDITCOREAI · Auto${resolved}`;
     updateSavings();
     return;
   }
@@ -3183,7 +3156,7 @@ function updateStatus() {
     || $("model")?.value?.trim()
     || PROVIDERS[state.mode]?.model
     || "";
-  $("status").textContent = `${providerLabel} via EditCore · ${model}`;
+  $("status").textContent = `${providerLabel} via EDITCOREAI · ${model}`;
   updateSavings();
 }
 
@@ -3208,7 +3181,7 @@ function append(role, text, usage, scroll = true, elapsedSeconds = null, images 
 
   const header = document.createElement("div");
   header.className = "msg-head";
-  header.textContent = role === "user" ? "Tú" : `EditCore AI${elapsedSeconds === null ? "" : ` ${formatElapsed(elapsedSeconds)}`}`;
+  header.textContent = role === "user" ? "Tú" : `EDITCOREAI${elapsedSeconds === null ? "" : ` ${formatElapsed(elapsedSeconds)}`}`;
 
   const body = document.createElement("div");
   body.className = "msg-body";
@@ -3269,7 +3242,7 @@ function appendThinking(statusText = "Pensando...", isAgent = false, runLabel = 
   item.className = "msg assistant thinking-msg";
   const head = document.createElement("div");
   head.className = "msg-head";
-  head.textContent = runLabel ? `EditCore AI · ${runLabel}` : "EditCore AI";
+  head.textContent = runLabel ? `EDITCOREAI · ${runLabel}` : "EDITCOREAI";
   const body = document.createElement("div");
   body.className = "msg-body msg-thinking";
   const primary = document.createElement("div");
@@ -3403,6 +3376,8 @@ function applyPipelineProgress(progress = {}) {
 }
 
 function hideThinkingIndicator(_thinkingItem) {
+  // Las 3 bolitas deben permanecer visibles mientras el agente trabaja.
+  // No ocultar el indicador al empezar la narracion del modelo.
 }
 
 function showThinkingIndicator(thinkingItem) {
@@ -3550,7 +3525,7 @@ function agentProgressText(progress) {
     }
     return `Analizando... (${timeStr})`;
   }
-  if (phase === "model") return String(progress.text || "Consultando al modelo...");
+  if (phase === "model") return String(progress.text || "Trabajando…");
   const name = String(progress.name || "");
   const input = progress.input || {};
   const running = progress.stage === "running" || (phase === "tool" && progress.ok === undefined && progress.stage !== "done");
@@ -3660,7 +3635,7 @@ function finalizeThinkingAsAssistant(thinking, text, usage, elapsedSeconds) {
   thinking.classList.remove("thinking-msg");
   thinking.classList.add("assistant");
   const head = thinking.querySelector(".msg-head");
-  if (head) head.textContent = `EditCore ${formatElapsed(elapsedSeconds)}`;
+  if (head) head.textContent = `EDITCOREAI ${formatElapsed(elapsedSeconds)}`;
   thinking.querySelector(".thinking-primary")?.remove();
   const body = thinking.querySelector(".msg-body");
   if (body) body.classList.remove("msg-thinking");
@@ -3697,7 +3672,7 @@ function startResponseTimer(head) {
   const startedAt = Date.now();
   const tick = () => {
     const seconds = Math.floor((Date.now() - startedAt) / 1000);
-    head.textContent = `EditCore ${formatElapsed(seconds)}`;
+    head.textContent = `EDITCOREAI ${formatElapsed(seconds)}`;
   };
   tick();
   const timer = setInterval(tick, 1000);
@@ -3706,7 +3681,7 @@ function startResponseTimer(head) {
     clearInterval(timer);
     if (responseTimer === timer) responseTimer = null;
     const seconds = Math.floor((Date.now() - startedAt) / 1000);
-    head.textContent = `EditCore ${formatElapsed(seconds)}`;
+    head.textContent = `EDITCOREAI ${formatElapsed(seconds)}`;
     return seconds;
   };
 }
@@ -3754,7 +3729,7 @@ async function loadBrainCatalog() {
     const button = document.createElement("button"); button.type = "button"; button.className = "brain-install-btn";
     const installed = installedIds.has(item.id); button.textContent = installed ? "Instalado" : "Instalar"; button.disabled = installed;
     button.addEventListener("click", async () => {
-      if (!confirm(`Instalar ${item.name || item.id} en el Cerebro global de EditCore? Estará disponible para todos los agentes y proveedores.`)) return;
+      if (!confirm(`Instalar ${item.name || item.id} en el Cerebro global de EDITCOREAI? Estará disponible para todos los agentes y proveedores.`)) return;
       button.disabled = true; button.textContent = "Instalando…";
       try { await window.editcoreBrain.install(state.projectRoot || "", item.id); await loadBrainCatalog(); }
       catch (error) { button.disabled = false; button.textContent = "Reintentar"; $("brainStatus").textContent = error?.message || String(error); }
@@ -4021,7 +3996,7 @@ function renderInspectorChat() {
   const messages = inspectorProjectMessages();
   if (!messages.length) {
     inspectorAppend("assistant", [
-      "Inspector nativo de EditCore activo.",
+      "Inspector nativo de EDITCOREAI activo.",
       "",
       "Escanear observa archivos, validaciones, modelos, procesos, logs, memoria, colas y cache sin modificar archivos.",
       "",
@@ -4131,7 +4106,7 @@ function setInspectorHandoff(evaluation = null) {
   if (button) {
     button.classList.toggle("hidden", !latestInspectorHandoff);
     button.textContent = latestInspectorHandoff?.target === "editcore-runtime"
-      ? "Reparar EditCore"
+      ? "Reparar EDITCOREAI"
       : "Reparar proyecto";
     button.onclick = () => repairInspectorTarget(latestInspectorHandoff?.target === "editcore-runtime" ? "editcore" : "project");
   }
@@ -4140,23 +4115,23 @@ function setInspectorHandoff(evaluation = null) {
 function inspectorProgressStatus(area, stateName = "running") {
   const messages = {
     overview: {
-      running: "Analizando archivos, procesos y estado de EditCore...",
-      complete: "Estado interno de EditCore analizado.",
+      running: "Analizando archivos, procesos y estado de EDITCOREAI...",
+      complete: "Estado interno de EDITCOREAI analizado.",
     },
     security: {
       running: "Auditando seguridad y posibles secretos...",
       complete: "Auditoria de seguridad completada.",
     },
     tests: {
-      running: "Ejecutando check y pruebas reales de EditCore...",
-      complete: "Validacion interna de EditCore completada.",
+      running: "Ejecutando check y pruebas reales de EDITCOREAI...",
+      complete: "Validacion interna de EDITCOREAI completada.",
     },
     deploy: {
       running: "Revisando runtime, Electron y empaquetado...",
       complete: "Validacion del runtime completada.",
     },
     database: {
-      running: "Revisando conexiones y almacenamiento de EditCore...",
+      running: "Revisando conexiones y almacenamiento de EDITCOREAI...",
       complete: "Revision de conexiones completada.",
     },
     report: {
@@ -4212,10 +4187,10 @@ function failInspectorProgress(message) {
 }
 
 async function refreshInspectorForProject(options = {}) {
-  if (!options.silent) inspectorHealth("checking", "Inspector verificando el runtime de EditCore...");
+  if (!options.silent) inspectorHealth("checking", "Inspector verificando el runtime de EDITCOREAI...");
   const snapshot = await window.editcoreInspector.scan("editcore", "", { force: options.force === true });
   state.inspectorSnapshot = snapshot;
-  $("inspectorSubtitle").textContent = `Supervision interna activa · ${snapshot.runtime?.root || snapshot.projectRoot || "EditCore"}`;
+  $("inspectorSubtitle").textContent = `Supervision interna activa · ${snapshot.runtime?.root || snapshot.projectRoot || "EDITCOREAI"}`;
   const alertCount = Number(snapshot.openAlerts || 0) + Number(snapshot.runtime?.issues?.length || 0);
   const fixedCount = Number(snapshot.fixedAlerts || 0);
   const alertsBtn = $("inspectorAlertsBtn");
@@ -4223,7 +4198,7 @@ async function refreshInspectorForProject(options = {}) {
     alertsBtn.textContent = `Alertas ${alertCount}`;
     alertsBtn.title = `Alertas abiertas: ${alertCount}. Corregidas por Inspector: ${fixedCount}.`;
   }
-  inspectorHealth(alertCount ? "checking" : "ready", alertCount ? `EditCore requiere atencion · ${alertCount} alerta(s)` : "EditCore operativo · sin alertas abiertas");
+  inspectorHealth(alertCount ? "checking" : "ready", alertCount ? `EDITCOREAI requiere atencion · ${alertCount} alerta(s)` : "EDITCOREAI operativo · sin alertas abiertas");
   renderInspectorReports(snapshot);
   return snapshot;
 }
@@ -4346,10 +4321,10 @@ function inspectorContextPrompt(snapshot) {
     `- Servidor SSH: ${conn.serverHost ? conn.serverHost : "sin configurar"}`,
   ];
   return [
-    "Eres Inspector Core AI, supervisor nativo de EditCore. Responde SIEMPRE en español.",
+    "Eres Inspector Core AI, supervisor nativo de EDITCOREAI. Responde SIEMPRE en español.",
     "Eres un solo inspector visible para el usuario, pero internamente razonas como Planner, Debug, QA, Security, DevOps y Report Agent.",
-    "Tu objetivo principal es diagnosticar EditCore: runtime, interfaz, APIs, modelos, agentes, colas, logs, herramientas y empaquetado.",
-    "El chat diagnostica solicitudes especificas y no escribe por si solo. Las modificaciones solo se ejecutan mediante Reparar EditCore o Reparar proyecto.",
+    "Tu objetivo principal es diagnosticar EDITCOREAI: runtime, interfaz, APIs, modelos, agentes, colas, logs, herramientas y empaquetado.",
+    "El chat diagnostica solicitudes especificas y no escribe por si solo. Las modificaciones solo se ejecutan mediante Reparar EDITCOREAI o Reparar proyecto.",
     "Si detectas un problema corregible, explica causa, evidencia y solucion, y termina exactamente con: CORRECCION_EDITCORE:, luego DESTINO: EDITCORE o DESTINO: PROYECTO, luego PROMPT: y la instruccion ejecutable para el motor de reparacion.",
     "Formato obligatorio para cualquier modelo: profesional, sin emojis, sin iconos decorativos, sin checks visuales genericos y sin tablas de estado no verificadas.",
     "No uses palabras como listo, terminado o completo si no tienes evidencia concreta de archivos, scripts, pruebas o reportes.",
@@ -4359,7 +4334,7 @@ function inspectorContextPrompt(snapshot) {
     "Prioriza funcionamiento correcto, seguridad, pruebas y no romper arquitectura existente.",
     "Estructura preferida: Estado, Evidencia revisada, Hallazgos, Riesgo, Acciones recomendadas, Siguiente paso.",
     "",
-    "EditCore inspeccionado:",
+    "EDITCOREAI inspeccionado:",
     `- Ruta interna: ${runtime.root || twin.projectRoot || "no verificada"}`,
     `- Version: ${runtime.version || "no verificada"}`,
     `- Archivos internos analizados: ${twin.fileCount || 0}`,
@@ -4388,11 +4363,11 @@ function inspectorContextPrompt(snapshot) {
 
 function inspectorAreaLabel(area) {
   return {
-    overview: "Estado de EditCore",
-    security: "Seguridad de EditCore",
-    tests: "Validacion de EditCore",
+    overview: "estado de EDITCOREAI",
+    security: "Seguridad de EDITCOREAI",
+    tests: "Validacion de EDITCOREAI",
     deploy: "Runtime y empaquetado",
-    database: "Conexiones de EditCore",
+    database: "Conexiones de EDITCOREAI",
     report: "Reporte completo",
     alerts: "Alertas",
     pending: "Pendientes",
@@ -4434,7 +4409,7 @@ function inspectorEvaluationMarkdown(area, evaluation) {
     `Estado: ${inspectorStatusLabel(evaluation?.status || "unverified")}`,
     `Score: ${evaluation?.score ?? 0}/100`,
     `Duracion real: ${durationSeconds}s`,
-    `Destino inspeccionado: ${runtime.root || evaluation?.targetRoot || "runtime de EditCore"}`,
+    `Destino inspeccionado: ${runtime.root || evaluation?.targetRoot || "runtime de EDITCOREAI"}`,
     "",
     "### Evidencia revisada",
     "",
@@ -4460,7 +4435,7 @@ function inspectorEvaluationMarkdown(area, evaluation) {
     "|---|---|---|",
     ...(fixRows.length ? fixRows : ["| Sin correccion automatica | No se modificaron archivos en esta ejecucion. | no aplica |"]),
     "",
-    "### Estado nativo de EditCore",
+    "### Estado nativo de EDITCOREAI",
     "",
     `- Archivos internos criticos: ${(runtime.files || []).filter((item) => item.exists).length}/${(runtime.files || []).length || 0}`,
     `- Modelos activos: ${(runtime.activeModels || []).length}`,
@@ -4496,7 +4471,7 @@ function inspectorTargetRoot(target) {
 }
 
 function inspectorActionLabel(action, target) {
-  return `${action === "repair" ? "Reparacion" : "Escaneo"} ${target === "project" ? "del proyecto" : "de EditCore"}`;
+  return `${action === "repair" ? "Reparacion" : "Escaneo"} ${target === "project" ? "del proyecto" : "de EDITCOREAI"}`;
 }
 
 async function runInspectorScan(target) {
@@ -4684,7 +4659,7 @@ async function publishChanges(target = "project") {
     : (state.projectRoot || "");
   if (!projectRoot) {
     const msg = isEditCore
-      ? "No se pudo determinar la ruta de EditCore. Ejecuta un escaneo primero."
+      ? "No se pudo determinar la ruta de EDITCOREAI. Ejecuta un escaneo primero."
       : "Abre un proyecto antes de publicar.";
     if (isEditCore) { inspectorAppend("assistant", msg); inspectorHealth("error", msg); }
     else appendMessage("assistant", msg);
@@ -4692,7 +4667,7 @@ async function publishChanges(target = "project") {
   }
 
   const editcorePublishPrompt = [
-    "## Publicar cambios de EditCore",
+    "## Publicar cambios de EDITCOREAI",
     "",
     "Ejecuta los siguientes pasos en orden. Usa run_command para cada uno.",
     "",
@@ -4702,7 +4677,7 @@ async function publishChanges(target = "project") {
     "2. Revisa los cambios pendientes para generar un mensaje de commit descriptivo:",
     "   run_command: git diff --stat",
     "",
-    "3. Reconstruye el archivo app.asar con los cambios actuales. Ejecuta desde la carpeta de instalacion de EditCore:",
+    "3. Reconstruye el archivo app.asar con los cambios actuales. Ejecuta desde la carpeta de instalacion de EDITCOREAI:",
     "   run_command: npx asar pack resources/app resources/app.asar",
     "",
     "4. Agrega los archivos modificados al commit (NO incluyas .asar.backup-*, node_modules, ni archivos de aceptacion):",
@@ -4756,7 +4731,7 @@ async function publishChanges(target = "project") {
 
   if (isEditCore) {
     inspectorSetTab("chat");
-    inspectorHealth("checking", "Publicando cambios de EditCore...");
+    inspectorHealth("checking", "Publicando cambios de EDITCOREAI...");
     const thinking = inspectorAppend("assistant", "⏳ Publicando… resultado al finalizar.");
     try {
       const result = await window.editcoreAgent.run({
@@ -4879,7 +4854,7 @@ function inspectorChatToolPrompt(basePrompt) {
     "",
     "PARA CORREGIR: cuando identifiques un problema con solucion concreta, termina tu respuesta con este bloque exacto:",
     "CORRECCION_EDITCORE:",
-    "DESTINO: EDITCORE   (o PROYECTO si el fallo esta en el proyecto del usuario, no en EditCore)",
+    "DESTINO: EDITCORE   (o PROYECTO si el fallo esta en el proyecto del usuario, no en EDITCOREAI)",
     "PROMPT: <instrucciones precisas de que archivo cambiar y como, con rutas reales que leiste>",
     "Sin ese bloque la correccion no se aplica: el hallazgo se queda en texto y el usuario no obtiene el arreglo.",
   ].join("\n");
@@ -4890,8 +4865,8 @@ function inspectorContextPromptCompact(snapshot) {
   const runtime = snapshot?.runtime || {};
   const issues = (twin.issues || []).slice(0, 3);
   return [
-    "Eres Inspector Core AI de EditCore. Responde en español, sin emojis, con evidencia concreta.",
-    `EditCore: version ${runtime.version || "?"}, archivos ${twin.fileCount || 0}, alertas ${issues.length}.`,
+    "Eres Inspector Core AI de EDITCOREAI. Responde en español, sin emojis, con evidencia concreta.",
+    `EDITCOREAI: version ${runtime.version || "?"}, archivos ${twin.fileCount || 0}, alertas ${issues.length}.`,
     ...issues.map((i) => `  * [${i.severity}] ${i.title}`),
     `Proyecto: ${state.projectRoot || "sin proyecto"}`,
   ].join("\n");
@@ -4910,7 +4885,7 @@ async function sendInspectorPrompt() {
   input.value = "";
   inspectorAppend("user", prompt);
   inspectorRemember("user", prompt);
-  const thinking = inspectorAppend("assistant", "Analizando EditCore y el contexto solicitado...");
+  const thinking = inspectorAppend("assistant", "Analizando EDITCOREAI y el contexto solicitado...");
   try {
     const snapshot = state.inspectorSnapshot || await refreshInspectorForProject({ silent: true });
     const modelConfig = activeModelConfigForInspector();
@@ -5025,7 +5000,7 @@ async function prepareInspectorCorrection() {
     inspectorHealth("error", "Inspector no pudo determinar la carpeta de destino para la correccion.");
     return;
   }
-  const project = projectForRoot(targetRoot, /resources[\\/]app$/i.test(targetRoot) ? "EditCore AI" : "");
+  const project = projectForRoot(targetRoot, /resources[\\/]app$/i.test(targetRoot) ? "EDITCOREAI" : "");
   state.activeProjectId = project.id;
   state.projectRoot = targetRoot;
   project.permissionMode = state.permissionMode;
@@ -5042,7 +5017,7 @@ function appendStreaming() {
   item.id = "streamingMsg";
   const head = document.createElement("div");
   head.className = "msg-head";
-  head.textContent = "EditCore AI";
+  head.textContent = "EDITCOREAI";
   const body = document.createElement("div");
   body.className = "msg-body";
   item.append(head, body);
@@ -5161,7 +5136,7 @@ async function send(event) {
     rememberMessage("user", effectivePrompt);
     const response = project?.analysisMemory
       ? ProjectAnalysis.percentageResponse(project.analysisMemory)
-      : "## Porcentaje de terminacion: no determinable todavia\n\nNo existe un analisis verificable guardado para el proyecto activo. Ejecuta primero un analisis de solo lectura; EditCore debe revisar requisitos, archivos y comprobaciones reales antes de calcular cualquier porcentaje.";
+      : "## Porcentaje de terminacion: no determinable todavia\n\nNo existe un analisis verificable guardado para el proyecto activo. Ejecuta primero un analisis de solo lectura; EDITCOREAI debe revisar requisitos, archivos y comprobaciones reales antes de calcular cualquier porcentaje.";
     const usage = { local_response: true, confirmed_input_tokens: 0, confirmed_output_tokens: 0, estimated_input_tokens: 0, estimated_output_tokens: 0 };
     append("assistant", response, usage, true, 0);
     rememberMessage("assistant", response, usage);
@@ -5294,6 +5269,8 @@ async function send(event) {
     const visiblePrompt = ProjectAnalysis.redactCredentials(job.prompt);
     appendUserWithImages(visiblePrompt, job.images || []);
     rememberMessage("user", visiblePrompt, null, job.images || [], job.documents || []);
+    if (job.autoEscalatedAgent) {
+    }
     job.userMessageDisplayed = true;
     promptQueue.push(job);
     $("prompt").value = "";
@@ -5366,33 +5343,6 @@ function buildPromptJob(prompt) {
   if (state.permissionMode === "readonly" && usesProjectTools && !planAuthorizedExecution && !authorizedContinuation) {
     directReadOnly = true;
   }
-
-  // FIX MODO PREPARATORIO: si ya hay un agente ESCRIBIENDO en este proyecto, este
-  // nuevo job NO debe competir por escritura. Se degrada a "modo preparatorio":
-  // analiza y prepara el plan sin tocar archivos, corre en paralelo y no
-  // pisa al agente activo. Cuando el usuario diga PROCEDE, se ejecuta.
-  if (isAgent && usesProjectTools && !directReadOnly && !planAuthorizedExecution && !authorizedContinuation) {
-    const activeWriteAgent = [...activePromptRequests.values()].some((job) =>
-      job.isAgent
-      && job.usesProjectTools
-      && !job.directReadOnly
-      && !job.readOnlyChat
-      && normalizeProjectRoot(job.projectRoot || "") === normalizeProjectRoot(state.projectRoot || "")
-    );
-    if (activeWriteAgent) {
-      directReadOnly = true;
-      prompt = [
-        "MODO ANÁLISIS PREPARATORIO (otro agente ya está escribiendo en este proyecto):",
-        "- NO modifiques archivos. NO uses write_file ni replace_in_file.",
-        "- Lee lo necesario para entender el pedido.",
-        "- Prepara un plan claro de la solución (qué archivos tocar, qué cambiar).",
-        "- Cierra con: Cuando autorices procedo con los cambios.",
-        "",
-        prompt,
-      ].join("\n");
-    }
-  }
-
   const continueAuthorized = isAgent
     && !directReadOnly
     && projectOpen
@@ -5592,3 +5542,1618 @@ async function directQueuedPrompt(job, targetAgent) {
     return;
   }
   promptQueue = promptQueue.filter((item) => item.id !== job.id);
+  $("status").textContent = "Instruccion dirigida al agente activo";
+  renderPromptQueue();
+}
+
+function updateSendButtonState() {
+  const button = $("sendBtn");
+  if (!button) return;
+  const running = activePromptRequests.size > 0 || promptQueue.some((item) => !item.cancelled);
+  const hasDraft = Boolean($("prompt").value.trim()) || state.attachments.length > 0;
+  const agentNeedsProject = $("runMode").value === "agent" && !state.projectRoot;
+  const showStop = running && !hasDraft;
+
+  button.classList.toggle("stop-mode", showStop);
+  button.dataset.mode = showStop ? "stop" : "send";
+  if (showStop) {
+    button.title = `Detener ${Math.max(activePromptRequests.size, 1)} tarea(s)`;
+    button.innerHTML = "&#9632;";
+    button.disabled = false;
+  } else if (agentNeedsProject) {
+    button.title = hasDraft ? "Abre o crea un proyecto para usar el agente" : "Enviar";
+    button.innerHTML = "&#10148;";
+    button.disabled = !hasDraft;
+  } else if (running) {
+    button.title = "Enviar otra instrucción al agente";
+    button.innerHTML = "&#10148;";
+    button.disabled = !hasDraft;
+  } else {
+    button.title = "Enviar";
+    button.innerHTML = "&#10148;";
+    button.disabled = !hasDraft;
+  }
+  button.setAttribute("aria-label", button.title);
+}
+
+function setRunningControls() {
+  updateSendButtonState();
+}
+
+function throwIfJobCancelled(job) {
+  if (job.cancelled && job.cancelRequestedBy) {
+    const error = new Error("Cancelado por el usuario.");
+    error.code = "USER_CANCELLED";
+    throw error;
+  }
+}
+
+async function cancelActiveResponse() {
+  const active = [...activePromptRequests.values()];
+  if (!active.length) return;
+  const now = Date.now();
+  active.forEach((job) => {
+    job.cancelled = true;
+    job.cancelRequestedAt = now;
+    job.cancelRequestedBy = "stop-button";
+    const live = activeAgentThinkingRuns.get(job.planRunId || job.runId);
+    if (live?.thinking) setThinkingStatus(live.thinking, "Cancelando...");
+  });
+  $("status").textContent = `Cancelando ${active.length} tarea(s)...`;
+  const cancelCalls = [
+    ...active.map((job) => window.editcoreAgent.cancel({ runId: job.planRunId || job.runId || "" }).catch(() => false)),
+    window.editcoreAgent.cancel({ runId: "" }).catch(() => false),
+    window.editcoreChat.cancel().catch(() => false),
+  ];
+  await Promise.all(cancelCalls);
+}
+
+function countActiveAgents(active = []) {
+  return active.filter((job) => job.usesProjectTools).length;
+}
+
+function canLaunchParallelAgent(next, active = []) {
+  if (!next?.usesProjectTools) return false;
+  if (countActiveAgents(active) >= MAX_PARALLEL_AGENTS) return false;
+  const root = normalizeProjectRoot(next.projectRoot || "");
+  const nextWrite = next.isAgent && !next.directReadOnly && !next.readOnlyChat;
+  if (!nextWrite) return true;
+  return !active.some((job) => job.usesProjectTools && job.isAgent && !job.directReadOnly && !job.readOnlyChat
+    && normalizeProjectRoot(job.projectRoot || "") === root);
+}
+
+function canLaunchPromptJob(next, active = []) {
+  if (next.usesProjectTools) return canLaunchParallelAgent(next, active);
+  return active.filter((job) => !job.usesProjectTools).length < MAX_PARALLEL_AGENTS;
+}
+
+async function processPromptQueue() {
+  if (!promptProcessorRunning) promptProcessorRunning = true;
+  let launched = true;
+  while (launched && promptQueue.length) {
+    launched = false;
+    const next = promptQueue[0];
+    if (Number(next.notBefore || 0) > Date.now()) {
+      setTimeout(() => processPromptQueue().catch((error) => { $("status").textContent = error?.message || String(error); }), Number(next.notBefore) - Date.now());
+      break;
+    }
+    const active = [...activePromptRequests.values()];
+    if (!canLaunchPromptJob(next, active)) break;
+    const job = { ...promptQueue.shift(), cancelled: false, runId: next.runId || uid() };
+    activePromptRequests.set(job.id, job);
+    const task = executePromptJob(job).finally(() => {
+      activePromptRequests.delete(job.id);
+      activePromptTasks.delete(job.id);
+      if (!activePromptRequests.size && !promptQueue.length) promptProcessorRunning = false;
+      renderPromptQueue();
+      setRunningControls();
+      processPromptQueue().catch((error) => { $("status").textContent = error?.message || String(error); });
+    });
+    activePromptTasks.set(job.id, task);
+    launched = true;
+    renderPromptQueue();
+    setRunningControls();
+    const parallelCount = countActiveAgents([...activePromptRequests.values()]);
+    if (parallelCount > 1) {
+      $("status").textContent = `${parallelCount} agentes en paralelo (max ${MAX_PARALLEL_AGENTS})`;
+    }
+  }
+}
+
+function mergeAgentSegmentUsage(rows = []) {
+  const merged = { ...(rows.at(-1) || {}) };
+  const sumKeys = [
+    "confirmed_input_tokens", "confirmed_output_tokens", "prompt_tokens", "completion_tokens",
+    "estimated_input_tokens", "estimated_output_tokens", "provider_cache_read_tokens",
+    "provider_calls", "request_input_tokens_estimate", "net_input_tokens_estimate",
+    "context_compaction_count", "local_cache_hits", "local_cache_saved_estimated_tokens",
+    "tool_cache_hits", "external_calls_avoided",
+  ];
+  for (const key of sumKeys) merged[key] = rows.reduce((sum, item) => sum + Number(item?.[key] || 0), 0);
+  merged.peak_request_input_tokens_estimate = rows.reduce((max, item) => Math.max(max, Number(item?.peak_request_input_tokens_estimate || 0)), 0);
+  merged.auto_resume_count = Math.max(0, rows.length - 1);
+  return merged;
+}
+
+async function runAgentUntilSettled(input, { targetRun, thinking, runAgent = window.editcoreAgent.run }) {
+  const usageRows = [];
+  let result = null;
+  let segment = 0;
+  while (true) {
+    segment += 1;
+    const sessionUsage = mergeAgentSegmentUsage(usageRows);
+    result = await runAgent({
+      ...input,
+      taskId: result?.taskId || input.taskId || targetRun?.taskId || "",
+      resume: Boolean(input.resume) || segment > 1,
+      resumeSteps: segment > 1 ? (result?.steps || input.resumeSteps || []) : (input.resumeSteps || []),
+      segmentId: segment,
+      sessionProviderCalls: Number(sessionUsage.provider_calls || 0),
+      sessionNetInputTokens: Number(sessionUsage.net_input_tokens_estimate || 0),
+    });
+    if (result.usage) usageRows.push(result.usage);
+    if (targetRun && result.taskId) targetRun.taskId = result.taskId;
+    if (result.report?.completed || result.report?.autoResumeRecommended !== true) break;
+    if (targetRun) {
+      targetRun.phase = "executing";
+      targetRun.autoResumeCount = segment;
+      targetRun.updatedAt = Date.now();
+    }
+    saveProjects();
+    setThinkingStatus(thinking, `Compactando memoria y continuando desde el checkpoint (${segment + 1})...`);
+    $("status").textContent = "Agente continuando desde el checkpoint durable...";
+  }
+  if (!result) throw new Error("El agente no inicio la ejecucion.");
+  result.usage = mergeAgentSegmentUsage(usageRows);
+  result.report = {
+    ...(result.report || {}),
+    autoResumeCount: Math.max(0, usageRows.length - 1),
+    autoResumeLimitReached: false,
+  };
+  return result;
+}
+
+async function executePromptJob(job) {
+  const prompt = job.prompt;
+  const isAgent = job.isAgent;
+  const usesProjectTools = job.usesProjectTools;
+  if (isAgent && !job.projectRoot) {
+    $("status").textContent = "Abre un proyecto para usar agente";
+    await pickProject().catch(() => undefined);
+    if (!state.projectRoot) throw new Error("No hay proyecto abierto para el agente.");
+    job.projectRoot = state.projectRoot;
+    job.projectId = activeProject()?.id || "";
+  }
+  if (isAgent && normalizeProjectRoot(job.projectRoot) === normalizeProjectRoot(projectCatalogParent())) {
+    throw new Error("El agente necesita un proyecto concreto. Abre uno desde Proyectos o con el boton Abrir.");
+  }
+
+  const pendingAuthorization = isAgent && isAgentAuthorization(prompt);
+  const projectForJob = state.projects.find((item) => item.id === job.projectId)
+    || state.projects.find((item) => normalizeProjectRoot(item.projectRoot) === normalizeProjectRoot(job.projectRoot))
+    || activeProject();
+
+  const outgoingImages = job.images || [];
+  const documents = job.documents || [];
+  if (!job.userMessageDisplayed) {
+    const visiblePrompt = ProjectAnalysis.redactCredentials(job.prompt);
+    appendUserWithImages(visiblePrompt, job.images || []);
+    rememberMessage("user", visiblePrompt, null, job.images || [], job.documents || []);
+    job.userMessageDisplayed = true;
+  }
+
+  const showAgentLog = usesProjectTools && isAgent;
+  const parallelLabel = showAgentLog && (activePromptRequests.size > 0 || promptQueue.some((item) => item.usesProjectTools))
+    ? String(prompt).replace(/\s+/g, " ").trim().slice(0, 42)
+    : "";
+  const thinking = appendThinking("", showAgentLog, parallelLabel);
+  const stopTimer = startResponseTimer(thinking.querySelector(".msg-head"));
+  let elapsedSeconds = 0;
+  if (showAgentLog) {
+    job.runId = job.runId || uid();
+    activeAgentThinkingRuns.set(job.runId, {
+      thinking,
+      projectId: job.projectId || projectForJob?.id || "",
+    });
+  }
+
+  try {
+    $("status").textContent = usesProjectTools ? (isAgent ? "Agente trabajando..." : "Analizando proyecto...") : "Pensando...";
+    if (usesProjectTools) {
+      const project = state.projects.find((item) => item.id === job.projectId)
+        || state.projects.find((item) => normalizeProjectRoot(item.projectRoot) === normalizeProjectRoot(job.projectRoot))
+        || activeProject();
+      const continueAuthorized = Boolean(job.continueAuthorized);
+      const directReadOnly = Boolean(job.directReadOnly);
+      const workflowPhase = project?.agentWorkflow?.phase || "";
+      const resumableExecutable = hasResumableAgentTask(project) && ["interrupted", "executing", "awaiting_authorization"].includes(workflowPhase);
+      const planAuthorizedExecution = Boolean(job.planAuthorizedExecution)
+        || isPlanAuthorizedExecution(project, prompt, isAgent);
+      const authorizedContinuation = planAuthorizedExecution || (isAgent && resumableExecutable
+        && (Boolean(job.resumeAuthorized) || isAgentAuthorization(prompt) || ProjectAnalysis.isRecoveryInstruction(prompt) || ProjectAnalysis.isAgentTaskFeedback(prompt)));
+      const authorized = !isAgent || authorizedContinuation || continueAuthorized || planAuthorizedExecution;
+      if (!isAgent || authorized || directReadOnly) {
+        if (directReadOnly) {
+          setAgentActivity(job.needsAnalysisFirst ? "Analizando proyecto con herramientas..." : "Analizando proyecto...");
+          setThinkingStatus(thinking, "Analizando proyecto...");
+          if (showAgentLog) {
+            addAgentStepToThinking(thinking, {
+              phase: "startup",
+              stage: "analysis",
+              text: job.needsAnalysisFirst ? "Iniciando analisis del proyecto..." : "Revisando el proyecto...",
+            });
+          }
+        } else if (authorizedContinuation || continueAuthorized) {
+          setAgentActivity("Ejecutando tarea...");
+          setThinkingStatus(thinking, "Pensando...");
+          if (!agentModelCapabilities.has(agentCapabilityKey(job))) {
+            try {
+              await ensureAgentModelCapability(job);
+            } catch (error) {
+              const message = String(error?.message || error);
+              if (!/timeout|aborted|operation was aborted|the operation was aborted/i.test(message)) throw error;
+            }
+          }
+        } else {
+          setAgentActivity(`Verificando ${job.model}...`);
+          setThinkingStatus(thinking, "Pensando...");
+          try {
+            await ensureAgentModelCapability(job);
+          } catch (error) {
+            const message = String(error?.message || error);
+            if (!/timeout|aborted|operation was aborted|the operation was aborted/i.test(message)) throw error;
+            setAgentActivity("Continuando con el agente...");
+          }
+        }
+      }
+      if (isAgent && isAgentAuthorization(prompt)) await ensureWorkflowFromPendingPlan(project, prompt);
+      if (isAgent && !directReadOnly && !continueAuthorized && !authorizedContinuation && !hasResumableAgentTask(project)) {
+        if (isAgentAuthorization(prompt)) {
+          elapsedSeconds = stopTimer();
+          removeThinking(thinking);
+          const noTask = "No hay una tarea pendiente. Describe qué quieres analizar o corregir en el proyecto.";
+          append("assistant", noTask, null, true, elapsedSeconds);
+          rememberMessage("assistant", noTask);
+          $("status").textContent = "Sin tarea pendiente";
+          return;
+        }
+        job.directReadOnly = true;
+        job.needsAnalysisFirst = true;
+        directReadOnly = true;
+        setAgentActivity("Analizando proyecto con herramientas...");
+        setThinkingStatus(thinking, "Analizando proyecto...");
+        if (showAgentLog) {
+          addAgentStepToThinking(thinking, {
+            phase: "startup",
+            stage: "analysis",
+            text: "Iniciando analisis del proyecto...",
+          });
+        }
+      }
+      const isolatedRun = directReadOnly || !isAgent || (continueAuthorized && !authorizedContinuation);
+      const storedTask = agentTaskPrompt(project.agentWorkflow?.taskId || job.taskId, project.agentWorkflow?.task || prompt);
+      // FIX CRITICO: cuando el usuario escribio una autorizacion pura ("procede",
+      // "adelante", "autorizo", etc.) pasar SIEMPRE el prompt crudo al backend.
+      // Sin esto, si planAuthorizedExecution/isPlanAuthorizedExecution fallaba,
+      // el renderer reemplazaba "procede" por storedTask y main.js no podia
+      // detectar la autorizacion con looksLikeAgentApproval(task).
+      const rawAuthorization = isAgentAuthorization(prompt);
+      const executionPrompt = planAuthorizedExecution
+        ? (ProjectAnalysis.resolveAuthorizedExecutionPrompt
+          ? ProjectAnalysis.resolveAuthorizedExecutionPrompt(prompt, { ...project.agentWorkflow, task: storedTask }, storedTask)
+          : ProjectAnalysis.authorizedPlanExecutionPrompt({ ...project.agentWorkflow, task: storedTask }))
+        : authorizedContinuation
+          ? ProjectAnalysis.recoveryPrompt({ ...project.agentWorkflow, task: storedTask }, prompt)
+          : isolatedRun
+            ? prompt
+            : (rawAuthorization ? prompt : storedTask);
+      const recoveryProjection = !isolatedRun && window.editcoreTasks
+        ? await window.editcoreTasks.status(project.agentWorkflow?.taskId || job.taskId || "").catch(() => null)
+        : null;
+      const resumeCount = Number(recoveryProjection?.lastCheckpoint?.completedSteps?.length || 0);
+      const runId = job.runId || uid();
+      job.runId = runId;
+      if (showAgentLog) {
+        activeAgentThinkingRuns.set(runId, { thinking, projectId: project?.id || job.projectId || "" });
+      }
+      job.agentExecuting = true;
+      renderPromptQueue();
+      let runRecord = null;
+      if (isolatedRun) {
+        project.agentRuns = Array.isArray(project.agentRuns) ? project.agentRuns : [];
+        runRecord = {
+          taskId: job.taskId || "",
+          runId,
+          prompt: executionPrompt,
+          phase: "executing",
+          model: job.model,
+          checkpoints: [],
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        };
+        project.agentRuns.push(runRecord);
+        project.agentRuns = project.agentRuns.slice(-20);
+      } else {
+        const wasInterrupted = project.agentWorkflow.phase === "interrupted";
+        project.agentWorkflow.phase = "executing";
+        project.agentWorkflow.updatedAt = Date.now();
+        project.agentWorkflow.model = job.model;
+        project.agentWorkflow.runId = runId;
+        project.agentWorkflow.error = "";
+        project.agentWorkflow.resuming = wasInterrupted;
+      }
+      saveProjects();
+      const effectiveAllowWrite = planAuthorizedExecution && job.permissionMode !== "readonly"
+        ? true
+        : (!isAgent || directReadOnly ? false : job.permissionMode !== "readonly");
+      const effectiveAnalysisMode = planAuthorizedExecution ? false : (!isAgent || directReadOnly);
+      const effectivePermissionMode = planAuthorizedExecution && job.permissionMode !== "readonly"
+        ? job.permissionMode
+        : (!isAgent || directReadOnly ? "readonly" : job.permissionMode);
+      if (planAuthorizedExecution && job.permissionMode === "readonly") {
+        const blocked = "El plan esta autorizado pero el permiso es Solo lectura. Cambia a Paso a paso o Acceso completo y escribe procede de nuevo.";
+        elapsedSeconds = stopTimer();
+        append("assistant", blocked, null, true, elapsedSeconds);
+        rememberMessage("assistant", blocked);
+        $("status").textContent = "Permiso insuficiente para ejecutar correcciones";
+        return;
+      }
+      setAgentActivity(directReadOnly ? "Analizando proyecto..." : planAuthorizedExecution ? "Ejecutando plan autorizado..." : continueAuthorized ? "Ejecutando tarea..." : "Ejecutando plan autorizado...");
+      const targetRun = isolatedRun ? runRecord : project.agentWorkflow;
+      let result;
+      try {
+        result = await runAgentUntilSettled({
+        mode: job.mode, baseUrl: job.baseUrl, apiKey: job.apiKey, model: job.model, prompt: executionPrompt,
+        originalGoal: project?.agentWorkflow?.task || project?.analysisMemory?.request || job.prompt,
+        images: workflowImages(outgoingImages),
+        documents: workflowDocuments(documents),
+        projectRoot: job.projectRoot,
+        projectId: project?.id || job.projectId || "",
+        agentId: project?.activeAgentId || "",
+        allowWrite: effectiveAllowWrite,
+        permissionMode: effectivePermissionMode,
+        analysisMode: effectiveAnalysisMode,
+        requireEvidence: job.requireEvidence,
+        analysisContext: job.analysisContext || "",
+        singleTask: usesProjectTools,
+        // FIX CRITICO: enviar planAuthorized=true tambien cuando el usuario
+        // escribio una autorizacion pura ("procede", "adelante", "autorizo"),
+        // aunque planAuthorizedExecution haya quedado en falso por una
+        // deteccion de reporte previo fallida. main.js propaga este flag a
+        // validateAgentCompletion y al adapter para exponer write_file.
+        planAuthorized: Boolean(planAuthorizedExecution) || isAgentAuthorization(prompt),
+        fixQueue: planAuthorizedExecution
+          ? (project?.agentWorkflow?.fixQueue || project?.durableWorkflow?.fixQueue || [])
+          : [],
+        executionMode: job.executionMode || (planAuthorizedExecution ? "AUTHORIZED_PLAN" : ""),
+        planId: planAuthorizedExecution
+          ? (job.planId || project?.agentWorkflow?.planId || project?.durableWorkflow?.planId || "")
+          : "",
+        history: job.history,
+        runId,
+        taskId: (directReadOnly && (job.needsAnalysisFirst || ProjectAnalysis.isFreshAnalysisRequest(job.prompt || prompt)))
+          ? ""
+          : (targetRun?.taskId || job.taskId || project?.agentWorkflow?.taskId || project?.durableWorkflow?.taskId || ""),
+        resume: Boolean(recoveryProjection) || Boolean(project.agentWorkflow?.resumeSteps?.length),
+        resumeSteps: project.agentWorkflow?.resumeSteps || [],
+        preobservedFiles: [...new Set(project.analysisMemory?.filesInspected || [])],
+      }, { targetRun, thinking });
+      } finally {
+        activeAgentThinkingRuns.delete(runId);
+      }
+      if (targetRun && result.taskId) targetRun.taskId = result.taskId;
+      if (result.planId && project?.agentWorkflow) project.agentWorkflow.planId = result.planId;
+      if (result.planId || result.taskId) await syncDurableWorkflow(project);
+      const reportText = String(result.text || "").trim() || extractThinkingNarrativeFallback(thinking);
+      const analysisReportReady = Boolean(result.report?.completed)
+        && (ProjectAnalysis.isAnalysisReport(reportText) || ProjectAnalysis.isPendingAnalysisPlan(reportText))
+        && !planAuthorizedExecution
+        && !authorizedContinuation
+        && !continueAuthorized
+        && job.executionMode !== "AUTHORIZED_PLAN"
+        && (targetRun?.phase || project?.agentWorkflow?.phase) !== "executing";
+      const normalizedReportText = ProjectAnalysis.isAnalysisReport(reportText)
+        ? reportText
+        : ProjectAnalysis.normalizeAnalysisReport(reportText);
+      if (targetRun) {
+        if (analysisReportReady) {
+          targetRun.phase = "awaiting_authorization";
+          targetRun.plan = ProjectAnalysis.redactCredentials(normalizedReportText);
+          targetRun.error = "";
+          targetRun.resumeSteps = [];
+        } else {
+          targetRun.phase = result.report?.completed ? "completed" : "interrupted";
+          targetRun.error = result.report?.completed ? "" : reportText;
+          if (!result.report?.completed && Array.isArray(result.steps) && result.steps.length) {
+            targetRun.resumeSteps = result.steps.slice(-24);
+          }
+        }
+        targetRun.result = reportText;
+        targetRun.report = result.report || null;
+        targetRun.resuming = false;
+        targetRun.updatedAt = Date.now();
+      }
+      if (result.report?.completed && !analysisReportReady) {
+        await deleteAgentTaskPrompt(result.taskId || targetRun?.taskId || job.taskId).catch(() => undefined);
+      }
+      if (directReadOnly && result.report?.completed) {
+        const memoryReportText = analysisReportReady ? normalizedReportText : reportText;
+        project.analysisMemory = ProjectAnalysis.buildAnalysisMemory({
+          projectName: projectDisplayName(project),
+          projectRoot: job.projectRoot,
+          request: executionPrompt,
+          resultText: memoryReportText,
+          model: job.model,
+          steps: result.steps,
+          report: result.report,
+        });
+        if (job.needsAnalysisFirst || analysisReportReady) {
+          markWorkflowAwaitingAuthorization(project, {
+            taskId: result.taskId || job.taskId || "",
+            planId: result.planId || project.agentWorkflow?.planId || "",
+            task: executionPrompt,
+            plan: memoryReportText,
+            images: outgoingImages,
+            documents: job.documents || [],
+            fixQueue: result.fixQueue || result.report?.fixQueue || [],
+          });
+          if (window.editcoreTasks?.persistPlan && (result.taskId || project.agentWorkflow?.taskId)) {
+            await window.editcoreTasks.persistPlan({
+              taskId: result.taskId || project.agentWorkflow.taskId,
+              projectId: project.id || "",
+              projectRoot: job.projectRoot || project.root || "",
+              goal: executionPrompt,
+              content: memoryReportText,
+              planId: result.planId || project.agentWorkflow?.planId || "",
+              fixQueue: project.agentWorkflow?.fixQueue || [],
+            }).catch(() => null);
+          }
+          await saveAgentTaskPrompt(project.agentWorkflow.taskId, executionPrompt);
+          updateAgentPipelineUi({
+            visible: true,
+            queue: Array.isArray(project.agentWorkflow?.fixQueue) && project.agentWorkflow.fixQueue.length
+              ? `0/${project.agentWorkflow.fixQueue.length} · listo para PROCEDE`
+              : "Plan listo · PROCEDE",
+            queueState: "warn",
+            diagnosticState: agentPipelineState.diagnosticState || "",
+          });
+          $("status").textContent = "Análisis listo · escribe procede, autorizo o continua";
+        }
+      } else if (analysisReportReady && targetRun === project.agentWorkflow) {
+        markWorkflowAwaitingAuthorization(project, {
+          taskId: result.taskId || job.taskId || "",
+          planId: result.planId || project.agentWorkflow?.planId || "",
+          task: project.agentWorkflow?.task || executionPrompt,
+          plan: normalizedReportText,
+          images: outgoingImages,
+          documents: job.documents || [],
+          fixQueue: result.fixQueue || result.report?.fixQueue || project.agentWorkflow?.fixQueue || [],
+        });
+        if (window.editcoreTasks?.persistPlan && (result.taskId || project.agentWorkflow?.taskId)) {
+          await window.editcoreTasks.persistPlan({
+            taskId: result.taskId || project.agentWorkflow.taskId,
+            projectId: project.id || "",
+            projectRoot: job.projectRoot || project.root || "",
+            goal: project.agentWorkflow?.task || executionPrompt,
+            content: normalizedReportText,
+            planId: result.planId || project.agentWorkflow?.planId || "",
+            fixQueue: project.agentWorkflow?.fixQueue || [],
+          }).catch(() => null);
+        }
+        await saveAgentTaskPrompt(project.agentWorkflow.taskId, project.agentWorkflow.task).catch(() => undefined);
+        $("status").textContent = "Análisis listo · escribe procede, autorizo o continua";
+      }
+      saveProjects();
+      elapsedSeconds = stopTimer();
+      const finalText = String(result.text || "").trim() || extractThinkingNarrativeFallback(thinking);
+      rememberMessage("assistant", finalText, result.usage);
+      finalizeThinkingAsAssistant(thinking, finalText, result.usage, elapsedSeconds);
+      if (result.usage) recordUsage(result.usage);
+      notifyVoiceAssistant(finalText);
+      const report = result.report || {};
+      if (!report.completed) {
+        $("status").textContent = report.autoResumeRecommended
+          ? `Continuando - ${report.toolCount || 0} acciones verificadas - quedan ${report.remainingProviderCalls || 0} llamadas globales`
+          : `Interrumpido - ${report.toolCount || 0} acciones verificadas - checkpoint guardado`;
+      }
+      if (report.completed && !job.needsAnalysisFirst) {
+        $("status").textContent = `Completado - ${report.toolCount || 0} acciones - ${(report.changedFiles || []).length} archivos`;
+      }
+    } else {
+      let accumulated = "";
+      let streamEl = null;
+      let streamBody = null;
+      let finalUsage = null;
+
+      window.editcoreStream.offChunk();
+      window.editcoreStream.onChunk((chunk) => {
+        if (chunk && chunk.done) return;
+        const replace = Boolean(chunk && typeof chunk === "object" && chunk.replace);
+        const text = typeof chunk === "string" ? chunk : (chunk?.text || chunk?.delta || "");
+        if (!text) return;
+        if (streamEl === null) {
+          removeThinking(thinking);
+          const s = appendStreaming();
+          streamEl = s.item;
+          streamBody = s.body;
+          stopTimer();
+          const stopStreamingTimer = startResponseTimer(s.head);
+          job.stopStreamingTimer = stopStreamingTimer;
+        }
+        accumulated = replace ? text : `${accumulated}${text}`;
+        streamBody.innerHTML = renderMarkdown(accumulated);
+        scrollFeedToBottom();
+      });
+
+      const result = await window.editcoreChat.chat({
+        mode: job.mode, baseUrl: job.baseUrl, apiKey: job.apiKey, model: job.model, prompt,
+        providerKey: job.providerKey || "",
+        images: outgoingImages,
+        projectRoot: job.projectRoot || "",
+        projectId: activeProject()?.id || "",
+        agentId: activeProject()?.activeAgentId || state.activeAgentId || "",
+        permissionMode: job.permissionMode || state.permissionMode || "step",
+        history: job.history,
+        systemPrompt: job.analysisContext ? [
+          "Eres EDITCOREAI, un asistente de desarrollo experto. Responde siempre en español, de forma directa y basada en evidencia.",
+          "Las preguntas informativas y de seguimiento no requieren autorizacion. No afirmes que perdiste contexto si la memoria verificada incluye el proyecto.",
+          job.analysisContext,
+        ].join("\n\n") : "",
+      });
+
+      window.editcoreStream.offChunk();
+      elapsedSeconds = job.stopStreamingTimer ? job.stopStreamingTimer() : stopTimer();
+      removeThinking(thinking);
+
+      if (streamEl) {
+        const finalText = String(result?.text || "").trim() && result.text !== "Operación completada."
+          ? result.text
+          : accumulated;
+        if (finalText && accumulated !== finalText) {
+          accumulated = finalText;
+          streamBody.innerHTML = renderMarkdown(accumulated);
+        }
+        streamEl.id = "";
+        finalUsage = result.usage;
+        if (finalUsage) {
+          const meta = document.createElement("div");
+          meta.className = "msg-meta";
+          meta.textContent = usageMetaText(finalUsage);
+          streamEl.appendChild(meta);
+        }
+      } else {
+        append("assistant", result.text, result.usage, true, elapsedSeconds);
+      }
+
+      rememberMessage("assistant", accumulated || result.text, result.usage);
+      if (result.usage) recordUsage(result.usage);
+      notifyVoiceAssistant(accumulated || result.text || result?.text);
+      updateStatus();
+    }
+    return;
+  } catch (error) {
+    elapsedSeconds = stopTimer();
+    const streamEl2 = $("streamingMsg");
+    if (streamEl2) streamEl2.remove();
+    const rawMessage = String(error?.message || error).replace(/^Error invoking remote method '[^']+':\s*/i, "");
+    const cancelled = (Boolean(job.cancelled) && Boolean(job.cancelRequestedBy))
+      || /cancelad[oa]|aborted|abort/i.test(rawMessage);
+    const message = cancelled
+      ? "Cancelado por el usuario."
+      : rawMessage && rawMessage !== "<none>"
+        ? rawMessage
+        : "EDITCOREAI no recibió un error legible del proveedor o del proyecto.";
+    if (isAgent) {
+      const project = state.projects.find((item) => item.id === job.projectId)
+        || state.projects.find((item) => normalizeProjectRoot(item.projectRoot) === normalizeProjectRoot(job.projectRoot))
+        || activeProject();
+      const parallelRun = project?.agentRuns?.find((item) => item.runId === job.runId);
+      const targetRun = parallelRun || (project?.agentWorkflow?.runId === job.runId ? project.agentWorkflow : null);
+      if (targetRun?.phase === "executing") {
+        targetRun.phase = "interrupted";
+        targetRun.error = message;
+        targetRun.updatedAt = Date.now();
+        saveProjects();
+      }
+    }
+    rememberMessage("assistant", message);
+    if (usesProjectTools && thinking) finalizeThinkingAsAssistant(thinking, message, null, elapsedSeconds);
+    else append("assistant", message, null, true, elapsedSeconds);
+    notifyVoiceAssistant(message);
+    handleProviderFailureForAuto(message, job).catch(() => undefined);
+    $("status").textContent = cancelled ? "Cancelado" : "Error";
+  } finally {
+    if (job.runId) activeAgentThinkingRuns.delete(job.runId);
+    job.agentExecuting = false;
+    renderPromptQueue();
+    notifyVoiceTurnComplete();
+    $("prompt").focus();
+  }
+}
+
+function workflowImages(outgoingImages, project = activeProject()) {
+  if (Array.isArray(outgoingImages) && outgoingImages.length) return outgoingImages;
+  return Array.isArray(project && project.agentWorkflow?.images) ? project.agentWorkflow.images : [];
+}
+
+function workflowDocuments(outgoingDocuments, project = activeProject()) {
+  if (Array.isArray(outgoingDocuments) && outgoingDocuments.length) return outgoingDocuments;
+  return Array.isArray(project && project.agentWorkflow?.documents) ? project.agentWorkflow.documents : [];
+}
+
+function appendAgentApprovalCard(request = {}) {
+  const requestId = String(request.requestId || "");
+  if (!requestId || pendingAgentApprovalCards.has(requestId)) return null;
+  const item = document.createElement("article");
+  item.className = "msg assistant agent-approval-card";
+  item.dataset.approvalRequestId = requestId;
+
+  const header = document.createElement("div");
+  header.className = "msg-head";
+  header.textContent = "EDITCOREAI · Permiso requerido";
+
+  const body = document.createElement("div");
+  body.className = "msg-body";
+  const title = document.createElement("p");
+  title.textContent = String(request.message || "El agente necesita tu autorizacion para continuar.");
+  const detail = document.createElement("pre");
+  detail.className = "agent-approval-detail";
+  detail.textContent = String(request.detail || "").trim();
+  body.append(title);
+  if (detail.textContent) body.appendChild(detail);
+
+  const actions = document.createElement("div");
+  actions.className = "agent-approval-actions";
+  const cancelBtn = document.createElement("button");
+  cancelBtn.type = "button";
+  cancelBtn.className = "ghost-btn";
+  cancelBtn.textContent = "Cancelar";
+  const approveBtn = document.createElement("button");
+  approveBtn.type = "button";
+  approveBtn.className = "primary-btn";
+  approveBtn.textContent = "Autorizar";
+  actions.append(cancelBtn, approveBtn);
+  body.appendChild(actions);
+  item.append(header, body);
+  $("feed").appendChild(item);
+  scrollFeedToBottom();
+
+  const settle = async (approved) => {
+    if (!pendingAgentApprovalCards.has(requestId)) return;
+    pendingAgentApprovalCards.delete(requestId);
+    cancelBtn.disabled = true;
+    approveBtn.disabled = true;
+    item.classList.add(approved ? "is-approved" : "is-denied");
+    title.textContent = approved
+      ? "Autorizacion concedida. El agente continua..."
+      : "Autorizacion cancelada. El agente no ejecutara esta accion.";
+    actions.remove();
+    await window.editcoreAgent.respondApproval({ requestId, approved }).catch(() => false);
+    $("status").textContent = approved ? "Accion autorizada" : "Accion cancelada";
+  };
+  cancelBtn.addEventListener("click", () => settle(false));
+  approveBtn.addEventListener("click", () => settle(true));
+  pendingAgentApprovalCards.set(requestId, { item, settle });
+  $("status").textContent = "Esperando autorizacion en el chat...";
+  return item;
+}
+
+async function cancelProjectAgentJobs(projectRoot) {
+  const root = normalizeProjectRoot(projectRoot || "");
+  promptQueue = promptQueue.filter((item) => !(item.isAgent && normalizeProjectRoot(item.projectRoot) === root));
+  const targets = [...activePromptRequests.values()].filter((job) =>
+    job.isAgent && normalizeProjectRoot(job.projectRoot) === root
+  );
+  if (!targets.length) {
+    renderPromptQueue();
+    setRunningControls();
+    return;
+  }
+  const now = Date.now();
+  targets.forEach((job) => {
+    job.cancelled = true;
+    job.cancelRequestedAt = now;
+    job.cancelRequestedBy = "authorization";
+  });
+  await Promise.all(
+    targets.map((job) => window.editcoreAgent.cancel({ runId: job.planRunId || job.runId || "" }).catch(() => false))
+  );
+  renderPromptQueue();
+  setRunningControls();
+}
+
+function appendUserWithImages(text, images) {
+  const item = document.createElement("article");
+  item.className = "msg user";
+
+  const header = document.createElement("div");
+  header.className = "msg-head";
+  header.textContent = "Tú";
+
+  const body = document.createElement("div");
+  body.className = "msg-body";
+  body.innerHTML = renderMarkdown(text);
+
+  item.append(header, body);
+
+  for (const img of images) {
+    const imgEl = document.createElement("img");
+    imgEl.src = img.dataUrl;
+    imgEl.alt = img.name;
+    imgEl.className = "msg-img";
+    item.appendChild(imgEl);
+  }
+
+  $("feed").appendChild(item);
+  scrollFeedToBottom();
+}
+
+// ── Boot ──────────────────────────────────────────────────────────────────────
+
+async function migrateConfig() {
+  const config = loadJson("editcore-chat-config", null);
+  if (!config) return;
+  const profiles = loadProviderProfiles().filter((profile) => profile.status === "active");
+  const providerKey = config.providerKey || providerKeyForEndpoint(config.baseUrl);
+  const legacyClaudeModel = /^claude-(?:3-|3\.|3_)/i.test(String(config.model || ""));
+  const selectedProfile = profiles.find((profile) => profile.id === config.providerProfileId)
+    || profiles.find((profile) => profile.providerKey === providerKey && profile.model === config.model)
+    || (legacyClaudeModel
+      ? profiles.find((profile) => profile.providerKey === providerKey
+        && /^claude-(?:sonnet|opus|haiku)-4(?:[.-]|$)/i.test(profile.model))
+      : null);
+  if (!selectedProfile) return;
+  const provider = loadJson("editcore-providers", {})[selectedProfile.providerKey] || {};
+  const baseUrl = selectedProfile.baseUrl || provider.baseUrl || PROVIDERS[selectedProfile.providerKey]?.baseUrl || config.baseUrl || "";
+  const migratedConfig = {
+    ...config,
+    mode: selectedProfile.model.startsWith("claude") ? "claude" : "gpt",
+    baseUrl,
+    apiKey: selectedProfile.apiKey,
+    model: selectedProfile.model,
+    providerKey: selectedProfile.providerKey,
+    providerProfileId: selectedProfile.id,
+  };
+  if (JSON.stringify(migratedConfig) !== JSON.stringify(config)) {
+    await saveSecureJson("editcore-chat-config", migratedConfig);
+  }
+}
+
+async function cleanupObsoleteProviders() {
+  const REMOVED_PROVIDER_KEYS = new Set(["chatgptpro4all"]);
+  const REMOVED_HOST_FRAGMENTS = ["chatgptpro4all.com"];
+  const storedProviders = loadJson("editcore-providers", {});
+  let providersMapChanged = false;
+  for (const key of REMOVED_PROVIDER_KEYS) {
+    if (Object.prototype.hasOwnProperty.call(storedProviders, key)) {
+      delete storedProviders[key];
+      providersMapChanged = true;
+    }
+  }
+  if (providersMapChanged) await saveSecureJson("editcore-providers", storedProviders);
+
+  const primaryHostnames = PRIMARY_PROVIDER_KEYS.map((key) => {
+    try { return new URL(PROVIDERS[key].baseUrl).hostname; } catch { return ''; }
+  }).filter(Boolean);
+  const customProviders = loadCustomProviders();
+  const badSubstrings = [...REMOVED_HOST_FRAGMENTS];
+
+  const toRemove = customProviders.filter((prov) => {
+    const url = String(prov.baseUrl || '').toLowerCase();
+    const name = String(prov.name || '').toLowerCase();
+    if (badSubstrings.some((bad) => url.includes(bad) || name.includes(bad))) return true;
+    try { return primaryHostnames.includes(new URL(url).hostname); } catch { return false; }
+  });
+  const removedIds = new Set(toRemove.map((p) => p.id));
+  const cleaned = customProviders.filter((p) => !removedIds.has(p.id));
+  if (cleaned.length !== customProviders.length) await saveCustomProviders(cleaned);
+
+  let profiles = loadProviderProfiles();
+  let changed = false;
+
+  profiles = profiles.map((profile) => {
+    const key = String(profile.providerKey || '');
+    if (profile.providerName && PRIMARY_PROVIDER_KEYS.includes(key)) {
+      changed = true;
+      const { providerName: _, ...rest } = profile;
+      return rest;
+    }
+    return profile;
+  }).filter((profile) => {
+    const key = String(profile.providerKey || '');
+    const url = String(profile.baseUrl || '').toLowerCase();
+    if (REMOVED_PROVIDER_KEYS.has(key) || String(profile.model || "").toLowerCase().startsWith("chatgptpro4all/")) { changed = true; return false; }
+    if (badSubstrings.some((bad) => url.includes(bad))) { changed = true; return false; }
+    if (key.startsWith('custom:') && removedIds.has(key.slice(7))) { changed = true; return false; }
+    return true;
+  });
+
+  if (changed) await saveProviderProfiles(profiles);
+}
+
+const APICREDITS_VERIFIED_MODELS = [
+  "claude-fable-5", "claude-haiku-4-5", "claude-opus-4-7", "claude-opus-4-8",
+  "claude-sonnet-4-6", "claude-sonnet-5",
+  "gpt-5.6-luna", "gpt-5.6-sol", "gpt-5.6-terra",
+];
+
+async function ensureDefaultModelSelectionMode() {
+  const config = loadJson("editcore-chat-config", {});
+  if (config.modelSelectionMode) return;
+  if (!verifiedChatModelOptions().length) return;
+  await saveSecureJson("editcore-chat-config", { ...config, remember: true, modelSelectionMode: "auto" });
+}
+
+async function boot() {
+  $("previewWebview").setAttribute("partition", PREVIEW_PARTITION);
+  setPreviewMode(localStorage.getItem(PREVIEW_MODE_STORAGE_KEY) || "web");
+  await initializeSecureState();
+  if (loadJson("editcore-rtk", {}).enabled !== true) await saveSecureJson("editcore-rtk", { enabled: true });
+  await cleanupObsoleteProviders();
+  await migrateLegacyProviderProfiles();
+  await migrateConfig();
+  loadConfig();
+  loadMetrics();
+  if (window.EditCoreVoiceMode?.init) {
+    window.EditCoreVoiceMode.init();
+    window.EditCoreVoiceMode.setPromptDispatcher((text) => {
+      $("prompt").value = text;
+      triggerChatSend();
+    });
+  }
+  refreshCacheStats().catch(() => undefined);
+  loadPanelSizes();
+  const storedProjects = loadJson(PROJECTS_STORAGE_KEY, []);
+  const storedActiveProjectId = String(localStorage.getItem(ACTIVE_PROJECT_STORAGE_KEY) || "").trim();
+  state.projects = repairPersistedText(storedProjects).map(ensureProjectAgent);
+  state.activeProjectId = "";
+  state.projectRoot = "";
+  await refreshProjectCatalog().catch(() => undefined);
+  const restoredProject = storedActiveProjectId
+    ? state.projects.find((project) => project.id === storedActiveProjectId && project.projectRoot)
+    : null;
+  const durableTasks = window.editcoreTasks ? await window.editcoreTasks.list().catch(() => []) : [];
+  const visibleDurableTasks = (durableTasks || []).filter((task) => [
+    "READY", "WAITING", "AWAITING_AUTHORIZATION", "PLAN_READY", "APPROVED",
+    "PAUSED", "RECOVERABLE", "RECOVERING",
+  ].includes(task.status));
+  for (const durableTask of visibleDurableTasks) {
+    const recovered = ["READY", "RECOVERABLE", "AWAITING_AUTHORIZATION", "PLAN_READY"].includes(durableTask.status) && window.editcoreTasks
+      ? await window.editcoreTasks.describeWorkflow(durableTask.taskId).catch(() => null)
+      : null;
+    const project = state.projects.find((item) => item.id === durableTask.projectId)
+      || state.projects.find((item) => normalizeProjectRoot(item.projectRoot) === normalizeProjectRoot(durableTask.projectRoot));
+    if (!project || project.agentWorkflow?.phase === "executing") continue;
+    const awaitingAuthorization = durableTask.status === "AWAITING_AUTHORIZATION"
+      || durableTask.status === "PLAN_READY"
+      || recovered?.awaitingAuthorization === true
+      || (durableTask.status === "READY" && (recovered?.nextAction || durableTask.nextAction)?.type === "AUTHORIZE");
+    project.durableWorkflow = recovered || {
+      taskId: durableTask.taskId,
+      state: durableTask.status,
+      goal: durableTask.goal,
+      planId: durableTask.planId || "",
+      planContent: recovered?.planContent || "",
+      awaitingAuthorization,
+    };
+    project.agentWorkflow = {
+      ...(project.agentWorkflow || {}), taskId: durableTask.taskId,
+      planId: durableTask.planId || recovered?.planId || project.agentWorkflow?.planId || "",
+      task: recovered?.goal || durableTask.goal || project.agentWorkflow?.task || "Tarea persistente",
+      plan: recovered?.planContent || project.agentWorkflow?.plan || "",
+      phase: awaitingAuthorization ? "awaiting_authorization" : "interrupted", runId: "", updatedAt: Date.now(),
+      error: awaitingAuthorization ? "" : durableTask.recoveryReason || (durableTask.status === "READY" ? "Tarea pendiente de ejecucion." : "Tarea persistente disponible para continuar."),
+      durableStatus: durableTask.status, currentStage: recovered?.currentStage || durableTask.currentStage,
+      currentStepId: recovered?.currentStepId || durableTask.currentStepId, nextAction: recovered?.nextAction || durableTask.nextAction,
+      lastCheckpointId: recovered?.lastCheckpoint?.checkpointId || durableTask.lastCheckpointId || "",
+    };
+  }
+  if (JSON.stringify(state.projects) !== JSON.stringify(storedProjects)) saveProjects();
+  await ensureDefaultModelSelectionMode();
+  await refreshModelCapabilities(true);
+  syncChatModelFromConfig();
+
+  localStorage.removeItem("editcore-projects-collapsed");
+  document.body.classList.remove("projects-collapsed");
+
+  $("projectPathLabel").textContent = state.projectRoot || "Sin proyecto";
+
+  const autoPick = new URLSearchParams(location.search).get("autoPick") === "1";
+  if (autoPick) await pickProject();
+  else if (restoredProject) await selectProject(restoredProject.id);
+  renderProjects();
+  renderFeed();
+  renderProjectFiles();
+  renderAttachments();
+  renderConnectionStatus();
+  const bootPermission = ["readonly", "step", "full"].includes(state.permissionMode) ? state.permissionMode : "step";
+  window.editcoreAgent.setPermission(bootPermission).then((mode) => {
+    applyPermissionMode(mode);
+  }).catch(() => {
+    applyPermissionMode(bootPermission);
+  });
+  document.body.dataset.editcoreReady = "1";
+  window.__editcorePipeline = {
+    update: updateAgentPipelineUi,
+    getState: () => ({ ...agentPipelineState }),
+  };
+  performance.mark?.("editcore-interactive");
+  updateSendButtonState();
+  window.EditCoreVoiceMode?.init?.({
+    button: $("voiceBtn"),
+    onStatus: (message) => { $("status").textContent = message; },
+    onSend: (text) => {
+      $("prompt").value = text;
+      triggerChatSend();
+    },
+    onSteer: (text) => {
+      const activeAgent = [...activePromptRequests.values()].find((job) => job.isAgent && job.agentExecuting && job.runId);
+      if (!activeAgent?.runId) return false;
+      window.editcoreAgent.steer({ instruction: text, runId: activeAgent.runId }).catch(() => undefined);
+      $("status").textContent = "Instruccion de voz enviada al agente activo";
+      return true;
+    },
+    isBusy: () => activePromptRequests.size > 0 || promptQueue.some((item) => !item.cancelled),
+  });
+}
+
+// ── Fetch models ──────────────────────────────────────────────────────────────
+
+async function fetchModels() {
+  const apiKey = $("apiKey").value.trim();
+  const baseUrl = $("baseUrl").value.trim() || "https://api.apicredits.site/v1";
+  const btn = $("fetchModelsBtn");
+  const dot = $("apiStatusDot");
+
+  function setDot(state, title) {
+    if (!dot) return;
+    dot.className = `api-dot${state ? " " + state : ""}`;
+    dot.title = title || "Estado API";
+  }
+
+  if (!apiKey) {
+    setDot("", "Sin API key");
+    btn.textContent = "↓ Ver modelos";
+    return;
+  }
+
+  btn.textContent = "Verificando…";
+  btn.disabled = true;
+  setDot("checking", "Verificando…");
+
+  try {
+    if (typeof window.editcoreModels?.list !== "function") {
+      throw new Error("bridge");
+    }
+    const models = await window.editcoreModels.list({ apiKey, baseUrl, providerKey: providerKeyForEndpoint(baseUrl) });
+    const sel = $("model");
+    const current = sel.value;
+    sel.replaceChildren();
+    for (const m of models) {
+      const opt = document.createElement("option");
+      opt.value = m; opt.textContent = m;
+      sel.appendChild(opt);
+    }
+    sel.value = models.includes(current) ? current : (models[0] || "");
+    setChatModelOptions(models, sel.value);
+    setDot("active", `API activa · ${models.length} modelos`);
+    btn.textContent = "↓ Ver modelos";
+  } catch {
+    setDot("inactive", "API no responde o clave inválida");
+    btn.textContent = "↓ Ver modelos";
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+// ── Fallback providers ────────────────────────────────────────────────────────
+
+function loadFallbackProviders() {
+  return loadJson("editcore-fallback-providers", []);
+}
+
+function saveFallbackProviders(list) {
+  saveSecureJson("editcore-fallback-providers", list);
+}
+
+function renderFallbackProviders() {
+  const container = $("fallbackProviders");
+  if (!container) return;
+  const list = loadFallbackProviders();
+  container.replaceChildren();
+  if (!list.length) return;
+  const label = document.createElement("div");
+  label.style.cssText = "font-size:11px;font-weight:800;color:#6c7a89;text-transform:uppercase;letter-spacing:.04em;margin-bottom:8px;margin-top:4px;";
+  label.textContent = "Proveedores de respaldo";
+  container.appendChild(label);
+  list.forEach((prov, i) => {
+    const row = document.createElement("div");
+    row.style.cssText = "display:grid;grid-template-columns:1fr 1fr 1fr 28px;gap:6px;align-items:center;margin-bottom:7px;";
+    const nameEl = document.createElement("input");
+    nameEl.value = prov.name || "";
+    nameEl.placeholder = "Nombre";
+    nameEl.style.cssText = "height:30px;padding:0 8px;font-size:12px;border:1px solid #cbd3dc;border-radius:6px;background:#fff;color:#17202a;width:100%;";
+    nameEl.oninput = () => { list[i].name = nameEl.value.trim(); saveFallbackProviders(list); };
+
+    const urlEl = document.createElement("input");
+    urlEl.value = prov.baseUrl || "";
+    urlEl.placeholder = "https://api.../v1";
+    urlEl.style.cssText = nameEl.style.cssText;
+    urlEl.oninput = () => { list[i].baseUrl = urlEl.value.trim(); saveFallbackProviders(list); };
+
+    const keyEl = document.createElement("input");
+    keyEl.type = "password";
+    keyEl.value = prov.apiKey || "";
+    keyEl.placeholder = "API Key";
+    keyEl.style.cssText = nameEl.style.cssText;
+    keyEl.onchange = () => { list[i].apiKey = keyEl.value.trim(); saveFallbackProviders(list); };
+
+    const delBtn = document.createElement("button");
+    delBtn.type = "button";
+    delBtn.textContent = "×";
+    delBtn.title = "Eliminar";
+    delBtn.style.cssText = "height:30px;width:28px;border:1px solid #e0e5ea;border-radius:6px;background:transparent;color:#9aacba;font-size:16px;cursor:pointer;padding:0;";
+    delBtn.onclick = () => { list.splice(i, 1); saveFallbackProviders(list); renderFallbackProviders(); };
+
+    row.append(nameEl, urlEl, keyEl, delBtn);
+    container.appendChild(row);
+  });
+  const hint = document.createElement("div");
+  hint.style.cssText = "font-size:10px;color:#9aacba;margin-top:2px;";
+  hint.textContent = "Nombre · Endpoint · API Key";
+  container.appendChild(hint);
+}
+
+function addFallbackProvider() {
+  const list = loadFallbackProviders();
+  list.push({ name: "", baseUrl: "https://api.apicredits.site/v1", apiKey: "" });
+  saveFallbackProviders(list);
+  renderFallbackProviders();
+}
+
+function wireComposerControls() {
+  $("runMode")?.addEventListener("change", updateSendButtonState);
+
+  $("permissionsBtn")?.addEventListener("click", (event) => {
+    event.stopPropagation();
+    setPermissionMenuOpen($("permissionMenu")?.classList.contains("hidden"));
+  });
+
+  $("permissionMenu")?.querySelectorAll("[data-permission]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const selected = btn.dataset.permission;
+      try {
+        const mode = await window.editcoreAgent.setPermission(selected);
+        applyPermissionMode(mode);
+      } catch (error) {
+        $("status").textContent = error?.message || "No se pudo cambiar el permiso";
+        return;
+      }
+      const project = activeProject();
+      if (project) { project.permissionMode = state.permissionMode; project.updatedAt = Date.now(); saveProjects(); }
+      const labels = { readonly: "Solo lectura", step: "Permisos", full: "Acceso completo" };
+      $("status").textContent = `Permisos: ${labels[state.permissionMode] || state.permissionMode}`;
+      setPermissionMenuOpen(false);
+    });
+  });
+
+  $("chatForm")?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    triggerChatSend();
+  });
+  $("sendBtn")?.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    triggerChatSend();
+  });
+  $("voiceBtn")?.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    window.EditCoreVoiceMode?.toggle?.();
+  });
+
+  $("chatModelSelect")?.addEventListener("change", async (event) => {
+    const option = event.target.selectedOptions[0];
+    if (option?.dataset?.configure === "1") {
+      syncChatModelFromConfig();
+      openProviders();
+      return;
+    }
+    if (AutoModel.isAutoModelSelection(option)) {
+      const config = loadJson("editcore-chat-config", {});
+      await saveSecureJson("editcore-chat-config", {
+        ...config,
+        remember: true,
+        modelSelectionMode: "auto",
+      });
+      state.modelSelectionAuto = true;
+      state.lastAutoResolvedModel = "";
+      updateModelPickerLabel();
+      updateStatus();
+      return;
+    }
+    const model = option?.dataset.model?.trim() || "";
+    if (!model) {
+      openProviders();
+      return;
+    }
+    const config = loadJson("editcore-chat-config", {});
+    const providerKey = option.dataset.providerKey || config.providerKey || providerKeyForEndpoint(config.baseUrl);
+    const profileId = option.dataset.profileId || "";
+    const providerData = loadJson("editcore-providers", {})[providerKey] || {};
+    const profile = loadProviderProfiles().find((item) => item.id === profileId && item.status === "active")
+      || verifiedProfileForModel(providerKey, model);
+    const baseUrl = profile?.baseUrl || providerData.baseUrl || config.baseUrl || PROVIDERS[providerKey]?.baseUrl || "";
+    const apiKey = profile?.apiKey || providerData.apiKey || config.apiKey || "";
+    await activateProvider({ baseUrl, apiKey, model, providerKey, profileId: profile?.id || "" });
+    updateModelPickerLabel();
+    updateStatus();
+  });
+
+  $("modelPickerBtn")?.addEventListener("click", (event) => {
+    event.stopPropagation();
+    const menu = $("modelPickerMenu");
+    setModelPickerOpen(menu?.classList.contains("hidden"));
+  });
+
+  $("attachBtn")?.addEventListener("click", () => $("fileInput")?.click());
+  $("fileInput")?.addEventListener("change", (e) => {
+    addFiles(e.target.files || []).catch((err) => { $("status").textContent = err?.message || String(err); });
+    e.target.value = "";
+  });
+
+  $("prompt")?.addEventListener("paste", (e) => {
+    const files = [];
+    for (const item of [...(e.clipboardData?.items || [])]) {
+      if (item.kind === "file") {
+        const file = item.getAsFile();
+        if (file) files.push(file);
+      }
+    }
+    if (!files.length) {
+      for (const f of [...(e.clipboardData?.files || [])]) {
+        files.push(f);
+      }
+    }
+    if (files.length) {
+      e.preventDefault();
+      addFiles(files).catch((err) => { $("status").textContent = err?.message || String(err); });
+    }
+  });
+
+  $("prompt")?.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
+      e.preventDefault();
+      triggerChatSend();
+    }
+  });
+  $("prompt")?.addEventListener("input", updateSendButtonState);
+}
+
+// ── Event wiring ──────────────────────────────────────────────────────────────
+
+wireComposerControls();
+
+$("connectionsBtn").addEventListener("click", openConnections);
+$("closeConnectionsBtn").addEventListener("click", closeConnections);
+$("detectConnectionsBtn").addEventListener("click", detectConnections);
+$("connectGatewayProjectBtn")?.addEventListener("click", () => {
+  connectGatewayProject().catch((error) => { $("status").textContent = error?.message || String(error); });
+});
+$("providersBtn").addEventListener("click", openProviders);
+$("addCustomProviderBtn")?.addEventListener("click", () => addCustomProvider());
+$("closeProvidersBtn").addEventListener("click", (e) => { e.stopPropagation(); closeProviders(); });
+$("brainBtn").addEventListener("click", openBrain);
+$("closeBrainBtn").addEventListener("click", (e) => { e.preventDefault(); $("brainDialog").close(); });
+$("brainSearchBtn").addEventListener("click", () => loadBrainCatalog().catch((error) => {
+  $("brainStatus").textContent = error?.message || String(error);
+}));
+$("brainAuditBtn").addEventListener("click", runBrainAudit);
+$("brainInstallRepoBtn").addEventListener("click", installBrainRepo);
+$("brainSearch").addEventListener("keydown", (event) => {
+  if (event.key === "Enter") {
+    event.preventDefault();
+    loadBrainCatalog().catch((error) => { $("brainStatus").textContent = error?.message || String(error); });
+  }
+});
+$("brainRepoUrl").addEventListener("keydown", (event) => {
+  if (event.key === "Enter") {
+    event.preventDefault();
+    installBrainRepo();
+  }
+});
+$("inspectorBtn").addEventListener("click", openInspector);
+$("closeInspectorBtn").addEventListener("click", () => $("inspectorDialog").close());
+$("inspectorChatTab")?.addEventListener("click", () => inspectorSetTab("chat"));
+$("inspectorReportsTab")?.addEventListener("click", () => inspectorSetTab("reports"));
+$("inspectorSendBtn").addEventListener("click", () => sendInspectorPrompt());
+$("inspectorHandoffBtn")?.addEventListener("click", () => prepareInspectorCorrection());
+document.querySelectorAll("[data-inspector-action]").forEach((button) => {
+  button.addEventListener("click", () => {
+    const target = button.dataset.inspectorTarget === "project" ? "project" : "editcore";
+    if (button.dataset.inspectorAction === "repair") repairInspectorTarget(target);
+    else runInspectorScan(target);
+  });
+});
+document.querySelectorAll("[data-inspector-area]").forEach((button) => {
+  button.addEventListener("click", () => {
+    const area = button.dataset.inspectorArea;
+    if (area) {
+      runInspectorEvaluation(area).catch((error) => {
+        inspectorHealth("error", error?.message || String(error));
+      });
+    }
+  });
+});
+$("inspectorPrompt").addEventListener("keydown", (event) => {
+  if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
+    event.preventDefault();
+    sendInspectorPrompt();
+  }
+});
+
+$("connectionsForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const button = $("saveConnectionsBtn");
+  button.disabled = true;
+  try {
+    await saveConnections();
+    $("status").textContent = "Conexiones guardadas; revisa el estado verificado de cada servicio";
+  } catch (error) {
+    $("status").textContent = error?.message || "No se pudieron verificar las conexiones";
+  } finally {
+    button.disabled = false;
+  }
+});
+
+$("providersForm").addEventListener("submit", (e) => {
+  e.preventDefault();
+  saveProviders().then(() => closeProviders()).catch(() => undefined);
+});
+
+document.querySelectorAll("[data-add-provider-profile]").forEach((button) => {
+  button.addEventListener("click", () => addProviderProfile(button.dataset.addProviderProfile));
+});
+
+document.querySelectorAll("[data-bulk-add-profiles]").forEach((button) => {
+  button.addEventListener("click", () => bulkAddProviderProfiles(button.dataset.bulkAddProfiles));
+});
+
+$("providersDialog").addEventListener("click", (e) => {
+  const key = e.target.dataset?.provActivate;
+  if (!key || !PROVIDERS[key]) return;
+  e.preventDefault();
+  e.stopPropagation();
+  verifyProvider(key)
+    .then((provider) => activateProvider(provider))
+    .catch((error) => { $("status").textContent = `API no activada: ${error?.message || String(error)}`; });
+});
+
+document.querySelector(".conn-connect-btn[data-service='github']")
+  ?.addEventListener("click", connectGitHub);
+document.querySelector(".conn-connect-btn[data-service='vercel']")
+  ?.addEventListener("click", connectVercel);
+document.querySelector(".conn-connect-btn[data-service='selfsupabase']")
+  ?.addEventListener("click", connectSelfSupabase);
+
+$("newProjectBtn").addEventListener("click", openNewProjectDialog);
+$("saveProjectBtn").addEventListener("click", saveCurrentProjectEntry);
+$("saveProjectForm").addEventListener("submit", confirmCurrentProjectSave);
+$("closeSaveProjectBtn").addEventListener("click", () => $("saveProjectDialog").close());
+$("cancelSaveProjectBtn").addEventListener("click", () => $("saveProjectDialog").close());
+$("newProjectForm").addEventListener("submit", createProjectFromDialog);
+$("newProjectTemplate").addEventListener("change", renderProjectTemplateSummary);
+$("pickProjectParentBtn").addEventListener("click", async () => {
+  const picked = await window.editcoreProject.pickParent();
+  if (picked) $("newProjectParent").value = picked;
+});
+$("cancelProjectCreateBtn").addEventListener("click", cancelProjectCreate);
+$("closeNewProjectBtn").addEventListener("click", () => { if (!projectCreateRunning) $("newProjectDialog").close(); });
+$("closeProjectsBtn").addEventListener("click", () => $("projectsDialog").close());
+$("projectsOpenExistingBtn").addEventListener("click", () => pickProject().catch((err) => { $("status").textContent = err?.message || String(err); }));
+$("projectsSaveCurrentBtn").addEventListener("click", saveCurrentProjectEntry);
+$("verifyAgentBtn")?.addEventListener("click", runAgentVerification);
+
+window.editcoreAgent.onApprovalRequest((request) => {
+  try {
+    appendAgentApprovalCard(request);
+  } catch (error) {
+    console.error("[Agent approval UI]", error);
+    window.editcoreAgent.respondApproval({ requestId: request?.requestId, approved: false }).catch(() => false);
+  }
+});
+
+window.editcoreAgent.onProgress((progress) => {
+  try {
+    if (progress?.phase === "pipeline" || progress?.pipeline) {
+      applyPipelineProgress(progress);
+    }
+    const planStream = activePlanStreams.get(progress?.runId);
+    if (planStream) {
+      if (progress.phase === "plan_delta") addPlanDelta(planStream.thinking, progress.text);
+      else if (progress.phase === "plan_stage") setThinkingStatus(planStream.thinking, "Pensando...");
+      return;
+    }
+    if (activeInspectorChatRun?.runId === progress?.runId) {
+      const thinkingEl = activeInspectorChatRun.thinking;
+      if (thinkingEl) thinkingEl.textContent = inspectorChatToolLabel(progress);
+      return;
+    }
+    if (activeInspectorRepairRun?.runId === progress?.runId) {
+      for (const file of progress.changedFiles || []) activeInspectorRepairRun.changedFiles.add(file);
+      setInspectorProgress(Math.min(72, 30 + Number(progress.index || 0) * 4), `Reparando EDITCOREAI: ${progress.name || "accion"}...`, "running");
+      return;
+    }
+
+    const liveRun = activeAgentThinkingRuns.get(progress?.runId);
+    const thinkingEl = liveRun?.thinking || document.querySelector(".thinking-msg");
+    if (!thinkingEl) return;
+
+    if (progress.phase === "narration_delta") {
+      addAgentNarrationDelta(thinkingEl, progress.text, progress.index);
+      return;
+    }
+    if (progress.phase === "narration") {
+      addAgentNarration(thinkingEl, progress.text, progress.index);
+      const project = state.projects.find((item) => item.id === progress?.projectId)
+        || state.projects.find((item) => item.id === liveRun?.projectId)
+        || activeProject();
+      const targetRun = project?.agentWorkflow?.runId === progress?.runId
+        ? project.agentWorkflow
+        : project?.agentRuns?.find((item) => item.runId === progress?.runId);
+      if (targetRun) {
+        targetRun.narration ||= [];
+        targetRun.narration.push({ index: Number(progress.index) || 0, text: String(progress.text || ""), at: Date.now() });
+        targetRun.updatedAt = Date.now();
+        saveProjects();
+      }
+      return;
+    }
+
+    const isToolStep = progress.phase === "tool" || (!progress.phase && progress.name);
+    const isVisiblePhase = ["startup", "model", "confirm", "repair", "human_intervention", "direction"].includes(progress?.phase);
+    if (isToolStep || isVisiblePhase) addAgentStepToThinking(thinkingEl, progress);
+    const narrative = agentProgressText(progress);
+    if (narrative) {
+      setThinkingStatus(thinkingEl, narrative);
+      inferPipelineFromText(narrative);
+    }
+    if (progress.ok === false && (isToolStep || isVisiblePhase)) {
+      $("status").textContent = `Agente encontro un error en ${progress.name || "una accion"}; ajustando la ejecucion`;
+    }
+    if (["heartbeat", "model", "startup", "confirm", "repair", "human_intervention"].includes(progress?.phase)) {
+      if (narrative) $("status").textContent = narrative;
+      return;
+    }
+
+    const project = state.projects.find((item) => item.id === progress?.projectId)
+      || state.projects.find((item) => item.id === liveRun?.projectId)
+      || activeProject();
+    const targetRun = project?.agentWorkflow?.runId === progress?.runId
+      ? project.agentWorkflow
+      : project?.agentRuns?.find((item) => item.runId === progress?.runId);
+    if (!targetRun) return;
+    if (!isToolStep) return;
+    targetRun.checkpoints ||= [];
+    const checkpoint = {
+      index: progress.index,
+      name: progress.name,
+      ok: progress.ok !== false,
+      changedFiles: progress.changedFiles || [],
+      commands: progress.commands || [],
+      input: progress.input || {},
+      result: progress.result || {},
+    };
+    const existingIndex = targetRun.checkpoints.findIndex((item) => item.index === checkpoint.index && item.name === checkpoint.name);
+    if (existingIndex >= 0) targetRun.checkpoints[existingIndex] = checkpoint;
+    else targetRun.checkpoints.push(checkpoint);
+    targetRun.updatedAt = Date.now();
+    saveProjects();
+  } catch (error) {
+    console.error("[Agent progress UI]", error);
+    const thinkingEl = activeAgentThinkingRuns.get(progress?.runId)?.thinking || document.querySelector(".thinking-msg");
+    if (thinkingEl) setThinkingStatus(thinkingEl, "Actualizando progreso del agente...");
+  }
+});
+window.editcoreProject.onProgress(updateProjectCreateProgress);
+$("clearChatBtn").addEventListener("click", clearActiveProject);
+
+$("toggleProjectsBtn").addEventListener("click", openProjectsDialog);
+
+$("pickProjectBtn").addEventListener("click", () =>
+  pickProject().catch((err) => { $("projectPathLabel").textContent = err?.message || String(err); })
+);
+
+$("openPreviewBtn").addEventListener("click", refreshPreview);
+$("previewBackBtn").addEventListener("click", () => {
+  const webview = $("previewWebview");
+  if (previewHistoryIndex > 0) navigatePreviewHistory(previewHistoryIndex - 1);
+  else updatePreviewNavigationControls(webview);
+});
+$("webPreviewBtn").addEventListener("click", () => setPreviewMode("web"));
+$("mobilePreviewBtn").addEventListener("click", () => setPreviewMode("mobile"));
+$("previewUrl").addEventListener("keydown", (e) => { if (e.key === "Enter") openPreview(); });
+$("previewWebview").addEventListener("did-start-loading", () => {
+  $("previewWebview").dataset.previewReady = "0";
+  if (previewExpectedUrl) showPreviewLoading("Cargando navegador del proyecto...");
+});
+$("previewWebview").addEventListener("dom-ready", () => {
+  schedulePreviewFit();
+  void settlePreviewDocument();
+});
+$("previewWebview").addEventListener("did-navigate", (event) => {
+  syncPreviewNavigation($("previewWebview"), event);
+  schedulePreviewFit();
+  void settlePreviewDocument();
+});
+$("previewWebview").addEventListener("did-navigate-in-page", (event) => {
+  syncPreviewNavigation($("previewWebview"), event);
+  void settlePreviewDocument();
+});
+$("previewWebview").addEventListener("did-finish-load", () => {
+  schedulePreviewFit();
+  void settlePreviewDocument();
+});
+$("previewWebview").addEventListener("did-stop-loading", () => {
+  syncPreviewNavigation($("previewWebview"));
+  void settlePreviewDocument();
+});
+$("previewWebview").addEventListener("did-fail-load", (event) => {
+  if (event.errorCode === -3 || !previewExpectedUrl) return;
+  const detail = [event.errorDescription, event.validatedURL].filter(Boolean).join(" · ");
+  if (restoreLastSuccessfulPreview($("previewWebview"), event.validatedURL || previewExpectedUrl)) {
+    $("status").textContent = `No se pudo abrir la ruta solicitada. ${detail || "Se restauro la pagina anterior."}`;
+    void monitorPreviewHealth({ forceRecovery: true });
+    return;
+  }
+  showPreviewStatus(`No se pudo cargar ${$("previewUrl").value || "el proyecto"}. ${detail || "Revisa el servidor del proyecto."}`);
+  $("status").textContent = "El navegador no pudo cargar el proyecto";
+  void monitorPreviewHealth({ forceRecovery: true });
+});
+$("previewWebview").addEventListener("console-message", (event) => {
+  if (event.level >= 2 && previewExpectedUrl) $("status").textContent = `Navegador: ${String(event.message || "error").slice(0, 180)}`;
+});
+$("previewUrl").addEventListener("change", () => {
+  if (state.projectRoot) {
+    localStorage.setItem(projectUrlKey(state.projectRoot), $("previewUrl").value.trim());
+  }
+});
+
+$("newWindowBtn").addEventListener("click", openNewWindow);
+setupSplitter("splitChatBrowser");
+setupSplitter("splitBrowserProjects");
+
+new ResizeObserver(() => schedulePreviewFit()).observe(document.querySelector(".viewer-body"));
+window.addEventListener("resize", schedulePreviewFit);
+
+document.addEventListener("click", (e) => {
+  if (!$("permissionsBtn")?.contains(e.target) && !$("permissionMenu")?.contains(e.target)) {
+    setPermissionMenuOpen(false);
+  }
+  const pickerWrap = document.querySelector(".model-picker-wrap");
+  if (pickerWrap && !pickerWrap.contains(e.target) && !$("modelPickerMenu")?.contains(e.target)) {
+    setModelPickerOpen(false);
+  }
+});
+window.addEventListener("resize", () => {
+  if (!$("permissionMenu")?.classList.contains("hidden")) {
+    positionFloatingMenu($("permissionMenu"), $("permissionsBtn"), { align: "left", gap: 6 });
+  }
+  if (!$("modelPickerMenu")?.classList.contains("hidden")) {
+    positionFloatingMenu($("modelPickerMenu"), $("modelPickerBtn"), { align: "right", gap: 8 });
+  }
+});
+
+function setChatModelOptions(_models = [], selected = "", selectedProviderKey = "", selectedProfileId = "") {
+  const options = visibleChatModelOptions(verifiedChatModelOptions());
+  const select = $("chatModelSelect");
+  if (!select) return;
+  select.replaceChildren();
+  if (!options.length) {
+    const option = document.createElement("option");
+    option.value = "";
+    option.textContent = "Configurar modelo";
+    select.appendChild(option);
+    select.disabled = false;
+    select.title = "No hay un modelo verificado. Abre Proveedores para configurarlo.";
+    select.dataset.noVerifiedModel = "1";
+    return;
+  }
+
+  const config = loadJson("editcore-chat-config", {});
+  const wantAuto = config.modelSelectionMode === "auto" || selected === AutoModel.AUTO_MODEL_SELECTION;
+
+  const autoOption = document.createElement("option");
+  autoOption.value = AutoModel.AUTO_MODEL_SELECTION;
+  autoOption.textContent = "Auto";
+  autoOption.dataset.auto = "1";
+  autoOption.title = "EDITCOREAI elige el mejor modelo verificado para cada mensaje";
+  select.appendChild(autoOption);
+
+  const providerKeys = [...new Set(options.map((entry) => entry.modelProviderGroup || entry.providerKey))];
+  providerKeys.forEach((providerKey) => {
+    const providerOptions = options.filter((entry) => (entry.modelProviderGroup || entry.providerKey) === providerKey);
+    if (!providerOptions.length) return;
+    const group = document.createElement("optgroup");
+    group.label = providerOptions[0]?.providerLabel || PROVIDERS[providerKey]?.label || providerKey;
+    providerOptions.forEach((entry) => {
+      const option = document.createElement("option");
+      option.value = `${entry.providerKey}:${entry.profileId || "provider"}:${entry.model}`;
+      option.textContent = entry.providerKey === "custom:gafcore-gateway"
+        ? String(entry.model).split("/").slice(1).join("/")
+        : entry.model;
+      option.dataset.model = entry.model;
+      option.dataset.providerKey = entry.providerKey;
+      option.dataset.profileId = entry.profileId;
+      option.dataset.fullModel = entry.model;
+      group.appendChild(option);
+    });
+    select.appendChild(group);
+  });
+
+  const configureOption = document.createElement("option");
+  configureOption.value = CONFIGURE_MODELS_SELECTION;
+  configureOption.textContent = "Configurar modelos…";
+  configureOption.dataset.configure = "1";
+  select.appendChild(configureOption);
+
+  select.disabled = false;
+  select.title = wantAuto ? "Auto: elige el mejor modelo verificado por tarea" : "Modelo activo";
+  delete select.dataset.noVerifiedModel;
+  if (wantAuto) {
+    select.value = AutoModel.AUTO_MODEL_SELECTION;
+    state.modelSelectionAuto = true;
+    updateModelPickerLabel();
+    return;
+  }
+  state.modelSelectionAuto = false;
+  const selectedOption = [...select.options].find((option) =>
+    option.dataset.model === selected
+      && (!selectedProviderKey || option.dataset.providerKey === selectedProviderKey)
+      && (!selectedProfileId || option.dataset.profileId === selectedProfileId)
+  ) || [...select.options].find((option) => option.dataset.model === selected);
+  select.value = selectedOption?.value || select.options[1]?.value || select.options[0].value;
+  updateModelPickerLabel();
+}
+
+function syncChatModelFromConfig() {
+  const config = loadJson("editcore-chat-config", {});
+  const project = activeProject();
+  const record = Object.values(loadJson("editcore-providers", {})).find((provider) => provider?.baseUrl === config.baseUrl);
+  const key = project?.provider || config.providerKey || providerKeyForEndpoint(config.baseUrl);
+  if (config.modelSelectionMode === "auto") {
+    state.modelSelectionAuto = true;
+    setChatModelOptions([], AutoModel.AUTO_MODEL_SELECTION, "", "");
+    updateStatus();
+    return;
+  }
+  setChatModelOptions([], project?.model || config.model || record?.model || "", key, project?.providerProfileId || config.providerProfileId || "");
+}
+
+$("publishBtn")?.addEventListener("click", () => publishChanges("project"));
+$("inspectorPublishBtn")?.addEventListener("click", () => publishChanges("editcore"));
+
+boot().catch((error) => {
+  $("status").textContent = error?.message || "No se pudo iniciar la aplicacion";
+});
+
+// EJECUCIÓN DIRECTA OBLIGATORIA
+// Archivo: runtime/renderer.js
+let prevRenderedState = {};
+
+function updateDOMOptimized(newState) {
+  function deepCompareAndPatch(parent, oldObj, newObj) {
+    if (JSON.stringify(oldObj) === JSON.stringify(newObj)) return;
+    // Actualización granular de nodos
+    for (const key of Object.keys(newObj)) {
+      if (oldObj[key] !== newObj[key]) {
+        const el = parent.querySelector(`[data-bind="${key}"]`);
+        if (el && document.activeElement !== el) {
+          el.textContent = newObj[key];
+        }
+      }
+    }
+  }
+  deepCompareAndPatch(document.body, prevRenderedState, newState);
+  prevRenderedState = JSON.parse(JSON.stringify(newState));
+}

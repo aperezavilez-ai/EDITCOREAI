@@ -92,12 +92,44 @@ test("isAutoModelSelection detecta la opcion Auto", () => {
   assert.equal(AutoModel.isAutoModelSelection(AutoModel.AUTO_MODEL_SELECTION), true);
   assert.equal(AutoModel.isAutoModelSelection(AutoModel.autoSelectionValue("meai")), true);
   assert.equal(AutoModel.isAutoModelSelection(AutoModel.autoSelectionValue("apicredits")), true);
+  assert.equal(AutoModel.isAutoModelSelection(AutoModel.autoSelectionValue("all")), true);
   assert.equal(AutoModel.isAutoModelSelection({ value: AutoModel.AUTO_MODEL_SELECTION, dataset: {} }), true);
   assert.equal(AutoModel.isAutoModelSelection({ value: "x", dataset: { auto: "1" } }), true);
   assert.equal(AutoModel.parseAutoSelectionScope(AutoModel.autoSelectionValue("meai")), "meai");
   assert.equal(AutoModel.parseAutoSelectionScope(AutoModel.autoSelectionValue("apicredits")), "apicredits");
+  assert.equal(AutoModel.parseAutoSelectionScope(AutoModel.autoSelectionValue("all")), "all");
+  assert.equal(AutoModel.parseAutoSelectionScope(AutoModel.AUTO_MODEL_SELECTION), "all");
   assert.equal(AutoModel.formatAutoLabel("meai"), "Auto · ME AI");
   assert.equal(AutoModel.formatAutoLabel("apicredits"), "Auto · APICredits");
+  assert.equal(AutoModel.formatAutoLabel("all"), "Auto");
+  assert.equal(AutoModel.isScopedAutoProvider("all"), false);
+  assert.equal(AutoModel.isScopedAutoProvider("meai"), true);
+});
+
+test("Auto con scope all usa ambos proveedores", () => {
+  const mixed = sixteenModelProfiles();
+  const options = mixed.map((profile) => ({
+    providerKey: profile.providerKey,
+    profileId: profile.id,
+    model: profile.model,
+    modelProviderGroup: String(profile.model).split("/", 1)[0],
+  }));
+  const seen = new Set();
+  for (let i = 0; i < 16; i += 1) {
+    const profile = AutoModel.resolveAutoModelProfile(options, mixed, {
+      prompt: "procede e implementa el fix",
+      isAgent: true,
+      usesProjectTools: true,
+      planAuthorizedExecution: true,
+      autoProviderScope: "all",
+      lastAutoResolvedModel: i ? [...seen][seen.size - 1] || "" : "",
+      autoUpstreamUsage: { meai: i % 2, apicredits: Math.floor(i / 2) },
+      autoModelUsage: {},
+    });
+    assert.ok(profile?.model, `turno ${i}`);
+    seen.add(String(profile.model).split("/", 1)[0]);
+  }
+  assert.ok(seen.has("meai") || seen.has("apicredits"));
 });
 
 test("Auto con scope meai no elige APICredits", () => {
@@ -254,6 +286,9 @@ test("Auto endurecido: solo elige ok:true y prefiere menor latencia", () => {
     usesProjectTools: true,
     needsAnalysisFirst: true,
     capabilities,
+    autoProviderScope: "all",
+    // Preferir APICredits para validar latencia baja (fable) frente a meai lento/fallido.
+    autoUpstreamUsage: { meai: 8, apicredits: 0 },
   });
   assert.equal(profile?.model, "apicredits/claude-fable-5");
 });

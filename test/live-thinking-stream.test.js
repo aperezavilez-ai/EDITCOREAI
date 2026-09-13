@@ -18,15 +18,16 @@ test("live activity: una sola fila setAgentLiveActivity", () => {
 
 test("live activity: analisis no bloquea minutos en Cerebro", () => {
   assert.match(mainSource, /analysisMode/);
-  assert.match(mainSource, /max 3s|setTimeout\(\(\) => resolve\(\["", emptyInventory\]\), 3_000\)/);
-  assert.match(mainSource, /skipBrainNow = analysisMode/);
+  assert.match(mainSource, /setTimeout\(\(\) => resolve\(\["", emptyInventory\]\), 3_000\)/);
+  assert.match(mainSource, /const skipBrainNow =/);
 });
 
-test("live activity: ticker esperando modelo", () => {
-  assert.match(adapterSource, /Esperando al modelo/);
+test("live activity: ticker trabajando silencioso", () => {
+  assert.match(adapterSource, /Trabajando…/);
   assert.match(adapterSource, /waitTicker/);
-  assert.match(adapterSource, /onStreamActivity/);
-  assert.match(adapterSource, /Recibiendo herramientas del modelo/);
+  assert.match(adapterSource, /onProgress/);
+  assert.match(adapterSource, /silentFailover/);
+  assert.match(rendererSource, /sanitizeLiveActivityLabel/);
 });
 
 test("live thinking: adapter streamea deltas", () => {

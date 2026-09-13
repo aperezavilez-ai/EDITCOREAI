@@ -6,6 +6,7 @@ const { logWorkflow } = require("./workflow-logger");
 const RECOVERABLE_MODEL_PATTERNS = [
   /timeout|timed out|ETIMEDOUT|ECONNRESET|ENOTFOUND|socket|network|fetch failed/i,
   /rate limit|too many requests|429/i,
+  /402|payment required|insufficient (?:funds|balance|credit)|saldo insuficiente|sin saldo|out of credits|quota exceeded|credit(?:s)? exhausted|billing|usage limit|limit exceeded|plan limit|exceeded your current quota/i,
   /502|503|504|524|5\d\d|bad gateway|service unavailable|overloaded/i,
   /temporarily unavailable|temporalmente|unavailable|no respondio|no respondió/i,
   /respuesta vacia|empty response|EMPTY_PROVIDER/i,
@@ -14,6 +15,14 @@ const RECOVERABLE_MODEL_PATTERNS = [
   /provider unavailable|upstream|worker.*dead|heartbeat no recibido/i,
   /aborted.*limite|excedio el limite/i,
 ];
+
+const BILLING_QUOTA_PATTERNS = [
+  /402|payment required|insufficient (?:funds|balance|credit)|saldo insuficiente|sin saldo|out of credits|quota exceeded|credit(?:s)? exhausted|billing|usage limit|plan limit|exceeded your current quota|rate limit|too many requests|429/i,
+];
+
+const PROVIDER_COOLDOWN_MS = 60 * 60 * 1000;
+/** @type {Map<string, number>} providerKey|baseUrl → cooldownUntil */
+const providerCooldowns = new Map();
 
 const TASK_LEVEL_PATTERNS = [
   /^loop detectado/i,
@@ -31,12 +40,42 @@ function modelProfileKey(profile = {}) {
   return `${String(profile.providerKey || "")}|${String(profile.baseUrl || "")}|${String(profile.model || "")}`.toLowerCase();
 }
 
+function providerCooldownKey(profile = {}) {
+  return `${String(profile.providerKey || "").toLowerCase()}|${String(profile.baseUrl || "").toLowerCase()}`;
+}
+
+function isBillingOrQuotaError(error) {
+  if (!error) return false;
+  const status = Number(error.status || 0);
+  if (status === 402 || status === 429) return true;
+  const message = String(error?.message || error || "");
+  return BILLING_QUOTA_PATTERNS.some((pattern) => pattern.test(message));
+}
+
+function markProviderCooldown(profile = {}, ms = PROVIDER_COOLDOWN_MS) {
+  const key = providerCooldownKey(profile);
+  if (!key || key === "|") return;
+  providerCooldowns.set(key, Date.now() + Math.max(60_000, Number(ms) || PROVIDER_COOLDOWN_MS));
+}
+
+function isProviderCoolingDown(profile = {}) {
+  const key = providerCooldownKey(profile);
+  if (!key || key === "|") return false;
+  const until = Number(providerCooldowns.get(key) || 0);
+  if (!until) return false;
+  if (Date.now() >= until) {
+    providerCooldowns.delete(key);
+    return false;
+  }
+  return true;
+}
+
 function isRecoverableModelError(error) {
   if (!error) return false;
   if (error.code === "TASK_LEVEL_ERROR" || error.taskLevel === true) return false;
   if (error.code === "AGENT_STEER") return false;
   const status = Number(error.status || 0);
-  if ([408, 409, 425, 429, 500, 502, 503, 504, 524].includes(status)) return true;
+  if ([402, 408, 409, 425, 429, 500, 502, 503, 504, 524].includes(status)) return true;
   const message = String(error?.message || error || "");
   if (/401|403|无效|invalid.?token|inv[aá]lid.?token|forbidden|no available accounts|no est[aá] disponible|upstream|上游/i.test(message)) {
     return true;
@@ -184,6 +223,7 @@ class ModelFailoverCoordinator {
         if (!key || key === modelProfileKey(this.current)) return false;
         if (excludeKeys.has(key)) return false;
         if (this.failedModels.has(key)) return false;
+        if (isProviderCoolingDown(candidate)) return false;
         return hasRequiredCapability(candidate, this.requiredCapability);
       })
       .sort((left, right) => {
@@ -219,20 +259,26 @@ class ModelFailoverCoordinator {
 
     const failedProfile = this.current;
     const failedKey = modelProfileKey(failedProfile);
+    const billingHit = isBillingOrQuotaError(error);
+    if (billingHit) markProviderCooldown(failedProfile, PROVIDER_COOLDOWN_MS);
+
     const previous = this.failedModels.get(failedKey) || { retryCount: 0 };
-    const retryCount = previous.retryCount + 1;
+    // Saldo/cuota: no reintentar el mismo modelo; saltar al siguiente de inmediato.
+    const retryCount = billingHit ? this.maxRetriesPerModel + 1 : previous.retryCount + 1;
     this.failedModels.set(failedKey, {
       error: String(error?.message || error || ""),
       timestamp: Date.now(),
       retryCount,
       provider: failedProfile?.providerKey,
       model: failedProfile?.model,
+      billing: billingHit,
     });
 
     this.log("MODEL_EXECUTION_FAILED", {
       provider: failedProfile?.providerKey,
       model: failedProfile?.model,
       error: String(error?.message || error || ""),
+      billing: billingHit,
     });
 
     if (retryCount <= this.maxRetriesPerModel) {
@@ -258,6 +304,8 @@ class ModelFailoverCoordinator {
       provider: failedProfile?.providerKey,
       model: failedProfile?.model,
       checkpointId: this.lastCheckpoint?.checkpointId,
+      silent: true,
+      billing: billingHit,
     });
 
     const next = this.selectNextModel();
@@ -280,13 +328,23 @@ class ModelFailoverCoordinator {
       model: next.model,
       capability: profileCapability(next, this.requiredCapability),
       checkpointId: this.lastCheckpoint?.checkpointId,
+      silent: true,
     });
     this.log("FAILOVER_COMPLETED", {
       provider: next.providerKey,
       model: next.model,
       checkpointId: this.lastCheckpoint?.checkpointId,
+      silent: true,
+      fromModel: failedProfile?.model,
     });
-    return { action: "failover", profile: next, checkpoint: this.lastCheckpoint };
+    return {
+      action: "failover",
+      profile: next,
+      checkpoint: this.lastCheckpoint,
+      silent: true,
+      fromModel: failedProfile?.model,
+      reason: billingHit ? "billing_quota" : "recoverable",
+    };
   }
 
   applyProfileToInput(input, profile) {
@@ -368,10 +426,14 @@ function recordIntraTurnFallback(coordinator, input, fallbackMeta = {}) {
 module.exports = {
   ModelFailoverCoordinator,
   isRecoverableModelError,
+  isBillingOrQuotaError,
   isTaskLevelError,
   hasRequiredCapability,
   modelProfileKey,
   mergeCandidateProfiles,
   profileCapability,
   recordIntraTurnFallback,
+  markProviderCooldown,
+  isProviderCoolingDown,
+  PROVIDER_COOLDOWN_MS,
 };

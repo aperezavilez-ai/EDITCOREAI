@@ -696,9 +696,18 @@ test("Chat conserva analisis de solo lectura y escala cambios al Agente", () => 
   assert.match(source, /onUiCommand/);
   assert.match(mainSource, /name: "open_project"/);
   assert.match(mainSource, /name: "close_project"/);
+  assert.match(mainSource, /name: "switch_project"/);
+  assert.match(mainSource, /workspace:close-current/);
+  assert.match(mainSource, /workspace:open-folder/);
+  assert.match(mainSource, /workspace:switch-project/);
   assert.match(mainSource, /requestProjectUiAction/);
   assert.match(preloadSource, /onUiCommand/);
   assert.match(preloadSource, /replyUiCommand/);
+  assert.match(preloadSource, /closeWorkspace/);
+  assert.match(preloadSource, /openWorkspace/);
+  assert.match(preloadSource, /switchProject/);
+  assert.match(source, /function switchOpenProject\(/);
+  assert.match(source, /action === "switch"/);
   assert.match(source, /ProjectAnalysis\.isTaskStatusQuestion\(effectivePrompt\)[\s\S]*durableAgentWorkflowStatusText\(project\)/);
   assert.match(source, /window\.editcoreAgent\.steer\(\{ instruction: effectivePrompt, runId: steeringRunId \}\)/);
   assert.match(source, /if \(result\?\.accepted\)[\s\S]*updateSteeringUI/);

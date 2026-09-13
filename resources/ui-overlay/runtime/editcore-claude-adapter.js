@@ -1054,7 +1054,7 @@ class EditCoreClaudeAdapter {
         try {
           const workerDeathErr = typeof input.pullWorkerDeathError === "function" ? input.pullWorkerDeathError() : null;
           if (workerDeathErr) throw workerDeathErr;
-          input.onProgress?.({ phase: "model", text: steps.length ? "Siguiente paso con el modelo..." : "Consultando al modelo...", stage: this.stageForSteps(steps), index: steps.length });
+          input.onProgress?.({ phase: "model", text: steps.length ? "Siguiente paso…" : "Trabajando…", stage: this.stageForSteps(steps), index: steps.length });
           turn = await this.getNextTurn(input, steps);
           this._malformedJsonRetries = 0;
         } catch (apiError) {
@@ -1079,7 +1079,6 @@ class EditCoreClaudeAdapter {
               modifiedFiles: steps.filter((step) => step.name === "write_file" && step.ok !== false).map((step) => step.input?.path).filter(Boolean),
             });
             if (failoverResult.action === "retry_same_model") {
-              this.logger.warn(`⚠️ [Failover] Reintentando mismo modelo (${input.model}) tras checkpoint.`);
               await new Promise((resolve) => setTimeout(resolve, Math.min(1500 * (failoverResult.retryCount || 1), 4000)));
               continue;
             }
@@ -1087,6 +1086,14 @@ class EditCoreClaudeAdapter {
               input.failover.applyProfileToInput(input, failoverResult.profile);
               input.failover.markExecutionResumed(failoverResult.profile);
               input.resetWorkerHealth?.();
+              // Silencioso: el chat no anuncia cambio de modelo; solo sigue trabajando.
+              input.onProgress?.({
+                phase: "model",
+                text: "Trabajando…",
+                silentFailover: true,
+                fromModel: failoverResult.fromModel || "",
+                toModel: failoverResult.profile?.model || "",
+              });
               continue;
             }
             if (failoverResult.action === "waiting_for_provider") {
@@ -3488,14 +3495,14 @@ class EditCoreClaudeAdapter {
         if (idleSec >= 8) {
           input.onProgress?.({
             phase: "model",
-            text: `Redactando (sin tokens nuevos ${idleSec}s)…`,
+            text: `Trabajando…`,
           });
         }
         return;
       }
       input.onProgress?.({
         phase: "model",
-        text: `Esperando al modelo… ${waitSeconds}s`,
+        text: `Trabajando…`,
       });
     }, 2_000);
     let lastExtractedThought = "";
@@ -3529,7 +3536,7 @@ class EditCoreClaudeAdapter {
           this._modelWaitNudgeSent = true;
           input.onProgress?.({
             phase: "model",
-            text: input.analysisMode === true ? "Modelo razonando el analisis..." : "Modelo preparando la siguiente accion...",
+            text: "Trabajando…",
           });
         }
       }

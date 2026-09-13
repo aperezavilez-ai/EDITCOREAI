@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, Menu, shell, safeStorage, session, clipboard } = require("electron");
+const { app, BrowserWindow, ipcMain, dialog, Menu, shell, safeStorage, session, clipboard, nativeImage } = require("electron");
 // No forzar --disable-gpu: genera ruido ContextResult::kFatalFailure y degrada estabilidad.
 try {
   app.setName("EditCoreAI");
@@ -1115,10 +1115,7 @@ function resolveUiAsset(...parts) {
   return path.join(__dirname, ...parts);
 }
 
-function createWindow(options = {}) {
-  const windowId = String(options.windowId || crypto.randomUUID());
-  const hiddenAcceptance = process.env.EDITCORE_ACCEPTANCE_HIDDEN === "1";
-  logStartup(`runtime v${RUNTIME_VERSION} cargado desde ${__dirname}`);
+function resolveAppIconPath() {
   const iconCandidates = [
     path.join(__dirname, "assets", "logo.ico"),
     path.join(process.cwd(), "assets", "logo.ico"),
@@ -1126,25 +1123,46 @@ function createWindow(options = {}) {
     path.join(__dirname, "assets", "logo.png"),
     path.join(__dirname, "assets", "editcore-logo.png"),
   ];
-  let iconPath = "";
   for (const candidate of iconCandidates) {
     try {
       if (candidate && fs.existsSync(candidate) && !String(candidate).includes(".asar")) {
-        iconPath = candidate;
-        break;
+        return candidate;
       }
     } catch { /* continue */ }
   }
-  if (!iconPath) {
-    for (const candidate of iconCandidates) {
-      try {
-        if (candidate && fs.existsSync(candidate)) {
-          iconPath = candidate;
-          break;
-        }
-      } catch { /* continue */ }
-    }
+  for (const candidate of iconCandidates) {
+    try {
+      if (candidate && fs.existsSync(candidate)) return candidate;
+    } catch { /* continue */ }
   }
+  return "";
+}
+
+function loadAppIconImage(iconPath = "") {
+  const target = String(iconPath || resolveAppIconPath() || "").trim();
+  if (!target) return null;
+  try {
+    const image = nativeImage.createFromPath(target);
+    if (image && !image.isEmpty()) return image;
+  } catch { /* ignore */ }
+  return null;
+}
+
+function applyWindowIcon(win, iconPath = "") {
+  if (!win || win.isDestroyed()) return;
+  const image = loadAppIconImage(iconPath);
+  try {
+    if (image && typeof win.setIcon === "function") win.setIcon(image);
+    else if (iconPath && typeof win.setIcon === "function") win.setIcon(iconPath);
+  } catch { /* ignore */ }
+}
+
+function createWindow(options = {}) {
+  const windowId = String(options.windowId || crypto.randomUUID());
+  const hiddenAcceptance = process.env.EDITCORE_ACCEPTANCE_HIDDEN === "1";
+  logStartup(`runtime v${RUNTIME_VERSION} cargado desde ${__dirname}`);
+  const iconPath = resolveAppIconPath();
+  const iconImage = loadAppIconImage(iconPath);
   logStartup(`startup:creating-browser-window icon=${iconPath || "(none)"}`);
   let win;
   try {
@@ -1172,14 +1190,13 @@ function createWindow(options = {}) {
       webPreferences: prefs,
     };
     try {
-      if (iconPath) winOpts.icon = iconPath;
+      if (iconImage) winOpts.icon = iconImage;
+      else if (iconPath) winOpts.icon = iconPath;
     } catch {
       // sin icono
     }
     win = new BrowserWindow(winOpts);
-    try {
-      if (iconPath && typeof win.setIcon === "function") win.setIcon(iconPath);
-    } catch { /* ignore */ }
+    applyWindowIcon(win, iconPath);
   } catch (error) {
     logStartup("startup:browser-window-FAILED", error);
     throw error;
@@ -1192,6 +1209,7 @@ function createWindow(options = {}) {
   const displayWindow = () => {
     if (windowShown || win.isDestroyed() || hiddenAcceptance) return;
     windowShown = true;
+    applyWindowIcon(win, iconPath);
     if (win.isMinimized()) win.restore();
     win.center();
     win.show();
@@ -6253,7 +6271,7 @@ ipcMain.handle("agent:run", async (event, input = {}) => {
     if (skipBrainNow) {
       console.log("[Agent] Modo sin Cerebro (o analisis con timeout 0):", orchestratorPlan.reason || runProfile.reason || runProfile.statusLabel);
     } else {
-      sendAgentProgress({ phase: "model", text: "Cargando contexto del Cerebro (max 3s)..." });
+      sendAgentProgress({ phase: "model", text: "Trabajando…" });
       try {
         const brainLoad = Promise.all([
           brain().assembleContext(rootPath, task).catch(() => ""),
@@ -6273,10 +6291,10 @@ ipcMain.handle("agent:run", async (event, input = {}) => {
 
     sendAgentProgress({
       phase: "startup",
-      text: analysisMode ? "Leyendo archivos del proyecto (evidencia en vivo)..." : "Consultando al modelo...",
+      text: analysisMode ? "Leyendo archivos del proyecto..." : "Trabajando…",
     });
     if (!analysisMode) {
-      sendAgentProgress({ phase: "model", text: "Consultando al modelo..." });
+      sendAgentProgress({ phase: "model", text: "Trabajando…" });
     }
     const adapter = new EditCoreClaudeAdapter({ maxIterations: 18, tokenBudget: 100000, logger: console });
     adapter.actionRegistry = actionRegistryForProject(rootPath);
@@ -7671,9 +7689,9 @@ ipcMain.handle("agent:run", async (event, input = {}) => {
     const friendlyMessage = /timeout|timed out|aborted|abortado|excedio el limite/i.test(rawMessage)
       ? `La ejecucion se detuvo por tiempo (${rawMessage.slice(0, 140)}). La tarea y sus checkpoints quedaron guardados: escribe "continua" para retomarla desde donde quedo.`
       : /unexpected token|invalid json|malformed|JSON\.parse/i.test(rawMessage)
-        ? `El modelo devolvio JSON de herramienta invalido. EditCore cambio/guardara failover automatico. Escribe CONTINUA o PROCEDE para retomar (mejor con Claude Sonnet, no DeepSeek).`
+        ? `La tarea sigue activa; EditCore reintento en silencio con otro modelo. Escribe CONTINUA o PROCEDE para retomar.`
       : /HTTP 5\d\d|error interno|internal server|bad gateway|service unavailable|overloaded/i.test(rawMessage)
-        ? `El proveedor de IA fallo temporalmente (${rawMessage.slice(0, 140)}). La tarea quedo guardada: escribe "continua" para reintentar, o cambia de modelo/proveedor en la barra inferior.`
+        ? `El proveedor de IA fallo temporalmente. La tarea quedo guardada: escribe "continua" para reintentar.`
         : rawMessage;
 
     // Enviar error al UI

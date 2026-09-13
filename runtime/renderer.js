@@ -3525,7 +3525,7 @@ function agentProgressText(progress) {
     }
     return `Analizando... (${timeStr})`;
   }
-  if (phase === "model") return String(progress.text || "Consultando al modelo...");
+  if (phase === "model") return String(progress.text || "Trabajando…");
   const name = String(progress.name || "");
   const input = progress.input || {};
   const running = progress.stage === "running" || (phase === "tool" && progress.ok === undefined && progress.stage !== "done");

@@ -24,7 +24,7 @@ const asar = require("@electron/asar");
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const appRoot = path.resolve(__dirname, "..");
-const resourcesDir = path.resolve(appRoot, "..");
+const resourcesDir = path.join(appRoot, "resources");
 
 const INSTALLED_ASAR = path.join(
   process.env.LOCALAPPDATA || "",

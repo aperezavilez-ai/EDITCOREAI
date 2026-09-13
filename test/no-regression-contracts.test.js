@@ -142,6 +142,6 @@ test("C8: Acceso completo no traga listados en chat; fallos de modelo ocultos", 
   assert.match(mainSource, /EMPTY_PROVIDER_RESPONSE/);
   assert.match(mainSource, /nunca mostrar hostname ni nombre de modelo/i);
   assert.match(rendererSource, /No pude completar la respuesta\. Intenta de nuevo/);
-  assert.match(rendererSource, /Cambiando de modelo\.\.\./);
+  assert.match(rendererSource, /sanitizeLiveActivityLabel|Trabajando…/);
   assert.doesNotMatch(rendererSource, /omitido; Auto usará otro modelo/);
 });

@@ -1377,7 +1377,7 @@ async function quarantineModelForAuto(job = {}, message = "") {
   } catch {}
   await refreshModelCapabilities(true);
   if (isChatModelAutoMode()) {
-    $("status").textContent = "Cambiando de modelo...";
+    $("status").textContent = "Listo";
     if ($("modelPickerMenu") && !$("modelPickerMenu").classList.contains("hidden")) renderModelPickerMenu();
   }
 }
@@ -1594,6 +1594,7 @@ function renderModelPickerMenu() {
   menu.appendChild(searchWrap);
 
   const autoScopes = [
+    { scope: "all", title: "Auto", hint: "ME AI Cloud + APICredits juntos." },
     { scope: "meai", title: "Auto · ME AI", hint: "Solo modelos ME AI Cloud." },
     { scope: "apicredits", title: "Auto · APICredits", hint: "Solo modelos APICredits." },
   ];
@@ -1607,12 +1608,13 @@ function renderModelPickerMenu() {
     toggle.type = "button";
     toggle.className = "model-toggle";
     toggle.setAttribute("role", "switch");
-    const on = autoActive && activeAutoScope === scope;
+    const on = autoActive && AutoModel.normalizeAutoProviderScope(activeAutoScope) === scope;
     toggle.setAttribute("aria-checked", on ? "true" : "false");
     toggle.setAttribute("aria-label", `Activar ${title}`);
     toggle.addEventListener("click", (event) => {
       event.stopPropagation();
-      const currentlyOn = isChatModelAutoMode() && currentAutoProviderScope() === scope;
+      const currentlyOn = isChatModelAutoMode()
+        && AutoModel.normalizeAutoProviderScope(currentAutoProviderScope()) === scope;
       if (currentlyOn) {
         setAutoModelEnabled(false).then(() => {
           if (!menu.classList.contains("hidden")) renderModelPickerMenu();
@@ -6859,10 +6861,32 @@ function addAgentStepToThinking(thinkingItem, progress) {
   scrollFeedToBottom();
 }
 
+function sanitizeLiveActivityLabel(raw = "") {
+  const text = String(raw || "").trim();
+  if (!text) return "Trabajando…";
+  if (/^(?:esperando\s+al\s+modelo|consultando\s+al\s+modelo|verificando\s+(?:el\s+)?(?:agente\s+con\s+)?modelo|verificando\s+agente|cambiando\s+de\s+modelo|siguiente\s+paso\s+con\s+el\s+modelo|modelo\s+(?:razonando|preparando|colgado)|recibiendo\s+herramientas)/i.test(text)) {
+    return "Trabajando…";
+  }
+  if (/\bes\s+solo\s+chat;\s+usando\b/i.test(text)) return "Trabajando…";
+  if (/failover|fallback|cambiando\s+de\s+modelo|siguiente\s+modelo/i.test(text)
+    && /modelo|provider|meai|apicredits|claude|gpt|deepseek/i.test(text)) {
+    return "Trabajando…";
+  }
+  if (/^(?:meai|apicredits|anthropic|openai|gemini|claude|gpt|deepseek|grok)\b/i.test(text)
+    && /modelo|provider|failover|fallback/i.test(text)) {
+    return "Trabajando…";
+  }
+  return text
+    .replace(/\b(?:meai|apicredits)\/[^\s…]+\b/gi, "")
+    .replace(/\s{2,}/g, " ")
+    .trim() || "Trabajando…";
+}
+
 function agentProgressText(progress) {
   if (!progress) return "";
   const phase = String(progress.phase || "");
   if (phase === "narration" || phase === "narration_delta") return "";
+  if (progress.silentFailover === true) return "Trabajando…";
   if (phase === "background_start") {
     return String(progress.text || `Tarea ${progress.taskId || ""} en segundo plano…`);
   }
@@ -6885,14 +6909,17 @@ function agentProgressText(progress) {
   if (phase === "startup") {
     const startupText = String(progress.text || "");
     if (/FOCO/i.test(startupText)) return startupText;
+    if (/cerebro|modelo|verificando/i.test(startupText)) return "Trabajando…";
     return startupText || (progress.stage === "analysis" ? "Iniciando analisis del proyecto..." : "Iniciando ejecucion...");
   }
   if (phase === "heartbeat") {
     const totalSec = Math.max(0, Math.floor(Number(progress.elapsedMs || 0) / 1000));
-    if (totalSec <= 0) return "Trabajando...";
-    return `Trabajando... ${formatElapsed(totalSec)}`;
+    if (totalSec <= 0) return "Trabajando…";
+    return `Trabajando… ${formatElapsed(totalSec)}`;
   }
-  if (phase === "model") return String(progress.text || "Pensando / razonando...");
+  if (phase === "model") {
+    return sanitizeLiveActivityLabel(progress.text || "Trabajando…");
+  }
   const name = String(progress.name || "");
   const input = progress.input || {};
   const running = progress.stage === "running" || (phase === "tool" && progress.ok === undefined && progress.stage !== "done");
@@ -7388,10 +7415,13 @@ async function verifyAgentForCurrentProjectOnce() {
   sessionStorage.setItem(key, "1");
   try {
     const result = await ensureAgentModelCapability(job);
-    $("status").textContent = `${job.model} operativo para agente · ${result.entriesRead || 0} entradas leidas en la prueba`;
+    $("status").textContent = "Listo";
   } catch (error) {
     sessionStorage.removeItem(key);
-    $("status").textContent = error?.message || String(error);
+    if (typeof window.addLog === "function") {
+      window.addLog("warn", String(error?.message || error));
+    }
+    $("status").textContent = "Listo";
   }
 }
 
@@ -10476,7 +10506,7 @@ async function ensureAgentModelCapability(job) {
     agentModelCapabilities.set(key, { chatOK: true, toolOK: true, cachedVerification: true });
   }
   if (!agentModelCapabilities.has(key)) {
-    $("status").textContent = `Verificando agente con ${job.model}...`;
+    $("status").textContent = "Trabajando…";
     const result = await window.editcoreAgent.verifyModel({
       providerKey: job.providerKey,
       baseUrl: job.baseUrl,
@@ -10503,7 +10533,10 @@ async function ensureAgentModelCapability(job) {
       job.baseUrl = fallback.baseUrl;
       job.providerKey = fallback.providerKey;
       job.providerProfileId = fallback.providerProfileId;
-      $("status").textContent = `${originalModel} es solo chat; usando ${fallback.model} para agente`;
+      if (typeof window.addLog === "function") {
+        window.addLog("info", `Failover silencioso: ${originalModel} (solo chat) → ${fallback.model}`);
+      }
+      $("status").textContent = "Trabajando…";
       return ensureAgentModelCapability(job);
     }
     throw new Error(`${job.model} funciona para chat, pero no emitio herramientas de agente: ${result?.toolError || "formato incompatible"}`);
@@ -10935,14 +10968,14 @@ async function executePromptJob(job) {
             }
           }
         } else {
-          setAgentActivity(`Verificando ${job.model}...`);
-          setAgentLiveActivity(thinking, `Verificando modelo ${job.model}...`);
+          setAgentActivity("Trabajando…");
+          setAgentLiveActivity(thinking, "Trabajando…");
           try {
             await ensureAgentModelCapability(job);
           } catch (error) {
             const message = String(error?.message || error);
             if (!/timeout|aborted|operation was aborted|the operation was aborted/i.test(message)) throw error;
-            setAgentActivity("Continuando con el agente...");
+            setAgentActivity("Trabajando…");
           }
         }
       }
@@ -12121,7 +12154,7 @@ function wireComposerControls() {
       } else {
         updateModelPickerLabel();
         updateStatus();
-        $("status").textContent = autoProviderScope
+        $("status").textContent = AutoModel.isScopedAutoProvider(autoProviderScope)
           ? `Auto · ${AutoModel.AUTO_SCOPE_LABELS[autoProviderScope] || autoProviderScope}: sin modelos verificados con tools`
           : "Auto: sin modelos verificados con tools";
       }
@@ -12614,7 +12647,12 @@ window.editcoreAgent.onProgress((progress) => {
       return;
     }
     if (progress?.phase === "model") {
-      const label = narrative || String(progress.text || "Razonando siguiente paso...").replace(/^Pensando\s*\/\s*razonando\.\.\.$/i, "Razonando solución...");
+      if (progress.silentFailover === true && typeof window.addLog === "function") {
+        const from = String(progress.fromModel || "").trim();
+        const to = String(progress.toModel || "").trim();
+        if (from || to) window.addLog("info", `Failover silencioso${from ? ` desde ${from}` : ""}${to ? ` → ${to}` : ""}`);
+      }
+      const label = sanitizeLiveActivityLabel(narrative || progress.text || "Trabajando…");
       setAgentLiveActivity(thinkingEl, label);
       $("status").textContent = label;
       return;
@@ -12629,19 +12667,14 @@ window.editcoreAgent.onProgress((progress) => {
         .replace(/\s+(?:\d+s|\d+m\s+\d{1,2}s|\d+h\s+\d{1,2}m|\d+:\d{2})$/i, "")
         .trim();
       let label = "";
-      // No borrar "Esperando al modelo" / Avance / Redactando: solo refrescar el reloj total.
-      if (/^Esperando\s+al\s+modelo/i.test(stripped) || /^Consultando\s+al\s+modelo/i.test(stripped)
-        || /^Siguiente paso/i.test(stripped) || /^Modelo\s+(?:razonando|preparando)/i.test(stripped)) {
-        const kind = /^Consultando/i.test(stripped) ? "Consultando al modelo"
-          : /^Siguiente paso/i.test(stripped) ? "Siguiente paso con el modelo"
-          : /^Modelo\s+razonando/i.test(stripped) ? "Modelo razonando el analisis"
-          : /^Modelo\s+preparando/i.test(stripped) ? "Modelo preparando la siguiente accion"
-          : "Esperando al modelo";
-        label = sec > 0 ? `${kind}… ${clock}` : `${kind}…`;
+      // UX Cursor-like: no mostrar "Esperando al modelo"; solo "Trabajando…" + reloj.
+      if (/^(?:Esperando\s+al\s+modelo|Consultando\s+al\s+modelo|Siguiente\s+paso|Modelo\s+|Trabajando)/i.test(stripped)
+        || !stripped) {
+        label = sec > 0 ? `Trabajando… ${clock}` : "Trabajando…";
       } else if (stripped && !/^(?:Trabajando\.\.\.|Pensando\.\.\.|Razonando(?:\s+soluci[oó]n)?\.\.\.|Analizando proyecto\.\.\.)$/i.test(stripped)) {
-        label = sec > 0 ? `${stripped} (${clock})` : stripped;
+        label = sec > 0 ? `${sanitizeLiveActivityLabel(stripped)} (${clock})` : sanitizeLiveActivityLabel(stripped);
       } else {
-        label = narrative || (sec ? `Trabajando... ${clock}` : "Trabajando...");
+        label = narrative || (sec ? `Trabajando… ${clock}` : "Trabajando…");
       }
       setAgentLiveActivity(thinkingEl, label);
       $("status").textContent = label;
@@ -13000,7 +13033,19 @@ function setChatModelOptions(_models = [], selected = "", selectedProviderKey = 
     : (config.modelSelectionMode === "auto" ? AutoModel.normalizeAutoProviderScope(config.autoProviderScope) : null);
   const wantAuto = selectedAutoScope !== null
     || config.modelSelectionMode === "auto"
-    || selected === AutoModel.AUTO_MODEL_SELECTION;
+    || selected === AutoModel.AUTO_MODEL_SELECTION
+    || String(selected || "").startsWith(`${AutoModel.AUTO_MODEL_SELECTION}:`);
+
+  // Auto (ambos proveedores) siempre primero.
+  {
+    const allAuto = document.createElement("option");
+    allAuto.value = AutoModel.autoSelectionValue("all");
+    allAuto.textContent = AutoModel.formatAutoLabel("all");
+    allAuto.dataset.auto = "1";
+    allAuto.dataset.autoScope = "all";
+    allAuto.title = "EditCoreAI elige automáticamente entre ME AI Cloud y APICredits";
+    select.appendChild(allAuto);
+  }
 
   // Solo mostrar proveedores con perfiles verificados activos
   const providerKeys = [...new Set(options.map((entry) => entry.modelProviderGroup || entry.providerKey))];
@@ -13009,8 +13054,10 @@ function setChatModelOptions(_models = [], selected = "", selectedProviderKey = 
     if (!providerOptions.length) return;
     const group = document.createElement("optgroup");
     group.label = providerOptions[0]?.providerLabel || PROVIDERS[providerKey]?.label || providerKey;
-    const scopedAuto = AutoModel.normalizeAutoProviderScope(providerKey);
-    if (scopedAuto) {
+    const scopedAuto = AutoModel.isScopedAutoProvider?.(providerKey)
+      ? AutoModel.normalizeAutoProviderScope(providerKey)
+      : (providerKey === "meai" || providerKey === "apicredits" ? providerKey : "");
+    if (scopedAuto && AutoModel.isScopedAutoProvider(scopedAuto)) {
       const autoOption = document.createElement("option");
       autoOption.value = AutoModel.autoSelectionValue(scopedAuto);
       autoOption.textContent = AutoModel.formatAutoLabel(scopedAuto);
@@ -13041,16 +13088,15 @@ function setChatModelOptions(_models = [], selected = "", selectedProviderKey = 
   select.appendChild(configureOption);
 
   select.disabled = false;
-  select.title = wantAuto ? "Auto: elige el mejor modelo verificado por tarea (según proveedor)" : "Modelo activo";
+  select.title = wantAuto ? "Auto: elige el mejor modelo verificado por tarea" : "Modelo activo";
   delete select.dataset.noVerifiedModel;
   if (wantAuto) {
     const scope = selectedAutoScope === null
       ? AutoModel.normalizeAutoProviderScope(config.autoProviderScope)
       : selectedAutoScope;
-    const effectiveScope = scope || "meai";
+    const effectiveScope = scope || "all";
     const autoValue = AutoModel.autoSelectionValue(effectiveScope);
     if (![...select.options].some((option) => option.value === autoValue)) {
-      // Scope pedido sin modelos de ese proveedor: caer al Auto del primer grupo disponible.
       const fallback = [...select.options].find((option) => option.dataset?.auto === "1");
       select.value = fallback?.value || select.options[0]?.value || "";
     } else {

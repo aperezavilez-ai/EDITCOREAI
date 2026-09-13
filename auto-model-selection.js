@@ -9,23 +9,32 @@
   const CAPABILITY_FAIL_TTL_MS = 20 * 60 * 1000;
   const SLOW_MODEL_MS = 90_000;
   const UPSTREAM_ORDER = ["meai", "apicredits"];
-  const AUTO_SCOPE_LABELS = { meai: "ME AI", apicredits: "APICredits" };
+  const AUTO_SCOPE_LABELS = { all: "Todos", meai: "ME AI", apicredits: "APICredits" };
 
   function normalizeAutoProviderScope(scope) {
     const value = String(scope || "").trim().toLowerCase();
     if (value === "meai" || value === "apicredits") return value;
-    return "";
+    if (value === "all" || value === "both" || value === "*" || value === "combined" || value === "todos") return "all";
+    // Legacy: "__auto__" sin sufijo / scope vacio = ambos proveedores.
+    if (!value) return "all";
+    return "all";
+  }
+
+  function isScopedAutoProvider(scope) {
+    const normalized = normalizeAutoProviderScope(scope);
+    return normalized === "meai" || normalized === "apicredits";
   }
 
   function autoSelectionValue(scope = "") {
     const normalized = normalizeAutoProviderScope(scope);
-    return normalized ? `${AUTO_MODEL_SELECTION}:${normalized}` : AUTO_MODEL_SELECTION;
+    if (normalized === "all") return `${AUTO_MODEL_SELECTION}:all`;
+    return `${AUTO_MODEL_SELECTION}:${normalized}`;
   }
 
   function parseAutoSelectionScope(optionOrValue) {
-    if (!optionOrValue) return "";
+    if (!optionOrValue) return "all";
     if (typeof optionOrValue === "string") {
-      if (optionOrValue === AUTO_MODEL_SELECTION) return "";
+      if (optionOrValue === AUTO_MODEL_SELECTION) return "all";
       if (optionOrValue.startsWith(`${AUTO_MODEL_SELECTION}:`)) {
         return normalizeAutoProviderScope(optionOrValue.slice(AUTO_MODEL_SELECTION.length + 1));
       }
@@ -39,7 +48,7 @@
 
   function formatAutoLabel(scope = "") {
     const normalized = normalizeAutoProviderScope(scope);
-    if (!normalized) return "Auto";
+    if (normalized === "all") return "Auto";
     return `Auto · ${AUTO_SCOPE_LABELS[normalized] || normalized}`;
   }
 
@@ -373,7 +382,7 @@
 
   function preferredAutoBucket(context = {}, list = []) {
     const scoped = normalizeAutoProviderScope(context.autoProviderScope);
-    if (scoped) return scoped;
+    if (isScopedAutoProvider(scoped)) return scoped;
 
     const available = availableBuckets(list);
     if (!available.size) return "meai";
@@ -483,7 +492,7 @@
     const lanes = ROLE_LANES[role] || ROLE_LANES.analyze;
     const scoped = normalizeAutoProviderScope(context.autoProviderScope);
     const preferred = preferredAutoBucket(context, source);
-    const order = scoped
+    const order = isScopedAutoProvider(scoped)
       ? [scoped]
       : [preferred, ...UPSTREAM_ORDER.filter((bucket) => bucket !== preferred)];
     const laneOrder = ["primary", "secondary", "reserve"];
@@ -503,7 +512,7 @@
 
       // Si el bucket no tiene ningun carril del rol, no inventar pelea: pasa al otro upstream.
       // Con scope fijo no cruzamos de proveedor.
-      if (scoped) break;
+      if (isScopedAutoProvider(scoped)) break;
     }
 
     // Ultimo recurso: least-used global sin modelos prohibidos del rol.
@@ -547,9 +556,17 @@
     if (!cap) return false;
     const failStreak = Number(cap.failStreak) || 0;
     const lastFailAt = Number(cap.lastFailAt) || 0;
-    if (failStreak < 2) return false;
+    // Un solo fallo reciente (ok:false) ya saca al modelo de Auto.
+    if (failStreak < 1) return false;
     if (Date.now() - lastFailAt > CAPABILITY_FAIL_TTL_MS) return false;
-    return !cap.ok || failStreak >= 2;
+    return cap.ok === false || failStreak >= 1;
+  }
+
+  function isHealthyCapability(cap) {
+    if (!cap) return false;
+    if (cap.ok !== true) return false;
+    if (isRecentlyFailedCapability(cap)) return false;
+    return true;
   }
 
   function isProviderFailureMessage(message) {
@@ -673,7 +690,7 @@
       return !(context.excludeModels || []).map((item) => String(item || "").toLowerCase()).includes(model);
     });
     const scope = normalizeAutoProviderScope(context.autoProviderScope);
-    if (scope) {
+    if (isScopedAutoProvider(scope)) {
       list = list.filter((entry) => entryUpstreamBucket(entry) === scope);
     }
     if (!list.length) return null;
@@ -786,6 +803,7 @@
     DEEPSEEK_MAX_SHARE,
     DEEPSEEK_USAGE_WEIGHT,
     normalizeAutoProviderScope,
+    isScopedAutoProvider,
     autoSelectionValue,
     parseAutoSelectionScope,
     formatAutoLabel,
@@ -806,6 +824,7 @@
     roleFitScore,
     findCapabilityForEntry,
     isRecentlyFailedCapability,
+    isHealthyCapability,
     isProviderFailureMessage,
     isSafeDefaultModel,
     filterAutoModelOptions,

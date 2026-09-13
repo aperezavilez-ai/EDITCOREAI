@@ -1,5 +1,5 @@
 // Launcher: abre SIEMPRE el proyecto en la carpeta raíz (donde está este EXE).
-// El proceso ya está brandado como EditCoreAI (icono + metadatos). Nunca exponer marca Electron.
+// Arranca EDITCOREAI-host.exe (runtime brandado), NUNCA electron.exe suelto con logo Electron.
 using System;
 using System.Diagnostics;
 using System.IO;
@@ -12,9 +12,9 @@ using System.Windows.Forms;
 [assembly: AssemblyCompany("EditCoreAI")]
 [assembly: AssemblyProduct("EditCoreAI")]
 [assembly: AssemblyCopyright("Copyright © EditCoreAI")]
-[assembly: AssemblyVersion("2.9.3.0")]
-[assembly: AssemblyFileVersion("2.9.3.0")]
-[assembly: AssemblyInformationalVersion("2.9.3")]
+[assembly: AssemblyVersion("2.9.4.0")]
+[assembly: AssemblyFileVersion("2.9.4.0")]
+[assembly: AssemblyInformationalVersion("2.9.4")]
 
 internal static class Program
 {
@@ -27,7 +27,10 @@ internal static class Program
         try { SetCurrentProcessExplicitAppUserModelID("com.editcoreai.app"); } catch { /* ignore */ }
 
         string root = AppDomain.CurrentDomain.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-        string electron = Path.Combine(root, "node_modules", "electron", "dist", "electron.exe");
+        string dist = Path.Combine(root, "node_modules", "electron", "dist");
+        string host = Path.Combine(dist, "EDITCOREAI-host.exe");
+        string electron = Path.Combine(dist, "electron.exe");
+        string runtime = File.Exists(host) ? host : electron;
         string mainJs = Path.Combine(root, "main.js");
         string kernel = Path.Combine(root, "editcore-chat-kernel", "index.js");
 
@@ -41,7 +44,7 @@ internal static class Program
             return;
         }
 
-        if (!File.Exists(electron))
+        if (!File.Exists(runtime))
         {
             MessageBox.Show(
                 "Falta el runtime de EditCoreAI.\nEjecuta npm install en:\n" + root,
@@ -53,7 +56,7 @@ internal static class Program
 
         var psi = new ProcessStartInfo
         {
-            FileName = electron,
+            FileName = runtime,
             Arguments = "\".\"",
             WorkingDirectory = root,
             UseShellExecute = false,

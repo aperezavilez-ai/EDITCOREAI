@@ -11,6 +11,7 @@ const { WorkflowOrchestrator } = require("../runtime/workflow-orchestrator");
 const {
   ModelFailoverCoordinator,
   isRecoverableModelError,
+  isBillingOrQuotaError,
   isTaskLevelError,
   hasRequiredCapability,
   modelProfileKey,
@@ -322,4 +323,22 @@ test("TEST 8: error real de task no se oculta con failover", async () => {
   assert.equal(result.action, "task_error");
   assert.equal(isTaskLevelError(result.error), true);
   assert.equal(isRecoverableModelError(providerError("timeout")), true);
+});
+
+test("billing/quota 402 salta al siguiente modelo en silencio sin reintentar el mismo", async () => {
+  assert.equal(isBillingOrQuotaError(providerError("Payment Required", 402)), true);
+  assert.equal(isBillingOrQuotaError(providerError("insufficient credits", 400)), true);
+  assert.equal(isRecoverableModelError(providerError("Payment Required", 402)), true);
+  const coordinator = new ModelFailoverCoordinator({
+    current: profile("a"),
+    candidates: [profile("b"), profile("c")],
+    maxRetriesPerModel: 1,
+    taskContext: { taskId: "task-billing", runId: "run-billing" },
+    onCheckpoint: async () => ({ checkpointId: "cp-billing" }),
+  });
+  const result = await coordinator.handleFailure(providerError("insufficient balance", 402), { completedSteps: ["step-1"] });
+  assert.equal(result.action, "failover");
+  assert.equal(result.silent, true);
+  assert.equal(result.reason, "billing_quota");
+  assert.ok(result.profile.model === "model-b" || result.profile.model === "model-c");
 });

@@ -1,4 +1,4 @@
-# EDITCOREAI — Roadmap & Arquitectura (v2.9.3)
+# EDITCOREAI — Roadmap & Arquitectura (v2.9.4)
 
 EDITCOREAI es el IDE Electron de pair-programming y agentic coding: orquesta tools reales en disco, publica con bóveda `safeStorage` (GitHub / Vercel / Supabase / GafCore Gateway) y prioriza co-creación con evidencia (lee el repo; no pide datos que ya estén ahí).
 
@@ -6,7 +6,7 @@ Fuente de autoconocimiento de la app: `EDITCORE-MANIFEST.md`.
 
 ---
 
-## Estado actual del producto (v2.9.3)
+## Estado actual del producto (v2.9.4)
 
 ### Núcleo operativo
 - [x] Chat + Agente con orquestación (`runtime/intent-orchestrator.js`) y política elite de comunicación.
@@ -19,17 +19,21 @@ Fuente de autoconocimiento de la app: `EDITCORE-MANIFEST.md`.
 - [x] `isSwitchProjectRequest` no confunde auditorías largas (cerrar/abrir en prosa) con cambio de carpeta.
 - [x] Jarvis inyecta `ACTIVE WORKSPACE` + manifiesto en cada turno (`runtime/jarvis-port.js`).
 - [x] Main resuelve `projectRoot` vacío vía `resolveIncomingWorkspaceRoot` (memoria por ventana).
+- [x] Failover silencioso 402/429/saldo entre modelos activos (sin truncar tarea; aviso solo en Logs).
+- [x] UX Cursor-like: sin “conectando/esperando modelo” en chat; solo trabajo + `Trabajando…`.
 
 ### UI / barra superior (realidad actual)
 - [x] Primaria: Inicio · Proyectos · Nuevo · Guardar · Ventana+ · Conexiones · Modelos · **Herramientas ▾** · **Conectar** · **Publicar**.
 - [x] Herramientas: Logs · Cerebro · Inspector · Tema · Buscar versión · Recargar app.
 - [x] Logo welcome/toolbar: `assets/editcore-logo.png` (alta resolución, sin recorte SVG 24×24).
 - [x] Tema **gris** tipo Cursor en toda la chrome; preview/navegador usa `--ec-preview-bg` (ya no blanco fijo); splitters unificados.
+- [x] Selector Auto: **Auto** (ME AI + APICredits) · **Auto · ME AI** · **Auto · APICredits**.
 - [x] Retirados: Terminal panel, Composer panel, Extensiones (.vsix), Deshacer / Actualizar publicación sueltos (update vía Publicar mode=update).
 
 ### Branding / launcher
 - [x] `EDITCOREAI.exe` (raíz) con `assets/logo.ico` + AppUserModelId `com.editcoreai.app`.
-- [x] `scripts/brand-electron-runtime.js` estampa icono/metadatos EditCoreAI en `electron.exe` (nunca marca Electron visible).
+- [x] Runtime host `EDITCOREAI-host.exe` brandado (icono/metadatos EditCoreAI); el launcher no abre `electron.exe` crudo.
+- [x] `BrowserWindow` fuerza icono vía `nativeImage` (barra de título sin átomo Electron).
 - [x] `npm start` / `Abrir-EDITCOREAI.bat` → launcher oficial; `postinstall` rebrandea runtime.
 - [x] Accesos Escritorio/Inicio: `EditCoreAI.lnk` → `EDITCOREAI.exe`.
 
@@ -61,7 +65,7 @@ Pedidos `publicar` / `deploy` / `conectar github|vercel|…` **escalan a Agente*
 ### Empaquetado
 - [x] `resources/ui-overlay` y `resources/rtk` dentro de EDITCOREAI.
 - [x] `npm run dist:win` → `release/EDITCOREAI-Setup.exe` + launcher raíz recompilado.
-- [x] Producto v2.9.3 / buildVersion 2.9.3.0.
+- [x] Producto v2.9.4 / buildVersion 2.9.4.0.
 
 ---
 
@@ -74,18 +78,18 @@ Pedidos `publicar` / `deploy` / `conectar github|vercel|…` **escalan a Agente*
 | 3. Acceso solo lectura / sin write | EXECUTE nube bloqueado. |
 | 4. Bóveda vacía | Tools cloud fallan con “falta … en Conexiones”. |
 | 5. Gateway sin admin token | No puede crear project key. |
-| 6. Workspace null + auditoría con “cerrar/abrir” | Antes disparaba switch falso → “Indica el proyecto…”. **Corregido** en v2.9.3. |
+| 6. Workspace null + auditoría con “cerrar/abrir” | Antes disparaba switch falso → “Indica el proyecto…”. **Corregido** en v2.9.3+. |
 
 ---
 
 ## Próximos hitos
 
-### v2.9.4 — Pegamento y evidencia
+### v2.9.5 — Pegamento y evidencia
 - [ ] Superficie UI opcional de `editcoreCloud.vaultStatus` en Conexiones (estado bóveda sin secretos).
 - [ ] Telemetría de “primer tool_call” por turno (detectar narración sin acción).
 - [ ] Scope-drift watchdog: rechazar expansiones fuera del contrato de la tarea.
 
-### v2.9.5 — Operador nube
+### v2.9.6 — Operador nube
 - [ ] Unificar mensajes de error bóveda entre botón Publicar y tools del agente.
 - [ ] MCP nativos opcionales (GitHub, Supabase, Playwright, Vercel) sin sustituir la bóveda local.
 

@@ -7,8 +7,7 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const source = path.resolve(__dirname, "..");
-const resourcesDir = path.resolve(source, "..");
-const uiOverlay = path.join(resourcesDir, "ui-overlay");
+const uiOverlay = path.join(source, "resources", "ui-overlay");
 const installApp = path.join(process.env.LOCALAPPDATA || "", "Programs", "EDITCOREAI", "resources", "app");
 
 const targets = [
