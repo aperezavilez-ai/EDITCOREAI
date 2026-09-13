@@ -3287,3 +3287,92 @@ body.welcome-open .app-toolbar {
 .agent-diff-file.is-decided .agent-diff-file-title {
   cursor: pointer;
 }
+
+/* -- v2.9 IDE panels + ghost text -- */
+.prompt-ghost-stack {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: grid;
+}
+.prompt-ghost-stack > * {
+  grid-area: 1 / 1;
+}
+.prompt-ghost {
+  margin: 0;
+  padding: 8px 10px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font: inherit;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 13px;
+  line-height: 1.45;
+  color: transparent;
+  pointer-events: none;
+  overflow: hidden;
+}
+.prompt-ghost .ghost-suffix {
+  color: #9aa7b5;
+}
+.prompt-ghost-stack textarea {
+  background: transparent;
+  position: relative;
+  z-index: 1;
+}
+.ide-side-panel {
+  position: fixed;
+  right: 12px;
+  bottom: 150px;
+  width: min(520px, 92vw);
+  max-height: min(52vh, 520px);
+  background: #0f1419;
+  color: #d7e0ea;
+  border: 1px solid #2a3644;
+  border-radius: 10px;
+  z-index: 80;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 18px 48px rgba(0,0,0,.35);
+  padding: 10px;
+  gap: 8px;
+}
+.ide-side-panel.collapsed { display: none; }
+.ide-side-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.ide-side-panel-actions { display: flex; gap: 6px; }
+.ide-side-panel-actions.row { justify-content: flex-start; }
+.ide-side-panel textarea,
+.ide-side-panel input,
+.terminal-input-row input {
+  width: 100%;
+  background: #171e26;
+  color: #e8eef5;
+  border: 1px solid #334155;
+  border-radius: 6px;
+  padding: 8px;
+  font: 12px/1.4 ui-monospace, Consolas, monospace;
+}
+.terminal-output, .composer-diff-out {
+  flex: 1;
+  min-height: 140px;
+  max-height: 280px;
+  overflow: auto;
+  background: #0b1015;
+  border: 1px solid #243041;
+  border-radius: 6px;
+  padding: 8px;
+  margin: 0;
+  white-space: pre-wrap;
+  font: 12px/1.4 ui-monospace, Consolas, monospace;
+}
+.terminal-input-row {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 6px;
+  align-items: center;
+}
+.terminal-prompt-mark { color: #5ec8d8; }

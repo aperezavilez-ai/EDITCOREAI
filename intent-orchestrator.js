@@ -230,6 +230,8 @@ const TOOL_ALLOWLIST = {
     "ssh_deploy",
     "create_supabase_project",
     "onboard_project",
+    "run_tdd_cycle",
+    "run_test_repair_loop",
   ],
 };
 
@@ -243,6 +245,7 @@ const GREENFIELD_TOOL_ALLOWLIST = [
   "publish_project", "connect_project", "assess_project_connections",
   "provision_project", "project_health", "sync_vercel_env", "supabase_manage", "ssh_deploy",
   "create_supabase_project", "onboard_project",
+  "run_tdd_cycle", "run_test_repair_loop",
 ];
 
 const LOVABLE_ONESHOT_TOOL_ALLOWLIST = [

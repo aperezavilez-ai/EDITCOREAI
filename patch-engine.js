@@ -160,6 +160,7 @@ function applyPatch(projectRoot, filePath, oldText, newText, options = {}) {
     runId = "",
     skipCheckpoint = false,
     createBackup = true,
+    gitCheckpoint = false,
   } = options || {};
 
   let absPath;
@@ -204,6 +205,24 @@ function applyPatch(projectRoot, filePath, oldText, newText, options = {}) {
     }
   }
 
+  let gitRef = null;
+  if (gitCheckpoint && projectRoot) {
+    try {
+      const { spawnSync } = require("node:child_process");
+      const stash = spawnSync("git", ["stash", "push", "-u", "-m", `editcore-patch-${Date.now()}`], {
+        cwd: projectRoot,
+        encoding: "utf8",
+        windowsHide: true,
+      });
+      gitRef = {
+        ok: stash.status === 0,
+        message: String(stash.stdout || stash.stderr || "").trim().slice(0, 200),
+      };
+    } catch (error) {
+      gitRef = { ok: false, message: error.message };
+    }
+  }
+
   let backupPath = null;
   try {
     if (exists && createBackup) backupPath = createLocalBackup(absPath);
@@ -212,13 +231,14 @@ function applyPatch(projectRoot, filePath, oldText, newText, options = {}) {
       ok: true,
       path: absPath,
       backupPath,
+      gitCheckpoint: gitRef,
       diff: generateDiff(absPath, originalContent, patchedContent),
       checkpoint,
       bytesWritten: Buffer.byteLength(patchedContent, "utf8"),
       created: !exists,
     };
   } catch (error) {
-    return { ok: false, error: error.message, checkpoint, backupPath };
+    return { ok: false, error: error.message, checkpoint, backupPath, gitCheckpoint: gitRef };
   }
 }
 

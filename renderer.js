@@ -11330,6 +11330,19 @@ function wireComposerControls() {
     if (e.key === "Tab" && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
       const field = $("prompt");
       const value = field?.value || "";
+      const accept = field?.dataset?.ghostAccept || "";
+      if (accept) {
+        e.preventDefault();
+        field.value = accept.includes("\n") || accept.length > value.length
+          ? accept
+          : value.replace(/(@?[\w./-]*)$/, accept);
+        field.dataset.ghostAccept = "";
+        const ghost = $("promptGhost");
+        if (ghost) ghost.innerHTML = "";
+        updateSendButtonState();
+        $("status").textContent = "Tab: predicción aplicada";
+        return;
+      }
       if (/@?[\w./-]{2,}$/.test(value) && window.editcoreAgent?.tabPredict) {
         e.preventDefault();
         window.editcoreAgent.tabPredict({
@@ -11337,11 +11350,13 @@ function wireComposerControls() {
           prompt: value,
           history: state.history || [],
         }).then((out) => {
-          const pick = out?.candidates?.[0]?.text;
+          const pick = out?.accept || out?.candidates?.[0]?.text;
           if (!pick || !field) return;
-          field.value = value.replace(/(@?[\w./-]*)$/, pick);
+          field.value = pick.includes("\n") || pick.length > value.length
+            ? pick
+            : value.replace(/(@?[\w./-]*)$/, pick);
           updateSendButtonState();
-          $("status").textContent = `Tab: ${pick}`;
+          $("status").textContent = `Tab: ${String(pick).slice(0, 80)} (${out?.latencyMs || 0}ms)`;
         }).catch(() => undefined);
         return;
       }
@@ -11351,12 +11366,196 @@ function wireComposerControls() {
       triggerChatSend();
     }
   });
-  $("prompt")?.addEventListener("input", updateSendButtonState);
+
+  let ghostTimer = null;
+  const refreshGhost = () => {
+    const field = $("prompt");
+    const ghost = $("promptGhost");
+    if (!field || !ghost || !window.editcoreAgent?.tabPredict) return;
+    const value = field.value || "";
+    if (value.length < 2) {
+      ghost.innerHTML = "";
+      field.dataset.ghostAccept = "";
+      return;
+    }
+    window.editcoreAgent.tabPredict({
+      projectRoot: state.projectRoot || "",
+      prompt: value,
+      history: state.history || [],
+    }).then((out) => {
+      const suffix = String(out?.ghost || "");
+      const accept = String(out?.accept || out?.candidates?.[0]?.text || "");
+      field.dataset.ghostAccept = accept;
+      if (!suffix) {
+        ghost.innerHTML = "";
+        return;
+      }
+      const escaped = value
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
+      const escapedSuffix = suffix
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
+      ghost.innerHTML = `${escaped}<span class="ghost-suffix">${escapedSuffix}</span>`;
+    }).catch(() => undefined);
+  };
+
+  $("prompt")?.addEventListener("input", () => {
+    updateSendButtonState();
+    clearTimeout(ghostTimer);
+    ghostTimer = setTimeout(refreshGhost, 45);
+  });
+  $("prompt")?.addEventListener("scroll", () => {
+    const ghost = $("promptGhost");
+    const field = $("prompt");
+    if (ghost && field) ghost.scrollTop = field.scrollTop;
+  });
 }
 
 // ── Event wiring ──────────────────────────────────────────────────────────────
 
 wireComposerControls();
+
+(function wireIdePanels() {
+  let ptyId = "";
+  let unsubPty = null;
+  const setPanel = (id, open) => {
+    const el = $(id);
+    if (!el) return;
+    el.classList.toggle("collapsed", !open);
+    el.setAttribute("aria-hidden", open ? "false" : "true");
+  };
+
+  const appendTerminal = (text) => {
+    const out = $("terminalOutput");
+    if (!out) return;
+    out.textContent += text;
+    out.scrollTop = out.scrollHeight;
+  };
+
+  const ensurePty = async () => {
+    if (ptyId || !window.editcorePty?.create) return ptyId;
+    const snap = await window.editcorePty.create({
+      projectRoot: state.projectRoot || "",
+      cols: 100,
+      rows: 24,
+    });
+    ptyId = snap?.id || "";
+    if (!unsubPty && window.editcorePty.onData) {
+      unsubPty = window.editcorePty.onData((payload) => {
+        if (payload?.id === ptyId) appendTerminal(payload.data || "");
+      });
+    }
+    appendTerminal(`[${snap?.backend || "pty"}] ${snap?.cwd || ""}\n`);
+    return ptyId;
+  };
+
+  $("terminalBtn")?.addEventListener("click", async () => {
+    const panel = $("terminalPanel");
+    const open = panel?.classList.contains("collapsed");
+    setPanel("terminalPanel", open);
+    if (open) {
+      try {
+        await ensurePty();
+      } catch (err) {
+        appendTerminal(`Error: ${err?.message || err}\n`);
+      }
+    }
+  });
+  $("terminalCloseBtn")?.addEventListener("click", () => setPanel("terminalPanel", false));
+  $("terminalNewBtn")?.addEventListener("click", async () => {
+    if (ptyId && window.editcorePty?.kill) await window.editcorePty.kill({ id: ptyId }).catch(() => undefined);
+    ptyId = "";
+    if ($("terminalOutput")) $("terminalOutput").textContent = "";
+    await ensurePty();
+  });
+  $("terminalForm")?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const input = $("terminalInput");
+    const line = String(input?.value || "");
+    if (!line) return;
+    await ensurePty();
+    await window.editcorePty?.write({ id: ptyId, data: `${line}\r\n` });
+    if (input) input.value = "";
+  });
+
+  $("composerPanelBtn")?.addEventListener("click", () => {
+    const panel = $("composerPanel");
+    setPanel("composerPanel", panel?.classList.contains("collapsed"));
+  });
+  $("composerCloseBtn")?.addEventListener("click", () => setPanel("composerPanel", false));
+
+  let composerSessionId = "";
+  $("composerPreviewBtn")?.addEventListener("click", async () => {
+    const out = $("composerDiffOut");
+    try {
+      const files = JSON.parse(String($("composerFilesJson")?.value || "[]"));
+      const plan = await window.editcoreComposer.plan({
+        projectRoot: state.projectRoot || "",
+        goal: $("composerGoal")?.value || "",
+        files,
+      });
+      composerSessionId = plan.sessionId;
+      const preview = await window.editcoreComposer.preview({
+        projectRoot: state.projectRoot || "",
+        sessionId: composerSessionId,
+      });
+      if (out) {
+        out.textContent = (preview.proposals || [])
+          .map((p) => `## ${p.path}\n${p.diff || "(sin diff)"}`)
+          .join("\n\n");
+      }
+      $("status").textContent = `Composer preview: ${preview.count || 0} archivos`;
+    } catch (err) {
+      if (out) out.textContent = err?.message || String(err);
+    }
+  });
+  $("composerApplyBtn")?.addEventListener("click", async () => {
+    const out = $("composerDiffOut");
+    try {
+      if (!composerSessionId) {
+        $("composerPreviewBtn")?.click();
+        await new Promise((r) => setTimeout(r, 80));
+      }
+      const result = await window.editcoreComposer.apply({
+        projectRoot: state.projectRoot || "",
+        sessionId: composerSessionId,
+      });
+      if (out) out.textContent = JSON.stringify(result, null, 2);
+      $("status").textContent = `Composer aplicado: ${(result.applied || []).length} archivos`;
+    } catch (err) {
+      if (out) out.textContent = err?.message || String(err);
+    }
+  });
+
+  const refreshExtensions = async () => {
+    const out = $("extensionsListOut");
+    if (!window.editcoreExtensions?.list) return;
+    const list = await window.editcoreExtensions.list({ projectRoot: state.projectRoot || "" });
+    if (out) out.textContent = JSON.stringify(list, null, 2);
+  };
+  $("extensionsBtn")?.addEventListener("click", () => {
+    $("extensionsDialog")?.showModal?.();
+    refreshExtensions().catch(() => undefined);
+  });
+  $("vsixRefreshBtn")?.addEventListener("click", () => refreshExtensions().catch(() => undefined));
+  $("vsixInstallBtn")?.addEventListener("click", async () => {
+    const vsixPath = String($("vsixPathInput")?.value || "").trim();
+    const out = $("extensionsListOut");
+    try {
+      const result = await window.editcoreExtensions.installVsix({
+        projectRoot: state.projectRoot || "",
+        vsixPath,
+      });
+      if (out) out.textContent = JSON.stringify(result, null, 2);
+      $("status").textContent = `Extensión instalada: ${result?.extension?.id || ""}`;
+    } catch (err) {
+      if (out) out.textContent = err?.message || String(err);
+    }
+  });
+})();
 
 $("connectionsBtn").addEventListener("click", openConnections);
 $("closeConnectionsBtn").addEventListener("click", closeConnections);

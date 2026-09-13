@@ -72,12 +72,15 @@
         <span class="toolbar-divider" aria-hidden="true"></span>
         <div class="toolbar-group" aria-label="Operacion">
           <button id="logsBtn" type="button" title="Panel de logs (Ctrl+`)">Logs</button>
+          <button id="terminalBtn" type="button" title="Terminal interactiva">Terminal</button>
+          <button id="composerPanelBtn" type="button" title="Composer multi-archivo">Composer</button>
           <button id="maintenanceBtn" type="button" title="Estado de todos tus proyectos">Mantenimiento</button>
           <div class="toolbar-more-wrap">
             <button id="toolsMoreBtn" type="button" class="toolbar-more-btn" aria-haspopup="menu" aria-expanded="false" title="Herramientas internas">Herramientas ▾</button>
             <div id="toolsMoreMenu" class="toolbar-more-menu hidden" role="menu" hidden>
               <button id="brainBtn" type="button" role="menuitem" title="Memoria y skills del Cerebro">Cerebro</button>
               <button id="inspectorBtn" type="button" role="menuitem" title="Inspector del nucleo EDITCOREAI">Inspector</button>
+              <button id="extensionsBtn" type="button" role="menuitem" title="Instalar packs .vsix">Extensiones</button>
               <button id="checkUpdatesMenuBtn" type="button" role="menuitem" title="Buscar version nueva en GitHub Releases">Buscar version (GitHub)</button>
             </div>
           </div>
@@ -139,7 +142,10 @@
       <form id="chatForm" class="composer">
         <div class="composer-input-wrap">
           <div id="attachmentList" class="attachment-list"></div>
-          <textarea id="prompt" rows="3" placeholder="Escribe tu mensaje…"></textarea>
+          <div class="prompt-ghost-stack">
+            <div id="promptGhost" class="prompt-ghost" aria-hidden="true"></div>
+            <textarea id="prompt" rows="3" placeholder="Escribe tu mensaje…" spellcheck="false"></textarea>
+          </div>
         </div>
         <div class="composer-bar">
           <button id="attachBtn" type="button" title="Adjuntar imagen (o archivo)">+</button>
@@ -544,6 +550,54 @@
       </div>
     </div>
     <!-- Fin Panel de Logs -->
+
+    <div id="terminalPanel" class="ide-side-panel collapsed" aria-hidden="true">
+      <div class="ide-side-panel-header">
+        <strong>Terminal</strong>
+        <div class="ide-side-panel-actions">
+          <button type="button" id="terminalNewBtn" title="Nueva sesión">+</button>
+          <button type="button" id="terminalCloseBtn" title="Cerrar">×</button>
+        </div>
+      </div>
+      <pre id="terminalOutput" class="terminal-output" tabindex="0"></pre>
+      <form id="terminalForm" class="terminal-input-row">
+        <span class="terminal-prompt-mark">›</span>
+        <input id="terminalInput" type="text" autocomplete="off" spellcheck="false" placeholder="comando…" />
+        <button type="submit">Enviar</button>
+      </form>
+    </div>
+
+    <div id="composerPanel" class="ide-side-panel collapsed" aria-hidden="true">
+      <div class="ide-side-panel-header">
+        <strong>Composer multi-archivo</strong>
+        <div class="ide-side-panel-actions">
+          <button type="button" id="composerCloseBtn" title="Cerrar">×</button>
+        </div>
+      </div>
+      <textarea id="composerGoal" rows="2" placeholder="Objetivo del cambio multi-archivo…"></textarea>
+      <textarea id="composerFilesJson" rows="8" placeholder='[{"path":"runtime/foo.js","oldText":"a","newText":"b"}]'></textarea>
+      <div class="ide-side-panel-actions row">
+        <button type="button" id="composerPreviewBtn">Vista previa diffs</button>
+        <button type="button" id="composerApplyBtn">Aplicar todo</button>
+      </div>
+      <pre id="composerDiffOut" class="composer-diff-out"></pre>
+    </div>
+
+    <dialog id="extensionsDialog" class="dlg">
+      <form method="dialog" class="dlg-body">
+        <header class="dlg-header">
+          <h2>Extensiones (.vsix)</h2>
+          <button type="submit" value="cancel" class="dlg-close">×</button>
+        </header>
+        <p class="dlg-hint">Instala packs empaquetados como .vsix (zip + package.json). Host EditCore: temas CSS y comandos; no es el Extension Host completo de VS Code.</p>
+        <input id="vsixPathInput" type="text" placeholder="Ruta absoluta al .vsix" />
+        <div class="ide-side-panel-actions row">
+          <button type="button" id="vsixInstallBtn" class="btn-primary">Instalar</button>
+          <button type="button" id="vsixRefreshBtn" class="btn-outline">Actualizar lista</button>
+        </div>
+        <pre id="extensionsListOut" class="composer-diff-out"></pre>
+      </form>
+    </dialog>
 
     <script src="./renderer-markdown.js"></script>
     <script src="./project-analysis.js"></script>

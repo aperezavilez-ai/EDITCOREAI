@@ -6,6 +6,7 @@ function registerTaskIpc(ipcMain, manager, recovery, workflow = null) {
     "task:create": (_event, input = {}) => manager.createTask(input),
     "task:get": (_event, taskId) => manager.getTask(taskId),
     "task:list": (_event, filter = {}) => manager.listTasks(filter),
+    "task:update": (_event, taskId, patch = {}) => manager.updateTask(taskId, patch || {}),
     "task:pause": (_event, taskId) => manager.pauseTask(taskId),
     "task:resume": (_event, taskId) => manager.resumeTask(taskId),
     "task:cancel": (_event, taskId) => manager.cancelTask(taskId),

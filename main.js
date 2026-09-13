@@ -7644,7 +7644,7 @@ ipcMain.handle("agent:git-push", (_event, input = {}) => {
 });
 
 ipcMain.handle("project:tab-predict", (_event, input = {}) => {
-  const { collectCandidates } = require("./runtime/tab-prediction");
+  const { collectCandidates, ghostFromCandidates } = require("./runtime/tab-prediction");
   const root = String(input.projectRoot || "").trim();
   let index = null;
   try {
@@ -7652,12 +7652,131 @@ ipcMain.handle("project:tab-predict", (_event, input = {}) => {
   } catch {
     index = null;
   }
+  const result = collectCandidates(root, String(input.prompt || ""), {
+    index,
+    history: Array.isArray(input.history) ? input.history : [],
+  });
+  const candidates = Array.isArray(result) ? result : (result.candidates || []);
+  const ghost = ghostFromCandidates(String(input.prompt || ""), candidates);
   return {
-    candidates: collectCandidates(root, String(input.prompt || ""), {
-      index,
-      history: Array.isArray(input.history) ? input.history : [],
-    }),
+    candidates,
+    latencyMs: result.latencyMs || 0,
+    engine: result.engine || "local-index+snippets",
+    ghost: ghost.ghost,
+    accept: ghost.accept,
   };
+});
+
+ipcMain.handle("project:semantic-reindex", (_event, input = {}) => {
+  const { buildIncrementalIndex } = require("./runtime/semantic-index-incremental");
+  const root = assertProjectRoot(String(input.projectRoot || "").trim());
+  const index = buildIncrementalIndex(root, { force: input.force === true });
+  return {
+    ok: true,
+    docs: index.docs.length,
+    stats: index.stats || null,
+    engine: index.engine,
+    builtAt: index.builtAt,
+  };
+});
+
+ipcMain.handle("composer:plan", (_event, input = {}) => {
+  const { createComposerPlan } = require("./runtime/composer-orchestrator");
+  const root = assertWritableProjectRoot(String(input.projectRoot || "").trim());
+  return createComposerPlan(root, input);
+});
+
+ipcMain.handle("composer:preview", (_event, input = {}) => {
+  const { previewComposer } = require("./runtime/composer-orchestrator");
+  const root = assertWritableProjectRoot(String(input.projectRoot || "").trim());
+  return previewComposer(root, input.sessionId || input.id);
+});
+
+ipcMain.handle("composer:apply", (_event, input = {}) => {
+  const { applyComposer } = require("./runtime/composer-orchestrator");
+  const root = assertWritableProjectRoot(String(input.projectRoot || "").trim());
+  return applyComposer(root, input.sessionId || input.id, {
+    writeFile: (rel, content) => writeProjectFile(root, rel, content),
+  });
+});
+
+ipcMain.handle("composer:list", (_event, input = {}) => {
+  const { listComposerSessions, getComposer } = require("./runtime/composer-orchestrator");
+  const root = assertProjectRoot(String(input.projectRoot || "").trim());
+  if (input.sessionId) return getComposer(input.sessionId);
+  return { sessions: listComposerSessions(root) };
+});
+
+ipcMain.handle("extensions:install-vsix", async (_event, input = {}) => {
+  const { installVsix } = require("./runtime/extension-host");
+  const root = assertWritableProjectRoot(String(input.projectRoot || "").trim());
+  return installVsix(root, input.vsixPath || input.path, { activate: input.activate !== false });
+});
+
+ipcMain.handle("extensions:list", (_event, input = {}) => {
+  const { listExtensions } = require("./runtime/extension-host");
+  const root = assertProjectRoot(String(input.projectRoot || "").trim());
+  return listExtensions(root);
+});
+
+ipcMain.handle("extensions:uninstall", (_event, input = {}) => {
+  const { uninstallExtension } = require("./runtime/extension-host");
+  const root = assertWritableProjectRoot(String(input.projectRoot || "").trim());
+  return uninstallExtension(root, input.id || input.extensionId);
+});
+
+ipcMain.handle("pty:create", (event, input = {}) => {
+  const { createSession, attachDataListener } = require("./runtime/pty-session");
+  const root = String(input.projectRoot || "").trim();
+  const cwd = root ? assertProjectRoot(root) : process.cwd();
+  const snap = createSession({
+    cwd,
+    cols: Number(input.cols) || 120,
+    rows: Number(input.rows) || 30,
+  });
+  const sender = event.sender;
+  attachDataListener(snap.id, (data) => {
+    if (!sender.isDestroyed()) sender.send("pty:data", { id: snap.id, data });
+  });
+  return snap;
+});
+
+ipcMain.handle("pty:write", (_event, input = {}) => {
+  const { writeSession } = require("./runtime/pty-session");
+  return writeSession(input.id || input.sessionId, input.data ?? input.text ?? "");
+});
+
+ipcMain.handle("pty:resize", (_event, input = {}) => {
+  const { resizeSession } = require("./runtime/pty-session");
+  return resizeSession(input.id || input.sessionId, input.cols, input.rows);
+});
+
+ipcMain.handle("pty:kill", (_event, input = {}) => {
+  const { killSession } = require("./runtime/pty-session");
+  return killSession(input.id || input.sessionId);
+});
+
+ipcMain.handle("pty:list", () => {
+  const { listSessions, nodePtyAvailable } = require("./runtime/pty-session");
+  return { sessions: listSessions(), nodePtyAvailable: nodePtyAvailable() };
+});
+
+ipcMain.handle("project:memory-get", (_event, input = {}) => {
+  const { loadProjectMemory } = require("./runtime/project-memory");
+  const root = assertProjectRoot(String(input.projectRoot || "").trim());
+  return loadProjectMemory(root);
+});
+
+ipcMain.handle("project:memory-remember", (_event, input = {}) => {
+  const { rememberProjectEvent } = require("./runtime/project-memory");
+  const root = assertWritableProjectRoot(String(input.projectRoot || "").trim());
+  return rememberProjectEvent(root, input);
+});
+
+ipcMain.handle("project:memory-rule", (_event, input = {}) => {
+  const { upsertArchitectureRule } = require("./runtime/project-memory");
+  const root = assertWritableProjectRoot(String(input.projectRoot || "").trim());
+  return upsertArchitectureRule(root, input.rule || input.text || "");
 });
 
 ipcMain.handle("session:export", (_event, input = {}) => {
@@ -7701,6 +7820,17 @@ ipcMain.handle("project:run-tdd", (_event, input = {}) => {
   const { runTddCycle } = require("./runtime/tdd-cycle");
   const root = assertWritableProjectRoot(String(input.projectRoot || "").trim());
   return runTddCycle(root, input, {
+    runCommand: (command) => runProjectCommand(root, command, "analysis"),
+  });
+});
+
+ipcMain.handle("project:test-repair", async (_event, input = {}) => {
+  const { runTddRepair } = require("./runtime/test-repair-loop");
+  const root = assertWritableProjectRoot(String(input.projectRoot || "").trim());
+  return runTddRepair(root, {
+    testCommand: input.testCommand || input.command || "",
+    maxAttempts: Number(input.maxAttempts) || 3,
+    patches: Array.isArray(input.patches) ? input.patches : [],
     runCommand: (command) => runProjectCommand(root, command, "analysis"),
   });
 });

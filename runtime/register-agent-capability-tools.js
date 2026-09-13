@@ -244,6 +244,23 @@ function registerAgentCapabilityTools(dispatcher, {
     });
 
     dispatcher.register({
+      name: "run_test_repair_loop",
+      write: true,
+      description: "Bucle autónomo: ejecuta tests, aplica parches (applyPatch) y reintenta hasta verde.",
+      execute: async (toolInput = {}) => {
+        const { runTddRepair } = require("./test-repair-loop");
+        return runTddRepair(rootPath, {
+          testCommand: toolInput.testCommand || toolInput.command || "",
+          maxAttempts: Number(toolInput.maxAttempts) || 3,
+          patches: Array.isArray(toolInput.patches) ? toolInput.patches : [],
+          runCommand: runProjectCommand
+            ? (command) => runProjectCommand(rootPath, command, "analysis")
+            : undefined,
+        });
+      },
+    });
+
+    dispatcher.register({
       name: "export_session",
       write: true,
       description: "Exporta hilo de chat/Composer a .editcore/sessions/*.md para compartir con el equipo.",

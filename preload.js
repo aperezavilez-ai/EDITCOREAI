@@ -184,6 +184,10 @@ contextBridge.exposeInMainWorld("editcoreAgent", {
   terminalYolo: (input = {}) => ipcRenderer.invoke("terminal:yolo", input),
   terminalCheck: (input = {}) => ipcRenderer.invoke("terminal:check", input),
   tabPredict: (input = {}) => ipcRenderer.invoke("project:tab-predict", input),
+  semanticReindex: (input = {}) => ipcRenderer.invoke("project:semantic-reindex", input),
+  memoryGet: (input = {}) => ipcRenderer.invoke("project:memory-get", input),
+  memoryRemember: (input = {}) => ipcRenderer.invoke("project:memory-remember", input),
+  memoryRule: (input = {}) => ipcRenderer.invoke("project:memory-rule", input),
   workflows: (input = {}) => ipcRenderer.invoke("project:workflows", input),
   dockerCompose: (input = {}) => ipcRenderer.invoke("project:docker-compose", input),
   gitPull: (input = {}) => ipcRenderer.invoke("agent:git-pull", input),
@@ -193,6 +197,7 @@ contextBridge.exposeInMainWorld("editcoreAgent", {
   tailLogs: (input = {}) => ipcRenderer.invoke("project:tail-logs", input),
   migrationPlaybook: (input = {}) => ipcRenderer.invoke("project:migration-playbook", input),
   runTdd: (input = {}) => ipcRenderer.invoke("project:run-tdd", input),
+  testRepair: (input = {}) => ipcRenderer.invoke("project:test-repair", input),
   gitCreateBranch: (input = {}) => ipcRenderer.invoke("agent:git-create-branch", input),
   onProgress: (callback) => ipcRenderer.on("agent:progress", (_event, value) => callback(value)),
   onComplete: (callback) => {
@@ -218,6 +223,7 @@ contextBridge.exposeInMainWorld("editcoreTasks", {
   create: (input = {}) => ipcRenderer.invoke("task:create", input),
   get: (taskId) => ipcRenderer.invoke("task:get", taskId),
   list: (filter = {}) => ipcRenderer.invoke("task:list", filter),
+  update: (taskId, patch = {}) => ipcRenderer.invoke("task:update", taskId, patch),
   pause: (taskId) => ipcRenderer.invoke("task:pause", taskId),
   resume: (taskId) => ipcRenderer.invoke("task:resume", taskId),
   cancel: (taskId) => ipcRenderer.invoke("task:cancel", taskId),
@@ -328,4 +334,29 @@ contextBridge.exposeInMainWorld("editcorePatch", {
   apply: (filePath, diffText, opts) => ipcRenderer.invoke("patch:apply", filePath, diffText, opts),
   rollback: (filePath, backupPath) => ipcRenderer.invoke("patch:rollback", filePath, backupPath),
   listBackups: (filePath) => ipcRenderer.invoke("patch:list-backups", filePath),
+});
+contextBridge.exposeInMainWorld("editcoreComposer", {
+  plan: (input = {}) => ipcRenderer.invoke("composer:plan", input),
+  preview: (input = {}) => ipcRenderer.invoke("composer:preview", input),
+  apply: (input = {}) => ipcRenderer.invoke("composer:apply", input),
+  list: (input = {}) => ipcRenderer.invoke("composer:list", input),
+});
+
+contextBridge.exposeInMainWorld("editcoreExtensions", {
+  installVsix: (input = {}) => ipcRenderer.invoke("extensions:install-vsix", input),
+  list: (input = {}) => ipcRenderer.invoke("extensions:list", input),
+  uninstall: (input = {}) => ipcRenderer.invoke("extensions:uninstall", input),
+});
+
+contextBridge.exposeInMainWorld("editcorePty", {
+  create: (input = {}) => ipcRenderer.invoke("pty:create", input),
+  write: (input = {}) => ipcRenderer.invoke("pty:write", input),
+  resize: (input = {}) => ipcRenderer.invoke("pty:resize", input),
+  kill: (input = {}) => ipcRenderer.invoke("pty:kill", input),
+  list: () => ipcRenderer.invoke("pty:list"),
+  onData: (callback) => {
+    const listener = (_event, value) => callback(value);
+    ipcRenderer.on("pty:data", listener);
+    return () => ipcRenderer.removeListener("pty:data", listener);
+  },
 });
