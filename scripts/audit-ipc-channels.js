@@ -1,0 +1,16 @@
+"use strict";
+const fs = require("fs");
+const preload = fs.readFileSync("preload.js", "utf8");
+const main = fs.readFileSync("main.js", "utf8");
+const taskIpc = fs.readFileSync("runtime/task-ipc.js", "utf8");
+const re = /ipcRenderer\.(?:invoke|sendSync)\(\s*["']([^"']+)["']/g;
+const channels = new Set();
+let m;
+while ((m = re.exec(preload))) channels.add(m[1]);
+const corpus = `${main}\n${taskIpc}`;
+const missing = [...channels].sort().filter((c) => !corpus.includes(`"${c}"`) && !corpus.includes(`'${c}'`));
+console.log("preload_channels", channels.size);
+console.log("missing_count", missing.length);
+for (const c of missing) console.log("MISSING", c);
+if (missing.length) process.exit(1);
+console.log("IPC_AUDIT_OK");

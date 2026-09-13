@@ -171,6 +171,13 @@ const {
   setYoloMode,
   isCommandAllowed,
 } = require("./runtime/terminal-allowlist");
+const {
+  applyPatch,
+  rollbackPatch,
+  listBackups,
+  generateDiff,
+  writeFileAtomic,
+} = require("./patch-engine");
 
 for (const stream of [process.stdout, process.stderr]) {
   stream?.on?.("error", (error) => {
@@ -4314,6 +4321,38 @@ ipcMain.handle("secure-config:load", async () => {
     return readSecureState();
   } catch (error) {
     throw new Error(`No se pudo abrir la configuración segura: ${error.message}`);
+  }
+});
+
+ipcMain.handle("patch:apply", async (_event, filePath, diffText, opts = {}) => {
+  try {
+    const options = opts && typeof opts === "object" ? opts : {};
+    const projectRoot = String(options.projectRoot || "").trim() || process.cwd();
+    const oldText = Object.prototype.hasOwnProperty.call(options, "oldText") ? options.oldText : undefined;
+    const newText = Object.prototype.hasOwnProperty.call(options, "newText")
+      ? options.newText
+      : (diffText == null ? "" : String(diffText));
+    return applyPatch(projectRoot, filePath, oldText, newText, options);
+  } catch (error) {
+    return { ok: false, error: error?.message || String(error) };
+  }
+});
+
+ipcMain.handle("patch:rollback", async (_event, filePath, backupPath, opts = {}) => {
+  try {
+    const projectRoot = String(opts?.projectRoot || "").trim();
+    return rollbackPatch(filePath, backupPath, projectRoot);
+  } catch (error) {
+    return { ok: false, error: error?.message || String(error) };
+  }
+});
+
+ipcMain.handle("patch:list-backups", async (_event, filePath, opts = {}) => {
+  try {
+    const projectRoot = String(opts?.projectRoot || "").trim();
+    return { ok: true, backups: listBackups(filePath, projectRoot) };
+  } catch (error) {
+    return { ok: false, error: error?.message || String(error), backups: [] };
   }
 });
 
