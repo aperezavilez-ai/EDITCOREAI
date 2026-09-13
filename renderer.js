@@ -1398,6 +1398,15 @@ function applyPermissionMode(mode) {
   const project = activeProject();
   if (project) {
     project.permissionMode = next;
+    // Acceso completo: salir de la puerta awaiting_authorization (no pedir PROCEDE).
+    if (next === "full" && project.agentWorkflow?.phase === "awaiting_authorization") {
+      project.agentWorkflow.phase = "executing";
+      project.agentWorkflow.updatedAt = Date.now();
+      if (project.durableWorkflow) {
+        project.durableWorkflow.awaitingAuthorization = false;
+        project.durableWorkflow.state = "EXECUTING";
+      }
+    }
     saveProjects();
   }
   return next;
@@ -10291,6 +10300,7 @@ async function executePromptJob(job) {
         && !planAuthorizedExecution
         && !authorizedContinuation
         && !continueAuthorized
+        && !isFullAccessMode(job)
         && job.executionMode !== "AUTHORIZED_PLAN"
         && (targetRun?.phase || project?.agentWorkflow?.phase) !== "executing";
       const normalizedReportText = ProjectAnalysis.isAnalysisReport(reportText)
@@ -11554,6 +11564,11 @@ window.editcoreAgent.onProgress((progress) => {
       return;
     }
     if (progress.phase === "awaiting_authorization") {
+      if (state.permissionMode === "full") {
+        setThinkingStatus(thinkingEl, "Acceso completo: aplicando sin pedir PROCEDE...");
+        setAgentLiveActivity(thinkingEl, "");
+        return;
+      }
       setThinkingStatus(thinkingEl, String(progress.text || "Esperando tu autorización...").trim());
       setAgentLiveActivity(thinkingEl, "");
       const primary = thinkingEl.querySelector?.(".thinking-primary");

@@ -198,10 +198,9 @@ function buildDepthReportGuide(depthProfile = {}) {
     ? [
       "CIERRE (Acceso completo / sin puerta PROCEDE):",
       "1) Resume hallazgos en 3-6 lineas claras.",
-      "2) Ofrece 2-4 OPCIONES DE SIGUIENTE ACCION numeradas y concretas (que se puede hacer YA).",
-      "3) Marca UNA como **Recomendada** y explica por que en 1-2 frases.",
-      "4) Pregunta con cual opcion avanzamos (sin exigir la palabra PROCEDE).",
-      "PROHIBIDO cerrar solo con: 'Cuando autorices procedo', 'Escribe procede', '¿Procedo?'.",
+      "2) Aplica YA las correcciones comprobables con write_file/replace_in_file (Acceso completo ya autoriza).",
+      "3) Si no hay correcciones comprobables, dilo y cierra.",
+      "PROHIBIDO: 'Cuando autorices procedo', 'Escribe procede', '¿Procedo?', 'elige una opcion'.",
     ].join("\n")
     : "Si HAY correcciones comprobables: ultima linea exacta `Cuando autorices procedo con las correcciones.` Si NO hay: `Sin correcciones comprobables pendientes. No se solicita PROCEDE.`";
   return [

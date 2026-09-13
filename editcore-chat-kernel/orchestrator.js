@@ -54,11 +54,11 @@ const LEADERSHIP_PROMPT = [
 function nextStepsClosingText({ fullAccess = false, wroteFiles = false } = {}) {
   if (wroteFiles) {
     return fullAccess
-      ? "\n\n**Siguientes pasos sugeridos**\n1. **Recomendada:** verificar el cambio en preview/tests.\n2. Continuar con otra corrección relacionada.\n3. Pedir un análisis más amplio del módulo.\n\n¿Con cuál avanzamos?"
+      ? "\n\nCambios aplicados con Acceso completo."
       : "";
   }
   return fullAccess
-    ? "Análisis listo.\n\n**Siguientes pasos sugeridos**\n1. **Recomendada:** aplicar las correcciones concretas detectadas.\n2. Revisar solo un archivo/módulo concreto.\n3. Pedir más detalle de un hallazgo.\n\n¿Con cuál opción avanzamos? (puedes decir el número o describir la acción)."
+    ? "Acceso completo activo: las correcciones comprobables se aplican sin pedir PROCEDE."
     : "Se ha completado la lectura y análisis. Si quieres que aplique cambios en disco, escribe **procede** o elige la corrección concreta.";
 }
 

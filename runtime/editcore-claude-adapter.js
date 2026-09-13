@@ -410,6 +410,20 @@ class EditCoreClaudeAdapter {
       text = collapseDuplicateReportSections(buildGroundedAnalysisReport(grounded.evidence, input.projectRoot || "", { prompt: input.prompt || "", depthProfile: input.analysisDepth || null }));
     }
     this.analysisFinalizedText = text;
+    const fullAccess = input.permissionMode === "full"
+      || input.runProfile?.permissionFull === true
+      || input.orchestratorPlan?.permissionFull === true
+      || input.analysisDepth?.fullAccess === true
+      || input.analysisDepth?.skipAuthCloser === true;
+    if (fullAccess) {
+      text = String(text || "")
+        .replace(/\s*(Cuando autorices procedo[^.]*\.?)\s*/gi, "\n")
+        .replace(/\s*(Escribe\s+\*{0,2}procede\*{0,2}[^.]*\.?)\s*/gi, "\n")
+        .replace(/\s*(¿Procedo\??)\s*/gi, "\n")
+        .replace(/\n{3,}/g, "\n\n")
+        .trim();
+      this.analysisFinalizedText = text;
+    }
     return text;
   }
 
@@ -3753,14 +3767,14 @@ ${buildDepthReportGuide(input.analysisDepth || resolveAnalysisDepth(input.prompt
 1. EditCore YA precargo evidencia real. Usa esa evidencia; no inventes otra estructura.
 2. Si faltan datos: list_files → read_file de codigo listado.
 ${permissionFullNow
-    ? "3. Acceso completo activo: NO digas 'espera PROCEDE' ni 'Cuando autorices'. Tras el informe ofrece opciones + **Recomendada**."
+    ? "3. Acceso completo activo: NO digas 'espera PROCEDE' ni 'Cuando autorices'. Aplica correcciones con tools YA."
     : "3. PROHIBIDO: run_command lint/test/build global, write_file/replace_in_file de codigo (espera PROCEDE)."}
 4. PROHIBIDO decir que no tienes list_files/read_file/search_files. Nunca pidas pegar archivos.
 5. ROADMAP.md: NO lo uses como fuente de bugs; NO lo reescribas tu. EditCore lo actualiza mid-run y al cierre como indice (ahorro de tokens). PROHIBIDO cerrar el analisis solo citando ROADMAP.md.
 6. Usa CACHE de lecturas (no repitas). Cerebro OPCIONAL y max UNA vez; si brain_skill falla o ya hay ≥10 lecturas, IGNORALO y cierra el reporte YA.
 7. Cubre funcionalidad, viabilidad, errores, soluciones y evidencia. Sin pegar bloques largos de codigo.
 ${permissionFullNow
-    ? "8. Cierre: 2-4 opciones de siguiente accion + marca **Recomendada** con motivo; pregunta con cual avanzamos (sin exigir la palabra PROCEDE)."
+    ? "8. Cierre: aplica correcciones con tools; NO pidas PROCEDE ni listes opciones para autorizar."
     : "8. Ultima linea: Cuando autorices procedo con las correcciones (omitela si el usuario dijo que no pidas PROCEDE)."}
 9. Si el usuario dijo CONTINUA tras un corte por tiempo: NO reinicies el path. Reutiliza evidencia y cierra el REPORTE FINAL.` : `
 
@@ -3769,7 +3783,7 @@ ${permissionFullNow ? `CONTRATO ACCESO TOTAL (permissionFullNow=${permissionFull
 1. El usuario autorizo operar en su PC dentro del proyecto/rutas indicadas.
 2. Usa tools reales YA. PROHIBIDO pedir PowerShell/cmd ni decir que no tienes acceso.
 3. PROHIBIDO preguntar '¿Procedo?', 'Escribe procede' o '¿Deseas que proceda?' ANTES o DURANTE la tarea pedida.
-4. Lee → escribe → verifica. Al FINAL (solo cuando termines): ofrece 2-3 opciones siguientes + **Recomendada** con motivo breve.
+4. Lee → escribe → verifica. Al FINAL: resume evidencia de mutacion. PROHIBIDO pedir PROCEDE u opciones de autorizacion.
 5. Cierra con evidencia de mutacion.` : "Permisos segun el modo del chat."}
 1. ORDEN OBLIGATORIO: leer archivo objetivo → replace_in_file/write_file → verificar.
 2. Si el usuario dijo procede/continua, NO re-analices ni inventes un plan nuevo: corrige con herramientas.
