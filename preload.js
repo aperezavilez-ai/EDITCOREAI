@@ -3,7 +3,6 @@ const { contextBridge, ipcRenderer } = require("electron");
 contextBridge.exposeInMainWorld("editcoreChat", {
   chat: async (input) => {
     const result = await ipcRenderer.invoke("editcore:chat", input);
-    // Let queued stream chunks reach the renderer before the request resolves.
     await new Promise((resolve) => setTimeout(resolve, 0));
     return result;
   },
@@ -97,7 +96,7 @@ contextBridge.exposeInMainWorld("editcoreSession", {
   loadProjectChats: (input = {}) => ipcRenderer.invoke("project:chats-load", input),
   onPleaseFlush: (callback) => {
     const listener = () => {
-      try { callback?.(); } catch { /* ignore */ }
+      try { callback?.(); } catch {}
     };
     ipcRenderer.on("session:please-flush", listener);
     return () => ipcRenderer.removeListener("session:please-flush", listener);
@@ -323,4 +322,10 @@ contextBridge.exposeInMainWorld("editcoreInspector", {
     ipcRenderer.on("inspector:progress", listener);
     return () => ipcRenderer.removeListener("inspector:progress", listener);
   },
+});
+
+contextBridge.exposeInMainWorld("editcorePatch", {
+  apply: (filePath, diffText, opts) => ipcRenderer.invoke("patch:apply", filePath, diffText, opts),
+  rollback: (filePath, backupPath) => ipcRenderer.invoke("patch:rollback", filePath, backupPath),
+  listBackups: (filePath) => ipcRenderer.invoke("patch:list-backups", filePath),
 });
