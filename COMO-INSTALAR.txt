@@ -1,20 +1,15 @@
-EDITCOREAI — cómo abrir / instalar (v2.8.1)
-==========================================
+EDITCOREAI — cómo abrir (v2.8.1)
+================================
 
-El empaquetado vive DENTRO de esta carpeta del proyecto:
+1) App del proyecto (carpeta raíz) — CORRECTO:
+   D:\PROGRAMAS IA\EDITCOREAI\EDITCOREAI.exe
+   Abre este código fuente con Electron (no usa release).
 
-  D:\PROGRAMAS IA\EDITCOREAI\release-EDITCOREAI\
+2) Instalador empaquetado:
+   D:\PROGRAMAS IA\EDITCOREAI\release\EDITCOREAI-Setup.exe
+   (solo ese archivo dentro de release\)
 
-Opciones:
-
-1) Portable
-   - Abrir-EDITCOREAI-PORTABLE.bat
-   - O: release-EDITCOREAI\EDITCOREAI-portable\EDITCOREAI.exe
-
-2) Instalador
-   - release-EDITCOREAI\EDITCOREAI-Setup.exe
-
-3) Desarrollo (código + Electron)
-   - Abrir-EDITCOREAI.bat
+3) Desarrollo alternativo:
+   Abrir-EDITCOREAI.bat
 
 Producto: EDITCOREAI (no EditCore AI).

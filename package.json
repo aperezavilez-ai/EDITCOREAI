@@ -57,7 +57,7 @@
       "artifactName": "EDITCOREAI-Setup.${ext}"
     },
     "directories": {
-      "output": "release-EDITCOREAI"
+      "output": "release"
     },
     "files": [
       "**/*",

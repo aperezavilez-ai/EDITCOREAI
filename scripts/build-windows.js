@@ -6,14 +6,11 @@ const { spawnSync } = require("node:child_process");
 const asar = require("@electron/asar");
 
 const appRoot = path.resolve(__dirname, "..");
-// Recursos compartidos siguen en el padre (rtk / ui-overlay).
 const workspaceRoot = path.resolve(appRoot, "..");
-// El release pertenece DENTRO del proyecto EDITCOREAI.
-const releaseDir = path.join(appRoot, "release-EDITCOREAI");
-const expectedReleaseDir = path.join(appRoot, "release-EDITCOREAI");
+const releaseDir = path.join(appRoot, "release");
+const expectedReleaseDir = path.join(appRoot, "release");
 const installerName = "EDITCOREAI-Setup.exe";
 const bundledRtk = path.resolve(workspaceRoot, "rtk", "rtk.exe");
-const portableDir = path.join(releaseDir, "EDITCOREAI-portable");
 
 if (releaseDir !== expectedReleaseDir || path.dirname(releaseDir) !== appRoot) {
   throw new Error(`Ruta de release insegura: ${releaseDir}`);
@@ -50,7 +47,7 @@ const appVersion = String(pkg.version || "").trim();
 const unpackedDir = path.join(releaseDir, "win-unpacked");
 const unpackedExe = path.join(unpackedDir, "EDITCOREAI.exe");
 if (!fs.existsSync(unpackedExe)) {
-  throw new Error(`No se genero la app portable en ${unpackedDir}.`);
+  throw new Error(`No se genero la app en ${unpackedDir}.`);
 }
 
 const archivePath = path.join(unpackedDir, "resources", "app.asar");
@@ -68,6 +65,7 @@ if (!fs.existsSync(uiOverlayPacked)) {
 if (!fs.existsSync(uiOverlayPacked) && !fs.existsSync(path.join(unpackedDir, "resources", "ui-overlay", "index.html"))) {
   throw new Error("El empaquetado no incluye resources/ui-overlay/index.html.");
 }
+
 const mismatches = [];
 for (const archiveEntry of asar.listPackage(archivePath)) {
   const relative = archiveEntry.replace(/^[/\\]+/, "").replace(/\\/g, "/");
@@ -93,65 +91,60 @@ try {
   spawnSync("taskkill", ["/F", "/IM", "electron.exe"], { stdio: "ignore" });
 } catch { /* ignore */ }
 
-// Portable limpio (no volcar DLLs a D:\ ni a PROGRAMAS IA).
-fs.mkdirSync(portableDir, { recursive: true });
-for (const entry of fs.readdirSync(unpackedDir, { withFileTypes: true })) {
-  const destName = entry.name.toLowerCase() === "electron.exe" ? "EDITCOREAI.exe" : entry.name;
-  const src = path.join(unpackedDir, entry.name);
-  const dest = path.join(portableDir, destName);
-  fs.cpSync(src, dest, { recursive: true, force: true });
-}
-try {
-  const orphanPortable = path.join(portableDir, "electron.exe");
-  if (fs.existsSync(orphanPortable)) fs.unlinkSync(orphanPortable);
-} catch { /* ignore */ }
-
-// Copia del EXE portable junto al proyecto fuente NO sirve sola (faltan DLLs).
-// Generar acceso rápido vía BAT al portable completo.
-const projectLauncher = path.join(appRoot, "Abrir-EDITCOREAI-PORTABLE.bat");
-try {
-  const portableExe = path.join(portableDir, "EDITCOREAI.exe");
-  fs.writeFileSync(
-    projectLauncher,
-    [
-      "@echo off",
-      "setlocal",
-      `cd /d "${portableDir}"`,
-      "start \"\" \"EDITCOREAI.exe\"",
-      "endlocal",
-      "",
-    ].join("\r\n"),
-    "utf8",
-  );
-  // Evitar EXE huérfano en la raíz del repo (rompe al hacer doble clic).
-  const orphanProjectExe = path.join(appRoot, "EDITCOREAI.exe");
-  if (fs.existsSync(orphanProjectExe)) {
-    try { fs.unlinkSync(orphanProjectExe); } catch { /* ignore */ }
-  }
-  console.log(`Launcher: ${projectLauncher}`);
-  console.log(`Portable EXE: ${portableExe}`);
-} catch (error) {
-  console.warn(`[build-windows] No se pudo crear launcher: ${error.message}`);
-}
-
+// Actualizar instalacion LocalAppData si existe (antes de borrar win-unpacked).
 const installDir = path.join(process.env.LOCALAPPDATA || "", "Programs", "EDITCOREAI");
-if (fs.existsSync(installDir)) {
-  for (const entry of fs.readdirSync(portableDir, { withFileTypes: true })) {
-    const src = path.join(portableDir, entry.name);
-    const dest = path.join(installDir, entry.name);
+if (fs.existsSync(installDir) && fs.existsSync(unpackedDir)) {
+  for (const entry of fs.readdirSync(unpackedDir, { withFileTypes: true })) {
+    const destName = entry.name.toLowerCase() === "electron.exe" ? "EDITCOREAI.exe" : entry.name;
+    const src = path.join(unpackedDir, entry.name);
+    const dest = path.join(installDir, destName);
     try {
       fs.cpSync(src, dest, { recursive: true, force: true });
     } catch (error) {
       console.warn(`[build-windows] No se pudo actualizar instalacion ${dest}: ${error.message}`);
     }
   }
-  try {
-    const orphanInstallExe = path.join(installDir, "electron.exe");
-    if (fs.existsSync(orphanInstallExe)) fs.unlinkSync(orphanInstallExe);
-  } catch { /* ignore */ }
 }
 
-console.log(`Release limpio: ${installerPath}`);
+// release/: SOLO el Setup.exe (sin carpetas/duplicados/yml/blockmap).
+const keepName = installerName.toLowerCase();
+for (const entry of fs.readdirSync(releaseDir, { withFileTypes: true })) {
+  if (entry.name.toLowerCase() === keepName) continue;
+  const target = path.join(releaseDir, entry.name);
+  try {
+    fs.rmSync(target, { recursive: true, force: true });
+  } catch (error) {
+    console.warn(`[build-windows] No se pudo eliminar ${target}: ${error.message}`);
+  }
+}
+
+const leftover = fs.readdirSync(releaseDir);
+if (leftover.length !== 1 || leftover[0] !== installerName) {
+  throw new Error(`Release no limpio. Contenido: ${leftover.join(", ")}`);
+}
+
+// BAT solo para el Setup en release\ (no sustituye el EXE de la raíz).
+fs.writeFileSync(
+  path.join(appRoot, "Abrir-EDITCOREAI-PORTABLE.bat"),
+  [
+    "@echo off",
+    "setlocal",
+    'start "" "%~dp0release\\EDITCOREAI-Setup.exe"',
+    "endlocal",
+    "",
+  ].join("\r\n"),
+  "utf8",
+);
+
+// EDITCOREAI.exe en la RAÍZ = launcher del proyecto raíz (Electron), NUNCA release.
+const rebuildRoot = spawnSync(process.execPath, [path.join(__dirname, "rebuild-root-exe.js")], {
+  cwd: appRoot,
+  stdio: "inherit",
+  shell: false,
+});
+if (rebuildRoot.status !== 0) {
+  console.warn("[build-windows] No se pudo recompilar EDITCOREAI.exe de la raíz");
+}
+
+console.log(`Release limpio (solo Setup): ${installerPath}`);
 console.log(`Version empaquetada: ${appVersion}`);
-console.log(`Portable: ${path.join(portableDir, "EDITCOREAI.exe")}`);
-console.log(`Launcher: ${path.join(appRoot, "Abrir-EDITCOREAI-PORTABLE.bat")}`);
