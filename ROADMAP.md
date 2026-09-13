@@ -1,10 +1,10 @@
-# EDITCOREAI — Roadmap & Arquitectura (v2.8.0)
+# EDITCOREAI — Roadmap & Arquitectura (v2.8.1)
 
 EDITCOREAI es la plataforma desktop de pair-programming y agentic coding: orquesta subagentes, ejecuta en disco con evidencia y prioriza co-creación (inspecciona el proyecto y dice qué falta, no pide datos que ya estén en el repo).
 
 ---
 
-## Hitos completados — estado actual (v2.8.0)
+## Hitos completados — estado actual (v2.8.1)
 
 ### 0. Continuidad del chat (v2.6.6)
 - [x] `procede` / `continua` reabren tareas `COMPLETED`/`FAILED`/`CANCELLED`.
@@ -46,16 +46,22 @@ EDITCOREAI es la plataforma desktop de pair-programming y agentic coding: orques
 - [x] Identidad de producto **EDITCOREAI** (sin espacio); sin mezclar con otras instalaciones legacy.
 - [x] Agent Core v0.2.15 + `agent-core/src/classify.js`.
 
-### 7. Estabilidad + Auto por proveedor (v2.8.0) — NUEVO
+### 7. Estabilidad + Auto por proveedor (v2.8.0)
 - [x] Preview sin spam GPU (`--disable-gpu` retirado); icono `assets/logo.ico` restaurado.
 - [x] Conexiones: Supabase GafCore muestra URL del **proyecto abierto** (no hereda `/taxidriv`).
 - [x] Auto · ME AI y Auto · APICredits (scope por proveedor); ancla perfil/API con tools (no solo-lectura).
 - [x] Acceso completo: al cerrar análisis/ejecución ofrece opciones + **Recomendada** (sin puerta PROCEDE a mitad).
 - [x] Empaquetado desde esta carpeta EDITCOREAI → `../release-EDITCOREAI` (portable + Setup).
 
+### 8. Hotfix arranque TaskQueue (v2.8.1) — NUEVO
+- [x] Crash `TaskQueue is not a constructor`: el kernel usa el singleton `require("./task-queue")`, no `new TaskQueue()`.
+- [x] `task-queue.js`: shutdown/clear/getStats + export estable `module.exports` + `.TaskQueue`.
+- [x] Pack Windows: excluye `.editcore/**`; salida en `D:\PROGRAMAS IA\release-EDITCOREAI\` (Setup + portable).
+- [x] Abrir siempre el portable completo (`EDITCOREAI-portable\EDITCOREAI.exe`), no un EXE suelto sin DLLs.
+
 ---
 
-## Próximos hitos (v2.8.1+)
+## Próximos hitos (v2.8.2+)
 
 ### 1. Scope-drift watchdog
 - [ ] Rechazar expansiones no pedidas fuera del contrato de la tarea.

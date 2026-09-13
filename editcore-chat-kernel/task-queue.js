@@ -21,6 +21,7 @@ class TaskQueue extends EventEmitter {
     this.meta = new Map();
     this.pending = [];
     this._seq = 0;
+    this.isShuttingDown = false;
   }
 
   /**
@@ -30,6 +31,10 @@ class TaskQueue extends EventEmitter {
    * @param {{ onProgress?: Function }} [options]
    */
   runInBackground(taskType, taskData = {}, options = {}) {
+    if (this.isShuttingDown) {
+      throw new Error("Queue is shutdown and cannot accept new tasks");
+    }
+
     this._seq += 1;
     const taskId = `task_${Date.now()}_${this._seq}`;
     const job = {
@@ -63,6 +68,7 @@ class TaskQueue extends EventEmitter {
   }
 
   _pump() {
+    if (this.isShuttingDown) return;
     while (this.workers.size < this.concurrency && this.pending.length) {
       this._spawn(this.pending.shift());
     }
@@ -146,7 +152,6 @@ class TaskQueue extends EventEmitter {
       this._pump();
     });
 
-    // El worker escucha parentPort: enviamos la tarea por mensaje.
     worker.postMessage({
       type: "run",
       taskId,
@@ -195,6 +200,25 @@ class TaskQueue extends EventEmitter {
     ];
     for (const id of ids) this.cancel(id);
     return { ok: true, cancelled: ids.length };
+  }
+
+  clear() {
+    this.pending = [];
+    return { ok: true };
+  }
+
+  shutdown() {
+    this.isShuttingDown = true;
+    this.cancelAll();
+  }
+
+  getStats() {
+    return {
+      total: this.pending.length + this.workers.size,
+      pending: this.pending.length,
+      workers: this.workers.size,
+      running: this.workers.size,
+    };
   }
 
   list() {
