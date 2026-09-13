@@ -6,6 +6,7 @@ out/
 .release/
 release/
 release-275/
+release-EDITCOREAI/
 *.asar
 *.asar.unpacked/
 # Logs & caches

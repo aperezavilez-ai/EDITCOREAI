@@ -51,7 +51,7 @@ EDITCOREAI es la plataforma desktop de pair-programming y agentic coding: orques
 - [x] Conexiones: Supabase GafCore muestra URL del **proyecto abierto** (no hereda `/taxidriv`).
 - [x] Auto · ME AI y Auto · APICredits (scope por proveedor); ancla perfil/API con tools (no solo-lectura).
 - [x] Acceso completo: al cerrar análisis/ejecución ofrece opciones + **Recomendada** (sin puerta PROCEDE a mitad).
-- [x] Empaquetado desde esta carpeta EDITCOREAI → `../release-275` (portable + Setup).
+- [x] Empaquetado desde esta carpeta EDITCOREAI → `../release-EDITCOREAI` (portable + Setup).
 
 ---
 
