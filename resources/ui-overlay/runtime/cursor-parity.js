@@ -21,7 +21,7 @@
     "run_parallel_explore", "run_subagent",
     "fetch_url", "github_repo_info", "github_list_files", "github_read_file", "github_search_repos",
     "brain_search", "brain_skill", "brain_tools", "brain_install_repo",
-    "generate_image", "propose_diff", "apply_diff", "deploy_one_click",
+    "generate_image", "generate_video", "add_erp_module", "propose_diff", "apply_diff", "deploy_one_click",
     "publish_project", "connect_project", "assess_project_connections",
     "provision_project", "onboard_project", "project_health",
     "sync_vercel_env", "supabase_manage", "ssh_deploy", "create_supabase_project",

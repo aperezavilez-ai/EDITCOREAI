@@ -60,6 +60,11 @@
     "- Código modular, tipado cuando aplique, completo; PROHIBIDO placeholders tipo \"// resto del código aquí\".",
     "- Prioriza diffs precisos o bloques aplicables al repo; no vuelques archivos enteros sin necesidad.",
     "- En bloques de código respeta el idioma del lenguaje (inglés de APIs/identificadores). Fuera del código, español correcto.",
+    "",
+    "6) WEB/PWA NUEVAS — MOTION Y ASSETS:",
+    "- Al crear o rediseñar web/PWA: micro-interacciones, scroll suave/triggers y placeholders responsive de assets (public/assets/).",
+    "- Usa Framer Motion + utilidades Tailwind del template; respeta prefers-reduced-motion.",
+    "- generate_image / generate_video solo con config y pedido de assets; si no hay config, SVG/CSS/placeholder sin inventar URLs.",
   ].join("\n");
 
   const FILLER_OPENING = /^(?:¡?\s*)?(?:claro(?:\s+que\s+s[ií])?|por\s+supuesto|entendido|perfecto|excelente(?:\s+pregunta)?|aqu[ií]\s+tienes|con\s+gusto|de\s+acuerdo|ok(?:ay)?|vale|genial|absolutamente|sin\s+problema)\b[!.,:\s]*/i;

@@ -2823,7 +2823,7 @@ function agentWorkflowStatusText(workflow) {
     const error = String(workflow.error || "La ejecucion se interrumpio antes de terminar.").trim();
     return `La tarea quedo interrumpida, no se marco como completada.\n\nTarea conservada: ${task}\nProgreso verificado: ${checkpoints.length} accion(es), ${changedFiles.size} archivo(s) modificado(s).\nUltimo error: ${error}\n\nEscribe CONTINUA o PROCEDE para reanudar desde este punto.`;
   }
-  return `La tarea esta lista y espera tu autorizacion: ${task}\n\nEscribe **procede**, **autorizo** o **continua** para aplicar las correcciones.`;
+  return `La tarea esta lista. Con Acceso completo se aplican correcciones sin pedir PROCEDE; si el modo es paso a paso, escribe **procede**, **autorizo** o **continua**.\n\nTarea: ${task}`;
 }
 
 async function durableAgentWorkflowStatusText(project) {

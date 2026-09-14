@@ -83,6 +83,7 @@ test("greenfield-builder: scaffolds complete modern React + Vite + Tailwind proj
     assert.equal(pkg.name, "restopro");
     assert.ok(pkg.dependencies.react);
     assert.ok(pkg.dependencies["lucide-react"]);
+    assert.ok(pkg.dependencies["framer-motion"], "animated-pwa must preinstall framer-motion");
     assert.ok(pkg.devDependencies.tailwindcss);
     assert.ok(pkg.devDependencies.vite);
 
@@ -90,12 +91,27 @@ test("greenfield-builder: scaffolds complete modern React + Vite + Tailwind proj
     assert.ok(indexHtml.includes("RestoPro"));
     assert.ok(indexHtml.includes("viewport"));
     assert.ok(indexHtml.includes("/src/main.tsx"));
+    assert.ok(indexHtml.includes("manifest.webmanifest"));
+
+    assert.ok(fs.existsSync(path.join(tempDir, "public", "assets", ".gitkeep")));
+    assert.ok(fs.existsSync(path.join(tempDir, "public", "manifest.webmanifest")));
+    assert.ok(fs.existsSync(path.join(tempDir, "src", "components", "motion", "FadeIn.tsx")));
+    assert.ok(fs.existsSync(path.join(tempDir, "src", "hooks", "useSmoothAnchorScroll.ts")));
 
     const appTsx = fs.readFileSync(path.join(tempDir, "src", "App.tsx"), "utf8");
     assert.ok(appTsx.includes("<Navbar"));
     assert.ok(appTsx.includes("<Hero"));
     assert.ok(appTsx.includes("<Showcase"));
     assert.ok(appTsx.includes("<Footer"));
+    assert.ok(appTsx.includes("useSmoothAnchorScroll"));
+
+    const hero = fs.readFileSync(path.join(tempDir, "src", "components", "sections", "Hero.tsx"), "utf8");
+    assert.ok(hero.includes("framer-motion"));
+    assert.ok(hero.includes("FadeIn"));
+
+    const css = fs.readFileSync(path.join(tempDir, "src", "index.css"), "utf8");
+    assert.ok(css.includes("transition-soft"));
+    assert.ok(css.includes("asset-placeholder"));
   } finally {
     fs.rmSync(tempDir, { recursive: true, force: true });
   }

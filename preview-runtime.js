@@ -28,12 +28,25 @@ function hasPreviewScript(pkg) {
   return Boolean(pkg?.scripts?.dev || pkg?.scripts?.start);
 }
 
+/** Parse `npm --prefix "dir with spaces"` / `'dir'` / unquoted token. */
+function matchNpmPrefixTarget(script) {
+  const match = String(script || "").match(/--prefix\s+(?:"([^"]+)"|'([^']+)'|(\S+))/i);
+  return match ? String(match[1] || match[2] || match[3] || "").trim() : "";
+}
+
+/** Root scripts that only re-run into a nested package are not the app runtime. */
+function isPrefixOnlyDevScript(script) {
+  const text = String(script || "").trim();
+  if (!text || !/--prefix\b/i.test(text)) return false;
+  return /^(?:npm(?:\.cmd)?|pnpm|yarn|bun)\b/i.test(text);
+}
+
 function prefixedWorkspaceRoots(root, pkg) {
   const candidates = [];
   for (const script of Object.values(pkg?.scripts || {})) {
-    const match = String(script).match(/--prefix\s+["']?([^\s"']+)/i);
-    if (!match) continue;
-    const candidate = path.resolve(root, match[1]);
+    const target = matchNpmPrefixTarget(script);
+    if (!target) continue;
+    const candidate = path.resolve(root, target);
     if (!candidates.includes(candidate)) candidates.push(candidate);
   }
   return candidates;
@@ -41,9 +54,9 @@ function prefixedWorkspaceRoots(root, pkg) {
 
 function delegatedRuntimeRoot(root, pkg) {
   const activeScript = String(pkg?.scripts?.dev || pkg?.scripts?.start || "");
-  const match = activeScript.match(/--prefix\s+["']?([^\s"']+)/i);
-  if (!match) return "";
-  const candidate = path.resolve(root, match[1]);
+  const target = matchNpmPrefixTarget(activeScript);
+  if (!target) return "";
+  const candidate = path.resolve(root, target);
   return hasPreviewScript(readPackage(candidate)) ? candidate : "";
 }
 
@@ -81,7 +94,10 @@ function findRunnableProjectRoot(root) {
   const rootPackage = readPackage(safeRoot);
   const delegated = delegatedRuntimeRoot(safeRoot, rootPackage);
   if (delegated) return delegated;
-  if (hasPreviewScript(rootPackage)) return safeRoot;
+  const activeScript = String(rootPackage?.scripts?.dev || rootPackage?.scripts?.start || "");
+  // Do not treat a pure `--prefix` wrapper as the runnable app: that stalls preview
+  // on the wrong cwd (e.g. `"FUXION SERVICE"` cut to `FUXION`) for minutes.
+  if (hasPreviewScript(rootPackage) && !isPrefixOnlyDevScript(activeScript)) return safeRoot;
   for (const candidate of [...prefixedWorkspaceRoots(safeRoot, rootPackage), ...declaredWorkspaceRoots(safeRoot, rootPackage)]) {
     if (hasPreviewScript(readPackage(candidate))) return candidate;
   }

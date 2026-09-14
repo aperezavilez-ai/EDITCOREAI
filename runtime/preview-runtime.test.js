@@ -37,6 +37,25 @@ test("usa una aplicacion anidada cuando el script de desarrollo delega en ella",
   assert.equal(findRunnableProjectRoot(root), app);
 });
 
+test("resuelve --prefix con espacios entre comillas (FUXION SERVICE)", (t) => {
+  const root = temporaryRoot(t);
+  const app = path.join(root, "FUXION SERVICE");
+  fs.mkdirSync(app);
+  fs.writeFileSync(path.join(root, "package.json"), JSON.stringify({
+    scripts: { dev: "npm run dev --prefix \"FUXION SERVICE\"" },
+  }));
+  fs.writeFileSync(path.join(app, "package.json"), JSON.stringify({ scripts: { dev: "vite dev" } }));
+  assert.equal(findRunnableProjectRoot(root), app);
+});
+
+test("no usa la raiz wrapper si --prefix apunta a una carpeta inexistente", (t) => {
+  const root = temporaryRoot(t);
+  fs.writeFileSync(path.join(root, "package.json"), JSON.stringify({
+    scripts: { dev: "npm run dev --prefix \"Missing App\"" },
+  }));
+  assert.equal(findRunnableProjectRoot(root), "");
+});
+
 test("hereda variables publicas sin exponer secretos del proyecto", (t) => {
   const root = temporaryRoot(t);
   const app = path.join(root, "frontend");

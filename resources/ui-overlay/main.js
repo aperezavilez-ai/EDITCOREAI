@@ -1784,11 +1784,11 @@ function formatProjectBootstrapListing(rootPath, options = {}) {
     const formatEntry = (entry) => `${entry.path}${entry.kind === "directory" ? "/" : ""}`;
     let sessionBlock = "";
     try {
-      const { formatSessionStateForPrompt, ensureSessionState } = require("./runtime/session-state");
+      const { formatSessionMemoryOrFallback, ensureSessionState } = require("./runtime/session");
       ensureSessionState(rootPath, {
         task: String(options.task || "").slice(0, 220) || undefined,
       });
-      sessionBlock = formatSessionStateForPrompt(rootPath);
+      sessionBlock = formatSessionMemoryOrFallback(rootPath);
     } catch {
       sessionBlock = "";
     }
@@ -4627,9 +4627,20 @@ const WORKSPACE_SWITCH_TIMEOUT_MS = 5 * 60 * 1000;
 ipcMain.handle("workspace:close-current", async (event) => {
   try {
     const result = await requestProjectUiAction(event.sender, { action: "close", cancelAgent: false });
+    const previousRoot = String(result?.projectRoot || "").trim();
+    if (previousRoot) {
+      try {
+        const { rememberWorkspaceEvent } = require("./runtime/session");
+        rememberWorkspaceEvent(previousRoot, {
+          type: "workspace_close",
+          message: "Workspace cerrado",
+          nextAction: "cerrado",
+        });
+      } catch { /* ignore */ }
+    }
     return {
       ok: result?.ok === true,
-      previousRoot: result?.projectRoot || "",
+      previousRoot,
       label: result?.label || "",
       error: result?.error || "",
     };
@@ -4644,6 +4655,14 @@ ipcMain.handle("workspace:open-folder", async (event, targetPath) => {
       { path: String(targetPath || "").trim() },
       { crossProjectAccess: true },
     );
+    try {
+      const { ensureSessionState, rememberWorkspaceEvent } = require("./runtime/session");
+      ensureSessionState(target, { task: "workspace open", nextAction: "listo" });
+      rememberWorkspaceEvent(target, {
+        type: "workspace_open",
+        message: `Workspace abierto: ${path.basename(target)}`,
+      });
+    } catch { /* ignore */ }
     const result = await requestProjectUiAction(event.sender, {
       action: "open",
       path: target,
@@ -6347,14 +6366,21 @@ ipcMain.handle("agent:run", async (event, input = {}) => {
       defaultTimeoutMs: 60_000,
       authorize: async (tool, toolInput) => {
         // Candado duro: diagnostico / NO MODIFICAR = cero mutaciones (ni ROADMAP ni .md).
-        // EXCEPCION: solo planAuthorized o PROCEDE/ADELANTE/AUTORIZO (NO "continua":
-        // continua reanuda analisis/reporte, no autoriza lint/write).
+        // Acceso completo: aplica parches sin pedir PROCEDE (salvo NO MODIFICAR explícito).
         const promptText = String(input.prompt || input.originalGoal || task || "");
-        const procedeInPrompt = /^\s*(?:procede|adelante|autorizo)\b/i.test(promptText);
-        const authorizedToMutate = input.planAuthorized === true || procedeInPrompt;
+        const procedeInPrompt = /^\s*(?:procede|adelante|autorizo|continua|continúa)\b/i.test(promptText)
+          || /\b(?:procede|adelante|autorizo)\b/i.test(promptText);
+        const livePermission = resolveLivePermission(input.permissionMode, event.sender.id);
+        const fullAccess = livePermission === "full" || input.fullAccess === true;
+        const explicitNoWrite = /\bNO\s+MODIFIQUES?\b|\bNO\s+MODIFICAR\b|\bNO\s+CREES?\s+ARCHIVOS\b|\bSOLO\s+(?:LEE|LECTURA|ANALIZA|AN[AÁ]LISIS)\b|\bMODO:\s*DIAGN/i.test(promptText);
+        const fixOrApplyIntent = /\b(?:corrige|arreglar?|fix|aplica|implementa|parchea|refactor|reescribe|repara|audita(?:r)?(?:\s+y\s+(?:corrige|arregla|repara))?|patch)\b/i.test(promptText);
+        const authorizedToMutate = input.planAuthorized === true
+          || procedeInPrompt
+          || (fullAccess && !explicitNoWrite)
+          || (canWrite && fixOrApplyIntent && !explicitNoWrite && !analysisMode);
         const readonlyDiagnostic = !authorizedToMutate && (
           analysisMode
-          || /\bNO\s+MODIFIQUES?\b|\bNO\s+MODIFICAR\b|\bNO\s+CREES?\s+ARCHIVOS\b|\bMODO:\s*DIAGN/i.test(promptText)
+          || explicitNoWrite
         );
         if (readonlyDiagnostic && tool.write) return false;
         if (analysisMode && tool.write && tool.name !== "run_command" && !authorizedToMutate) {
@@ -6374,7 +6400,6 @@ ipcMain.handle("agent:run", async (event, input = {}) => {
           && tool.name !== "git_push"
           && tool.name !== "onboard_project") return true;
         if (!canWrite && tool.write) return false;
-        const livePermission = resolveLivePermission(input.permissionMode, event.sender.id);
         const forceConfirm = ["deploy_one_click", "publish_project", "ssh_deploy", "git_push", "onboard_project"].includes(tool.name)
           || (tool.name === "switch_project" && (toolInput?.publishFirst === true || toolInput?.autoPublish === true));
         if (forceConfirm || livePermission === "step") {

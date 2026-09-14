@@ -57,9 +57,11 @@ function nextStepsClosingText({ fullAccess = false, wroteFiles = false } = {}) {
       ? "\n\nCambios aplicados con Acceso completo."
       : "";
   }
-  return fullAccess
-    ? "Acceso completo activo: las correcciones comprobables se aplican sin pedir PROCEDE."
-    : "Se ha completado la lectura y análisis. Si quieres que aplique cambios en disco, escribe **procede** o elige la corrección concreta.";
+  // Acceso completo / ejecución directa: NUNCA pedir PROCEDE.
+  if (fullAccess) {
+    return "\n\nAcceso completo activo: las correcciones comprobables se aplican sin pedir PROCEDE.";
+  }
+  return "";
 }
 
 function ensureCognitiveMap(projectRoot) {

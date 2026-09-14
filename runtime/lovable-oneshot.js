@@ -56,7 +56,8 @@ function buildLovableOneShotBlock({ permissionFull = false, prompt = "" } = {}) 
     "  · sin errores graves de consola del preview",
     "- Tipografia expresiva (no Inter/Roboto/Arial/system). Hero full-bleed si es landing.",
     "- Una composicion clara en el primer viewport; evita dashboard generico salvo que el usuario lo pida.",
-    "- generate_image solo si el usuario pide imagenes/assets y hay config local; si no, usa CSS/SVG.",
+    "- generate_image / generate_video solo si el usuario pide imagenes/video/assets y hay config local; si no, usa CSS/SVG/placeholders en public/assets/.",
+    "- En scaffolds web/PWA: micro-interacciones, scroll suave y Framer Motion / Tailwind transitions del template.",
     "- run_parallel_explore / run_subagent implementer (max 5 patches) si acelera; sin APIs de pago.",
     permissionFull
       ? "- Acceso completo: puedes usar MCP bajo demanda y comandos reales."

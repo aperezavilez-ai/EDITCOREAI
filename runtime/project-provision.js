@@ -46,15 +46,28 @@ async function provisionProject(projectRoot, connections = {}, {
   let vercelEnv = { ok: true, skipped: true };
   if (syncVercel) {
     vercelEnv = await syncEnvToVercel(root, connections, {
-      projectId: connected.steps?.find((item) => item.step === "vercel_project")?.projectId || "",
+      projectId: connected.steps?.find((item) => item.step === "vercel_project")?.projectId
+        || connections.vercelProjectId
+        || "",
       projectName: repoName || path.basename(root),
     });
     steps.push({ step: "vercel_env_sync", ...vercelEnv });
   }
 
+  // Enriquecer connections con projectId resuelto ANTES de publish/deploy.
+  const publishConnections = {
+    ...connections,
+    vercelProjectId: String(
+      vercelEnv.projectId
+      || connected.steps?.find((item) => item.step === "vercel_project")?.projectId
+      || connections.vercelProjectId
+      || "",
+    ).trim(),
+  };
+
   let supabase = { ok: true, skipped: true };
   if (manageSupabase) {
-    supabase = await manageSupabaseProject(root, connections, { ensureBucket: true });
+    supabase = await manageSupabaseProject(root, publishConnections, { ensureBucket: true });
     steps.push({ step: "supabase_manage", ok: supabase.ok, message: supabase.message });
   }
 
@@ -71,7 +84,7 @@ async function provisionProject(projectRoot, connections = {}, {
   if (firstDeploy) {
     publish = await publishProject(root, {
       mode: "project",
-      connections,
+      connections: publishConnections,
       deploy: true,
       supabasePush: true,
       commitMessage: commitMessage || `chore: initial provision ${path.basename(root)}`,
@@ -91,8 +104,8 @@ async function provisionProject(projectRoot, connections = {}, {
   }
 
   let ssh = { ok: true, skipped: true };
-  if (sshAfterPublish && connectionSummary(connections).server.configured) {
-    ssh = await sshDeploy(root, connections);
+  if (sshAfterPublish && connectionSummary(publishConnections).server.configured) {
+    ssh = await sshDeploy(root, publishConnections);
     steps.push({ step: "ssh_deploy", ...ssh });
   }
 
@@ -107,8 +120,12 @@ async function provisionProject(projectRoot, connections = {}, {
 
   writeProjectLinkManifest(root, {
     github: connected.assessment?.remoteUrl ? { remoteUrl: connected.assessment.remoteUrl } : null,
-    vercel: vercelEnv.projectId ? { projectId: vercelEnv.projectId } : null,
-    supabase: connections.selfSupabaseUrl ? { url: String(connections.selfSupabaseUrl).replace(/\/+$/, "") } : null,
+    vercel: publishConnections.vercelProjectId
+      ? { projectId: publishConnections.vercelProjectId }
+      : (vercelEnv.projectId ? { projectId: vercelEnv.projectId } : null),
+    supabase: publishConnections.selfSupabaseUrl
+      ? { url: String(publishConnections.selfSupabaseUrl).replace(/\/+$/, "") }
+      : null,
     notes: [
       `Provisionado: ${new Date().toISOString()}`,
       `Checklist: ${JSON.stringify(checklist)}`,

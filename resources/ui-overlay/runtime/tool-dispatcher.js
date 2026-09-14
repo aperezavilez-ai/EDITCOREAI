@@ -46,6 +46,13 @@ const TOOL_ALIASES = Object.freeze({
   change_project: "switch_project",
   switch_workspace: "switch_project",
   open_and_close_project: "switch_project",
+  gen_image: "generate_image",
+  image_gen: "generate_image",
+  create_image: "generate_image",
+  flux_image: "generate_image",
+  gen_video: "generate_video",
+  video_gen: "generate_video",
+  create_video: "generate_video",
 });
 
 function normalizeToolInput(canonicalName, input) {
@@ -69,7 +76,18 @@ function normalizeToolInput(canonicalName, input) {
     if (value.oldText === undefined) value.oldText = value.old_text ?? value.search ?? value.before ?? "";
     if (value.newText === undefined) value.newText = value.new_text ?? value.replacement ?? value.after ?? "";
   }
+  if (canonicalName === "generate_image" || canonicalName === "generate_video") {
+    if (!value.prompt) value.prompt = value.text || value.description || value.caption || "";
+    if (value.outputDir === undefined) value.outputDir = value.dir || value.output_dir || value.folder || "public/assets";
+    if (value.aspectRatio === undefined) value.aspectRatio = value.aspect_ratio || value.ratio || "";
+    if (value.filename === undefined) value.filename = value.fileName || value.file_name || value.name || "";
+  }
   return value;
+}
+
+function registerBuiltinMultimodalTools(dispatcher, options = {}) {
+  const { registerMultimodalAssetTools } = require("./image-gen");
+  return registerMultimodalAssetTools(dispatcher, options);
 }
 
 class ToolDispatcher {
@@ -118,4 +136,4 @@ class ToolDispatcher {
   }
 }
 
-module.exports = { ToolDispatcher };
+module.exports = { ToolDispatcher, TOOL_ALIASES, normalizeToolInput, registerBuiltinMultimodalTools };

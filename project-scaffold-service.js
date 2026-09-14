@@ -6,6 +6,7 @@ const path = require("node:path");
 const { spawn } = require("node:child_process");
 const { buildProjectTemplate, packageName } = require("./project-template");
 const { scaffoldGreenfieldApp } = require("./runtime/greenfield-builder");
+const { scaffoldEnterpriseErpBase } = require("./runtime/enterprise-erp");
 
 const PROFESSIONAL_RULES = `
 ## EDITCOREAI Professional Project Rules
@@ -16,7 +17,9 @@ const PROFESSIONAL_RULES = `
 - Every asynchronous view must implement loading, skeleton, empty, error, and success states.
 - Interfaces must work at 375px, 768px, 1280px, and 1440px without overlap or horizontal overflow.
 - Preserve keyboard navigation, visible focus, accessible labels, and reduced-motion preferences.
-- Use motion only when it clarifies state or hierarchy. Never delay a user action for decoration.
+- Always ship micro-interactions (hover/focus/press) plus smooth in-page scroll triggers on new web/PWA surfaces.
+- Use Framer Motion or Tailwind transition utilities already in the template; never block primary actions for decoration.
+- Responsive asset placeholders belong in \`public/assets/\` (aspect-ratio + fallback). Prefer generate_image / generate_video when configured.
 - Validate forms with schemas and show field-level errors.
 - Never display simulated progress, fabricated data, or a successful state before the real operation succeeds.
 - Run the available lint, test, typecheck, and build commands after material changes.
@@ -58,6 +61,12 @@ const TEMPLATE_CATALOG = Object.freeze([
     description: "React, Vite, TypeScript, Tailwind CSS, componentes UI accesibles y assets temáticos.",
     source: "builtin", install: true, verifyScripts: ["build"], visualVerify: true,
     requirements: ["Node.js 20+", "npm"],
+  },
+  {
+    id: "enterprise-erp-base", name: "Enterprise ERP Base", group: "Profesional",
+    description: "ERP multi-tenant: RBAC, DataTable densa, shell multi-sucursal, Supabase/Gafcore client, schema-first.",
+    source: "builtin", install: true, verifyScripts: ["build"], visualVerify: false,
+    requirements: ["Node.js 20+", "npm", "Supabase o Gafcore"],
   },
   {
     id: "next-saas", name: "SaaS profesional Next.js", group: "Profesional",
@@ -353,6 +362,9 @@ class ProjectScaffoldService {
           prompt: input.description || input.prompt || input.name || "",
           appName: name,
         });
+      } else if (template.id === "enterprise-erp-base") {
+        progress(18, "files", "Generando enterprise ERP base (schema-first)");
+        scaffoldEnterpriseErpBase(projectRoot, { appName: name });
       } else if (template.source === "builtin") {
         progress(18, "files", "Creando estructura local");
         const built = buildProjectTemplate({ name, template: template.id });

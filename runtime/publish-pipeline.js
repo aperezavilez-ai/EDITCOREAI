@@ -306,7 +306,42 @@ async function publishProject(projectRoot, {
 
   if (deploy) {
     const { readVercelIds } = require("./deploy-one-click");
-    const ids = readVercelIds(root, connections);
+    let ids = readVercelIds(root, connections);
+    // Antes de deploy: asegurar projectId (crear/linkear) si hay token y aún no hay id.
+    if (!ids.projectId && String(connections.vercelToken || "").trim()) {
+      try {
+        const { ensureVercelProjectId } = require("./vercel-env-sync");
+        const ensured = await ensureVercelProjectId(connections, {
+          projectRoot: root,
+          projectId: connections.vercelProjectId || ids.projectId || "",
+          projectName: path.basename(root),
+          createIfMissing: true,
+        });
+        if (ensured?.projectId) {
+          ids = { ...ids, projectId: ensured.projectId, orgId: ensured.orgId || ids.orgId || "" };
+          steps.push({
+            step: "vercel_ensure_project",
+            ok: true,
+            projectId: ensured.projectId,
+            created: ensured.created === true,
+            message: ensured.message || "Vercel projectId listo",
+          });
+        } else {
+          steps.push({
+            step: "vercel_ensure_project",
+            ok: ensured?.ok !== false,
+            skipped: ensured?.skipped === true,
+            message: ensured?.message || "Sin projectId Vercel",
+          });
+        }
+      } catch (error) {
+        steps.push({
+          step: "vercel_ensure_project",
+          ok: false,
+          message: String(error?.message || error),
+        });
+      }
+    }
     const deployConnections = {
       ...connections,
       vercelProjectId: String(connections.vercelProjectId || ids.projectId || "").trim(),

@@ -9,7 +9,7 @@ const { listTools: mcpListTools, invokeTool: mcpInvokeTool } = require("./mcp-br
 const { unifiedSearch } = require("./unified-search");
 const { planDiagnostics, runDiagnostics } = require("./post-write-diagnostics");
 const { semanticSearch } = require("./semantic-index");
-const { generateImage } = require("./image-gen");
+const { registerBuiltinMultimodalTools } = require("./tool-dispatcher");
 const { runParallelExplore, runSubagent } = require("./subagent-runner");
 const { browserInteract } = require("./browser-interact");
 const { proposeDiff, applyDiff } = require("./diff-preview");
@@ -172,11 +172,24 @@ function registerAgentCapabilityTools(dispatcher, {
   });
 
   if (canWrite) {
+    registerBuiltinMultimodalTools(dispatcher, { rootPath, canWrite: true });
+
     dispatcher.register({
-      name: "generate_image",
+      name: "add_erp_module",
       write: true,
-      description: "Genera imagen via API OpenAI-compatible o Jaaz si hay config; sin config responde available:false.",
-      execute: async (toolInput = {}) => generateImage(rootPath, toolInput),
+      description: "Inyecta un modulo ERP (inventory|payroll|invoicing|crm) con migracion SQL primero y CRUD UI sin sobrescribir nav/conexiones core.",
+      schema: {
+        type: "object",
+        properties: {
+          module: { type: "string", enum: ["inventory", "payroll", "invoicing", "crm"] },
+          name: { type: "string" },
+        },
+        required: ["module"],
+      },
+      execute: async (toolInput = {}) => {
+        const { addErpModule } = require("./enterprise-erp");
+        return addErpModule(rootPath, toolInput.module || toolInput.name || "");
+      },
     });
 
     dispatcher.register({

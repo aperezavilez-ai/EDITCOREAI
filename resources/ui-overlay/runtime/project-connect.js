@@ -118,7 +118,15 @@ async function ensureGitRepo(projectRoot) {
   const init = await git(projectRoot, ["init"]);
   if (init.code !== 0) return { ok: false, message: init.stderr || "git init fallo" };
   await git(projectRoot, ["add", "-A"]);
-  await git(projectRoot, ["commit", "-m", "chore: initial commit from EDITCOREAI"]);
+  // -F evita pathspec en Windows (nunca -m con shell).
+  const msgFile = path.join(projectRoot, ".git", "EDITCOREAI_COMMIT_MSG.tmp");
+  try {
+    fs.mkdirSync(path.dirname(msgFile), { recursive: true });
+    fs.writeFileSync(msgFile, "chore: initial commit from EDITCOREAI\n", "utf8");
+    await git(projectRoot, ["commit", "-F", msgFile]);
+  } finally {
+    try { fs.unlinkSync(msgFile); } catch { /* ignore */ }
+  }
   return { ok: true, created: true, gitRoot: projectRoot };
 }
 

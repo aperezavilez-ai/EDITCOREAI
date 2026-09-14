@@ -1,6 +1,6 @@
 # EDITCOREAI — MANIFESTO DE AUTOCONOCIMIENTO
 
-Versión producto: **2.9.4**. Este archivo es la fuente de verdad que el agente debe leer (vía system prompt) para saber qué es EDITCOREAI, qué puede hacer y qué no debe re-escanear.
+Versión producto: **2.9.5**. Este archivo es la fuente de verdad que el agente debe leer (vía system prompt) para saber qué es EDITCOREAI, qué puede hacer y qué no debe re-escanear.
 
 ## Qué es
 IDE de escritorio Electron con agente embebido: chat, preview web, explorador, publicar (GitHub/Vercel/Supabase) y alimentación AI vía **GafCore Gateway**.
@@ -36,8 +36,12 @@ IDE de escritorio Electron con agente embebido: chat, preview web, explorador, p
 
 ## Herramientas del agente (selección)
 Disco: `list_files`, `read_file`, `search_files`, `write_file`, `replace_in_file` (lectura de hermanos OK; escritura fuera del activo requiere Acceso completo).
+Workspace: `open_project`, `close_project`, `switch_project`.
+Assets: `generate_image`, `generate_video` → `public/assets/`.
+ERP: `create_project template=enterprise-erp-base`, `add_erp_module` (inventory|payroll|invoicing|crm).
 Nube: `deploy_github`, `deploy_vercel`, `provision_supabase`, `provision_gafcore_ai`, `provision_fullstack_project`, `publish_project`, `onboard_project`, `fullstack_deploy`.
 Diag: `probe_endpoint`, `test_local_api`, `project_discovery`, `codebase_map`.
+Cerebro: `brain_skill`, `brain_search`, `brain_install_repo`; audit/heal vía `runtime/skill-registry.js`.
 
 ## Bridges / IPC relevantes
 - `secure-config:*` — bóveda

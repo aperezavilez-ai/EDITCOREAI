@@ -4120,7 +4120,9 @@ ${input.analysisMode ? (isCodeAudit ? `MODO ANALISIS ACTIVO:
         tool("replace_in_file", "Reemplaza oldText exacto en un archivo leido.", { path: { type: "string" }, oldText: { type: "string" }, newText: { type: "string" }, replaceAll: { type: "boolean" } }, ["path", "oldText", "newText"]),
         tool("service_write", "Modifica un servicio conectado.", { service: { type: "string" }, method: { type: "string" }, path: { type: "string" }, body: {} }, ["service"]),
         tool("create_project", "Crea un proyecto o estructura inicial.", { name: { type: "string" }, path: { type: "string" }, template: { type: "string" }, install: { type: "boolean" } }, ["name"]),
-        tool("generate_image", "Genera imagen via API OpenAI-compatible/Jaaz si hay config; sin config no falla el agente.", { prompt: { type: "string" }, size: { type: "string" } }, ["prompt"]),
+        tool("generate_image", "Genera imagen (OpenAI / Replicate Flux / Jaaz) y la guarda en public/assets/. Sin config: available:false.", { prompt: { type: "string" }, size: { type: "string" }, model: { type: "string" }, outputDir: { type: "string" } }, ["prompt"]),
+        tool("generate_video", "Genera video corto (Replicate / OpenAI-compatible) y lo guarda en public/assets/. Sin config: available:false.", { prompt: { type: "string" }, model: { type: "string" }, duration: { type: "number" }, outputDir: { type: "string" } }, ["prompt"]),
+        tool("add_erp_module", "Inyecta modulo ERP (inventory|payroll|invoicing|crm): migracion SQL primero, luego CRUD UI sin pisar nav/conexiones.", { module: { type: "string" } }, ["module"]),
         tool("propose_diff", "Propone un cambio y muestra diff unificado + hunks sin escribir.", {
           path: { type: "string" },
           content: { type: "string" },

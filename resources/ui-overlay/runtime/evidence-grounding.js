@@ -219,7 +219,7 @@ function isShallowPath(value) {
 function isDocNoisePath(value) {
   const p = String(value || "").replace(/\\/g, "/");
   if (!p) return true;
-  // Memoria/chat interno de EditCore: NUNCA es codigo del producto bajo analisis.
+  // Memoria/chat interno de EDITCOREAI: NUNCA es codigo del producto bajo analisis.
   if (/(^|\/)\.editcore(\/|$)/i.test(p)) return true;
   if (/(^|\/)ROADMAP(\/|$)/i.test(p) || /(^|\/)ROADMAP\.md$/i.test(p)) return true;
   if (/ANALISIS_ERRORES/i.test(p)) return true;
@@ -893,16 +893,7 @@ function requiredConcreteReads(evidence, options = {}) {
     if (hasListTool) return 0;
   }
   if (minFromDepth > 0) {
-    const deep = Boolean(depthProfile && ["deep", "surgical", "forensic", "exhaustive"].includes(depthProfile.depth));
-    // FIX v2.7: en deep+ NUNCA bajar el minimo (eso cerraba exhaustivo a los 6 reads).
-    // Solo adaptar hacia ARRIBA cuando el arbol descubierto es grande.
-    if (deep) {
-      if (listedFiles >= 80) return Math.max(minFromDepth, 20);
-      if (listedFiles >= 40) return Math.max(minFromDepth, 16);
-      if (listedFiles >= 20) return Math.max(minFromDepth, 12);
-      return minFromDepth;
-    }
-    // Surface/standard: adaptar al tamaño descubierto sin exigir lo imposible.
+    // No exigir mas lecturas que archivos de codigo descubiertos (adaptive).
     if (listedFiles > 0 && listedFiles < minFromDepth) {
       return Math.max(1, listedFiles);
     }
@@ -1505,7 +1496,7 @@ function buildScopedFocusReport(evidence, projectRoot = "", options = {}) {
             ? "Esperando tu autorizacion para aplicar **solo este cambio** (di PROCEDE / ADELANTE)."
             : (skipProceed
               ? "Sin aplicar cambios: solo propuesta."
-              : "Si quieres que lo aplique, di PROCEDE."),
+              : "Con Acceso completo este cambio se aplica en disco sin pedir PROCEDE."),
         );
       } else {
         lines.push(
@@ -1525,7 +1516,7 @@ function buildScopedFocusReport(evidence, projectRoot = "", options = {}) {
         "",
         skipProceed
           ? "Sin correcciones pendientes segun el FOCO. No se solicita PROCEDE."
-          : "Si quieres un cambio concreto, indicalo y autoriza con PROCEDE.",
+          : "Indica el cambio concreto; con Acceso completo se aplica en disco sin pedir PROCEDE.",
       );
     }
   } else if (pkgInfo?.parseError) {

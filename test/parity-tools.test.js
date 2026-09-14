@@ -260,7 +260,7 @@ test("CHAT sigue sin tools nuevas; EXECUTE las incluye", () => {
   assert.equal(execute.mode, MODES.EXECUTE);
   for (const tool of [
     "search", "run_diagnostics", "mcp_list_tools", "inspect_browser", "browser_interact",
-    "semantic_search", "run_parallel_explore", "run_subagent", "generate_image",
+    "semantic_search", "run_parallel_explore", "run_subagent", "generate_image", "generate_video",
     "propose_diff", "apply_diff", "deploy_one_click",
     "publish_project", "connect_project", "assess_project_connections",
     "provision_project", "project_health", "sync_vercel_env", "supabase_manage", "ssh_deploy",

@@ -9,9 +9,15 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const { getImagesForProject, generateSvgLogo } = require("./project-assets");
+const {
+  ANIMATED_PWA_DEPENDENCIES,
+  animatedPwaStaticFiles,
+  mergeAnimatedPwaPackageJson,
+  ensureTemplateScaffoldOnDisk,
+} = require("./templates");
 
 function generatePackageJson(name = "pro-app") {
-  return JSON.stringify({
+  const pkg = {
     name: String(name || "pro-app").toLowerCase().replace(/[^a-z0-9-_]/g, "-"),
     private: true,
     version: "1.0.0",
@@ -27,7 +33,8 @@ function generatePackageJson(name = "pro-app") {
       "react-dom": "^18.3.1",
       "lucide-react": "^0.395.0",
       "clsx": "^2.1.1",
-      "tailwind-merge": "^2.3.0"
+      "tailwind-merge": "^2.3.0",
+      ...ANIMATED_PWA_DEPENDENCIES,
     },
     devDependencies: {
       "@types/node": "^20.14.2",
@@ -38,9 +45,10 @@ function generatePackageJson(name = "pro-app") {
       "postcss": "^8.4.38",
       "tailwindcss": "^3.4.4",
       "typescript": "^5.4.5",
-      "vite": "^5.2.13"
+      "vite": "^5.2.13",
     }
-  }, null, 2);
+  };
+  return JSON.stringify(mergeAnimatedPwaPackageJson(pkg), null, 2);
 }
 
 function generateViteConfig() {
@@ -146,6 +154,22 @@ export default {
         md: "calc(var(--radius) - 2px)",
         sm: "calc(var(--radius) - 4px)",
       },
+      transitionTimingFunction: {
+        soft: "cubic-bezier(0.22, 1, 0.36, 1)",
+      },
+      transitionDuration: {
+        soft: "280ms",
+        reveal: "450ms",
+      },
+      keyframes: {
+        "fade-up": {
+          "0%": { opacity: "0", transform: "translateY(12px)" },
+          "100%": { opacity: "1", transform: "translateY(0)" },
+        },
+      },
+      animation: {
+        "fade-up": "fade-up 450ms cubic-bezier(0.22, 1, 0.36, 1) both",
+      },
     },
   },
   plugins: [],
@@ -211,6 +235,31 @@ body {
   @apply bg-background text-foreground antialiased selection:bg-primary/20 selection:text-primary;
   font-feature-settings: "cv02", "cv03", "cv04", "cv11";
 }
+
+@layer utilities {
+  .transition-soft {
+    @apply transition-all duration-soft ease-soft;
+  }
+  .hover-lift {
+    @apply transition-soft hover:-translate-y-0.5 hover:shadow-lg;
+  }
+  .asset-placeholder {
+    @apply relative overflow-hidden rounded-2xl bg-muted/60 animate-pulse;
+  }
+  .asset-placeholder::after {
+    content: "";
+    @apply absolute inset-0 bg-gradient-to-br from-transparent via-white/5 to-transparent;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .transition-soft,
+    .hover-lift,
+    .animate-fade-up {
+      transition: none !important;
+      animation: none !important;
+      transform: none !important;
+    }
+  }
+}
 `;
 }
 
@@ -220,7 +269,10 @@ function generateIndexHtml(title = "Modern Web Application") {
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/logo.svg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta name="theme-color" content="#4f46e5" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="${title} — PWA generada con EDITCOREAI" />
     <title>${title}</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -416,17 +468,20 @@ export function Navbar() {
 function generateHeroComponent(appName = "ProApp", prompt = "") {
   const assets = getImagesForProject(prompt);
   return `import * as React from "react";
+import { motion, useReducedMotion } from "framer-motion";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
+import { FadeIn } from "@/components/motion/FadeIn";
 import { ArrowRight, Star, ShieldCheck, Zap } from "lucide-react";
 
 export function Hero() {
+  const reduce = useReducedMotion();
   return (
     <section className="relative overflow-hidden pt-12 pb-20 md:pt-20 md:pb-32">
       <div className="container mx-auto max-w-7xl px-4 sm:px-8">
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 items-center">
-          <div className="lg:col-span-7 space-y-6 text-center lg:text-left">
-            <Badge variant="default" className="gap-1.5 py-1 px-3.5 text-xs">
+          <FadeIn className="lg:col-span-7 space-y-6 text-center lg:text-left">
+            <Badge variant="default" className="gap-1.5 py-1 px-3.5 text-xs transition-soft">
               <Zap className="h-3.5 w-3.5 fill-primary" /> Nueva Versión 2.0 Lista
             </Badge>
 
@@ -439,10 +494,10 @@ export function Hero() {
             </p>
 
             <div className="flex flex-col sm:flex-row gap-3.5 justify-center lg:justify-start pt-2">
-              <Button size="lg" variant="primary">
+              <Button size="lg" variant="primary" className="transition-soft hover-lift">
                 Empieza ahora sin costo <ArrowRight className="h-5 w-5" />
               </Button>
-              <Button size="lg" variant="outline">
+              <Button size="lg" variant="outline" className="transition-soft">
                 Ver Demo en Vivo
               </Button>
             </div>
@@ -457,18 +512,29 @@ export function Hero() {
                 4.9/5 estrellas (2,400+ usuarios)
               </div>
             </div>
-          </div>
+          </FadeIn>
 
-          <div className="lg:col-span-5 relative">
-            <div className="relative mx-auto rounded-3xl p-2 bg-gradient-to-tr from-primary/30 to-purple-500/20 shadow-2xl backdrop-blur-xl">
+          <motion.div
+            className="lg:col-span-5 relative"
+            initial={reduce ? false : { opacity: 0, scale: 0.96 }}
+            animate={reduce ? undefined : { opacity: 1, scale: 1 }}
+            transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1], delay: 0.1 }}
+          >
+            <div className="relative mx-auto rounded-3xl p-2 bg-gradient-to-tr from-primary/30 to-purple-500/20 shadow-2xl backdrop-blur-xl hover-lift">
               <img
                 src="${assets.heroUrl}"
                 alt="${appName} Hero visual"
-                className="w-full h-auto rounded-2xl object-cover shadow-lg aspect-[4/3]"
+                className="w-full h-auto rounded-2xl object-cover shadow-lg aspect-[4/3] bg-muted asset-placeholder"
                 loading="eager"
+                onError={(event) => {
+                  const img = event.currentTarget;
+                  img.onerror = null;
+                  img.src = "/logo.svg";
+                  img.classList.add("object-contain", "p-10");
+                }}
               />
             </div>
-          </div>
+          </motion.div>
         </div>
       </div>
     </section>
@@ -568,8 +634,10 @@ import { Navbar } from "@/components/layout/Navbar";
 import { Hero } from "@/components/sections/Hero";
 import { Showcase } from "@/components/sections/Showcase";
 import { Footer } from "@/components/layout/Footer";
+import { useSmoothAnchorScroll } from "@/hooks/useSmoothAnchorScroll";
 
 export function App() {
+  useSmoothAnchorScroll(true);
   return (
     <div className="min-h-screen flex flex-col bg-background selection:bg-primary/20">
       <Navbar />
@@ -591,6 +659,14 @@ function generateMainTsx() {
 import ReactDOM from "react-dom/client";
 import App from "./App";
 import "./index.css";
+
+if (import.meta.env.PROD && "serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("/sw.js").catch(() => {
+      /* PWA registration is best-effort */
+    });
+  });
+}
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
@@ -812,6 +888,7 @@ export function ChartWidget({
 function scaffoldGreenfieldApp(projectRoot, { prompt = "", appName = "ProApp" } = {}) {
   const root = path.resolve(projectRoot);
   fs.mkdirSync(root, { recursive: true });
+  try { ensureTemplateScaffoldOnDisk(); } catch { /* template meta is best-effort */ }
 
   const files = {
     "package.json": generatePackageJson(appName),
@@ -838,7 +915,8 @@ function scaffoldGreenfieldApp(projectRoot, { prompt = "", appName = "ProApp" } 
     "src/components/sections/Showcase.tsx": generateShowcaseComponent(prompt),
     "src/App.tsx": generateAppTsx(appName, prompt),
     "src/main.tsx": generateMainTsx(),
-    "README.md": `# ${appName}\n\nAplicación profesional creada con EditCore AI.\n\n## Tecnologías\n- React + Vite + TypeScript\n- Tailwind CSS + UI Components\n- Lucide Icons\n\n## Ejecución\n\`\`\`bash\nnpm install\nnpm run dev\n\`\`\`\n`,
+    "README.md": `# ${appName}\n\nAplicación profesional creada con EDITCOREAI (animated PWA).\n\n## Tecnologías\n- React + Vite + TypeScript\n- Tailwind CSS (transition utilities)\n- Framer Motion\n- PWA shell (\`public/manifest.webmanifest\`, \`public/sw.js\`)\n- Lucide Icons\n\n## Assets\nGuarda imagenes/videos generados en \`public/assets/\` (herramientas \`generate_image\` / \`generate_video\`).\n\n## Ejecución\n\`\`\`bash\nnpm install\nnpm run dev\n\`\`\`\n`,
+    ...animatedPwaStaticFiles(appName),
   };
 
   const written = [];
@@ -853,6 +931,7 @@ function scaffoldGreenfieldApp(projectRoot, { prompt = "", appName = "ProApp" } 
     ok: true,
     projectRoot: root,
     appName,
+    template: "animated-pwa",
     filesCount: written.length,
     files: written,
   };

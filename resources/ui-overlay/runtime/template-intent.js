@@ -7,6 +7,14 @@
 
 const TEMPLATE_RULES = Object.freeze([
   {
+    id: "enterprise-erp-base",
+    score: (t) => (
+      (/\berp\b/i.test(t) ? 100 : 0)
+      + (/\b(crm|inventario|n[oó]mina|facturaci[oó]n|multi[- ]?tenant|multi[- ]?sucursal)\b/i.test(t) ? 85 : 0)
+      + (/\b(rbac|roles?|permisos)\b/i.test(t) && /\b(empresa|enterprise|saas)\b/i.test(t) ? 70 : 0)
+    ),
+  },
+  {
     id: "next-saas",
     score: (t) => (
       (/\bnext(?:\.?js)?\b/i.test(t) && /\b(saas|stripe|drizzle|postgres)\b/i.test(t) ? 100 : 0)
@@ -58,6 +66,7 @@ const TEMPLATE_LABELS = Object.freeze({
   node: "Node.js",
   react: "React + Vite",
   "lovable-web": "Web App profesional (React/Vite/Supabase)",
+  "enterprise-erp-base": "Enterprise ERP (RBAC + multi-tenant + schema-first)",
   "next-saas": "SaaS Next.js",
   "open-saas": "Open SaaS (Wasp)",
   soundonemusic: "SOUNDONEMUSIC",

@@ -125,6 +125,7 @@ function scaffoldNextjsApp(root, { name = "next-app", prompt = "" } = {}) {
         "lucide-react": "^0.323.0",
         clsx: "^2.1.0",
         "tailwind-merge": "^2.2.1",
+        "framer-motion": "^11.15.0",
       },
       devDependencies: {
         "@types/node": "^20",
@@ -171,13 +172,19 @@ const config: Config = {
       colors: {
         primary: "#0284c7",
       },
+      transitionTimingFunction: {
+        soft: "cubic-bezier(0.22, 1, 0.36, 1)",
+      },
+      transitionDuration: {
+        soft: "280ms",
+      },
     },
   },
   plugins: [],
 };
 export default config;
 `,
-    "src/app/globals.css": `@tailwind base;\n@tailwind components;\n@tailwind utilities;\n`,
+    "src/app/globals.css": `@tailwind base;\n@tailwind components;\n@tailwind utilities;\n\n@layer utilities {\n  .transition-soft { @apply transition-all duration-soft ease-soft; }\n  .hover-lift { @apply transition-soft hover:-translate-y-0.5 hover:shadow-lg; }\n  .asset-placeholder { @apply relative overflow-hidden rounded-2xl bg-slate-800/60 animate-pulse; }\n}\n`,
     "src/app/layout.tsx": `import type { Metadata } from "next";
 import "./globals.css";
 

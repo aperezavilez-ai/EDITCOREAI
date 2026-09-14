@@ -1,4 +1,4 @@
-# EDITCOREAI — Roadmap & Arquitectura (v2.9.4)
+# EDITCOREAI — Roadmap & Arquitectura (v2.9.5)
 
 EDITCOREAI es el IDE Electron de pair-programming y agentic coding: orquesta tools reales en disco, publica con bóveda `safeStorage` (GitHub / Vercel / Supabase / GafCore Gateway) y prioriza co-creación con evidencia (lee el repo; no pide datos que ya estén ahí).
 
@@ -6,7 +6,7 @@ Fuente de autoconocimiento de la app: `EDITCORE-MANIFEST.md`.
 
 ---
 
-## Estado actual del producto (v2.9.4)
+## Estado actual del producto (v2.9.5)
 
 ### Núcleo operativo
 - [x] Chat + Agente con orquestación (`runtime/intent-orchestrator.js`) y política elite de comunicación.
@@ -21,6 +21,26 @@ Fuente de autoconocimiento de la app: `EDITCORE-MANIFEST.md`.
 - [x] Main resuelve `projectRoot` vacío vía `resolveIncomingWorkspaceRoot` (memoria por ventana).
 - [x] Failover silencioso 402/429/saldo entre modelos activos (sin truncar tarea; aviso solo en Logs).
 - [x] UX Cursor-like: sin “conectando/esperando modelo” en chat; solo trabajo + `Trabajando…`.
+- [x] IPC workspace: `workspace:close-current` / `open-folder` / `switch-project` + tools `close_project` / `open_project` / `switch_project`.
+- [x] Git Windows: commits con `-F` + `shell:false` (pathspec con espacios). Vercel `ensureVercelProjectId(connections, opts)`.
+
+### Preview interno
+- [x] `--prefix "dir with spaces"` resuelto (p. ej. FUXION SERVICE → app anidada Vite directa).
+- [x] Wrappers npm `--prefix` no se tratan como app ejecutable (evita “Iniciando servidor…” eterno).
+
+### Multimodal + motion scaffolding
+- [x] Tools `generate_image` / `generate_video` (OpenAI / Replicate-Flux / Jaaz) → `public/assets/`.
+- [x] Template animated-PWA: Framer Motion + Tailwind transitions + PWA shell (`runtime/templates/`).
+- [x] Reglas agente: micro-interacciones, scroll triggers, placeholders responsive.
+
+### Enterprise ERP
+- [x] Template `enterprise-erp-base` (`runtime/golden-templates/enterprise-erp-base/`): RBAC, DataTable densa, multi-tenant/branch + dark mode, cliente Supabase/Gafcore.
+- [x] Schema-first en prompts ERP/CRM: migraciones SQL antes de CRUD UI.
+- [x] Tool `add_erp_module` (inventory | payroll | invoicing | crm) sin pisar nav/conexiones core.
+
+### Cerebro / skills
+- [x] `runtime/skill-registry.js`: audit + heal wrappers `SKILL.md` + purge de items incompatibles.
+- [x] `brain:audit` con repair ejecuta heal/purge. Estado post-heal: 49/49 activas.
 
 ### UI / barra superior (realidad actual)
 - [x] Primaria: Inicio · Proyectos · Nuevo · Guardar · Ventana+ · Conexiones · Modelos · **Herramientas ▾** · **Conectar** · **Publicar**.
@@ -65,7 +85,7 @@ Pedidos `publicar` / `deploy` / `conectar github|vercel|…` **escalan a Agente*
 ### Empaquetado
 - [x] `resources/ui-overlay` y `resources/rtk` dentro de EDITCOREAI.
 - [x] `npm run dist:win` → `release/EDITCOREAI-Setup.exe` + launcher raíz recompilado.
-- [x] Producto v2.9.4 / buildVersion 2.9.4.0.
+- [x] Producto v2.9.5 / buildVersion 2.9.5.0.
 
 ---
 
@@ -79,17 +99,18 @@ Pedidos `publicar` / `deploy` / `conectar github|vercel|…` **escalan a Agente*
 | 4. Bóveda vacía | Tools cloud fallan con “falta … en Conexiones”. |
 | 5. Gateway sin admin token | No puede crear project key. |
 | 6. Workspace null + auditoría con “cerrar/abrir” | Antes disparaba switch falso → “Indica el proyecto…”. **Corregido** en v2.9.3+. |
+| 7. Preview en wrapper `--prefix "carpeta con espacios"` | Antes cortaba el path → hang. **Corregido** en v2.9.5. |
 
 ---
 
 ## Próximos hitos
 
-### v2.9.5 — Pegamento y evidencia
+### v2.9.6 — Pegamento y evidencia
 - [ ] Superficie UI opcional de `editcoreCloud.vaultStatus` en Conexiones (estado bóveda sin secretos).
 - [ ] Telemetría de “primer tool_call” por turno (detectar narración sin acción).
 - [ ] Scope-drift watchdog: rechazar expansiones fuera del contrato de la tarea.
 
-### v2.9.6 — Operador nube
+### v2.9.7 — Operador nube
 - [ ] Unificar mensajes de error bóveda entre botón Publicar y tools del agente.
 - [ ] MCP nativos opcionales (GitHub, Supabase, Playwright, Vercel) sin sustituir la bóveda local.
 

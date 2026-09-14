@@ -1,0 +1,11 @@
+{
+  "id": "enterprise-erp-base",
+  "name": "Enterprise ERP Base",
+  "schemaFirst": true,
+  "modules": [
+    "inventory",
+    "payroll",
+    "invoicing",
+    "crm"
+  ]
+}

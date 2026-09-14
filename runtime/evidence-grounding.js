@@ -1496,7 +1496,7 @@ function buildScopedFocusReport(evidence, projectRoot = "", options = {}) {
             ? "Esperando tu autorizacion para aplicar **solo este cambio** (di PROCEDE / ADELANTE)."
             : (skipProceed
               ? "Sin aplicar cambios: solo propuesta."
-              : "Si quieres que lo aplique, di PROCEDE."),
+              : "Con Acceso completo este cambio se aplica en disco sin pedir PROCEDE."),
         );
       } else {
         lines.push(
@@ -1516,7 +1516,7 @@ function buildScopedFocusReport(evidence, projectRoot = "", options = {}) {
         "",
         skipProceed
           ? "Sin correcciones pendientes segun el FOCO. No se solicita PROCEDE."
-          : "Si quieres un cambio concreto, indicalo y autoriza con PROCEDE.",
+          : "Indica el cambio concreto; con Acceso completo se aplica en disco sin pedir PROCEDE.",
       );
     }
   } else if (pkgInfo?.parseError) {
