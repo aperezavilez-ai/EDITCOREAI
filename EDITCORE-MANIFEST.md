@@ -1,6 +1,6 @@
 # EDITCOREAI — MANIFESTO DE AUTOCONOCIMIENTO
 
-Versión producto: **2.9.5**. Este archivo es la fuente de verdad que el agente debe leer (vía system prompt) para saber qué es EDITCOREAI, qué puede hacer y qué no debe re-escanear.
+Versión producto: **2.9.7**. Este archivo es la fuente de verdad que el agente debe leer (vía system prompt) para saber qué es EDITCOREAI, qué puede hacer y qué no debe re-escanear.
 
 ## Qué es
 IDE de escritorio Electron con agente embebido: chat, preview web, explorador, publicar (GitHub/Vercel/Supabase) y alimentación AI vía **GafCore Gateway**.
@@ -29,8 +29,8 @@ IDE de escritorio Electron con agente embebido: chat, preview web, explorador, p
 - **Top bar**: Inicio, Proyectos, Nuevo, Guardar, Ventana+, Conexiones, Modelos, **Herramientas ▾**, **Conectar**, **Publicar**.
 - **Herramientas**: Logs, Cerebro, Inspector (incluye salud/mantenimiento), Tema, Buscar versión, Recargar app.
 - **Chat**: tabs, cola de prompts, progreso fullstack; auto-bind de proyecto activo.
-- **Preview**: `<webview>` + URL bar; fondo sigue tema (`--ec-preview-bg`).
-- **Explorer**: árbol del proyecto activo.
+- **Preview**: `<webview>` + URL bar; fondo sigue tema (`--ec-preview-bg`). Tabs **Web | Móvil | Código** (Monaco; webview se oculta, no se destruye).
+- **Explorer**: árbol del proyecto activo; clic en archivo abre el editor Código.
 - **Conexiones**: GitHub, Vercel, Supabase propio, **GafCore Gateway**, SSH.
 - **Branding**: launcher/runtime siempre EditCoreAI (`assets/logo.ico`); never Electron.
 
@@ -42,6 +42,8 @@ ERP: `create_project template=enterprise-erp-base`, `add_erp_module` (inventory|
 Nube: `deploy_github`, `deploy_vercel`, `provision_supabase`, `provision_gafcore_ai`, `provision_fullstack_project`, `publish_project`, `onboard_project`, `fullstack_deploy`.
 Diag: `probe_endpoint`, `test_local_api`, `project_discovery`, `codebase_map`.
 Cerebro: `brain_skill`, `brain_search`, `brain_install_repo`; audit/heal vía `runtime/skill-registry.js`.
+Bodega UI: usable sin proyecto abierto (no NPE `brainSnapshot`). Persistencia web/RAG automática + `run_e2e_pipeline` (reporte 0→100 en `.editcore/e2e-pipeline-report.md`).
+Visión: paste/drop imágenes + auto-route multimodal. Clone: tool `clone_web_page` → React/Tailwind + golden `web-clone-base`.
 
 ## Bridges / IPC relevantes
 - `secure-config:*` — bóveda
@@ -56,6 +58,7 @@ Cerebro: `brain_skill`, `brain_search`, `brain_install_repo`; audit/heal vía `r
 2. No reexplorar el repo entero si el índice cubre la pregunta.
 3. Hermanos: `../GAFCORE GATEWAY/...` o `GAFCORE GATEWAY/package.json`.
 4. Tras `applyPatch`/write OK, EditCore actualiza ROADMAP + session-state solo.
+5. Chat-kernel: tras writes guarda `agent-last-run` (Undo All / Keep All / Review); no re-listar `.` si ya hay ROADMAP.
 
 ## Límites
 - No inventar archivos ni secretos en el chat.

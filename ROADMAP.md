@@ -1,4 +1,4 @@
-# EDITCOREAI — Roadmap & Arquitectura (v2.9.5)
+# EDITCOREAI — Roadmap & Arquitectura (v2.9.7)
 
 EDITCOREAI es el IDE Electron de pair-programming y agentic coding: orquesta tools reales en disco, publica con bóveda `safeStorage` (GitHub / Vercel / Supabase / GafCore Gateway) y prioriza co-creación con evidencia (lee el repo; no pide datos que ya estén ahí).
 
@@ -6,7 +6,7 @@ Fuente de autoconocimiento de la app: `EDITCORE-MANIFEST.md`.
 
 ---
 
-## Estado actual del producto (v2.9.5)
+## Estado actual del producto (v2.9.7)
 
 ### Núcleo operativo
 - [x] Chat + Agente con orquestación (`runtime/intent-orchestrator.js`) y política elite de comunicación.
@@ -41,6 +41,22 @@ Fuente de autoconocimiento de la app: `EDITCORE-MANIFEST.md`.
 ### Cerebro / skills
 - [x] `runtime/skill-registry.js`: audit + heal wrappers `SKILL.md` + purge de items incompatibles.
 - [x] `brain:audit` con repair ejecuta heal/purge. Estado post-heal: 49/49 activas.
+- [x] **Fix Bodega UI (2026-09-14):** `Cannot set properties of null (setting 'brainSnapshot')` — `loadBrainCatalog` ya no hace `activeProject().brainSnapshot` sin guard; Bodega funciona sin proyecto abierto (`state.brainSnapshot`).
+- [x] Persistencia automática web/RAG: hook post-tool → memoria global + `upsertKnowledgeChunk` / `ingestExternalSnippet`.
+- [x] Pre-query: `assembleContext` refuerza retrieval memoria + RAG + bloque web/RAG.
+
+### Visión multimodal + clone web
+- [x] Intake pegar/soltar imagen → DataURL + thumbnails + payload IPC (`renderer.js`).
+- [x] `runtime/vision-intake.js` + auto-route a modelo visión; bloques OpenAI / Anthropic / Gemini en `ai-core.js`.
+- [x] Chat/agent/kernel pasan `images`; regla VISION obligatoria en política élite.
+- [x] Tool `clone_web_page` (Puppeteer→Playwright→fetch) + visión→React/Tailwind + golden `web-clone-base` + `{{TOKEN}}` replacements.
+- [x] Tools expuestos en adapter + chat-kernel (antes solo dispatcher → modelo no los veía). **Cable corregido.**
+
+### E2E 0→100 (producto)
+- [x] Tool `run_e2e_pipeline` + IPC `project:e2e-pipeline` + CLI `node scripts/run-e2e-pipeline.js`.
+- [x] Reporte oficial: `.editcore/e2e-pipeline-report.md` (+ `.json`), mismo formato si lo pide el usuario en chat.
+- [x] Política élite §8: pedido E2E → usar `run_e2e_pipeline`, no inventar checklist.
+- [x] Cobertura: sintaxis, Bodega UI, IPC (+ task-ipc), brain API, visión, clone, tools adapter/kernel/dispatcher, tests, overlay.
 
 ### UI / barra superior (realidad actual)
 - [x] Primaria: Inicio · Proyectos · Nuevo · Guardar · Ventana+ · Conexiones · Modelos · **Herramientas ▾** · **Conectar** · **Publicar**.
@@ -49,6 +65,9 @@ Fuente de autoconocimiento de la app: `EDITCORE-MANIFEST.md`.
 - [x] Tema **gris** tipo Cursor en toda la chrome; preview/navegador usa `--ec-preview-bg` (ya no blanco fijo); splitters unificados.
 - [x] Selector Auto: **Auto** (ME AI + APICredits) · **Auto · ME AI** · **Auto · APICredits**.
 - [x] Retirados: Terminal panel, Composer panel, Extensiones (.vsix), Deshacer / Actualizar publicación sueltos (update vía Publicar mode=update).
+- [x] **Chat Agent Transparency (Cursor-like):** tarjeta de ejecución con Thought expandible, pill `Explored N files`, diffs inline (+/− rojo/verde), footer Review / Stop / follow-up; IPC `agent:thought-stream|exploration-*|diff-*|task-complete` + política élite §9 (prohibido “Done” silencioso).
+- [x] **IDE Cursor-class (2026-09-14):** Monaco editor (Código tab, multi-cursor, gutter +/- , F12 Go to Definition), live apply-by-hunk Accept/Reject en el chat durante la corrida, terminal xterm + `editcorePty` (node-pty si está / spawn-pipe fallback) en panel inferior.
+- [x] **Pestaña Código restaurada (v2.9.7):** Web | Móvil | Código. Monaco abre archivos del explorador (Ctrl+S / F12). El webview del preview **no se destruye**: solo se oculta con CSS al editar.
 
 ### Branding / launcher
 - [x] `EDITCOREAI.exe` (raíz) con `assets/logo.ico` + AppUserModelId `com.editcoreai.app`.
@@ -82,10 +101,18 @@ Pedidos `publicar` / `deploy` / `conectar github|vercel|…` **escalan a Agente*
 - [x] Tools `probe_endpoint` / `test_local_api` para health local.
 - [x] Fondo preview sincronizado con tema activo.
 
+### Chat kernel — ROADMAP-first + Undo/Keep/Review (2026-09-14)
+- [x] Kernel inyecta `ROADMAP.md` + `.editcore/session-state.json` en EXECUTE (sin reexploración completa).
+- [x] `list_files('.')` con ROADMAP real → hint `roadmapFirst` (ahorro de tokens).
+- [x] Tras `write_file` / `replace_in_file` del kernel → `noteSuccessfulPatch` actualiza ROADMAP + session-state.
+- [x] Checkpoint `agent-last-run` al completar corrida kernel (backups desde `.editcore/snapshots`).
+- [x] **Undo All / Keep All / Review** funcionales: feedback en chat con conteos + panel de diffs; Undo con fallback a snapshot si no hay manifest.
+- [x] Footer ya no son enlaces muertos (antes solo status bar / sin checkpoint).
+
 ### Empaquetado
 - [x] `resources/ui-overlay` y `resources/rtk` dentro de EDITCOREAI.
 - [x] `npm run dist:win` → `release/EDITCOREAI-Setup.exe` + launcher raíz recompilado.
-- [x] Producto v2.9.5 / buildVersion 2.9.5.0.
+- [x] Producto v2.9.7 / buildVersion 2.9.7.0 — release GitHub + EXE raíz.
 
 ---
 
@@ -105,12 +132,20 @@ Pedidos `publicar` / `deploy` / `conectar github|vercel|…` **escalan a Agente*
 
 ## Próximos hitos
 
-### v2.9.6 — Pegamento y evidencia
+### v2.9.6 — Pegamento, evidencia y E2E
+- [x] Visión multimodal + clone_web_page + persistencia web/RAG + E2E `run_e2e_pipeline` (2026-09-14).
+- [x] Fix Bodega `brainSnapshot` null sin proyecto.
+- [x] ROADMAP-first en chat-kernel + Undo All / Keep All / Review con checkpoint real (2026-09-14).
 - [ ] Superficie UI opcional de `editcoreCloud.vaultStatus` en Conexiones (estado bóveda sin secretos).
 - [ ] Telemetría de “primer tool_call” por turno (detectar narración sin acción).
 - [ ] Scope-drift watchdog: rechazar expansiones fuera del contrato de la tarea.
 
-### v2.9.7 — Operador nube
+### v2.9.7 — Editor Código + chat vivo + release
+- [x] Pestaña **Código** (Monaco) junto a Web/Móvil sin romper preview webview.
+- [x] Clic en explorador → abre y edita archivo (Ctrl+S, F12).
+- [x] Undo/Keep/Review con checkpoint kernel + feedback en chat.
+- [x] Bolitas de thinking se detienen al completar / Keep All / error (`settleAgentTurnChrome`).
+- [x] Eliminadas plantillas CONTINUA/PROCEDE / READY-queue en Agente+Acceso completo (el modelo razona).
 - [ ] Unificar mensajes de error bóveda entre botón Publicar y tools del agente.
 - [ ] MCP nativos opcionales (GitHub, Supabase, Playwright, Vercel) sin sustituir la bóveda local.
 
@@ -128,3 +163,39 @@ Pedidos `publicar` / `deploy` / `conectar github|vercel|…` **escalan a Agente*
 4. Acceso completo si hay que escribir hermanos / mutar infra.
 5. Verificar `project-infra.json` tras la acción.
 6. Si falla: mirar si hubo tool_calls; si no, es orquestación; si sí, leer el error de bóveda/red.
+7. Bodega del Cerebro: puede abrirse **sin** proyecto; si ves “Cerebro con error” + `brainSnapshot`, recargar app (fix ya en código).
+8. Pedido “end to end / 0 a 100”: el agente debe ejecutar `run_e2e_pipeline` y pegar el reporte (o `node scripts/run-e2e-pipeline.js`).
+
+---
+
+## Análisis E2E final (2026-09-14) — cerrado sin medias tintas
+
+### Hallazgo que invalidaba un “100/100” previo
+La Bodega del Cerebro fallaba en runtime con:
+
+`Cannot set properties of null (setting 'brainSnapshot')`
+
+Causa: `loadBrainCatalog()` hacía `activeProject().brainSnapshot = snapshot` con **Sin proyecto** (`activeProject() === null`). El snapshot del Cerebro sí llegaba (skills/instalados visibles), pero el NPE marcaba “Cerebro con error”.
+
+### Correcciones aplicadas
+| Área | Cambio |
+|------|--------|
+| `renderer.js` + overlays | Guard `project`; fallback `state.brainSnapshot`; host/strong null-safe |
+| `runtime/renderer.js` + overlay runtime | Mismo fix Bodega |
+| Adapter + chat-kernel | Exponer `clone_web_page`, `images_to_code`, `run_e2e_pipeline` |
+| IPC/preload | `project:clone-web-page`, `project:e2e-pipeline`, `editcoreProject.cloneWebPage` / `runE2ePipeline` |
+| E2E pipeline | Checks 0→26: UI Bodega, IPC+task-ipc, brain API real (`searchCatalog`/`auditTools`), visión, clone, tools, tests, overlay |
+| Política élite | §7 VISION + §8 E2E obligatorio |
+
+### Cómo repetir (mismo reporte)
+```bash
+node scripts/run-e2e-pipeline.js
+```
+o en chat/agente: tool `run_e2e_pipeline` → `.editcore/e2e-pipeline-report.md`.
+
+### Criterio de score
+- No se declara 100 si hay fallos de peso ≥5 (Bodega, IPC crítico, tools no expuestas, etc.).
+- Task/workflow IPC se validan vía `runtime/task-ipc.js` + `registerTaskIpc` (no solo literales en `main.js`).
+
+### Estado tras cierre
+Ver score actual en `.editcore/e2e-pipeline-report.md` (regenerar con el script/tool anterior). Bodega usable sin proyecto; visión/clone/brain persist cableados; agente puede repetir el E2E 0→100 con el mismo formato.

@@ -33,12 +33,38 @@ function truncatePayload(value, max = TOOL_RESULT_CAP) {
 }
 
 function listFiles(root, rel = ".", max = 80) {
-  const dir = safe(root, rel);
+  const requested = String(rel || ".").replace(/\\/g, "/").trim() || ".";
+  // ROADMAP-FIRST: no reescanear la raíz si ya hay índice (ahorro de tokens).
+  if (requested === "." || requested === "/" || requested === "") {
+    try {
+      const { readRoadmap, isStubRoadmap, formatRoadmapForPrompt } = require("../runtime/project-roadmap");
+      const { formatSessionStateForPrompt, ensureSessionState, loadSessionState } = require("../runtime/session-state");
+      const loaded = readRoadmap(root);
+      if (loaded.exists && loaded.content && !isStubRoadmap(loaded.content)) {
+        ensureSessionState(root);
+        const state = loadSessionState(root);
+        const treePaths = (state.fileTree || []).map((row) => String(row.path || "")).filter(Boolean);
+        const dirs = treePaths.filter((p) => p.endsWith("/")).map((p) => p.replace(/\/$/, "")).slice(0, 40);
+        const files = treePaths.filter((p) => !p.endsWith("/")).slice(0, 40);
+        return {
+          ok: true,
+          path: ".",
+          roadmapFirst: true,
+          message: "ROADMAP + session-state ya cubren el mapa. NO reescanees el repo. Usa read_file solo en archivos a editar.",
+          hint: String(formatRoadmapForPrompt(root) || "").slice(0, 1800),
+          session: String(formatSessionStateForPrompt(root, 900) || "").slice(0, 900),
+          dirs: dirs.length ? dirs : undefined,
+          files: files.length ? files : ["ROADMAP.md"],
+        };
+      }
+    } catch { /* fallback a listado real */ }
+  }
+  const dir = safe(root, requested === "/" ? "." : requested);
   if (!fs.existsSync(dir)) return { ok: false, error: `No existe: ${rel}` };
   const entries = fs.readdirSync(dir, { withFileTypes: true }).slice(0, max);
   return {
     ok: true,
-    path: rel,
+    path: requested,
     dirs: entries.filter((e) => e.isDirectory()).map((e) => e.name),
     files: entries.filter((e) => e.isFile()).map((e) => e.name),
   };
@@ -59,7 +85,16 @@ function writeFile(root, rel, content) {
   const file = safe(root, rel);
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(file, String(content ?? ""), "utf8");
-  return { ok: true, path: rel, snapshotId: snap.ok ? snap.id : null };
+  const out = { ok: true, path: rel, snapshotId: snap.ok ? snap.id : null };
+  try {
+    const { noteSuccessfulPatch } = require("../runtime/session-state");
+    noteSuccessfulPatch(root, {
+      path: String(rel || "").replace(/\\/g, "/"),
+      action: "write_file",
+      summary: "archivo escrito (kernel)",
+    });
+  } catch { /* índice no debe bloquear escritura */ }
+  return out;
 }
 
 /**
@@ -150,13 +185,22 @@ function replaceInFile(root, rel, oldText, newText) {
   const snap = snapshotBeforeWrite(root, rel, "replace_in_file");
   const next = current.replace(located.match, String(newText ?? ""));
   fs.writeFileSync(file, next, "utf8");
-  return {
+  const out = {
     ok: true,
     path: rel,
     replaced: true,
     softMatch: located.mode !== "exact" ? located.mode : undefined,
     snapshotId: snap.ok ? snap.id : null,
   };
+  try {
+    const { noteSuccessfulPatch } = require("../runtime/session-state");
+    noteSuccessfulPatch(root, {
+      path: String(rel || "").replace(/\\/g, "/"),
+      action: "replace_in_file",
+      summary: "parche aplicado (kernel)",
+    });
+  } catch { /* ignore */ }
+  return out;
 }
 
 /** Fallos leves que no deben detener la sesión OODA. */
@@ -463,6 +507,55 @@ const DEFINITIONS = [
   {
     type: "function",
     function: {
+      name: "clone_web_page",
+      description: "Clona una URL: render DOM (Puppeteer/Playwright), capturas, visión→React/Tailwind y merge en golden template. replacements: { TITLE, CTA, ... }.",
+      parameters: {
+        type: "object",
+        properties: {
+          url: { type: "string" },
+          title: { type: "string" },
+          folder: { type: "string" },
+          viewport: { type: "string" },
+          replacements: { type: "object" },
+          skipVision: { type: "boolean" },
+          mergeApp: { type: "boolean" },
+          dryRun: { type: "boolean" },
+        },
+        required: ["url"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "images_to_code",
+      description: "Genera UI desde brief/imagen (scaffold o visión).",
+      parameters: {
+        type: "object",
+        properties: {
+          title: { type: "string" },
+          description: { type: "string" },
+          folder: { type: "string" },
+        },
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "run_e2e_pipeline",
+      description: "Verificación end-to-end 1→100 del cableado EditCore (visión, clone, brain, IPC). Escribe .editcore/e2e-pipeline-report.md.",
+      parameters: {
+        type: "object",
+        properties: {
+          writeReport: { type: "boolean" },
+        },
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "rollback_last_change",
       description: "Restaura el último snapshot (.editcore/snapshots/) tras un fallo de compilación o cambio incorrecto.",
       parameters: {
@@ -596,6 +689,29 @@ async function execute(name, args, root, allowWrite, helpers = {}) {
     case "clone_repo":
       if (!allowWrite) return { ok: false, error: "Clonar requiere modo escritura" };
       return cloneRepo(root, a.url, a.path);
+    case "clone_web_page": {
+      if (!allowWrite) return { ok: false, error: "clone_web_page requiere modo escritura" };
+      const { cloneWebPage } = require("../runtime/clone-web-page");
+      return cloneWebPage(root, {
+        url: a.url,
+        title: a.title,
+        folder: a.folder,
+        viewport: a.viewport,
+        replacements: a.replacements || a.data || {},
+        skipVision: a.skipVision === true,
+        mergeApp: a.mergeApp !== false,
+        dryRun: a.dryRun === true,
+      }, { model: a.model || "" });
+    }
+    case "images_to_code": {
+      if (!allowWrite) return { ok: false, error: "images_to_code requiere modo escritura" };
+      const { imagesToCode } = require("../runtime/images-to-code");
+      return imagesToCode(root, a);
+    }
+    case "run_e2e_pipeline": {
+      const { runEditcoreE2ePipeline } = require("../runtime/e2e-pipeline-report");
+      return runEditcoreE2ePipeline(root, { writeReport: a.writeReport !== false });
+    }
     case "rollback_last_change":
       if (!allowWrite) return { ok: false, error: "Rollback requiere modo escritura" };
       return rollbackLastChange(root, a.snapshotId || null);

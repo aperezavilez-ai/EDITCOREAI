@@ -3510,15 +3510,33 @@ class EditCoreClaudeAdapter {
       const value = String(delta || "");
       if (!value) return;
       lastTokenAt = Date.now();
+      const beforeLen = streamedText.length;
       streamedText += value;
       const trimmed = streamedText.trimStart();
       if (streamMode === "pending" && trimmed) {
         streamMode = /^(?:\{|\[|<(?:tool|function)|```json)/i.test(trimmed) ? "protocol" : "narration";
       }
-      // Siempre streamear prosa al thinking (como Cursor).
-      if (streamMode !== "protocol") {
+      // Prosa + luego <tool_call>: cortar mid-stream (nunca volcar XML/código al chat).
+      if (streamMode === "narration") {
+        const cut = streamedText.search(/<(?:tool_call|tool_use|function\s*=|parameter\s*=)\b/i);
+        if (cut >= 0) {
+          streamMode = "protocol";
+          if (cut > beforeLen) {
+            const visiblePiece = value.slice(0, cut - beforeLen);
+            if (visiblePiece) {
+              input.onProgress?.({ phase: "narration_delta", stage: this.stageForSteps(steps), index: steps.length, text: visiblePiece });
+            }
+          }
+          if (!this._modelWaitNudgeSent) {
+            this._modelWaitNudgeSent = true;
+            input.onProgress?.({ phase: "model", text: "Ejecutando herramienta…" });
+          }
+          return;
+        }
         input.onProgress?.({ phase: "narration_delta", stage: this.stageForSteps(steps), index: steps.length, text: value });
-      } else {
+        return;
+      }
+      if (streamMode === "protocol") {
         const thoughtMatch = streamedText.match(/"(?:thought|reasoning|analysis|thinking)"\s*:\s*"((?:[^"\\]|\\.)*)"/i)
           || streamedText.match(/<(?:thinking|thought|reasoning)>([\s\S]*?)(?:<\/(?:thinking|thought|reasoning)>|$)/i);
         if (thoughtMatch && thoughtMatch[1]) {
@@ -3998,9 +4016,8 @@ Para el mensaje final:
     const promptText3220 = String(input.prompt || "");
     const hasFixOrCreate3220 = /\b(?:crear?|crees?|corregir?|corrijas?|corrijelo|modifica|modifiques|escribir?|escribas?|arreglar?|arregles?|implementar?|implementes?|haz|hacer|funcionar|ejecutar?|ejecuta)\b/i.test(promptText3220);
     const isCodeAudit = isAnalysisOnlyRequest(input.prompt) && !hasFixOrCreate3220;
-    messages.push({
-      role: "user",
-      content: `Proyecto: ${input.projectRoot}
+    const visionImages = Array.isArray(input.images) ? input.images : [];
+    const taskText = `Proyecto: ${input.projectRoot}
 Tarea: ${input.prompt}
 
 ${input.analysisMode ? (isCodeAudit ? `MODO ANALISIS ACTIVO:
@@ -4016,8 +4033,21 @@ ${input.analysisMode ? (isCodeAudit ? `MODO ANALISIS ACTIVO:
 - Permisos del chat activos. Si hay plan autorizado, ejecuta correcciones YA con herramientas.
 - ORDEN: read_file del objetivo → replace_in_file/write_file → run_command/read_file de verificacion.
 - PROHIBIDO solo narrar "ACCION 1/2/3" sin tool_calls. Sin mutacion real la tarea no avanza.
-- El cierre DEBE incluir ## Evidencia de correccion con archivos tocados y verificaciones.`}`,
-    });
+- El cierre DEBE incluir ## Evidencia de correccion con archivos tocados y verificaciones.`}`;
+    if (visionImages.length) {
+      try {
+        const { buildOpenAiImageContent, VISION_ACK_RULE } = require("./vision-intake");
+        messages.push({ role: "system", content: VISION_ACK_RULE });
+        messages.push({
+          role: "user",
+          content: buildOpenAiImageContent(taskText, visionImages),
+        });
+      } catch {
+        messages.push({ role: "user", content: taskText });
+      }
+    } else {
+      messages.push({ role: "user", content: taskText });
+    }
 
     return messages;
   }
@@ -4120,7 +4150,29 @@ ${input.analysisMode ? (isCodeAudit ? `MODO ANALISIS ACTIVO:
         tool("replace_in_file", "Reemplaza oldText exacto en un archivo leido.", { path: { type: "string" }, oldText: { type: "string" }, newText: { type: "string" }, replaceAll: { type: "boolean" } }, ["path", "oldText", "newText"]),
         tool("service_write", "Modifica un servicio conectado.", { service: { type: "string" }, method: { type: "string" }, path: { type: "string" }, body: {} }, ["service"]),
         tool("create_project", "Crea un proyecto o estructura inicial.", { name: { type: "string" }, path: { type: "string" }, template: { type: "string" }, install: { type: "boolean" } }, ["name"]),
-        tool("generate_image", "Genera imagen via API OpenAI-compatible/Jaaz si hay config; sin config no falla el agente.", { prompt: { type: "string" }, size: { type: "string" } }, ["prompt"]),
+        tool("generate_image", "Genera imagen (OpenAI / Replicate Flux / Jaaz) y la guarda en public/assets/. Sin config: available:false.", { prompt: { type: "string" }, size: { type: "string" }, model: { type: "string" }, outputDir: { type: "string" } }, ["prompt"]),
+        tool("generate_video", "Genera video corto (Replicate / OpenAI-compatible) y lo guarda en public/assets/. Sin config: available:false.", { prompt: { type: "string" }, model: { type: "string" }, duration: { type: "number" }, outputDir: { type: "string" } }, ["prompt"]),
+        tool("images_to_code", "Genera UI desde brief/imagen (vision LLM o scaffold local).", {
+          title: { type: "string" },
+          description: { type: "string" },
+          folder: { type: "string" },
+          images: { type: "array", items: { type: "object" } },
+          forceVision: { type: "boolean" },
+        }),
+        tool("clone_web_page", "Clona URL externa: Puppeteer/Playwright DOM+capturas, visión→React/Tailwind, merge golden template + replacements {{TOKEN}}.", {
+          url: { type: "string" },
+          title: { type: "string" },
+          folder: { type: "string" },
+          viewport: { type: "string", enum: ["desktop", "mobile"] },
+          replacements: { type: "object" },
+          skipVision: { type: "boolean" },
+          mergeApp: { type: "boolean" },
+          dryRun: { type: "boolean" },
+        }, ["url"]),
+        tool("run_e2e_pipeline", "Ejecuta verificación end-to-end 1→100 (visión, clone, brain, IPC, tools) y escribe .editcore/e2e-pipeline-report.md con el mismo formato de reporte.", {
+          writeReport: { type: "boolean" },
+        }),
+        tool("add_erp_module", "Inyecta modulo ERP (inventory|payroll|invoicing|crm): migracion SQL primero, luego CRUD UI sin pisar nav/conexiones.", { module: { type: "string" } }, ["module"]),
         tool("propose_diff", "Propone un cambio y muestra diff unificado + hunks sin escribir.", {
           path: { type: "string" },
           content: { type: "string" },

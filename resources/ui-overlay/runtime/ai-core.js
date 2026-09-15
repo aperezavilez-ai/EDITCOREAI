@@ -4,6 +4,70 @@ const { normalizeProviderDefinition } = require("./provider-contract");
 const { sanitizeMessagesToolArguments, sanitizeToolCallArguments, safeParseToolArguments } = require("../agent-parser");
 const { resolveFactualTemperature } = require("./anti-hallucination-policy");
 
+const GATEWAY_TIMEOUT_USER_MESSAGE =
+  "La respuesta tardó demasiado tiempo. Intenta reducir el alcance de la solicitud.";
+const DEFAULT_PROVIDER_TIMEOUT_MS = 180_000;
+
+function isGatewayHtmlBody(value = "") {
+  const text = String(value || "").trim();
+  if (!text) return false;
+  return /^<!DOCTYPE\s+html/i.test(text)
+    || /^<html[\s>]/i.test(text)
+    || /cloudflare|error code 524|gateway time-?out|524:\s*a timeout occurred/i.test(text);
+}
+
+function createGatewayTimeoutError(status = 524, detail = "") {
+  const err = new Error(GATEWAY_TIMEOUT_USER_MESSAGE);
+  err.status = Number(status) || 524;
+  err.code = "PROVIDER_GATEWAY_TIMEOUT";
+  err.detail = String(detail || "").slice(0, 240);
+  return err;
+}
+
+async function assertNotGatewayTimeoutResponse(response) {
+  const status = Number(response?.status || 0);
+  const contentType = String(response?.headers?.get?.("content-type") || "").toLowerCase();
+  if (status === 524 || contentType.includes("text/html")) {
+    const body = await response.text().catch(() => "");
+    if (status === 524 || isGatewayHtmlBody(body) || contentType.includes("text/html")) {
+      throw createGatewayTimeoutError(status || 524, body.slice(0, 200));
+    }
+  }
+  return null;
+}
+
+async function parseProviderJsonOrThrow(response) {
+  const status = Number(response?.status || 0);
+  const contentType = String(response?.headers?.get?.("content-type") || "").toLowerCase();
+  const raw = await response.text().catch(() => "");
+  if (status === 524 || contentType.includes("text/html") || isGatewayHtmlBody(raw)) {
+    throw createGatewayTimeoutError(status || 524, raw.slice(0, 200));
+  }
+  let data = {};
+  if (raw) {
+    try {
+      data = JSON.parse(raw);
+    } catch {
+      if (isGatewayHtmlBody(raw) || /timeout|524/i.test(raw)) {
+        throw createGatewayTimeoutError(status || 524, raw.slice(0, 200));
+      }
+      data = { message: raw.slice(0, 300) };
+    }
+  }
+  if (!response.ok) {
+    const err = Object.assign(
+      new Error(data?.error?.message || data?.message || `HTTP ${status}`),
+      { status },
+    );
+    if (status === 524 || isGatewayHtmlBody(String(err.message || ""))) {
+      throw createGatewayTimeoutError(status || 524, err.message);
+    }
+    if (/unexpected token|invalid json|malformed/i.test(String(err.message || ""))) err.code = "MALFORMED_TOOL_JSON";
+    throw err;
+  }
+  return data;
+}
+
 function usage(raw = {}) {
   const cacheRead = Number(raw.cache_read_input_tokens || raw.cached_input_tokens || raw.cached_tokens || raw.prompt_tokens_details?.cached_tokens || raw.provider_cache_read_tokens || 0);
   const cacheWrite = Number(raw.cache_creation_input_tokens || raw.cache_creation?.input_tokens || 0);
@@ -69,12 +133,24 @@ function normalizeToolCallsOut(toolCalls = []) {
 
 
 function normalizeForAnthropic(messages) {
+  let convertPart = null;
+  try {
+    convertPart = require("./vision-intake").convertContentPartForAnthropic;
+  } catch { /* optional */ }
   const result = [];
   for (const msg of sanitizeMessagesToolArguments(messages)) {
     if (msg.role === "system") continue;
     if (msg.role === "assistant" && Array.isArray(msg.tool_calls) && msg.tool_calls.length) {
       const content = [];
-      if (msg.content) content.push({ type: "text", text: typeof msg.content === "string" ? msg.content : JSON.stringify(msg.content) });
+      if (msg.content) {
+        if (Array.isArray(msg.content)) {
+          for (const part of msg.content) {
+            content.push(convertPart ? convertPart(part) : part);
+          }
+        } else {
+          content.push({ type: "text", text: typeof msg.content === "string" ? msg.content : JSON.stringify(msg.content) });
+        }
+      }
       for (const call of msg.tool_calls) {
         const fn = call.function || call;
         let input = fn.arguments || fn.input || {};
@@ -85,6 +161,8 @@ function normalizeForAnthropic(messages) {
       result.push({ role: "assistant", content });
     } else if (msg.role === "tool") {
       result.push({ role: "user", content: [{ type: "tool_result", tool_use_id: msg.tool_call_id, content: typeof msg.content === "string" ? msg.content : JSON.stringify(msg.content) }] });
+    } else if (Array.isArray(msg.content) && convertPart) {
+      result.push({ ...msg, content: msg.content.map(convertPart) });
     } else {
       result.push(msg);
     }
@@ -93,6 +171,10 @@ function normalizeForAnthropic(messages) {
 }
 
 function normalizeForGemini(messages) {
+  let convertPart = null;
+  try {
+    convertPart = require("./vision-intake").convertContentPartForGemini;
+  } catch { /* optional */ }
   return sanitizeMessagesToolArguments(messages).filter((item) => item.role !== "system").map((item) => {
     if (item.role === "tool") {
       let response = item.content;
@@ -100,7 +182,15 @@ function normalizeForGemini(messages) {
       return { role: "user", parts: [{ functionResponse: { name: item.name || item.tool_name || "tool", response } }] };
     }
     const parts = [];
-    if (item.content) parts.push({ text: typeof item.content === "string" ? item.content : JSON.stringify(item.content) });
+    if (Array.isArray(item.content)) {
+      for (const part of item.content) {
+        const converted = convertPart ? convertPart(part) : null;
+        if (converted) parts.push(converted);
+        else if (part?.type === "text" || part?.text) parts.push({ text: String(part.text || "") });
+      }
+    } else if (item.content) {
+      parts.push({ text: typeof item.content === "string" ? item.content : JSON.stringify(item.content) });
+    }
     for (const call of Array.isArray(item.tool_calls) ? item.tool_calls : []) {
       const fn = call.function || call;
       let args = fn.arguments || fn.input || {};
@@ -118,7 +208,7 @@ function deltaText(content) {
   return content.map((part) => typeof part === "string" ? part : String(part?.text || "")).join("");
 }
 
-async function readOpenAiStream(response, onTextDelta, signal, onStreamActivity = null) {
+async function readOpenAiStream(response, onTextDelta, signal) {
   const reader = response.body?.getReader?.();
   if (!reader) return null;
   const decoder = new TextDecoder();
@@ -127,9 +217,6 @@ async function readOpenAiStream(response, onTextDelta, signal, onStreamActivity 
   let streamUsage = {};
   const toolCalls = new Map();
   const toolCallKeyByIndex = new Map();
-  const noteActivity = (kind, detail = {}) => {
-    try { onStreamActivity?.({ kind, ...detail }); } catch { /* ignore */ }
-  };
   const onAbort = () => {
     try { reader.cancel("aborted"); } catch { /* ignore */ }
   };
@@ -146,14 +233,12 @@ async function readOpenAiStream(response, onTextDelta, signal, onStreamActivity 
       if (!value.startsWith("data:") || value === "data: [DONE]") continue;
       let data;
       try { data = JSON.parse(value.slice(5).trim()); } catch { continue; }
-      noteActivity("sse_frame");
       if (data?.usage) streamUsage = data.usage;
       const delta = data?.choices?.[0]?.delta || data?.choices?.[0]?.message || {};
       const content = deltaText(delta.content ?? data?.choices?.[0]?.text);
       if (content) {
         text += content;
         try { onTextDelta?.(content); } catch {}
-        noteActivity("text");
       }
       for (const call of delta.tool_calls || []) {
         const index = Number(call.index) || 0;
@@ -164,7 +249,6 @@ async function readOpenAiStream(response, onTextDelta, signal, onStreamActivity 
         if (call.function?.name) current.function.name += call.function.name;
         if (call.function?.arguments) current.function.arguments += call.function.arguments;
         toolCalls.set(key, current);
-        noteActivity("tool_call", { name: call.function?.name || current.function.name || "" });
       }
       if (delta.function_call?.name || delta.function_call?.arguments) {
         const key = "legacy:0";
@@ -172,7 +256,6 @@ async function readOpenAiStream(response, onTextDelta, signal, onStreamActivity 
         current.function.name += delta.function_call?.name || "";
         current.function.arguments += delta.function_call?.arguments || "";
         toolCalls.set(key, current);
-        noteActivity("tool_call", { name: current.function.name || "" });
       }
     }
   };
@@ -195,7 +278,7 @@ async function readOpenAiStream(response, onTextDelta, signal, onStreamActivity 
   }
 }
 
-async function readAnthropicStream(response, onTextDelta, signal, onStreamActivity = null) {
+async function readAnthropicStream(response, onTextDelta, signal) {
   const reader = response.body?.getReader?.();
   if (!reader) return null;
   const decoder = new TextDecoder();
@@ -204,9 +287,6 @@ async function readAnthropicStream(response, onTextDelta, signal, onStreamActivi
   let streamUsage = {};
   const toolCalls = new Map();
   let currentToolId = "";
-  const noteActivity = (kind, detail = {}) => {
-    try { onStreamActivity?.({ kind, ...detail }); } catch { /* ignore */ }
-  };
   const onAbort = () => {
     try { reader.cancel("aborted"); } catch { /* ignore */ }
   };
@@ -223,7 +303,6 @@ async function readAnthropicStream(response, onTextDelta, signal, onStreamActivi
       if (!value.startsWith("data:") || value === "data: [DONE]") continue;
       let data;
       try { data = JSON.parse(value.slice(5).trim()); } catch { continue; }
-      noteActivity("sse_frame");
       const type = String(data?.type || "");
       if (type === "content_block_start" && data?.content_block?.type === "tool_use") {
         currentToolId = String(data.content_block.id || `tool-${toolCalls.size}`);
@@ -232,21 +311,17 @@ async function readAnthropicStream(response, onTextDelta, signal, onStreamActivi
           type: "function",
           function: { name: String(data.content_block.name || ""), arguments: "" },
         });
-        noteActivity("tool_call", { name: String(data.content_block.name || "") });
       } else if (type === "content_block_delta") {
         const delta = data?.delta || {};
         if (delta.type === "text_delta" && delta.text) {
           text += delta.text;
           try { onTextDelta?.(delta.text); } catch { /* ignore */ }
-          noteActivity("text");
         } else if (delta.type === "input_json_delta" && delta.partial_json && currentToolId) {
           const current = toolCalls.get(currentToolId);
           if (current) current.function.arguments += delta.partial_json;
-          noteActivity("tool_call", { name: current?.function?.name || "" });
         } else if (typeof delta.text === "string" && delta.text) {
           text += delta.text;
           try { onTextDelta?.(delta.text); } catch { /* ignore */ }
-          noteActivity("text");
         }
       } else if (type === "message_delta" && data?.usage) {
         streamUsage = { ...streamUsage, ...data.usage };
@@ -285,26 +360,34 @@ function adapterFor(definition) {
       const base = definition.baseUrl.replace(/\/+$/, "");
       const safeMessages = sanitizeMessagesToolArguments(input.messages || []);
       const messages = definition.kind === "openai-compatible" ? withCacheControl(safeMessages) : safeMessages;
+      // Streaming por defecto: evita timeouts del gateway (524) al no esperar el cuerpo completo.
+      const wantStream = input.stream !== false;
       const response = await fetch(`${base}/chat/completions`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${input.apiKey || "ollama"}`, "x-api-key": input.apiKey || "" },
-        body: JSON.stringify({ model: input.model, messages, temperature: resolveFactualTemperature(input.temperature), stream: Boolean(input.onTextDelta), ...(input.onTextDelta ? { stream_options: { include_usage: true } } : {}), ...(input.tools?.length ? { tools: input.tools } : {}) }),
+        body: JSON.stringify({
+          model: input.model,
+          messages,
+          temperature: resolveFactualTemperature(input.temperature),
+          stream: wantStream,
+          ...(wantStream ? { stream_options: { include_usage: true } } : {}),
+          ...(input.tools?.length ? { tools: input.tools } : {}),
+        }),
         signal: input.signal,
       });
       const contentType = response.headers?.get?.("content-type") || "";
-      if (response.ok && input.onTextDelta && contentType.includes("text/event-stream")) {
-        const streamed = await readOpenAiStream(response, input.onTextDelta, input.signal, input.onStreamActivity);
+      if (!response.ok) {
+        await parseProviderJsonOrThrow(response);
+      }
+      if (wantStream && contentType.includes("text/event-stream")) {
+        const streamed = await readOpenAiStream(response, input.onTextDelta, input.signal);
         if (streamed) return { ...streamed, toolCalls: normalizeToolCallsOut(streamed.toolCalls) };
       }
-      if (response.ok && (input.onTextDelta || input.onStreamActivity) && !contentType.includes("text/event-stream")) {
-        try { input.onStreamActivity?.({ kind: "buffered", contentType }); } catch { /* ignore */ }
+      if (contentType.includes("text/html")) {
+        const body = await response.text().catch(() => "");
+        throw createGatewayTimeoutError(response.status || 524, body.slice(0, 200));
       }
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        const err = Object.assign(new Error(data?.error?.message || data?.message || `HTTP ${response.status}`), { status: response.status });
-        if (/unexpected token|invalid json|malformed/i.test(String(err.message || ""))) err.code = "MALFORMED_TOOL_JSON";
-        throw err;
-      }
+      const data = await parseProviderJsonOrThrow(response);
       const message = data?.choices?.[0]?.message || data?.message || {};
       const textContent = Array.isArray(message.content) ? message.content.map((part) => part.text || "").join("") : String(message.content || data?.text || "");
       if (input.onTextDelta && textContent) {
@@ -312,11 +395,7 @@ function adapterFor(definition) {
       }
       const nativeToolCalls = message.tool_calls || data?.tool_calls || [];
       const legacyCall = message.function_call ? [{ id: `call_${message.function_call.name}_0`, type: "function", function: { name: message.function_call.name, arguments: message.function_call.arguments || "{}" } }] : [];
-      const outCalls = normalizeToolCallsOut(nativeToolCalls.length ? nativeToolCalls : legacyCall);
-      if (outCalls.length) {
-        try { input.onStreamActivity?.({ kind: "tool_call", name: outCalls[0]?.function?.name || "" }); } catch { /* ignore */ }
-      }
-      return { text: textContent, toolCalls: outCalls, usage: usage(data.usage) };
+      return { text: textContent, toolCalls: normalizeToolCallsOut(nativeToolCalls.length ? nativeToolCalls : legacyCall), usage: usage(data.usage) };
     };
   }
   if (definition.kind === "anthropic") {
@@ -327,7 +406,7 @@ function adapterFor(definition) {
           ? systemContent
           : [{ type: "text", text: systemContent, cache_control: { type: "ephemeral" } }])
         : undefined;
-      const wantStream = typeof input.onTextDelta === "function";
+      const wantStream = input.stream !== false;
       const response = await fetch(`${definition.baseUrl.replace(/\/+$/, "")}/messages`, {
         method: "POST",
         headers: {
@@ -351,35 +430,32 @@ function adapterFor(definition) {
         signal: input.signal,
       });
       const contentType = String(response.headers?.get?.("content-type") || response.headers?.["content-type"] || "");
-      if (wantStream && response.ok && contentType.includes("text/event-stream")) {
-        const streamed = await readAnthropicStream(response, input.onTextDelta, input.signal, input.onStreamActivity);
-        return streamed ? { ...streamed, toolCalls: normalizeToolCallsOut(streamed.toolCalls) } : streamed;
-      }
-      if (wantStream && response.ok && !contentType.includes("text/event-stream")) {
-        try { input.onStreamActivity?.({ kind: "buffered", contentType }); } catch { /* ignore */ }
-      }
-      const data = await response.json().catch(() => ({}));
       if (!response.ok) {
+        const data = await parseProviderJsonOrThrow(response);
         const err = Object.assign(new Error(data?.error?.message || data?.message || `HTTP ${response.status}`), { status: response.status });
-        if (/unexpected token|invalid json|malformed/i.test(String(err.message || ""))) err.code = "MALFORMED_TOOL_JSON";
         throw err;
       }
+      if (wantStream && contentType.includes("text/event-stream")) {
+        const streamed = await readAnthropicStream(response, input.onTextDelta, input.signal);
+        return streamed ? { ...streamed, toolCalls: normalizeToolCallsOut(streamed.toolCalls) } : streamed;
+      }
+      if (contentType.includes("text/html")) {
+        const body = await response.text().catch(() => "");
+        throw createGatewayTimeoutError(response.status || 524, body.slice(0, 200));
+      }
+      const data = await parseProviderJsonOrThrow(response);
       const blocks = Array.isArray(data.content) ? data.content : [];
       const text = blocks.filter((part) => part.type === "text").map((part) => part.text || "").join("");
       if (wantStream && text) {
-        try { input.onTextDelta(text); } catch { /* ignore */ }
-      }
-      const toolCalls = normalizeToolCallsOut(blocks.filter((part) => part.type === "tool_use").map((part) => ({
-        id: part.id,
-        type: "function",
-        function: { name: part.name, arguments: JSON.stringify(part.input || {}) },
-      })));
-      if (toolCalls.length) {
-        try { input.onStreamActivity?.({ kind: "tool_call", name: toolCalls[0]?.function?.name || "" }); } catch { /* ignore */ }
+        try { input.onTextDelta?.(text); } catch { /* ignore */ }
       }
       return {
         text,
-        toolCalls,
+        toolCalls: normalizeToolCallsOut(blocks.filter((part) => part.type === "tool_use").map((part) => ({
+          id: part.id,
+          type: "function",
+          function: { name: part.name, arguments: JSON.stringify(part.input || {}) },
+        }))),
         usage: usage(data.usage),
       };
     };
@@ -401,17 +477,13 @@ function adapterFor(definition) {
         }),
         signal: input.signal,
       });
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok) throw Object.assign(new Error(data?.error?.message || `HTTP ${response.status}`), { status: response.status });
+      const data = await parseProviderJsonOrThrow(response);
       const parts = data?.candidates?.[0]?.content?.parts || [];
       const text = parts.map((part) => part.text || "").join("");
       if (typeof input.onTextDelta === "function" && text) {
         try { input.onTextDelta(text); } catch { /* ignore */ }
       }
       const toolCalls = parts.filter((part) => part.functionCall?.name).map((part, index) => ({ id: `gemini-${index}`, type: "function", function: { name: part.functionCall.name, arguments: JSON.stringify(part.functionCall.args || {}) } }));
-      if (toolCalls.length) {
-        try { input.onStreamActivity?.({ kind: "tool_call", name: toolCalls[0]?.function?.name || "" }); } catch { /* ignore */ }
-      }
       return { text, toolCalls: normalizeToolCallsOut(toolCalls), usage: usage(data.usageMetadata) };
     };
   }
@@ -446,9 +518,31 @@ class AiCore {
       };
     } catch (error) {
       await this.metrics({ provider: item.definition.id, model: input.model, ok: false, latencyMs: Date.now() - startedAt, error: String(error?.message || error) });
+      const msg = String(error?.message || error || "");
+      if (/cancelad|cancelled by the user|Detenido\.|Solicitud cancelada/i.test(msg)) throw error;
+      if (
+        error?.code === "PROVIDER_GATEWAY_TIMEOUT"
+        || Number(error?.status) === 524
+        || error?.name === "TimeoutError"
+        || /timeout|gateway time-?out|cloudflare|API 524|<!DOCTYPE\s+html/i.test(msg)
+      ) {
+        throw createGatewayTimeoutError(error?.status || 524, msg);
+      }
       throw error;
     }
   }
 }
 
-module.exports = { AiCore, normalizeForAnthropic, normalizeForGemini, withCacheControl, normalizeToolCallsOut };
+module.exports = {
+  AiCore,
+  normalizeForAnthropic,
+  normalizeForGemini,
+  withCacheControl,
+  normalizeToolCallsOut,
+  readOpenAiStream,
+  GATEWAY_TIMEOUT_USER_MESSAGE,
+  DEFAULT_PROVIDER_TIMEOUT_MS,
+  isGatewayHtmlBody,
+  createGatewayTimeoutError,
+  parseProviderJsonOrThrow,
+};

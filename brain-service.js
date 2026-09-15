@@ -530,7 +530,20 @@ class EditCoreBrainService {
     const title = String(input.title||"Memoria EDITCOREAI").trim();
     const content = String(input.content||"").trim();
     if(!content) throw new Error("Escribe el contenido que EDITCOREAI debe recordar.");
-    if(scope==="global") return this.saveGlobalMemory({ type:input.type||"preference", title, content, projectPath:root||undefined, projectName:root?path.basename(root):undefined });
+    if(scope==="global") {
+      const saved = await this.saveGlobalMemory({ type:input.type||"preference", title, content, projectPath:root||undefined, projectName:root?path.basename(root):undefined });
+      if (Number(input.importance) > 0 && saved?.id) {
+        try {
+          this.memoryStore.upsertMemory({
+            ...saved,
+            scope: "global",
+            source: String(input.source || saved.source || "web/rag"),
+            importance: Number(input.importance),
+          });
+        } catch { /* ignore */ }
+      }
+      return saved;
+    }
     const ws = assertRoot(root);
     const brainRoot = this.projectBrainRoot(ws);
     const indexPath = path.join(brainRoot, "memory-index.json");
@@ -543,6 +556,28 @@ class EditCoreBrainService {
     index.entries = index.entries.slice(0,500);
     await writeJson(indexPath, index);
     return this.memoryStore.upsertMemory({ id:entry.id, scope:"project", projectId:projectId(ws), type:entry.type, title:entry.title, content:entry.summary, source:"tech", updatedAt:now, importance:Number(input.importance)||0.65 });
+  }
+
+  /**
+   * Persist an external web/docs/GitHub snippet into RAG knowledge_chunks (incremental).
+   */
+  async ingestExternalSnippet(root, input = {}) {
+    if (!root) return null;
+    const ws = assertRoot(root);
+    const text = String(input.text || input.content || "").trim();
+    if (text.length < 40) return null;
+    const relPath = String(input.path || `external/web/${Date.now()}.md`).replace(/\\/g, "/");
+    const ragDir = path.join(this.projectBrainRoot(ws), "rag-external");
+    await fs.promises.mkdir(ragDir, { recursive: true });
+    const fileName = path.basename(relPath).replace(/[^\w.-]+/g, "_") || `snippet-${Date.now()}.md`;
+    const abs = path.join(ragDir, fileName);
+    const body = `# ${String(input.title || "External knowledge").slice(0, 160)}\n\n${text.slice(0, 12_000)}\n`;
+    await fs.promises.writeFile(abs, body, "utf8");
+    return this.memoryStore.upsertKnowledgeChunk(projectId(ws), {
+      path: `rag-external/${fileName}`,
+      line: 1,
+      text: body.slice(0, 8000),
+    });
   }
 
   async forget(root, id) {
@@ -739,6 +774,10 @@ class EditCoreBrainService {
     if(catalog.length) sections.push(`Bodega relevante:\n${catalog.map(it=>`- ${it.name} [${it.type}]: ${it.description}`).join("\n")}`);
     if(memory.length) sections.push(`Memoria relevante:\n${memory.map(it=>`- [${it.type}] ${it.title}: ${String(it.content).slice(0,500)}`).join("\n")}`);
     if(knowledge.length) sections.push(`Código recuperado (RAG):\n${knowledge.map(it=>`- ${it.path}:${it.line}\n${it.text.slice(0,700)}`).join("\n")}`);
+    const webRag = matchedMemory.filter((it) => /web\/rag|web_rag/i.test(String(it.source || it.type || "")));
+    if (webRag.length) {
+      sections.push(`Conocimiento externo persistido (web/RAG):\n${webRag.map((it) => `- ${it.title}: ${String(it.content).slice(0, 600)}`).join("\n")}`);
+    }
     sections.push("====================================================");
     return sections.join("\n\n").slice(0, MAX_CONTEXT_CHARS);
   }

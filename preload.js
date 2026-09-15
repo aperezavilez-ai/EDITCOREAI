@@ -20,6 +20,9 @@ contextBridge.exposeInMainWorld("editcoreProject", {
   catalog: (parentPath) => ipcRenderer.invoke("project:catalog", parentPath),
   list: (rootPath, relativePath) => ipcRenderer.invoke("project:list", rootPath, relativePath),
   writeText: (input) => ipcRenderer.invoke("project:write-text", input),
+  readText: (input) => ipcRenderer.invoke("project:read-text", input),
+  saveEditor: (input) => ipcRenderer.invoke("project:save-editor", input),
+  gotoDefinition: (input) => ipcRenderer.invoke("project:goto-definition", input),
   revealInFolder: (input = {}) => ipcRenderer.invoke("project:reveal-in-folder", input),
   openPath: (input = {}) => ipcRenderer.invoke("project:open-path", input),
   copyPath: (input = {}) => ipcRenderer.invoke("project:copy-path", input),
@@ -33,6 +36,8 @@ contextBridge.exposeInMainWorld("editcoreProject", {
   browserInspect: (input = {}) => ipcRenderer.invoke("project:browser-inspect", input),
   renameSync: (input = {}) => ipcRenderer.invoke("project:rename-sync", input),
   imagesToCode: (input = {}) => ipcRenderer.invoke("project:images-to-code", input),
+  cloneWebPage: (input = {}) => ipcRenderer.invoke("project:clone-web-page", input),
+  runE2ePipeline: (input = {}) => ipcRenderer.invoke("project:e2e-pipeline", input),
   autoDocs: (input = {}) => ipcRenderer.invoke("project:auto-docs", input),
   dockerPlaybook: (input = {}) => ipcRenderer.invoke("project:docker-playbook", input),
   resolveSpecialFolder: (key) => ipcRenderer.invoke("project:resolve-special-folder", key),
@@ -212,6 +217,36 @@ contextBridge.exposeInMainWorld("editcoreAgent", {
   testRepair: (input = {}) => ipcRenderer.invoke("project:test-repair", input),
   gitCreateBranch: (input = {}) => ipcRenderer.invoke("agent:git-create-branch", input),
   onProgress: (callback) => ipcRenderer.on("agent:progress", (_event, value) => callback(value)),
+  onThoughtStream: (callback) => {
+    const listener = (_event, value) => callback(value);
+    ipcRenderer.on("agent:thought-stream", listener);
+    return () => ipcRenderer.removeListener("agent:thought-stream", listener);
+  },
+  onExplorationStart: (callback) => {
+    const listener = (_event, value) => callback(value);
+    ipcRenderer.on("agent:exploration-start", listener);
+    return () => ipcRenderer.removeListener("agent:exploration-start", listener);
+  },
+  onExplorationEnd: (callback) => {
+    const listener = (_event, value) => callback(value);
+    ipcRenderer.on("agent:exploration-end", listener);
+    return () => ipcRenderer.removeListener("agent:exploration-end", listener);
+  },
+  onDiffProposed: (callback) => {
+    const listener = (_event, value) => callback(value);
+    ipcRenderer.on("agent:diff-proposed", listener);
+    return () => ipcRenderer.removeListener("agent:diff-proposed", listener);
+  },
+  onDiffApplied: (callback) => {
+    const listener = (_event, value) => callback(value);
+    ipcRenderer.on("agent:diff-applied", listener);
+    return () => ipcRenderer.removeListener("agent:diff-applied", listener);
+  },
+  onTaskComplete: (callback) => {
+    const listener = (_event, value) => callback(value);
+    ipcRenderer.on("agent:task-complete", listener);
+    return () => ipcRenderer.removeListener("agent:task-complete", listener);
+  },
   onComplete: (callback) => {
     const listener = (_event, value) => callback(value);
     ipcRenderer.on("agent:complete", listener);
@@ -369,6 +404,31 @@ contextBridge.exposeInMainWorld("editcoreExtensions", {
   installVsix: (input = {}) => ipcRenderer.invoke("extensions:install-vsix", input),
   list: (input = {}) => ipcRenderer.invoke("extensions:list", input),
   uninstall: (input = {}) => ipcRenderer.invoke("extensions:uninstall", input),
+});
+
+contextBridge.exposeInMainWorld("editcoreIdeAssets", {
+  monacoVs: () => {
+    const path = require("node:path");
+    const fs = require("node:fs");
+    // 1) Ruta relativa al index (dev / asar con node_modules empaquetado)
+    const relativeFs = path.join(__dirname, "node_modules", "monaco-editor", "min", "vs");
+    if (fs.existsSync(path.join(relativeFs, "loader.js"))) {
+      return "./node_modules/monaco-editor/min/vs";
+    }
+    // 2) asar.unpacked (instalador)
+    const unpacked = [
+      path.join(__dirname, "..", "app.asar.unpacked", "node_modules", "monaco-editor", "min", "vs"),
+      path.join(process.resourcesPath || "", "app.asar.unpacked", "node_modules", "monaco-editor", "min", "vs"),
+    ];
+    for (const abs of unpacked) {
+      if (fs.existsSync(path.join(abs, "loader.js"))) {
+        return "./node_modules/monaco-editor/min/vs";
+      }
+    }
+    return "./node_modules/monaco-editor/min/vs";
+  },
+  xtermBase: () => "./node_modules/xterm",
+  xtermFitBase: () => "./node_modules/xterm-addon-fit",
 });
 
 contextBridge.exposeInMainWorld("editcorePty", {

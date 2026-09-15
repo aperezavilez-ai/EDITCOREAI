@@ -845,5 +845,29 @@
     resolveAutoModelEntry,
     resolveAutoModelProfile,
     formatChatModelLabel,
+    /** Protocolo de transparencia obligatorio bajo Auto Router (cualquier modelo). */
+    getTransparentAgentProtocol() {
+      const rootObj = typeof window !== "undefined" ? window : globalThis;
+      if (rootObj?.EditCoreAutoRouterProtocol?.AUTO_ROUTER_TRANSPARENT_PROTOCOL) {
+        return rootObj.EditCoreAutoRouterProtocol.AUTO_ROUTER_TRANSPARENT_PROTOCOL;
+      }
+      if (typeof require !== "undefined") {
+        try {
+          return require("./runtime/auto-router-transparent-protocol").AUTO_ROUTER_TRANSPARENT_PROTOCOL;
+        } catch { /* ignore */ }
+      }
+      return "";
+    },
+    withTransparentAgentProtocol(systemPrompt = "") {
+      const rootObj = typeof window !== "undefined" ? window : globalThis;
+      const api = rootObj?.EditCoreAutoRouterProtocol
+        || (typeof require !== "undefined"
+          ? (() => { try { return require("./runtime/auto-router-transparent-protocol"); } catch { return null; } })()
+          : null);
+      if (api?.withAutoRouterTransparentProtocol) {
+        return api.withAutoRouterTransparentProtocol(systemPrompt);
+      }
+      return String(systemPrompt || "");
+    },
   };
 });

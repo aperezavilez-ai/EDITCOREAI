@@ -12,9 +12,9 @@ using System.Windows.Forms;
 [assembly: AssemblyCompany("EditCoreAI")]
 [assembly: AssemblyProduct("EditCoreAI")]
 [assembly: AssemblyCopyright("Copyright © EditCoreAI")]
-[assembly: AssemblyVersion("2.9.4.0")]
-[assembly: AssemblyFileVersion("2.9.4.0")]
-[assembly: AssemblyInformationalVersion("2.9.4")]
+[assembly: AssemblyVersion("2.9.7.0")]
+[assembly: AssemblyFileVersion("2.9.7.0")]
+[assembly: AssemblyInformationalVersion("2.9.7")]
 
 internal static class Program
 {

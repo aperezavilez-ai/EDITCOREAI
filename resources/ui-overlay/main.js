@@ -92,6 +92,15 @@ const {
   resolveFactualTemperature,
 } = require("./runtime/anti-hallucination-policy");
 const { ToolDispatcher } = require("./runtime/tool-dispatcher");
+const {
+  normalizeImages: normalizeVisionImages,
+  buildOpenAiImageContent,
+  modelSupportsVision,
+  ensureVisionRoute,
+  VISION_ACK_RULE,
+  VISION_MODEL_PATTERN: VISION_INTAKE_PATTERN,
+} = require("./runtime/vision-intake");
+const { createExternalKnowledgeHook, wrapDispatcherWithKnowledgePersist } = require("./runtime/external-knowledge-persist");
 const { BRAIN_TOOL_DEFINITIONS, registerBrainTools } = require("./runtime/brain-tools");
 const { registerAgentCapabilityTools } = require("./runtime/register-agent-capability-tools");
 const { queuePostWriteDiagnostics } = require("./runtime/post-write-diagnostics");
@@ -156,6 +165,10 @@ const {
   classifyChatKernel,
   buildKernelHelpers,
 } = require("./runtime/chat-kernel-bridge");
+const {
+  attachTransparencyToProgress,
+  createAgentTransparencyEmitter,
+} = require("./runtime/agent-transparency-bus");
 const { attachPreviewLogStream } = require("./runtime/dev-server-daemon");
 const { enrichAgentInventory, formatJarvisContextForPrompt } = require("./runtime/jarvis-port");
 const { getBotRegistry } = require("./runtime/bot-registry");
@@ -575,6 +588,58 @@ function requestAgentApproval(event, payload = {}) {
     }
     sender.send("agent:approval-request", { requestId, ...payload });
   });
+}
+
+/** Progress + eventos granulares Cursor-like (thought / explore / diff). */
+function publishAgentProgress(sender, payload = {}) {
+  if (!sender || sender.isDestroyed?.()) return;
+  const safePayload = typeof clipMutationProgressForUi === "function"
+    ? clipMutationProgressForUi(payload)
+    : (payload || {});
+  const redacted = typeof redactSensitive === "function"
+    ? redactSensitive(safePayload, 8)
+    : safePayload;
+  try {
+    sender.send("agent:progress", redacted);
+  } catch { /* ignore */ }
+  try {
+    attachTransparencyToProgress(sender, redacted, redacted);
+  } catch { /* ignore */ }
+  // Kernel escribe directo a disco: emitir files-changed al completar mutaciones
+  // para que el panel derecho se refresque aunque el runId no esté en agentWorkflow.
+  try {
+    const tool = String(redacted?.name || "");
+    const stage = String(redacted?.stage || "");
+    const phase = String(redacted?.phase || "");
+    if (
+      phase === "tool"
+      && stage === "done"
+      && redacted?.ok !== false
+      && ["write_file", "replace_in_file", "apply_diff", "create_project", "delete_file"].includes(tool)
+    ) {
+      const projectRoot = String(redacted.projectRoot || "").trim();
+      if (projectRoot) {
+        emitProjectFilesChanged({ sender }, projectRoot, tool, redacted.input || {}, redacted.result || {});
+      }
+    }
+  } catch { /* ignore */ }
+}
+
+function publishAgentTaskComplete(sender, payload = {}) {
+  if (!sender || sender.isDestroyed?.()) return;
+  try {
+    const emitter = createAgentTransparencyEmitter(sender, {
+      runId: String(payload.runId || ""),
+      projectId: String(payload.projectId || ""),
+      projectRoot: String(payload.projectRoot || ""),
+    });
+    emitter.emitTaskComplete(payload.completed !== false && payload.ok !== false, {
+      text: String(payload.text || "").slice(0, 4000),
+      changedFiles: Array.isArray(payload.changedFiles)
+        ? payload.changedFiles
+        : (payload.report?.changedFiles || []),
+    });
+  } catch { /* ignore */ }
 }
 
 function resolveLivePermission(requested = "", senderId = null) {
@@ -1270,6 +1335,14 @@ function createWindow(options = {}) {
     inspectorRendererTelemetry.delete(webContentsId);
     permissionBySender.delete(webContentsId);
     windows.delete(windowId);
+    try {
+      const { listSessions, killSession } = require("./runtime/pty-session");
+      for (const snap of listSessions()) {
+        if (Number(snap.ownerId) === Number(webContentsId)) {
+          try { killSession(snap.id); } catch { /* ignore */ }
+        }
+      }
+    } catch { /* ignore */ }
     for (const [root, runtime] of previewProcesses) {
       runtime.owners?.delete(webContentsId);
       if (!runtime.owners?.size) {
@@ -1430,12 +1503,7 @@ function estimateTokens(value) {
 }
 
 function normalizeImages(images) {
-  if (!Array.isArray(images)) return [];
-  return images.slice(0, 6).map((image) => ({
-    name: String(image?.name || "imagen").slice(0, 120),
-    mimeType: String(image?.mimeType || ""),
-    dataUrl: String(image?.dataUrl || ""),
-  })).filter((image) => /^data:image\/(png|jpeg|webp);base64,/i.test(image.dataUrl));
+  return normalizeVisionImages(images).slice(0, 6);
 }
 
 
@@ -1503,10 +1571,13 @@ function toUserFacingError(error) {
 
 ipcMain.handle("editcore:chat", async (_event, input = {}) => {
   const apiKey = String(input.apiKey || "").trim();
-  const model = String(input.model || "").trim();
+  let model = String(input.model || "").trim();
   const prompt = String(input.prompt || "").trim();
-  const baseUrl = normalizeBaseUrl(input.baseUrl, input.providerKey || input.provider || input.mode);
+  let baseUrl = normalizeBaseUrl(input.baseUrl, input.providerKey || input.provider || input.mode);
+  let chatApiKey = apiKey;
+  let providerKey = String(input.providerKey || input.provider || input.mode || "");
   const rootPath = String(input.projectRoot || "").trim();
+  const images = normalizeImages(input.images);
   const permissionHint = String(
     input.permissionMode
     || permissionBySender.get(_event?.sender?.id)
@@ -1515,9 +1586,24 @@ ipcMain.handle("editcore:chat", async (_event, input = {}) => {
   ).toLowerCase();
   const fullAccess = permissionHint === "full";
 
-  if (!prompt) throw new Error("Escribe un mensaje.");
+  if (!prompt && !images.length) throw new Error("Escribe un mensaje.");
+  const effectivePrompt = prompt || (images.length ? "Analiza la imagen adjunta." : "");
 
-  const decision = classifyChatKernel(prompt, {
+  if (images.length) {
+    const routed = ensureVisionRoute({
+      model,
+      images,
+      candidates: fallbackProviderProfiles({ providerKey, baseUrl, model, apiKey: chatApiKey }),
+    });
+    if (routed.routed && routed.model) {
+      model = routed.model;
+      if (routed.apiKey) chatApiKey = routed.apiKey;
+      if (routed.baseUrl) baseUrl = normalizeBaseUrl(routed.baseUrl, routed.providerKey || providerKey);
+      if (routed.providerKey) providerKey = routed.providerKey;
+    }
+  }
+
+  const decision = classifyChatKernel(effectivePrompt, {
     permissionMode: permissionHint || "step",
     fullAccess,
     allowWrite: fullAccess,
@@ -1540,9 +1626,9 @@ ipcMain.handle("editcore:chat", async (_event, input = {}) => {
   }
 
   const localText = typeof localConversationResponse === "function"
-    ? localConversationResponse(prompt)
+    ? localConversationResponse(effectivePrompt)
     : "";
-  if (localText && decision.kind === "CHAT" && !fullAccess) {
+  if (localText && decision.kind === "CHAT" && !fullAccess && !images.length) {
     return {
       text: localText,
       cached: true,
@@ -1553,7 +1639,7 @@ ipcMain.handle("editcore:chat", async (_event, input = {}) => {
         completion_tokens: 0,
         confirmed_input_tokens: 0,
         confirmed_output_tokens: 0,
-        estimated_input_tokens: estimateTokens(prompt),
+        estimated_input_tokens: estimateTokens(effectivePrompt),
         estimated_output_tokens: estimateTokens(localText),
         local_response: true,
         telemetry: "estimated",
@@ -1572,11 +1658,12 @@ ipcMain.handle("editcore:chat", async (_event, input = {}) => {
       ...buildKernelProcessHooks(rootPath),
     });
     const out = await handleChatKernel({
-      message: prompt,
+      message: effectivePrompt,
       projectRoot: rootPath,
       apiBaseUrl: baseUrl,
-      apiKey,
+      apiKey: chatApiKey,
       model,
+      images,
       helpers,
       allowWrite: fullAccess || permissionHint !== "readonly",
       permissionMode: permissionHint || permissionMode || "step",
@@ -1584,22 +1671,33 @@ ipcMain.handle("editcore:chat", async (_event, input = {}) => {
       planAuthorizedExecution: fullAccess,
       onProgress: (p) => {
         try {
-          if (!sender.isDestroyed()) {
-            sender.send("agent:progress", {
-              runId: String(input.runId || ""),
-              projectId: String(input.projectId || ""),
-              ...(p && typeof p === "object" ? p : { text: String(p || "") }),
-            });
+          const payload = {
+            runId: String(input.runId || ""),
+            projectId: String(input.projectId || ""),
+            projectRoot: rootPath,
+            ...(p && typeof p === "object" ? p : { text: String(p || "") }),
+          };
+          publishAgentProgress(sender, payload);
+          const phase = String(payload.phase || "");
+          if (phase === "narration_delta" || (phase === "narration" && payload.streaming === true)) {
+            const delta = String(payload.text || payload.delta || "");
+            if (delta && !sender.isDestroyed()) {
+              sender.send("editcore:chunk", { text: delta, delta: true });
+            }
           }
         } catch { /* ignore */ }
       },
     });
     const text = String(out?.text || "").trim() || "Sin respuesta.";
+    try {
+      if (!sender.isDestroyed()) sender.send("editcore:chunk", { done: true, text });
+    } catch { /* ignore */ }
     return {
       text,
       kernel: true,
       kind: out?.kind || decision.kind,
       steps: Array.isArray(out?.steps) ? out.steps : [],
+      visionRouted: images.length ? model : undefined,
       usage: out?.usage || {
         prompt_tokens: 0,
         completion_tokens: 0,
@@ -1779,7 +1877,9 @@ function formatBrainAgentContext(inventory = {}, orchestratorContent = "") {
 
 function formatProjectBootstrapListing(rootPath, options = {}) {
   try {
-    const ignoreRoadmap = options.ignoreRoadmap === true || options.analysisMode === true;
+    // Siempre inyectar ROADMAP como índice (ahorro tokens). En análisis: no usarlo como fuente de bugs.
+    const ignoreRoadmap = options.ignoreRoadmap === true;
+    const analysisMode = options.analysisMode === true;
     const roadmap = ignoreRoadmap ? { exists: false, content: "" } : readRoadmap(rootPath);
     const formatEntry = (entry) => `${entry.path}${entry.kind === "directory" ? "/" : ""}`;
     let sessionBlock = "";
@@ -1796,10 +1896,13 @@ function formatProjectBootstrapListing(rootPath, options = {}) {
       const rootEntries = listEntries(rootPath, "").slice(0, 24);
       return [
         "PUNTO DE PARTIDA: ROADMAP + session-state ya cargados. NO reexplores ni leas el proyecto entero.",
+        analysisMode
+          ? "MODO ANALISIS: ROADMAP es indice de tokens, NO fuente de bugs. Hallazgos solo desde codigo leido."
+          : "MODO ACCION: read_file solo de archivos a editar. EditCore actualiza ROADMAP tras cada write.",
         `Raiz (nombres): ${rootEntries.map(formatEntry).join(", ")}`,
         formatRoadmapForPrompt(rootPath),
         sessionBlock,
-        "read_file solo para el archivo que vas a editar o que el ROADMAP/session-state no menciona.",
+        "PROHIBIDO list_files('.') / project_discovery / codebase_map del repo entero si el mapa cubre la tarea.",
       ].filter(Boolean).join("\n");
     }
     const rootEntries = listEntries(rootPath, "").slice(0, CURSOR_PARITY_LIMITS.bootstrapRootEntries);
@@ -1808,13 +1911,13 @@ function formatProjectBootstrapListing(rootPath, options = {}) {
       ? listEntries(rootPath, "src").slice(0, CURSOR_PARITY_LIMITS.bootstrapSrcEntries)
       : [];
     return [
-      ignoreRoadmap
+      analysisMode
         ? "INDICE REAL DEL PROYECTO (analisis: hallazgos desde codigo; ROADMAP.md lo actualiza EditCore como indice):"
         : "INDICE REAL DEL PROYECTO (precargado; no uses read_file en la carpeta raiz ni en rutas absolutas):",
       `Raiz: ${rootEntries.map(formatEntry).join(", ")}`,
       srcEntries.length ? `src/: ${srcEntries.map(formatEntry).join(", ")}` : "",
       sessionBlock,
-      ignoreRoadmap
+      analysisMode
         ? "No cites bugs desde ROADMAP.md. Analiza package.json + codigo (src/api/app). EditCore sincroniza ROADMAP.md mid-run y al cierre; TU no lo escribas en este turno."
         : "No hay ROADMAP.md. Analiza el disco (list_files + package.json/index.html). EditCore creara/actualizara ROADMAP.md. PROHIBIDO pedirlo al usuario.",
       "Usa read_file solo con rutas de ARCHIVO relativas (ej. package.json, src/app/page.tsx).",
@@ -2813,28 +2916,31 @@ function parseAgentJson(text) {
 }
 
 // Vision-capable model patterns for image_url filtering
-const VISION_MODEL_PATTERN = /vision|claude|gpt-4o|gpt-4-turbo|gemini|llava|qwen-vl|moonshot-v1|kimi|haiku|sonnet|opus|pixtral|mistral-large|yi-vl|deepseek-vl|internvl|minicpm-v/i;
+const VISION_MODEL_PATTERN = VISION_INTAKE_PATTERN;
+
+function messagesHaveImages(messages = []) {
+  return (Array.isArray(messages) ? messages : []).some((msg) =>
+    Array.isArray(msg?.content) && msg.content.some((part) => part?.type === "image_url" || part?.type === "image")
+  );
+}
 
 function sanitizeMessagesForModel(messages, model) {
-  // Check if any message has image_url content
-  const hasImages = messages.some((msg) =>
-    Array.isArray(msg.content) && msg.content.some((part) => part?.type === "image_url")
-  );
+  const hasImages = messagesHaveImages(messages);
   if (!hasImages) return messages;
-  // If model supports vision, pass through unchanged
-  if (VISION_MODEL_PATTERN.test(String(model || ""))) return messages;
-  // Strip image blocks and add a note so the model knows an image was attached
+  if (modelSupportsVision(model)) return messages;
+  // Keep images when possible; callProvider should have auto-routed already.
+  // Only strip as last resort if the active model still cannot accept vision.
   return messages.map((msg) => {
     if (!Array.isArray(msg.content)) return msg;
-    const hasImg = msg.content.some((part) => part?.type === "image_url");
+    const hasImg = msg.content.some((part) => part?.type === "image_url" || part?.type === "image");
     if (!hasImg) return msg;
     const textParts = msg.content.filter((part) => part?.type === "text");
-    const imgCount = msg.content.filter((part) => part?.type === "image_url").length;
+    const imgCount = msg.content.filter((part) => part?.type === "image_url" || part?.type === "image").length;
     return {
       ...msg,
       content: [
         ...textParts,
-        { type: "text", text: `[${imgCount} imagen(es) adjunta(s) — el modelo "${model}" no soporta visión. Para analizar imágenes selecciona un modelo con capacidad visual como claude-opus-4, gpt-4o o qwen-vl.]` },
+        { type: "text", text: `[${imgCount} imagen(es) adjunta(s) — el modelo activo no soporta visión y no hubo candidato multimodal disponible.]` },
       ],
     };
   });
@@ -2971,11 +3077,35 @@ function isProviderToolUnsupported(error) {
 }
 
 async function callProvider({ baseUrl, apiKey, model, messages, providerKey = "", signal, timeoutMs = 180_000, maxAttempts = 2, enableTools = false, tools = AGENT_TOOL_DEFINITIONS, auditContext = null, tokenLedger = null, ledgerContext = null, allowProviderFallback = true, rawToolCalls = false, onTextDelta = null }) {
-  const endpoint = normalizeBaseUrl(baseUrl, providerKey);
+  let activeModel = model;
+  let activeApiKey = apiKey;
+  let activeBaseUrl = baseUrl;
+  let activeProviderKey = providerKey;
+  if (messagesHaveImages(messages) && !modelSupportsVision(activeModel)) {
+    const pick = ensureVisionRoute({
+      model: activeModel,
+      images: [{ dataUrl: "data:image/png;base64,iVBORw0KGgo=" }],
+      candidates: fallbackProviderProfiles({
+        providerKey: activeProviderKey,
+        baseUrl: activeBaseUrl,
+        model: activeModel,
+        apiKey: activeApiKey,
+      }),
+    });
+    if (pick.routed && pick.model) {
+      activeModel = pick.model;
+      if (pick.apiKey) activeApiKey = pick.apiKey;
+      if (pick.baseUrl) activeBaseUrl = pick.baseUrl;
+      if (pick.providerKey) activeProviderKey = pick.providerKey;
+    }
+  }
+  const endpoint = normalizeBaseUrl(activeBaseUrl, activeProviderKey);
   const providerId = `endpoint:${new URL(endpoint).hostname}`;
-  runtimeAiCore.register({ id: providerId, kind: providerKind(providerKey, endpoint), baseUrl: endpoint });
+  runtimeAiCore.register({ id: providerId, kind: providerKind(activeProviderKey, endpoint), baseUrl: endpoint });
   const attempts = Math.max(1, Math.min(3, Number(maxAttempts) || 1));
-  const safeMessages = sanitizeMessagesForModel(messages, model);
+  const safeMessages = modelSupportsVision(activeModel)
+    ? messages
+    : sanitizeMessagesForModel(messages, activeModel);
   let lastError;
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
     if (signal?.aborted) throw signal.reason || new Error("Solicitud cancelada.");
@@ -2986,7 +3116,7 @@ async function callProvider({ baseUrl, apiKey, model, messages, providerKey = ""
     const trace = auditPhase1()?.request({
       ...(auditContext || {}),
       provider: new URL(endpoint).hostname,
-      model,
+      model: activeModel,
       messages: safeMessages,
       tools: enableTools ? tools : [],
       attempt,
@@ -2995,7 +3125,7 @@ async function callProvider({ baseUrl, apiKey, model, messages, providerKey = ""
     const ledgerRow = tokenLedger?.begin({
       ...(ledgerContext || {}),
       provider: new URL(endpoint).hostname,
-      model,
+      model: activeModel,
       retry: attempt - 1,
       attemptId: `${String(ledgerContext?.attemptId || ledgerContext?.stepId || "model")}:${attempt}`,
       budgetBefore: Math.max(0, Number(ledgerContext?.budgetBefore) || 0),
@@ -3003,17 +3133,17 @@ async function callProvider({ baseUrl, apiKey, model, messages, providerKey = ""
     try {
       let result;
       try {
-        result = await runtimeAiCore.complete({ provider: providerId, apiKey, model, messages: safeMessages, tools: enableTools ? tools : [], temperature: resolveFactualTemperature(), signal: requestSignal, maxAttempts: 1, onTextDelta });
+        result = await runtimeAiCore.complete({ provider: providerId, apiKey: activeApiKey, model: activeModel, messages: safeMessages, tools: enableTools ? tools : [], temperature: resolveFactualTemperature(), signal: requestSignal, maxAttempts: 1, onTextDelta });
       } catch (error) {
         if (!enableTools || !isProviderToolUnsupported(error)) throw error;
         const textProtocolMessages = [
           ...safeMessages,
           { role: "user", content: "El proveedor no acepto herramientas nativas. Continua usando el protocolo JSON textual de EditCore: responde SOLO con {\"type\":\"tool\",\"name\":\"...\",\"input\":{...}} o {\"type\":\"final\",\"text\":\"...\"}." },
         ];
-        result = await runtimeAiCore.complete({ provider: providerId, apiKey, model, messages: textProtocolMessages, tools: [], temperature: resolveFactualTemperature(), signal: requestSignal, maxAttempts: 1 });
+        result = await runtimeAiCore.complete({ provider: providerId, apiKey: activeApiKey, model: activeModel, messages: textProtocolMessages, tools: [], temperature: resolveFactualTemperature(), signal: requestSignal, maxAttempts: 1 });
         result.decisionSource = "text_protocol_no_native_tools";
       }
-      result.usage = { ...normalizeUsage(result.usage, estimatedRequestTokens, result.text), model, request_input_tokens_estimate: estimatedRequestTokens, provider_host: new URL(endpoint).hostname, request_attempt: attempt };
+      result.usage = { ...normalizeUsage(result.usage, estimatedRequestTokens, result.text), model: activeModel, request_input_tokens_estimate: estimatedRequestTokens, provider_host: new URL(endpoint).hostname, request_attempt: attempt };
       tokenLedger?.finish(ledgerRow, result.usage, {
         latency: result.latencyMs,
         budgetAfter: Math.max(0, Number(ledgerContext?.budgetBefore || 0) - Number(result.usage.confirmed_input_tokens || result.usage.estimated_input_tokens || 0)),
@@ -3022,12 +3152,12 @@ async function callProvider({ baseUrl, apiKey, model, messages, providerKey = ""
       const hasToolCalls = Array.isArray(result.toolCalls) && result.toolCalls.length > 0;
       const hasText = Boolean(String(result.text || "").trim());
       if (!hasToolCalls && !hasText) {
-        const emptyError = new Error(`El proveedor ${new URL(endpoint).hostname} devolvio una respuesta vacia para ${model}.`);
+        const emptyError = new Error(`El proveedor ${new URL(endpoint).hostname} devolvio una respuesta vacia para ${activeModel}.`);
         emptyError.code = "EMPTY_PROVIDER_RESPONSE";
         throw emptyError;
       }
       if (trace) auditPhase1()?.response(trace, { usage: result.usage });
-      recordModelCapability({ baseUrl: endpoint, model, providerKey, ok: true, latencyMs: result.latencyMs });
+      recordModelCapability({ baseUrl: endpoint, model: activeModel, providerKey: activeProviderKey, ok: true, latencyMs: result.latencyMs });
       return result;
     } catch (error) {
       tokenLedger?.finish(ledgerRow, {}, { error, latency: Date.now() - Number(ledgerRow?.startedAt || Date.now()), budgetAfter: ledgerContext?.budgetBefore });
@@ -3041,7 +3171,7 @@ async function callProvider({ baseUrl, apiKey, model, messages, providerKey = ""
       break;
     }
   }
-  if (!(signal?.aborted)) recordModelCapability({ baseUrl: endpoint, model, providerKey, ok: false, error: String(lastError?.message || lastError || "") });
+  if (!(signal?.aborted)) recordModelCapability({ baseUrl: endpoint, model: activeModel, providerKey: activeProviderKey, ok: false, error: String(lastError?.message || lastError || "") });
   const shouldRotateProvider = allowProviderFallback && (
     isRecoverableModelError(lastError)
     || isModelUnavailableError(lastError)
@@ -3049,7 +3179,7 @@ async function callProvider({ baseUrl, apiKey, model, messages, providerKey = ""
     || isAuthOrUpstreamFailure(lastError)
   );
   if (shouldRotateProvider) {
-    for (const fallback of fallbackProviderProfiles({ providerKey, baseUrl: endpoint, model, apiKey })) {
+    for (const fallback of fallbackProviderProfiles({ providerKey: activeProviderKey, baseUrl: endpoint, model: activeModel, apiKey: activeApiKey })) {
       try {
         const result = await callProvider({
           baseUrl: fallback.baseUrl,
@@ -3062,16 +3192,16 @@ async function callProvider({ baseUrl, apiKey, model, messages, providerKey = ""
           maxAttempts: 1,
           enableTools,
           tools,
-          auditContext: { ...(auditContext || {}), fallbackFrom: `${providerKey || "provider"}/${model}` },
+          auditContext: { ...(auditContext || {}), fallbackFrom: `${activeProviderKey || "provider"}/${activeModel}` },
           tokenLedger,
           ledgerContext,
           allowProviderFallback: false,
           rawToolCalls,
           onTextDelta,
         });
-        result.usage = { ...(result.usage || {}), provider_fallback_used: true, fallback_from_model: model, fallback_to_model: fallback.model };
+        result.usage = { ...(result.usage || {}), provider_fallback_used: true, fallback_from_model: activeModel, fallback_to_model: fallback.model };
         result.fallback = {
-          from: { providerKey, model, baseUrl: endpoint, apiKey },
+          from: { providerKey: activeProviderKey, model: activeModel, baseUrl: endpoint, apiKey: activeApiKey },
           to: {
             providerKey: fallback.providerKey,
             model: fallback.model,
@@ -5246,6 +5376,40 @@ ipcMain.handle("project:write-text", (_event, input = {}) => {
   const result = writeProjectFile(root, rel, String(input.content || ""));
   return { ok: true, ...result };
 });
+
+ipcMain.handle("project:read-text", (_event, input = {}) => {
+  const root = assertProjectRoot(String(input.projectRoot || "").trim());
+  const rel = assertSafeProjectRel(input.path);
+  const target = resolveInside(root, rel);
+  if (!fs.existsSync(target) || !fs.statSync(target).isFile()) {
+    throw new Error(`No es un archivo: ${rel}`);
+  }
+  const stat = fs.statSync(target);
+  if (stat.size > 2_000_000) throw new Error("Archivo demasiado grande para el editor (>2MB).");
+  const content = fs.readFileSync(target, "utf8");
+  return { ok: true, path: rel, content, size: stat.size };
+});
+
+ipcMain.handle("project:save-editor", (event, input = {}) => {
+  const root = assertWritableProjectRoot(String(input.projectRoot || "").trim());
+  const rel = assertSafeProjectRel(input.path);
+  const target = resolveInside(root, rel);
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  fs.writeFileSync(target, String(input.content ?? ""), "utf8");
+  const result = { path: rel, written: true };
+  emitProjectFilesChanged(event, root, "write_file", { path: rel }, result);
+  return { ok: true, ...result };
+});
+
+ipcMain.handle("project:goto-definition", (_event, input = {}) => {
+  const root = assertProjectRoot(String(input.projectRoot || "").trim());
+  const { gotoDefinition } = require("./runtime/symbol-nav");
+  const hit = gotoDefinition(root, String(input.symbol || ""), {
+    fromPath: String(input.fromPath || ""),
+    resolveInside,
+  });
+  return hit || { ok: false };
+});
 ipcMain.handle("project:catalog", (_event, parentPath) => listProjectCatalog(String(parentPath || "").trim()));
 ipcMain.handle("project:resolve-special-folder", (_event, key = "") => {
   const alias = String(key || "").trim().toLowerCase();
@@ -5781,12 +5945,12 @@ ipcMain.handle("agent:plan", async (event, input = {}) => {
     startedAt: Date.now(),
   });
   const sendPlanProgress = (payload = {}) => {
-    if (!event.sender.isDestroyed()) event.sender.send("agent:progress", redactSensitive({
+    publishAgentProgress(event.sender, {
       runId: planRunId,
       projectId: String(input.projectId || ""),
       stage: "planning",
       ...payload,
-    }, 8));
+    });
   };
   const persistedTask = String(input.persistedPrompt || redactSensitive(task) || "").trim();
   if (!apiKey || !model || !task) {
@@ -5889,12 +6053,28 @@ ipcMain.handle("agent:plan", async (event, input = {}) => {
 
 ipcMain.handle("agent:run", async (event, input = {}) => {
   // Validaciones básicas
-  const apiKey = String(input.apiKey || "").trim();
-  const model = String(input.model || "").trim();
-  const baseUrl = normalizeBaseUrl(input.baseUrl, input.providerKey);
-  const task = String(input.prompt || "").trim();
+  let apiKey = String(input.apiKey || "").trim();
+  let model = String(input.model || "").trim();
+  let baseUrl = normalizeBaseUrl(input.baseUrl, input.providerKey);
+  let providerKey = String(input.providerKey || "");
+  const runImages = normalizeImages(input.images);
+  const task = String(input.prompt || "").trim() || (runImages.length ? "Analiza la imagen adjunta." : "");
 
   if (!task) throw new Error("Falta tarea.");
+
+  if (runImages.length) {
+    const routed = ensureVisionRoute({
+      model,
+      images: runImages,
+      candidates: fallbackProviderProfiles({ providerKey, baseUrl, model, apiKey }),
+    });
+    if (routed.routed && routed.model) {
+      model = routed.model;
+      if (routed.apiKey) apiKey = routed.apiKey;
+      if (routed.baseUrl) baseUrl = normalizeBaseUrl(routed.baseUrl, routed.providerKey || providerKey);
+      if (routed.providerKey) providerKey = routed.providerKey;
+    }
+  }
 
   const kernelDecision = classifyChatKernel(task);
   if (kernelDecision.kind === "STOP") {
@@ -5948,6 +6128,7 @@ ipcMain.handle("agent:run", async (event, input = {}) => {
         apiBaseUrl: baseUrl,
         apiKey,
         model,
+        images: runImages,
         helpers,
         allowWrite: permissionHint === "full" || permissionHint !== "readonly",
         permissionMode: permissionHint || "step",
@@ -5955,13 +6136,12 @@ ipcMain.handle("agent:run", async (event, input = {}) => {
         planAuthorizedExecution: permissionHint === "full",
         onProgress: (p) => {
           try {
-            if (!event.sender.isDestroyed()) {
-              event.sender.send("agent:progress", {
-                runId,
-                projectId: String(input.projectId || ""),
-                ...(p && typeof p === "object" ? p : { text: String(p || "") }),
-              });
-            }
+            publishAgentProgress(event.sender, {
+              runId,
+              projectId: String(input.projectId || ""),
+              projectRoot: rootPath,
+              ...(p && typeof p === "object" ? p : { text: String(p || "") }),
+            });
           } catch { /* ignore */ }
         },
       });
@@ -5971,6 +6151,47 @@ ipcMain.handle("agent:run", async (event, input = {}) => {
         .filter((st) => ["write_file", "replace_in_file", "delete_file"].includes(String(st?.name || "")) && st?.ok !== false)
         .map((st) => String(st?.input?.path || st?.path || "").trim())
         .filter(Boolean))];
+      // Checkpoint Undo/Keep/Review: el kernel escribe snapshots pero no agent-last-run.
+      try {
+        const mutations = Array.isArray(out?.mutations) ? out.mutations.filter((m) => m && m.path) : [];
+        let filesForCheckpoint = mutations;
+        if (!filesForCheckpoint.length && changedFiles.length) {
+          const { resolveSnapshotBackupAbs, listSnapshots } = require("./editcore-chat-kernel/snapshot");
+          // listSnapshots devuelve newest-first
+          const listed = listSnapshots(rootPath);
+          const snapList = Array.isArray(listed?.snapshots) ? listed.snapshots : [];
+          const window = snapList.slice(0, 24);
+          filesForCheckpoint = changedFiles.map((rel) => {
+            const norm = String(rel).replace(/\\/g, "/");
+            let backupPath = "";
+            // El backup pre-corrida es el más antiguo en la ventana que tenga .bak
+            for (let i = window.length - 1; i >= 0; i -= 1) {
+              const abs = resolveSnapshotBackupAbs(rootPath, window[i]?.id, norm);
+              if (abs) {
+                backupPath = abs;
+                break;
+              }
+            }
+            return {
+              path: norm,
+              action: "write_file",
+              backupPath,
+              created: !backupPath,
+            };
+          });
+        }
+        if (filesForCheckpoint.length) {
+          saveLastAgentRun(app.getPath("userData"), rootPath, {
+            runId,
+            at: new Date().toISOString(),
+            task: String(task || input.prompt || "").slice(0, 500),
+            files: filesForCheckpoint,
+            steps,
+          });
+        }
+      } catch (error) {
+        logStartup(`kernel saveLastAgentRun fallo: ${String(error?.message || error).slice(0, 160)}`);
+      }
       const report = {
         completed: true,
         toolCount: steps.length,
@@ -5989,6 +6210,15 @@ ipcMain.handle("agent:run", async (event, input = {}) => {
             text,
             steps: typeof slimAgentStepsForIpc === "function" ? slimAgentStepsForIpc(steps) : steps,
             usage: out?.usage || {},
+            report,
+          });
+          publishAgentTaskComplete(event.sender, {
+            runId,
+            projectId: String(input.projectId || ""),
+            projectRoot: rootPath,
+            completed: true,
+            text,
+            changedFiles,
             report,
           });
         }
@@ -6226,14 +6456,12 @@ ipcMain.handle("agent:run", async (event, input = {}) => {
   activeAgentRuns.set(runKey, runState);
 
   const sendAgentProgress = (payload = {}) => {
-    const safePayload = typeof clipMutationProgressForUi === "function"
-      ? clipMutationProgressForUi(payload)
-      : (payload || {});
-    if (!event.sender.isDestroyed()) event.sender.send("agent:progress", redactSensitive({
+    publishAgentProgress(event.sender, {
       runId,
       projectId: String(input.projectId || ""),
-      ...safePayload,
-    }, 8));
+      projectRoot: rootPath,
+      ...(payload || {}),
+    });
   };
   // Checkpoint Git aditivo tras PROCEDE (despues de runState; no bloquea si no hay git).
   if (workflowContext
@@ -7071,6 +7299,30 @@ ipcMain.handle("agent:run", async (event, input = {}) => {
       brain: brain(),
       runProjectCommand,
       writeProjectFile: (rel, content) => writeProjectFile(rootPath, rel, content),
+      visionGenerate: async ({ prompt, images, model: visionModel, systemPrompt }) => {
+        const useModel = String(visionModel || model || "").trim();
+        const content = [
+          { type: "text", text: prompt },
+          ...(images || []).map((img) => ({
+            type: "image_url",
+            image_url: { url: img.dataUrl || img.url },
+          })),
+        ];
+        const providerResult = await callProvider({
+          baseUrl,
+          apiKey,
+          model: useModel,
+          providerKey: input.providerKey || "",
+          messages: [
+            { role: "system", content: systemPrompt || "Eres un generador de UI. Solo JSON de archivos." },
+            { role: "user", content },
+          ],
+          timeoutMs: 120_000,
+          maxAttempts: 1,
+          enableTools: false,
+        });
+        return String(providerResult?.text || "");
+      },
     });
 
     registerBrainTools(dispatcher, {
@@ -7078,6 +7330,11 @@ ipcMain.handle("agent:run", async (event, input = {}) => {
       rootPath,
       hostTools: () => dispatcher.definitions(),
     });
+
+    wrapDispatcherWithKnowledgePersist(
+      dispatcher,
+      createExternalKnowledgeHook({ brain: brain(), projectRoot: rootPath }),
+    );
 
     // Configurar tool executor
     adapter.toolExecutor = {
@@ -7256,7 +7513,10 @@ ipcMain.handle("agent:run", async (event, input = {}) => {
     // FOCO 1 archivo: no listar raiz/src ni enriquecer con indice/memoria/Cerebro.
     const projectBootstrap = (scopedDiskFocus || runProfile.skipBootstrap === true)
       ? ""
-      : formatProjectBootstrapListing(rootPath, { analysisMode });
+      : formatProjectBootstrapListing(rootPath, {
+        analysisMode,
+        task: String(task || "").slice(0, 220),
+      });
     let orchestratorSkill = "";
     if (!scopedDiskFocus && !runProfile.greenfieldCreate && !runProfile.conversationOnly) {
       try {
@@ -7272,11 +7532,14 @@ ipcMain.handle("agent:run", async (event, input = {}) => {
         projectMemoryContext = String(loadProjectContext(rootPath).prompt || "").slice(0, 12_000);
       } catch {}
     }
-    // Bloque 1: @Files/@Folders/@Docs/@Git/@Web + indice siempre al adaptador legado.
+    // Índice completo solo con @mentions o análisis amplio — no en cada "modifica X".
     let enrichedTask = task;
     if (!scopedDiskFocus) {
       try {
-        const index = getCachedProjectIndex(rootPath, { rebuild: false });
+        const { extractAtMentions } = require("./runtime/project-index");
+        const mentions = extractAtMentions(task);
+        const needsIndex = analysisMode === true || (Array.isArray(mentions) && mentions.length > 0);
+        const index = needsIndex ? getCachedProjectIndex(rootPath, { rebuild: false }) : null;
         const enriched = enrichPromptWithMentions(rootPath, task, { index, maxFiles: 4 });
         if (String(enriched.prompt || "").length > String(task || "").length) {
           enrichedTask = enriched.prompt;
@@ -7357,6 +7620,7 @@ ipcMain.handle("agent:run", async (event, input = {}) => {
       maxTokens: inspectorRepairMode ? 500000 : Math.min(400000, Number(input.maxOutputTokens) || 400000),
       brainContext: brainCtx,
       brainInventory,
+      images: normalizeImages(input.images),
       analysisContext: String(input.analysisContext || ""),
       freshAnalysisRun,
       runId,
@@ -7686,6 +7950,15 @@ ipcMain.handle("agent:run", async (event, input = {}) => {
         ...reportExtras,
       },
     });
+    publishAgentTaskComplete(event.sender, {
+      runId,
+      projectId: String(input.projectId || ""),
+      projectRoot: rootPath,
+      completed: result.completed,
+      text: result.text,
+      changedFiles: result.report?.changedFiles || reportExtras.undoFiles || [],
+      report: { ...(result.report || {}), ...reportExtras },
+    });
 
     return {
       taskId,
@@ -7865,14 +8138,37 @@ ipcMain.handle("agent:undo-last-run", (_event, input = {}) => {
     }
   }
 
-  const agentUndo = restoreLastAgentRun(app.getPath("userData"), root, { resolveInside });
+  let agentUndo = null;
+  try {
+    agentUndo = restoreLastAgentRun(app.getPath("userData"), root, { resolveInside });
+  } catch (error) {
+    const msg = String(error?.message || error);
+    if (/ya fue deshecha/i.test(msg)) {
+      return {
+        ok: false,
+        restored: 0,
+        files: [],
+        errors: [],
+        source: "agent-run",
+        error: msg,
+      };
+    }
+    agentUndo = { restored: 0, files: [], errors: [], error: msg };
+  }
   const restoredCount = Number(agentUndo?.restored || 0);
   if (restoredCount > 0) {
-    return { ...agentUndo, source: "agent-run" };
+    return { ...agentUndo, ok: true, source: "agent-run" };
   }
   // Fallback: checkpoint del kernel (.editcore/snapshots/)
   try {
-    return runSnapshotRollback();
+    const snapResult = runSnapshotRollback();
+    if (snapResult.ok) return snapResult;
+    return {
+      ...(agentUndo || { restored: 0, files: [], errors: [] }),
+      ...snapResult,
+      ok: false,
+      error: snapResult.error || agentUndo?.error || "Sin cambios para deshacer",
+    };
   } catch (error) {
     return {
       ...(agentUndo || { restored: 0, files: [], errors: [] }),
@@ -8162,12 +8458,18 @@ ipcMain.handle("extensions:uninstall", (_event, input = {}) => {
 
 ipcMain.handle("pty:create", (event, input = {}) => {
   const { createSession, attachDataListener } = require("./runtime/pty-session");
-  const root = String(input.projectRoot || "").trim();
-  const cwd = root ? assertProjectRoot(root) : process.cwd();
+  const root = String(input.projectRoot || input.cwd || "").trim();
+  let cwd = process.cwd();
+  try {
+    if (root) cwd = assertProjectRoot(root);
+  } catch {
+    cwd = root && require("node:path").isAbsolute(root) ? root : process.cwd();
+  }
   const snap = createSession({
     cwd,
     cols: Number(input.cols) || 120,
     rows: Number(input.rows) || 30,
+    ownerId: event.sender.id,
   });
   const sender = event.sender;
   attachDataListener(snap.id, (data) => {
@@ -8335,6 +8637,60 @@ ipcMain.handle("project:images-to-code", async (_event, input = {}) => {
   });
 });
 
+  ipcMain.handle("project:clone-web-page", async (_event, input = {}) => {
+  const privacy = readPrivacyMode(readSecureState());
+  const cloudGate = assertCloudAllowed(privacy, String(input.providerKey || input.provider || ""));
+  const { cloneWebPage } = require("./runtime/clone-web-page");
+  const root = assertWritableProjectRoot(String(input.projectRoot || "").trim());
+  const visionGenerate = async ({ prompt, images, model, systemPrompt }) => {
+    const gate = assertCloudAllowed(readPrivacyMode(readSecureState()), String(input.providerKey || input.provider || ""));
+    if (!gate.ok) throw new Error(gate.message);
+    const apiKey = String(input.apiKey || "").trim();
+    const baseUrl = normalizeBaseUrl(input.baseUrl, input.providerKey || input.provider);
+    const useModel = String(model || input.model || "").trim();
+    if (!apiKey || !useModel || !baseUrl) {
+      throw new Error("Falta modelo/API key para vision.");
+    }
+    const content = [
+      { type: "text", text: prompt },
+      ...(images || []).map((img) => ({
+        type: "image_url",
+        image_url: { url: img.dataUrl || img.url },
+      })),
+    ];
+    const messages = [
+      { role: "system", content: systemPrompt || "Eres un generador de UI React/Tailwind. Solo JSON de archivos." },
+      { role: "user", content },
+    ];
+    const providerResult = await callProvider({
+      baseUrl,
+      apiKey,
+      model: useModel,
+      providerKey: input.providerKey || input.provider || "",
+      messages,
+      timeoutMs: 120_000,
+      maxAttempts: 1,
+      enableTools: false,
+    });
+    return String(providerResult?.text || "");
+  };
+  return cloneWebPage(root, {
+    ...input,
+    skipVision: !cloudGate.ok ? true : input.skipVision,
+  }, {
+    visionGenerate: cloudGate.ok ? visionGenerate : null,
+    model: input.model,
+  });
+});
+
+ipcMain.handle("project:e2e-pipeline", async (_event, input = {}) => {
+  const { runEditcoreE2ePipeline } = require("./runtime/e2e-pipeline-report");
+  const root = String(input.projectRoot || "").trim()
+    ? assertWritableProjectRoot(String(input.projectRoot || "").trim())
+    : path.resolve(__dirname);
+  return runEditcoreE2ePipeline(root, { writeReport: input.writeReport !== false });
+});
+
 ipcMain.handle("project:auto-docs", (_event, input = {}) => {
   const { generateAutoDocs } = require("./runtime/auto-docs");
   const root = assertWritableProjectRoot(String(input.projectRoot || "").trim());
@@ -8423,12 +8779,12 @@ ipcMain.handle("agent:steer", async (event, input = {}) => {
   }
 
   if (!event.sender.isDestroyed()) {
-    event.sender.send("agent:progress", redactSensitive({
+    publishAgentProgress(event.sender, {
       runId: run.runId || runId,
       phase: "direction",
       stage: "running",
       text: instruction,
-    }, 8));
+    });
   }
 
   let interrupted = false;
@@ -8796,6 +9152,10 @@ app.on("before-quit", () => {
     }
   } catch { /* ignore */ }
   try {
+    const { killAllSessions } = require("./runtime/pty-session");
+    killAllSessions();
+  } catch { /* ignore */ }
+  try {
     optionalJarvisLauncher()?.stopJarvis?.();
   } catch (err) {}
 });
@@ -8821,7 +9181,23 @@ ipcMain.handle("brain:catalog",         (_e, query, lim)        => brain().searc
 ipcMain.handle("brain:remember",        (_e, root, input)       => brain().remember(root, input));
 ipcMain.handle("brain:forget",          (_e, root, id)          => brain().forget(root, id));
 ipcMain.handle("brain:install",         (_e, root, itemId)      => brain().installCatalogItem(root, itemId, true));
-ipcMain.handle("brain:audit",           (_e, root, repair)      => brain().auditTools(root, { repair: repair === true }));
+ipcMain.handle("brain:audit", async (_e, root, repair) => {
+  if (repair === true) {
+    try {
+      const { healAndPurgeBrainSkills } = require("./runtime/skill-registry");
+      const healed = await healAndPurgeBrainSkills({
+        userDataPath: app.getPath("userData"),
+        catalogPath: path.join(__dirname, "brain-seed", "catalog.json"),
+        sharedSkillPaths: [path.join(__dirname, "brain-seed", "skills")],
+      });
+      const audit = await brain().auditTools(root, { repair: false });
+      return { ...audit, healReport: healed };
+    } catch (error) {
+      return brain().auditTools(root, { repair: true });
+    }
+  }
+  return brain().auditTools(root, { repair: false });
+});
 ipcMain.handle("brain:install-repo",    (_e, root, url)         => brain().installRepo(root, url, true));
 
 function inspectorTargetRoot(target, requestedRoot = "") {

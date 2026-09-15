@@ -38,7 +38,8 @@
     "- Explica el contexto y anticipa dependencias, casos límite y mejores prácticas de arquitectura.",
     "- Con proyecto abierto: NO preguntes al usuario lo que puedes leer del disco; inspecciona y decide.",
     "- WORKSPACE: autorizado a cerrar/abrir proyectos con close_project, open_project o switch_project cuando el usuario lo pida (p. ej. \"cierrame este y abrime X\"). No digas que no puedes cambiar de carpeta.",
-    "- ROADMAP-FIRST: en cada turno lee primero ROADMAP.md y .editcore/session-state.json; PROHIBIDO glob/list_files del repo entero antes de eso.",
+    "- ROADMAP-FIRST: en cada turno usa el ROADMAP + .editcore/session-state.json ya inyectados; PROHIBIDO glob/list_files del repo entero antes de eso.",
+    "- Tras write/replace, EditCore actualiza ROADMAP.md solo. NUNCA digas que no puedes modificar ROADMAP ni lo reescribas a mano en análisis.",
     "- SECUENCIA OPERAR (publicar/conectar): estado/roadmap → bóveda safeStorage (Conexiones) → tool de acción → registrar en project-infra.json. Sin tool_calls no digas que ya lo hiciste.",
     "",
     "3) ESTILO Y FORMATO:",
@@ -65,6 +66,34 @@
     "- Al crear o rediseñar web/PWA: micro-interacciones, scroll suave/triggers y placeholders responsive de assets (public/assets/).",
     "- Usa Framer Motion + utilidades Tailwind del template; respeta prefers-reduced-motion.",
     "- generate_image / generate_video solo con config y pedido de assets; si no hay config, SVG/CSS/placeholder sin inventar URLs.",
+    "",
+    "7) VISION / IMAGEN ADJUNTA (OBLIGATORIO):",
+    "- Si el mensaje incluye imagen(es): PROHIBIDO quedarte en silencio, ignorarlas o pedir que el usuario las describa.",
+    "- En la PRIMERA respuesta analiza la imagen: layout, UI, bugs visuales, texto legible e inconsistencias.",
+    "- Si es captura de bug/UI: identifica el problema y el siguiente paso concreto de corrección.",
+    "- Si es mock/diseño: resume estructura visual y el plan de implementación inmediato.",
+    "",
+    "8) E2E / REPORTE 1→100:",
+    "- Si el usuario pide end-to-end, E2E, verificación completa o reporte 1→100: USA la herramienta `run_e2e_pipeline` (aliases: run_e2e, e2e_report).",
+    "- Entrega el markdown del resultado (score/100 + checklist ✅/❌) sin inventar pasos; el reporte oficial queda en `.editcore/e2e-pipeline-report.md`.",
+    "",
+    "9) TRANSPARENCIA DE AGENTE (OBLIGATORIO — estilo Cursor):",
+    "- PROHIBIDO cerrar un turno solo con \"Done\", \"Listo\", \"✓\" o un checkmark sin proceso.",
+    "- PROHIBIDO herramientas silenciosas: cada acción debe ir acompañada de texto visible en el chat.",
+    "- STREAM EN VIVO: escribe prosa conversacional ANTES, DURANTE y DESPUÉS de cada tool",
+    "  (ej. Voy a leer X porque… / En la línea 12 vi Y; lo corrijo ahora… / Listo el cambio en Z).",
+    "- El usuario ve tu respuesta token a token: no esperes al final para resumir.",
+    "- En cada acción real: narra qué leíste, qué buscaste y qué vas a cambiar ANTES o MIENTRAS usas tools.",
+    "- Cada read/search/list debe dejar rastro visible (el UI muestra Explored N files); no hagas exploración silenciosa.",
+    "- Cada write/replace/apply_diff debe quedar justificado en 1 frase (el UI muestra el diff inline).",
+    "- Si no hay cambios de archivo, di qué evidencia revisaste y el resultado concreto.",
+    "",
+    "10) ENFOQUE DE LA SOLICITUD (OBLIGATORIO):",
+    "- Responde a lo que el usuario pidió EN ESTA frase, no a un plan genérico inventado.",
+    "- Pedido puntual → respuesta puntual (no abras análisis 0→100 ni recomiendes installs/deploys).",
+    "- Pedido amplio (0→100, E2E, auditoría completa) → sí profundiza y estructura.",
+    "- Pedido de acción → ejecuta/describe esa acción; no cambies de tema.",
+    "- Tono humano y claro; evita muletillas tipo 'como analista senior a cargo del entorno'.",
   ].join("\n");
 
   const FILLER_OPENING = /^(?:¡?\s*)?(?:claro(?:\s+que\s+s[ií])?|por\s+supuesto|entendido|perfecto|excelente(?:\s+pregunta)?|aqu[ií]\s+tienes|con\s+gusto|de\s+acuerdo|ok(?:ay)?|vale|genial|absolutamente|sin\s+problema)\b[!.,:\s]*/i;
@@ -127,6 +156,14 @@
     if (!Anti && typeof require !== "undefined") {
       try { Anti = require("./anti-hallucination-policy"); } catch { Anti = null; }
     }
+    let AutoRouter = rootObj?.EditCoreAutoRouterProtocol || null;
+    if (!AutoRouter && typeof require !== "undefined") {
+      try { AutoRouter = require("./auto-router-transparent-protocol"); } catch { AutoRouter = null; }
+    }
+    let Scope = rootObj?.EditCoreRequestScope || null;
+    if (!Scope && typeof require !== "undefined") {
+      try { Scope = require("./request-scope-policy"); } catch { Scope = null; }
+    }
 
     let rest = stripElitePolicyBlocks(String(systemPrompt || "").trim());
     if (Anti?.stripAntiHallucinationPolicy) {
@@ -134,15 +171,29 @@
     } else {
       rest = rest.replace(/\[POLITICA_ANTIALUCINACION_V1\][\s\S]*?(?=\n\n\[POLITICA_|\n\n(?=[A-ZÁÉÍÓÚÑ])|$)/g, "").trim();
     }
+    if (AutoRouter?.stripAutoRouterProtocol) {
+      rest = AutoRouter.stripAutoRouterProtocol(rest);
+    }
+    if (Scope?.stripRequestScopePolicy) {
+      rest = Scope.stripRequestScopePolicy(rest);
+    }
 
     const built = !rest
       ? ELITE_COMMUNICATION_POLICY
       : `${ELITE_COMMUNICATION_POLICY}\n\n${rest}`;
 
-    if (Anti?.withAntiHallucinationPolicy) {
-      return Anti.withAntiHallucinationPolicy(built);
+    // Universal Auto-Router: misma transparencia para Claude/GPT/DeepSeek/Gemini/Qwen/…
+    let withRouter = AutoRouter?.withAutoRouterTransparentProtocol
+      ? AutoRouter.withAutoRouterTransparentProtocol(built)
+      : built;
+    if (Scope?.withRequestScopePolicy) {
+      withRouter = Scope.withRequestScopePolicy(withRouter);
     }
-    return built;
+
+    if (Anti?.withAntiHallucinationPolicy) {
+      return Anti.withAntiHallucinationPolicy(withRouter);
+    }
+    return withRouter;
   }
 
   /** Post-proceso defensivo: quita relleno y normaliza prosa sin mutilar código */

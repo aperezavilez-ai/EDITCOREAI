@@ -35,6 +35,7 @@ function registerAgentCapabilityTools(dispatcher, {
   brain = null,
   runProjectCommand = null,
   writeProjectFile = null,
+  visionGenerate = null,
 } = {}) {
   if (!dispatcher || !rootPath) return dispatcher;
 
@@ -306,7 +307,35 @@ function registerAgentCapabilityTools(dispatcher, {
       description: "Genera UI desde brief/imagen. Con modelo vision + images[] usa LLM; si no, scaffold local.",
       execute: async (toolInput = {}) => {
         const { imagesToCode } = require("./images-to-code");
-        return await imagesToCode(rootPath, toolInput);
+        return await imagesToCode(rootPath, toolInput, {
+          visionGenerate: typeof visionGenerate === "function" ? visionGenerate : undefined,
+          model: toolInput.model || "",
+        });
+      },
+    });
+
+    dispatcher.register({
+      name: "clone_web_page",
+      write: true,
+      description: "Clona una URL externa: render DOM (Puppeteer/Playwright), capturas, visión→React/Tailwind y merge en golden template. Input: url, replacements{}, title, folder, viewport, skipVision, mergeApp.",
+      execute: async (toolInput = {}) => {
+        const { cloneWebPage } = require("./clone-web-page");
+        return await cloneWebPage(rootPath, toolInput, {
+          visionGenerate: typeof visionGenerate === "function" ? visionGenerate : undefined,
+          model: toolInput.model || "",
+        });
+      },
+    });
+
+    dispatcher.register({
+      name: "run_e2e_pipeline",
+      write: true,
+      description: "Ejecuta verificación end-to-end 1→100 (visión, clone, brain, IPC, tools) y guarda .editcore/e2e-pipeline-report.md con el mismo formato de reporte.",
+      execute: async (toolInput = {}) => {
+        const { runEditcoreE2ePipeline } = require("./e2e-pipeline-report");
+        return runEditcoreE2ePipeline(rootPath, {
+          writeReport: toolInput.writeReport !== false,
+        });
       },
     });
 

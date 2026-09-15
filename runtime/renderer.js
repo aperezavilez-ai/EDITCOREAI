@@ -1,3 +1,8 @@
+﻿/**
+ * DEPRECATED — NO USAR.
+ * EditCoreAI carga ./renderer.js desde index.html (raiz del proyecto).
+ * Esta copia es antigua (sin modo Codigo/Monaco/IDE). Edita solo ../renderer.js.
+ */
 const $ = (id) => document.getElementById(id);
 const WINDOW_ID = new URLSearchParams(location.search).get("windowId") || "main";
 const ProjectAnalysis = window.EditCoreProjectAnalysis;
@@ -98,6 +103,7 @@ const state = {
   cacheStats: { responses: {}, tools: {}, harness: {} },
   modelSelectionAuto: false,
   lastAutoResolvedModel: "",
+  brainSnapshot: null,
 };
 const SECURE_STORAGE_KEYS = new Set([
   "editcore-chat-config",
@@ -3688,6 +3694,7 @@ function startResponseTimer(head) {
 
 function renderBrainSnapshot(snapshot) {
   const host = $("brainSnapshot");
+  if (!host) return;
   host.replaceChildren();
   const values = [
     `Skills: ${snapshot?.skillCount || 0}`,
@@ -3695,21 +3702,29 @@ function renderBrainSnapshot(snapshot) {
     `Memorias: ${snapshot?.memoryCount || 0}`,
     `RAG: ${snapshot?.index?.totalFiles || 0} archivos`,
   ];
-  for (const value of values) { const chip = document.createElement("span"); chip.className = "brain-chip"; chip.textContent = value; host.appendChild(chip); }
+  for (const value of values) {
+    const chip = document.createElement("span");
+    chip.className = "brain-chip";
+    chip.textContent = value;
+    host.appendChild(chip);
+  }
   const health = $("brainHealth");
   if (health) {
     const count = Number(snapshot?.skillCount || 0);
     const ready = snapshot?.ready === true && count > 0;
     health.dataset.state = ready ? "ready" : "error";
-    health.querySelector("strong").textContent = ready
-      ? `Cerebro operativo · ${count} skills disponibles para chat y agentes`
-      : "Cerebro incompleto · revisa la copia local de herramientas";
+    const strong = health.querySelector("strong");
+    if (strong) {
+      strong.textContent = ready
+        ? `Cerebro operativo · ${count} skills disponibles para chat y agentes`
+        : "Cerebro incompleto · revisa la copia local de herramientas";
+    }
   }
 }
 
 async function loadBrainCatalog() {
-  const query = $("brainSearch").value.trim();
-  $("brainStatus").textContent = "Consultando Bodega…";
+  const query = $("brainSearch")?.value?.trim() || "";
+  if ($("brainStatus")) $("brainStatus").textContent = "Consultando Bodega…";
   const [items, snapshot, audit] = await Promise.all([
     window.editcoreBrain.catalog(query, 50),
     window.editcoreBrain.snapshot(state.projectRoot || ""),
@@ -3719,10 +3734,20 @@ async function loadBrainCatalog() {
   const installedIds = new Set(installedList.map((item) => item.id));
   renderBrainSnapshot(snapshot);
   renderBrainAudit(audit);
-  activeProject().brainSnapshot = snapshot;
-  saveProjects();
-  const host = $("brainCatalogList"); host.replaceChildren();
-  for (const item of items) {
+  const project = activeProject();
+  if (project) {
+    project.brainSnapshot = snapshot;
+    saveProjects();
+  } else {
+    state.brainSnapshot = snapshot;
+  }
+  const host = $("brainCatalogList");
+  if (!host) {
+    if ($("brainStatus")) $("brainStatus").textContent = `${(items || []).length} elementos · Cerebro común activo`;
+    return;
+  }
+  host.replaceChildren();
+  for (const item of items || []) {
     const card = document.createElement("article"); card.className = "brain-card";
     const head = document.createElement("div"); head.className = "brain-card-head";
     const title = document.createElement("span"); title.className = "brain-card-title"; title.textContent = item.name || item.id;
@@ -3732,13 +3757,13 @@ async function loadBrainCatalog() {
       if (!confirm(`Instalar ${item.name || item.id} en el Cerebro global de EDITCOREAI? Estará disponible para todos los agentes y proveedores.`)) return;
       button.disabled = true; button.textContent = "Instalando…";
       try { await window.editcoreBrain.install(state.projectRoot || "", item.id); await loadBrainCatalog(); }
-      catch (error) { button.disabled = false; button.textContent = "Reintentar"; $("brainStatus").textContent = error?.message || String(error); }
+      catch (error) { button.disabled = false; button.textContent = "Reintentar"; if ($("brainStatus")) $("brainStatus").textContent = error?.message || String(error); }
     });
     const meta = document.createElement("div"); meta.className = "brain-card-meta"; meta.textContent = `${item.type || "skill"} · ${item.status || "disponible"} · riesgo ${item.risk || "no indicado"}`;
     const desc = document.createElement("div"); desc.className = "brain-card-meta"; desc.textContent = item.description || "Sin descripción";
     head.append(title, button); card.append(head, meta, desc); host.appendChild(card);
   }
-  $("brainStatus").textContent = `${items.length} elementos · Cerebro común activo para chat y agentes`;
+  if ($("brainStatus")) $("brainStatus").textContent = `${(items || []).length} elementos · Cerebro común activo para chat y agentes`;
 }
 
 function renderBrainAudit(audit) {

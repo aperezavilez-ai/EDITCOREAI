@@ -162,10 +162,12 @@ function ensureProjectRoadmap(projectRoot, input = {}) {
 
 function syncProjectRoadmap(projectRoot, input = {}) {
   const previous = readRoadmap(projectRoot);
-  const scan = scanProjectForRoadmap(projectRoot);
+  const previousMap = parseMapLines(previous.content);
+  const needScan = !previous.exists || isStubRoadmap(previous.content) || previousMap.length < 3;
+  const scan = needScan ? scanProjectForRoadmap(projectRoot) : { mapLines: previousMap };
   const mapLines = uniqueLines([
     ...scan.mapLines,
-    ...parseMapLines(previous.content),
+    ...previousMap,
     ...(input.mapLines || []),
     ...(input.files || []),
   ]);
@@ -180,7 +182,7 @@ function syncProjectRoadmap(projectRoot, input = {}) {
   });
   fs.mkdirSync(path.dirname(previous.absolute), { recursive: true });
   fs.writeFileSync(previous.absolute, content, "utf8");
-  return { ...previous, exists: true, created: !previous.exists, updated: true, content };
+  return { ...previous, exists: true, created: !previous.exists, updated: true, content, scanned: needScan };
 }
 
 /**

@@ -53,6 +53,13 @@ const TOOL_ALIASES = Object.freeze({
   gen_video: "generate_video",
   video_gen: "generate_video",
   create_video: "generate_video",
+  clone_page: "clone_web_page",
+  clone_website: "clone_web_page",
+  web_clone: "clone_web_page",
+  scrape_and_clone: "clone_web_page",
+  e2e_pipeline: "run_e2e_pipeline",
+  run_e2e: "run_e2e_pipeline",
+  e2e_report: "run_e2e_pipeline",
 });
 
 function normalizeToolInput(canonicalName, input) {

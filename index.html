@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: file:; font-src 'self'; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-src http: https: file:;" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: file: blob:; font-src 'self' data:; worker-src 'self' blob: data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-src http: https: file:;" />
     <title>EditCoreAI</title>
     <link rel="icon" href="./assets/logo.ico" type="image/x-icon" />
     <link rel="shortcut icon" href="./assets/logo.ico" type="image/x-icon" />
@@ -76,6 +76,7 @@
             <div id="toolsMoreMenu" class="toolbar-more-menu hidden" role="menu" hidden>
               <div class="toolbar-menu-label" role="presentation">Paneles</div>
               <button id="logsBtn" type="button" role="menuitem" data-tool="logs" title="Panel de logs (Ctrl+`)">Logs</button>
+              <button id="terminalBtn" type="button" role="menuitem" data-tool="terminal" title="Terminal interactiva">Terminal</button>
               <hr class="toolbar-menu-sep" />
               <div class="toolbar-menu-label" role="presentation">Núcleo</div>
               <button id="brainBtn" type="button" role="menuitem" data-tool="brain" title="Memoria y skills del Cerebro">Cerebro</button>
@@ -200,15 +201,26 @@
     <!-- Browser preview -->
     <section class="viewer">
       <div class="viewer-url">
-        <button id="webPreviewBtn" class="preview-mode-btn active" type="button">Web</button>
-        <button id="mobilePreviewBtn" class="preview-mode-btn" type="button">Móvil</button>
-        <button id="previewBackBtn" class="preview-nav-btn" type="button" title="Atrás" aria-label="Atrás" disabled>&#8592;</button>
-        <input id="previewUrl" value="" placeholder="Abre un proyecto para conectar su navegador" />
-        <button id="openPreviewBtn" class="refresh-btn" type="button" title="Actualizar">↻</button>
-        <button id="inspectBrowserBtn" class="preview-inspect-btn" type="button" title="Inspeccionar DOM del preview local">Inspeccionar</button>
+        <div class="viewer-mode-group" role="tablist" aria-label="Modo de vista">
+          <button id="webPreviewBtn" class="preview-mode-btn active" type="button">Web</button>
+          <button id="mobilePreviewBtn" class="preview-mode-btn" type="button">Móvil</button>
+          <button id="codePreviewBtn" class="preview-mode-btn" type="button" title="Editor de código (Monaco)">Código</button>
+        </div>
+        <div class="viewer-nav-group">
+          <button id="previewBackBtn" class="preview-nav-btn text-action-btn" type="button" title="Atrás" aria-label="Atrás" disabled>←</button>
+          <input id="previewUrl" value="" placeholder="URL del preview…" />
+          <button id="openPreviewBtn" class="refresh-btn text-action-btn" type="button" title="Actualizar">↻</button>
+          <span id="editorPathLabel" class="editor-path-label" title="">Sin archivo</span>
+        </div>
+        <div class="viewer-action-group">
+          <button id="saveEditorBtn" class="preview-inspect-btn text-action-btn" type="button" title="Guardar (Ctrl+S)">Guardar</button>
+          <button id="gotoDefBtn" class="preview-inspect-btn text-action-btn" type="button" title="Ir a definición (F12)">F12</button>
+          <button id="inspectBrowserBtn" class="preview-inspect-btn text-action-btn" type="button" title="Inspeccionar DOM del preview local">Inspeccionar</button>
+        </div>
       </div>
       <div class="viewer-body">
         <webview id="previewWebview" class="preview-webview" partition="persist:editcore-browser" allowpopups="false" webpreferences="contextIsolation=yes, nodeIntegration=no, sandbox=yes, webSecurity=yes"></webview>
+        <div id="monacoEditorHost" class="monaco-editor-host" hidden aria-label="Editor de código"></div>
         <div id="previewHealBanner" class="preview-heal-banner hidden" role="status" aria-live="polite" hidden></div>
         <div id="previewStatus" class="preview-status">Abre un proyecto con servidor para visualizarlo aqui.</div>
         <div id="previewRuntimeErrors" class="preview-runtime-errors" hidden></div>
@@ -234,6 +246,7 @@
         <div class="viewer-logs-header">
           <div class="viewer-logs-tabs">
             <button type="button" class="viewer-logs-tab active" data-tab="logs">Logs del Agente</button>
+            <button type="button" class="viewer-logs-tab" data-tab="terminal">Terminal</button>
           </div>
           <div class="viewer-logs-actions">
             <button type="button" class="logs-btn-minimize" title="Minimizar">_</button>
@@ -250,6 +263,16 @@
               <button class="logs-btn-clear" type="button" title="Limpiar logs">Limpiar</button>
             </div>
             <div id="logs-output" class="logs-output"></div>
+          </div>
+          <div id="tab-terminal" class="logs-tab-content" hidden>
+            <div id="terminalPanel" class="terminal-panel" aria-label="Terminal interactiva">
+              <div class="terminal-toolbar">
+                <strong>Terminal</strong>
+                <span id="terminalBackendLabel" class="terminal-backend">—</span>
+                <button id="terminalRestartBtn" type="button" title="Reiniciar sesión">↻</button>
+              </div>
+              <div id="xtermHost" class="xterm-host"></div>
+            </div>
           </div>
         </div>
       </div>
@@ -550,10 +573,15 @@
       </dialog>
     </div><!-- #modals -->
 
+    <script src="./ide/live-hunks.js"></script>
+    <script src="./ide/editor-pane.js"></script>
+    <script src="./ide/terminal-pane.js"></script>
     <script src="./renderer-markdown.js"></script>
     <script src="./project-analysis.js"></script>
     <script src="./runtime/anti-hallucination-policy.js"></script>
     <script src="./runtime/elite-communication-policy.js"></script>
+    <script src="./runtime/auto-router-transparent-protocol.js"></script>
+    <script src="./runtime/request-scope-policy.js"></script>
     <script src="./runtime/chat-stream-preserve.js"></script>
     <script src="./runtime/cursor-parity.js"></script>
     <script src="./runtime/intent-orchestrator.js"></script>

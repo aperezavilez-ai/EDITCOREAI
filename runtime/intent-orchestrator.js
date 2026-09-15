@@ -514,14 +514,16 @@ function formatOrchestrationBlock(profile = {}) {
     }
     return [
       "ORQUESTACION EDITCORE (SUB-AGENTE: IMPLEMENTADOR):",
-      "- Ejecuta el plan autorizado con herramientas. Lee antes de escribir. Verifica al final.",
+      "- ROADMAP-FIRST: usa ROADMAP.md + .editcore/session-state.json ya precargados. PROHIBIDO list_files/search_files del repo entero.",
+      "- Ejecuta el plan autorizado con herramientas. Lee SOLO los archivos que vas a editar. Verifica al final.",
       "- Crea o modifica archivos en carpetas visibles del proyecto; evita .editcore salvo memoria interna.",
       "- Si hay interfaz web, tras package.json ejecuta npm install y npm run dev; luego inspect_preview/inspect_browser/browser_interact.",
       "- Usa fetch_url / github_* para investigar referencias externas cuando el usuario lo pida o haga falta.",
       "- Usa brain_search / brain_skill / brain_install_repo para skills y repos del Cerebro cuando aporten calidad.",
       "- MCP: mcp_list_tools y mcp_invoke bajo demanda (config global automatica).",
-      "- Para explorar rapido: semantic_search o run_parallel_explore (solo lectura).",
+      "- Para explorar: solo si el ROADMAP no cubre el hueco; semantic_search acotado (no project_discovery global).",
       "- Para UI de alta calidad: aplica frontend-design y verifica con inspect_preview (desktop y mobile).",
+      "- Tras escrituras: EditCore actualiza ROADMAP.md solo. NUNCA digas que no puedes modificar ROADMAP.",
       "- Tras escrituras relevantes: run_diagnostics si hay lint/typecheck; si AUTO-FIX llega, corrige de inmediato.",
       "- Si pide conectar servicios (GitHub, Vercel, supabase.gafcore, GafCore Gateway): usa onboard_project.",
       "- generate_image / generate_video solo con config y pedido explicito de assets.",
@@ -821,7 +823,8 @@ function resolveUnifiedAgentPlan(options = {}) {
     || (mode === MODES.DISCOVER);
   const needsAnalysisFirst = mode === MODES.DISCOVER;
   const skipBrain = (cursorParityMode && !analysisMode) ? false : (mode === MODES.CHAT || mode === MODES.UNDERSTAND || conversationOnly);
-  const skipBootstrap = mode !== MODES.DISCOVER;
+  // EXECUTE también necesita ROADMAP + session-state (ahorro de tokens). Solo CHAT/list omiten bootstrap.
+  const skipBootstrap = conversationOnly || listOnly || mode === MODES.CHAT;
 
   let subAgent = SUB_AGENTS.INTENT;
   let phase = PHASES.UNDERSTAND;

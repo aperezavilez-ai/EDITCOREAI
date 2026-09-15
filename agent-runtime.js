@@ -17,10 +17,6 @@ const MUTATION_TOOLS = new Set([
 ]);
 const VERIFICATION_COMMAND = /(^|\s)(test|build|lint|(?:--)?check|typecheck)(\s|$)/i;
 
-/**
- * Diccionario de mapeo de alias (Tool Aliasing Proxy).
- * Traduce nombres intuitivos que el LLM suele invocar hacia las herramientas nativas del IDE.
- */
 const TOOL_ALIASES = {
   "file_search": "list_files",
   "file_reader": "read_file",
@@ -33,7 +29,6 @@ function normalizeToolCall(name, input = {}) {
   const cleanName = String(name || "").trim();
   const resolvedName = TOOL_ALIASES[cleanName] || cleanName;
   
-  // Normalización de argumentos para alias específicos
   let normalizedInput = input && typeof input === "object" ? { ...input } : {};
   if (cleanName === "file_reader" && normalizedInput.filepath && !normalizedInput.path) {
     normalizedInput.path = normalizedInput.filepath;
@@ -104,7 +99,7 @@ function compactAgentMessages(messages, steps = [], options = {}) {
   }).join("\n");
   return [
     normalized[0],
-    normalized[1],
+    normalized,
     ...(summary ? [{
       role: "user",
       content: `CHECKPOINTS ANTERIORES (no repetir):\n${summary}`,
@@ -151,6 +146,8 @@ function compactChatHistory(history = [], options = {}) {
   const rows = [];
   let used = 0;
   const recentSlice = history.slice(-maxMessages);
+  const seenFingerprints = new Set();
+  
   for (const item of recentSlice.reverse()) {
     let content;
     if (Array.isArray(item?.content)) {
@@ -165,6 +162,9 @@ function compactChatHistory(history = [], options = {}) {
       used += approxLen;
     } else {
       content = truncateText(item?.content, maxContentChars);
+      const fp = String(content || "").slice(0, 100);
+      if (seenFingerprints.has(fp)) continue;
+      seenFingerprints.add(fp);
       if (rows.length && used + content.length > maxTotalChars) break;
       rows.push({ role: item?.role === "assistant" ? "assistant" : "user", content });
       used += content.length;
@@ -340,13 +340,13 @@ function isFailedDiagnosticResult(result) {
     const text = String(result.output || result.summary || "");
     if (/Resultado de verificacion:\s*FALLO/i.test(text)) return true;
     const match = /verificacion finalizado con exit\s+(\d+)/i.exec(text);
-    if (match) return Number(match[1]) !== 0;
+    if (match) return Number(match) !== 0;
     return false;
   }
   const text = String(result);
   if (/Resultado de verificacion:\s*FALLO/i.test(text)) return true;
   const match = /verificacion finalizado con exit\s+(\d+)/i.exec(text);
-  return match ? Number(match[1]) !== 0 : false;
+  return match ? Number(match) !== 0 : false;
 }
 
 function verificationStepPassed(step = {}) {

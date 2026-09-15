@@ -116,7 +116,9 @@ const state = {
   fileListRefreshTimer: null,
   fileListHighlightClearTimer: null,
   lastListedRoot: "",
+  brainSnapshot: null,
 };
+window.state = state;
 const SECURE_STORAGE_KEYS = new Set([
   "editcore-chat-config",
   "editcore-connections",
@@ -312,7 +314,7 @@ function repairMojibakeText(value) {
 }
 
 /** Quita XML de tools que el modelo a veces pega en el chat (no debe verse). */
-function stripAgentToolXml(value) {
+function stripAgentToolXml(value, { trim = true } = {}) {
   const names = [
     "list_directory", "list_dir", "list_files", "read_file", "write_file",
     "replace_in_file", "search_files", "execute_command", "run_command",
@@ -320,12 +322,45 @@ function stripAgentToolXml(value) {
     "scaffold_project", "capture_preview", "str_replace", "search_replace",
   ].join("|");
   const re = new RegExp(`<(${names})>[\\s\\S]*?<\\/\\1>`, "gi");
-  return String(value || "")
+  let out = String(value || "")
     .replace(/<tool_call>[\s\S]*?<\/tool_call>/gi, "")
     .replace(/<function\s*=\s*[a-zA-Z_][\w-]*\s*>[\s\S]*?<\/function>/gi, "")
-    .replace(re, "")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
+    .replace(/<parameter\s*=\s*[a-zA-Z_][\w-]*\s*>[\s\S]*?<\/parameter>/gi, "")
+    .replace(re, "");
+  // Bloques incompletos / stream cortado: cortar desde el primer marcador de protocolo.
+  const cut = out.search(/<(?:tool_call|tool_use|tool_invocation|function_calls?|function\s*=|parameter\s*=)\b/i);
+  if (cut >= 0) out = out.slice(0, cut);
+  out = out.replace(/\n{3,}/g, "\n\n");
+  return trim ? out.trimEnd() : out;
+}
+
+function looksLikeAgentToolDump(value = "") {
+  return /<(?:tool_call|tool_use|function\s*=|parameter\s*=)\b/i.test(String(value || ""));
+}
+
+/** Une chunks del agente sin pegar pasos (evita "correctamente.Entendido"). */
+function joinAgentStreamText(prev = "", next = "") {
+  const a = String(prev || "");
+  const b = String(next || "");
+  if (!a) return b;
+  if (!b) return a;
+  if (a.endsWith(b)) return a;
+  if (b.startsWith(a) && b.length >= a.length) return b;
+
+  const aTrim = a.replace(/\s+$/g, "");
+  const bTrim = b.replace(/^\s+/g, "");
+  const bStart = bTrim.charAt(0);
+  const newStep = /^(?:Entendido|Perfecto|Excelente|Ahora|Listo|Bien|Hecho|Voy |Primero |Luego |Despu[eé]s|Siguiente|Ok[,.]?\s)/i.test(bTrim)
+    || (/[.!?:]$/.test(aTrim) && /^[A-ZÁÉÍÓÚÑ¿¡]/.test(bStart) && bTrim.length > 10);
+
+  if (newStep) return `${aTrim}\n\n${bTrim}`;
+  if (/[.!?,:;]$/.test(aTrim) && /^[A-Za-zÁ-ú0-9¿¡("]/.test(bStart)) return `${aTrim} ${bTrim}`;
+  if (/\s$/.test(a) || /^\s/.test(b)) return `${a}${b}`;
+  if (/[a-zA-Z0-9_áéíóúñ]$/i.test(aTrim) && /^[a-zA-Z0-9_áéíóúñ]/i.test(bStart) && b.length <= 64) {
+    return `${a}${b}`;
+  }
+  if (/[.!?]$/.test(aTrim)) return `${aTrim} ${bTrim}`;
+  return `${a}${b}`;
 }
 
 function repairPersistedText(value) {
@@ -648,10 +683,30 @@ function readFileAsDataUrl(file) {
   });
 }
 
+function isImageAttachment(item = {}) {
+  const mime = String(item?.mimeType || "").toLowerCase();
+  if (/^image\/(png|jpe?g|webp|gif|bmp)$/i.test(mime)) return true;
+  if (/^data:image\/(png|jpe?g|webp|gif|bmp)/i.test(String(item?.dataUrl || ""))) return true;
+  return false;
+}
+
+function sniffMimeFromDataUrl(dataUrl = "") {
+  const match = String(dataUrl).match(/^data:(image\/[a-z0-9.+-]+);base64,/i);
+  let mime = match ? match[1].toLowerCase() : "";
+  if (mime === "image/jpg") mime = "image/jpeg";
+  return mime;
+}
+
 async function addFiles(files) {
   for (const file of [...files].slice(0, 8)) {
     const dataUrl = await readFileAsDataUrl(file);
-    state.attachments.push({ name: file.name, mimeType: file.type, size: file.size, dataUrl });
+    let mimeType = String(file.type || "").toLowerCase();
+    if (mimeType === "image/jpg") mimeType = "image/jpeg";
+    if (!mimeType || mimeType === "application/octet-stream") {
+      mimeType = sniffMimeFromDataUrl(dataUrl) || mimeType;
+    }
+    const name = String(file.name || `image-${Date.now()}`).slice(0, 120);
+    state.attachments.push({ name, mimeType, size: file.size, dataUrl });
   }
   renderAttachments();
 }
@@ -665,7 +720,7 @@ function renderAttachments() {
     const chip = document.createElement("div");
     chip.className = "attachment-chip";
     chip.title = item.name;
-    if (/^image\//i.test(item.mimeType)) {
+    if (/^image\//i.test(item.mimeType) || isImageAttachment(item)) {
       chip.classList.add("has-image");
       const img = document.createElement("img");
       img.src = item.dataUrl;
@@ -2860,28 +2915,8 @@ async function durableAgentWorkflowStatusText(project) {
 async function answerAgentWorkflowQuestion(project, question) {
   const workflow = project?.agentWorkflow || {};
   const memory = project?.analysisMemory || null;
-  const phase = String(workflow.phase || memory?.phase || "");
-  const stopHint = String(workflow.error || memory?.stopReason || memory?.resultSummary || "").slice(0, 500);
-  const q = String(question || "");
-  // Respuesta local honesta: no gastar tokens ni reabrir exploracion.
-  if (/\b(?:explica|explicame|qu[eé]\s+hiciste|por\s*qu[eé]|porque|qu[eé]\s+hace\s+falta|qu[eé]\s+falta)\b/i.test(q)) {
-    const lines = [
-      "## Respuesta directa",
-      "",
-      workflow.task ? `Me pediste: ${String(workflow.task).slice(0, 280)}` : "Había una tarea de análisis en curso.",
-      phase === "interrupted" || /loop|incomplet|interrump/i.test(stopHint)
-        ? "No terminé el reporte porque la corrida se cortó (bucle de lecturas repetidas, timeout o cancelación). No es que no pueda: me atasqué explorando archivos internos (.editcore/chats/memory) en vez de cerrar el informe."
-        : phase === "awaiting_authorization"
-          ? "El análisis ya tiene un plan pendiente. Para aplicar correcciones escribe **PROCEDE**. Si quieres otro informe, dilo explícitamente."
-          : "Puedo responder con la evidencia ya acumulada; no debo reabrir un análisis nuevo salvo que lo pidas.",
-      stopHint && phase === "interrupted" ? `Motivo técnico: ${stopHint.slice(0, 220)}` : "",
-      "",
-      "**Qué hace falta de tu lado:** escribe **CONTINUA** para cerrar el reporte con la evidencia ya leída, o **PROCEDE** si hay plan listo. Si solo quieres una explicación, ya la tienes aquí — no hace falta otro análisis.",
-    ].filter(Boolean);
-    return lines.join("\n");
-  }
   const context = ProjectAnalysis.workflowQuestionContext(workflow, memory);
-  if (!context.trim()) return agentWorkflowStatusText(workflow);
+  // Sin plantillas CONTINUA/PROCEDE ni historias inventadas de .editcore.
   const { baseUrl, apiKey, model, providerKey } = (() => {
     const selectedProfile = resolveActiveChatProfile({
       prompt: question,
@@ -2897,7 +2932,10 @@ async function answerAgentWorkflowQuestion(project, question) {
       providerKey: selectedProviderKey,
     };
   })();
-  if (!apiKey) return `${context}\n\nPara aplicar correcciones escribe **procede**, **autorizo** o **continua**.`;
+  if (!apiKey) {
+    return context.trim()
+      || "No hay evidencia de corrida guardada. En modo Agente vuelve a pedir la tarea.";
+  }
   const result = await window.editcoreChat.chat({
     mode: state.mode,
     baseUrl,
@@ -2912,18 +2950,16 @@ async function answerAgentWorkflowQuestion(project, question) {
     systemPrompt: [
       (window.EditCoreEliteCommunication?.withEliteCommunicationPolicy
         || ((s) => s))([
-        "Eres EditCoreAI, asistente de desarrollo. Responde en español, claro y directo.",
-        "Usa SOLO el contexto verificado abajo. No inventes archivos ni cambios.",
-        "Responde la pregunta del usuario sin pedir autorizacion otra vez ni generar un plan nuevo.",
-        "PROHIBIDO reabrir exploracion del proyecto ni decir Verificacion completada.",
-        "No pegues codigo fuente ni bloques ```; explica en prosa.",
-        "Si falta informacion en el contexto, dilo explicitamente.",
-        `\n${context}`,
+        "Eres EditCoreAI. Responde en español, breve y con hechos.",
+        "Usa SOLO la evidencia abajo. No inventes bucles .editcore ni pidas CONTINUA/PROCEDE si Acceso completo.",
+        "Si el contexto está vacío, dilo y ofrece retomar la tarea real.",
+        "No reabras exploración del repo solo para contestar.",
+        context ? `\nEVIDENCIA:\n${String(context).slice(0, 12000)}` : "\nEVIDENCIA: (vacía)",
       ].join("\n\n")),
     ].join("\n\n"),
   });
   const answer = String(result?.text || "").trim();
-  return answer || agentWorkflowStatusText(workflow);
+  return answer || context || "Sin respuesta del modelo.";
 }
 
 function analysisRepairPrompt(_memory = {}, authorization = "procede") {
@@ -3413,8 +3449,11 @@ function handleProjectFilesChanged(payload = {}) {
     const writtenPath = String(payload.writtenPath || payload.path || "");
     const fileName = String(payload.fileName || ProjectFilesUi?.resolveWrittenFileName?.(writtenPath) || "");
     const nav = markAgentTouchedFromPayload(payload, { writing: false });
-    // Abrir la carpeta del archivo tocado para ver el nombre en color (como Cursor).
-    refreshProjectFilesFromDisk({ viewDir: nav.viewDir, highlightNames: nav.highlightNames });
+    // En raíz: permanecer para que aparezcan carpetas nuevas (src/, etc.).
+    // Si el usuario ya navegó a una subcarpeta, abrir la carpeta del archivo tocado.
+    const currentView = String(state.fileListRelativePath || "");
+    const viewDir = !currentView ? "" : String(nav.viewDir || currentView);
+    refreshProjectFilesFromDisk({ viewDir, highlightNames: nav.highlightNames });
     if (payload.autoPreview || ProjectFilesUi?.shouldAutoStartPreview?.(fileName)) {
       maybeRefreshPreviewAfterWrite(fileName).catch(() => undefined);
     } else if (payload.hotReload || ProjectFilesUi?.shouldHotReloadPreview?.(fileName)) {
@@ -3488,20 +3527,28 @@ function addAgentCodeFragment(thinkingItem, progress) {
 
 function notifyAgentFileMutationProgress(thinkingEl, progress) {
   const tool = String(progress?.name || "");
-  if (!["write_file", "replace_in_file", "apply_diff"].includes(tool)) return;
+  if (!["write_file", "replace_in_file", "apply_diff", "create_project", "delete_file"].includes(tool)) return;
   const payload = ProjectFilesUi?.filesChangedPayload
     ? ProjectFilesUi.filesChangedPayload(progress, state.projectRoot)
     : {
       writtenPath: String(progress?.input?.path || ""),
-      viewDir: "",
       highlightNames: [],
       fileName: "",
     };
   const writing = progress?.stage === "running" || (progress?.ok === undefined && progress?.stage !== "done");
+  const done = progress?.stage === "done" || progress?.ok === true;
   const nav = markAgentTouchedFromPayload(payload, { writing });
-  if (writing) {
-    refreshProjectFilesFromDisk({ viewDir: nav.viewDir, highlightNames: nav.highlightNames }).catch(() => undefined);
+  // Refrescar siempre: en "running" el árbol puede anticipar; en "done" confirma lo ya escrito en disco.
+  // Si el usuario está en la raíz, quedarse ahí para que aparezcan carpetas nuevas (src/, etc.).
+  if (writing || done) {
+    const currentView = String(state.fileListRelativePath || "");
+    const refreshView = (!currentView || writing)
+      ? currentView
+      : String(nav.viewDir || currentView);
+    refreshProjectFilesFromDisk({ viewDir: refreshView, highlightNames: nav.highlightNames }).catch(() => undefined);
   }
+  // Si hay tarjeta Cursor con diffs inline, no duplicar el fragmento legacy oscuro.
+  if (thinkingEl?._inlineDiffs) return;
   addAgentCodeFragment(thinkingEl, { ...progress, fragment: payload.fragment });
 }
 
@@ -4029,8 +4076,14 @@ async function renderProjectFiles(relativePath = "") {
       button.onclick = () => {
         if (row.kind === "directory") {
           renderProjectFiles(row.path);
-        } else if (/\.html?$/i.test(row.name)) {
-          $("previewWebview").src = `file:///${row.absolutePath.replace(/\\/g, "/")}`;
+        } else {
+          openPathInEditor(row.path).catch((error) => {
+            $("status").textContent = error?.message || String(error);
+            if (/\.html?$/i.test(row.name) && row.absolutePath) {
+              window.EditCoreEditor?.showWebMode?.();
+              $("previewWebview").src = `file:///${row.absolutePath.replace(/\\/g, "/")}`;
+            }
+          });
         }
       };
       $("fileList").appendChild(button);
@@ -4739,12 +4792,30 @@ async function fitPreviewToPanel() {
 function schedulePreviewFit() { requestAnimationFrame(() => fitPreviewToPanel()); }
 
 function setPreviewMode(mode) {
-  const next = mode === "mobile" ? "mobile" : "web";
+  // Código = Monaco encima; Web/Móvil = preview. El webview NUNCA se destruye.
+  const next = mode === "code" ? "code" : (mode === "mobile" ? "mobile" : "web");
+  try {
+    localStorage.setItem(PREVIEW_MODE_STORAGE_KEY, next);
+  } catch { /* ignore */ }
   const viewer = document.querySelector(".viewer");
-  if (viewer) viewer.dataset.previewMode = next;
+  if (viewer) viewer.dataset.previewMode = next === "code" ? "web" : next;
+
   $("webPreviewBtn")?.classList.toggle("active", next === "web");
   $("mobilePreviewBtn")?.classList.toggle("active", next === "mobile");
-  localStorage.setItem(PREVIEW_MODE_STORAGE_KEY, next);
+  $("codePreviewBtn")?.classList.toggle("active", next === "code");
+
+  if (next === "code") {
+    document.body.classList.add("ide-code-mode");
+    document.body.classList.remove("ide-web-mode");
+    window.EditCoreEditor?.showCodeModeAsync?.().catch((error) => {
+      $("status").textContent = `Código: ${error?.message || error}`;
+    });
+    return;
+  }
+
+  document.body.classList.remove("ide-code-mode");
+  document.body.classList.add("ide-web-mode");
+  window.EditCoreEditor?.showWebMode?.();
   schedulePreviewFit();
 }
 
@@ -5308,17 +5379,28 @@ async function undoLastAgentRunFromUi(options = {}) {
   try {
     $("status").textContent = "Deshaciendo ultima corrida...";
     const result = await window.editcoreAgent.undoLastRun({ projectRoot: root });
+    const restored = Number(result?.restored || 0);
+    if (!result?.ok && restored <= 0) {
+      appendMessage("assistant", [
+        "## Deshacer corrida",
+        "",
+        `No se pudo deshacer: ${result?.error || "sin checkpoint ni snapshot"}.`,
+      ].join("\n"));
+      $("status").textContent = "Deshacer: sin cambios";
+      return false;
+    }
     const files = (result?.files || []).map((f) => `- \`${f.path}\` (${f.action})`).join("\n");
     appendMessage("assistant", [
       "## Deshacer corrida",
       "",
-      `Restaurados: ${result?.restored || 0} archivo(s).`,
+      `Restaurados: **${restored}** archivo(s)` +
+        (result?.source ? ` · fuente: \`${result.source}\`` : "") + ".",
       files ? `\n${files}` : "",
       (result?.errors || []).length ? `\nErrores:\n${result.errors.map((e) => `- ${e.path}: ${e.error}`).join("\n")}` : "",
     ].filter(Boolean).join("\n"));
     refreshProjectFilesFromDisk({ viewDir: state.fileListRelativePath || "" });
     refreshUndoAgentRunButton(false);
-    $("status").textContent = "Ultima corrida deshecha";
+    $("status").textContent = `Ultima corrida deshecha (${restored})`;
     if (options.fromChat) return true;
     return true;
   } catch (error) {
@@ -6230,12 +6312,14 @@ function rememberMessage(role, content, usage, images = [], documents = []) {
 
 function appendThinking(statusText = "Pensando...", isAgent = false, runLabel = "") {
   const item = document.createElement("article");
-  item.className = "msg assistant thinking-msg";
+  item.className = "msg assistant thinking-msg agent-execution-card";
+  item.dataset.agentCard = "1";
   const head = document.createElement("div");
   head.className = "msg-head";
   head.textContent = runLabel ? `EditCoreAI · ${runLabel}` : "EditCoreAI";
   const body = document.createElement("div");
   body.className = "msg-body msg-thinking";
+
   const primary = document.createElement("div");
   primary.className = "thinking-primary";
   const dots = document.createElement("span");
@@ -6246,25 +6330,473 @@ function appendThinking(statusText = "Pensando...", isAgent = false, runLabel = 
   status.className = "thinking-status";
   status.textContent = statusText;
   primary.append(dots, status);
-  body.appendChild(primary);
+  // En modo agente las bolitas van al final (después del contenido). En chat simple, arriba.
 
   if (isAgent) {
-    // Stream continuo de razonamiento (texto plano), sin tarjetas ni roles.
+    const exec = document.createElement("div");
+    exec.className = "agent-execution-container";
+
+    // ── Thought accordion (default expanded, como Cursor) ──
+    const thoughtWrap = document.createElement("details");
+    thoughtWrap.className = "agent-thought-accordion";
+    thoughtWrap.open = true;
+    const thoughtSum = document.createElement("summary");
+    thoughtSum.className = "agent-thought-summary";
+    thoughtSum.textContent = "Thought";
     const stream = document.createElement("div");
-    stream.className = "agent-live-stream";
+    stream.className = "agent-live-stream agent-thought-stream";
     stream.setAttribute("aria-live", "polite");
-    body.appendChild(stream);
+    thoughtWrap.append(thoughtSum, stream);
+    exec.appendChild(thoughtWrap);
+
+    // ── Exploration pill ──
+    const explore = document.createElement("div");
+    explore.className = "agent-explore-block";
+    explore.hidden = true;
+    const exploreBtn = document.createElement("button");
+    exploreBtn.type = "button";
+    exploreBtn.className = "agent-explore-pill";
+    exploreBtn.textContent = "Explored 0 files";
+    const exploreList = document.createElement("ul");
+    exploreList.className = "agent-explore-list";
+    exploreList.hidden = true;
+    exploreBtn.addEventListener("click", () => {
+      const open = exploreList.hidden;
+      exploreList.hidden = !open;
+      exploreBtn.classList.toggle("is-open", open);
+    });
+    explore.append(exploreBtn, exploreList);
+    exec.appendChild(explore);
+
+    // ── Inline diffs host ──
+    const diffs = document.createElement("div");
+    diffs.className = "agent-inline-diffs";
+    exec.appendChild(diffs);
+
+    // ── Activity / tool lines (compat con _narrativeLog) ──
+    const activityLog = document.createElement("div");
+    activityLog.className = "agent-narrative-log agent-activity-log";
+    exec.appendChild(activityLog);
+
+    // ── Acciones post-turno (estilo Cursor: solo texto, sin Stop ni follow-up duplicados) ──
+    const footer = document.createElement("div");
+    footer.className = "agent-turn-footer";
+    footer.hidden = true;
+    const undoAllBtn = document.createElement("button");
+    undoAllBtn.type = "button";
+    undoAllBtn.className = "agent-footer-link";
+    undoAllBtn.textContent = "Undo All";
+    undoAllBtn.title = "Deshacer el último turno del agente";
+    undoAllBtn.addEventListener("click", async () => {
+      try {
+        undoAllBtn.disabled = true;
+        const ok = await undoLastAgentRunFromUi({ fromChat: true });
+        settleAgentTurnChrome(item, { failed: false });
+        if (ok) {
+          footer.querySelectorAll(".agent-footer-link").forEach((btn) => { btn.disabled = true; });
+        } else {
+          undoAllBtn.disabled = false;
+        }
+      } catch (error) {
+        undoAllBtn.disabled = false;
+        appendMessage("assistant", `No pude deshacer: ${error?.message || error}`);
+        $("status").textContent = `Undo: ${error?.message || error}`;
+      }
+    });
+    const keepAllBtn = document.createElement("button");
+    keepAllBtn.type = "button";
+    keepAllBtn.className = "agent-footer-link";
+    keepAllBtn.textContent = "Keep All";
+    keepAllBtn.title = "Aceptar todos los cambios pendientes";
+    keepAllBtn.addEventListener("click", async () => {
+      try {
+        keepAllBtn.disabled = true;
+        const root = String(state.projectRoot || "").trim();
+        if (!root || !window.editcoreAgent?.acceptAllReview) {
+          appendMessage("assistant", "Keep All no está disponible (sin proyecto o API).");
+          keepAllBtn.disabled = false;
+          return;
+        }
+        const result = await window.editcoreAgent.acceptAllReview({ projectRoot: root });
+        const n = Number(result?.accepted || 0);
+        settleAgentTurnChrome(item, { failed: false });
+        appendMessage("assistant", [
+          "## Keep All",
+          "",
+          n > 0
+            ? `Aceptados **${n}** archivo(s) del último turno. Los cambios se conservan.`
+            : "No había cambios pendientes para aceptar (¿ya aceptados o sin checkpoint?).",
+        ].join("\n"));
+        $("status").textContent = n > 0 ? `Keep All: ${n} archivo(s)` : "Keep All: sin pendientes";
+        if (n > 0) {
+          footer.querySelectorAll(".agent-footer-link").forEach((btn) => { btn.disabled = true; });
+        } else {
+          keepAllBtn.disabled = false;
+        }
+      } catch (error) {
+        keepAllBtn.disabled = false;
+        appendMessage("assistant", `Keep All falló: ${error?.message || error}`);
+        $("status").textContent = `Keep: ${error?.message || error}`;
+      }
+    });
+    const reviewBtn = document.createElement("button");
+    reviewBtn.type = "button";
+    reviewBtn.className = "agent-footer-link";
+    reviewBtn.textContent = "Review";
+    reviewBtn.addEventListener("click", () => reviewAgentTurnFromCard(item));
+    footer.append(undoAllBtn, keepAllBtn, reviewBtn);
+    exec.appendChild(footer);
+
+    // Contenido primero; bolitas/estado al final (como Cursor: indicador abajo).
+    body.appendChild(exec);
+    body.appendChild(primary);
+
+    item._thoughtAccordion = thoughtWrap;
     item._thoughtPanel = stream;
     item._thoughtStream = stream;
-    item._narrativeLog = stream;
+    item._narrativeLog = activityLog;
+    item._exploreBlock = explore;
+    item._explorePill = exploreBtn;
+    item._exploreList = exploreList;
+    item._inlineDiffs = diffs;
+    item._turnFooter = footer;
+    item._thinkingPrimary = primary;
+    item._exploredItems = new Map();
+    item._inlineDiffCards = new Map();
+    item._changedFiles = [];
     item._narrativeSeen = new Set();
     item._narrativeRows = new Map();
+  } else {
+    body.appendChild(primary);
   }
 
   item.append(head, body);
   $("feed").appendChild(item);
   scrollFeedToBottom();
   return item;
+}
+
+function revealAgentTurnActions(thinkingItem, { failed = false } = {}) {
+  const footer = thinkingItem?._turnFooter || thinkingItem?.querySelector?.(".agent-turn-footer");
+  if (!footer) return;
+  const changed = Array.isArray(thinkingItem?._changedFiles)
+    ? thinkingItem._changedFiles.filter(Boolean)
+    : [];
+  // Sin diffs reales: no mostrar Undo/Keep/Review (análisis de solo lectura).
+  if (!failed && changed.length === 0) {
+    footer.hidden = true;
+    return;
+  }
+  footer.hidden = false;
+  footer.classList.toggle("is-failed", failed === true);
+  if (failed) {
+    footer.querySelectorAll(".agent-footer-link").forEach((btn) => {
+      if (btn.textContent === "Review") return;
+      btn.disabled = true;
+    });
+  }
+}
+
+async function reviewAgentTurnFromCard(thinkingItem) {
+  const root = String(state.projectRoot || "").trim();
+  const files = Array.isArray(thinkingItem?._changedFiles) ? thinkingItem._changedFiles.filter(Boolean) : [];
+  if (window.editcoreAgent?.reviewLastRun && root) {
+    try {
+      const review = await window.editcoreAgent.reviewLastRun({ projectRoot: root });
+      if (review?.files?.length) {
+        renderAgentDiffReview(review);
+        const pending = review.files.filter((f) => (f.status || "pending") === "pending").length;
+        appendMessage("assistant", [
+          "## Review",
+          "",
+          `**${review.files.length}** archivo(s) en el último turno` +
+            (pending ? ` · **${pending}** pendiente(s)` : " · sin pendientes"),
+          "",
+          "Revisa cada diff abajo: Accept / Reject por archivo o hunk.",
+        ].join("\n"));
+        $("status").textContent = `Review: ${review.files.length} archivo(s)`;
+        return;
+      }
+      appendMessage("assistant", [
+        "## Review",
+        "",
+        files.length
+          ? `Hay ${files.length} archivo(s) tocados en el chat, pero no hay checkpoint con diffs (agent-last-run). Reinicia EditCore tras esta corrección y vuelve a pedir un cambio.`
+          : "No hay cambios pendientes para revisar en este turno.",
+      ].join("\n"));
+      $("status").textContent = "Review: sin checkpoint";
+      return;
+    } catch (error) {
+      appendMessage("assistant", `Review falló: ${error?.message || error}`);
+      $("status").textContent = `Review: ${error?.message || error}`;
+    }
+  }
+  const first = files[0];
+  if (first && window.editcoreProject?.openPath) {
+    try {
+      await window.editcoreProject.openPath({ projectRoot: root, path: first });
+      $("status").textContent = `Abierto: ${first}`;
+      return;
+    } catch {
+      /* fall through */
+    }
+  }
+  $("status").textContent = files.length
+    ? `Archivos tocados: ${files.slice(0, 3).join(", ")}`
+    : "Aún no hay diffs para revisar en esta corrida";
+}
+
+function resolveThinkingForTransparency(payload = {}) {
+  const runId = String(payload?.runId || "");
+  const liveRun = runId ? activeAgentThinkingRuns.get(runId) : null;
+  return liveRun?.thinking
+    || (!runId ? document.querySelector(".thinking-msg.agent-execution-card, .thinking-msg") : null);
+}
+
+function appendCursorThought(thinkingItem, text, { delta = false } = {}) {
+  if (!thinkingItem) return;
+  const value = String(text || "");
+  if (!value.trim()) return;
+  ensureThoughtPanel(thinkingItem);
+  if (thinkingItem._thoughtAccordion) thinkingItem._thoughtAccordion.open = true;
+  // Nunca mutar _streamBuffer aquí: es el buffer del chat/narración.
+  // Los deltas de thought van a un buffer propio para no duplicar texto en el mensaje.
+  if (delta) {
+    thinkingItem._thoughtOnlyBuffer = `${String(thinkingItem._thoughtOnlyBuffer || "")}${value}`;
+    appendThoughtStreamText(thinkingItem, thinkingItem._thoughtOnlyBuffer);
+  } else {
+    thinkingItem._thoughtOnlyBuffer = value;
+    appendThoughtStreamText(thinkingItem, value);
+  }
+  const summary = thinkingItem.querySelector?.(".agent-thought-summary");
+  if (summary) {
+    summary.textContent = delta || thinkingItem._thoughtOnlyBuffer
+      ? "Thought · streaming…"
+      : "Thought";
+  }
+}
+
+function upsertExplorationUi(thinkingItem, { summary, items = [], count } = {}) {
+  if (!thinkingItem?._exploreBlock) return;
+  thinkingItem._exploredItems ||= new Map();
+  for (const item of items) {
+    const label = String(item?.label || item?.path || item?.query || item?.tool || "").trim();
+    if (!label) continue;
+    const key = `${item?.tool || "file"}:${label}`;
+    thinkingItem._exploredItems.set(key, item);
+  }
+  const total = Number(count) || thinkingItem._exploredItems.size;
+  thinkingItem._exploreBlock.hidden = total <= 0;
+  if (thinkingItem._explorePill) {
+    thinkingItem._explorePill.textContent = summary || `Explored ${total} file${total === 1 ? "" : "s"}`;
+  }
+  const list = thinkingItem._exploreList;
+  if (!list) return;
+  list.replaceChildren();
+  for (const entry of [...thinkingItem._exploredItems.values()].slice(-40)) {
+    const li = document.createElement("li");
+    const tool = String(entry.tool || "file").replace(/_/g, " ");
+    const label = String(entry.label || entry.path || entry.query || "").trim();
+    li.textContent = label ? `${tool}: ${label}` : tool;
+    list.appendChild(li);
+  }
+}
+
+function renderUnifiedDiffLines(pre, unifiedDiff = "") {
+  pre.replaceChildren();
+  const lines = String(unifiedDiff || "").split("\n").slice(0, 120);
+  if (!lines.length || (lines.length === 1 && !lines[0])) {
+    pre.textContent = "(diff en curso…)";
+    return;
+  }
+  for (const line of lines) {
+    const row = document.createElement("div");
+    row.className = "agent-diff-line";
+    if (line.startsWith("+") && !line.startsWith("+++")) row.classList.add("is-add");
+    else if (line.startsWith("-") && !line.startsWith("---")) row.classList.add("is-del");
+    else if (line.startsWith("@@")) row.classList.add("is-hunk");
+    row.textContent = line;
+    pre.appendChild(row);
+  }
+}
+
+function upsertInlineDiffCard(thinkingItem, payload = {}) {
+  if (!thinkingItem) return;
+  const host = thinkingItem._inlineDiffs;
+  if (!host) {
+    addAgentCodeFragment(thinkingItem, {
+      name: "apply_diff",
+      stage: "done",
+      input: { path: payload.filePath },
+      fragment: {
+        kind: "replace",
+        path: payload.filePath,
+        summary: payload.summary || payload.filePath,
+        oldText: "",
+        newText: String(payload.unifiedDiff || "").slice(0, 4000),
+      },
+    });
+    return;
+  }
+  const filePath = String(payload.filePath || "").trim();
+  if (!filePath) return;
+  thinkingItem._inlineDiffCards ||= new Map();
+  thinkingItem._changedFiles ||= [];
+  if (!thinkingItem._changedFiles.includes(filePath)) thinkingItem._changedFiles.push(filePath);
+
+  let card = thinkingItem._inlineDiffCards.get(filePath);
+  if (!card) {
+    card = document.createElement("div");
+    card.className = "agent-inline-diff-card";
+    const head = document.createElement("div");
+    head.className = "agent-inline-diff-head";
+    const title = document.createElement("button");
+    title.type = "button";
+    title.className = "agent-inline-diff-path";
+    title.title = "Abrir en editor";
+    title.addEventListener("click", () => {
+      openPathInEditor(filePath, payload.unifiedDiff).catch((error) => {
+        $("status").textContent = `Editor: ${error?.message || error}`;
+      });
+    });
+    const deltas = document.createElement("span");
+    deltas.className = "agent-inline-diff-deltas";
+    head.append(title, deltas);
+    const hunkHost = document.createElement("div");
+    hunkHost.className = "agent-live-hunk-list";
+    const body = document.createElement("pre");
+    body.className = "agent-inline-diff-body";
+    card.append(head, hunkHost, body);
+    card._title = title;
+    card._deltas = deltas;
+    card._body = body;
+    card._hunkHost = hunkHost;
+    host.appendChild(card);
+    thinkingItem._inlineDiffCards.set(filePath, card);
+  }
+  const rel = ProjectFilesUi?.resolveTouchedRelativePath?.(state.projectRoot, filePath) || filePath;
+  card._title.textContent = rel;
+  const add = Number(payload.additions) || 0;
+  const del = Number(payload.deletions) || 0;
+  card._deltas.innerHTML = `<span class="is-add">+${add}</span> <span class="is-del">−${del}</span>`;
+  if (payload.unifiedDiff) {
+    renderUnifiedDiffLines(card._body, payload.unifiedDiff);
+    renderLiveHunkActions(card, rel, payload.unifiedDiff);
+    // Gutter markers in Monaco when file is open
+    if (window.EditCoreEditor?.getCurrentPath?.() === rel.replace(/\\/g, "/")
+      || window.EditCoreEditor?.getCurrentPath?.() === String(filePath).replace(/\\/g, "/")) {
+      const marks = window.EditCoreLiveHunks?.gutterMarksFromDiff?.(payload.unifiedDiff) || [];
+      window.EditCoreEditor.applyGutterDiffs(marks);
+    }
+  } else if (!card._body.childNodes.length) {
+    card._body.textContent = "Aplicando cambio…";
+  }
+  card.classList.toggle("is-applied", payload.applied === true);
+  scrollFeedToBottom();
+}
+
+function renderLiveHunkActions(card, relativePath, unifiedDiff) {
+  const host = card?._hunkHost;
+  if (!host) return;
+  const hunks = window.EditCoreLiveHunks?.parseUnifiedHunks?.(unifiedDiff) || [];
+  host.replaceChildren();
+  if (!hunks.length) return;
+  for (const hunk of hunks) {
+    const row = document.createElement("div");
+    row.className = "agent-live-hunk";
+    row.dataset.hunkId = hunk.id;
+    const meta = document.createElement("div");
+    meta.className = "agent-live-hunk-meta";
+    meta.textContent = `${hunk.id} · +${hunk.additions || 0} −${hunk.deletions || 0} · L${hunk.newStart}`;
+    const actions = document.createElement("div");
+    actions.className = "agent-live-hunk-actions";
+    const accept = document.createElement("button");
+    accept.type = "button";
+    accept.textContent = "Accept";
+    accept.className = "agent-hunk-accept";
+    const reject = document.createElement("button");
+    reject.type = "button";
+    reject.textContent = "Reject";
+    reject.className = "agent-hunk-reject";
+    const setDone = (status) => {
+      row.dataset.status = status;
+      accept.disabled = true;
+      reject.disabled = true;
+      row.classList.add(status === "rejected" ? "is-rejected" : "is-accepted");
+    };
+    accept.addEventListener("click", async () => {
+      try {
+        if (window.editcoreAgent?.reviewHunk && state.projectRoot) {
+          await window.editcoreAgent.reviewHunk({
+            projectRoot: state.projectRoot,
+            path: relativePath,
+            hunkId: hunk.id,
+            decision: "accept",
+          });
+        }
+        setDone("accepted");
+        $("status").textContent = `Hunk ${hunk.id} aceptado`;
+      } catch (error) {
+        $("status").textContent = `Accept: ${error?.message || error}`;
+      }
+    });
+    reject.addEventListener("click", async () => {
+      try {
+        if (window.editcoreAgent?.reviewHunk && state.projectRoot) {
+          await window.editcoreAgent.reviewHunk({
+            projectRoot: state.projectRoot,
+            path: relativePath,
+            hunkId: hunk.id,
+            decision: "reject",
+          });
+        }
+        setDone("rejected");
+        $("status").textContent = `Hunk ${hunk.id} rechazado`;
+        if (window.EditCoreEditor?.getCurrentPath?.() === String(relativePath).replace(/\\/g, "/")) {
+          await openPathInEditor(relativePath);
+        }
+      } catch (error) {
+        $("status").textContent = `Reject: ${error?.message || error}`;
+      }
+    });
+    actions.append(accept, reject);
+    const preview = document.createElement("pre");
+    preview.className = "agent-live-hunk-preview";
+    preview.textContent = hunk.lines.slice(0, 12).join("\n");
+    row.append(meta, actions, preview);
+    host.appendChild(row);
+  }
+}
+
+async function openPathInEditor(filePath, unifiedDiff = "") {
+  const root = String(state.projectRoot || "").trim();
+  const rel = ProjectFilesUi?.resolveTouchedRelativePath?.(root, filePath)
+    || String(filePath || "").replace(/\\/g, "/").replace(/^\/+/, "");
+  if (!root || !rel) {
+    $("status").textContent = "Sin ruta de archivo";
+    return;
+  }
+  if (!window.EditCoreEditor?.openFile) {
+    $("status").textContent = `Archivo: ${rel} (editor no cargado)`;
+    return;
+  }
+  try {
+    setPreviewMode("code");
+    await window.EditCoreEditor.openFile(root, rel, { unifiedDiff: unifiedDiff || "" });
+    $("status").textContent = `Código: ${rel}`;
+  } catch (error) {
+    $("status").textContent = `No se pudo abrir ${rel}: ${error?.message || error}`;
+    throw error;
+  }
+}
+
+function markInlineDiffApplied(thinkingItem, filePath = "") {
+  const path = String(filePath || "").trim();
+  if (!thinkingItem || !path) return;
+  const card = thinkingItem._inlineDiffCards?.get?.(path);
+  if (card) card.classList.add("is-applied");
+  thinkingItem._changedFiles ||= [];
+  if (!thinkingItem._changedFiles.includes(path)) thinkingItem._changedFiles.push(path);
 }
 
 function setThinkingStatus(item, text) {
@@ -6309,16 +6841,31 @@ function ensureThoughtPanel(thinkingItem) {
   const body = thinkingItem.querySelector?.(".msg-body") || thinkingItem;
   let stream = thinkingItem.querySelector?.(".agent-live-stream, .agent-thought-stream");
   if (!stream) {
+    const exec = thinkingItem.querySelector?.(".agent-execution-container") || body;
+    let accordion = thinkingItem.querySelector?.(".agent-thought-accordion");
+    if (!accordion) {
+      accordion = document.createElement("details");
+      accordion.className = "agent-thought-accordion";
+      accordion.open = true;
+      const sum = document.createElement("summary");
+      sum.className = "agent-thought-summary";
+      sum.textContent = "Thought";
+      accordion.appendChild(sum);
+      const primary = thinkingItem.querySelector?.(".thinking-primary");
+      if (primary?.parentNode) primary.parentNode.insertBefore(accordion, primary.nextSibling);
+      else exec.insertBefore(accordion, exec.firstChild);
+      thinkingItem._thoughtAccordion = accordion;
+    }
     stream = document.createElement("div");
-    stream.className = "agent-live-stream";
+    stream.className = "agent-live-stream agent-thought-stream";
     stream.setAttribute("aria-live", "polite");
-    const primary = thinkingItem.querySelector?.(".thinking-primary");
-    if (primary?.parentNode) primary.parentNode.insertBefore(stream, primary.nextSibling);
-    else body.appendChild(stream);
+    accordion.appendChild(stream);
   }
   thinkingItem._thoughtPanel = stream;
   thinkingItem._thoughtStream = stream;
-  thinkingItem._narrativeLog = stream;
+  if (!thinkingItem._narrativeLog) {
+    thinkingItem._narrativeLog = thinkingItem.querySelector?.(".agent-activity-log") || stream;
+  }
   return stream;
 }
 
@@ -6609,7 +7156,7 @@ function scheduleAgentStreamRender(thinkingItem) {
     thinkingItem._streamRenderedAt = next;
     row.innerHTML = renderMarkdown(repairMojibakeText(next));
     scrollFeedToBottom();
-  }, 100);
+  }, 24);
 }
 
 function flushAgentStreamRender(thinkingItem) {
@@ -6652,7 +7199,9 @@ function narrationStreamFingerprint(text = "") {
     .trim();
 }
 
-function shouldAcceptNarrationProgress(thinkingEl, text) {
+function shouldAcceptNarrationProgress(thinkingEl, text, { delta = false } = {}) {
+  // Deltas de token: nunca deduplicar (rompería el stream en vivo).
+  if (delta) return true;
   const fp = narrationStreamFingerprint(text);
   if (!fp || fp.length < 36) return true;
   if (thinkingEl._lastNarrationFp === fp) return false;
@@ -6669,10 +7218,58 @@ function looksLikeAnalysisStreamChunk(text = "") {
 }
 
 function appendAgentStreamDelta(thinkingItem, text) {
+  const raw = String(text || "");
+  // Nunca pintar tool_call / function= / parameter= en el chat.
+  if (thinkingItem?._toolDumpLocked) {
+    if (looksLikeAgentToolDump(raw) || raw.length > 200) return;
+  }
+  if (looksLikeAgentToolDump(raw)) {
+    const cleaned = stripAgentToolXml(raw, { trim: false });
+    thinkingItem._toolDumpLocked = true;
+    if (!String(thinkingItem._streamBuffer || "").trim() && !cleaned.trim()) {
+      setAgentLiveActivity(thinkingItem, "Ejecutando herramienta…");
+      return;
+    }
+    if (cleaned) {
+      // Solo la prosa previa al markup de este chunk.
+      text = cleaned;
+    } else {
+      setAgentLiveActivity(thinkingItem, "Ejecutando herramienta…");
+      thinkingItem._streamBuffer = stripAgentToolXml(String(thinkingItem._streamBuffer || ""), { trim: false });
+      scheduleAgentStreamRender(thinkingItem);
+      return;
+    }
+  }
+  // No strip/trim agresivo en tokens normales: destroza espacios del stream.
   const value = humanizeAgentNarration(String(text || ""));
   if (!thinkingItem || !value) return;
   ensureAgentStreamRow(thinkingItem);
   const prev = String(thinkingItem._streamBuffer || "");
+  // Tokens cortos del LLM: unir con joinAgentStreamText (nunca "fin.Inicio").
+  if (prev && value.length <= 64 && !/^#{1,6}\s*Avance\b/i.test(value.trim()) && !looksLikeAnalysisStreamChunk(value)) {
+    if (prev.endsWith(value)) {
+      scheduleAgentStreamRender(thinkingItem);
+      return;
+    }
+    // Snapshot acumulado disfrazado de delta: reemplazar, no concatenar.
+    if (value.length >= prev.length && value.startsWith(prev)) {
+      thinkingItem._streamBuffer = stripAgentToolXml(value, { trim: false });
+      if (looksLikeAgentToolDump(value)) thinkingItem._toolDumpLocked = true;
+      scheduleAgentStreamRender(thinkingItem);
+      return;
+    }
+    const merged = joinAgentStreamText(prev, value);
+    if (looksLikeAgentToolDump(merged)) {
+      thinkingItem._streamBuffer = stripAgentToolXml(merged, { trim: false });
+      thinkingItem._toolDumpLocked = true;
+      setAgentLiveActivity(thinkingItem, "Ejecutando herramienta…");
+      scheduleAgentStreamRender(thinkingItem);
+      return;
+    }
+    thinkingItem._streamBuffer = merged;
+    scheduleAgentStreamRender(thinkingItem);
+    return;
+  }
   // Avance = progreso de tools (no informe). Acumular, pero topar a ~20 notas
   // para que el buffer nunca compita en tamaño con el reporte final.
   if (/^#{1,6}\s*Avance\b/i.test(value.trim())) {
@@ -6729,18 +7326,11 @@ function appendAgentStreamDelta(thinkingItem, text) {
       scheduleAgentStreamRender(thinkingItem);
       return;
     }
-    // Nuevo turno narrativo: solo reemplazar si no destruye un informe largo ni Avances.
-    if (/[a-záéíóúñ]$/i.test(prev.trim()) && /^(?:Entendido|He |Ya |Tienes |Reconozco|Analizando|## )/i.test(value.trim())) {
-      if (/^#{1,6}\s*Avance\b/im.test(prev)) {
-        thinkingItem._streamBuffer = prev.endsWith("\n") ? `${prev}\n${value.trim()}` : `${prev}\n\n${value.trim()}`;
-        scheduleAgentStreamRender(thinkingItem);
-        return;
-      }
-      if (!(prev.length > 400 && value.length < prev.length * 0.7)) {
-        thinkingItem._streamBuffer = value;
-        scheduleAgentStreamRender(thinkingItem);
-        return;
-      }
+    // Nuevo turno narrativo: anexar como párrafo (nunca pisar ni pegar sin salto).
+    if (/[a-záéíóúñ]$/i.test(prev.trim()) && /^(?:Entendido|He |Ya |Tienes |Reconozco|Analizando|Perfecto|Excelente|Ahora|## )/i.test(value.trim())) {
+      thinkingItem._streamBuffer = joinAgentStreamText(prev, value.trim());
+      scheduleAgentStreamRender(thinkingItem);
+      return;
     }
     if (isGarbledAgentNarration(`${prev}${value}`) && !isGarbledAgentNarration(value)) {
       if (!(prev.length > 500 && value.length < prev.length * 0.6 && looksLikeAnalysisStreamChunk(prev))) {
@@ -6756,17 +7346,7 @@ function appendAgentStreamDelta(thinkingItem, text) {
   } else if (!prev) {
     thinkingItem._streamBuffer = value;
   } else {
-    const prevTrim = prev.trimEnd();
-    const valTrim = value.trimStart();
-    if (/^#{1,6}\s+|^[*-]\s+|^\d+[.)]\s+|^\|/.test(valTrim)) {
-      thinkingItem._streamBuffer = prev.endsWith("\n") ? `${prev}\n${valTrim}` : `${prev}\n\n${valTrim}`;
-    } else if (/\s$/.test(prev) || /^\s/.test(value) || /[.,;:!?)]$/.test(prevTrim)) {
-      thinkingItem._streamBuffer = `${prev}${value}`;
-    } else if (/[a-zA-Z0-9_ñÁ-ú]$/i.test(prevTrim) && /^[a-zA-Z0-9_ñÁ-ú]/i.test(valTrim) && value.length > 15) {
-      thinkingItem._streamBuffer = `${prev}\n${value}`;
-    } else {
-      thinkingItem._streamBuffer = `${prev}${value}`;
-    }
+    thinkingItem._streamBuffer = joinAgentStreamText(prev, value);
   }
   scheduleAgentStreamRender(thinkingItem);
 }
@@ -6801,13 +7381,28 @@ function humanizeAgentNarration(text) {
 }
 
 function addAgentNarrationDelta(thinkingItem, text) {
-  appendAgentStreamDelta(thinkingItem, text);
-  appendThoughtStreamText(thinkingItem, String(thinkingItem?._streamBuffer || text || ""));
+  const raw = String(text || "");
+  if (!thinkingItem || !raw) return;
+  // Deduplicar el mismo token si llega por dos canales casi a la vez.
+  if (thinkingItem._lastNarrationDelta === raw && (Date.now() - (thinkingItem._lastNarrationDeltaAt || 0)) < 80) {
+    return;
+  }
+  thinkingItem._lastNarrationDelta = raw;
+  thinkingItem._lastNarrationDeltaAt = Date.now();
+  // Un solo camino: acumular delta UNA vez en _streamBuffer y espejar al Thought.
+  appendAgentStreamDelta(thinkingItem, raw);
+  const buf = String(thinkingItem?._streamBuffer || "");
+  thinkingItem._thoughtOnlyBuffer = buf;
+  appendThoughtStreamText(thinkingItem, buf);
+  if (thinkingItem?._thoughtAccordion) thinkingItem._thoughtAccordion.open = true;
+  const summary = thinkingItem?.querySelector?.(".agent-thought-summary");
+  if (summary) summary.textContent = "Thought · streaming…";
 }
 
 function addAgentNarration(thinkingItem, text) {
-  const value = humanizeAgentNarration(String(text || "")).trim();
+  const value = humanizeAgentNarration(stripAgentToolXml(String(text || ""))).trim();
   if (!thinkingItem || !value) return;
+  if (looksLikeAgentToolDump(text) && value.length < 8) return;
   // Líneas de acción del orquestador → panel CoT (no solo stream markdown).
   if (/^[⚙️🔍📂✓○→✗]/.test(value) || /^(Creando|Editando|Leyendo|Verificando|Explorando)\b/i.test(value)) {
     appendThoughtLine(thinkingItem, value, { kind: "action" });
@@ -6824,12 +7419,25 @@ function addAgentNarration(thinkingItem, text) {
   // No pisar un informe largo con un fragmento corto de phase "narration".
   if (prev.length > 400 && value.length < prev.length * 0.7
     && !(value.includes(prev.slice(0, Math.min(80, prev.length))) && value.length >= prev.length)) {
+    // Nuevo paso corto: anexar como párrafo, no descartar ni pisar.
+    thinkingItem._streamBuffer = joinAgentStreamText(prev, value);
+    thinkingItem._thoughtOnlyBuffer = thinkingItem._streamBuffer;
     flushAgentStreamRender(thinkingItem);
+    appendThoughtStreamText(thinkingItem, thinkingItem._streamBuffer);
+    scrollFeedToBottom();
     return;
   }
-  thinkingItem._streamBuffer = value;
+  // Snapshot más largo que contiene el anterior → reemplazar.
+  if (prev && value.includes(prev.slice(0, Math.min(64, prev.length))) && value.length >= prev.length) {
+    thinkingItem._streamBuffer = value;
+  } else if (prev) {
+    thinkingItem._streamBuffer = joinAgentStreamText(prev, value);
+  } else {
+    thinkingItem._streamBuffer = value;
+  }
+  thinkingItem._thoughtOnlyBuffer = thinkingItem._streamBuffer;
   flushAgentStreamRender(thinkingItem);
-  appendThoughtStreamText(thinkingItem, value);
+  appendThoughtStreamText(thinkingItem, thinkingItem._streamBuffer);
   scrollFeedToBottom();
 }
 
@@ -7041,6 +7649,30 @@ function agentProgressText(progress) {
 function stopThinkingAnimations(thinking) {
   for (const timer of thinking?._narrativeTimers || []) clearInterval(timer);
   if (thinking) thinking._narrativeTimers = [];
+  if (!thinking) return;
+  const dots = thinking.querySelector?.(".thinking-dots");
+  if (dots) {
+    dots.hidden = true;
+    dots.style.display = "none";
+    dots.querySelectorAll("span").forEach((span) => {
+      span.style.animation = "none";
+    });
+  }
+  thinking.querySelector?.(".thinking-primary")?.remove();
+  thinking.classList.remove("is-thinking-live");
+}
+
+/** Cierra UI de “trabajando…” sin borrar el historial del turno. */
+function settleAgentTurnChrome(thinking, { failed = false } = {}) {
+  if (!thinking) return;
+  stopThinkingAnimations(thinking);
+  thinking.classList.remove("thinking-msg");
+  thinking.classList.add("assistant", "agent-execution-done");
+  if (failed) thinking.classList.add("is-failed");
+  const thoughtSummary = thinking.querySelector?.(".agent-thought-summary");
+  if (thoughtSummary) thoughtSummary.textContent = "Thought";
+  if (thinking._thoughtAccordion) thinking._thoughtAccordion.open = false;
+  revealAgentTurnActions(thinking, { failed });
 }
 
 function collapseDuplicateNarrations(parts = []) {
@@ -7136,7 +7768,7 @@ function isAvanceProgressOnly(text = "") {
 }
 
 function finalizeThinkingAsAssistant(thinking, text, usage, elapsedSeconds, options = {}) {
-  stopThinkingAnimations(thinking);
+  settleAgentTurnChrome(thinking, { failed: false });
   flushAgentStreamRender(thinking);
   const serverText = collapseDuplicateReportText(repairMojibakeText(stripAgentToolXml(String(text || ""))).trim());
   const streamedRaw = stripAgentToolXml(String(thinking?._streamBuffer || "")).trim();
@@ -7168,27 +7800,34 @@ function finalizeThinkingAsAssistant(thinking, text, usage, elapsedSeconds, opti
 
   if (thinking) {
     thinking._streamBuffer = value;
-    const log = thinking.querySelector(".agent-narrative-log");
-    if (log && dropAvances) {
-      for (const row of [...log.querySelectorAll(".agent-narration")]) row.remove();
-      thinking._streamRow = null;
-    }
   }
   if (!thinking) return append("assistant", value, usage, true, elapsedSeconds);
-  thinking.classList.remove("thinking-msg");
-  thinking.classList.add("assistant");
+  // settleAgentTurnChrome ya quitó thinking-msg / bolitas
   const head = thinking.querySelector(".msg-head");
   if (head) head.textContent = `EditCoreAI ${formatElapsed(elapsedSeconds)}`;
-  thinking.querySelector(".thinking-primary")?.remove();
+  revealAgentTurnActions(thinking, { failed: false });
+  // Evitar texto triplicado: cerrar Thought y limpiar stream intermedio; deja solo la respuesta final.
+  if (thinking._thoughtAccordion) thinking._thoughtAccordion.open = false;
+  const thoughtSummaryDone = thinking.querySelector?.(".agent-thought-summary");
+  if (thoughtSummaryDone) thoughtSummaryDone.textContent = "Thought";
+  if (thinking._streamRow) {
+    thinking._streamRow.remove();
+    thinking._streamRow = null;
+  }
+  if (thinking._thoughtLiveBlock) {
+    thinking._thoughtLiveBlock.remove();
+    thinking._thoughtLiveBlock = null;
+  }
   const body = thinking.querySelector(".msg-body");
   if (body) body.classList.remove("msg-thinking");
   let finalBody = body?.querySelector(".agent-final-response");
   if (!finalBody && body) {
     finalBody = document.createElement("div");
     finalBody.className = "agent-final-response";
-    body.appendChild(finalBody);
+    const exec = body.querySelector(".agent-execution-container");
+    if (exec) exec.insertAdjacentElement("afterend", finalBody);
+    else body.appendChild(finalBody);
   }
-  // Pintar SIEMPRE el informe final en agent-final-response (no mezclar con Avances).
   if (finalBody) {
     finalBody.innerHTML = renderMarkdown(repairMojibakeText(value));
   }
@@ -7227,6 +7866,7 @@ function startResponseTimer(head) {
 
 function renderBrainSnapshot(snapshot) {
   const host = $("brainSnapshot");
+  if (!host) return;
   host.replaceChildren();
   const values = [
     `Skills: ${snapshot?.skillCount || 0}`,
@@ -7234,21 +7874,29 @@ function renderBrainSnapshot(snapshot) {
     `Memorias: ${snapshot?.memoryCount || 0}`,
     `RAG: ${snapshot?.index?.totalFiles || 0} archivos`,
   ];
-  for (const value of values) { const chip = document.createElement("span"); chip.className = "brain-chip"; chip.textContent = value; host.appendChild(chip); }
+  for (const value of values) {
+    const chip = document.createElement("span");
+    chip.className = "brain-chip";
+    chip.textContent = value;
+    host.appendChild(chip);
+  }
   const health = $("brainHealth");
   if (health) {
     const count = Number(snapshot?.skillCount || 0);
     const ready = snapshot?.ready === true && count > 0;
     health.dataset.state = ready ? "ready" : "error";
-    health.querySelector("strong").textContent = ready
-      ? `Cerebro operativo · ${count} skills disponibles para chat y agentes`
-      : "Cerebro incompleto · revisa la copia local de herramientas";
+    const strong = health.querySelector("strong");
+    if (strong) {
+      strong.textContent = ready
+        ? `Cerebro operativo · ${count} skills disponibles para chat y agentes`
+        : "Cerebro incompleto · revisa la copia local de herramientas";
+    }
   }
 }
 
 async function loadBrainCatalog() {
-  const query = $("brainSearch").value.trim();
-  $("brainStatus").textContent = "Consultando Bodega…";
+  const query = $("brainSearch")?.value?.trim() || "";
+  if ($("brainStatus")) $("brainStatus").textContent = "Consultando Bodega…";
   const [items, snapshot, audit] = await Promise.all([
     window.editcoreBrain.catalog(query, 50),
     window.editcoreBrain.snapshot(state.projectRoot || ""),
@@ -7258,10 +7906,23 @@ async function loadBrainCatalog() {
   const installedIds = new Set(installedList.map((item) => item.id));
   renderBrainSnapshot(snapshot);
   renderBrainAudit(audit);
-  activeProject().brainSnapshot = snapshot;
-  saveProjects();
-  const host = $("brainCatalogList"); host.replaceChildren();
-  for (const item of items) {
+  // Bodega es global: no exigir proyecto abierto. Guardar en proyecto activo si existe.
+  const project = activeProject();
+  if (project) {
+    project.brainSnapshot = snapshot;
+    saveProjects();
+  } else {
+    state.brainSnapshot = snapshot;
+  }
+  const host = $("brainCatalogList");
+  if (!host) {
+    if ($("brainStatus")) {
+      $("brainStatus").textContent = `${(items || []).length} elementos · Cerebro común activo`;
+    }
+    return;
+  }
+  host.replaceChildren();
+  for (const item of items || []) {
     const card = document.createElement("article"); card.className = "brain-card";
     const head = document.createElement("div"); head.className = "brain-card-head";
     const title = document.createElement("span"); title.className = "brain-card-title"; title.textContent = item.name || item.id;
@@ -7271,13 +7932,15 @@ async function loadBrainCatalog() {
       if (!confirm(`Instalar ${item.name || item.id} en el Cerebro global de EditCore? Estará disponible para todos los agentes y proveedores.`)) return;
       button.disabled = true; button.textContent = "Instalando…";
       try { await window.editcoreBrain.install(state.projectRoot || "", item.id); await loadBrainCatalog(); }
-      catch (error) { button.disabled = false; button.textContent = "Reintentar"; $("brainStatus").textContent = error?.message || String(error); }
+      catch (error) { button.disabled = false; button.textContent = "Reintentar"; if ($("brainStatus")) $("brainStatus").textContent = error?.message || String(error); }
     });
     const meta = document.createElement("div"); meta.className = "brain-card-meta"; meta.textContent = `${item.type || "skill"} · ${item.status || "disponible"} · riesgo ${item.risk || "no indicado"}`;
     const desc = document.createElement("div"); desc.className = "brain-card-meta"; desc.textContent = item.description || "Sin descripción";
     head.append(title, button); card.append(head, meta, desc); host.appendChild(card);
   }
-  $("brainStatus").textContent = `${items.length} elementos · Cerebro común activo para chat y agentes`;
+  if ($("brainStatus")) {
+    $("brainStatus").textContent = `${(items || []).length} elementos · Cerebro común activo para chat y agentes`;
+  }
 }
 
 function renderBrainAudit(audit) {
@@ -8798,6 +9461,7 @@ function applyEditCoreTheme(theme = "blanco") {
   const btn = $("themeCycleBtn");
   if (btn) btn.textContent = `Tema: ${next}`;
   syncPreviewChromeForTheme();
+  try { window.EditCoreEditor?.applyTheme?.(); } catch { /* ignore */ }
   return next;
 }
 
@@ -9351,7 +10015,7 @@ async function send(event) {
   const promptField = $("prompt");
   const prompt = promptField.value.trim();
   const hasAttachments = state.attachments.length > 0;
-  const hasImages = state.attachments.some((item) => /^image\/(png|jpeg|webp)$/i.test(item.mimeType));
+  const hasImages = state.attachments.some((item) => isImageAttachment(item));
   if (!prompt && !hasAttachments) return;
   promptField.value = "";
   updateSendButtonState();
@@ -9725,7 +10389,7 @@ async function send(event) {
   // Images→code: admite adjuntos (vision) o solo brief.
   if (/^\s*(?:images?\s*->\s*code|imagen\s+a\s+codigo|images?\s+to\s+code)\b(.*)$/i.test(effectivePrompt)
     || (hasAttachments && /^\s*(?:images?\s*->\s*code|imagen\s+a\s+codigo|images?\s+to\s+code)\b/i.test(effectivePrompt))) {
-    const imageAttachments = (state.attachments || []).filter((a) => /^image\//i.test(a.mimeType || ""));
+    const imageAttachments = (state.attachments || []).filter((a) => isImageAttachment(a));
     appendUserWithImages(effectivePrompt, imageAttachments);
     rememberMessage("user", effectivePrompt, null, imageAttachments);
     try {
@@ -9929,7 +10593,8 @@ async function send(event) {
     $("status").textContent = "Tarea pendiente de autorizacion";
     updateSendButtonState();
     return;
-  } else if (!hasAttachments && project && ProjectAnalysis.isTaskStatusQuestion(effectivePrompt)) {
+  } else if (!hasAttachments && project && ProjectAnalysis.isTaskStatusQuestion(effectivePrompt) && agentTaskLive) {
+    // Solo atajo local si hay corrida REAL en curso. READY/queue vacío → deja pasar al agente.
     appendUserWithImages(effectivePrompt, []);
     rememberMessage("user", effectivePrompt);
     const response = await durableAgentWorkflowStatusText(project);
@@ -9939,11 +10604,15 @@ async function send(event) {
     notifyVoiceAssistant(response);
     notifyVoiceTurnComplete();
     $("prompt").value = "";
-    $("status").textContent = "Estado recuperado de memoria durable · 0 tokens de API";
+    $("status").textContent = "Estado de corrida activa";
     updateSendButtonState();
     return;
   }
+  // Preguntas "qué pasó / qué hiciste": en Agente o Acceso completo NO usar atajo local;
+  // el modelo/agente debe razonar (evita plantillas CONTINUA/PROCEDE).
   if (!hasAttachments && project
+    && state.mode !== "agent"
+    && state.permissionMode !== "full"
     && (hasResumableAgentTask(project) || project.agentWorkflow?.task || project.analysisMemory)
     && !isAgentAuthorization(effectivePrompt)
     && !ProjectAnalysis.isFreshAnalysisRequest(effectivePrompt)
@@ -9954,11 +10623,7 @@ async function send(event) {
     try {
       response = await answerAgentWorkflowQuestion(project, effectivePrompt);
     } catch (error) {
-      response = `${ProjectAnalysis.workflowQuestionContext(project.agentWorkflow, project.analysisMemory)}\n\nNo pude consultar al modelo: ${error?.message || error}\n\n${
-        state.permissionMode === "full"
-          ? "Con Acceso completo: indica la opción recomendada o la acción que quieres aplicar."
-          : "Para aplicar correcciones escribe **procede**, **autorizo** o **continua**."
-      }`;
+      response = `${ProjectAnalysis.workflowQuestionContext(project.agentWorkflow, project.analysisMemory)}\n\nNo pude consultar al modelo: ${error?.message || error}`;
     }
     const usage = { local_response: true, confirmed_input_tokens: 0, confirmed_output_tokens: 0 };
     append("assistant", response, usage, true, 0);
@@ -9966,9 +10631,7 @@ async function send(event) {
     notifyVoiceAssistant(response);
     notifyVoiceTurnComplete();
     $("prompt").value = "";
-    $("status").textContent = state.permissionMode === "full"
-      ? "Pregunta respondida · elige opción o acción siguiente"
-      : "Pregunta respondida · escribe procede/autorizo/continua para ejecutar";
+    $("status").textContent = "Pregunta respondida";
     updateSendButtonState();
     return;
   }
@@ -9989,11 +10652,11 @@ async function send(event) {
   let analysisRepairAuthorization = false;
   const userAuthorized = isAgentAuthorization(effectivePrompt);
   const userVisiblePrompt = String(effectivePrompt || "").trim();
-  const queuedImages = [...(state.attachments || []).filter((a) => /^image\/(png|jpeg|webp)$/i.test(a.mimeType))];
+  const queuedImages = [...(state.attachments || []).filter((a) => isImageAttachment(a))];
   // Pintar PROCEDE/HAZLO al instante (antes de awaits / cancelaciones).
   let userBubblePainted = false;
-  if (userVisiblePrompt) {
-    appendUserMessageImmediate(userVisiblePrompt, queuedImages);
+  if (userVisiblePrompt || queuedImages.length) {
+    appendUserMessageImmediate(userVisiblePrompt || "Imagen adjunta", queuedImages);
     userBubblePainted = true;
     $("prompt").value = "";
     updateSendButtonState();
@@ -10348,7 +11011,7 @@ function buildPromptJob(prompt) {
     needsAnalysisFirst: plan.needsAnalysisFirst,
     requireAgentTools: Boolean(plan.isAgent && plan.usesProjectTools),
     hasAttachments: state.attachments.length > 0,
-    hasImages: state.attachments.some((item) => /^image\/(png|jpeg|webp)$/i.test(item.mimeType)),
+    hasImages: state.attachments.some((item) => isImageAttachment(item)),
   };
   let selectedProfile = resolveActiveChatProfile(autoContext);
   if (!selectedProfile) {
@@ -10441,8 +11104,8 @@ function buildPromptJob(prompt) {
     cursorParityEnabled: loadJson("editcore-cursor-parity", true) !== false,
     providerKey: selectedProviderKey,
     providerProfileId: selectedProfileId,
-    images: state.attachments.filter((a) => /^image\/(png|jpeg|webp)$/i.test(a.mimeType)),
-    documents: state.attachments.filter((a) => !/^image\/(png|jpeg|webp)$/i.test(a.mimeType)),
+    images: state.attachments.filter((a) => isImageAttachment(a)),
+    documents: state.attachments.filter((a) => !isImageAttachment(a)),
     history: cleanHistoricalProjectMessages(state.history.filter((m) => m.role !== "system")),
     analysisContext: analysisContextExtra,
     queuedAt: Date.now(),
@@ -11604,9 +12267,10 @@ function appendUserWithImages(text, images) {
 
 function appendUserMessageImmediate(text, images = []) {
   const visible = ProjectAnalysis.redactCredentials(String(text || "").trim());
-  if (!visible) return null;
-  const item = appendUserWithImages(visible, images);
-  rememberMessage("user", visible, null, images || [], []);
+  const imgs = Array.isArray(images) ? images : [];
+  if (!visible && !imgs.length) return null;
+  const item = appendUserWithImages(visible || "Imagen adjunta", imgs);
+  rememberMessage("user", visible || "Imagen adjunta", null, imgs, []);
   return item;
 }
 
@@ -11724,7 +12388,21 @@ async function ensureDefaultModelSelectionMode() {
 async function boot() {
   performance.mark?.("editcore-boot-start");
   try { $("previewWebview")?.setAttribute("partition", PREVIEW_PARTITION); } catch { /* ignore */ }
-  setPreviewMode(localStorage.getItem(PREVIEW_MODE_STORAGE_KEY) || "web");
+  // Quitar UI legacy Review/Stop/Done + follow-up si quedó en el DOM
+  try {
+    for (const el of document.querySelectorAll(".agent-followup-input, .agent-footer-stop, .agent-footer-btn")) {
+      el.remove();
+    }
+  } catch { /* ignore */ }
+  try {
+    document.body.classList.remove("ide-code-mode");
+    document.body.classList.add("ide-web-mode");
+  } catch { /* ignore */ }
+  {
+    const savedMode = localStorage.getItem(PREVIEW_MODE_STORAGE_KEY);
+    const bootMode = savedMode === "code" || savedMode === "mobile" ? savedMode : "web";
+    setPreviewMode(bootMode);
+  }
   bindFeedScrollGuard();
   initFileListContextMenu();
   loadPanelSizes();
@@ -12211,6 +12889,30 @@ function wireComposerControls() {
     }
   });
 
+  const setupImageDropTarget = (el) => {
+    if (!el) return;
+    el.addEventListener("dragover", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      el.classList.add("drag-over");
+    });
+    el.addEventListener("dragleave", () => el.classList.remove("drag-over"));
+    el.addEventListener("drop", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      el.classList.remove("drag-over");
+      const files = [...(e.dataTransfer?.files || [])].filter((f) =>
+        /^image\//i.test(f.type || "") || /\.(png|jpe?g|webp|gif|bmp)$/i.test(f.name || "")
+      );
+      if (files.length) {
+        addFiles(files).catch((err) => { $("status").textContent = err?.message || String(err); });
+      }
+    });
+  };
+  setupImageDropTarget($("chatForm"));
+  setupImageDropTarget($("prompt"));
+  setupImageDropTarget($("feed"));
+
   $("prompt")?.addEventListener("keydown", (e) => {
     if (e.key === "Tab" && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
       const field = $("prompt");
@@ -12308,11 +13010,14 @@ function wireComposerControls() {
 
 // ── Event wiring ──────────────────────────────────────────────────────────────
 
-wireComposerControls();
+try { wireComposerControls(); } catch (err) {
+  console.error("[EditCoreAI] wireComposerControls failed", err);
+  try { $("status").textContent = "Error UI chat: " + (err?.message || err); } catch { /* ignore */ }
+}
 
-$("connectionsBtn").addEventListener("click", openConnections);
-$("closeConnectionsBtn").addEventListener("click", closeConnections);
-$("detectConnectionsBtn").addEventListener("click", detectConnections);
+$("connectionsBtn")?.addEventListener("click", openConnections);
+$("closeConnectionsBtn")?.addEventListener("click", closeConnections);
+$("detectConnectionsBtn")?.addEventListener("click", detectConnections);
 $("validateConnectionsBtn")?.addEventListener("click", () => {
   renderConnectionStatus(true).catch((error) => {
     $("status").textContent = error?.message || String(error);
@@ -12327,9 +13032,9 @@ $("saveGafcoreAdminTokenBtn")?.addEventListener("click", () => {
 $("openGafcoreDashboardBtn")?.addEventListener("click", () => {
   openExternal("https://gafcore-gateway.vercel.app/dashboard");
 });
-$("providersBtn").addEventListener("click", openProviders);
+$("providersBtn")?.addEventListener("click", openProviders);
 $("addCustomProviderBtn")?.addEventListener("click", () => addCustomProvider());
-$("closeProvidersBtn").addEventListener("click", (e) => { e.stopPropagation(); closeProviders(); });
+$("closeProvidersBtn")?.addEventListener("click", (e) => { e.stopPropagation(); closeProviders(); });
 $("brainBtn")?.addEventListener("click", () => openBrain().catch((err) => {
   $("status").textContent = err?.message || String(err);
 }));
@@ -12338,14 +13043,14 @@ $("brainSearchBtn")?.addEventListener("click", () => loadBrainCatalog().catch((e
   $("brainStatus").textContent = error?.message || String(error);
 }));
 $("brainAuditBtn")?.addEventListener("click", runBrainAudit);
-$("brainInstallRepoBtn").addEventListener("click", installBrainRepo);
-$("brainSearch").addEventListener("keydown", (event) => {
+$("brainInstallRepoBtn")?.addEventListener("click", installBrainRepo);
+$("brainSearch")?.addEventListener("keydown", (event) => {
   if (event.key === "Enter") {
     event.preventDefault();
     loadBrainCatalog().catch((error) => { $("brainStatus").textContent = error?.message || String(error); });
   }
 });
-$("brainRepoUrl").addEventListener("keydown", (event) => {
+$("brainRepoUrl")?.addEventListener("keydown", (event) => {
   if (event.key === "Enter") {
     event.preventDefault();
     installBrainRepo();
@@ -12462,6 +13167,91 @@ window.editcoreAgent.onApprovalRequest((request) => {
   }
 });
 
+if (typeof window.editcoreAgent.onThoughtStream === "function") {
+  window.editcoreAgent.onThoughtStream((payload) => {
+    const thinking = resolveThinkingForTransparency(payload);
+    if (!thinking) return;
+    // Los deltas de narración ya llegan por agent:progress (narration_delta).
+    // Ignorar thought-stream delta evita "VoyVoy…" / palabras cortadas.
+    if (payload?.delta) return;
+    appendCursorThought(thinking, payload?.text || "", { delta: false });
+  });
+}
+if (typeof window.editcoreAgent.onExplorationStart === "function") {
+  window.editcoreAgent.onExplorationStart((payload) => {
+    const thinking = resolveThinkingForTransparency(payload);
+    if (!thinking) return;
+    setAgentLiveActivity(thinking, String(payload?.detail || "Explorando…"));
+    if (payload?.query || payload?.detail) {
+      thinking._exploredItems ||= new Map();
+      const label = String(payload.query || payload.detail || "");
+      thinking._exploredItems.set(`start:${label}`, {
+        tool: payload.tool || "explore",
+        label,
+        path: label,
+      });
+      upsertExplorationUi(thinking, { items: [...thinking._exploredItems.values()] });
+    }
+  });
+}
+if (typeof window.editcoreAgent.onExplorationEnd === "function") {
+  window.editcoreAgent.onExplorationEnd((payload) => {
+    const thinking = resolveThinkingForTransparency(payload);
+    if (!thinking) return;
+    upsertExplorationUi(thinking, payload || {});
+    setAgentLiveActivity(thinking, String(payload?.summary || "Exploración lista"));
+  });
+}
+if (typeof window.editcoreAgent.onDiffProposed === "function") {
+  window.editcoreAgent.onDiffProposed((payload) => {
+    const thinking = resolveThinkingForTransparency(payload);
+    if (!thinking) return;
+    upsertInlineDiffCard(thinking, payload || {});
+    const name = String(payload?.filePath || "").split(/[/\\]/).pop();
+    if (name) setAgentLiveActivity(thinking, `Diff: ${name}`);
+  });
+}
+if (typeof window.editcoreAgent.onDiffApplied === "function") {
+  window.editcoreAgent.onDiffApplied((payload) => {
+    const thinking = resolveThinkingForTransparency(payload);
+    if (!thinking) return;
+    markInlineDiffApplied(thinking, payload?.filePath || "");
+    upsertInlineDiffCard(thinking, { ...(payload || {}), applied: true });
+  });
+}
+if (typeof window.editcoreAgent.onTaskComplete === "function") {
+  window.editcoreAgent.onTaskComplete((payload) => {
+    const thinking = resolveThinkingForTransparency(payload);
+    if (!thinking) return;
+    if (Array.isArray(payload?.changedFiles)) {
+      thinking._changedFiles = [...new Set([...(thinking._changedFiles || []), ...payload.changedFiles])];
+    }
+    settleAgentTurnChrome(thinking, { failed: payload?.ok === false });
+  });
+}
+if (typeof window.editcoreAgent.onComplete === "function") {
+  window.editcoreAgent.onComplete((payload) => {
+    const thinking = resolveThinkingForTransparency(payload);
+    if (!thinking) return;
+    const files = Array.isArray(payload?.report?.changedFiles)
+      ? payload.report.changedFiles
+      : (Array.isArray(payload?.changedFiles) ? payload.changedFiles : []);
+    if (files.length) {
+      thinking._changedFiles = [...new Set([...(thinking._changedFiles || []), ...files])];
+      for (const filePath of files) markInlineDiffApplied(thinking, filePath);
+    }
+    settleAgentTurnChrome(thinking, { failed: payload?.completed === false });
+  });
+}
+if (typeof window.editcoreAgent.onError === "function") {
+  window.editcoreAgent.onError((payload) => {
+    const thinking = resolveThinkingForTransparency(payload);
+    if (!thinking) return;
+    settleAgentTurnChrome(thinking, { failed: true });
+    setAgentLiveActivity(thinking, String(payload?.error || payload?.message || "Error del agente").slice(0, 160));
+  });
+}
+
 window.editcoreAgent.onProgress((progress) => {
   try {
     if (progress?.phase === "pipeline" || progress?.pipeline) {
@@ -12492,10 +13282,11 @@ window.editcoreAgent.onProgress((progress) => {
     if (!thinkingEl) return;
 
     if (progress.phase === "narration_reset") {
+      // NO borrar el texto ya mostrado (provocaba pasos a medias / rearmados).
+      // Solo liberar locks para el siguiente tramo.
       flushAgentStreamRender(thinkingEl);
-      thinkingEl._streamRow = null;
-      thinkingEl._streamBuffer = "";
-      thinkingEl._lastNarrationFp = "";
+      thinkingEl._lastNarrationDelta = "";
+      thinkingEl._toolDumpLocked = false;
       return;
     }
     if (progress.phase === "final_report") {
@@ -12538,8 +13329,7 @@ window.editcoreAgent.onProgress((progress) => {
       return;
     }
     if (progress.phase === "narration_delta") {
-      // Una sola zona de escritura (stream row). No vaciar el status: eso + CSS
-      // display:none en is-streaming provocaba titileo con el heartbeat (2s).
+      // Solo addAgentNarrationDelta — NO appendCursorThought (duplicaba cada token).
       addAgentNarrationDelta(thinkingEl, progress.text, progress.index);
       const note = String(progress.text || "");
       const avanceMatch = note.match(/^#{1,6}\s*Avance\s*[—\-–]?\s*(.+)$/im);
@@ -12559,6 +13349,7 @@ window.editcoreAgent.onProgress((progress) => {
       if (shouldAcceptNarrationProgress(thinkingEl, progress.text)) {
         addAgentNarration(thinkingEl, progress.text, progress.index);
       }
+      // No appendCursorThought: addAgentNarration ya espeja al Thought; duplicaba el buffer.
       const cur = String(thinkingEl?.querySelector?.(".thinking-status")?.textContent || "").trim();
       if (!cur || /^(?:Trabajando\.\.\.|Pensando\.\.\.|Redactando respuesta\.\.\.)/i.test(cur)) {
         setAgentLiveActivity(thinkingEl, "Redactando respuesta...");
@@ -12601,6 +13392,65 @@ window.editcoreAgent.onProgress((progress) => {
           $("status").textContent = narrative;
         }
         notifyAgentFileMutationProgress(thinkingEl, progress);
+        // Espejo Cursor: exploración + diffs inline desde tools
+        const toolName = String(progress.name || "");
+        const target = String(progress.input?.path || progress.input?.filePath || progress.input?.query || "").trim();
+        if (/^(?:list_files|read_file|search_files|grep|codebase_map|project_discovery|brain_search)$/i.test(toolName)) {
+          if (target) {
+            thinkingEl._exploredItems ||= new Map();
+            thinkingEl._exploredItems.set(`${toolName}:${target}`, {
+              tool: toolName,
+              path: target,
+              label: target,
+              ok: progress.ok !== false,
+            });
+          }
+          if (progress.stage === "done" || progress.ok === true || progress.ok === false) {
+            upsertExplorationUi(thinkingEl, {
+              count: thinkingEl._exploredItems?.size || 0,
+              items: [...(thinkingEl._exploredItems?.values?.() || [])],
+            });
+          }
+        }
+        if (/^(?:write_file|replace_in_file|apply_diff)$/i.test(toolName)) {
+          const fragment = ProjectFilesUi?.buildMutationFragment?.(progress, state.projectRoot) || progress.fragment;
+          let unifiedDiff = String(progress.diff || progress.unifiedDiff || "").trim();
+          if (!unifiedDiff && fragment) {
+            const lines = [];
+            if (fragment.oldText) {
+              for (const line of String(fragment.oldText).split("\n").slice(0, 40)) lines.push(`-${line}`);
+            }
+            if (fragment.newText || fragment.content) {
+              for (const line of String(fragment.newText || fragment.content).split("\n").slice(0, 60)) lines.push(`+${line}`);
+            }
+            if (lines.length) unifiedDiff = lines.join("\n");
+          }
+          upsertInlineDiffCard(thinkingEl, {
+            filePath: target || fragment?.path || "",
+            additions: (unifiedDiff.match(/^\+/gm) || []).length,
+            deletions: (unifiedDiff.match(/^-/gm) || []).length,
+            unifiedDiff,
+            applied: progress.stage === "done" || progress.ok === true,
+          });
+          if (progress.stage === "done" || progress.ok === true) {
+            markInlineDiffApplied(thinkingEl, target || fragment?.path || "");
+            // Abrir el archivo tocado en Monaco con gutters
+            const openRel = ProjectFilesUi?.resolveTouchedRelativePath?.(state.projectRoot, target || fragment?.path || "")
+              || String(target || fragment?.path || "");
+            if (openRel && window.EditCoreEditor?.openFile && state.projectRoot) {
+              openPathInEditor(openRel, unifiedDiff).catch((error) => {
+                $("status").textContent = `Editor: ${error?.message || error}`;
+              });
+            }
+          }
+        }
+        if (/^run_command$/i.test(toolName) && target) {
+          if (progress.stage === "running" || progress.ok === undefined) {
+            window.EditCoreTerminal?.show?.()
+              .then(() => window.EditCoreTerminal.writeAgentCommand(target))
+              .catch(() => undefined);
+          }
+        }
       }
     }
     if (progress?.phase === "startup") {
@@ -12695,6 +13545,15 @@ window.editcoreAgent.onProgress((progress) => {
       return;
     }
 
+    // Refresco del árbol de archivos NO depende de targetRun: el kernel puede
+    // escribir en disco aunque el runId no esté enlazado al agentWorkflow.
+    if (isToolStep && progress.ok !== false && progress.stage === "done"
+      && ["write_file", "replace_in_file", "create_project", "apply_diff", "delete_file"].includes(String(progress.name || ""))) {
+      const payload = ProjectFilesUi?.filesChangedPayload
+        ? ProjectFilesUi.filesChangedPayload(progress, state.projectRoot)
+        : { writtenPath: String(progress.input?.path || ""), fileName: "", autoPreview: false };
+      handleProjectFilesChanged(payload);
+    }
     const project = state.projects.find((item) => item.id === progress?.projectId)
       || state.projects.find((item) => item.id === liveRun?.projectId)
       || activeProject();
@@ -12718,13 +13577,6 @@ window.editcoreAgent.onProgress((progress) => {
     else targetRun.checkpoints.push(checkpoint);
     targetRun.updatedAt = Date.now();
     saveProjects();
-    if (progress.ok !== false && progress.stage === "done"
-      && ["write_file", "replace_in_file", "create_project", "apply_diff"].includes(String(progress.name || ""))) {
-      const payload = ProjectFilesUi?.filesChangedPayload
-        ? ProjectFilesUi.filesChangedPayload(progress, state.projectRoot)
-        : { writtenPath: String(progress.input?.path || ""), viewDir: "", fileName: "", autoPreview: false };
-      handleProjectFilesChanged(payload);
-    }
     try {
       const project = state.projects.find((item) => item.id === progress?.projectId)
         || state.projects.find((item) => item.id === liveRun?.projectId)
@@ -12919,13 +13771,55 @@ $("browserInspectText")?.addEventListener("keydown", (event) => {
     runPreviewInteract("type").catch(() => undefined);
   }
 });
-$("previewBackBtn").addEventListener("click", () => {
+$("previewBackBtn")?.addEventListener("click", () => {
   const webview = $("previewWebview");
   if (previewHistoryIndex > 0) navigatePreviewHistory(previewHistoryIndex - 1);
   else updatePreviewNavigationControls(webview);
 });
-$("webPreviewBtn").addEventListener("click", () => setPreviewMode("web"));
-$("mobilePreviewBtn").addEventListener("click", () => setPreviewMode("mobile"));
+$("webPreviewBtn")?.addEventListener("click", () => setPreviewMode("web"));
+$("mobilePreviewBtn")?.addEventListener("click", () => setPreviewMode("mobile"));
+$("codePreviewBtn")?.addEventListener("click", () => setPreviewMode("code"));
+$("saveEditorBtn")?.addEventListener("click", () => {
+  window.EditCoreEditor?.saveCurrent?.().catch((error) => {
+    $("status").textContent = `Guardar: ${error?.message || error}`;
+  });
+});
+$("gotoDefBtn")?.addEventListener("click", () => {
+  window.EditCoreEditor?.goToDefinition?.().catch((error) => {
+    $("status").textContent = `F12: ${error?.message || error}`;
+  });
+});
+$("terminalBtn")?.addEventListener("click", () => {
+  setToolbarMenuOpen("toolsMoreBtn", "toolsMoreMenu", false);
+  window.EditCoreTerminal?.show?.().catch((error) => {
+    $("status").textContent = error?.message || String(error);
+  });
+});
+$("terminalRestartBtn")?.addEventListener("click", () => {
+  window.EditCoreTerminal?.start?.(state.projectRoot || "").catch((error) => {
+    $("status").textContent = error?.message || String(error);
+  });
+});
+document.querySelectorAll(".viewer-logs-tab").forEach((tab) => {
+  tab.addEventListener("click", () => {
+    const name = tab.getAttribute("data-tab");
+    document.querySelectorAll(".viewer-logs-tab").forEach((t) => t.classList.toggle("active", t === tab));
+    const logs = $("tab-logs");
+    const term = $("tab-terminal");
+    if (name === "terminal") {
+      if (logs) { logs.classList.remove("active"); logs.hidden = true; }
+      if (term) { term.hidden = false; term.classList.add("active"); }
+      window.EditCoreTerminal?.show?.().catch(() => undefined);
+    } else {
+      if (term) { term.classList.remove("active"); term.hidden = true; }
+      if (logs) { logs.hidden = false; logs.classList.add("active"); }
+    }
+  });
+});
+window.addEventListener("resize", () => {
+  window.EditCoreEditor?.layout?.();
+  window.EditCoreTerminal?.fit?.();
+});
 $("previewUrl").addEventListener("keydown", (e) => { if (e.key === "Enter") openPreview(); });
 $("previewWebview").addEventListener("did-start-loading", () => {
   $("previewWebview").dataset.previewReady = "0";

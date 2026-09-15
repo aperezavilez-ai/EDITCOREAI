@@ -129,12 +129,14 @@ class PtySession extends EventEmitter {
       recent: this._buf.slice(-40).join(""),
       host: os.hostname(),
       nodePtyAvailable: Boolean(nodePty),
+      ownerId: this.ownerId || null,
     };
   }
 }
 
 function createSession(input = {}) {
   const session = new PtySession(input);
+  session.ownerId = input.ownerId != null ? Number(input.ownerId) : null;
   sessions.set(session.id, session);
   return session.snapshot();
 }
@@ -168,6 +170,13 @@ function listSessions() {
   return [...sessions.values()].map((s) => s.snapshot());
 }
 
+function killAllSessions() {
+  for (const id of [...sessions.keys()]) {
+    try { killSession(id); } catch { /* ignore */ }
+  }
+  return { ok: true };
+}
+
 function attachDataListener(id, handler) {
   const session = getSession(id);
   if (!session) throw new Error("Sesión PTY desconocida.");
@@ -181,6 +190,7 @@ module.exports = {
   writeSession,
   resizeSession,
   killSession,
+  killAllSessions,
   listSessions,
   attachDataListener,
   nodePtyAvailable: () => Boolean(nodePty),

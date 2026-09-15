@@ -133,12 +133,24 @@ function normalizeToolCallsOut(toolCalls = []) {
 
 
 function normalizeForAnthropic(messages) {
+  let convertPart = null;
+  try {
+    convertPart = require("./vision-intake").convertContentPartForAnthropic;
+  } catch { /* optional */ }
   const result = [];
   for (const msg of sanitizeMessagesToolArguments(messages)) {
     if (msg.role === "system") continue;
     if (msg.role === "assistant" && Array.isArray(msg.tool_calls) && msg.tool_calls.length) {
       const content = [];
-      if (msg.content) content.push({ type: "text", text: typeof msg.content === "string" ? msg.content : JSON.stringify(msg.content) });
+      if (msg.content) {
+        if (Array.isArray(msg.content)) {
+          for (const part of msg.content) {
+            content.push(convertPart ? convertPart(part) : part);
+          }
+        } else {
+          content.push({ type: "text", text: typeof msg.content === "string" ? msg.content : JSON.stringify(msg.content) });
+        }
+      }
       for (const call of msg.tool_calls) {
         const fn = call.function || call;
         let input = fn.arguments || fn.input || {};
@@ -149,6 +161,8 @@ function normalizeForAnthropic(messages) {
       result.push({ role: "assistant", content });
     } else if (msg.role === "tool") {
       result.push({ role: "user", content: [{ type: "tool_result", tool_use_id: msg.tool_call_id, content: typeof msg.content === "string" ? msg.content : JSON.stringify(msg.content) }] });
+    } else if (Array.isArray(msg.content) && convertPart) {
+      result.push({ ...msg, content: msg.content.map(convertPart) });
     } else {
       result.push(msg);
     }
@@ -157,6 +171,10 @@ function normalizeForAnthropic(messages) {
 }
 
 function normalizeForGemini(messages) {
+  let convertPart = null;
+  try {
+    convertPart = require("./vision-intake").convertContentPartForGemini;
+  } catch { /* optional */ }
   return sanitizeMessagesToolArguments(messages).filter((item) => item.role !== "system").map((item) => {
     if (item.role === "tool") {
       let response = item.content;
@@ -164,7 +182,15 @@ function normalizeForGemini(messages) {
       return { role: "user", parts: [{ functionResponse: { name: item.name || item.tool_name || "tool", response } }] };
     }
     const parts = [];
-    if (item.content) parts.push({ text: typeof item.content === "string" ? item.content : JSON.stringify(item.content) });
+    if (Array.isArray(item.content)) {
+      for (const part of item.content) {
+        const converted = convertPart ? convertPart(part) : null;
+        if (converted) parts.push(converted);
+        else if (part?.type === "text" || part?.text) parts.push({ text: String(part.text || "") });
+      }
+    } else if (item.content) {
+      parts.push({ text: typeof item.content === "string" ? item.content : JSON.stringify(item.content) });
+    }
     for (const call of Array.isArray(item.tool_calls) ? item.tool_calls : []) {
       const fn = call.function || call;
       let args = fn.arguments || fn.input || {};

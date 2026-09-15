@@ -9,7 +9,7 @@ const { runAnalyst } = require("./subagents/analyst");
 const { runImplementer } = require("./subagents/implementer");
 const { runVerifier } = require("./subagents/verifier");
 const { dispatchSpecialist } = require("./subagents/dispatcher");
-const { parseTextToolCalls, stripTextToolMarkup, toRelativePath } = require("./parse-text-tools");
+const { parseTextToolCalls, stripTextToolMarkup, toRelativePath, visibleNarrationText } = require("./parse-text-tools");
 const tools = require("./tools");
 const { callChat } = require("./provider");
 const { capture_preview_screenshot, DEFAULT_PREVIEW_URL } = require("./vision-inspector");
@@ -39,17 +39,75 @@ const DEFAULT_MAX_STEPS = 28;
 const AUTHORIZED_MAX_STEPS = 32;
 
 const LEADERSHIP_PROMPT = [
-  "ROL: GUÍA LÍDER (inversión del control).",
+  "ROL: GUÍA LÍDER (inversión del control) — pero SIEMPRE subordinado al alcance de la petición.",
   "Ante objetivos de alto nivel o solicitudes generales:",
   "1) Genera tu propia hoja de ruta de 3 a 5 pasos concretos (basada en el mapa cognitivo real).",
   "2) Informa al usuario en 2-4 líneas qué vas a hacer (sin pedir permiso ni esperar confirmación si ya hay autorización, Acceso completo, o la tarea es exploratoria/análisis).",
   "3) Ejecuta paso a paso de forma autónoma con tools: Observar → Orientar → Decidir → Actuar.",
   "4) No te detengas por fallos leves (oldText desfasado, git auxiliar, carpetas inexistentes): relee contexto cercano y reintenta.",
-  "5) Al TERMINAR (solo al final): ofrece 2-4 opciones de siguiente acción, marca UNA **Recomendada** con motivo breve, y pregunta con cuál avanzamos.",
+  "5) Al TERMINAR: responde el resultado de LO PEDIDO. Solo ofrece siguientes pasos si el usuario pidió un plan o un análisis amplio.",
   "PROHIBIDO inventar carpetas típicas (src/, app/, lib/) si no aparecen en el MAPA COGNITIVO.",
   "PROHIBIDO devolver solo un plan vacío sin ejecutar tools cuando el modo permite herramientas.",
+  "PROHIBIDO ampliar una pregunta puntual a un análisis total del proyecto.",
   "Con Acceso completo: PROHIBIDO pedir PROCEDE/¿Procedo? durante la tarea pedida.",
 ].join("\n");
+
+/** Narración continua en el stream (estilo Cursor) — obligatoria en cada turno con tools. */
+const LIVE_NARRATION_PROMPT = [
+  "NARRACIÓN EN VIVO (OBLIGATORIO — el usuario lee tu texto token a token):",
+  "- PROHIBIDO callar y solo devolver tools, un checkmark, \"Done\", \"Listo\" o un resumen corto al final.",
+  "- ANTES de cada tool: 1-3 oraciones en prosa (qué vas a leer/buscar/cambiar y por qué).",
+  "- DURANTE: si razonas, escríbelo en el chat; no lo escondas.",
+  "- DESPUÉS de cada tool: di qué encontraste o qué cambiaste en 1-2 frases concretas.",
+  "- Escribe como conversación continua; el UI muestra tu texto en tiempo real.",
+  "- No uses solo badges/checks: el cuerpo del mensaje debe ser prosa legible.",
+].join("\n");
+
+let eliteCommunication = null;
+try {
+  eliteCommunication = require("../runtime/elite-communication-policy");
+} catch (_) {
+  eliteCommunication = null;
+}
+
+let autoRouterProtocol = null;
+try {
+  autoRouterProtocol = require("../runtime/auto-router-transparent-protocol");
+} catch (_) {
+  autoRouterProtocol = null;
+}
+
+let requestScopePolicy = null;
+try {
+  requestScopePolicy = require("../runtime/request-scope-policy");
+} catch (_) {
+  requestScopePolicy = null;
+}
+
+function wrapSystemPrompt(raw = "") {
+  const text = String(raw || "").trim();
+  if (!text) return text;
+  let next = text;
+  if (requestScopePolicy?.withRequestScopePolicy) {
+    try { next = requestScopePolicy.withRequestScopePolicy(next); } catch { /* ignore */ }
+  }
+  if (autoRouterProtocol?.withAutoRouterTransparentProtocol) {
+    try { next = autoRouterProtocol.withAutoRouterTransparentProtocol(next); } catch { /* ignore */ }
+  } else {
+    next = `${LIVE_NARRATION_PROMPT}\n\n${next}`;
+  }
+  if (eliteCommunication?.withEliteCommunicationPolicy) {
+    try { return eliteCommunication.withEliteCommunicationPolicy(next); } catch { /* fall through */ }
+  }
+  return `${LIVE_NARRATION_PROMPT}\n\n${next}`;
+}
+
+function scopeUserMessage(message = "", evidence = "") {
+  if (requestScopePolicy?.buildScopedUserDirective) {
+    try { return requestScopePolicy.buildScopedUserDirective(message, evidence); } catch { /* fall through */ }
+  }
+  return String(message || "");
+}
 
 function nextStepsClosingText({ fullAccess = false, wroteFiles = false } = {}) {
   if (wroteFiles) {
@@ -77,6 +135,40 @@ function formatCognitiveBlock(projectRoot) {
   const map = ensureCognitiveMap(projectRoot);
   if (projectMapApi?.formatMapForPrompt) return projectMapApi.formatMapForPrompt(map);
   return "MAPA COGNITIVO: usa list_files('.') — no asumas src/ ni app/.";
+}
+
+/** ROADMAP + session-state inyectados al prompt (ahorro de tokens). */
+function buildRoadmapFirstBlock(projectRoot) {
+  if (!projectRoot) return "";
+  const parts = [];
+  try {
+    const {
+      ensureProjectRoadmap,
+      formatRoadmapForPrompt,
+      readRoadmap,
+      isStubRoadmap,
+    } = require("../runtime/project-roadmap");
+    const loaded = readRoadmap(projectRoot);
+    if (!loaded.exists || isStubRoadmap(loaded.content || "")) {
+      try { ensureProjectRoadmap(projectRoot, { reason: "kernel-bootstrap" }); } catch { /* ignore */ }
+    }
+    parts.push(formatRoadmapForPrompt(projectRoot));
+  } catch {
+    parts.push("ROADMAP: no disponible en este turno; lee solo archivos puntuales del pedido.");
+  }
+  try {
+    const { formatSessionStateForPrompt, ensureSessionState } = require("../runtime/session-state");
+    ensureSessionState(projectRoot);
+    parts.push(formatSessionStateForPrompt(projectRoot, 2_000));
+  } catch { /* ignore */ }
+  parts.push([
+    "ROADMAP-FIRST (OBLIGATORIO — ahorro de tokens):",
+    "1) El ROADMAP y session-state YA están arriba. NO hagas list_files/search_files del repo entero.",
+    "2) Para agregar/modificar: read_file SOLO de los archivos que vas a tocar (según mapa o pedido).",
+    "3) Tras write_file/replace_in_file, EditCore ACTUALIZA ROADMAP.md solo. NO digas que no puedes modificar ROADMAP.",
+    "4) PROHIBIDO write_file de ROADMAP.md en modo análisis; en ejecución tampoco hace falta: el sistema lo sincroniza.",
+  ].join("\n"));
+  return parts.filter(Boolean).join("\n\n").slice(0, 7_500);
 }
 
 /**
@@ -273,6 +365,7 @@ class ChatOrchestrator {
       apiBaseUrl,
       apiKey,
       model,
+      images,
       onProgress,
       helpers,
       autoHeal,
@@ -286,7 +379,7 @@ class ChatOrchestrator {
     } = input;
 
     const rawText = typeof message === "object" && message?.text ? message.text : String(message || "");
-    const text = rawText.trim();
+    const text = rawText.trim() || (Array.isArray(images) && images.length ? "Analiza la imagen adjunta." : "");
     const textLower = text.toLowerCase();
     const isApprovalText = APPROVAL_WORDS.has(textLower);
 
@@ -453,6 +546,7 @@ class ChatOrchestrator {
       return this.runModelTask({
         decision, message: text, projectRoot: projectRoot || ".", apiBaseUrl, apiKey, model, memory, onProgress,
         allowWrite: false, maxSteps: 1, helpers, chatOnly: true,
+        images: Array.isArray(images) ? images : [],
       });
     }
 
@@ -474,7 +568,7 @@ class ChatOrchestrator {
       if (apiKey) {
         return this.runModelTask({
           decision,
-          message: `El explorador analizó el directorio '${out.target || target}' con los siguientes resultados:\n\n${out.summary}\n\nCon base en la estructura encontrada (mapa cognitivo real), responde a la solicitud del usuario: "${text}" proponiendo 3 tareas altamente concretas y contextualizadas.`,
+          message: scopeUserMessage(text, out.summary),
           projectRoot, apiBaseUrl, apiKey, model, memory, onProgress,
           allowWrite: false, maxSteps: 4, helpers,
         });
@@ -490,8 +584,10 @@ class ChatOrchestrator {
         });
       }
       this.session.start("ANALYZE", projectRoot);
-      onProgress?.({ phase: "start", text: "Subagente Analyst: Escaneando proyecto..." });
-      const out = await runAnalyst({ projectRoot, onProgress, maxReads: 8 });
+      const scope = requestScopePolicy?.classifyRequestScope?.(text) || "focused";
+      const maxReads = scope === "broad" ? 16 : scope === "action" ? 10 : 6;
+      onProgress?.({ phase: "start", text: scope === "broad" ? "Análisis amplio del proyecto…" : "Revisando lo necesario para tu pregunta…" });
+      const out = await runAnalyst({ projectRoot, onProgress, maxReads, userMessage: text });
       if (memory) {
         memory.setReport(out.report);
         memory.note("análisis completado");
@@ -501,7 +597,7 @@ class ChatOrchestrator {
       if (apiKey) {
         return this.runModelTask({
           decision,
-          message: `El analista examinó el proyecto e identificó lo siguiente:\n\n${out.report}\n\nResponde directamente al usuario ofreciendo recomendaciones reales para continuar.`,
+          message: scopeUserMessage(text, out.report),
           projectRoot, apiBaseUrl, apiKey, model, memory, onProgress,
           allowWrite: false, maxSteps: 2, helpers,
         });
@@ -559,6 +655,7 @@ class ChatOrchestrator {
         authorizedFromPending: true,
         fullAccess,
         permissionMode: fullAccess ? "full" : permissionMode,
+        images: Array.isArray(images) ? images : [],
       });
     }
 
@@ -569,7 +666,7 @@ class ChatOrchestrator {
     const {
       decision, message, projectRoot, apiBaseUrl, apiKey, model, memory, onProgress,
       allowWrite, maxSteps, helpers, chatOnly, authorizedFromPending,
-      fullAccess, permissionMode,
+      fullAccess, permissionMode, images: taskImages = [],
     } = opts;
 
     const accessFull = fullAccess === true
@@ -583,6 +680,9 @@ class ChatOrchestrator {
     let lastVerifyError = null;
     const cognitiveBlock = (!chatOnly && decision?.kind !== "CHAT")
       ? formatCognitiveBlock(projectRoot)
+      : "";
+    const roadmapFirstBlock = (!chatOnly && decision?.kind !== "CHAT")
+      ? buildRoadmapFirstBlock(projectRoot)
       : "";
 
     const specialist = (!chatOnly && decision?.kind !== "CHAT" && !authorizedFromPending)
@@ -605,56 +705,76 @@ class ChatOrchestrator {
       ].join("\n")
       : "";
 
-    const system = chatOnly || decision?.kind === "CHAT"
+    const system = wrapSystemPrompt(chatOnly || decision?.kind === "CHAT"
       ? [
-        "Eres EDITCOREAI: asistente del IDE. Responde en español, 2-5 frases, directo.",
-        "PROHIBIDO: decir que vas a analizar, abrir tools, listar archivos, o inventar pasos de exploración.",
+        "Eres EDITCOREAI: asistente del IDE. Responde en español, claro y directo.",
+        "Habla en prosa continua; no cierres solo con un check o \"Listo\".",
+        "PROHIBIDO: fingir que abriste tools o inventar exploración sin haberla hecho.",
         `Proyecto abierto: ${projectRoot || "(ninguno)"}.`,
       ].filter(Boolean).join("\n\n")
       : authorizedFromPending || accessFull
         ? [
           "Eres EditCore Agent — GUÍA LÍDER autónomo.",
           LEADERSHIP_PROMPT,
+          LIVE_NARRATION_PROMPT,
           noConfirmBlock,
           "Ejecuta YA la instrucción con tools (write_file, replace_in_file, run_command).",
           "Antes de mutar: narra en 2-4 líneas tu hoja de ruta (3-5 pasos) y procede sin pedir confirmación.",
-          "PROHIBIDO inventar ROADMAP.md u otras tareas genéricas: solo la instrucción del usuario.",
+          "NO reexplores el proyecto: usa ROADMAP + session-state. Solo read_file de lo que editarás.",
+          "EditCore actualiza ROADMAP.md automáticamente tras cada write. NUNCA digas que no puedes modificar ROADMAP.",
+          "PROHIBIDO inventar tareas genéricas ajenas a la instrucción del usuario.",
           "Ante fallo leve de tool: relee y reintenta; NUNCA abandones con 'Detenido' por errores secundarios.",
           `Permiso de escritura: SÍ.${accessFull ? " Acceso completo activo." : ""}`,
+          roadmapFirstBlock,
           cognitiveBlock,
           specialistInstruction,
         ].filter(Boolean).join("\n\n")
         : [
           "Eres EditCore Agent — entorno autónomo y GUÍA LÍDER del IDE.",
           LEADERSHIP_PROMPT,
+          LIVE_NARRATION_PROMPT,
           `Modo actual: ${decision?.kind || "EXECUTE"}. Permiso de escritura: ${allowWrite ? "SÍ" : "NO"}.`,
           specialistInstruction,
           "REGLAS OBLIGATORIAS:",
           "1. Usa SOLO function calling / tools nativas. NUNCA escribas XML como <list_directory>, <read_file>, <execute_command>, <tool_call>.",
-          "2. Observa el MAPA COGNITIVO antes de explorar; no inventes src/ ni app/.",
-          "3. Sé conciso. Informa la hoja de ruta y actúa.",
+          "2. ROADMAP-FIRST: lee el bloque ROADMAP/session-state; PROHIBIDO list_files('.') del repo entero si el mapa ya está cargado.",
+          "3. Narra en prosa cada paso; no te limites a badges o checks.",
           "4. NO repitas exactamente la misma herramienta con los mismos parámetros.",
           "5. Paths relativos al proyecto (ej. package.json), nunca absolutos.",
           "6. Si ejecutas 'run_command' o un test/build, analiza la salida y aplica corrección inmediata (OODA).",
           "7. Fallos leves (oldText, git auxiliar, list_files de ruta ausente): recupera y continúa; no detengas la sesión.",
+          "8. EditCore actualiza ROADMAP.md solo tras cambios. No digas que está prohibido actualizarlo.",
+          roadmapFirstBlock,
           cognitiveBlock,
           skillsPrompt(projectRoot, decision?.kind, message),
           memory && !authorizedFromPending ? memory.promptBlock() : "",
           globalLearned,
-        ].filter(Boolean).join("\n\n");
+        ].filter(Boolean).join("\n\n"));
 
-    const messages = [
-      { role: "system", content: system },
-      {
-        role: "user",
-        content: authorizedFromPending
-          ? `Proyecto: ${projectRoot}\nEjecuta ahora:\n${message}`
-          : `Proyecto: ${projectRoot}\n${message}`,
-      },
-    ];
+    const scopedBody = authorizedFromPending
+      ? String(message || "")
+      : (String(message || "").includes("ALCANCE:")
+        ? String(message || "")
+        : scopeUserMessage(message));
+    const userText = authorizedFromPending
+      ? `Proyecto: ${projectRoot}\nEjecuta ahora:\n${scopedBody}`
+      : `Proyecto: ${projectRoot}\n${scopedBody}`;
+    const messages = [{ role: "system", content: system }];
+    if (Array.isArray(taskImages) && taskImages.length) {
+      try {
+        const { buildOpenAiImageContent, VISION_ACK_RULE } = require("../runtime/vision-intake");
+        messages.push({ role: "system", content: VISION_ACK_RULE });
+        messages.push({ role: "user", content: buildOpenAiImageContent(userText, taskImages) });
+      } catch {
+        messages.push({ role: "user", content: userText });
+      }
+    } else {
+      messages.push({ role: "user", content: userText });
+    }
 
     const steps = [];
     const pendingWrites = new Set();
+    const runMutations = [];
     const stepsLimit = Math.max(1, Number(maxSteps) || DEFAULT_MAX_STEPS);
 
     try {
@@ -666,13 +786,73 @@ class ChatOrchestrator {
           : tools.DEFINITIONS.filter((t) => ![
             "write_file", "replace_in_file", "run_command", "scaffold_project",
             "supabase_migrate", "ingest_to_brain", "clone_repo",
+            "clone_web_page", "images_to_code",
             "rollback_last_change",
           ].includes(t.function.name));
 
+        let streamAccum = "";
+        let lastVisible = "";
+        let toolStreamNotified = false;
+        // Separar párrafos entre turnos del modelo (evita pasos pegados).
+        if (steps.length > 0) {
+          try {
+            onProgress?.({
+              phase: "narration_delta",
+              text: "\n\n",
+              index: steps.length,
+              streaming: true,
+            });
+          } catch { /* ignore */ }
+        }
         const turn = await callChat({
           apiBaseUrl, apiKey, model, messages,
           tools: (chatOnly || decision?.kind === "CHAT") ? [] : availableTools,
           signal: this.abort.signal,
+          stream: true,
+          onTextDelta: (delta) => {
+            const chunk = String(delta || "");
+            if (!chunk) return;
+            try {
+              // Acumular y emitir SOLO prosa visible (nunca <tool_call> / código interno).
+              streamAccum += chunk;
+              const visible = visibleNarrationText(streamAccum);
+              let piece = "";
+              if (visible.startsWith(lastVisible)) {
+                piece = visible.slice(lastVisible.length);
+              } else if (visible.length < lastVisible.length && lastVisible.startsWith(visible)) {
+                // Encogió por corte de tool markup: no resetear el chat.
+                piece = "";
+              } else if (visible !== lastVisible) {
+                // Nuevo tramo distinto: separar con párrafo, sin borrar lo anterior.
+                piece = visible;
+                try {
+                  onProgress?.({
+                    phase: "narration_delta",
+                    text: "\n\n",
+                    index: steps.length,
+                    streaming: true,
+                  });
+                } catch { /* ignore */ }
+              }
+              lastVisible = visible;
+              if (!piece) {
+                if (/<(?:tool_call|function\s*=)/i.test(streamAccum) && !toolStreamNotified) {
+                  toolStreamNotified = true;
+                  onProgress?.({
+                    phase: "model",
+                    text: "Ejecutando herramienta…",
+                  });
+                }
+                return;
+              }
+              onProgress?.({
+                phase: "narration_delta",
+                text: piece,
+                index: steps.length,
+                streaming: true,
+              });
+            } catch { /* ignore UI errors */ }
+          },
         });
 
         let toolCalls = Array.isArray(turn.toolCalls) ? turn.toolCalls : [];
@@ -680,6 +860,19 @@ class ChatOrchestrator {
           toolCalls = [];
         } else if (!toolCalls.length && turn.text) {
           toolCalls = parseTextToolCalls(turn.text, { projectRoot });
+        }
+        // Si write_file vino sin path, intentar inferirlo de la prosa previa.
+        for (const call of toolCalls) {
+          if (call.function?.name !== "write_file") continue;
+          let args = {};
+          try { args = JSON.parse(call.function.arguments || "{}"); } catch { args = {}; }
+          if (args.path || !args.content) continue;
+          const prose = visibleNarrationText(turn.text || "");
+          const m = prose.match(/\b([\w./\\-]+\.(?:tsx?|jsx?|css|html|json|md|sql))\b/i);
+          if (m) {
+            args.path = toRelativePath(projectRoot, m[1]);
+            call.function.arguments = JSON.stringify(args);
+          }
         }
         const cleanText = stripTextToolMarkup(turn.text || "");
 
@@ -702,8 +895,14 @@ class ChatOrchestrator {
           } else if (accessFull && /procede|¿procedo|cuando autorices/i.test(textOut)) {
             textOut = `${textOut.replace(/\s*(Cuando autorices procedo[^.]*\.?|Escribe\s+\*{0,2}procede\*{0,2}[^.]*\.?|Si deseas que aplique[^.]*\.?)\s*$/gi, "").trim()}${nextStepsClosingText({ fullAccess: true, wroteFiles: false })}`;
           }
+          if (!String(textOut || "").trim()) {
+            const toolNames = steps.map((s) => s.name).filter(Boolean).slice(-8);
+            textOut = toolNames.length
+              ? `Completé ${toolNames.length} acción(es): ${toolNames.join(", ")}.`
+              : "No pude generar texto visible en este turno. Reintenta o cambia de modelo en Auto.";
+          }
 
-          return { kind: decision?.kind || "CHAT", text: textOut, steps };
+          return { kind: decision?.kind || "CHAT", text: textOut, steps, mutations: runMutations };
         }
 
         messages.push({
@@ -739,6 +938,13 @@ class ChatOrchestrator {
             continue;
           }
           toolHistory.set(callKey, execCount + 1);
+
+          onProgress?.({
+            phase: "tool",
+            stage: "running",
+            name,
+            input: args,
+          });
 
           let result;
           if (name === "write_file" || name === "replace_in_file") {
@@ -859,10 +1065,35 @@ class ChatOrchestrator {
           };
           steps.push(stepData);
           this.session.addStep(stepData);
-          onProgress?.({ phase: "tool", name, input: args, result, ok: stepData.ok });
+          onProgress?.({
+            phase: "tool",
+            stage: "done",
+            name,
+            input: args,
+            result,
+            ok: stepData.ok,
+          });
 
           if ((name === "write_file" || name === "replace_in_file") && result?.ok !== false && args.path) {
             pendingWrites.delete(String(args.path));
+            try {
+              const { resolveSnapshotBackupAbs } = require("./snapshot");
+              const rel = String(args.path || "").replace(/\\/g, "/");
+              const backupPath = resolveSnapshotBackupAbs(projectRoot, result?.snapshotId, rel);
+              const existedBefore = Boolean(backupPath);
+              const idx = runMutations.findIndex((m) => m.path === rel);
+              if (idx >= 0) {
+                // Conservar el primer backup (estado pre-corrida) y el flag created.
+                runMutations[idx].action = name;
+              } else {
+                runMutations.push({
+                  path: rel,
+                  action: name,
+                  backupPath,
+                  created: name === "write_file" && !existedBefore,
+                });
+              }
+            } catch { /* undo checkpoint best-effort */ }
           }
 
           if (memory) {
@@ -894,10 +1125,10 @@ class ChatOrchestrator {
         textOut = nextStepsClosingText({ fullAccess: accessFull, wroteFiles: false });
       }
 
-      return { kind: decision?.kind || "EXECUTE", text: textOut, steps, incomplete: false };
+      return { kind: decision?.kind || "EXECUTE", text: textOut, steps, incomplete: false, mutations: runMutations };
     } catch (err) {
       this.session.kill();
-      return { kind: "CHAT", text: "Atención durante la ejecución: " + (err.message || err), steps };
+      return { kind: "CHAT", text: "Atención durante la ejecución: " + (err.message || err), steps, mutations: runMutations };
     }
   }
 }

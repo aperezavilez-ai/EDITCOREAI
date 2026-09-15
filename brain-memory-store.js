@@ -158,6 +158,26 @@ class BrainMemoryStore {
       .map((row) => ({ id: row.id, path: row.path, line: row.line, text: row.text, source: "sqlite_fts", score: Math.max(1, Math.round(100 / (1 + Math.abs(Number(row.rank) || 0)))) }));
   }
 
+  /** Incremental upsert for web/RAG snippets without wiping the project index. */
+  upsertKnowledgeChunk(projectId, chunk = {}) {
+    const pid = String(projectId || "");
+    const text = String(chunk.text || "").slice(0, 12_000);
+    if (!pid || !text.trim()) return null;
+    const now = new Date().toISOString();
+    const pathName = String(chunk.path || `external/${Date.now()}.md`).slice(0, 500);
+    const line = Math.max(1, Number(chunk.line) || 1);
+    const contentHash = hash(text);
+    const id = String(chunk.id || `chunk-${contentHash.slice(0, 24)}`);
+    this.db.prepare(`INSERT INTO knowledge_chunks (id, project_id, path, line, text, content_hash, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(project_id, id) DO UPDATE SET path=excluded.path, line=excluded.line, text=excluded.text,
+        content_hash=excluded.content_hash, updated_at=excluded.updated_at`)
+      .run(id, pid, pathName, line, text, contentHash, now);
+    this.db.prepare("DELETE FROM knowledge_fts WHERE project_id = ? AND id = ?").run(pid, id);
+    this.db.prepare("INSERT INTO knowledge_fts (project_id, id, path, text) VALUES (?, ?, ?, ?)").run(pid, id, pathName, text);
+    return { id, projectId: pid, path: pathName, line, text, updatedAt: now };
+  }
+
   related(projectId, nodeId, limit = 20) {
     return this.db.prepare("SELECT from_id AS fromId, to_id AS toId, relation_type AS type, weight, evidence FROM relations WHERE project_id = ? AND (from_id = ? OR to_id = ?) ORDER BY weight DESC LIMIT ?")
       .all(String(projectId || ""), String(nodeId || ""), String(nodeId || ""), Math.max(1, Math.min(100, Number(limit) || 20)));

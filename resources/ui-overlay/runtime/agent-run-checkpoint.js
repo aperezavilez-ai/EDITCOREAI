@@ -285,7 +285,7 @@ function reviewFileDecision(userDataPath, projectRoot, relativePath, decision, {
 
 function acceptAllPending(userDataPath, projectRoot) {
   const manifest = peekLastAgentRun(userDataPath, projectRoot);
-  if (!manifest || manifest.restored) throw new Error("No hay revision pendiente.");
+  if (!manifest || manifest.restored) return { accepted: 0, runId: "", error: "No hay revision pendiente." };
   let count = 0;
   for (const item of manifest.files) {
     if ((item.status || "pending") === "pending") {

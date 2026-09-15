@@ -250,4 +250,20 @@ module.exports = {
   listSnapshots,
   getLatestSnapshotId,
   snapshotsRoot,
+  resolveSnapshotBackupAbs,
 };
+
+/** Ruta absoluta del .bak de un snapshot (si existe). */
+function resolveSnapshotBackupAbs(projectRoot, snapshotId, relPath) {
+  const root = path.resolve(String(projectRoot || ""));
+  const id = String(snapshotId || "").trim();
+  const rel = String(relPath || "").replace(/\\/g, "/").replace(/^\.\//, "").trim();
+  if (!root || !id || !rel) return "";
+  const backupName = `${rel.replace(/[\\/]/g, "__")}.bak`;
+  const abs = path.join(snapshotsRoot(root), id, backupName);
+  try {
+    return fs.existsSync(abs) ? abs : "";
+  } catch {
+    return "";
+  }
+}
