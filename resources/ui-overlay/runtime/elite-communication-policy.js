@@ -29,6 +29,12 @@
     "- Tras punto, coma, dos puntos o cierre de paréntesis deja un espacio antes de la siguiente palabra.",
     "- Oraciones completas y claras. No comprimas la prosa omitiendo letras o espacios.",
     "",
+    "0b) PÁRRAFOS LEGIBLES (OBLIGATORIO — nunca una plasta):",
+    "- Separa ideas con línea en blanco (doble salto \\n\\n). Una idea = un párrafo.",
+    "- PROHIBIDO devolver todo el mensaje en un solo bloque continuo sin saltos.",
+    "- Tras cada 1-3 oraciones relacionadas inserta un párrafo nuevo.",
+    "- Listas, hallazgos y pasos van en líneas/párrafos propios, no pegados al texto previo.",
+    "",
     "1) APERTURA DIRECTA Y CRITERIO HUMANO:",
     "- PROHIBIDO empezar con saludos o relleno: \"Claro\", \"Por supuesto\", \"Entendido\", \"¡Claro!\", \"Aquí tienes\", \"Voy a...\", \"Perfecto\", \"Excelente pregunta\".",
     "- La primera oración responde al grano con criterio técnico elevado, claridad y empatía profesional.",
@@ -69,8 +75,9 @@
     "",
     "7) VISION / IMAGEN ADJUNTA (OBLIGATORIO):",
     "- Si el mensaje incluye imagen(es): PROHIBIDO quedarte en silencio, ignorarlas o pedir que el usuario las describa.",
+    "- PROHIBIDO decir 'no veo ninguna imagen' cuando el payload multimodal ya trae la foto.",
     "- En la PRIMERA respuesta analiza la imagen: layout, UI, bugs visuales, texto legible e inconsistencias.",
-    "- Si es captura de bug/UI: identifica el problema y el siguiente paso concreto de corrección.",
+    "- Si es captura de bug/UI (Vite overlay, stack): identifica archivo/línea/error y el siguiente paso concreto de corrección.",
     "- Si es mock/diseño: resume estructura visual y el plan de implementación inmediato.",
     "",
     "8) E2E / REPORTE 1→100:",
@@ -150,6 +157,55 @@
     }).join("");
   }
 
+  const ABBREV_BEFORE_DOT = /(?:^|[\s(])(?:ej|etc|dr|sr|sra|vs|p\.ej|mr|ms|inc|ltd|n[úu]m|vol|cap|art|fig|aprox)\.$/i;
+
+  /**
+   * Evita la "plasta": si el modelo no pone saltos, inserta párrafos reales
+   * tras fin de oración / marcadores de discurso. Protege fences y `código`.
+   */
+  function ensureChatParagraphs(text = "") {
+    const raw = String(text || "");
+    if (!raw.trim()) return raw;
+    const blankBreaks = (raw.match(/\n[ \t]*\n/g) || []).length;
+    const parts = raw.split(/(```[\s\S]*?```)/g);
+    return parts.map((part, index) => {
+      if (index % 2 === 1) return part;
+      let value = part;
+      // Marcadores de discurso / secciones → párrafo propio
+      value = value.replace(
+        /([.!?…])[ \t]+(?=(?:Además|También|Ahora|Luego|Después|Primero|Segundo|Tercero|Por otro lado|En resumen|El problema|La causa|Voy a |Voy |He |Entonces|Por tanto|Sin embargo|No obstante|Finalmente|Conclusión|Diagnóstico|Hallazgo|Corrección|Siguiente|Paso\s+\d|Perfecto|Entendido|Listo[,.]?\s|Bien[,.]?\s)[^\n]{8,})/g,
+        "$1\n\n",
+      );
+      // Encabezados / listas pegados al texto
+      value = value.replace(/([^\n])[ \t]*\n?(#{1,6}[ \t])/g, "$1\n\n$2");
+      value = value.replace(/([^\n])[ \t]*\n([*-][ \t]|\d+[.)][ \t])/g, "$1\n\n$2");
+      // Pared de texto: partir en oraciones → párrafos
+      if (blankBreaks < 2 && value.replace(/\s+/g, " ").trim().length > 220) {
+        value = value.replace(/([.!?…])[ \t]+([¿¡A-ZÁÉÍÓÚÜÑ])/g, (match, punct, next, offset, full) => {
+          const before = full.slice(Math.max(0, offset - 16), offset + 1);
+          if (ABBREV_BEFORE_DOT.test(before)) return match;
+          // Evitar partir "archivo.Ts" / rutas raras
+          if (/[a-z0-9]\.[A-Z]/.test(`${full.charAt(offset - 1) || ""}${punct}${next}`) && !/[.!?…][ \t]/.test(match)) {
+            return match;
+          }
+          return `${punct}\n\n${next}`;
+        });
+      }
+      // Una sola línea muy larga con varios ". " → forzar párrafos
+      value = value.split("\n").map((line) => {
+        if (line.length < 260 || /\n/.test(line)) return line;
+        if ((line.match(/[.!?…][ \t]+[¿¡A-ZÁÉÍÓÚÜÑ]/g) || []).length < 2) return line;
+        if (/^\s*[|`#>*-]/.test(line) || /^\s*\d+[.)]\s/.test(line)) return line;
+        return line.replace(/([.!?…])[ \t]+([¿¡A-ZÁÉÍÓÚÜÑ])/g, (match, punct, next, offset, full) => {
+          const before = full.slice(Math.max(0, offset - 16), offset + 1);
+          if (ABBREV_BEFORE_DOT.test(before)) return match;
+          return `${punct}\n\n${next}`;
+        });
+      }).join("\n");
+      return value.replace(/\n{3,}/g, "\n\n");
+    }).join("");
+  }
+
   function withEliteCommunicationPolicy(systemPrompt = "") {
     const rootObj = typeof window !== "undefined" ? window : globalThis;
     let Anti = rootObj?.EditCoreAntiHallucination || null;
@@ -210,6 +266,7 @@
     value = value.replace(FILLER_OPENING, "").trim();
     value = value.replace(REDUNDANT_CLOSING, "").trim();
     value = normalizeSpanishProse(value);
+    value = ensureChatParagraphs(value);
     return value.replace(/\n{3,}/g, "\n\n").trim();
   }
 
@@ -233,6 +290,7 @@
     withEliteCommunicationPolicy,
     stripEliteFiller,
     normalizeSpanishProse,
+    ensureChatParagraphs,
     defaultChatSystemPrompt,
   };
 });

@@ -61,6 +61,7 @@ const LIVE_NARRATION_PROMPT = [
   "- DESPUÉS de cada tool: di qué encontraste o qué cambiaste en 1-2 frases concretas.",
   "- Escribe como conversación continua; el UI muestra tu texto en tiempo real.",
   "- No uses solo badges/checks: el cuerpo del mensaje debe ser prosa legible.",
+  "- PÁRRAFOS: separa ideas con línea en blanco (\\n\\n). PROHIBIDO una sola plasta de texto sin saltos.",
 ].join("\n");
 
 let eliteCommunication = null;
@@ -82,6 +83,21 @@ try {
   requestScopePolicy = require("../runtime/request-scope-policy");
 } catch (_) {
   requestScopePolicy = null;
+}
+
+function formatAgentVisibleText(text = "") {
+  let value = String(text || "");
+  if (!value.trim()) return value;
+  try {
+    if (eliteCommunication?.stripEliteFiller) value = eliteCommunication.stripEliteFiller(value);
+    else if (eliteCommunication?.normalizeSpanishProse) {
+      value = eliteCommunication.normalizeSpanishProse(value);
+      if (eliteCommunication?.ensureChatParagraphs) {
+        value = eliteCommunication.ensureChatParagraphs(value);
+      }
+    }
+  } catch { /* keep */ }
+  return String(value || "").replace(/\n{3,}/g, "\n\n").trim();
 }
 
 function wrapSystemPrompt(raw = "") {
@@ -161,12 +177,16 @@ function buildRoadmapFirstBlock(projectRoot) {
     ensureSessionState(projectRoot);
     parts.push(formatSessionStateForPrompt(projectRoot, 2_000));
   } catch { /* ignore */ }
-  parts.push([
-    "ROADMAP-FIRST (OBLIGATORIO — ahorro de tokens):",
-    "1) El ROADMAP y session-state YA están arriba. NO hagas list_files/search_files del repo entero.",
-    "2) Para agregar/modificar: read_file SOLO de los archivos que vas a tocar (según mapa o pedido).",
-    "3) Tras write_file/replace_in_file, EditCore ACTUALIZA ROADMAP.md solo. NO digas que no puedes modificar ROADMAP.",
-    "4) PROHIBIDO write_file de ROADMAP.md en modo análisis; en ejecución tampoco hace falta: el sistema lo sincroniza.",
+    parts.push([
+    "ROADMAP-FIRST (OBLIGATORIO — ahorro de tokens, se evalúa como incumplimiento):",
+    "1) El ROADMAP y session-state YA están arriba (incluye ## Proceso, ## Bloqueos, ## Tarea activa, ## Mapa). NO ejecutes list_files('.') ni project_discovery ni codebase_map del repo entero si el mapa cubre la tarea.",
+    "2) Lee primero ## Proceso (fase/stack/preview) y ## Bloqueos / bugs conocidos: es la memoria del estado del proyecto entre mensajes.",
+    "3) Prohibido re-listar o re-leer archivos que ya aparezcan en ## Mapa o ## Archivos clave salvo que el usuario pida explícitamente 'léelo ahora'.",
+    "4) Para agregar/modificar: read_file SOLO de los archivos concretos que vas a tocar. Máximo 1 lectura por archivo.",
+    "5) Si el ROADMAP está vacío o parece stub y crees que hace falta explorar, primero di en 1-2 frases qué falta y por qué; luego haz UNA sola llamada a list_files('.') — nunca dos seguidas.",
+    "6) Tras write_file/replace_in_file, EditCore actualiza ROADMAP.md por ti (Proceso+Cambios+Bloqueos). NO lo reescribas a mano.",
+    "7) Prohibido re-leer un archivo que ya leíste en este mismo turno. Si necesitas más contexto, usa search_files acotado o symbol_search.",
+    "8) Si el usuario pide algo simple y el ROADMAP ya dice dónde está: ve DIRECTO al archivo. No explores.",
   ].join("\n"));
   return parts.filter(Boolean).join("\n\n").slice(0, 7_500);
 }
@@ -262,10 +282,65 @@ function backgroundWorkerType(decisionKind) {
   return kind || "ANALYZE";
 }
 
+/**
+ * Antes había un router que sustituía sonnet→haiku etc. Eso rompía MEAI
+ * ("modelo no permitido"). Se conserva el modelo seleccionado por el usuario.
+ */
+function pickModelForKind(_kind, currentModel) {
+  return currentModel;
+}
+
 const APPROVAL_WORDS = new Set([
   "procede", "procedo", "adelante", "hazlo", "autorizado",
   "continua", "continúa", "ejecuta", "si", "sí", "ok", "dale", "va",
 ]);
+
+/**
+ * Sincroniza ROADMAP.md con el resumen de la corrida del kernel.
+ * Se llama al cerrar cada turno (éxito, temprano o error) para que la
+ * siguiente corrida lea un ROADMAP fresco y evite re-explorar el proyecto.
+ */
+function persistKernelRoadmap(projectRoot, { task, steps, kind, text, completed } = {}) {
+  if (!projectRoot) return false;
+  try {
+    const {
+      syncProjectRoadmap,
+      buildRoadmapSyncFromRun,
+    } = require("../runtime/project-roadmap");
+
+    const analysisMode = String(kind || "").toUpperCase() === "ANALYZE";
+    const payload = buildRoadmapSyncFromRun({
+      steps: Array.isArray(steps) ? steps : [],
+      task: String(task || "").slice(0, 220),
+      analysisMode,
+      completed: completed === true,
+      reportText: String(text || "").slice(0, 1800),
+      status: completed
+        ? (analysisMode
+            ? "Análisis cerrado. ROADMAP = Proceso+Mapa+Bloqueos; no reexplorar lo mapeado."
+            : "Tarea cerrada. El siguiente turno parte de ## Proceso / ## Tarea / ## Bloqueos.")
+        : `Incompleta: ${String(text || "").slice(0, 140)}`,
+      nextAction: completed
+        ? "Leer ## Proceso + ## Tarea activa + ## Bloqueos y continuar. No reexplorar el proyecto entero."
+        : "Retomar desde ## Proceso y ## Siguiente de este ROADMAP.",
+      phase: analysisMode ? "analisis" : "implementacion",
+    });
+
+    const changed = (Array.isArray(steps) ? steps : [])
+      .filter((s) => s && s.ok !== false && [
+        "write_file", "replace_in_file", "delete_file", "apply_diff", "create_project",
+      ].includes(String(s?.name || "")))
+      .map((s) => String(s?.input?.path || s?.result?.path || "").replace(/\\/g, "/"))
+      .filter(Boolean);
+    if (changed.length) {
+      payload.files = [...new Set([...(payload.files || []), ...changed])];
+    }
+    syncProjectRoadmap(projectRoot, payload);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 class ChatOrchestrator {
   constructor() {
@@ -379,9 +454,12 @@ class ChatOrchestrator {
     } = input;
 
     const rawText = typeof message === "object" && message?.text ? message.text : String(message || "");
-    const text = rawText.trim() || (Array.isArray(images) && images.length ? "Analiza la imagen adjunta." : "");
+    const taskImages = Array.isArray(images) ? images.filter(Boolean) : [];
+    const hasImages = taskImages.length > 0;
+    const text = rawText.trim() || (hasImages ? "Analiza la imagen adjunta." : "");
     const textLower = text.toLowerCase();
     const isApprovalText = APPROVAL_WORDS.has(textLower);
+    const visionAsk = hasImages && /\b(?:imagen|foto|captura|screenshot|adjunt|overlay|error\s+visible|analiza\s+(?:esto|la|el))\b/i.test(text);
 
     const fullAccess = isFullAccess({
       allowWrite: inputAllowWrite,
@@ -437,7 +515,15 @@ class ChatOrchestrator {
       }
     }
 
-    if (/\b(?:explora|explorer|directorio|listar|estructura|archivos)\b/i.test(text) && decision.kind === "CHAT") {
+    // Imagen adjunta: NUNCA degradar a ANALYZE ciego (el analyst de archivos no ve la foto).
+    // Ruta vision-first → runModelTask con multimodal + tools.
+    if (hasImages && (decision.kind === "ANALYZE" || decision.kind === "ASK" || visionAsk)) {
+      decision = fullAccess
+        ? { kind: "EXECUTE", label: "Análisis visual + acción", allowTools: true, allowWrite: true, background: false }
+        : { kind: "ASK", label: "Análisis visual", allowTools: true, allowWrite: false, background: false };
+    }
+
+    if (/\b(?:explora|explorer|directorio|listar|estructura|archivos)\b/i.test(text) && decision.kind === "CHAT" && !hasImages) {
       decision = { kind: "LIST", label: "Explorar directorio", allowTools: true, allowWrite: false, background: false };
     }
     if (/\b(?:explica|explicar|lee|leer|describe|resume|revisa|qu[eé]\s+hace)\b/i.test(text)
@@ -546,12 +632,24 @@ class ChatOrchestrator {
       return this.runModelTask({
         decision, message: text, projectRoot: projectRoot || ".", apiBaseUrl, apiKey, model, memory, onProgress,
         allowWrite: false, maxSteps: 1, helpers, chatOnly: true,
-        images: Array.isArray(images) ? images : [],
+        images: taskImages,
       });
     }
 
     if (decision.kind === "LIST" || decision.kind === "ASK") {
       ensureCognitiveMap(projectRoot);
+      if (hasImages) {
+        onProgress?.({ phase: "start", text: "Analizando imagen adjunta…" });
+        return this.runModelTask({
+          decision,
+          message: text,
+          projectRoot, apiBaseUrl, apiKey, model, memory, onProgress,
+          allowWrite: false, maxSteps: 8, helpers,
+          images: taskImages,
+          fullAccess: false,
+          permissionMode,
+        });
+      }
       if (wantsBackground(text, decision, input)) {
         return this.enqueueBackgroundTask({
           decision, message: text, projectRoot, onProgress,
@@ -571,6 +669,7 @@ class ChatOrchestrator {
           message: scopeUserMessage(text, out.summary),
           projectRoot, apiBaseUrl, apiKey, model, memory, onProgress,
           allowWrite: false, maxSteps: 4, helpers,
+          images: taskImages,
         });
       }
 
@@ -578,6 +677,24 @@ class ChatOrchestrator {
     }
 
     if (decision.kind === "ANALYZE") {
+      if (hasImages) {
+        onProgress?.({ phase: "start", text: "Analizando imagen adjunta…" });
+        return this.runModelTask({
+          decision: fullAccess
+            ? { kind: "EXECUTE", label: "Análisis visual", allowTools: true, allowWrite: true }
+            : decision,
+          message: text,
+          projectRoot, apiBaseUrl, apiKey, model, memory, onProgress,
+          allowWrite: fullAccess,
+          planAuthorizedExecution: fullAccess,
+          maxSteps: fullAccess ? AUTHORIZED_MAX_STEPS : 8,
+          helpers,
+          fullAccess,
+          permissionMode,
+          images: taskImages,
+          authorizedFromPending: fullAccess,
+        });
+      }
       if (wantsBackground(text, decision, input)) {
         return this.enqueueBackgroundTask({
           decision, message: text, projectRoot, onProgress, extra: { maxReads: 8 },
@@ -600,6 +717,7 @@ class ChatOrchestrator {
           message: scopeUserMessage(text, out.report),
           projectRoot, apiBaseUrl, apiKey, model, memory, onProgress,
           allowWrite: false, maxSteps: 2, helpers,
+          images: taskImages,
         });
       }
 
@@ -655,7 +773,7 @@ class ChatOrchestrator {
         authorizedFromPending: true,
         fullAccess,
         permissionMode: fullAccess ? "full" : permissionMode,
-        images: Array.isArray(images) ? images : [],
+        images: taskImages,
       });
     }
 
@@ -697,6 +815,22 @@ class ChatOrchestrator {
       ? globalMemory.promptBlock(message, 8)
       : "";
 
+    const previewUrl = String(helpers?.previewUrl || "").trim();
+    const previewBlock = previewUrl
+      ? [
+        `PREVIEW ACTIVO DEL IDE: ${previewUrl}`,
+        "Usa esa URL (o la tool capture_preview_screenshot). PROHIBIDO inventar puertos/URLs (ej. :1420) si el preview ya está publicado.",
+      ].join("\n")
+      : "Sin URL de preview conocida en este turno. No inventes localhost:puerto; pregunta o usa capture_preview_screenshot.";
+
+    const visionHardRule = (Array.isArray(taskImages) && taskImages.length)
+      ? [
+        `VISION: Hay ${taskImages.length} imagen(es) adjunta(s) en este mensaje multimodal.`,
+        "PROHIBIDO decir que no hay imagen, que no la ves, o pedir que el usuario la suba otra vez.",
+        "Analiza el contenido visual en la PRIMERA respuesta (errores Vite/overlay, UI, texto legible).",
+      ].join("\n")
+      : "";
+
     const noConfirmBlock = (accessFull || authorizedFromPending)
       ? [
         "ACCESO COMPLETO / EJECUCIÓN AUTORIZADA:",
@@ -707,10 +841,12 @@ class ChatOrchestrator {
 
     const system = wrapSystemPrompt(chatOnly || decision?.kind === "CHAT"
       ? [
-        "Eres EDITCOREAI: asistente del IDE. Responde en español, claro y directo.",
-        "Habla en prosa continua; no cierres solo con un check o \"Listo\".",
+        "Eres EDITCOREAI: asistente del IDE. Responde SIEMPRE en español, claro y directo.",
+        "Habla en prosa continua con párrafos separados por línea en blanco; nunca una plasta de texto.",
         "PROHIBIDO: fingir que abriste tools o inventar exploración sin haberla hecho.",
         `Proyecto abierto: ${projectRoot || "(ninguno)"}.`,
+        previewBlock,
+        visionHardRule,
       ].filter(Boolean).join("\n\n")
       : authorizedFromPending || accessFull
         ? [
@@ -725,6 +861,9 @@ class ChatOrchestrator {
           "PROHIBIDO inventar tareas genéricas ajenas a la instrucción del usuario.",
           "Ante fallo leve de tool: relee y reintenta; NUNCA abandones con 'Detenido' por errores secundarios.",
           `Permiso de escritura: SÍ.${accessFull ? " Acceso completo activo." : ""}`,
+          "Responde SIEMPRE en español al usuario.",
+          previewBlock,
+          visionHardRule,
           roadmapFirstBlock,
           cognitiveBlock,
           specialistInstruction,
@@ -744,6 +883,9 @@ class ChatOrchestrator {
           "6. Si ejecutas 'run_command' o un test/build, analiza la salida y aplica corrección inmediata (OODA).",
           "7. Fallos leves (oldText, git auxiliar, list_files de ruta ausente): recupera y continúa; no detengas la sesión.",
           "8. EditCore actualiza ROADMAP.md solo tras cambios. No digas que está prohibido actualizarlo.",
+          "9. Responde SIEMPRE en español al usuario.",
+          previewBlock,
+          visionHardRule,
           roadmapFirstBlock,
           cognitiveBlock,
           skillsPrompt(projectRoot, decision?.kind, message),
@@ -777,10 +919,15 @@ class ChatOrchestrator {
     const runMutations = [];
     const stepsLimit = Math.max(1, Number(maxSteps) || DEFAULT_MAX_STEPS);
 
+    // Router: NUNCA sustituir el modelo del usuario (evita "modelo no permitido").
+    const routedModel = String(model || "").trim();
+
     try {
       for (let i = 0; i < stepsLimit; i++) {
         if (!this.session.alive) return { kind: "STOP", text: "Detenido.", steps };
 
+        // Tools: filtro write-safe original (NO filterToolsByPlan — dejaba al agente
+        // sin tools del kernel y provocaba turnos vacíos).
         const availableTools = allowWrite
           ? tools.DEFINITIONS
           : tools.DEFINITIONS.filter((t) => ![
@@ -805,7 +952,7 @@ class ChatOrchestrator {
           } catch { /* ignore */ }
         }
         const turn = await callChat({
-          apiBaseUrl, apiKey, model, messages,
+          apiBaseUrl, apiKey, model: routedModel, messages,
           tools: (chatOnly || decision?.kind === "CHAT") ? [] : availableTools,
           signal: this.abort.signal,
           stream: true,
@@ -897,11 +1044,22 @@ class ChatOrchestrator {
           }
           if (!String(textOut || "").trim()) {
             const toolNames = steps.map((s) => s.name).filter(Boolean).slice(-8);
+            const errHint = String(turn?.error || turn?.message || "").trim();
             textOut = toolNames.length
               ? `Completé ${toolNames.length} acción(es): ${toolNames.join(", ")}.`
-              : "No pude generar texto visible en este turno. Reintenta o cambia de modelo en Auto.";
+              : (errHint
+                ? `El proveedor no devolvió texto usable: ${errHint.slice(0, 240)}`
+                : "No pude generar texto visible en este turno. Reintenta con el mismo modelo o cambia de modelo en Auto.");
           }
+          textOut = formatAgentVisibleText(textOut);
 
+          persistKernelRoadmap(projectRoot, {
+            task: message,
+            steps,
+            kind: decision?.kind,
+            text: textOut,
+            completed: true,
+          });
           return { kind: decision?.kind || "CHAT", text: textOut, steps, mutations: runMutations };
         }
 
@@ -1124,11 +1282,27 @@ class ChatOrchestrator {
       } else {
         textOut = nextStepsClosingText({ fullAccess: accessFull, wroteFiles: false });
       }
+      textOut = formatAgentVisibleText(textOut);
 
+      persistKernelRoadmap(projectRoot, {
+        task: message,
+        steps,
+        kind: decision?.kind,
+        text: textOut,
+        completed: true,
+      });
       return { kind: decision?.kind || "EXECUTE", text: textOut, steps, incomplete: false, mutations: runMutations };
     } catch (err) {
       this.session.kill();
-      return { kind: "CHAT", text: "Atención durante la ejecución: " + (err.message || err), steps, mutations: runMutations };
+      const errText = formatAgentVisibleText("Atención durante la ejecución: " + (err.message || err));
+      persistKernelRoadmap(projectRoot, {
+        task: message,
+        steps,
+        kind: decision?.kind,
+        text: errText,
+        completed: false,
+      });
+      return { kind: "CHAT", text: errText, steps, mutations: runMutations };
     }
   }
 }

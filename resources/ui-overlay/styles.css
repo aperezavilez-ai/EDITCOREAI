@@ -865,6 +865,8 @@ h1 { margin: 0; font-size: 15px; }
   line-height: 1.55;
   color: #0f172a;
 }
+.agent-final-response p { margin: 0 0 14px; line-height: 1.55; }
+.agent-final-response p:last-child { margin-bottom: 0; }
 
 /* ── main (chat) ── */
 main {
@@ -1029,7 +1031,7 @@ main {
 }
 
 /* Densidad tipo Claude: parrafos y listas compactos, sin aire vertical extra */
-.msg-body p { margin: 0 0 8px; }
+.msg-body p { margin: 0 0 14px; line-height: 1.55; }
 .msg-body p:last-child { margin-bottom: 0; }
 .msg-body ul, .msg-body ol { margin: 0 0 8px; padding-left: 22px; }
 .msg-body ul:last-child, .msg-body ol:last-child { margin-bottom: 0; }
@@ -3328,7 +3330,7 @@ details[open] .prov-summary::before { transform: rotate(90deg); }
   border-radius: 0;
   padding: 4px 0;
 }
-.agent-narrative-entry.agent-narration p { margin: 0 0 4px; }
+.agent-narrative-entry.agent-narration p { margin: 0 0 14px; line-height: 1.55; }
 .agent-narrative-entry.agent-narration p:last-child { margin-bottom: 0; }
 .agent-narrative-entry.agent-narration code { font-size: 12px; }
 

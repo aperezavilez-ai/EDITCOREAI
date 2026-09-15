@@ -6214,20 +6214,37 @@ function updateStatus() {
 
 // ── Chat rendering ────────────────────────────────────────────────────────────
 
+function prepareChatProseForRender(text) {
+  let value = repairMojibakeText(String(text || ""));
+  const Elite = window.EditCoreEliteCommunication;
+  try {
+    if (typeof Elite?.normalizeSpanishProse === "function") {
+      value = Elite.normalizeSpanishProse(value);
+    }
+    if (typeof Elite?.ensureChatParagraphs === "function") {
+      value = Elite.ensureChatParagraphs(value);
+    }
+  } catch { /* keep value */ }
+  return value;
+}
+
 function renderMarkdown(text) {
+  const prepared = prepareChatProseForRender(text);
   // Use secure markdown renderer (loaded from renderer-markdown.js)
-  if (typeof window.renderMarkdownSecure === 'function') {
-    return window.renderMarkdownSecure(text);
+  if (typeof window.renderMarkdownSecure === "function") {
+    return window.renderMarkdownSecure(prepared);
   }
 
-  // Fallback: escape everything (safe but no formatting)
-  return String(text || '')
+  // Fallback: escape everything (safe but no formatting) — conserva párrafos
+  return String(prepared || "")
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#039;")
-    .replace(/\n/g, "<br>");
+    .replace(/\n\n+/g, "</p><p>")
+    .replace(/\n/g, "<br>")
+    .replace(/^(.*)$/s, "<p>$1</p>");
 }
 
 function append(role, text, usage, scroll = true, elapsedSeconds = null, images = [], documents = []) {
@@ -6342,7 +6359,7 @@ function appendThinking(statusText = "Pensando...", isAgent = false, runLabel = 
     thoughtWrap.open = true;
     const thoughtSum = document.createElement("summary");
     thoughtSum.className = "agent-thought-summary";
-    thoughtSum.textContent = "Thought";
+    thoughtSum.textContent = "Pensamiento";
     const stream = document.createElement("div");
     stream.className = "agent-live-stream agent-thought-stream";
     stream.setAttribute("aria-live", "polite");
@@ -6356,7 +6373,7 @@ function appendThinking(statusText = "Pensando...", isAgent = false, runLabel = 
     const exploreBtn = document.createElement("button");
     exploreBtn.type = "button";
     exploreBtn.className = "agent-explore-pill";
-    exploreBtn.textContent = "Explored 0 files";
+    exploreBtn.textContent = "Explorados 0 archivos";
     const exploreList = document.createElement("ul");
     exploreList.className = "agent-explore-list";
     exploreList.hidden = true;
@@ -6385,7 +6402,7 @@ function appendThinking(statusText = "Pensando...", isAgent = false, runLabel = 
     const undoAllBtn = document.createElement("button");
     undoAllBtn.type = "button";
     undoAllBtn.className = "agent-footer-link";
-    undoAllBtn.textContent = "Undo All";
+    undoAllBtn.textContent = "Deshacer todo";
     undoAllBtn.title = "Deshacer el último turno del agente";
     undoAllBtn.addEventListener("click", async () => {
       try {
@@ -6406,14 +6423,14 @@ function appendThinking(statusText = "Pensando...", isAgent = false, runLabel = 
     const keepAllBtn = document.createElement("button");
     keepAllBtn.type = "button";
     keepAllBtn.className = "agent-footer-link";
-    keepAllBtn.textContent = "Keep All";
+    keepAllBtn.textContent = "Conservar todo";
     keepAllBtn.title = "Aceptar todos los cambios pendientes";
     keepAllBtn.addEventListener("click", async () => {
       try {
         keepAllBtn.disabled = true;
         const root = String(state.projectRoot || "").trim();
         if (!root || !window.editcoreAgent?.acceptAllReview) {
-          appendMessage("assistant", "Keep All no está disponible (sin proyecto o API).");
+          appendMessage("assistant", "Conservar todo no está disponible (sin proyecto o API).");
           keepAllBtn.disabled = false;
           return;
         }
@@ -6421,13 +6438,13 @@ function appendThinking(statusText = "Pensando...", isAgent = false, runLabel = 
         const n = Number(result?.accepted || 0);
         settleAgentTurnChrome(item, { failed: false });
         appendMessage("assistant", [
-          "## Keep All",
+          "## Conservar todo",
           "",
           n > 0
             ? `Aceptados **${n}** archivo(s) del último turno. Los cambios se conservan.`
             : "No había cambios pendientes para aceptar (¿ya aceptados o sin checkpoint?).",
         ].join("\n"));
-        $("status").textContent = n > 0 ? `Keep All: ${n} archivo(s)` : "Keep All: sin pendientes";
+        $("status").textContent = n > 0 ? `Conservar todo: ${n} archivo(s)` : "Conservar todo: sin pendientes";
         if (n > 0) {
           footer.querySelectorAll(".agent-footer-link").forEach((btn) => { btn.disabled = true; });
         } else {
@@ -6435,14 +6452,14 @@ function appendThinking(statusText = "Pensando...", isAgent = false, runLabel = 
         }
       } catch (error) {
         keepAllBtn.disabled = false;
-        appendMessage("assistant", `Keep All falló: ${error?.message || error}`);
-        $("status").textContent = `Keep: ${error?.message || error}`;
+        appendMessage("assistant", `Conservar todo falló: ${error?.message || error}`);
+        $("status").textContent = `Conservar: ${error?.message || error}`;
       }
     });
     const reviewBtn = document.createElement("button");
     reviewBtn.type = "button";
     reviewBtn.className = "agent-footer-link";
-    reviewBtn.textContent = "Review";
+    reviewBtn.textContent = "Revisar";
     reviewBtn.addEventListener("click", () => reviewAgentTurnFromCard(item));
     footer.append(undoAllBtn, keepAllBtn, reviewBtn);
     exec.appendChild(footer);
@@ -6491,7 +6508,7 @@ function revealAgentTurnActions(thinkingItem, { failed = false } = {}) {
   footer.classList.toggle("is-failed", failed === true);
   if (failed) {
     footer.querySelectorAll(".agent-footer-link").forEach((btn) => {
-      if (btn.textContent === "Review") return;
+      if (btn.textContent === "Revisar") return;
       btn.disabled = true;
     });
   }
@@ -6571,8 +6588,8 @@ function appendCursorThought(thinkingItem, text, { delta = false } = {}) {
   const summary = thinkingItem.querySelector?.(".agent-thought-summary");
   if (summary) {
     summary.textContent = delta || thinkingItem._thoughtOnlyBuffer
-      ? "Thought · streaming…"
-      : "Thought";
+      ? "Pensamiento · en curso…"
+      : "Pensamiento";
   }
 }
 
@@ -6588,7 +6605,7 @@ function upsertExplorationUi(thinkingItem, { summary, items = [], count } = {}) 
   const total = Number(count) || thinkingItem._exploredItems.size;
   thinkingItem._exploreBlock.hidden = total <= 0;
   if (thinkingItem._explorePill) {
-    thinkingItem._explorePill.textContent = summary || `Explored ${total} file${total === 1 ? "" : "s"}`;
+    thinkingItem._explorePill.textContent = summary || `Explorados ${total} archivo${total === 1 ? "" : "s"}`;
   }
   const list = thinkingItem._exploreList;
   if (!list) return;
@@ -6849,7 +6866,7 @@ function ensureThoughtPanel(thinkingItem) {
       accordion.open = true;
       const sum = document.createElement("summary");
       sum.className = "agent-thought-summary";
-      sum.textContent = "Thought";
+      sum.textContent = "Pensamiento";
       accordion.appendChild(sum);
       const primary = thinkingItem.querySelector?.(".thinking-primary");
       if (primary?.parentNode) primary.parentNode.insertBefore(accordion, primary.nextSibling);
@@ -7396,7 +7413,7 @@ function addAgentNarrationDelta(thinkingItem, text) {
   appendThoughtStreamText(thinkingItem, buf);
   if (thinkingItem?._thoughtAccordion) thinkingItem._thoughtAccordion.open = true;
   const summary = thinkingItem?.querySelector?.(".agent-thought-summary");
-  if (summary) summary.textContent = "Thought · streaming…";
+  if (summary) summary.textContent = "Pensamiento · en curso…";
 }
 
 function addAgentNarration(thinkingItem, text) {
@@ -7581,11 +7598,11 @@ function agentProgressText(progress) {
   if (name === "read_file") {
     const file = target ? target.split(/[/\\]/).pop() : "archivo";
     if (running) return `→ Leyendo ${file}...`;
-    if (done) return progress.cached ? `✓ ${file} (cache)` : `✓ Leido ${file}`;
+    if (done) return progress.cached ? `✓ ${file} (caché)` : `✓ Leído ${file}`;
   }
   if (name === "search_files") {
     if (running) return target ? `→ Buscando "${target}"...` : "→ Buscando en el proyecto...";
-    if (done) return target ? `✓ Busqueda "${target}" lista` : "✓ Busqueda completada";
+    if (done) return target ? `✓ Búsqueda "${target}" lista` : "✓ Búsqueda completada";
   }
   if (name === "write_file" || name === "replace_in_file" || name === "apply_diff") {
     const rel = ProjectFilesUi?.resolveTouchedRelativePath?.(state.projectRoot, target) || "";
@@ -7670,7 +7687,7 @@ function settleAgentTurnChrome(thinking, { failed = false } = {}) {
   thinking.classList.add("assistant", "agent-execution-done");
   if (failed) thinking.classList.add("is-failed");
   const thoughtSummary = thinking.querySelector?.(".agent-thought-summary");
-  if (thoughtSummary) thoughtSummary.textContent = "Thought";
+  if (thoughtSummary) thoughtSummary.textContent = "Pensamiento";
   if (thinking._thoughtAccordion) thinking._thoughtAccordion.open = false;
   revealAgentTurnActions(thinking, { failed });
 }
@@ -7809,7 +7826,7 @@ function finalizeThinkingAsAssistant(thinking, text, usage, elapsedSeconds, opti
   // Evitar texto triplicado: cerrar Thought y limpiar stream intermedio; deja solo la respuesta final.
   if (thinking._thoughtAccordion) thinking._thoughtAccordion.open = false;
   const thoughtSummaryDone = thinking.querySelector?.(".agent-thought-summary");
-  if (thoughtSummaryDone) thoughtSummaryDone.textContent = "Thought";
+  if (thoughtSummaryDone) thoughtSummaryDone.textContent = "Pensamiento";
   if (thinking._streamRow) {
     thinking._streamRow.remove();
     thinking._streamRow = null;

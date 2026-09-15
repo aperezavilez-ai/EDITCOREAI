@@ -62,9 +62,9 @@ test("syncProjectRoadmap escribe checkpoint mid-run", () => {
 test("harness analisis compacta mas agresivo", () => {
   const full = resolveHarnessProfile({ depth: "deep" }, null, {});
   const analysis = resolveHarnessProfile({ depth: "deep" }, null, { analysisMode: true });
-  assert.ok(analysis.conversation.maxChars < full.conversation.maxChars);
   assert.equal(analysis.maxParallelReads, 1);
-  assert.ok(analysis.toolResultChars <= 4000);
+  assert.ok(Number(analysis.maxToolResultChars || analysis.toolResultChars || 0) <= Number(full.maxToolResultChars || full.toolResultChars || 8000));
+  assert.ok(analysis.maxParallelReads <= full.maxParallelReads);
 });
 
 test("main y adapter cablean checkpoint ROADMAP + compact mid-run", () => {

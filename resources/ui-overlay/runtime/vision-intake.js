@@ -8,10 +8,11 @@ const VISION_MODEL_PATTERN = /vision|claude|gpt-4o|gpt-4\.1|gpt-5|o4-mini|gemini
 
 const VISION_ACK_RULE = [
   "## VISION OBLIGATORIA (imagen adjunta)",
-  "- Hay una o mas imagenes en el mensaje del usuario.",
-  "- PROHIBIDO responder en silencio, ignorar la imagen o pedir que la describa.",
+  "- Hay una o mas imagenes en el mensaje del usuario (payload multimodal).",
+  "- PROHIBIDO responder que no ves la imagen, que no hay adjunto, o pedir que la suba otra vez.",
+  "- PROHIBIDO responder en silencio o ignorar la imagen.",
   "- En la PRIMERA respuesta analiza la imagen: layout, UI, bugs visuales, texto legible, inconsistencias.",
-  "- Si parece captura de bug/UI: identifica el problema y propone correccion concreta (archivos/herramientas).",
+  "- Si parece captura de bug/UI (Vite overlay, stack, consola): identifica archivo/linea/error y propone correccion concreta.",
   "- Si es mock/diseno: resume estructura y siguiente paso de implementacion.",
 ].join("\n");
 

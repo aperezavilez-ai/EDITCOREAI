@@ -157,27 +157,26 @@
       primary: [
         /claude-sonnet/,
         /claude-fable/,
-        /claude-haiku/,
         /grok-4\.3/,
         /gemini-2\.5-flash/,
         /gpt-5\.6-luna/,
         /qwen3\.6-plus/,
         /glm-5/,
       ],
-      secondary: [/grok-4\.5/, /kimi-k2\.6/, /claude-opus/],
+      secondary: [/claude-haiku/, /grok-4\.5/, /kimi-k2\.6/, /claude-opus/],
       reserve: [/deepseek-v4/],
       forbid: [/gpt-5\.6-sol/],
     },
     chat: {
       purpose: "Mensajes cortos sin tools de proyecto.",
       primary: [
-        /claude-haiku/,
         /gpt-5\.6-luna/,
         /gemini-2\.5-flash/,
         /grok-4\.3/,
         /kimi-k2\.6/,
         /glm-5/,
         /qwen3\.6-plus/,
+        /claude-haiku/,
       ],
       secondary: [/claude-sonnet/, /claude-fable/],
       reserve: [/deepseek-v4/, /gpt-5\.6-sol/],
@@ -496,11 +495,18 @@
       ? [scoped]
       : [preferred, ...UPSTREAM_ORDER.filter((bucket) => bucket !== preferred)];
     const laneOrder = ["primary", "secondary", "reserve"];
+    // Vision / agente: haiku suele fallar en gateways openai-compat ("modelo no permitido").
+    const hardForbid = [];
+    if (context.hasImages || context.hasAttachments) hardForbid.push(/claude-haiku/i);
+    if (needsToolCapableAutoModel(context)) hardForbid.push(/claude-haiku/i, /gpt-5\.6-sol/i);
 
     for (const bucket of order) {
       let entries = entriesForBucket(source, bucket);
       if (!entries.length) continue;
-      entries = entries.filter((entry) => !matchesAnyPattern(entry?.model, lanes.forbid || []));
+      entries = entries.filter((entry) =>
+        !matchesAnyPattern(entry?.model, lanes.forbid || [])
+        && !matchesAnyPattern(entry?.model, hardForbid)
+      );
       if (!entries.length) continue;
 
       for (const laneName of laneOrder) {
@@ -515,8 +521,11 @@
       if (isScopedAutoProvider(scoped)) break;
     }
 
-    // Ultimo recurso: least-used global sin modelos prohibidos del rol.
-    const allowed = source.filter((entry) => !matchesAnyPattern(entry?.model, (ROLE_LANES[role] || {}).forbid || []));
+    // Ultimo recurso: least-used global sin modelos prohibidos del rol / vision.
+    const allowed = source.filter((entry) =>
+      !matchesAnyPattern(entry?.model, (ROLE_LANES[role] || {}).forbid || [])
+      && !matchesAnyPattern(entry?.model, hardForbid)
+    );
     return pickLeastUsedEntry(allowed.length ? allowed : source, context);
   }
 
@@ -571,7 +580,7 @@
 
   function isProviderFailureMessage(message) {
     const text = String(message || "");
-    return /no est[aá] disponible|tard[oó] demasiado|502|503|401|403|upstream|forbidden|temporarily unavailable|no available accounts|invalid.?token|inv[aá]lid.?token|无效|令牌|上游|timeout|ECONNRESET|ETIMEDOUT|ENOTFOUND|aborted|proveedor respondio|respuesta vacia|EMPTY_PROVIDER|devolvio una respuesta/i.test(text);
+    return /no est[aá] disponible|tard[oó] demasiado|502|503|401|403|upstream|forbidden|temporarily unavailable|no available accounts|invalid.?token|inv[aá]lid.?token|无效|令牌|上游|timeout|ECONNRESET|ETIMEDOUT|ENOTFOUND|aborted|proveedor respondio|respuesta vacia|EMPTY_PROVIDER|devolvio una respuesta|no est[aá] permitido|not allowed|permitido en la API|modelo .* no permitido/i.test(text);
   }
 
   function isSafeDefaultModel(model) {

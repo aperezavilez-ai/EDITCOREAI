@@ -9,7 +9,7 @@ const SKIP_DIRS = new Set([
   ".git", ".next", ".nuxt", ".output", ".svelte-kit", ".turbo", ".vercel", ".wrangler",
   ".cache", "node_modules", "dist", "build", "coverage", "out", ".editcore",
 ]);
-const KEY_DIRS = new Set(["src", "public", "pages", "app", "scripts", "docs", "components", "lib"]);
+const KEY_DIRS = new Set(["src", "public", "pages", "app", "scripts", "docs", "components", "lib", "src-tauri"]);
 
 function resolveRoadmapPath(projectRoot) {
   const root = path.resolve(String(projectRoot || ""));
@@ -20,7 +20,7 @@ function resolveRoadmapPath(projectRoot) {
   return { relative: ROADMAP_RELATIVE, absolute: primary, exists: false };
 }
 
-function readRoadmap(projectRoot, maxChars = 6_000) {
+function readRoadmap(projectRoot, maxChars = 8_000) {
   const found = resolveRoadmapPath(projectRoot);
   if (!found.exists) return { ...found, content: "" };
   try {
@@ -60,21 +60,53 @@ function listLevel(root, relative = "", limit = 40) {
   return rows;
 }
 
-function scanProjectForRoadmap(projectRoot) {
-  const root = path.resolve(String(projectRoot || ""));
-  const mapLines = [];
-  let stackHint = "";
+function detectStackHints(root) {
+  const hints = [];
   const pkgPath = path.join(root, "package.json");
+  let scripts = [];
+  let name = "";
   if (fs.existsSync(pkgPath)) {
     try {
       const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf8"));
-      const scripts = Object.keys(pkg.scripts || {}).slice(0, 8).join(", ");
-      stackHint = `package.json — ${pkg.name || "app"}${scripts ? ` · scripts: ${scripts}` : ""}`;
-      mapLines.push(stackHint);
-    } catch {
-      mapLines.push("package.json");
-    }
+      name = String(pkg.name || "").trim();
+      scripts = Object.keys(pkg.scripts || {}).slice(0, 10);
+      const deps = { ...(pkg.dependencies || {}), ...(pkg.devDependencies || {}) };
+      if (deps.react || deps["react-dom"]) hints.push("React");
+      if (deps.vite) hints.push("Vite");
+      if (deps.next) hints.push("Next.js");
+      if (deps["@tauri-apps/api"] || fs.existsSync(path.join(root, "src-tauri"))) hints.push("Tauri");
+      if (deps.electron) hints.push("Electron");
+      if (deps.vue) hints.push("Vue");
+      if (deps.svelte) hints.push("Svelte");
+      if (deps.typescript || fs.existsSync(path.join(root, "tsconfig.json"))) hints.push("TypeScript");
+      if (deps["@supabase/supabase-js"]) hints.push("Supabase");
+    } catch { /* ignore */ }
   }
+  const entryCandidates = [
+    "index.html", "src/main.tsx", "src/main.ts", "src/main.jsx", "src/main.js",
+    "src/App.tsx", "src/App.jsx", "app/page.tsx", "app/layout.tsx", "main.js",
+  ];
+  const entries = entryCandidates.filter((rel) => fs.existsSync(path.join(root, rel)));
+  return {
+    name,
+    scripts,
+    stack: uniqueLines(hints).slice(0, 8),
+    entries: entries.slice(0, 8),
+  };
+}
+
+function scanProjectForRoadmap(projectRoot) {
+  const root = path.resolve(String(projectRoot || ""));
+  const mapLines = [];
+  const stackInfo = detectStackHints(root);
+  if (stackInfo.name || stackInfo.scripts.length) {
+    mapLines.push(
+      `package.json — ${stackInfo.name || "app"}${stackInfo.scripts.length ? ` · scripts: ${stackInfo.scripts.join(", ")}` : ""}`,
+    );
+  }
+  if (stackInfo.stack.length) mapLines.push(`stack: ${stackInfo.stack.join(" + ")}`);
+  for (const entry of stackInfo.entries) mapLines.push(`entry: ${entry}`);
+
   const rootEntries = listLevel(root, "", 36);
   for (const entry of rootEntries) {
     if (entry.path === "package.json" || entry.path === "ROADMAP.md") continue;
@@ -83,15 +115,16 @@ function scanProjectForRoadmap(projectRoot) {
       const children = listLevel(root, entry.path, 24);
       for (const child of children) {
         mapLines.push(child.directory ? `${child.path}/` : child.path);
-        if (mapLines.length >= 48) break;
+        if (mapLines.length >= 56) break;
       }
     }
-    if (mapLines.length >= 48) break;
+    if (mapLines.length >= 56) break;
   }
   return {
-    mapLines: uniqueLines(mapLines).slice(0, 48),
+    mapLines: uniqueLines(mapLines).slice(0, 56),
     scanned: true,
     fileCount: mapLines.length,
+    stackInfo,
   };
 }
 
@@ -102,23 +135,95 @@ function isStubRoadmap(content = "") {
   return onlyGeneric || /scaffold inicial/i.test(content);
 }
 
-function renderRoadmap({ title, status, mapLines, task, files, nextAction, verified }) {
-  const map = uniqueLines(mapLines).slice(0, 40).map((line) => (line.startsWith("- ") ? line : `- ${line}`));
-  const changed = uniqueLines(files).slice(0, 16).map((line) => `- ${line}`);
-  const checks = uniqueLines(verified).slice(0, 8).map((line) => `- ${line}`);
+function parseSectionBullets(content = "", heading = "") {
+  const re = new RegExp(`##\\s*${heading}`, "i");
+  const block = String(content || "").split(re)[1]?.split(/##\s+/i)[0] || "";
+  return uniqueLines(
+    block.split(/\r?\n/)
+      .filter((line) => /^\s*-\s+/.test(line))
+      .map((line) => line.replace(/^\s*-\s+/, "").trim())
+      .filter((line) => line && !/^\(?(sin |ninguno|pendiente|n\/a)/i.test(line)),
+  );
+}
+
+function parseMapLines(content = "") {
+  return parseSectionBullets(content, "Mapa");
+}
+
+function parseFirstBullet(content = "", heading = "") {
+  return parseSectionBullets(content, heading)[0] || "";
+}
+
+function normalizePhase(raw = "") {
+  const value = String(raw || "").toLowerCase();
+  if (/bloque|error|roto|falla|bug/.test(value)) return "bloqueado";
+  if (/listo|done|completo|cerrado|ready|ok\b/.test(value)) return "listo";
+  if (/implement|ejecut|escri|fix|corrige|aplica/.test(value)) return "implementacion";
+  if (/anal|diagn|revis|plan|explora/.test(value)) return "analisis";
+  return String(raw || "en_curso").trim().slice(0, 40) || "en_curso";
+}
+
+function renderRoadmap({
+  title,
+  status,
+  mapLines,
+  task,
+  files,
+  nextAction,
+  verified,
+  phase,
+  stack,
+  entries,
+  scripts,
+  previewUrl,
+  blockers,
+  decisions,
+  keyFiles,
+  processNotes,
+} = {}) {
+  const map = uniqueLines(mapLines).slice(0, 48).map((line) => (line.startsWith("- ") ? line : `- ${line}`));
+  const changed = uniqueLines(files).slice(0, 18).map((line) => `- ${line}`);
+  const checks = uniqueLines(verified).slice(0, 10).map((line) => `- ${line}`);
+  const blockRows = uniqueLines(blockers).slice(0, 10).map((line) => `- ${line}`);
+  const decisionRows = uniqueLines(decisions).slice(0, 10).map((line) => `- ${line}`);
+  const keyRows = uniqueLines(keyFiles).slice(0, 16).map((line) => `- ${line}`);
+  const stackRows = uniqueLines(stack).slice(0, 8);
+  const entryRows = uniqueLines(entries).slice(0, 8);
+  const scriptRows = uniqueLines(scripts).slice(0, 10);
+  const fase = normalizePhase(phase || status);
+  const stamp = new Date().toISOString().slice(0, 16).replace("T", " ");
+
   return [
     `# ${title} — ROADMAP`,
     "",
-    "Indice compacto generado al analizar el proyecto. LEER ANTES de reexplorar. Actualizar al terminar cambios. No pegar codigo. Nunca pedirlo al usuario.",
+    "Fuente de verdad del proceso del proyecto para el agente. LEER ESTO ANTES de cualquier tool.",
+    "PROHIBIDO reexplorar el repo entero si este documento cubre la tarea. Solo read_file de lo que vas a editar.",
+    "EditCore actualiza este archivo tras cambios. No pedirlo al usuario. No pegar codigo largo.",
     "",
-    "## Estado",
-    `- ${String(status || "En progreso").trim()}`,
+    "## Proceso",
+    `- Fase: ${fase}`,
+    `- Estado: ${String(status || "En progreso").trim().slice(0, 280)}`,
+    `- Actualizado: ${stamp}`,
+    ...(stackRows.length ? [`- Stack: ${stackRows.join(" + ")}`] : []),
+    ...(entryRows.length ? entryRows.map((e) => `- Entry: ${e}`) : []),
+    ...(scriptRows.length ? [`- Scripts: ${scriptRows.join(", ")}`] : []),
+    `- Preview: ${String(previewUrl || "desconocido — usa el preview del IDE, no inventes puertos").trim().slice(0, 160)}`,
+    ...(processNotes ? [`- Nota: ${String(processNotes).trim().slice(0, 240)}`] : []),
     "",
     "## Mapa",
     ...(map.length ? map : ["- (sin archivos listados)"]),
     "",
+    "## Archivos clave (no reexplorar)",
+    ...(keyRows.length ? keyRows : ["- Usar el Mapa; no list_files('.') si ya hay rutas aqui"]),
+    "",
     "## Tarea activa",
-    `- ${String(task || "Sin tarea activa").trim().slice(0, 240)}`,
+    `- ${String(task || "Sin tarea activa").trim().slice(0, 280)}`,
+    "",
+    "## Bloqueos / bugs conocidos",
+    ...(blockRows.length ? blockRows : ["- Ninguno registrado"]),
+    "",
+    "## Decisiones",
+    ...(decisionRows.length ? decisionRows : ["- Ninguna registrada"]),
     "",
     "## Cambios recientes",
     ...(changed.length ? changed : ["- Ninguno todavia"]),
@@ -127,15 +232,39 @@ function renderRoadmap({ title, status, mapLines, task, files, nextAction, verif
     ...(checks.length ? checks : ["- Pendiente"]),
     "",
     "## Siguiente",
-    `- ${String(nextAction || "Usar este mapa; solo leer archivos a editar.").trim().slice(0, 240)}`,
+    `- ${String(nextAction || "Partir de este ROADMAP + .editcore/session-state.json; no releer el proyecto entero.").trim().slice(0, 280)}`,
+    "",
+    "## Regla anti-reexploracion",
+    "- Si el pedido del usuario apunta a un archivo ya listado arriba: ve DIRECTO a read_file/replace_in_file de ese path.",
+    "- PROHIBIDO list_files('.') / project_discovery / codebase_map del repo completo en el mismo turno si el Mapa ya tiene >= 5 entradas utiles.",
+    "- Tras mutar: EditCore refresca este ROADMAP; continua desde aqui en el siguiente mensaje.",
     "",
   ].join("\n");
 }
 
-function parseMapLines(content = "") {
-  const text = String(content || "");
-  const block = text.split(/##\s*Mapa/i)[1]?.split(/##\s+/i)[0] || "";
-  return uniqueLines(block.split(/\r?\n/).filter((line) => /^\s*-\s+/.test(line)).map((line) => line.replace(/^\s*-\s+/, "").trim()));
+function extractRoadmapMeta(content = "") {
+  const proceso = parseSectionBullets(content, "Proceso");
+  const pick = (prefix) => {
+    const row = proceso.find((line) => line.toLowerCase().startsWith(prefix.toLowerCase()));
+    return row ? row.slice(prefix.length).replace(/^[:\s]+/, "").trim() : "";
+  };
+  return {
+    phase: pick("Fase") || "",
+    status: pick("Estado") || parseFirstBullet(content, "Estado") || "",
+    stack: pick("Stack") ? pick("Stack").split(/\s*\+\s*/).map((s) => s.trim()).filter(Boolean) : [],
+    entries: proceso.filter((line) => /^Entry:/i.test(line)).map((line) => line.replace(/^Entry:\s*/i, "").trim()),
+    scripts: pick("Scripts") ? pick("Scripts").split(/,\s*/).map((s) => s.trim()).filter(Boolean) : [],
+    previewUrl: pick("Preview") || "",
+    processNotes: pick("Nota") || "",
+    task: parseFirstBullet(content, "Tarea activa"),
+    nextAction: parseFirstBullet(content, "Siguiente"),
+    blockers: parseSectionBullets(content, "Bloqueos"),
+    decisions: parseSectionBullets(content, "Decisiones"),
+    keyFiles: parseSectionBullets(content, "Archivos clave"),
+    verified: parseSectionBullets(content, "Verificado"),
+    files: parseSectionBullets(content, "Cambios recientes"),
+    mapLines: parseMapLines(content),
+  };
 }
 
 function ensureProjectRoadmap(projectRoot, input = {}) {
@@ -145,15 +274,24 @@ function ensureProjectRoadmap(projectRoot, input = {}) {
     return { ...found, created: false, scanned: false, content: existing };
   }
   const scan = scanProjectForRoadmap(projectRoot);
-  const previousMap = parseMapLines(existing);
+  const previous = extractRoadmapMeta(existing);
   const content = renderRoadmap({
     title: projectTitle(projectRoot),
     status: input.status || (found.exists ? "ROADMAP actualizado con analisis de disco." : "ROADMAP creado al analizar el proyecto en disco."),
-    mapLines: uniqueLines([...(scan.mapLines || []), ...previousMap, ...(input.mapLines || [])]),
-    task: input.task || "",
-    files: input.files || [],
-    nextAction: input.nextAction || "Partir de este mapa. No pedir el ROADMAP al usuario. Solo leer archivos a cambiar.",
-    verified: input.verified || [],
+    phase: input.phase || previous.phase || "analisis",
+    mapLines: uniqueLines([...(scan.mapLines || []), ...(previous.mapLines || []), ...(input.mapLines || [])]),
+    task: input.task || previous.task || "",
+    files: input.files || previous.files || [],
+    nextAction: input.nextAction || previous.nextAction || "Partir de este mapa. No pedir el ROADMAP al usuario. Solo leer archivos a cambiar.",
+    verified: input.verified || previous.verified || [],
+    stack: input.stack || scan.stackInfo?.stack || previous.stack || [],
+    entries: input.entries || scan.stackInfo?.entries || previous.entries || [],
+    scripts: input.scripts || scan.stackInfo?.scripts || previous.scripts || [],
+    previewUrl: input.previewUrl || previous.previewUrl || "",
+    blockers: input.blockers || previous.blockers || [],
+    decisions: input.decisions || previous.decisions || [],
+    keyFiles: input.keyFiles || previous.keyFiles || (scan.stackInfo?.entries || []),
+    processNotes: input.processNotes || previous.processNotes || "",
   });
   fs.mkdirSync(path.dirname(found.absolute), { recursive: true });
   fs.writeFileSync(found.absolute, content, "utf8");
@@ -161,26 +299,42 @@ function ensureProjectRoadmap(projectRoot, input = {}) {
 }
 
 function syncProjectRoadmap(projectRoot, input = {}) {
-  const previous = readRoadmap(projectRoot);
-  const scan = scanProjectForRoadmap(projectRoot);
+  const previousRaw = readRoadmap(projectRoot);
+  const previous = extractRoadmapMeta(previousRaw.content);
+  const needScan = !previousRaw.exists || isStubRoadmap(previousRaw.content) || (previous.mapLines || []).length < 3;
+  const scan = needScan ? scanProjectForRoadmap(projectRoot) : { mapLines: previous.mapLines, stackInfo: null };
   const mapLines = uniqueLines([
-    ...scan.mapLines,
-    ...parseMapLines(previous.content),
+    ...(scan.mapLines || []),
+    ...(previous.mapLines || []),
     ...(input.mapLines || []),
     ...(input.files || []),
   ]);
   const content = renderRoadmap({
     title: projectTitle(projectRoot),
-    status: input.status || (previous.exists ? "Actualizado al cerrar cambios" : "ROADMAP creado al cerrar cambios"),
+    status: input.status || (previousRaw.exists ? "Actualizado al cerrar cambios" : "ROADMAP creado al cerrar cambios"),
+    phase: input.phase || previous.phase || (input.analysisMode ? "analisis" : "implementacion"),
     mapLines,
-    task: input.task || "",
-    files: input.files || [],
-    nextAction: input.nextAction || "Partir de este ROADMAP. No releer el proyecto entero.",
-    verified: input.verified || [],
+    task: input.task || previous.task || "",
+    files: uniqueLines([...(input.files || []), ...(previous.files || [])]).slice(0, 18),
+    nextAction: input.nextAction || previous.nextAction || "Partir de este ROADMAP. No releer el proyecto entero.",
+    verified: uniqueLines([...(input.verified || []), ...(previous.verified || [])]).slice(0, 10),
+    stack: input.stack || scan.stackInfo?.stack || previous.stack || [],
+    entries: input.entries || scan.stackInfo?.entries || previous.entries || [],
+    scripts: input.scripts || scan.stackInfo?.scripts || previous.scripts || [],
+    previewUrl: input.previewUrl || previous.previewUrl || "",
+    blockers: uniqueLines([...(input.blockers || []), ...(previous.blockers || [])]).slice(0, 10),
+    decisions: uniqueLines([...(input.decisions || []), ...(previous.decisions || [])]).slice(0, 10),
+    keyFiles: uniqueLines([
+      ...(input.keyFiles || []),
+      ...(previous.keyFiles || []),
+      ...(input.files || []),
+      ...(scan.stackInfo?.entries || []),
+    ]).slice(0, 16),
+    processNotes: input.processNotes || previous.processNotes || "",
   });
-  fs.mkdirSync(path.dirname(previous.absolute), { recursive: true });
-  fs.writeFileSync(previous.absolute, content, "utf8");
-  return { ...previous, exists: true, created: !previous.exists, updated: true, content };
+  fs.mkdirSync(path.dirname(previousRaw.absolute), { recursive: true });
+  fs.writeFileSync(previousRaw.absolute, content, "utf8");
+  return { ...previousRaw, exists: true, created: !previousRaw.exists, updated: true, content, scanned: needScan };
 }
 
 /**
@@ -195,6 +349,10 @@ function buildRoadmapSyncFromRun({
   analysisMode = false,
   completed = false,
   reportText = "",
+  previewUrl = "",
+  blockers = [],
+  decisions = [],
+  phase = "",
 } = {}) {
   const filesRead = [];
   const dirsListed = [];
@@ -219,28 +377,42 @@ function buildRoadmapSyncFromRun({
       if (gaps.length >= 6) break;
     }
   }
+  // Extraer bugs/errores evidentes del texto del turno
+  const inferredBlockers = [...(blockers || [])];
+  for (const match of report.matchAll(/(?:ERROR|Error|Multiple exports|failed|fall[oó])[^\n]{0,120}/gi)) {
+    const line = String(match[0] || "").replace(/\s+/g, " ").trim();
+    if (line.length > 12) inferredBlockers.push(line.slice(0, 160));
+    if (inferredBlockers.length >= 6) break;
+  }
   const mapLines = uniqueLines([
     ...dirsListed.map((d) => (d === "." ? "(raiz)/" : `${d}/`)),
     ...filesRead,
   ]);
   const files = uniqueLines([...mutated, ...filesRead.slice(0, 24)]);
+  const inferredPhase = phase
+    || (analysisMode ? (completed ? "analisis" : "analisis") : (completed ? (mutated.length ? "implementacion" : "listo") : "implementacion"));
   return {
-    task: String(task || "").slice(0, 220),
+    task: String(task || "").slice(0, 280),
     files,
     mapLines,
+    keyFiles: uniqueLines([...mutated, ...filesRead]).slice(0, 16),
+    blockers: uniqueLines([...inferredBlockers, ...gaps]).slice(0, 10),
+    decisions: uniqueLines(decisions).slice(0, 10),
+    phase: inferredPhase,
+    previewUrl: String(previewUrl || "").trim(),
     status: String(status || (
       analysisMode
         ? (completed
-          ? "Analisis cerrado. ROADMAP = indice compacto; no reexplorar lo mapeado."
+          ? "Analisis cerrado. ROADMAP = proceso + mapa; no reexplorar lo mapeado."
           : "Analisis en curso. ROADMAP checkpoint (ahorro de tokens).")
-        : (completed ? "Cambios cerrados. Partir de este ROADMAP." : "Corrida incompleta; retomar desde ROADMAP.")
+        : (completed ? "Cambios cerrados. Partir de este ROADMAP (proceso completo)." : "Corrida incompleta; retomar desde ROADMAP.")
     )).slice(0, 280),
     nextAction: String(nextAction || (
-      gaps.length
-        ? `Gaps: ${gaps.slice(0, 3).join("; ")}. Partir de este ROADMAP.`
-        : "Leer este ROADMAP y continuar. No reexplorar el proyecto entero."
+      gaps.length || inferredBlockers.length
+        ? `Resolver: ${(inferredBlockers[0] || gaps[0] || "").slice(0, 120)}. Partir de este ROADMAP.`
+        : "Leer este ROADMAP (Proceso + Tarea + Bloqueos) y continuar. No reexplorar el proyecto entero."
     )).slice(0, 280),
-    verified: gaps.slice(0, 6),
+    verified: uniqueLines(gaps).slice(0, 6),
   };
 }
 
@@ -248,14 +420,15 @@ function formatRoadmapForPrompt(projectRoot) {
   const loaded = readRoadmap(projectRoot);
   if (!loaded.content) {
     return [
-      "ROADMAP ausente. Analiza el disco (list_files + read_file de package.json/index.html) y CREA ROADMAP.md.",
+      "ROADMAP ausente. Analiza el disco (list_files + read_file de package.json/index.html) y CREA ROADMAP.md con Proceso+Mapa+Tarea+Bloqueos.",
       "PROHIBIDO pedir al usuario que lo pegue, suba o indique la ruta.",
     ].join(" ");
   }
   return [
-    `ROADMAP YA CARGADO (${loaded.relative}). Generado al analizar el proyecto. Este es el punto de partida.`,
+    `ROADMAP YA CARGADO (${loaded.relative}). Contiene el PROCESO del proyecto (fase, stack, bloqueos, tarea, mapa).`,
     "PROHIBIDO pedir el ROADMAP al usuario. PROHIBIDO list_files/read_file de todo el proyecto. Solo lee lo que vas a editar o lo que el mapa no cubre.",
     "Antes de cualquier búsqueda o glob: lee también .editcore/session-state.json (caché de árbol/mods).",
+    "Usa las secciones Proceso / Bloqueos / Tarea activa / Siguiente como memoria de continuidad entre mensajes del usuario.",
     loaded.content,
   ].join("\n");
 }
@@ -268,46 +441,33 @@ function appendPatchSummaryToRoadmap(projectRoot, { path: filePath = "", action 
   if (!rel || /^ROADMAP(\/ROADMAP)?\.md$/i.test(rel) || rel.startsWith(".editcore/")) {
     return { ok: true, skipped: true };
   }
-  const previous = readRoadmap(projectRoot);
+  const previousRaw = readRoadmap(projectRoot);
+  const previous = extractRoadmapMeta(previousRaw.content);
   const stamp = new Date().toISOString().slice(0, 16).replace("T", " ");
   const changeLine = summary
     ? `${rel} — ${String(summary).slice(0, 120)} (${stamp})`
     : `${rel} (${action}) @ ${stamp}`;
-  const previousChanges = (() => {
-    const block = String(previous.content || "").split(/##\s*Cambios recientes/i)[1]?.split(/##\s+/i)[0] || "";
-    return uniqueLines(
-      block.split(/\r?\n/)
-        .filter((line) => /^\s*-\s+/.test(line))
-        .map((line) => line.replace(/^\s*-\s+/, "").trim())
-        .filter((line) => line && !/^Ninguno/i.test(line)),
-    );
-  })();
-  const taskBlock = String(previous.content || "").split(/##\s*Tarea activa/i)[1]?.split(/##\s+/i)[0] || "";
-  const taskLine = taskBlock.split(/\r?\n/).find((line) => /^\s*-\s+/.test(line))?.replace(/^\s*-\s+/, "").trim() || "";
-  const nextBlock = String(previous.content || "").split(/##\s*Siguiente/i)[1]?.split(/##\s+/i)[0] || "";
-  const nextLine = nextBlock.split(/\r?\n/).find((line) => /^\s*-\s+/.test(line))?.replace(/^\s*-\s+/, "").trim() || "";
-  const verifiedBlock = String(previous.content || "").split(/##\s*Verificado/i)[1]?.split(/##\s+/i)[0] || "";
-  const verified = uniqueLines(
-    verifiedBlock.split(/\r?\n/)
-      .filter((line) => /^\s*-\s+/.test(line))
-      .map((line) => line.replace(/^\s*-\s+/, "").trim())
-      .filter((line) => line && !/^Pendiente$/i.test(line)),
-  );
-  const mapLines = previous.exists && !isStubRoadmap(previous.content)
-    ? parseMapLines(previous.content)
-    : scanProjectForRoadmap(projectRoot).mapLines;
   const content = renderRoadmap({
     title: projectTitle(projectRoot),
     status: `Patch OK: ${rel} (${stamp})`,
-    mapLines: uniqueLines([rel, ...mapLines]),
-    task: taskLine || `Último cambio: ${rel}`,
-    files: uniqueLines([changeLine, ...previousChanges]),
-    nextAction: nextLine || "Partir de ROADMAP + session-state; no reexplorar el repo.",
-    verified,
+    phase: previous.phase || "implementacion",
+    mapLines: uniqueLines([rel, ...(previous.mapLines || [])]),
+    task: previous.task || `Último cambio: ${rel}`,
+    files: uniqueLines([changeLine, ...(previous.files || [])]),
+    nextAction: previous.nextAction || "Partir de ROADMAP + session-state; no reexplorar el repo.",
+    verified: previous.verified || [],
+    stack: previous.stack || [],
+    entries: previous.entries || [],
+    scripts: previous.scripts || [],
+    previewUrl: previous.previewUrl || "",
+    blockers: previous.blockers || [],
+    decisions: previous.decisions || [],
+    keyFiles: uniqueLines([rel, ...(previous.keyFiles || [])]),
+    processNotes: previous.processNotes || "",
   });
-  fs.mkdirSync(path.dirname(previous.absolute), { recursive: true });
-  fs.writeFileSync(previous.absolute, content, "utf8");
-  return { ok: true, updated: true, path: previous.relative, change: changeLine };
+  fs.mkdirSync(path.dirname(previousRaw.absolute), { recursive: true });
+  fs.writeFileSync(previousRaw.absolute, content, "utf8");
+  return { ok: true, updated: true, path: previousRaw.relative, change: changeLine };
 }
 
 module.exports = {
@@ -322,4 +482,6 @@ module.exports = {
   formatRoadmapForPrompt,
   renderRoadmap,
   isStubRoadmap,
+  extractRoadmapMeta,
+  detectStackHints,
 };

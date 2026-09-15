@@ -174,7 +174,7 @@ function createAgentTransparencyEmitter(sender, { runId = "", projectId = "", pr
         exploreOpen = false;
         safeSend("agent:exploration-end", {
           tool: name,
-          summary: `Explored ${explored.size} file${explored.size === 1 ? "" : "s"}`,
+          summary: `Explorados ${explored.size} archivo${explored.size === 1 ? "" : "s"}`,
           count: explored.size,
           items: [...explored.values()].slice(-40),
         });

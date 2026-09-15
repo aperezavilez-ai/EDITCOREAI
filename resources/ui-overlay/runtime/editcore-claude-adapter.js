@@ -108,23 +108,19 @@ const AGENT_PROTOCOL_PATTERN = /"type"\s*:\s*"(?:tool|final)"|tool_call|tool_use
 
 function narrationClaimsMissingTools(text = "") {
   const raw = String(text || "");
-  // Modelos inventan "sin acceso al disco" aunque list_files/read_file/write_file esten activos.
   if (/no tengo acceso a (?:tu |el |las? )?(?:sistema de archivos|filesystem|disco|herramientas)/i.test(raw)) return true;
   if (/sin acceso (?:al|a (?:tu |el )?)(?:sistema de archivos|filesystem|disco|proyecto)/i.test(raw)) return true;
   if (/no (?:puedo|se puede) (?:acceder|continuar).{0,80}(?:sistema de archivos|filesystem|disco|proyecto|herramientas|archivos)/i.test(raw)) return true;
   if (/no puedo continuar/i.test(raw) && /acceso|archivos|herramientas|disco|filesystem/i.test(raw)) return true;
-  // "package.json no está disponible en el contexto" / "no verificables" sin volver a leer.
   if (/contenido (?:de )?(?:package\.json|el archivo).{0,40}no est[aá] disponible/i.test(raw)) return true;
   if (/no est[aá] disponible en el contexto/i.test(raw)) return true;
   if (/solo consta que (?:fue |se )?le[ií]d/i.test(raw)) return true;
   if (/\bno verificables?\b/i.test(raw) && /\b(?:dependencias|scripts|package\.json)\b/i.test(raw)) return true;
   if (/sin (?:sus )?dependencias ni scripts/i.test(raw)) return true;
-  // Claim concreto: write_file no expuesto / solo read_file (quema tokens en bucle).
   if (narrationClaimsWriteToolsMissing(raw)) return true;
   return /no (?:tengo|hay) acceso a\b.*\b(?:list_files|read_file|search_files)\b|herramientas de sistema de archivos|no (?:estan|están) disponibles.*(?:list_files|read_file)|(?:pega|comparte|env[ií]ame|adjunta|sube|indica(?:me)? la ruta).*(?:lista de archivos|package\.json|contenido de|roadmap)|(?:roadmap\.md?).{0,80}(?:pega|sube|adjunta|env[ií]ame|comparte)|en este entorno.*(list_files|read_file)/i.test(raw);
 }
 
-/** El modelo dice que write_file/replace_in_file no estan en la sesion (a menudo cierto si FOCO/analisis). */
 function narrationClaimsWriteToolsMissing(text = "") {
   const raw = String(text || "");
   if (!raw.trim()) return false;
@@ -208,11 +204,9 @@ const ANALYSIS_REPORT_PROMPT = [
 function sanitizeUserFacingReport(text) {
   let value = stripEliteFiller(String(text || "").trim());
   if (!value) return value;
-  // Nunca dejar llegar el meta-cierre al chat (analisis o ejecucion).
   value = value.replace(/^.*Verificacion completada con evidencia real.*$/gim, "");
   value = value.replace(/```[\w.-]*\n[\s\S]*?```/g, "");
   value = value.replace(/```[\s\S]*?```/g, "");
-  // Quitar arboles ASCII inventados y relleno conversacional.
   value = value.replace(/^[ \t]*[├└│─]+.*$/gm, "");
   value = value.replace(/^(?:Entendido\.?|Disculpa,.*|Procedo con.*|Voy a proceder.*|Déjame verificar.*)\s*$/gim, "");
   value = value.replace(/^[ \t]*[📋✅⚠️📊🎯🔴]+[ \t]*/gm, "");
@@ -220,7 +214,7 @@ function sanitizeUserFacingReport(text) {
     const trimmed = line.trim();
     const dumped = /^((?:[\w.@/-]+\/)*[\w.@-]+\.[a-zA-Z0-9]+)\s*:\s*(import\b|export\b|'use client'|"use client"|const\s|let\s|function\s|from\s)/i.exec(trimmed);
     if (dumped) {
-      return `- **${dumped[1]}**: hay codigo relevante; se revisara y corregira sin pegarlo en el chat.`;
+      return `- **${dumped}**: hay codigo relevante; se revisara y corregira sin pegarlo en el chat.`;
     }
     return line;
   }).filter((line) => {
@@ -228,7 +222,7 @@ function sanitizeUserFacingReport(text) {
     if (!trimmed) return true;
     if (/^(import|export|from|const|let|var|function|class|interface|type|enum)\s/.test(trimmed)) return false;
     if (/^[a-zA-Z_$][\w$]*\s*=\s*require\(/.test(trimmed)) return false;
-    if (/^['"]use (?:client|server)['"];?$/.test(trimmed)) return false;
+    if /^['"]use (?:client|server)['"];?$/.test(trimmed)) return false;
     if (/^[<{[\]();=+\-*\\/|&]+$/.test(trimmed)) return false;
     if (/Paso\s+\d+\s*:/i.test(trimmed) && /listado|lectura|explorando/i.test(trimmed)) return false;
     return true;
@@ -240,7 +234,6 @@ function reportLooksComplete(text) {
   return isAnalysisReport(text) || isPendingAnalysisPlan(text);
 }
 
-/** Eco del prompt del usuario (o casi) como "respuesta" = fallo duro. */
 function looksLikePromptEcho(prompt = "", candidate = "") {
   const a = String(prompt || "").replace(/\s+/g, " ").trim().toLowerCase();
   const b = String(candidate || "").replace(/\s+/g, " ").trim().toLowerCase();
@@ -252,7 +245,6 @@ function looksLikePromptEcho(prompt = "", candidate = "") {
   return false;
 }
 
-/** Respuesta corta de listado a partir de evidencia real (anti-plantilla forense). */
 function formatListOnlyAnswerFromSteps(steps = [], projectRoot = "", prompt = "") {
   const listSteps = (Array.isArray(steps) ? steps : []).filter((s) => s?.name === "list_files" && s.ok === true);
   if (!listSteps.length) return "";
@@ -298,9 +290,6 @@ function looksLikeNoMutationMessage(text = "") {
   return /Sin cambios reales en disco|No hubo write_file\/replace_in_file|progreso simulado/i.test(String(text || ""));
 }
 
-// Solo las lecturas puras son reutilizables desde el cache: una mutacion o un
-// comando deben ejecutarse siempre de verdad, y una escritura invalida las
-// lecturas previas de ese archivo.
 const READ_CACHEABLE_TOOLS = new Set([
   "list_files", "read_file", "search_files", "project_discovery", "codebase_map",
   "symbol_search", "dependency_search", "fetch_url",
@@ -315,15 +304,12 @@ class EditCoreClaudeAdapter {
     this.tokenBudget = options.tokenBudget || 100000;
     this.logger = options.logger || console;
 
-    // NO crear ActionRegistry aquí - se pasa desde afuera
     this.actionRegistry = null;
-    // Nuevos módulos de optimización
     this.tokenLedger = new TokenLedger();
     this.adaptiveBudget = new AdaptiveBudget(this.tokenBudget, { logger: this.logger });
     this.agentMemory = null;
     this.memoryProjectRoot = "";
 
-    // Referencias al sistema de EditCore (configuradas después)
     this.providerApi = null;
     this.toolExecutor = null;
     this.taskManager = null;
@@ -427,20 +413,12 @@ class EditCoreClaudeAdapter {
     return text;
   }
 
-  /**
-   * Analisis NO puede cerrar solo con seeds/walker + plantilla.
-   * Exige al menos 1 llamada al modelo (investigacion real).
-   */
   analysisHasModelInvestigation(finalText = "") {
     if (this.providerCalls < 1) return false;
     if (reportLooksComplete(finalText) || isAnalysisReport(finalText)) return true;
     return this.providerCalls >= 2 && String(finalText || "").trim().length >= 400;
   }
 
-  /**
-   * Fuerza turnos del modelo con tools hasta que investigue y redacte el informe.
-   * Esto es el deber ser del agente: no programar la respuesta del chat.
-   */
   async forceModelInvestigation(input, steps, { minModelTurns = 2, maxTurns = 10 } = {}) {
     let lastText = "";
     const startedAt = Date.now();
@@ -514,10 +492,6 @@ class EditCoreClaudeAdapter {
     return lastText;
   }
 
-  /**
-   * Unico cierre de analisis del orquestador: evidencia → informe (hallazgos + plan) → chat.
-   * No cambia el deber ser: analizar, reportar, proponer correcciones; PROCEDE sigue mutando.
-   */
   closeAnalysisWithReport(input, steps, candidateText = "", stopReason = "") {
     const text = this.finalizeAnalysisOnce(input, steps, candidateText || "");
     const safe = String(text || "").trim().length >= 80
@@ -534,34 +508,24 @@ class EditCoreClaudeAdapter {
     return { text: safe, stopReason: stopReason || "Analisis cerrado con reporte de hallazgos y plan." };
   }
 
-  /**
-   * Ejecuta una tarea completa del agente
-   */
   async executeTask(input) {
     this.steps = [];
     this.tokensUsed = 0;
     this.providerCalls = 0;
     this.tokenLedger = new TokenLedger();
-    // Contadores anti-repeticion: una accion identica repetida dentro de la
-    // misma corrida no crea pasos nuevos ni progreso en el chat; solo devuelve
-    // correccion al modelo, y si insiste la corrida se cierra con lo que hay.
     this.repeatCounts = new Map();
     this.wastedRepeats = 0;
     this.repeatWarned = false;
     this.narrationSeen = new Set();
     this.duplicateNarrationCount = 0;
     this.consecutiveNoToolTurns = 0;
-    // Si el modelo responde 2 turnos seguidos sin emitir tool_calls reales,
-    // normalmente cortamos para evitar gasto de tokens. Para casos donde
-    // el modelo "olvida" las tool calls al reintentar, damos 1 oportunidad
-    // extra forzando evidencia con herramientas antes de cerrar.
-        this.forcedToolAfterNoToolStop = false;
-        this.reportPromptSent = false;  // BUG 1/4 FIX: evita enviar el prompt de reporte más de una vez
-        this.brainRequiredNudgeSent = false;
-        this.hollowReportNudgeSent = false;
-        this._modelWaitNudgeSent = false;
-        this.writeToolsMissingNudgeSent = false;
-        this.verifiedCloseArmed = false;
+    this.forcedToolAfterNoToolStop = false;
+    this.reportPromptSent = false;
+    this.brainRequiredNudgeSent = false;
+    this.hollowReportNudgeSent = false;
+    this._modelWaitNudgeSent = false;
+    this.writeToolsMissingNudgeSent = false;
+    this.verifiedCloseArmed = false;
     this.forceTextOnlyClose = false;
     this.analysisDiagnosticSeeded = false;
     this.rejectionCounts = new Map();
@@ -574,9 +538,6 @@ class EditCoreClaudeAdapter {
       peak_request_input_tokens_estimate: 0,
     };
     const requestedBudget = Math.max(0, Number(input.maxTokens) || 0);
-    // Las tareas con escritura no deben morir por limites internos: presupuesto
-    // e iteraciones generosos; los guardas de progreso (fallos repetidos, loop
-    // detection, validacion de completitud) son los que protegen del gasto inutil.
     const cursorParityMode = isCursorParityActive({
       isAgent: input.orchestratorPlan?.isAgent !== false && input.allowWrite !== false,
       permissionFull: input.permissionMode === "full" || input.runProfile?.permissionFull === true,
@@ -591,7 +552,6 @@ class EditCoreClaudeAdapter {
       || (isListOnlyRequest(input.prompt) && input.promptOnlyMode !== true);
     input.listOnly = listOnly === true;
     if (listOnly) {
-      // El agente responde (1 list_files + 1 turno de modelo). Sin bucle ni plantilla forense.
       input.cursorParityMode = false;
       input.analysisMode = false;
       input.maxIterations = Math.min(2, Number(input.maxIterations) || 2);
@@ -610,7 +570,6 @@ class EditCoreClaudeAdapter {
     const instructionConstraints = resolveInstructionConstraints(
       String(input.rawUserPrompt || input.originalGoal || input.prompt || ""),
     );
-    // PROCEDE / plan autorizado: el usuario manda. Sin FOCO, sin cola obligatoria, sin candados de analisis.
     if (input.planAuthorized === true) {
       input.instructionConstraints = {
         active: false,
@@ -652,7 +611,6 @@ class EditCoreClaudeAdapter {
     } else {
       input.instructionConstraints = instructionConstraints;
     }
-    // FOCO retirado: nunca anunciarlo ni recortar presupuesto/iteraciones.
     if (input.instructionConstraints?.mode === "scoped" || input.instructionConstraints?.mode === "scoped_dir") {
       input.instructionConstraints = {
         active: false,
@@ -708,7 +666,6 @@ class EditCoreClaudeAdapter {
     });
     this.adaptiveBudget = new AdaptiveBudget(effectiveBudget, { logger: this.logger });
     
-    // Intent unificado: una sola decisión de modo (evita pelea renderer vs adapter)
     try {
       const classified = classifyUserIntent(input.prompt || input.userPrompt || "", {
         planAuthorizedExecution: input.planAuthorizedExecution === true,
@@ -727,9 +684,7 @@ class EditCoreClaudeAdapter {
       }
       input._unifiedIntent = classified;
       input.onProgress?.({ phase: "start", text: `Intent: ${classified.label}` });
-    } catch (e) {
-      /* intent best-effort */
-    }
+    } catch (e) {}
     
     this.harnessProfile = resolveHarnessProfile(input.analysisDepth, this.adaptiveBudget, {
       analysisMode: input.analysisMode === true,
@@ -741,15 +696,13 @@ class EditCoreClaudeAdapter {
       });
     }
 
-    // Verificar que ActionRegistry exista
     if (!this.actionRegistry) {
       throw new Error('ActionRegistry no inicializado. Debe ser pasado desde main.js');
     }
 
-    // Inicializar memoria del agente
     if (input.projectRoot && !listOnly && this.memoryProjectRoot !== input.projectRoot) {
       this.agentMemory = new AgentMemory(input.projectRoot, { maxConversations: 40 });
-    this.readCache = new RunReadCache();
+      this.readCache = new RunReadCache();
       this.memoryProjectRoot = input.projectRoot;
       await this.agentMemory.load();
       this.logger.log(`✓ [Memory] Cargada memoria persistente (${this.agentMemory.getSummary().conversations} conversaciones)`);
@@ -771,17 +724,15 @@ class EditCoreClaudeAdapter {
       ? []
       : filterStepsForScope(Array.isArray(input.resumeSteps) ? input.resumeSteps : [], this.runScope);
 
-    // La conversacion vive durante toda la tarea: prefijo estable (prompt cache)
-    // + harness compacta agresivo para no quemar tokens.
     const harnessConv = this.harnessProfile?.conversation || {};
     this.conversation = new ConversationLog({
       prefixMessages: this.buildPrefixMessages(input),
       maxChars: listOnly
         ? 24_000
-        : (Number(harnessConv.maxChars) || (cursorParityMode ? CURSOR_PARITY_LIMITS.conversationMaxChars : 80_000)),
+        : (Number(harnessConv.maxChars) || (cursorParityMode ? CURSOR_PARITY_LIMITS.conversationMaxChars : 140_000)),
       keepLastTurns: listOnly
         ? 4
-        : (Number(harnessConv.keepLastTurns) || (cursorParityMode ? CURSOR_PARITY_LIMITS.conversationTurns : 8)),
+        : (Number(harnessConv.keepLastTurns) || (cursorParityMode ? CURSOR_PARITY_LIMITS.conversationTurns : 24)),
     });
 
     const steps = scopedResume
@@ -795,7 +746,6 @@ class EditCoreClaudeAdapter {
     let emptyResponseRetries = 0;
     const EMPTY_PROVIDER_FALLBACK = "El proveedor no devolvio una instruccion ni una respuesta util.";
 
-    // PASO 1: evidencia en disco solo si el perfil lo exige (no en prompt-primero).
     if (listOnly) {
       await this.seedListOnlyFolder(input, steps);
     } else if (input.analysisMode === true && !input.promptOnlyMode && input.runProfile?.skipBootstrap !== true) {
@@ -810,7 +760,6 @@ class EditCoreClaudeAdapter {
       ].filter(Boolean).join("\n\n"));
     }
 
-    // PROCEDE: ejecucion libre autorizada por el usuario (sin FOCO obligatorio).
     this.fixQueue = Array.isArray(input.fixQueue) ? input.fixQueue : [];
     if (input.planAuthorized === true) {
       this.forceTextOnlyClose = false;
@@ -830,7 +779,6 @@ class EditCoreClaudeAdapter {
       this.fixQueue = (this.fixQueue || []).filter((item) => item?.target && !isJunkRepairTargetPath(item.target));
       input.fixQueue = this.fixQueue;
 
-      // Preleer candidatos si hay cola (ayuda a replace_in_file); si no hay, el modelo elige libremente.
       for (const item of this.fixQueue.slice(0, 5)) {
         if (!item?.target) continue;
         await this.executeSeedTool(input, steps, "read_file", { path: item.target });
@@ -865,7 +813,6 @@ class EditCoreClaudeAdapter {
       }
     }
 
-    // Contrato de trabajo: plan → ejecuta → verifica → cierra (sin llamadas extra al modelo).
     if (!listOnly && input.promptOnlyMode !== true) {
       this.conversation.appendUser([
         "CONTRATO DE TRABAJO (obligatorio):",
@@ -915,7 +862,6 @@ class EditCoreClaudeAdapter {
           this.conversation.keepLastTurns = Number(this.harnessProfile.conversation.keepLastTurns) || this.conversation.keepLastTurns;
         }
         const strategyNow = String(this.harnessProfile?.strategy || "");
-        // Solo una vez por cambio de estrategia (si no, hincha el contexto y el modelo se congela).
         if (input.analysisMode === true && strategyNow && strategyNow !== lastHarnessStrategy) {
           lastHarnessStrategy = strategyNow;
           const harnessNudge = buildHarnessSystemNudge(this.harnessProfile);
@@ -933,7 +879,6 @@ class EditCoreClaudeAdapter {
             "HARNESS: presupuesto critico. Escribe YA el reporte final con evidencia acumulada. PROHIBIDO mas herramientas."
           );
         }
-        // Anti-cuelgue: si se atasco en ROADMAP o en el mismo read fallido, forzar reporte.
         const recent = steps.slice(-6);
         const roadmapStuck = recent.filter((s) => /ROADMAP/i.test(String(s?.input?.path || ""))).length >= 2;
         const sameFail = recent.length >= 3
@@ -985,13 +930,9 @@ class EditCoreClaudeAdapter {
           stopReason = String(input.signal.reason?.message || input.signal.reason || "Ejecucion cancelada.");
           break;
         }
-        // El presupuesto economico lo gobierna GafCore Gateway. Este contador
-        // es telemetria y nunca detiene una tarea localmente.
 
-        // Detectar loops
         if (this.detectLoop(steps)) {
           stopReason = "Loop detectado - misma secuencia de acciones";
-          // Analisis: no tirar 139 pasos a la basura — cerrar con reporte grounded si hay evidencia.
           if (input.analysisMode === true) {
             const evidence = this.collectRunEvidence(steps);
             const opts = this.analysisSufficiencyOpts(input);
@@ -1028,16 +969,7 @@ class EditCoreClaudeAdapter {
           this.conversation.appendUser("Cambios y verificacion ya estan hechos. NO uses herramientas. NO publiques ni conectes servicios. Escribe un resumen breve y cierra.");
         }
 
-        // Early-exit por evidencia SOLO en corridas de solo lectura: en una
-        // tarea con escritura autorizada ("procede", "instala", "corrige") el
-        // modelo decide cuando terminar; adelantarse tras N lecturas dejaba
-        // tareas a medias. El rescate post-bucle sigue cubriendo el caso en el
-        // que el proveedor deja de responder sin emitir un final.
-        // En analisis el modelo decide cuando dejar de explorar; el reporte
-        // se fuerza solo al cierre (sin herramientas) o post-bucle.
         if (input.allowWrite === false && input.analysisMode !== true && this.canCompleteFromEvidence(input, requirements, steps)) {
-          // BUG 1 FIX: No cerrar con texto genérico. Pedir al modelo que genere
-          // el reporte final. Solo usar evidenceFinalText como último recurso.
           if (!this.reportPromptSent && i < effectiveMaxIterations - 2) {
             this.reportPromptSent = true;
             this.conversation.appendUser("Has acumulado evidencia suficiente del proyecto. Escribe ahora el REPORTE FINAL completo en markdown. Incluye: ## Resumen del proyecto, ## Problemas encontrados, ## Recomendaciones concretas. NO llames más herramientas. Responde en español sin pegar código fuente.");
@@ -1049,7 +981,6 @@ class EditCoreClaudeAdapter {
           break;
         }
 
-        // Obtener siguiente turno del modelo (texto narrativo + tool calls)
         let turn;
         try {
           const workerDeathErr = typeof input.pullWorkerDeathError === "function" ? input.pullWorkerDeathError() : null;
@@ -1086,7 +1017,6 @@ class EditCoreClaudeAdapter {
               input.failover.applyProfileToInput(input, failoverResult.profile);
               input.failover.markExecutionResumed(failoverResult.profile);
               input.resetWorkerHealth?.();
-              // Silencioso: el chat no anuncia cambio de modelo; solo sigue trabajando.
               input.onProgress?.({
                 phase: "model",
                 text: "Trabajando…",
@@ -1115,8 +1045,7 @@ class EditCoreClaudeAdapter {
                   stopReason = "Reporte del modelo tras fallo temporal del proveedor.";
                   break;
                 }
-              } catch (_) { /* post-bucle forzara investigacion */ }
-              // NO cerrar con plantilla: el post-bucle exige turnos reales del modelo.
+              } catch (_) {}
               stopReason = "Proveedor fallo; se forzara investigacion del modelo al cierre.";
               break;
             } else {
@@ -1134,7 +1063,6 @@ class EditCoreClaudeAdapter {
           const msg = String(apiError?.message || "");
           const isProviderTimeout = apiError?.code === "PROVIDER_TIMEOUT"
             || /timeout|timed out|sin tokens nuevos|sin respuesta completa|Timeout duro/i.test(msg);
-          // Analisis: si el modelo se cuelga al redactar, NO reintentar 3x (parece "Redactando..." eterno).
           if (isProviderTimeout && input.analysisMode === true) {
             const evidence = this.collectRunEvidence(steps, input.projectRoot || "");
             const toolOk = steps.filter((step) => step.ok === true && ["list_files", "read_file", "search_files"].includes(String(step.name || ""))).length;
@@ -1145,7 +1073,7 @@ class EditCoreClaudeAdapter {
               try {
                 drafted = await this.requestAnalysisReport(input, steps, { appendPrompt: !this.reportPromptSent });
                 this.reportPromptSent = true;
-              } catch (_) { /* fallback */ }
+              } catch (_) {}
               if (this.analysisHasModelInvestigation(drafted || finalText)) {
                 completed = true;
                 finalText = this.finalizeAnalysisOnce(input, steps, drafted || finalText || "");
@@ -1153,20 +1081,15 @@ class EditCoreClaudeAdapter {
                 break;
               }
             }
-            // Sin investigacion del modelo: salir del loop y forzar en post-bucle.
             stopReason = "Timeout del modelo; se reintentara investigacion al cierre.";
             break;
           }
           const isMalformedToolJson = apiError?.code === "MALFORMED_TOOL_JSON"
             || /unexpected token|json\.parse|invalid json|malformed/i.test(msg);
-          // JSON roto: hasta 2 reintentos con corrección antes de fallar.
-          // En cada reintento le pedimos al modelo que responda en texto plano
-          // sin usar herramientas para evitar que vuelva a generar JSON corrupto.
           if (isMalformedToolJson) {
             this._malformedJsonRetries = Number(this._malformedJsonRetries || 0) + 1;
             this.logger.warn(`⚠️ [API] JSON de herramienta mal formado (intento ${this._malformedJsonRetries}/2); forzando failover si persiste: ${msg}`);
             if (this._malformedJsonRetries < 3 && i < effectiveMaxIterations - 1) {
-              // Inyectar mensaje de autocorrección: pedir respuesta en texto sin tools
               this.conversation.appendUser(
                 "EDITCORE AUTOCORRECCIÓN: Tu última respuesta contenía JSON de herramienta mal formado. " +
                 "Responde ahora con texto plano en español describiendo qué necesitas hacer a continuación. " +
@@ -1210,9 +1133,6 @@ class EditCoreClaudeAdapter {
           throw apiError;
         }
 
-        // BUG 4 FIX: Si el modelo devolvió texto sin herramientas y el contexto es muy
-        // grande (>60k chars), es probable overflow de ventana. Compactar agresivamente
-        // y reintentar para que el modelo trabaje con contexto reducido.
         const ctxLen = this.conversation.serializedLength();
         if (!turn.toolCalls?.length && turn.text && steps.length > 4 && ctxLen > 60_000 && i < effectiveMaxIterations - 3 && !this.reportPromptSent) {
           const prevMax = this.conversation.maxChars;
@@ -1231,7 +1151,6 @@ class EditCoreClaudeAdapter {
           }
         }
 
-        // Resolver las acciones del turno: tool_calls nativos o protocolo JSON.
         const actions = [];
         let finalAction = null;
         const nativeCalls = Array.isArray(turn.toolCalls) ? turn.toolCalls : [];
@@ -1258,9 +1177,6 @@ class EditCoreClaudeAdapter {
         const simulatedNarration = narration
           && narrationLooksLikeSimulatedWork(narration, steps, input.projectRoot || "", { requiresWrite: writeExecution });
 
-        // HARD STOP: el modelo dice que write_file no esta expuesto.
-        // En ANALISIS eso es NORMAL (solo lectura): NO cerrar la corrida.
-        // En EJECUCION: si no hay write → cerrar; si hay → corregir 1 vez.
         if (narration && narrationClaimsWriteToolsMissing(narration)) {
           if (input.analysisMode === true) {
             if (!this.writeToolsMissingNudgeSent && i < effectiveMaxIterations - 1) {
@@ -1276,7 +1192,6 @@ class EditCoreClaudeAdapter {
                 text: "Modo analisis (solo lectura). Continuando exploracion...",
               });
             }
-            // Descartar tool_calls de escritura si vinieran; seguir el loop.
             for (const action of actions) {
               if (action.callId && ["write_file", "replace_in_file", "apply_diff", "delete_file"].includes(String(action.name || ""))) {
                 this.conversation.appendToolResult(action.callId, action.name, {
@@ -1288,59 +1203,58 @@ class EditCoreClaudeAdapter {
             actions.length = 0;
             actions.push(...readActions);
             if (!actions.length) {
-              // Solo narracion sobre "no puedo escribir": pedir tools de lectura, no cerrar.
               continue;
             }
           } else {
-          const exposed = this.getAvailableTools(input);
-          const hasWrite = toolsIncludeWrite(exposed);
-          if (!hasWrite || writeExecution !== true) {
-            if (narrationTrack.emit) {
-              input.onProgress?.({
-                phase: "narration_delta",
-                stage: this.stageForSteps(steps),
-                index: steps.length,
-                text: narration,
-              });
-            }
-            for (const action of actions) {
-              if (action.callId) {
-                this.conversation.appendToolResult(action.callId, action.name, {
-                  error: "EditCore cerro la corrida: no hay herramientas de escritura en esta sesion.",
+            const exposed = this.getAvailableTools(input);
+            const hasWrite = toolsIncludeWrite(exposed);
+            if (!hasWrite || writeExecution !== true) {
+              if (narrationTrack.emit) {
+                input.onProgress?.({
+                  phase: "narration_delta",
+                  stage: this.stageForSteps(steps),
+                  index: steps.length,
+                  text: narration,
                 });
               }
+              for (const action of actions) {
+                if (action.callId) {
+                  this.conversation.appendToolResult(action.callId, action.name, {
+                    error: "EditCore cerro la corrida: no hay herramientas de escritura en esta sesion.",
+                  });
+                }
+              }
+              completed = false;
+              finalText = [
+                "## Escritura no disponible en esta sesión",
+                "",
+                "En este turno no estaban expuestas `write_file` / `replace_in_file` (modo analisis, solo lectura o FOCO de lectura).",
+                "Activa **Paso a paso** o **Acceso completo**, escribe **PROCEDE** y reintenta la correccion.",
+                "",
+                "No se modifico ningun archivo.",
+              ].join("\n");
+              stopReason = "Escritura no expuesta: se detiene para no quemar tokens.";
+              this.logger.warn("⏹ [Claude Code] Stop: write tools no expuestas (anti-bucle tokens)");
+              break;
+            }
+            if (!this.writeToolsMissingNudgeSent && i < effectiveMaxIterations - 1) {
+              this.writeToolsMissingNudgeSent = true;
+              this.conversation.appendUser(
+                "VALIDACION DE EDITCORE: FALSO. `write_file` y `replace_in_file` SI estan en las herramientas de esta sesion. "
+                + "Emite AHORA un tool_call real de write_file o replace_in_file. PROHIBIDO afirmar que no estan expuestas.",
+              );
+              input.onProgress?.({ phase: "model", text: "Herramientas de escritura SI disponibles. Reintentando..." });
+              continue;
             }
             completed = false;
             finalText = [
-              "## Escritura no disponible en esta sesión",
+              "## No se pudo escribir",
               "",
-              "En este turno no estaban expuestas `write_file` / `replace_in_file` (modo analisis, solo lectura o FOCO de lectura).",
-              "Activa **Paso a paso** o **Acceso completo**, escribe **PROCEDE** y reintenta la correccion.",
-              "",
-              "No se modifico ningun archivo.",
+              "Las herramientas de escritura estaban disponibles pero el modelo no las uso tras la correccion.",
+              "Escribe **PROCEDE** de nuevo para reintentar.",
             ].join("\n");
-            stopReason = "Escritura no expuesta: se detiene para no quemar tokens.";
-            this.logger.warn("⏹ [Claude Code] Stop: write tools no expuestas (anti-bucle tokens)");
+            stopReason = "Modelo insistio en que no hay write_file pese a estar expuesto.";
             break;
-          }
-          if (!this.writeToolsMissingNudgeSent && i < effectiveMaxIterations - 1) {
-            this.writeToolsMissingNudgeSent = true;
-            this.conversation.appendUser(
-              "VALIDACION DE EDITCORE: FALSO. `write_file` y `replace_in_file` SI estan en las herramientas de esta sesion. "
-              + "Emite AHORA un tool_call real de write_file o replace_in_file. PROHIBIDO afirmar que no estan expuestas.",
-            );
-            input.onProgress?.({ phase: "model", text: "Herramientas de escritura SI disponibles. Reintentando..." });
-            continue;
-          }
-          completed = false;
-          finalText = [
-            "## No se pudo escribir",
-            "",
-            "Las herramientas de escritura estaban disponibles pero el modelo no las uso tras la correccion.",
-            "Escribe **PROCEDE** de nuevo para reintentar.",
-          ].join("\n");
-          stopReason = "Modelo insistio en que no hay write_file pese a estar expuesto.";
-          break;
           }
         }
 
@@ -1364,7 +1278,6 @@ class EditCoreClaudeAdapter {
             continue;
           }
           if (listOnlyDone) {
-            // El agente ya listo: su texto ES la respuesta final (no exigir write_file).
             let answer = narration;
             if (looksLikeForensicListDrift(answer)) {
               answer = formatListOnlyAnswerFromSteps(steps, input.projectRoot || "", input.prompt || "") || answer;
@@ -1430,7 +1343,6 @@ class EditCoreClaudeAdapter {
             break;
           }
 
-          // Hard stop: dos turnos seguidos sin herramientas = bucle de narracion.
           if (this.consecutiveNoToolTurns >= 2 && finalText) {
             if (!this.forcedToolAfterNoToolStop && i < effectiveMaxIterations - 1 && input.listOnly !== true) {
               this.forcedToolAfterNoToolStop = true;
@@ -1449,7 +1361,6 @@ class EditCoreClaudeAdapter {
               const evidence = this.collectRunEvidence(steps, input.projectRoot || "");
               const sufficiencyOpts = this.analysisSufficiencyOpts(input);
               const codeReads = Number(evidence.realFileReadCount || (evidence.filesRead || []).length || 0);
-              // Con muchas lecturas reales, cerrar con reporte aunque el modelo deje de usar tools
               if (analysisEvidenceSufficient(evidence, sufficiencyOpts).ok || codeReads >= 8 || steps.filter((s) => s.ok !== false).length >= 12) {
                 completed = true;
                 finalText = this.finalizeAnalysisOnce(input, steps, reportLooksComplete(finalText) ? finalText : "");
@@ -1467,7 +1378,6 @@ class EditCoreClaudeAdapter {
             break;
           }
 
-          // Cortar bucle de tokens: misma respuesta repetida o reporte ya mostrado.
           if (finalText && (narrationTrack.duplicate || (reportBlocksRepetition(finalText) && this.duplicateNarrationCount >= 1))) {
             if (input.analysisMode === true) {
               const evidence = this.collectRunEvidence(steps, input.projectRoot || "");
@@ -1489,7 +1399,6 @@ class EditCoreClaudeAdapter {
             break;
           }
 
-          // Analisis: evidencia suficiente + respuesta sin herramientas → cerrar ya (no exigir formato perfecto).
           if (input.analysisMode === true && finalText) {
             const evidence = this.collectRunEvidence(steps, input.projectRoot || "");
             const sufficiencyOpts = this.analysisSufficiencyOpts(input);
@@ -1516,7 +1425,6 @@ class EditCoreClaudeAdapter {
             continue;
           }
 
-          // Tras PROCEDE: narrar "ACCIÓN 1" o inventar "sin acceso" sin herramientas NO cuenta como progreso.
           if (input.planAuthorized === true && input.allowWrite === true && input.analysisMode !== true
             && !hasMutationEvidence(steps)) {
             if (i < effectiveMaxIterations - 1) {
@@ -1545,7 +1453,6 @@ class EditCoreClaudeAdapter {
             break;
           }
 
-          // Analisis: rechazar narracion que contradice read_file exitosos.
           if (input.analysisMode === true && finalText) {
             const evidence = collectToolEvidence(steps, input.projectRoot || "", this.runScope);
             const contradiction = detectContradictoryEvidence(finalText, evidence);
@@ -1557,7 +1464,6 @@ class EditCoreClaudeAdapter {
             }
           }
 
-          // Analisis: rechazar inventos; si ya hay evidencia real, cerrar con reporte anclado.
           if (input.analysisMode === true && finalText
             && narrationLooksLikeInventedAnalysis(finalText, steps, input.projectRoot || "")) {
             const evidence = collectToolEvidence(steps, input.projectRoot || "", this.runScope);
@@ -1585,7 +1491,6 @@ class EditCoreClaudeAdapter {
             break;
           }
 
-          // Nunca abandonar pidiendo que el usuario pegue archivos: tools existen o se piden permisos.
           if (input.analysisMode === true && finalText && narrationClaimsMissingTools(finalText)) {
             input.onProgress?.({
               phase: "model",
@@ -1650,8 +1555,6 @@ class EditCoreClaudeAdapter {
             continue;
           }
 
-          // BUG 6 FIX: Si el modelo responde "Necesito ver/leer más archivos" SIN llamar
-          // herramientas, es confusión o contexto saturado. Redirigir en lugar de aceptar.
           const isIndecisiveText = finalText
             && /\bnecesito\s+(?:ver|leer|revisar|analizar|inspeccionar|examinar)\b|\bdebo\s+(?:ver|leer|revisar|analizar)\b|\bpara\s+poder\s+(?:darte|entregarte|generar)\b|\bantes\s+de\s+cerrar\b|\bconsulta\s+opcional\s+al\s+cerebro\b|\bhar[eé]\s+(?:una\s+)?(?:consulta|tanda|lectura)/i.test(finalText)
             && i < effectiveMaxIterations - 2
@@ -1684,13 +1587,10 @@ class EditCoreClaudeAdapter {
             continue;
           }
           if (input.analysisMode === true && completed) {
-            // Analisis profundo: NO forzar Cerebro (quema turnos y cierra temprano).
             finalText = this.finalizeAnalysisOnce(input, steps, finalText);
             const awaitingAuth = isPendingAnalysisPlan(finalText)
               || /Cuando autorices procedo/i.test(String(finalText || ""))
               || /esperando autorizacion/i.test(String(stopReason || ""));
-            // Si YA pidio autorizacion, el reporte es terminal: no reabrir el loop
-            // por umbral de cobertura (causa de "Trabajando..." eterno).
             if (awaitingAuth) {
               stopReason = stopReason || "Analisis cerrado: esperando autorizacion del usuario.";
               input.onProgress?.({
@@ -1723,7 +1623,6 @@ class EditCoreClaudeAdapter {
               }
               if (!sufficiency.ok && coverageRejects > 2) {
                 this.rejectionCounts.set("coverage", coverageRejects);
-                // Cap: cierra con lo que hay para no quemar tokens.
                 completed = true;
                 finalText = this.finalizeAnalysisOnce(input, steps, reportLooksComplete(finalText) ? finalText : "");
                 stopReason = "Analisis cerrado tras 2 rechazos de cobertura (anti-bucle tokens).";
@@ -1796,8 +1695,6 @@ class EditCoreClaudeAdapter {
             stopReason = failedNow.length
               ? `La ejecucion termino con ${failedNow.length} accion(es) fallida(s).`
               : steps.length ? "La tarea no tiene evidencia suficiente de ejecucion exitosa." : "El modelo intento finalizar sin ejecutar herramientas.";
-            // En analisis un fallo cierra honesto; en modo tarea el fallo se
-            // devuelve al modelo para que lo corrija o use una alternativa.
             if (failedNow.length && input.analysisMode === true) break;
             stopReason = validation?.reason || stopReason;
             finalRejections += 1;
@@ -1806,14 +1703,13 @@ class EditCoreClaudeAdapter {
               .map((step) => `${step.name}: ${String(step.result?.error || "").slice(0, 140)}`)
               .filter(Boolean)
               .join(" | ");
-            this.conversation.appendUser(`VALIDACION DE EDITCORE: ${stopReason}${failDetail ? ` Fallos pendientes: ${failDetail}.` : ""} No puedes terminar todavia: corrige la causa o usa una alternativa con herramientas, verifica despues de la ultima escritura y entonces entrega el reporte final.`);
+            this.conversation.appendUser(`VALIDACION DE EDITCORE: ${stopReason}${failDetail ? ` Fallos pendientes: ${failDetail}.` : ""} No puedes terminar todavia: corrige la causa o usa una alternativa con herramientas, verifica despues de la última escritura y entonces entrega el reporte final.`);
             if (i < effectiveMaxIterations - 1) continue;
           }
           this.logger.log(`✓ [Claude Code] Completado: ${steps.length} pasos`);
           break;
         }
 
-        // Listado: si ya hay list_files ok, no ejecutar mas tools; exigir respuesta de texto.
         if (input.listOnly === true && actions.length
           && steps.some((step) => step.name === "list_files" && step.ok === true)) {
           this.forceTextOnlyClose = true;
@@ -1823,9 +1719,6 @@ class EditCoreClaudeAdapter {
           continue;
         }
 
-        // Analisis: si el modelo YA pidio autorizacion, CERRAR YA.
-        // No seguir con mas tools ni regenerar (evita "Trabajando..." eterno y reportes pegados).
-        // Acceso completo: NO pausar por PROCEDE (el permiso ya autoriza).
         const permissionFullNowPause = input.permissionMode === "full"
           || input.runProfile?.permissionFull === true
           || input.orchestratorPlan?.permissionFull === true;
@@ -1875,7 +1768,6 @@ class EditCoreClaudeAdapter {
         }
 
         this.consecutiveNoToolTurns = 0;
-        // Analisis: UNA herramienta por turno (estilo Cursor). El resto se difiere.
         if (input.analysisMode === true && actions.length > 1) {
           const [firstAction, ...deferred] = actions;
           for (const extra of deferred) {
@@ -1893,8 +1785,7 @@ class EditCoreClaudeAdapter {
             text: "Modo serial: 1 archivo/carpeta por paso (sin saturar)...",
           });
         }
-        // Ejecutar TODAS las acciones del turno en orden. Cada tool_call
-        // recibe exactamente un resultado (exito, cache, rechazo o error).
+
         let forceFeedback = "";
         for (const action of actions) {
           if (forceFeedback) {
@@ -1904,7 +1795,7 @@ class EditCoreClaudeAdapter {
           if (this.shouldForceImplementation(input, requirements, steps, action)) {
             forceFeedback = input.runProfile?.greenfieldCreate || input.orchestratorPlan?.greenfieldCreate
               ? "Creacion de proyecto: deja de explorar. Escribe AHORA los archivos con write_file (README, package.json, src/, etc.)."
-              : "STOP EXPLORACION: ya tienes suficiente evidencia de lectura. El plan esta autorizado. Ahora DEBES modificar codigo con write_file o replace_in_file (o run_command si aplica) y luego verificar. NO hagas mas list_files/read_file/search_files hasta haber escrito. PROHIBIDO reescribir el mismo archivo en bucle.";
+              : "STOP EXPLORACION: ya tienes suficiente evidencia de lectura. El plan esta autorizado. Ahora DEBES modificar codigo con write_file o replace_in_file (o run_command si aplica) y luego verificar. NO haz mas list_files/read_file/search_files hasta haber escrito. PROHIBIDO reescribir el mismo archivo en bucle.";
             this.conversation.appendToolResult(action.callId, action.name, { error: forceFeedback });
             input.onProgress?.({ phase: "narration", stage: "implementation", index: steps.length, text: "Forzando implementación: suficiente lectura, ahora se aplica el cambio real." });
             continue;
@@ -1953,19 +1844,16 @@ class EditCoreClaudeAdapter {
             const writeTools = ["write_file", "replace_in_file", "delete_file", "apply_diff"];
             if (writeTools.includes(String(action.name || ""))) {
               const targetRaw = String(action.input?.path || "").replace(/\\/g, "/");
-              // Solo bloquear vendor/minificado obvio; el usuario autorizo ejecucion libre.
               if (isVendorOrGeneratedPath(targetRaw) && !/force|forzar|vendor/i.test(String(input.prompt || ""))) {
                 this.conversation.appendToolResult(action.callId, action.name, {
                   error: "Evitado: archivo vendor/minificado. Elige codigo fuente en src/ (o pide forzar vendor).",
                 });
                 continue;
               }
-              // Sin dispatcher FOCO: PROCEDE puede mutar cualquier path del proyecto.
               syncFixQueueWithSteps(this.fixQueue || [], steps, input.projectRoot || "");
             }
           }
 
-          // Bloquear reescrituras del mismo archivo (evita bucle write_file una y otra vez)
           action.projectRoot = input.projectRoot;
           if (MUTATION_TOOLS.has(action.name)) {
             const mutPath = String(action.input?.path || action.input?.filePath || "").trim().toLowerCase().replace(/\\/g, "/");
@@ -1986,8 +1874,6 @@ class EditCoreClaudeAdapter {
             }
           }
 
-          // CACHE de lecturas: devolver resultado real, NUNCA error en el primer hit
-          // (el bug anterior hacia repeats>=1 → error → el modelo releia por otra ruta).
           if (READ_CACHEABLE_TOOLS.has(action.name) && this.actionRegistry.wasExecuted(action)) {
             const actionHash = this.actionRegistry.hash(action);
             const repeats = (this.repeatCounts.get(actionHash) || 0) + 1;
@@ -2040,7 +1926,6 @@ class EditCoreClaudeAdapter {
             continue;
           }
 
-          // Ejecutar acción con fallback
           input.onProgress?.({
             phase: "tool",
             stage: "running",
@@ -2055,18 +1940,15 @@ class EditCoreClaudeAdapter {
             result = await this.executeWithFallback(action);
             input.assertExecutionActive?.(toolEpoch);
 
-            // Registrar éxito en ActionRegistry
             this.actionRegistry.record(action, result, true);
             if (READ_CACHEABLE_TOOLS.has(action.name)) {
               this.repeatCounts.set(this.actionRegistry.hash(action), 1);
             }
 
-            // Una mutacion invalida las lecturas cacheadas de ese archivo.
             if (MUTATION_TOOLS.has(action.name) && typeof this.actionRegistry.invalidatePath === "function") {
               this.actionRegistry.invalidatePath(String(action.input?.path || ""));
             }
 
-            // Registrar en memoria si es lectura/escritura de archivo
             if (this.agentMemory && (action.name === 'read_file' || action.name === 'write_file')) {
               const filePath = action.input?.path || action.input?.filePath || '';
               if (filePath) {
@@ -2096,7 +1978,6 @@ class EditCoreClaudeAdapter {
               verificationPassed: diagnosticFailed ? false : true,
             });
             this.conversation.appendToolResult(action.callId, action.name, this.compactResult(result));
-            // Tras escritura exitosa: no reescribir; verificar y cerrar
             if (MUTATION_TOOLS.has(action.name) && !diagnosticFailed) {
               const written = String(action.input?.path || action.input?.filePath || "el archivo");
               this.conversation.appendUser(`CAMBIO APLICADO en ${written}. No lo reescribas. Siguiente: verifica (read_file o run_command) y entrega el REPORTE FINAL en markdown (## Que hice, ## Verificacion, ## Pendientes). Prohibido volver a write_file sobre el mismo path.`);
@@ -2114,14 +1995,12 @@ class EditCoreClaudeAdapter {
               ].join(" "));
             }
 
-            // Registrar en ledger (estimado: 100 tokens por operación)
             this.tokenLedger.record(action.name, 100, 50);
             if (input.planAuthorized === true) {
               this.refreshFixQueueFocus(input, steps);
             }
 
           } catch (error) {
-            // Registrar fallo en ActionRegistry
             this.actionRegistry.record(action, { error: error.message }, false);
 
             steps.push({
@@ -2144,31 +2023,23 @@ class EditCoreClaudeAdapter {
             });
             this.conversation.appendToolResult(action.callId, action.name, { error: error.message, nota: "Corrige la causa real o cambia de estrategia; no repitas la misma entrada fallida." });
 
-            // Registrar en ledger
             this.tokenLedger.record(action.name, 50, 0);
           }
 
-          // Actualizar progreso
           if (this.taskManager?.updateProgress) {
             try {
               this.taskManager.updateProgress(steps[steps.length - 1]);
-            } catch (e) {
-              // Ignorar errores de taskManager
-            }
+            } catch (e) {}
           }
 
-          // Crear checkpoint cada 5 pasos
           if (steps.length % 5 === 0 && this.taskManager?.createCheckpoint) {
             try {
               this.taskManager.createCheckpoint(steps);
-            } catch (e) {
-              // Ignorar errores de checkpoint
-            }
+            } catch (e) {}
           }
         }
         if (forceFeedback) this.conversation.appendUser(`VALIDACION DE EDITCORE: ${forceFeedback}`);
 
-        // Auto-fix: tras mutaciones exitosas del turno, corre lint/typecheck y pide correccion.
         if (
           input.allowWrite === true
           && input.analysisMode !== true
@@ -2215,14 +2086,10 @@ class EditCoreClaudeAdapter {
                       reason: fixState.message || "auto-fix agotado",
                       diag,
                     });
-                  } catch {
-                    // Rollback best-effort: no tumbar el agente.
-                  }
+                  } catch {}
                 }
               }
-            } catch {
-              // Nunca tumbar el agente por fallo de diagnostico.
-            }
+            } catch {}
           }
         }
 
@@ -2236,9 +2103,6 @@ class EditCoreClaudeAdapter {
             break;
           }
         } else {
-          // Solo la racha pendiente puede detener la tarea. Los errores de
-          // formato, politica o estado obsoleto son recuperables si el modelo
-          // cambia de estrategia; no deben acumularse despues de un exito.
           const trailingFailures = [];
           for (let k = steps.length - 1; k >= 0 && steps[k].ok !== true; k--) trailingFailures.unshift(steps[k]);
           const failureSignatures = trailingFailures.map((step) => `${step.name}:${JSON.stringify(step.input || {})}`);
@@ -2252,9 +2116,6 @@ class EditCoreClaudeAdapter {
           }
         }
 
-        // Analisis: tras tools, completar cobertura con walker y PEDIR al modelo
-        // que redacte el informe. Nunca cerrar aqui con plantilla local (eso
-        // programaba la respuesta del chat en vez de dejar investigar al agente).
         if (input.analysisMode === true && actions.length > 0) {
           const projectRoot = input.projectRoot || "";
           const sufficiencyOpts = this.analysisSufficiencyOpts(input);
@@ -2290,8 +2151,6 @@ class EditCoreClaudeAdapter {
         }
       }
 
-      // Analisis: NUNCA cerrar solo con seeds/walker + plantilla (eso salia en 1s).
-      // Exigir investigacion real del modelo antes de marcar completed.
       if (input.analysisMode === true) {
         if (!this.analysisHasModelInvestigation(finalText)) {
           input.onProgress?.({
@@ -2316,7 +2175,6 @@ class EditCoreClaudeAdapter {
           finalText = closed.text;
           stopReason = closed.stopReason;
         } else if (!completed) {
-          // Ultimo recurso: un turno de informe; si no hay modelo, marcar incompleto.
           try {
             const drafted = await this.requestAnalysisReport(input, steps, { appendPrompt: !this.reportPromptSent });
             this.reportPromptSent = true;
@@ -2391,7 +2249,6 @@ class EditCoreClaudeAdapter {
         }
       }
 
-      // Analisis incompleto: mensaje honesto (nunca fingir completed con plantilla).
       if (!completed && input.analysisMode === true && !finalText) {
         finalText = this.finalizeAnalysisOnce(input, steps, "");
         stopReason = stopReason || "Analisis incompleto: falta investigacion del modelo. Escribe CONTINUA.";
@@ -2417,11 +2274,7 @@ class EditCoreClaudeAdapter {
         stopReason = closed.stopReason;
       }
 
-      // Guardar memoria al finalizar
       if (this.agentMemory) {
-        // BUG 6 FIX: No guardar como resumen textos no-reporte: "Necesito ver..."
-        // o el mensaje genérico de evidencia. La próxima corrida empezaría
-        // en un estado inservible generando el loop de recovery.
         const rawConclusion = finalText || stopReason || "";
         const isRealReport = rawConclusion.length > 80
           && !/\bnecesito\s+(?:ver|leer|revisar)\b|Verificacion completada con evidencia real/i.test(rawConclusion);
@@ -2460,7 +2313,6 @@ class EditCoreClaudeAdapter {
         } catch {}
       }
 
-      // Mostrar reporte de tokens
       const ledgerSummary = this.tokenLedger.getSummary();
       this.logger.log(`📊 [Ledger] ${ledgerSummary.totalTokens} tokens | ${ledgerSummary.savingsPercent}% ahorro por cache`);
       const verificationCommands = [...new Set(steps
@@ -2468,7 +2320,6 @@ class EditCoreClaudeAdapter {
         .map((step) => String(step.input?.command || "").trim())
         .filter(Boolean))];
       const progressMade = steps.some((step) => step.ok === true);
-      // Contar iteraciones de modelo (providerCalls/modelIterations), no steps.
       const iterationLimitHit = !completed && (
         this.providerCalls >= Math.max(1, effectiveMaxIterations - 1)
         || modelIterations >= effectiveMaxIterations
@@ -2485,14 +2336,11 @@ class EditCoreClaudeAdapter {
         || isPendingAnalysisPlan(finalText)
         || /Cuando autorices procedo/i.test(String(finalText || ""))
       );
-      // FOCO 1 archivo: nunca auto-reanudar (evita 3×6 min de hang).
-      // Tampoco auto-reanudar si ya se pidio autorizacion al usuario.
       const autoResumeRecommended = !awaitingAuthorization && !scopedDone && !completed && progressMade && (
         iterationLimitHit
         || /Loop detectado|repitio demasiadas|checkpoint|limite total|excedio el limite|fallos consecutivos|sin herramientas/i.test(String(stopReason || ""))
       );
 
-      // Cola FOCO + evidencia (analisis → plan durable; PROCEDE → mutacion).
       let resultFixQueue = Array.isArray(this.fixQueue) ? this.fixQueue : [];
       let resultEvidence = null;
       try {
@@ -2506,7 +2354,7 @@ class EditCoreClaudeAdapter {
           resultFixQueue = synced.queue;
           this.fixQueue = resultFixQueue;
         }
-      } catch { /* ignore */ }
+      } catch {}
 
       return {
         taskId: input.taskId,
@@ -2522,8 +2370,6 @@ class EditCoreClaudeAdapter {
               })()
             : (input.analysisMode === true
             ? (() => {
-                // Deber ser: devolver SIEMPRE el informe (hallazgos + como corregir).
-                // sanitize solo limpia relleno; si destroza el informe, se regenera.
                 let t = String(this.analysisFinalizedText || finalText || "").trim();
                 if (t) {
                   const cleaned = sanitizeUserFacingReport(t);
@@ -2596,13 +2442,6 @@ class EditCoreClaudeAdapter {
     }
   }
 
-  /**
-   * Si el usuario pide listar una ruta absoluta, ejecuta list_files YA
-   * (no esperar al modelo ni pedir PowerShell).
-   */
-  /**
-   * Listado puntual: una sola list_files de la carpeta pedida (sin modelo).
-   */
   async seedListOnlyFolder(input, steps) {
     let target = "";
     const folders = input.runProfile?.scopedFolderAllowlist
@@ -2617,12 +2456,12 @@ class EditCoreClaudeAdapter {
         const { extractScopedFolderAllowlist } = require("./scoped-file-focus");
         const fromPrompt = extractScopedFolderAllowlist(String(input.rawUserPrompt || input.prompt || ""));
         if (fromPrompt.length) target = fromPrompt[0];
-      } catch { /* ignore */ }
+      } catch {}
     }
     if (!target) {
       const m = String(input.prompt || "").match(/\bcarpeta\s+([A-Za-z0-9._-]+)\b/i)
         || String(input.prompt || "").match(/\b(?:lista|listar|enlista)\s+(?:solamente\s+|solo\s+)?([A-Za-z0-9._/-]+)\b/i);
-      target = m ? String(m[1] || "").trim() : "";
+      target = m ? String(m || "").trim() : "";
     }
     if (!target || /^(carpeta|folder|directorio|raiz|ra[ií]z|proyecto)$/i.test(target)) {
       target = ".";
@@ -2658,9 +2497,6 @@ class EditCoreClaudeAdapter {
     ].join(" "));
   }
 
-  /**
-   * Diagnostico nombrado: lee SOLO los archivos del prompt (sin walker amplio ni ROADMAP).
-   */
   async seedNamedDiagnosticTargets(input, steps) {
     const { isNamedFileDiagnosticPrompt, extractAnalysisTargets } = require("./evidence-grounding");
     if (!isNamedFileDiagnosticPrompt(input.prompt || "")) return false;
@@ -2683,20 +2519,12 @@ class EditCoreClaudeAdapter {
     return true;
   }
 
-  /**
-   * PASO 1: evidencia real en disco antes de que el modelo narre.
-   * FOCO acotado: solo read_file del allowlist (sin listar android/ios/src).
-   * Amplo: list_files raiz → package.json → carpetas clave → configs → walker.
-   */
   async seedAnalysisBootstrap(input, steps) {
     if (input.promptOnlyMode || input.analysisMode !== true || !this.toolExecutor?.execute || !this.conversation) return;
-    // FOCO retirado: siempre bootstrap normal (list + package.json + carpeta clave).
 
-    // Diagnostico de N archivos nombrados: no abrir el repo entero ni ROADMAP.
     if (await this.seedNamedDiagnosticTargets(input, steps)) return;
 
     if (steps.some((step) => step.name === "list_files" || step.name === "read_file")) {
-      // No saturar con walker masivo: deja que el modelo continue serial en el chat.
       return;
     }
 
@@ -2715,9 +2543,6 @@ class EditCoreClaudeAdapter {
       : (rootListed.result?.entries || []);
     const names = new Set(entries.map((entry) => String(entry?.name || entry?.path || "").replace(/\\/g, "/").split("/").pop()));
 
-    // Analisis de hallazgos: IGNORAR ROADMAP (docs de estado). Codigo real primero.
-    // Bootstrap LIGERO (estilo Cursor): raiz + package.json + UNA carpeta clave.
-    // El resto se hace tool a tool con avance visible en el chat (sin saturar).
     if (names.has("package.json")) {
       await this.executeSeedTool(input, steps, "read_file", { path: "package.json" });
     }
@@ -2738,23 +2563,19 @@ class EditCoreClaudeAdapter {
       break;
     }
 
-      this.conversation.appendUser([
-        "EVIDENCIA INICIAL (bootstrap ligero). El resto es SERIAL como Cursor:",
-        "- UNA herramienta por turno (list_files o read_file).",
-        "- Tras cada tool, narra 3-8 lineas de avance en el chat (que miraste / que encontraste).",
-        "- Luego la siguiente tool. PROHIBIDO planear 8 lecturas de golpe.",
-        "- NO cierres en segundos ni copies una plantilla: investiga de verdad hasta tener hallazgos.",
-        "ROADMAP.md: no lo uses como fuente de hallazgos; EditCore lo actualiza solo como indice compacto.",
-        "PROHIBIDO inventar stacks que no esten en package.json o codigo leido.",
-        "PROHIBIDO run_command lint/test/build en modo analisis.",
-        "Cuando la cobertura minima este cubierta, escribe el REPORTE FINAL con: ## Qué sí funcionó, ## Mapa, ## Qué falló, ## Qué falta para que funcione, ## Evidencia, ## Cómo lo corregiré.",
-      ].join("\n"));
+    this.conversation.appendUser([
+      "EVIDENCIA INICIAL (bootstrap ligero). El resto es SERIAL como Cursor:",
+      "- UNA herramienta por turno (list_files o read_file).",
+      "- Tras cada tool, narra 3-8 lineas de avance en el chat (que miraste / que encontraste).",
+      "- Luego la siguiente tool. PROHIBIDO planear 8 lecturas de golpe.",
+      "- NO cierres en segundos ni copies una plantilla: investiga de verdad hasta tener hallazgos.",
+      "ROADMAP.md: no lo uses como fuente de hallazgos; EditCore lo actualiza solo como indice compacto.",
+      "PROHIBIDO inventar stacks que no esten en package.json o codigo leido.",
+      "PROHIBIDO run_command lint/test/build en modo analisis.",
+      "Cuando la cobertura minima este cubierta, escribe el REPORTE FINAL con: ## Qué sí funcionó, ## Mapa, ## Qué falló, ## Qué falta para que funcione, ## Evidencia, ## Cómo lo corregiré.",
+    ].join("\n"));
   }
 
-  /**
-   * Publica en el chat el avance de 1 tool de analisis (archivo/carpeta).
-   * Cada pocos pasos: compacta conversacion + checkpoint ROADMAP (ahorro tokens).
-   */
   emitAnalysisStepProgress(input, name, toolInput, result) {
     const note = formatIncrementalAnalysisNote(name, toolInput || {}, result);
     if (!note) return;
@@ -2772,9 +2593,6 @@ class EditCoreClaudeAdapter {
     this.maybeCompactAndCheckpointAnalysis(input);
   }
 
-  /**
-   * Compactacion preventiva + ROADMAP checkpoint mid-run.
-   */
   maybeCompactAndCheckpointAnalysis(input) {
     if (input?.analysisMode !== true || !this.conversation) return;
     this._analysisToolsSinceCheckpoint = (this._analysisToolsSinceCheckpoint || 0) + 1;
@@ -2789,7 +2607,6 @@ class EditCoreClaudeAdapter {
     );
     const before = this.conversation.serializedLength();
     let didCompact = false;
-    // Compactar de forma preventiva al 75% del techo (no esperar overflow).
     if (before > limit * 0.75) {
       const prevMax = this.conversation.maxChars;
       this.conversation.maxChars = Math.max(20_000, Math.floor(before * 0.55));
@@ -2819,12 +2636,9 @@ class EditCoreClaudeAdapter {
         steps: this.steps || [],
         compacted: didCompact,
       });
-    } catch {
-      // ignore checkpoint errors
-    }
+    } catch {}
   }
 
-  /** Ejecuta una tool de precarga y la registra en steps + conversacion. */
   async executeSeedTool(input, steps, name, toolInput) {
     if (!this.toolExecutor?.execute || !this.conversation) return { ok: false };
     const MAX_PREPROMPT_FILE_READS = 8;
@@ -2871,7 +2685,6 @@ class EditCoreClaudeAdapter {
       };
       steps.push(step);
       this.steps = steps;
-      // Registrar bootstrap en ActionRegistry para que el modelo no relea lo mismo.
       if (this.actionRegistry && READ_CACHEABLE_TOOLS.has(name)) {
         this.actionRegistry.record({ name, input: toolInput, projectRoot: input.projectRoot }, result, true);
       }
@@ -2902,10 +2715,6 @@ class EditCoreClaudeAdapter {
     }
   }
 
-  /**
-   * Walker determinista: BFS carpeta por carpeta + lecturas de codigo hasta COVERAGE_MAP ok.
-   * Completa lecturas/targets del prompt primero; luego nextAnalysisWalkActions.
-   */
   async ensureAnalysisEvidenceReads(input, steps) {
     if (input.promptOnlyMode || input.analysisMode !== true || !this.toolExecutor?.execute) return false;
     const projectRoot = input.projectRoot || "";
@@ -2918,28 +2727,6 @@ class EditCoreClaudeAdapter {
       depthProfile,
     };
 
-    // FOCO retirado: walker normal siempre.
-    if (false && constraints.mode === "scoped" && constraints.allowlist.length) {
-      for (const rel of constraints.allowlist) {
-        const evidence0 = this.collectRunEvidence(steps, projectRoot);
-        const already = (evidence0.filesRead || []).some((row) => {
-          const np = normalizePath(row.path, projectRoot);
-          return np === normalizePath(rel, projectRoot) || baseName(row.path) === baseName(rel);
-        });
-        if (already) continue;
-        await this.executeSeedTool(input, steps, "read_file", { path: rel });
-      }
-      const evidence = this.collectRunEvidence(steps, projectRoot);
-      const ok = analysisEvidenceSufficient(evidence, sufficiencyOpts).ok;
-      input.onProgress?.({
-        phase: "pipeline",
-        text: ok ? `FOCO cubierto: ${constraints.allowlist.join(", ")}` : "FOCO: reintentando lectura...",
-        pipeline: { coverage: ok ? "foco ok" : "foco pendiente", coverageState: ok ? "ok" : "run" },
-      });
-      return ok;
-    }
-
-    // Primero: forzar lectura de archivos nombrados en el prompt (p.ej. editcore-claude-adapter.js).
     const targets = this.runScope?.analysisTargets || extractAnalysisTargets(input.prompt || "");
     if (targets.length) {
       const evidence0 = this.collectRunEvidence(steps, projectRoot);
@@ -2967,7 +2754,6 @@ class EditCoreClaudeAdapter {
     }
 
     const deep = isDeepOrHeavier(depthProfile?.depth || "");
-    // Limitar lecturas previas al prompt para no saturar contexto ni provocar 524.
     const maxSteps = deep ? 6 : 4;
     for (let attempt = 0; attempt < maxSteps; attempt += 1) {
       const evidence = this.collectRunEvidence(steps, projectRoot);
@@ -3017,9 +2803,6 @@ class EditCoreClaudeAdapter {
     return ok;
   }
 
-  /**
-   * Dispatcher: sincroniza cola y anuncia FOCO actual (PROCEDE).
-   */
   refreshFixQueueFocus(input, steps, { forceAppend = false } = {}) {
     if (input?.planAuthorized !== true) return null;
     const synced = syncFixQueueWithSteps(this.fixQueue || [], steps || [], input.projectRoot || "");
@@ -3051,10 +2834,6 @@ class EditCoreClaudeAdapter {
     return synced;
   }
 
-  /**
-   * Tras cobertura: 1 typecheck acotado (tsc --noEmit / npm run typecheck).
-   * No lint/build. Resultados alimentan hallazgos del reporte.
-   */
   async seedAnalysisDiagnostics(input, steps) {
     if (this.analysisDiagnosticSeeded) return false;
     if (input.promptOnlyMode || input.analysisMode !== true || input.planAuthorized === true) return false;
@@ -3113,9 +2892,6 @@ class EditCoreClaudeAdapter {
     return Boolean(seeded.ok || seeded.result);
   }
 
-  /**
-   * Ejecuta una accion exclusivamente mediante el despachador autorizado.
-   */
   async executeWithFallback(action) {
     const input = this.activeInput || {};
     if (input.promptOnlyMode && isFilesystemTool(action?.name)) {
@@ -3131,14 +2907,8 @@ class EditCoreClaudeAdapter {
     return await this.toolExecutor.execute(action.name, action.input);
   }
 
-  /**
-   * Detecta loops comparando secuencias de acciones
-   */
   detectLoop(steps) {
     if (steps.length < 10) return false;
-    // BUG 2 FIX: Comparar la firma COMPLETA (nombre + argumentos), no solo el nombre.
-    // Cinco read_file con paths diferentes es exploración legítima, NO un loop.
-    // Solo es un loop si la secuencia de acciones Y argumentos es exactamente igual.
     const sig = (s) => `${s.name}:${JSON.stringify(s.input || {})}`;
     const recent = steps.slice(-5).map(sig).join("|");
     const previous = steps.slice(-10, -5).map(sig).join("|");
@@ -3206,7 +2976,6 @@ class EditCoreClaudeAdapter {
   }
 
   shouldForceImplementation(input, requirements, steps, action) {
-    // BUG 7 FIX: doble protección. Si allowWrite no es exactamente true, nunca forzar.
     if (!requirements.write || input.analysisMode === true || input.allowWrite === false || input.allowWrite !== true) return false;
     if (steps.some((step) => classifyAgentStep(step) === "mutation")) return false;
     const discoveryTools = new Set(["list_files", "read_file", "search_files", "project_discovery", "codebase_map", "symbol_search", "dependency_search", "brain_search", "brain_tools", "brain_skill"]);
@@ -3218,7 +2987,6 @@ class EditCoreClaudeAdapter {
     if (input.runProfile?.greenfieldCreate === true || input.orchestratorPlan?.greenfieldCreate === true) {
       return distinctEvidence >= 0;
     }
-    // Tras PROCEDE/planAuthorized: no permitir bucles eternos de exploracion.
     const threshold = input.planAuthorized === true
       ? Math.max(2, Number(requirements.minimumEvidence || 2))
       : Math.max(3, Number(requirements.minimumEvidence || 3));
@@ -3253,7 +3021,6 @@ class EditCoreClaudeAdapter {
     return "";
   }
 
-  /** En analisis forense/profundo, lint/test/build queman el presupuesto y el tope de minutos. */
   shouldBlockAnalysisHeavyCommand(input, action) {
     if (input.planAuthorized === true) return "";
     const toolName = String(action?.name || "");
@@ -3276,9 +3043,7 @@ class EditCoreClaudeAdapter {
       if (toolName === "run_command" && forbidHeavy && isAnalysisHeavyVerificationCommand(command) && !allowDiag) {
         return "MODO ANALISIS: PROHIBIDO lint/test/build. Ya tienes evidencia en disco; escribe el REPORTE FINAL. Typecheck acotado solo tras cobertura; lint solo tras PROCEDE.";
       }
-    } catch {
-      /* fallback abajo */
-    }
+    } catch {}
     if (!forbidHeavy && input.analysisMode !== true) return "";
     if (toolName === "run_diagnostics") {
       return "MODO ANALISIS: PROHIBIDO run_diagnostics. Usa search_files/read_file y escribe el REPORTE FINAL.";
@@ -3290,7 +3055,7 @@ class EditCoreClaudeAdapter {
           || Number(evidence.realFileReadCount || 0) >= 10) {
           return "MODO ANALISIS: ya hay evidencia suficiente. PROHIBIDO Cerebro/subagent. Escribe el REPORTE FINAL ahora.";
         }
-      } catch { /* ignore */ }
+      } catch {}
     }
     if (toolName !== "run_command") return "";
     const command = String(action?.input?.command || "").trim();
@@ -3384,7 +3149,6 @@ class EditCoreClaudeAdapter {
   }
 
   evidenceFinalText(input, steps) {
-    // Nunca usar este meta-cierre para analisis/reporte: es el primer punto de falla a mitad.
     if (input?.analysisMode === true) {
       return this.buildAnalysisFallbackReport(input, steps);
     }
@@ -3399,7 +3163,6 @@ class EditCoreClaudeAdapter {
     return `Verificacion completada con evidencia real del proyecto. Acciones ejecutadas: ${steps.length}${details ? ` (${details})` : ""}.${suffix}`;
   }
 
-  /** neverEvidenceFinalForAnalysis: helper de tests / cierre seguro. */
   neverEvidenceFinalForAnalysis(input, steps, candidate = "") {
     const text = String(candidate || "");
     if (input?.analysisMode === true || /Verificacion completada con evidencia real/i.test(text)) {
@@ -3414,8 +3177,6 @@ class EditCoreClaudeAdapter {
   }
 
   async requestAnalysisReport(input, steps, { appendPrompt = true } = {}) {
-    // El informe lo redacta el MODELO (investigacion). La plantilla local solo
-    // es rescate si el proveedor falla o no entrega texto util.
     const evidence = this.collectRunEvidence(steps);
     const sufficiency = analysisEvidenceSufficient(evidence, this.analysisSufficiencyOpts(input));
     if (!sufficiency.ok) {
@@ -3469,9 +3230,6 @@ class EditCoreClaudeAdapter {
     return `${honest}${partial}`;
   }
 
-  /**
-   * Obtiene el siguiente turno del modelo sobre la conversacion viva.
-   */
   async getNextTurn(input, steps) {
     if (!this.providerApi) {
       throw new Error("providerApi no configurado");
@@ -3516,7 +3274,6 @@ class EditCoreClaudeAdapter {
       if (streamMode === "pending" && trimmed) {
         streamMode = /^(?:\{|\[|<(?:tool|function)|```json)/i.test(trimmed) ? "protocol" : "narration";
       }
-      // Prosa + luego <tool_call>: cortar mid-stream (nunca volcar XML/código al chat).
       if (streamMode === "narration") {
         const cut = streamedText.search(/<(?:tool_call|tool_use|function\s*=|parameter\s*=)\b/i);
         if (cut >= 0) {
@@ -3539,8 +3296,8 @@ class EditCoreClaudeAdapter {
       if (streamMode === "protocol") {
         const thoughtMatch = streamedText.match(/"(?:thought|reasoning|analysis|thinking)"\s*:\s*"((?:[^"\\]|\\.)*)"/i)
           || streamedText.match(/<(?:thinking|thought|reasoning)>([\s\S]*?)(?:<\/(?:thinking|thought|reasoning)>|$)/i);
-        if (thoughtMatch && thoughtMatch[1]) {
-          const currentThought = thoughtMatch[1].replace(/\\n/g, "\n").replace(/\\"/g, '"');
+        if (thoughtMatch && thoughtMatch) {
+          const currentThought = thoughtMatch.replace(/\\n/g, "\n").replace(/\\"/g, '"');
           if (currentThought && currentThought !== lastExtractedThought) {
             const deltaThought = currentThought.startsWith(lastExtractedThought)
               ? currentThought.slice(lastExtractedThought.length)
@@ -3564,7 +3321,7 @@ class EditCoreClaudeAdapter {
     const abortStep = (message) => {
       const err = new Error(message);
       err.code = "PROVIDER_TIMEOUT";
-      try { stepController.abort(err); } catch { /* ignore */ }
+      try { stepController.abort(err); } catch {}
       return err;
     };
     const wallTimer = setTimeout(() => {
@@ -3580,7 +3337,6 @@ class EditCoreClaudeAdapter {
       ? AbortSignal.any([input.signal, stepController.signal])
       : stepController.signal;
 
-    // Circuit Breaker Step 1: Pre-flight check
     const cbCheck = this._checkCircuitBreaker();
     if (!cbCheck.allowed) {
       const error = new Error(cbCheck.reason);
@@ -3599,7 +3355,6 @@ class EditCoreClaudeAdapter {
         rawToolCalls: true,
         onTextDelta,
       });
-      // Promise.race: aunque Electron ignore abort del body, el loop no se queda eterno.
       response = await Promise.race([
         callPromise,
         new Promise((_, reject) => {
@@ -3625,13 +3380,10 @@ class EditCoreClaudeAdapter {
       throw error;
     }
 
-    // Estimar tokens usados (considerando cache). Si el proveedor no reporta uso,
-    // usamos una estimacion baja para no cortar tareas reales por medicion local.
     const tokensUsed = response.usage?.total_tokens || response.usage?.confirmed_input_tokens || response.usage?.estimated_input_tokens || 250;
     const cacheHits = response.usage?.provider_cache_read_tokens || response.usage?.cache_read_input_tokens || response.usage?.cachedInputTokens || response.usage?.cached_tokens || 0;
     const cacheWrites = response.usage?.cache_creation_input_tokens || 0;
 
-    // Acumular el uso normalizado real para el pie del chat y las metricas.
     this.usageTotals.confirmed_input_tokens += Number(response.usage?.confirmed_input_tokens) || 0;
     this.usageTotals.confirmed_output_tokens += Number(response.usage?.confirmed_output_tokens) || 0;
     this.usageTotals.estimated_input_tokens += Number(response.usage?.estimated_input_tokens) || 0;
@@ -3643,17 +3395,12 @@ class EditCoreClaudeAdapter {
     );
 
     this.tokensUsed += tokensUsed;
-
-    // Actualizar presupuesto adaptativo
     this.adaptiveBudget.spend(tokensUsed);
-
-    // Registrar en token ledger
     this.tokenLedger.record('model_call', tokensUsed, 0, {
       cached: cacheHits > 0,
       cacheCreated: cacheWrites,
     });
 
-    // Log de ahorro por cache
     if (cacheHits > 0) {
       const savingsPercent = Math.round((cacheHits / tokensUsed) * 100);
       this.logger.log(`⚡ [Cache] Ahorro: ${cacheHits} tokens (${savingsPercent}%)`);
@@ -3667,11 +3414,6 @@ class EditCoreClaudeAdapter {
     };
   }
 
-  /**
-   * Circuit Breaker: check if provider calls are allowed.
-   * Step 1 of 4: Pre-flight state check.
-   * Returns { allowed: boolean, reason?: string }
-   */
   _checkCircuitBreaker() {
     const cb = this.circuitBreaker;
     if (!cb) return { allowed: true };
@@ -3679,7 +3421,6 @@ class EditCoreClaudeAdapter {
     if (cb.state === "OPEN") {
       const elapsed = Date.now() - cb.openedAt;
       if (elapsed >= cb.cooldownMs) {
-        // Transition to HALF_OPEN: allow one probe call
         cb.state = "HALF_OPEN";
         this.logger.log?.(`⚡ [CircuitBreaker] OPEN → HALF_OPEN (cooldown ${Math.round(elapsed / 1000)}s elapsed). Probing provider...`);
         return { allowed: true };
@@ -3695,9 +3436,6 @@ class EditCoreClaudeAdapter {
     return { allowed: true };
   }
 
-  /**
-   * Circuit Breaker Step 3: Record success — reset failure count, close circuit.
-   */
   _recordCircuitBreakerSuccess() {
     const cb = this.circuitBreaker;
     if (!cb) return;
@@ -3710,9 +3448,6 @@ class EditCoreClaudeAdapter {
     }
   }
 
-  /**
-   * Circuit Breaker Step 4: Record failure — increment count, open circuit if threshold hit.
-   */
   _recordCircuitBreakerFailure(error) {
     const cb = this.circuitBreaker;
     if (!cb) return;
@@ -3720,7 +3455,6 @@ class EditCoreClaudeAdapter {
     cb.lastFailureAt = Date.now();
 
     if (cb.state === "HALF_OPEN") {
-      // Probe failed: reopen immediately
       cb.state = "OPEN";
       cb.openedAt = Date.now();
       this.logger.warn?.(`⛔ [CircuitBreaker] HALF_OPEN → OPEN (probe failed: ${String(error?.message || error).slice(0, 120)}).`);
@@ -3736,18 +3470,11 @@ class EditCoreClaudeAdapter {
     }
   }
 
-  /**
-   * Compacta resultado para ahorrar tokens
-   */
   compactResult(result) {
     const maxChars = Number(this.adaptiveBudget?.maxToolResultChars?.() || this.harnessProfile?.toolResultChars || 8_000);
     return clipToolResultForHarness(result, maxChars);
   }
 
-  /**
-   * Prefijo estable de la conversacion: system prompts + tarea inicial.
-   * No se regenera entre iteraciones para maximizar el cache-read.
-   */
   buildPrefixMessages(input) {
     const messages = [];
     const tools = this.getAvailableTools(input);
@@ -3759,7 +3486,6 @@ class EditCoreClaudeAdapter {
         content: [
           {
             type: "text",
-            // Prompt corto a proposito: listado no carga elite/anti (ahorra ~10k tokens).
             text: `Eres EditCore Agent. El usuario pidio SOLO listar una carpeta.
 HERRAMIENTAS:
 ${toolsListText || "- list_files"}
@@ -3782,8 +3508,6 @@ Reglas:
     const permissionFullNow = input.permissionMode === "full"
       || input.runProfile?.permissionFull === true
       || input.orchestratorPlan?.permissionFull === true;
-
-    const scopedAnalysis = false;
 
     const analysisGuide = input.analysisMode ? `
 
@@ -3856,7 +3580,6 @@ MODO CREACION DE PROYECTO PROFESIONAL (GREENFIELD — PRIORIDAD MAXIMA):
         "- frontend-design: Diseno visual",
       ].join("\n");
 
-    // System prompt CON CACHE CONTROL + politica elite inmutable
     messages.push({
       role: "system",
       content: [
@@ -3881,7 +3604,7 @@ COMO TRABAJAR (ESTILO CURSOR — TEXTO EN VIVO):
     ? "En ANALISIS: carga como mucho 1 skill util del inventario real; prioriza disco y cierra el reporte con recomendaciones concretas."
     : "Usa el Cerebro (brain_search o brain_skill) cuando aporte valor en tareas largas; no lo uses para retrasar el cierre."}
 5. Usa encabezados ## y listas numeradas para planes, hallazgos y correcciones.
-6. ANTES de invocar herramientas: 1-3 oraciones de razonamiento. Tras cambios: una linea del por que.
+6. ANTES de invocar herramientas: 1-3 oraciones de razonamiento. Tras cambios: una linea del por qué.
 7. tool_calls nativos. Reporte final en markdown.
 8. WORKSPACE: si el usuario pide cerrar este proyecto y abrir otra carpeta, USA switch_project (no digas que no puedes). Tambien puedes usar open_project / close_project por separado.
 
@@ -3907,7 +3630,7 @@ Para el mensaje final:
     : "Las skills del Cerebro ayudan en ejecucion: carga la skill especializada si aplica; si falla, continua sin insistir."}
 8. Si una skill exige un procedimiento especifico, ese procedimiento tiene prioridad sobre tus habitos generales.
 9. En una reanudación: conserva evidencia y skills; no reinicies con reglas genéricas ni reexplores la raiz sin motivo.`),
-          cache_control: { type: "ephemeral" } // ← CACHEA ESTO
+          cache_control: { type: "ephemeral" }
         }
       ]
     });
@@ -3920,17 +3643,16 @@ Para el mensaje final:
       }),
     });
 
-    // Contexto extra del host (por ejemplo, modo Inspector self-repair)
     if (input.systemExtra) {
       messages.push({ role: "system", content: String(input.systemExtra) });
     }
 
-    // Historial del chat Inspector / caller (roles user|assistant) con retención progresiva
+    // Historial del chat ampliado (retención de contexto mejorada)
     if (Array.isArray(input.history) && input.history.length) {
       const compacted = compactChatHistory(input.history, {
-        maxMessages: 28,
-        maxContentChars: 8000,
-        maxTotalChars: 50000,
+        maxMessages: 100, // ampliado de 28 a 100 turnos
+        maxContentChars: 25000, // ampliado de 8000 a 25000 chars por mensaje
+        maxTotalChars: 150000, // ampliado de 50000 a 150000 chars totales
         includeSummary: true,
       });
       for (const item of compacted) {
@@ -3940,12 +3662,11 @@ Para el mensaje final:
         } else {
           const content = String(item?.content || "").trim();
           if (!content) continue;
-          messages.push({ role, content: content.slice(0, 12000) });
+          messages.push({ role, content: content.slice(0, 25000) });
         }
       }
     }
 
-    // Inyectar contexto de análisis del proyecto si existe
     if (input.analysisContext) {
       messages.push({
         role: "system",
@@ -3953,7 +3674,6 @@ Para el mensaje final:
       });
     }
 
-    // Memoria local de proyecto (.editcore/memory.json)
     if (input.projectRoot) {
       try {
         const projMem = loadProjectMemory(input.projectRoot);
@@ -3973,7 +3693,6 @@ Para el mensaje final:
       } catch {}
     }
 
-    // Contexto de memoria persistente del agente (.editcore/agent-memory)
     if (this.agentMemory) {
       const memoryContext = this.agentMemory.buildContextForAgent();
       if (memoryContext.length > 50) {
@@ -3983,29 +3702,26 @@ Para el mensaje final:
             {
               type: "text",
               text: `MEMORIA PERSISTENTE:\n${memoryContext}`,
-              cache_control: { type: "ephemeral" } // ← CACHEA MEMORIA
+              cache_control: { type: "ephemeral" }
             }
           ]
         });
       }
     }
 
-    // Cerebro context CON CACHE (si existe)
     if (input.brainContext && input.brainContext.length > 100) {
       messages.push({
         role: "system",
         content: [
           {
             type: "text",
-        text: `Cerebro EditCore (reglas vigentes para esta tarea):\n${input.brainContext.slice(0, 9000)}`,
-            cache_control: { type: "ephemeral" } // ← CACHEA ESTO
+            text: `Cerebro EditCore (reglas vigentes para esta tarea):\n${input.brainContext.slice(0, 9000)}`,
+            cache_control: { type: "ephemeral" }
           }
         ]
       });
     }
 
-    // Memoria de la corrida anterior en este proyecto: evita que una
-    // continuacion ("continua", "procede") re-explore todo desde cero.
     if (input.previousRunSummary && input.freshAnalysisRun !== true) {
       messages.push({
         role: "system",
@@ -4052,17 +3768,11 @@ ${input.analysisMode ? (isCodeAudit ? `MODO ANALISIS ACTIVO:
     return messages;
   }
 
-  /**
-   * Compatibilidad: construye los mensajes actuales de la conversacion.
-   */
   buildMessages(input, steps) {
     if (this.conversation) return this.conversation.toProviderMessages();
     return this.buildPrefixMessages(input);
   }
 
-  /**
-   * Obtiene herramientas disponibles
-   */
   getAvailableTools(input) {
     const tool = (name, description, properties = {}, required = []) => ({
       type: "function",
@@ -4282,7 +3992,6 @@ ${input.analysisMode ? (isCodeAudit ? `MODO ANALISIS ACTIVO:
 
     const filtered = filterToolsByPlan(tools, input.orchestratorPlan || input.runProfile || input);
     if (this.forceTextOnlyClose === true || input.forceTextOnlyClose === true) return [];
-    // PROCEDE / escritura autorizada: tools completas.
     const writeAuthorized = input.allowWrite === true && input.analysisMode !== true && input.listOnly !== true;
     if (input.planAuthorized === true || (writeAuthorized && input.planAuthorized === true)) {
       const byName = new Map(tools.map((item) => [item?.function?.name, item]));
@@ -4294,13 +4003,11 @@ ${input.analysisMode ? (isCodeAudit ? `MODO ANALISIS ACTIVO:
       }
       return execTools;
     }
-    // FOCO retirado: no limitar tools a read_file/allowlist.
     const promptText = String(input.prompt || "").trim();
     const hideOperator = Boolean(promptText) && !isOperatorPublishRequest(promptText);
     let withoutUnrequestedPublish = hideOperator
       ? filtered.filter((item) => !OPERATOR_PUBLISH_TOOLS.includes(item?.function?.name))
       : filtered;
-    // PROCEDE / ejecucion: si el allowlist de analisis se quedo pegado, reinyectar escritura.
     if (writeAuthorized && !toolsIncludeWrite(withoutUnrequestedPublish)) {
       const byName = new Map(tools.map((item) => [item?.function?.name, item]));
       for (const name of ["write_file", "replace_in_file", "list_files", "read_file", "run_command"]) {
@@ -4330,7 +4037,6 @@ ${input.analysisMode ? (isCodeAudit ? `MODO ANALISIS ACTIVO:
     }
     let text = (response.text || "").trim();
 
-    // Quitar markdown code blocks si existen (ej: ```json ... ```)
     if (text.startsWith("```")) {
       text = text.replace(/^```[a-zA-Z]*\n([\s\S]*?)\n```$/, "$1").trim();
     }
@@ -4339,7 +4045,6 @@ ${input.analysisMode ? (isCodeAudit ? `MODO ANALISIS ACTIVO:
       const parsed = parseAgentPayload(text);
       if (parsed?.type && (parsed.name || parsed.text)) return parsed;
     } catch (e) {
-      // Si no es JSON directo, buscar el bloque JSON completo usando balanceo de llaves
       const startIdx = text.indexOf('{');
       if (startIdx >= 0) {
         let braceCount = 0;
@@ -4359,9 +4064,7 @@ ${input.analysisMode ? (isCodeAudit ? `MODO ANALISIS ACTIVO:
             const potentialJson = text.substring(startIdx, endIdx + 1);
             const parsed = parseAgentPayload(potentialJson);
             if (parsed?.type && (parsed.name || parsed.text)) return parsed;
-          } catch (e2) {
-            // Ignorar
-          }
+          } catch (e2) {}
         }
       }
     }
@@ -4369,8 +4072,6 @@ ${input.analysisMode ? (isCodeAudit ? `MODO ANALISIS ACTIVO:
     const parsed = parseAgentPayload(text);
     if (parsed?.type && (parsed.name || parsed.text)) return parsed;
 
-    // Un texto libre sin herramientas es la respuesta final del modelo; la
-    // validacion de completitud decide si se acepta o se rechaza con feedback.
     return {
       type: "final",
       text: text || "El proveedor no devolvio una instruccion ni una respuesta util.",

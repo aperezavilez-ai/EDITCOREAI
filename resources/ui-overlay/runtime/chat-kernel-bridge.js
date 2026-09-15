@@ -1,9 +1,5 @@
 "use strict";
 
-/**
- * Puente Electron ↔ editcore-chat-kernel.
- */
-
 const path = require("path");
 const {
   handleChat,
@@ -38,6 +34,8 @@ function buildKernelHelpers({ BrowserWindow, capturePreview, previewUrl, appUser
 
 async function runKernelChat({
   message,
+  history,
+  messages,
   projectRoot,
   apiBaseUrl,
   apiKey,
@@ -56,10 +54,18 @@ async function runKernelChat({
   const isFull = fullAccess === true
     || permissionFull === true
     || mode === "full"
-    || planAuthorizedExecution === true && mode === "full";
+    || (planAuthorizedExecution === true && mode === "full");
+
+  const chatHistory = Array.isArray(history)
+    ? history
+    : Array.isArray(messages)
+      ? messages
+      : [];
 
   return handleChat({
     message,
+    history: chatHistory,
+    messages: chatHistory,
     projectRoot,
     apiBaseUrl,
     apiKey,

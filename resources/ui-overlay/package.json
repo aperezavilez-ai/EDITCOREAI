@@ -1,7 +1,7 @@
 {
   "name": "editcoreai",
-  "version": "2.9.7",
-  "description": "EditCoreAI — IDE con agente (MEAI/APICREDITS)",
+  "version": "2.9.8",
+  "description": "EditCoreAI â€” IDE con agente (MEAI/APICREDITS)",
   "author": "EditCoreAI",
   "private": true,
   "main": "main.js",
@@ -52,7 +52,7 @@
     "appId": "com.editcoreai.app",
     "productName": "EditCoreAI",
     "executableName": "EDITCOREAI",
-    "buildVersion": "2.9.7.0",
+    "buildVersion": "2.9.8.0",
     "artifactName": "EDITCOREAI-Setup.${ext}",
     "win": {
       "icon": "assets/logo.ico",
@@ -117,3 +117,4 @@
   },
   "productName": "EditCoreAI"
 }
+

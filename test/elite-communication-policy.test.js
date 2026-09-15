@@ -10,6 +10,7 @@ const {
   withEliteCommunicationPolicy,
   stripEliteFiller,
   normalizeSpanishProse,
+  ensureChatParagraphs,
   defaultChatSystemPrompt,
   hasElitePolicy,
 } = require("../runtime/elite-communication-policy");
@@ -25,6 +26,7 @@ test("politica elite contiene ortografia y las 4 directrices", () => {
   assert.match(ELITE_COMMUNICATION_POLICY, /PROHIBIDO empezar con saludos/);
   assert.match(ELITE_COMMUNICATION_POLICY, /placeholders/i);
   assert.match(ELITE_COMMUNICATION_POLICY, /está|también|código/);
+  assert.match(ELITE_COMMUNICATION_POLICY, /P[AÁ]RRAFOS LEGIBLES|plasta/i);
 });
 
 test("withEliteCommunicationPolicy es idempotente y antepone el marcador", () => {
@@ -57,6 +59,16 @@ test("normalizeSpanishProse separa puntuacion y une cortes con guion", () => {
     normalizeSpanishProse("```js\nfoo.bar()\n```\nListo."),
     "```js\nfoo.bar()\n```\nListo.",
   );
+});
+
+test("ensureChatParagraphs parte plastas en paragrafos reales", () => {
+  const wall = "Diagnostico del POS. El componente espera sale_price. Ahora reviso App.tsx. El problema esta en database.ts.";
+  const out = ensureChatParagraphs(wall);
+  assert.match(out, /\n\n/);
+  assert.match(out, /Ahora reviso App\.tsx/);
+  const fenced = "Ver:\n```js\nfoo.bar()\n```\nListo. Ahora sigue.";
+  const kept = ensureChatParagraphs(fenced);
+  assert.match(kept, /```js\nfoo\.bar\(\)\n```/);
 });
 
 test("stripEliteFiller tambien normaliza prosa pegada", () => {
