@@ -1,25 +1,45 @@
-# EDITCOREAI — Roadmap & Arquitectura (v2.9.10)
+# EDITCOREAI — Roadmap & Arquitectura (v3.0.1)
 
 EDITCOREAI es el IDE Electron de pair-programming y agentic coding: orquesta tools reales en disco, publica con bóveda `safeStorage` (GitHub / Vercel / Supabase) y prioriza co-creación con evidencia.
 
+Fuente de mapa: `PROJECT_CONTEXT.md` · reglas: `.cursorrules` · manifiesto: `EDITCORE-MANIFEST.md`.
+
 ---
 
-## Proceso del producto (v2.9.10)
+## Proceso del producto (v3.0.1)
 
 - **Fase:** listo (release)
 - **Stack:** Electron + chat-kernel + Monaco + preview local + bóveda safeStorage
-- **Estado:** Release 2.9.10 — cero «GafCore Gateway» en el chat; timeouts de ME AI/APICredits ya no blacklistean Auto 20 min; reintento transient
+- **Entry:** `main.js` · `renderer.js` · `editcore-chat-kernel/orchestrator.js`
+- **Scripts:** `npm start` · `npm test` · `npm run dist:win` · `npm run check`
+- **Estado:** Release **3.0.1** — red de seguridad Cursor (rama + rules + PROJECT_CONTEXT), cero GafCore en chat, Auto sin cuarentena por timeout, CONTINUA con memoria
 
 ---
 
-## Hotfixes v2.9.10
+## Hotfixes incluidos (desde 2.9.9 → 3.0.1)
 
-- [x] Sanitizar errores de proveedor: nunca mostrar GafCore Gateway / admin / URLs de gateway en el chat.
-- [x] Timeouts 503 temporales: reintento local + **no** cuarentena Auto de 20 minutos.
-- [x] Memoria de conexiones y ayuda local sin enseñar al agente a decir GafCore Gateway.
-- [x] `runtime/chat-error-sanitize.js` centraliza el mapeo de errores.
-- [x] Pensamiento limpio + CONTINUA con memoria (2.9.9).
+- [x] Pensamiento limpio (prosa solo abajo)
+- [x] Anti doble escritura de chat
+- [x] CONTINUA con recoveryPrompt + lastNarration
+- [x] Incomplete-intent nudge («Voy a…» sin tools)
+- [x] Sanitizar errores: nunca «GafCore Gateway» en el chat
+- [x] Timeouts 503: reintento; no blacklist Auto 20 min
+- [x] `PROJECT_CONTEXT.md` + `.cursorrules` endurecidas
+- [x] Versión alineada a semver mayor **3.0.1** / FileVersion **3.0.1.0**
+
+## Conexiones
+- GitHub / Vercel / Supabase / SSH vía bóveda.
+- Modelos: ME AI + APICredits.
 
 ## Empaquetado
+- `resources/ui-overlay` sincronizado
+- `release/EDITCOREAI-Setup.exe` + `EDITCOREAI.exe` raíz → **3.0.1.0**
 
-- Producto **v2.9.10** / buildVersion **2.9.10.0** → `release/EDITCOREAI-Setup.exe`
+---
+
+## Checklist al reanudar
+
+1. Leer `PROJECT_CONTEXT.md` + `.editcore/context.md`
+2. Abrir con `EDITCOREAI.exe` 3.0.1
+3. Agente + Acceso completo si hay que mutar
+4. Chat: sin GafCore; CONTINUA reanuda; Pensamiento sin prosa duplicada

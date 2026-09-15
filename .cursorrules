@@ -1,21 +1,38 @@
-# EditCore AI - reglas persistentes de agentes
+# EditCoreAI — reglas persistentes de agentes (Cursor + EditCore)
 
-1. HERRAMIENTAS REALES
-- Usa solamente herramientas registradas por EditCore para inspeccionar, editar y verificar.
+## 0. PRIMERO
+- Lee `PROJECT_CONTEXT.md` y `.editcore/context.md` antes de explorar el repo.
+- No reexplores con list_files/glob del árbol completo si el mapa ya cubre la tarea.
+- Trabaja solo en la rama activa; no cambies de rama ni hagas force-push sin pedido explícito.
+
+## 1. STACK Y ALCANCE
+- App: Electron IDE (main.js, preload.js, renderer.js) + `editcore-chat-kernel/` + `runtime/`.
+- Proveedores de modelos visibles al usuario: **ME AI** y **APICredits** (panel Modelos).
+- **PROHIBIDO** mencionar «GafCore Gateway», `gafcore-gateway`, project keys o URLs de gateway en el chat o en textos de ayuda al usuario.
+- Conexiones bóveda: GitHub, Vercel, Supabase, SSH (sin secretos en el chat).
+
+## 2. HERRAMIENTAS REALES
+- Usa herramientas reales para inspeccionar, editar y verificar.
 - Nunca muestres tool_call, tool_use, XML o JSON interno en el chat.
 - Lee archivos grandes por rangos concretos.
 
-2. MEMORIA PERSISTENTE
-- Lee .editcore/context.md al iniciar o reanudar una tarea.
-- Conserva tarea, archivos afectados, estado, siguiente accion y checkpoints verificados.
+## 3. LÍMITES DE ARCHIVOS
+- No modifiques archivos periféricos (snapshots `.editcore/snapshots`, `chats.json`, `memory.json`, EXE empaquetados) salvo que la tarea lo exija.
+- No truncar `main.js` / `renderer.js`. Mantén `resources/ui-overlay/` sincronizado cuando cambies UI/runtime empaquetable.
+- No inventes puertos de preview (`:1420`); usa el preview del IDE (`127.0.0.1:<asignado>`).
 
-3. CONTEXTO EFICIENTE
-- Envia solo reglas estables, tarea activa, evidencia y resultados recientes relevantes.
-- No repitas resultados completos ni el historial total del chat.
-- ADELANTE, PROCEDE o CONTINUA autoriza la tarea pendiente sin confirmaciones redundantes.
+## 4. MEMORIA Y CONTINUIDAD
+- Conserva tarea, archivos afectados, estado, siguiente acción y checkpoints.
+- CONTINUA / PROCEDE / ADELANTE reanudan la tarea guardada (no reexplorar desde cero).
+- ROADMAP del proyecto usuario: `## Proceso`, `## Bloqueos`, `## Archivos clave`, `## Siguiente`.
 
-4. ACCESO TOTAL
-- Los agentes operan con acceso completo persistente al proyecto activo, terminal, herramientas, Cerebro y conexiones configuradas.
-- Ejecuta la tarea autorizada hasta implementar y verificar el resultado.
-- No solicites permisos repetidos durante la misma tarea.
-- No reveles secretos ni salgas accidentalmente de la raiz del proyecto activo.
+## 5. MODELOS Y ERRORES
+- Timeouts 502/503 temporales: reintentar; no cuarentenar Auto 20 min.
+- Errores al usuario: sanitizar con `runtime/chat-error-sanitize.js` (sin GafCore, sin hostnames).
+- No inventar modelos (p. ej. haiku) ni filtrar tools del kernel.
+
+## 6. ACCESO Y CIERRE
+- Ejecuta la tarea autorizada hasta implementar y verificar.
+- No pidas permisos repetidos en la misma tarea.
+- No reveles secretos. No salgas de la raíz del proyecto activo sin necesidad.
+- Al terminar un fix de producto: actualizar `ROADMAP.md`, versión en `package.json`, verify script y EXE si el usuario pide release.
