@@ -970,16 +970,29 @@ class ChatOrchestrator {
                 // Encogió por corte de tool markup: no resetear el chat.
                 piece = "";
               } else if (visible !== lastVisible) {
-                // Nuevo tramo distinto: separar con párrafo, sin borrar lo anterior.
-                piece = visible;
-                try {
-                  onProgress?.({
-                    phase: "narration_delta",
-                    text: "\n\n",
-                    index: steps.length,
-                    streaming: true,
-                  });
-                } catch { /* ignore */ }
+                // Sanitizer cambió el prefijo: emitir solo el sufijo nuevo, NUNCA
+                // reenviar `visible` completo (eso duplicaba el párrafo en el chat).
+                let shared = 0;
+                const lim = Math.min(lastVisible.length, visible.length);
+                for (let n = lim; n >= 1; n -= 1) {
+                  if (lastVisible.endsWith(visible.slice(0, n))) {
+                    shared = n;
+                    break;
+                  }
+                }
+                if (shared > 0) {
+                  piece = visible.slice(shared);
+                } else {
+                  const idx = visible.indexOf(lastVisible);
+                  if (idx >= 0) {
+                    piece = visible.slice(idx + lastVisible.length);
+                  } else if (!lastVisible) {
+                    piece = visible;
+                  } else {
+                    // Tramo realmente nuevo: un párrafo, sin re-pegar lo anterior.
+                    piece = `\n\n${visible}`;
+                  }
+                }
               }
               lastVisible = visible;
               if (!piece) {
@@ -1024,6 +1037,26 @@ class ChatOrchestrator {
         const cleanText = stripTextToolMarkup(turn.text || "");
 
         if (!toolCalls.length) {
+          // "Voy a leer X…" sin tool_calls = intención incompleta: no cerrar el turno.
+          const incompleteIntent = /(?:^|\n)\s*(?:voy\s+a|ahora\s+(?:voy\s+a|leer[eé]|abrir[eé]|revisar[eé]|ejecutar[eé]|verificar[eé]|corregir[eé])|procedo\s+a|dejar[eé]\s+que)\b/i.test(cleanText)
+            && !/(?:completad[oa]|listo\.|verificad[oa]|aplicad[oa]|hecho\.|sin errores)/i.test(cleanText)
+            && cleanText.trim().length < 900;
+          if (incompleteIntent && i < stepsLimit - 1 && !chatOnly && decision?.kind !== "CHAT") {
+            messages.push({
+              role: "assistant",
+              content: cleanText || null,
+            });
+            messages.push({
+              role: "user",
+              content: "CONTINUA YA: anunciaste una acción y no la ejecutaste. Usa tools ahora (read_file/replace_in_file/run_command). No repitas el anuncio ni reexplores el proyecto.",
+            });
+            onProgress?.({
+              phase: "narration",
+              text: "Retomando la acción anunciada…",
+            });
+            continue;
+          }
+
           this.session.kill();
           if (memory) memory.note(`finalizó ${decision?.kind || "task"}`);
           
@@ -1053,14 +1086,22 @@ class ChatOrchestrator {
           }
           textOut = formatAgentVisibleText(textOut);
 
+          const stillIncomplete = incompleteIntent && !written.length;
           persistKernelRoadmap(projectRoot, {
             task: message,
             steps,
             kind: decision?.kind,
             text: textOut,
-            completed: true,
+            completed: !stillIncomplete,
           });
-          return { kind: decision?.kind || "CHAT", text: textOut, steps, mutations: runMutations };
+          return {
+            kind: decision?.kind || "CHAT",
+            text: textOut,
+            steps,
+            mutations: runMutations,
+            incomplete: stillIncomplete,
+            report: { completed: !stillIncomplete },
+          };
         }
 
         messages.push({

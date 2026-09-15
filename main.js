@@ -1677,14 +1677,8 @@ ipcMain.handle("editcore:chat", async (_event, input = {}) => {
             projectRoot: rootPath,
             ...(p && typeof p === "object" ? p : { text: String(p || "") }),
           };
+          // Solo agent:progress — NO reenviar por editcore:chunk (duplicaba el texto en el chat).
           publishAgentProgress(sender, payload);
-          const phase = String(payload.phase || "");
-          if (phase === "narration_delta" || (phase === "narration" && payload.streaming === true)) {
-            const delta = String(payload.text || payload.delta || "");
-            if (delta && !sender.isDestroyed()) {
-              sender.send("editcore:chunk", { text: delta, delta: true });
-            }
-          }
         } catch { /* ignore */ }
       },
     });

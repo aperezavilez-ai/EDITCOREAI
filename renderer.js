@@ -347,6 +347,20 @@ function joinAgentStreamText(prev = "", next = "") {
   if (a.endsWith(b)) return a;
   if (b.startsWith(a) && b.length >= a.length) return b;
 
+  // Párrafo entero reenviado (falla clásica de doble escritura en el chat).
+  const aTrimFull = a.trim();
+  const bTrimFull = b.trim();
+  if (bTrimFull.length >= 40) {
+    if (aTrimFull === bTrimFull) return a;
+    if (a.includes(bTrimFull)) return a;
+    const lastPara = (a.split(/\n\n+/).pop() || "").trim();
+    if (lastPara && lastPara === bTrimFull) return a;
+    if (lastPara.length >= 40 && bTrimFull.startsWith(lastPara.slice(0, Math.min(80, lastPara.length)))
+      && bTrimFull.length <= lastPara.length * 1.15) {
+      return a;
+    }
+  }
+
   const aTrim = a.replace(/\s+$/g, "");
   const bTrim = b.replace(/^\s+/g, "");
   const bStart = bTrim.charAt(0);
@@ -2679,6 +2693,13 @@ function hasResumableAgentTask(project) {
   if (Boolean(workflow.task?.trim()) && ["awaiting_authorization", "interrupted", "executing"].includes(workflow.phase)) {
     return true;
   }
+  // completed prematuro: aún hay tarea + narración/resultado → CONTINUA debe reanudar.
+  if (Boolean(workflow.task?.trim()) && workflow.phase === "completed") {
+    const leftover = String(workflow.lastNarration || workflow.result || workflow.error || "").trim();
+    if (leftover.length > 20 || Array.isArray(workflow.resumeSteps) && workflow.resumeSteps.length) {
+      return true;
+    }
+  }
   if (workflow.taskId && ["interrupted", "executing", "awaiting_authorization"].includes(workflow.phase)) {
     return true;
   }
@@ -2689,6 +2710,7 @@ function hasResumableAgentTask(project) {
       // COMPLETED prematuro: sigue reanudable si hay plan/pendiente o fase no final.
       const pendingPlan = String(workflow.plan || project?.analysisMemory?.resultSummary || durable.planContent || "").trim();
       if (pendingPlan || workflow.phase === "interrupted" || durable.resumeRequired) return true;
+      if (String(workflow.task || "").trim().length > 15) return true;
     } else {
       return true;
     }
@@ -6574,10 +6596,15 @@ function appendCursorThought(thinkingItem, text, { delta = false } = {}) {
   if (!thinkingItem) return;
   const value = String(text || "");
   if (!value.trim()) return;
+  // La prosa del agente va SOLO al stream de abajo. La caja Pensamiento es
+  // para acciones/CoT cortas — nunca el mismo párrafo del chat.
+  const looksLikeChatProse = value.length > 160
+    || /\n\n/.test(value)
+    || /^(?:La captura|Ahora |Voy a |He |Tras |Según |En `)/i.test(value.trim())
+    || /##\s|```/.test(value);
+  if (looksLikeChatProse) return;
   ensureThoughtPanel(thinkingItem);
   if (thinkingItem._thoughtAccordion) thinkingItem._thoughtAccordion.open = true;
-  // Nunca mutar _streamBuffer aquí: es el buffer del chat/narración.
-  // Los deltas de thought van a un buffer propio para no duplicar texto en el mensaje.
   if (delta) {
     thinkingItem._thoughtOnlyBuffer = `${String(thinkingItem._thoughtOnlyBuffer || "")}${value}`;
     appendThoughtStreamText(thinkingItem, thinkingItem._thoughtOnlyBuffer);
@@ -6880,8 +6907,9 @@ function ensureThoughtPanel(thinkingItem) {
   }
   thinkingItem._thoughtPanel = stream;
   thinkingItem._thoughtStream = stream;
+  // NUNCA usar el Thought stream como log de narración (eso metía el chat dentro de la caja).
   if (!thinkingItem._narrativeLog) {
-    thinkingItem._narrativeLog = thinkingItem.querySelector?.(".agent-activity-log") || stream;
+    thinkingItem._narrativeLog = thinkingItem.querySelector?.(".agent-activity-log, .agent-narrative-log") || null;
   }
   return stream;
 }
@@ -7145,7 +7173,37 @@ function hideThinkingIndicator(_thinkingItem) {
 }
 
 function showThinkingIndicator(thinkingItem) {
-  thinkingItem?.querySelector?.(".thinking-primary")?.classList.remove("hidden");
+  if (!thinkingItem) return;
+  thinkingItem.classList.remove("agent-execution-done");
+  thinkingItem.classList.add("thinking-msg", "is-thinking-live");
+  let primary = thinkingItem.querySelector?.(".thinking-primary");
+  if (!primary) {
+    const body = thinkingItem.querySelector?.(".msg-body") || thinkingItem;
+    primary = document.createElement("div");
+    primary.className = "thinking-primary";
+    const dots = document.createElement("span");
+    dots.className = "thinking-dots";
+    dots.setAttribute("aria-hidden", "true");
+    dots.innerHTML = "<span></span><span></span><span></span>";
+    const status = document.createElement("span");
+    status.className = "thinking-status";
+    status.textContent = "Trabajando…";
+    primary.append(dots, status);
+    const exec = body.querySelector?.(".agent-execution-container");
+    if (exec) exec.insertAdjacentElement("afterend", primary);
+    else body.appendChild(primary);
+  }
+  primary.classList.remove("hidden");
+  primary.hidden = false;
+  primary.style.display = "";
+  const dots = primary.querySelector?.(".thinking-dots");
+  if (dots) {
+    dots.hidden = false;
+    dots.style.display = "";
+    dots.querySelectorAll("span").forEach((span) => {
+      span.style.animation = "";
+    });
+  }
 }
 
 function ensureAgentStreamRow(thinkingItem) {
@@ -7262,6 +7320,19 @@ function appendAgentStreamDelta(thinkingItem, text) {
   if (!thinkingItem || !value) return;
   ensureAgentStreamRow(thinkingItem);
   const prev = String(thinkingItem._streamBuffer || "");
+  // Anti-doble-escritura: snapshot completo o párrafo ya presente → no concatenar.
+  if (prev) {
+    const valueTrim = value.trim();
+    if (valueTrim.length >= 40 && (prev.endsWith(value) || prev.includes(valueTrim))) {
+      scheduleAgentStreamRender(thinkingItem);
+      return;
+    }
+    if (value.length >= prev.length && value.startsWith(prev)) {
+      thinkingItem._streamBuffer = stripAgentToolXml(value, { trim: false });
+      scheduleAgentStreamRender(thinkingItem);
+      return;
+    }
+  }
   // Tokens cortos del LLM: unir con joinAgentStreamText (nunca "fin.Inicio").
   if (prev && value.length <= 64 && !/^#{1,6}\s*Avance\b/i.test(value.trim()) && !looksLikeAnalysisStreamChunk(value)) {
     if (prev.endsWith(value)) {
@@ -7401,30 +7472,37 @@ function addAgentNarrationDelta(thinkingItem, text) {
   const raw = String(text || "");
   if (!thinkingItem || !raw) return;
   // Deduplicar el mismo token si llega por dos canales casi a la vez.
-  if (thinkingItem._lastNarrationDelta === raw && (Date.now() - (thinkingItem._lastNarrationDeltaAt || 0)) < 80) {
+  if (thinkingItem._lastNarrationDelta === raw && (Date.now() - (thinkingItem._lastNarrationDeltaAt || 0)) < 120) {
     return;
   }
   thinkingItem._lastNarrationDelta = raw;
   thinkingItem._lastNarrationDeltaAt = Date.now();
-  // Un solo camino: acumular delta UNA vez en _streamBuffer y espejar al Thought.
+  // Prosa SOLO abajo. Limpiar cualquier texto viejo dentro de Pensamiento.
+  if (thinkingItem._thoughtLiveBlock) {
+    thinkingItem._thoughtLiveBlock.remove();
+    thinkingItem._thoughtLiveBlock = null;
+  }
   appendAgentStreamDelta(thinkingItem, raw);
-  const buf = String(thinkingItem?._streamBuffer || "");
-  thinkingItem._thoughtOnlyBuffer = buf;
-  appendThoughtStreamText(thinkingItem, buf);
-  if (thinkingItem?._thoughtAccordion) thinkingItem._thoughtAccordion.open = true;
   const summary = thinkingItem?.querySelector?.(".agent-thought-summary");
-  if (summary) summary.textContent = "Pensamiento · en curso…";
+  if (summary && /Pensamiento/i.test(summary.textContent || "")) {
+    summary.textContent = "Pensamiento · en curso…";
+  }
 }
 
 function addAgentNarration(thinkingItem, text) {
   const value = humanizeAgentNarration(stripAgentToolXml(String(text || ""))).trim();
   if (!thinkingItem || !value) return;
   if (looksLikeAgentToolDump(text) && value.length < 8) return;
-  // Líneas de acción del orquestador → panel CoT (no solo stream markdown).
+  // Líneas de acción del orquestador → panel CoT (no el stream markdown).
   if (/^[⚙️🔍📂✓○→✗]/.test(value) || /^(Creando|Editando|Leyendo|Verificando|Explorando)\b/i.test(value)) {
     appendThoughtLine(thinkingItem, value, { kind: "action" });
     thinkingItem._thoughtLiveBlock = null;
     return;
+  }
+  // Prosa: jamás dentro de la caja Pensamiento.
+  if (thinkingItem._thoughtLiveBlock) {
+    thinkingItem._thoughtLiveBlock.remove();
+    thinkingItem._thoughtLiveBlock = null;
   }
   ensureAgentStreamRow(thinkingItem);
   const prev = String(thinkingItem._streamBuffer || "");
@@ -7433,14 +7511,26 @@ function addAgentNarration(thinkingItem, text) {
     flushAgentStreamRender(thinkingItem);
     return;
   }
+  // Ya streameado: no volver a pegar el mismo párrafo (doble escritura).
+  if (prev) {
+    const prevTrim = prev.trim();
+    const valueTrim = value.trim();
+    if (prevTrim === valueTrim || prev.includes(valueTrim)) {
+      flushAgentStreamRender(thinkingItem);
+      return;
+    }
+    if (valueTrim.includes(prevTrim) && valueTrim.length >= prevTrim.length) {
+      thinkingItem._streamBuffer = value;
+      flushAgentStreamRender(thinkingItem);
+      scrollFeedToBottom();
+      return;
+    }
+  }
   // No pisar un informe largo con un fragmento corto de phase "narration".
   if (prev.length > 400 && value.length < prev.length * 0.7
     && !(value.includes(prev.slice(0, Math.min(80, prev.length))) && value.length >= prev.length)) {
-    // Nuevo paso corto: anexar como párrafo, no descartar ni pisar.
     thinkingItem._streamBuffer = joinAgentStreamText(prev, value);
-    thinkingItem._thoughtOnlyBuffer = thinkingItem._streamBuffer;
     flushAgentStreamRender(thinkingItem);
-    appendThoughtStreamText(thinkingItem, thinkingItem._streamBuffer);
     scrollFeedToBottom();
     return;
   }
@@ -7452,9 +7542,7 @@ function addAgentNarration(thinkingItem, text) {
   } else {
     thinkingItem._streamBuffer = value;
   }
-  thinkingItem._thoughtOnlyBuffer = thinkingItem._streamBuffer;
   flushAgentStreamRender(thinkingItem);
-  appendThoughtStreamText(thinkingItem, thinkingItem._streamBuffer);
   scrollFeedToBottom();
 }
 
@@ -7675,13 +7763,24 @@ function stopThinkingAnimations(thinking) {
       span.style.animation = "none";
     });
   }
-  thinking.querySelector?.(".thinking-primary")?.remove();
+  // No borrar el nodo: CONTINUA / progreso mid-run necesitan reactivarlo.
+  thinking.querySelector?.(".thinking-primary")?.classList.add("hidden");
   thinking.classList.remove("is-thinking-live");
 }
 
 /** Cierra UI de “trabajando…” sin borrar el historial del turno. */
-function settleAgentTurnChrome(thinking, { failed = false } = {}) {
+function settleAgentTurnChrome(thinking, { failed = false, force = false } = {}) {
   if (!thinking) return;
+  const runId = String(thinking._runId || thinking.dataset?.runId || "").trim();
+  const stillLive = !force && ((runId && activeAgentThinkingRuns.has(runId))
+    || [...activePromptRequests.values()].some((job) => job.agentExecuting && (
+      !runId || String(job.runId || "") === runId
+    )));
+  if (stillLive && !failed) {
+    showThinkingIndicator(thinking);
+    setAgentLiveActivity(thinking, "Trabajando…");
+    return;
+  }
   stopThinkingAnimations(thinking);
   thinking.classList.remove("thinking-msg");
   thinking.classList.add("assistant", "agent-execution-done");
@@ -11619,11 +11718,18 @@ async function executePromptJob(job) {
       const continueAuthorized = Boolean(job.continueAuthorized);
       let directReadOnly = Boolean(job.directReadOnly);
       const workflowPhase = project?.agentWorkflow?.phase || "";
-      const resumableExecutable = hasResumableAgentTask(project) && ["interrupted", "executing", "awaiting_authorization"].includes(workflowPhase);
+      const resumableTask = hasResumableAgentTask(project);
+      const resumableExecutable = resumableTask && ["interrupted", "executing", "awaiting_authorization", "completed"].includes(workflowPhase);
       const planAuthorizedExecution = Boolean(job.planAuthorizedExecution)
         || isPlanAuthorizedExecution(project, prompt, isAgent);
-      const authorizedContinuation = planAuthorizedExecution || (isAgent && resumableExecutable
-        && (Boolean(job.resumeAuthorized) || isAgentAuthorization(prompt) || ProjectAnalysis.isRecoveryInstruction(prompt) || ProjectAnalysis.isAgentTaskFeedback(prompt)));
+      const authPrompt = isAgentAuthorization(prompt)
+        || ProjectAnalysis.isRecoveryInstruction(prompt)
+        || ProjectAnalysis.isAgentTaskFeedback(prompt);
+      // Alinear con el plan: CONTINUA + tarea guardada SIEMPRE reanuda (no prompt suelto).
+      const authorizedContinuation = planAuthorizedExecution
+        || Boolean(job.resumeAuthorized)
+        || (isAgent && resumableTask && authPrompt)
+        || (isAgent && resumableExecutable && authPrompt);
       const authorized = !isAgent || authorizedContinuation || continueAuthorized || planAuthorizedExecution;
       if (!isAgent || authorized || directReadOnly) {
         if (directReadOnly) {
@@ -11694,13 +11800,20 @@ async function executePromptJob(job) {
       const concreteTask = job.concreteAuthorizedTask === true
         || (typeof ProjectAnalysis.hasConcreteAuthorizedTask === "function"
           && ProjectAnalysis.hasConcreteAuthorizedTask(prompt));
+      // CONTINUA / "porque paras" nunca deben mandar solo la palabra suelta al modelo.
+      const resumeWithMemory = Boolean(authorizedContinuation || (authPrompt && storedTask));
       const executionPrompt = (concreteTask || planAuthorizedExecution)
         ? (ProjectAnalysis.resolveAuthorizedExecutionPrompt
           ? ProjectAnalysis.resolveAuthorizedExecutionPrompt(prompt, { ...project.agentWorkflow, task: storedTask }, storedTask)
           : ProjectAnalysis.authorizedPlanExecutionPrompt({ ...project.agentWorkflow, task: storedTask }))
-        : authorizedContinuation
-          ? ProjectAnalysis.recoveryPrompt({ ...project.agentWorkflow, task: storedTask }, prompt)
-          : isolatedRun ? prompt : storedTask;
+        : resumeWithMemory
+          ? ProjectAnalysis.recoveryPrompt({
+            ...project.agentWorkflow,
+            task: storedTask,
+            lastNarration: project.agentWorkflow?.lastNarration || project.agentWorkflow?.result || "",
+            focusFiles: project.analysisMemory?.filesInspected || [],
+          }, prompt)
+          : isolatedRun ? prompt : (storedTask || prompt);
       const recoveryProjection = !isolatedRun && window.editcoreTasks
         ? await window.editcoreTasks.status(project.agentWorkflow?.taskId || job.taskId || "").catch(() => null)
         : null;
@@ -11847,9 +11960,13 @@ async function executePromptJob(job) {
           targetRun.error = "";
           targetRun.resumeSteps = [];
         } else {
-          targetRun.phase = result.report?.completed ? "completed" : "interrupted";
-          targetRun.error = result.report?.completed ? "" : reportText;
-          if (!result.report?.completed && Array.isArray(result.steps) && result.steps.length) {
+          const incompleteTurn = result.incomplete === true
+            || /(?:^|\n)\s*(?:voy\s+a|ahora\s+(?:voy\s+a|leer[eé]|abrir[eé]))\b/i.test(reportText);
+          const markCompleted = Boolean(result.report?.completed) && !incompleteTurn;
+          targetRun.phase = markCompleted ? "completed" : "interrupted";
+          targetRun.error = markCompleted ? "" : reportText;
+          targetRun.lastNarration = reportText.slice(0, 2000);
+          if (!markCompleted && Array.isArray(result.steps) && result.steps.length) {
             targetRun.resumeSteps = result.steps.slice(-24);
           }
         }
@@ -13378,20 +13495,21 @@ window.editcoreAgent.onProgress((progress) => {
       const targetRun = project?.agentWorkflow?.runId === progress?.runId
         ? project.agentWorkflow
         : project?.agentRuns?.find((item) => item.runId === progress?.runId);
-      if (targetRun) {
-        targetRun.narration ||= [];
-        targetRun.narration.push({ index: Number(progress.index) || 0, text: String(progress.text || ""), at: Date.now() });
-        targetRun.updatedAt = Date.now();
-        // Debounce: guardar en cada chunk congela el chat y refuerza el titileo.
-        if (liveRun) {
-          if (liveRun._narrationSaveTimer) clearTimeout(liveRun._narrationSaveTimer);
-          liveRun._narrationSaveTimer = setTimeout(() => {
-            liveRun._narrationSaveTimer = null;
+        if (targetRun) {
+          targetRun.narration ||= [];
+          targetRun.narration.push({ index: Number(progress.index) || 0, text: String(progress.text || ""), at: Date.now() });
+          targetRun.lastNarration = String(progress.text || "").slice(0, 2000);
+          targetRun.updatedAt = Date.now();
+          // Debounce: guardar en cada chunk congela el chat y refuerza el titileo.
+          if (liveRun) {
+            if (liveRun._narrationSaveTimer) clearTimeout(liveRun._narrationSaveTimer);
+            liveRun._narrationSaveTimer = setTimeout(() => {
+              liveRun._narrationSaveTimer = null;
+              saveProjects();
+            }, 1200);
+          } else {
             saveProjects();
-          }, 1200);
-        } else {
-          saveProjects();
-        }
+          }
       }
       return;
     }

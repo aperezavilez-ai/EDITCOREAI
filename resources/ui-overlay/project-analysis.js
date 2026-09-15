@@ -7,7 +7,7 @@
 })(typeof window !== "undefined" ? window : globalThis, function createProjectAnalysis() {
   const AUTHORIZATION_PATTERN = /^\s*(?:(?:s[i\u00ed][\s,.!]+)?(?:adelante|procede|contin[u\u00fa]a|hazlo|ejecuta)(?:\s+(?:con\s+)?(?:(?:todos?|todas?)\s+)?(?:(?:el|la|los|las|tu|tus|este|esta|estos|estas)\s+)?(?:cambios?|plan|propuesta|tarea|correcciones?))?|autorizado|autorizo(?:\s+(?:(?:todos?|todas?)\s+)?(?:(?:el|la|los|las|tu|tus|este|esta|estos|estas)\s+)?(?:cambios?|plan|propuesta|tarea|correcciones?))?|acepto(?:\s+(?:(?:todos?|todas?)\s+)?(?:(?:el|la|los|las|tu|tus|este|esta|estos|estas)\s+)?(?:cambios?|plan|propuesta|tarea|correcciones?))?|s[i\u00ed])\s*[.!]*\s*$/i;
   const FOLLOW_UP_PATTERN = /^(?:en\s+)?(?:qu[e\u00e9]|cu[a\u00e1]l|c[o\u00f3]mo|dime|explica)?\s*(?:porcentaje|avance|estado|reporte|resultado|hallazgos|an[a\u00e1]lisis|qu[e\u00e9]\s+falta)|^(?:la|el|esa|ese|esta|este)\s+(?:app|aplicaci[o\u00f3]n|proyecto|que\s+acabas|que\s+analizaste)|^(?:sobre|respecto\s+a)\s+(?:lo|la)\s+anterior/i;
-  const RECOVERY_PATTERN = /\b(?:contin[u\u00fa]a|reanuda|retoma|prosigue|corrige|corrije|repara|soluciona|arregla)\b[\s\S]{0,100}\b(?:tarea|proceso|ejecuci[o\u00f3]n|correcciones?|fallos?|errores?|problemas?|pendiente|anterior|descrit[oa]s?|indicad[oa]s?)\b|\b(?:correcciones?|fallos?|errores?|problemas?)\b[\s\S]{0,100}\b(?:anterior|pendiente|descrit[oa]s?|indicad[oa]s?|corrige|corrije|repara|soluciona|arregla)\b/i;
+  const RECOVERY_PATTERN = /\b(?:contin[u\u00fa]a|reanuda|retoma|prosigue|corrige|corrije|repara|soluciona|arregla)\b[\s\S]{0,100}\b(?:tarea|proceso|ejecuci[o\u00f3]n|correcciones?|fallos?|errores?|problemas?|pendiente|anterior|descrit[oa]s?|indicad[oa]s?)\b|\b(?:correcciones?|fallos?|errores?|problemas?)\b[\s\S]{0,100}\b(?:anterior|pendiente|descrit[oa]s?|indicad[oa]s?|corrige|corrije|repara|soluciona|arregla)\b|\b(?:por\s*qu[eé]|porque)\s+(?:paras?|te\s+detienes|te\s+quedas|cortas?|paras\s+a\s+medias)\b|\bno\s+te\s+detengas\b|\bsigue\s+(?:con\s+)?(?:eso|la\s+tarea|donde\s+ibas)\b/i;
   const CREDENTIAL_LABEL_PATTERN = /(\b(?:api[\s_-]*key|clave|clve|token|secret|password|contrase(?:n|ñ)a|authorization)\b\s*[:=]?\s*(?:bearer\s+)?)[A-Za-z0-9_.\/+\-=]{12,}/gi;
   const URL_CREDENTIAL_PATTERN = /([?&](?:key|api_key|apikey|token|access_token)=)[^&\s]+/gi;
 
@@ -579,13 +579,19 @@
     const original = text(workflow.task || workflow.originalRequest || "Tarea pendiente");
     const plan = text(workflow.plan || "");
     const failure = text(workflow.error || "");
+    const lastNarration = text(workflow.lastNarration || workflow.result || "").slice(0, 1200);
+    const focusFiles = Array.isArray(workflow.focusFiles)
+      ? workflow.focusFiles.filter(Boolean).slice(0, 8)
+      : [];
     const direction = text(instruction || "Continua hasta completar y verificar la tarea.");
     return [
       `SOLICITUD ORIGINAL:\n${original}`,
       plan ? `PLAN AUTORIZADO:\n${plan}` : "",
       failure ? `ESTADO DE REANUDACION:\n${failure}` : "",
+      lastNarration ? `ULTIMO AVANCE DEL AGENTE (no reexplores desde cero):\n${lastNarration}` : "",
+      focusFiles.length ? `ARCHIVOS EN FOCO:\n${focusFiles.map((f) => `- ${f}`).join("\n")}` : "",
       `INSTRUCCION ACTUAL:\n${direction}`,
-      "La autorizacion original sigue vigente. Retoma los checkpoints disponibles, corrige los fallos y completa la solicitud sin pedir otra autorizacion.",
+      "La autorizacion original sigue vigente. Retoma exactamente donde quedaste. PROHIBIDO reexplorar el repo entero ni reinventar el diagnostico si ya hay evidencia arriba.",
     ].filter(Boolean).join("\n\n");
   }
 
