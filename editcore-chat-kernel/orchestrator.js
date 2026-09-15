@@ -1335,7 +1335,16 @@ class ChatOrchestrator {
       return { kind: decision?.kind || "EXECUTE", text: textOut, steps, incomplete: false, mutations: runMutations };
     } catch (err) {
       this.session.kill();
-      const errText = formatAgentVisibleText("Atención durante la ejecución: " + (err.message || err));
+      let safeMsg = String(err?.message || err || "Error desconocido");
+      try {
+        const { sanitizeChatProviderError } = require("../runtime/chat-error-sanitize");
+        safeMsg = sanitizeChatProviderError(err);
+      } catch {
+        if (/gafcore/i.test(safeMsg)) {
+          safeMsg = "El proveedor no respondió a tiempo. Reintenta en unos segundos; tu modelo se conserva.";
+        }
+      }
+      const errText = formatAgentVisibleText("Atención durante la ejecución: " + safeMsg);
       persistKernelRoadmap(projectRoot, {
         task: message,
         steps,

@@ -1554,19 +1554,21 @@ function cacheKey(input) {
 }
 
 function toUserFacingError(error) {
-  const message = String(error?.message || error || "").trim();
-  if (!message) return "No pude completar la acción. Intenta de nuevo.";
-  if (/Cannot find module|Require stack|ENOENT|\.asar[\\/]|node_modules|ipcMain|jarvis-adapter/i.test(message)) {
-    return "No pude procesar tu mensaje ahora. Verifica que tengas un modelo verificado en Modelos y vuelve a intentar.";
+  try {
+    const { sanitizeChatProviderError } = require("./runtime/chat-error-sanitize");
+    return sanitizeChatProviderError(error);
+  } catch {
+    const message = String(error?.message || error || "").trim();
+    if (!message) return "No pude completar la acción. Intenta de nuevo.";
+    if (/gafcore/i.test(message)) return "No pude completar la respuesta. Intenta de nuevo.";
+    if (/Cannot find module|Require stack|ENOENT|\.asar[\\/]|node_modules|ipcMain|jarvis-adapter/i.test(message)) {
+      return "No pude procesar tu mensaje ahora. Verifica que tengas un modelo verificado en Modelos y vuelve a intentar.";
+    }
+    if (/ECONNREFUSED|fetch failed|backend|no est[aá] disponible|tardo demasiado|502|503|429|timeout/i.test(message)) {
+      return "No pude completar la respuesta. Intenta de nuevo.";
+    }
+    return message.replace(/^Error invoking remote method '[^']+':\s*/i, "");
   }
-  if (/ECONNREFUSED|fetch failed|backend/i.test(message)) {
-    return "No pude conectar con el modelo configurado. Revisa tu API key y el modelo seleccionado.";
-  }
-  // Fallos de proveedor/modelo: nunca mostrar hostname ni nombre de modelo en el chat.
-  if (/respuesta vacia|EMPTY_PROVIDER|gafcore-gateway|apicredits\/|meai\/|devolvio una respuesta|proveedor .+ devolvio|upstream|502|503|429|timeout|invalid.?token|no available accounts/i.test(message)) {
-    return "No pude completar la respuesta. Intenta de nuevo.";
-  }
-  return message.replace(/^Error invoking remote method '[^']+':\s*/i, "");
 }
 
 ipcMain.handle("editcore:chat", async (_event, input = {}) => {
@@ -2370,38 +2372,65 @@ function isRtkCompatibleCommand(parsed) {
 }
 
 function isAuthOrUpstreamFailure(error) {
-  const message = String(error?.message || error || "");
-  return /401|403|无效|令牌|invalid.?token|inv[aá]lid.?token|upstream|上游|no est[aá] disponible|503|502|forbidden|no available accounts|temporarily unavailable/i.test(message);
+  try {
+    const { isHardProviderFailure } = require("./runtime/chat-error-sanitize");
+    const message = String(error?.message || error || "");
+    // Auth/billing sí; timeouts temporales NO (deben reintentarse).
+    return isHardProviderFailure(message, error?.status);
+  } catch {
+    const message = String(error?.message || error || "");
+    return /401|403|无效|令牌|invalid.?token|inv[aá]lid.?token|forbidden/i.test(message)
+      && !/no est[aá] disponible|tard[oó] demasiado|reintenta en/i.test(message);
+  }
 }
 
 function isTransientProviderError(error) {
-  if (isAuthOrUpstreamFailure(error)) return false;
-  if (error?.code === "PROVIDER_GATEWAY_TIMEOUT" || Number(error?.status) === 524) return true;
-  const message = String(error?.message || error || "");
-  return isRetryableProviderStatus(error?.status)
-    || /timeout|timed out|network|fetch failed|socket|temporarily|temporalmente|unavailable|overloaded|rate limit|try again|reintenta|gateway time-?out|cloudflare|524/i.test(message);
+  try {
+    const { isTransientProviderFailure, isHardProviderFailure } = require("./runtime/chat-error-sanitize");
+    const message = String(error?.message || error || "");
+    if (isHardProviderFailure(message, error?.status)) return false;
+    if (error?.code === "PROVIDER_GATEWAY_TIMEOUT" || Number(error?.status) === 524) return true;
+    return isTransientProviderFailure(message, error?.status)
+      || isRetryableProviderStatus(error?.status)
+      || /timeout|timed out|network|fetch failed|socket|temporarily|temporalmente|unavailable|overloaded|rate limit|try again|reintenta|gateway time-?out|cloudflare|524/i.test(message);
+  } catch {
+    if (error?.code === "PROVIDER_GATEWAY_TIMEOUT" || Number(error?.status) === 524) return true;
+    const message = String(error?.message || error || "");
+    return isRetryableProviderStatus(error?.status)
+      || /timeout|timed out|network|fetch failed|socket|temporarily|temporalmente|unavailable|overloaded|rate limit|try again|reintenta|gateway time-?out|cloudflare|524|no est[aá] disponible|tard[oó] demasiado|503|502/i.test(message);
+  }
 }
 
 function toUserFacingProviderError(error) {
   if (!error) return error;
-  if (error?.code === "PROVIDER_GATEWAY_TIMEOUT" || Number(error?.status) === 524) {
-    const msg = "La respuesta tardó demasiado tiempo. Intenta reducir el alcance de la solicitud.";
+  try {
+    const { sanitizeChatProviderError } = require("./runtime/chat-error-sanitize");
+    const msg = sanitizeChatProviderError(error);
     return Object.assign(new Error(msg), {
-      status: Number(error.status) || 524,
-      code: "PROVIDER_GATEWAY_TIMEOUT",
-      detail: error.detail || error.message,
+      status: Number(error.status) || 0,
+      code: error.code || (isTransientProviderError(error) ? "PROVIDER_TRANSIENT" : "PROVIDER_ERROR"),
+      detail: String(error.message || "").slice(0, 240),
     });
+  } catch {
+    if (error?.code === "PROVIDER_GATEWAY_TIMEOUT" || Number(error?.status) === 524) {
+      const msg = "La respuesta tardó demasiado tiempo. Intenta reducir el alcance de la solicitud.";
+      return Object.assign(new Error(msg), {
+        status: Number(error.status) || 524,
+        code: "PROVIDER_GATEWAY_TIMEOUT",
+        detail: error.detail || error.message,
+      });
+    }
+    const message = String(error?.message || error || "");
+    if (/gafcore/i.test(message) || /<!DOCTYPE\s+html|<html[\s>]|cloudflare|error code 524|gateway time-?out|API 524/i.test(message)) {
+      const msg = "El proveedor no respondió a tiempo. Reintenta en unos segundos; tu modelo se conserva.";
+      return Object.assign(new Error(msg), {
+        status: Number(error?.status) || 524,
+        code: "PROVIDER_GATEWAY_TIMEOUT",
+        detail: message.slice(0, 240),
+      });
+    }
+    return error;
   }
-  const message = String(error?.message || error || "");
-  if (/<!DOCTYPE\s+html|<html[\s>]|cloudflare|error code 524|gateway time-?out|API 524/i.test(message)) {
-    const msg = "La respuesta tardó demasiado tiempo. Intenta reducir el alcance de la solicitud.";
-    return Object.assign(new Error(msg), {
-      status: Number(error?.status) || 524,
-      code: "PROVIDER_GATEWAY_TIMEOUT",
-      detail: message.slice(0, 240),
-    });
-  }
-  return error;
 }
 
 function logPreviewRuntime(message, error = null) {

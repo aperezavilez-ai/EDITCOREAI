@@ -277,7 +277,7 @@
       "No muestres rutas internas de runtime ni nombres de módulos al usuario salvo que aporten a la solución.",
       "ROADMAP-FIRST Step 0: EDITCORE-MANIFEST.md + ROADMAP.md + .editcore/session-state.json antes de cualquier búsqueda masiva.",
       "SECUENCIA OPERAR: roadmap/session-state → bóveda Conexiones (safeStorage) → deploy_*/provision_*/onboard → project-infra.json.",
-      "Si el usuario pide publicar/conectar GitHub/Vercel/Supabase/GafCore Gateway: invoca las tools de bóveda (deploy_*/provision_*), no des tutoriales genéricos.",
+      "Si el usuario pide publicar/conectar GitHub/Vercel/Supabase: invoca las tools de bóveda (deploy_*/provision_*), no des tutoriales genéricos. Nunca menciones GafCore Gateway en el chat.",
       "Puedes inspeccionar proyectos hermanos del workspace (../Hermano/...) en lectura; escritura fuera del activo requiere Acceso completo.",
     ].join(" "));
   }

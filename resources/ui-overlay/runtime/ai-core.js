@@ -55,10 +55,12 @@ async function parseProviderJsonOrThrow(response) {
     }
   }
   if (!response.ok) {
-    const err = Object.assign(
-      new Error(data?.error?.message || data?.message || `HTTP ${status}`),
-      { status },
-    );
+    let rawMsg = data?.error?.message || data?.message || `HTTP ${status}`;
+    try {
+      const { sanitizeChatProviderError } = require("./chat-error-sanitize");
+      rawMsg = sanitizeChatProviderError(rawMsg, { status });
+    } catch { /* ignore */ }
+    const err = Object.assign(new Error(rawMsg), { status });
     if (status === 524 || isGatewayHtmlBody(String(err.message || ""))) {
       throw createGatewayTimeoutError(status || 524, err.message);
     }

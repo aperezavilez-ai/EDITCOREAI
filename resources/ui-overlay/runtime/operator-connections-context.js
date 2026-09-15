@@ -63,22 +63,89 @@ function readEnvFileValues(filePath) {
   return out;
 }
 
+/** Slug GafCore = nombre de carpeta del proyecto (nunca de otro). */
+function gafcoreProjectSlug(projectRoot = "") {
+  return String(path.basename(path.resolve(String(projectRoot || "."))))
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 48) || "app";
+}
+
+function isGafcoreSupabaseUrl(url = "") {
+  try {
+    return /supabase\.gafcore\.com$/i.test(new URL(String(url || "").trim()).hostname);
+  } catch {
+    return /supabase\.gafcore\.com/i.test(String(url || ""));
+  }
+}
+
+/** Host sin path: la bóveda global nunca guarda /taxidriv ni otro proyecto. */
+function gafcorePlatformOrigin(url = "") {
+  try {
+    const parsed = new URL(String(url || "").trim());
+    if (/supabase\.gafcore\.com$/i.test(parsed.hostname)) {
+      return `${parsed.protocol}//${parsed.host}`;
+    }
+  } catch { /* ignore */ }
+  return "";
+}
+
+function gafcorePathSlug(url = "") {
+  try {
+    const parsed = new URL(String(url || "").trim());
+    if (!/supabase\.gafcore\.com$/i.test(parsed.hostname)) return "";
+    return String(parsed.pathname || "").replace(/^\/+|\/+$/g, "").split("/")[0] || "";
+  } catch {
+    return "";
+  }
+}
+
 /**
- * Supabase GafCore es POR PROYECTO (/taxidriv, /track-pro-gps, ...).
+ * URL Supabase que pertenece SOLO a este proyecto.
+ * En GafCore: siempre https://supabase.gafcore.com/{slug-de-esta-carpeta}
+ * Nunca hereda /taxidriv ni path de otro proyecto.
+ */
+function projectOwnedSupabaseUrl(projectRoot = "", candidateUrl = "") {
+  const slug = gafcoreProjectSlug(projectRoot);
+  const raw = String(candidateUrl || "").trim().replace(/\/+$/, "");
+  if (isGafcoreSupabaseUrl(raw) || !raw) {
+    const origin = gafcorePlatformOrigin(raw) || "https://supabase.gafcore.com";
+    return `${origin}/${slug}`;
+  }
+  return raw;
+}
+
+function projectOwnedSupabaseSchema(projectUrl = "", explicit = "") {
+  const forced = String(explicit || "").trim();
+  if (forced) return forced;
+  const pathSlug = gafcorePathSlug(projectUrl);
+  return pathSlug || "public";
+}
+
+/**
+ * Supabase GafCore es POR PROYECTO (/page, /taxidriv, ...).
  * La boveda global no debe fijar la URL de un solo proyecto.
  */
 function resolveProjectSupabase(projectRoot = "", globalConnections = {}) {
   const root = String(projectRoot || "").trim();
-  const globalUrl = String(globalConnections.selfSupabaseUrl || "").trim();
   const globalKey = String(globalConnections.selfSupabaseKey || "").trim();
+  const globalOrigin = gafcorePlatformOrigin(globalConnections.selfSupabaseUrl)
+    || (isGafcoreSupabaseUrl(globalConnections.selfSupabaseUrl)
+      ? "https://supabase.gafcore.com"
+      : String(globalConnections.selfSupabaseUrl || "").trim().replace(/\/+$/, ""));
+  const ownSlug = root ? gafcoreProjectSlug(root) : "";
+
   if (!root) {
+    // Sin proyecto activo: solo origen/plataforma, nunca path de un app concreto.
     return {
-      url: globalUrl,
+      url: globalOrigin,
       key: globalKey,
-      source: globalUrl || globalKey ? "boveda-global" : "",
+      source: globalOrigin || globalKey ? "boveda-global" : "",
       projectScoped: false,
     };
   }
+
   const candidates = [
     path.join(root, ".env.local"),
     path.join(root, ".env"),
@@ -100,60 +167,88 @@ function resolveProjectSupabase(projectRoot = "", globalConnections = {}) {
       || values.VITE_SUPABASE_PUBLISHABLE_KEY
       || "",
     ).trim();
-    if (/supabase\.gafcore\.com/i.test(url) && key) {
+    if (!url || !key) continue;
+
+    // Contaminación: .env apunta a otro slug GafCore → ignorar y corregir abajo.
+    if (isGafcoreSupabaseUrl(url)) {
+      const envSlug = gafcorePathSlug(url);
+      if (envSlug && envSlug !== ownSlug) {
+        continue;
+      }
       return {
-        url,
+        url: projectOwnedSupabaseUrl(root, url),
         key,
+        schema: projectOwnedSupabaseSchema(projectOwnedSupabaseUrl(root, url), values.NEXT_PUBLIC_SUPABASE_SCHEMA),
         source: path.basename(filePath),
         projectScoped: true,
         projectName: path.basename(root),
       };
     }
-  }
-  const manifest = readProjectLinkManifest(root);
-  if (manifest?.supabase?.url) {
+
     return {
-      url: String(manifest.supabase.url).replace(/\/+$/, ""),
-      key: globalKey,
-      source: ".editcore/connections.json",
+      url,
+      key,
+      schema: String(values.NEXT_PUBLIC_SUPABASE_SCHEMA || "public").trim() || "public",
+      source: path.basename(filePath),
       projectScoped: true,
       projectName: path.basename(root),
     };
   }
-  // No heredar URL de otro proyecto (ej. /taxidriv) solo porque esta en la boveda global.
-  let globalLooksProjectSpecific = false;
-  try {
-    const parsed = new URL(globalUrl);
-    globalLooksProjectSpecific = /supabase\.gafcore\.com$/i.test(parsed.hostname)
-      && Boolean(String(parsed.pathname || "").replace(/\/+$/, ""));
-  } catch {
-    globalLooksProjectSpecific = /supabase\.gafcore\.com\/.+/i.test(globalUrl);
+
+  const manifest = readProjectLinkManifest(root);
+  if (manifest?.supabase?.url && isGafcoreSupabaseUrl(manifest.supabase.url)) {
+    const linkedSlug = gafcorePathSlug(manifest.supabase.url);
+    if (!linkedSlug || linkedSlug === ownSlug) {
+      const url = projectOwnedSupabaseUrl(root, manifest.supabase.url);
+      return {
+        url,
+        key: globalKey,
+        schema: projectOwnedSupabaseSchema(url),
+        source: ".editcore/connections.json",
+        projectScoped: true,
+        projectName: path.basename(root),
+      };
+    }
   }
-  if (globalLooksProjectSpecific) {
+
+  // Bóveda: solo credencial de plataforma + URL propia de ESTE proyecto.
+  if (globalKey && (globalOrigin || isGafcoreSupabaseUrl(globalConnections.selfSupabaseUrl) || !globalConnections.selfSupabaseUrl)) {
+    const url = projectOwnedSupabaseUrl(root, globalOrigin || "https://supabase.gafcore.com");
     return {
-      url: "",
-      key: "",
-      source: "",
-      projectScoped: false,
+      url,
+      key: globalKey,
+      schema: projectOwnedSupabaseSchema(url),
+      source: "boveda-plataforma+slug-proyecto",
+      projectScoped: true,
       projectName: path.basename(root),
-      note: "Este proyecto no tiene SUPABASE_URL en .env; la boveda global apunta a otro proyecto y no se reutiliza.",
     };
   }
+
+  // URL global no-GafCore (cloud único): no inyectar en proyectos distintos.
   return {
-    url: globalUrl,
-    key: globalKey,
-    source: globalUrl || globalKey ? "boveda-global-fallback" : "",
+    url: "",
+    key: "",
+    schema: "",
+    source: "",
     projectScoped: false,
     projectName: path.basename(root),
+    note: "Este proyecto no tiene SUPABASE_URL propia; no se hereda la URL de otro proyecto.",
   };
 }
 
 function connectionsForProject(globalConnections = {}, projectRoot = "") {
   const resolved = resolveProjectSupabase(projectRoot, globalConnections);
-  if (!resolved.url && !resolved.key) return { ...globalConnections, _supabaseResolved: resolved };
+  if (!resolved.url && !resolved.key) {
+    return {
+      ...globalConnections,
+      selfSupabaseUrl: "",
+      selfSupabaseKey: "",
+      _supabaseResolved: resolved,
+    };
+  }
   return {
     ...globalConnections,
-    selfSupabaseUrl: resolved.url || globalConnections.selfSupabaseUrl,
+    selfSupabaseUrl: resolved.url,
     selfSupabaseKey: resolved.key || globalConnections.selfSupabaseKey,
     _supabaseResolved: resolved,
   };
@@ -171,7 +266,6 @@ function buildSafeConnectionsSnapshot(options = {}) {
     : {
       github: { configured: Boolean(connections.githubToken) },
       vercel: { configured: Boolean(connections.vercelToken) },
-      netlify: { configured: Boolean(connections.netlifyToken) },
       selfsupabase: {
         configured: Boolean(connections.selfSupabaseUrl && connections.selfSupabaseKey),
         url: connections.selfSupabaseUrl || "",
@@ -189,20 +283,24 @@ function buildSafeConnectionsSnapshot(options = {}) {
     ? options.projectManifest
     : readProjectLinkManifest(options.projectRoot);
 
+  const operatorNote =
+      "EDITCOREAI = IDE + agente. Conexiones globales (bóveda): GitHub, Vercel, Supabase (URL por proyecto), SSH. "
+      + "Alimentación de IA: proveedores ME AI y APICredits configurados en Modelos (API keys propias). "
+      + "Con un proyecto abierto, el agente usa el .env de ESE proyecto, no la URL de otro. "
+      + "No pidas tokens si ya estan en boveda o en el .env del proyecto activo. "
+      + "Nunca menciones GafCore Gateway en respuestas al usuario.";
+
   const gatewayConfigured = Boolean(
     gatewayLink?.projectId
     || gatewayLink?.projectName
     || gatewayLink?.connectedAt
+    || gatewayLink?.projectKey
     || options.gatewayAdminConfigured === true,
   );
 
   const snapshot = {
     updatedAt: new Date().toISOString(),
-    operatorNote:
-      "Boveda GLOBAL del operador: GitHub, Vercel, SSH, Gateway. "
-      + "Supabase GafCore es POR PROYECTO (URL distinta: /taxidriv, /track-pro-gps, ...). "
-      + "Con un proyecto abierto, el agente usa el .env de ESE proyecto, no la URL de otro. "
-      + "No pidas tokens si ya estan en boveda o en el .env del proyecto activo.",
+    operatorNote,
     github: {
       configured: Boolean(summary.github?.configured),
       account: String(options.accounts?.github || "").trim() || undefined,
@@ -214,12 +312,9 @@ function buildSafeConnectionsSnapshot(options = {}) {
       orgId: connections.vercelOrgId ? String(connections.vercelOrgId) : undefined,
       defaultProjectId: connections.vercelProjectId ? String(connections.vercelProjectId) : undefined,
     },
-    netlify: {
-      configured: Boolean(summary.netlify?.configured),
-    },
     selfsupabase: {
       configured: Boolean(summary.selfsupabase?.configured),
-      label: "Supabase GafCore",
+      label: "Supabase GafCore (datos)",
       url: String(summary.selfsupabase?.url || connections.selfSupabaseUrl || "").replace(/\/+$/, ""),
       scope: resolved.projectScoped ? "proyecto-activo" : "boveda-global",
       source: resolved.source || undefined,
@@ -235,17 +330,16 @@ function buildSafeConnectionsSnapshot(options = {}) {
     },
     gafcoreGateway: {
       configured: gatewayConfigured,
-      adminConfigured: options.gatewayAdminConfigured === true,
-      projectId: gatewayLink?.projectId ? String(gatewayLink.projectId) : undefined,
-      projectName: gatewayLink?.projectName ? String(gatewayLink.projectName) : undefined,
-      projectRoot: gatewayLink?.projectRoot ? String(gatewayLink.projectRoot) : undefined,
-      connectedAt: gatewayLink?.connectedAt ? String(gatewayLink.connectedAt) : undefined,
-      models: Array.isArray(gatewayLink?.models)
-        ? gatewayLink.models.map((m) => String(m)).slice(0, 12)
-        : undefined,
-      balanceUsd: Number.isFinite(Number(gatewayLink?.balanceUsd))
-        ? Number(gatewayLink.balanceUsd)
-        : undefined,
+      disabled: false,
+      url: "https://gafcore-gateway.vercel.app",
+      chatEndpoint: "https://gafcore-gateway.vercel.app/api/v1/chat",
+      openaiCompatible: "https://gafcore-gateway.vercel.app/api/openai/v1",
+      header: "x-project-key",
+      projectId: gatewayLink?.projectId || undefined,
+      projectName: gatewayLink?.projectName || undefined,
+      note:
+        "Fuente de IA: modelos ME AI / APICredits en el panel Modelos de EDITCOREAI. "
+        + "Nunca mencionar GafCore Gateway al usuario.",
     },
     projectLinks: projectManifest || null,
   };
@@ -259,28 +353,33 @@ function statusLabel(configured) {
 
 function formatOperatorConnectionsMemory(snapshot = {}) {
   const s = snapshot && typeof snapshot === "object" ? snapshot : {};
+  const gw = s.gafcoreGateway || {};
   const lines = [
-    "MEMORIA DE CONEXIONES DEL OPERADOR (fuente de verdad — sin secretos):",
+    "MEMORIA DE CONEXIONES Y DEPENDENCIAS DE EDITCOREAI (fuente de verdad — sin secretos):",
     String(s.operatorNote || "").trim(),
-    `- GitHub: ${statusLabel(s.github?.configured)}${s.github?.account ? ` (cuenta: ${s.github.account})` : ""} — git commit/push y herramientas github_*`,
-    `- Vercel: ${statusLabel(s.vercel?.configured)}${s.vercel?.account ? ` (cuenta: ${s.vercel.account})` : ""}${s.vercel?.defaultProjectId ? ` project=${s.vercel.defaultProjectId}` : ""} — deploy vercel --prod --yes / publicar`,
-    `- Supabase GafCore: ${statusLabel(s.selfsupabase?.configured)}${s.selfsupabase?.url ? ` (${s.selfsupabase.url})` : ""}${
+    "",
+    "### Capas",
+    "1) EDITCOREAI (esta app): IDE, agente, preview, Publicar, Inspector, Cerebro.",
+    "2) Conexiones bóveda: GitHub (git), Vercel (deploy), Supabase (DB por proyecto), SSH (servidor).",
+    "3) Modelos: ME AI y APICredits en el panel Modelos (API keys propias).",
+    "REGLA DURA: NUNCA menciones GafCore Gateway, gafcore-gateway, project keys ni URLs de gateway en respuestas al usuario.",
+    "",
+    "### Estado actual",
+    `- GitHub: ${statusLabel(s.github?.configured)}${s.github?.account ? ` (cuenta: ${s.github.account})` : ""} — commit/push / Publicar`,
+    `- Vercel: ${statusLabel(s.vercel?.configured)}${s.vercel?.account ? ` (cuenta: ${s.vercel.account})` : ""}${s.vercel?.defaultProjectId ? ` project=${s.vercel.defaultProjectId}` : ""} — deploy / Publicar`,
+    `- Supabase (datos): ${statusLabel(s.selfsupabase?.configured)}${s.selfsupabase?.url ? ` (${s.selfsupabase.url})` : ""}${
       s.selfsupabase?.scope === "proyecto-activo"
         ? ` [proyecto activo${s.selfsupabase.projectName ? `: ${s.selfsupabase.projectName}` : ""}${s.selfsupabase.source ? ` via ${s.selfsupabase.source}` : ""}]`
-        : " [boveda global — mejor usar .env del proyecto abierto]"
-    } — service_read/service_write, supabase db push`,
+        : " [boveda — URL propia por slug del proyecto abierto]"
+    }`,
     `- Servidor SSH: ${statusLabel(s.server?.configured)}${s.server?.host ? ` (${s.server.host})` : ""}${s.server?.deployPath ? ` deploy=${s.server.deployPath}` : ""}`,
-    `- GafCore Gateway: ${statusLabel(s.gafcoreGateway?.configured)}${
-      s.gafcoreGateway?.projectName || s.gafcoreGateway?.projectId
-        ? ` (proyecto: ${s.gafcoreGateway.projectName || s.gafcoreGateway.projectId})`
-        : s.gafcoreGateway?.adminConfigured
-          ? " (admin listo; vincula el proyecto activo)"
-          : ""
-    } — modelos/balance del Gateway del operador`,
+    `- Proveedores de IA (ME AI / APICredits): ${statusLabel(gw.configured)}${gw.projectName ? ` proyecto=${gw.projectName}` : ""}`,
+    `  ${gw.note || "Usa Modelos → ME AI / APICredits. No digas GafCore Gateway al usuario."}`,
   ];
 
   const links = s.projectLinks;
   if (links && typeof links === "object") {
+    lines.push("", "Publicar SIEMPRE usa Conexiones de EDITCOREAI (GitHub/Vercel/Supabase/SSH), no otras instalaciones.");
     lines.push("Enlaces de ESTE proyecto (.editcore/connections.json):");
     if (links.github) lines.push(`  - GitHub proyecto: ${JSON.stringify(stripSecrets(links.github)).slice(0, 240)}`);
     if (links.vercel) lines.push(`  - Vercel proyecto: ${JSON.stringify(stripSecrets(links.vercel)).slice(0, 240)}`);
@@ -289,11 +388,11 @@ function formatOperatorConnectionsMemory(snapshot = {}) {
   }
 
   lines.push(
-        "Regla: si esta CONECTADO, asume que EditCore ya tiene las credenciales del operador. "
-      + "No pidas pegar tokens. Para mutaciones externas (push/deploy/DB) pide confirmacion del usuario. "
-      + "Al cambiar de proyecto estas cuentas GLOBALES siguen vigentes; solo cambian los enlaces del proyecto activo "
-      + "(.editcore/connections.json y GafCore Gateway del proyecto). "
-      + "Puedes usar connection_status / service_read / Detectar desde herramientas; no dependas del badge de la UI.",
+    "",
+    "Regla: si esta CONECTADO, asume credenciales en boveda/.env. No pidas pegar tokens. "
+      + "Mutaciones externas (push/deploy/DB) → confirmacion. "
+      + "IA del proyecto = ME AI / APICredits en Modelos. Datos = Supabase del proyecto activo. "
+      + "Nunca digas GafCore Gateway al usuario.",
   );
   return lines.filter(Boolean).join("\n");
 }
@@ -346,6 +445,12 @@ module.exports = {
   PROJECT_MEMORY_PREFIX,
   stripSecrets,
   readProjectLinkManifest,
+  gafcoreProjectSlug,
+  isGafcoreSupabaseUrl,
+  gafcorePlatformOrigin,
+  gafcorePathSlug,
+  projectOwnedSupabaseUrl,
+  projectOwnedSupabaseSchema,
   resolveProjectSupabase,
   connectionsForProject,
   buildSafeConnectionsSnapshot,

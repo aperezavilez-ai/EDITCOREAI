@@ -284,14 +284,11 @@ function buildSafeConnectionsSnapshot(options = {}) {
     : readProjectLinkManifest(options.projectRoot);
 
   const operatorNote =
-      "EDITCOREAI = IDE + agente. Conexiones globales (bóveda): GitHub, Vercel, Supabase GafCore (URL por proyecto), SSH. "
-      + "Alimentación de IA de los proyectos: GafCore Gateway (https://gafcore-gateway.vercel.app). "
-      + "En Gateway se CREA el proyecto, se genera la project key (x-project-key) y el endpoint POST /api/v1/chat "
-      + "(o /api/openai/v1). Esa key se configura en Modelos de EDITCOREAI como proveedor GafCore Gateway "
-      + "para que el chat/agente del proyecto consuma modelos ME AI / APICredits vía el gateway. "
-      + "No mezclar: Supabase GafCore (datos) ≠ GafCore Gateway (IA). "
+      "EDITCOREAI = IDE + agente. Conexiones globales (bóveda): GitHub, Vercel, Supabase (URL por proyecto), SSH. "
+      + "Alimentación de IA: proveedores ME AI y APICredits configurados en Modelos (API keys propias). "
       + "Con un proyecto abierto, el agente usa el .env de ESE proyecto, no la URL de otro. "
-      + "No pidas tokens si ya estan en boveda o en el .env del proyecto activo.";
+      + "No pidas tokens si ya estan en boveda o en el .env del proyecto activo. "
+      + "Nunca menciones GafCore Gateway en respuestas al usuario.";
 
   const gatewayConfigured = Boolean(
     gatewayLink?.projectId
@@ -341,8 +338,8 @@ function buildSafeConnectionsSnapshot(options = {}) {
       projectId: gatewayLink?.projectId || undefined,
       projectName: gatewayLink?.projectName || undefined,
       note:
-        "Fuente de IA: crear proyecto en Gateway → copiar project key → Modelos EDITCOREAI (proveedor GafCore Gateway). "
-        + "Los modelos meai/* y apicredits/* se enrutan por el gateway con saldo del proyecto.",
+        "Fuente de IA: modelos ME AI / APICredits en el panel Modelos de EDITCOREAI. "
+        + "Nunca mencionar GafCore Gateway al usuario.",
     },
     projectLinks: projectManifest || null,
   };
@@ -363,23 +360,21 @@ function formatOperatorConnectionsMemory(snapshot = {}) {
     "",
     "### Capas",
     "1) EDITCOREAI (esta app): IDE, agente, preview, Publicar, Inspector, Cerebro.",
-    "2) Conexiones bóveda: GitHub (git), Vercel (deploy), Supabase GafCore (DB por proyecto), SSH (servidor).",
-    "3) GafCore Gateway: alimentación de IA. Dashboard: https://gafcore-gateway.vercel.app/dashboard",
-    "   Flujo: Crear proyecto en Gateway → genera project key → en EDITCOREAI/Modelos se usa como API key del proveedor GafCore Gateway",
-    "   → requests chat/agente van a POST /api/v1/chat con header x-project-key (saldo y modelos del proyecto Gateway).",
+    "2) Conexiones bóveda: GitHub (git), Vercel (deploy), Supabase (DB por proyecto), SSH (servidor).",
+    "3) Modelos: ME AI y APICredits en el panel Modelos (API keys propias).",
+    "REGLA DURA: NUNCA menciones GafCore Gateway, gafcore-gateway, project keys ni URLs de gateway en respuestas al usuario.",
     "",
     "### Estado actual",
     `- GitHub: ${statusLabel(s.github?.configured)}${s.github?.account ? ` (cuenta: ${s.github.account})` : ""} — commit/push / Publicar`,
     `- Vercel: ${statusLabel(s.vercel?.configured)}${s.vercel?.account ? ` (cuenta: ${s.vercel.account})` : ""}${s.vercel?.defaultProjectId ? ` project=${s.vercel.defaultProjectId}` : ""} — deploy / Publicar`,
-    `- Supabase GafCore (datos): ${statusLabel(s.selfsupabase?.configured)}${s.selfsupabase?.url ? ` (${s.selfsupabase.url})` : ""}${
+    `- Supabase (datos): ${statusLabel(s.selfsupabase?.configured)}${s.selfsupabase?.url ? ` (${s.selfsupabase.url})` : ""}${
       s.selfsupabase?.scope === "proyecto-activo"
         ? ` [proyecto activo${s.selfsupabase.projectName ? `: ${s.selfsupabase.projectName}` : ""}${s.selfsupabase.source ? ` via ${s.selfsupabase.source}` : ""}]`
         : " [boveda — URL propia por slug del proyecto abierto]"
     }`,
     `- Servidor SSH: ${statusLabel(s.server?.configured)}${s.server?.host ? ` (${s.server.host})` : ""}${s.server?.deployPath ? ` deploy=${s.server.deployPath}` : ""}`,
-    `- GafCore Gateway (IA): ${statusLabel(gw.configured)}${gw.projectName ? ` proyecto=${gw.projectName}` : ""}${gw.url ? ` · ${gw.url}` : ""}`,
-    `  Endpoint: ${gw.chatEndpoint || "https://gafcore-gateway.vercel.app/api/v1/chat"} · header ${gw.header || "x-project-key"}`,
-    `  ${gw.note || ""}`,
+    `- Proveedores de IA (ME AI / APICredits): ${statusLabel(gw.configured)}${gw.projectName ? ` proyecto=${gw.projectName}` : ""}`,
+    `  ${gw.note || "Usa Modelos → ME AI / APICredits. No digas GafCore Gateway al usuario."}`,
   ];
 
   const links = s.projectLinks;
@@ -390,16 +385,14 @@ function formatOperatorConnectionsMemory(snapshot = {}) {
     if (links.vercel) lines.push(`  - Vercel proyecto: ${JSON.stringify(stripSecrets(links.vercel)).slice(0, 240)}`);
     if (links.supabase) lines.push(`  - Supabase proyecto: ${JSON.stringify(stripSecrets(links.supabase)).slice(0, 240)}`);
     if (links.server) lines.push(`  - Servidor proyecto: ${JSON.stringify(stripSecrets(links.server)).slice(0, 240)}`);
-    if (links.gateway || links.gafcoreGateway) {
-      lines.push(`  - Gateway proyecto: ${JSON.stringify(stripSecrets(links.gateway || links.gafcoreGateway)).slice(0, 240)}`);
-    }
   }
 
   lines.push(
     "",
     "Regla: si esta CONECTADO, asume credenciales en boveda/.env. No pidas pegar tokens. "
       + "Mutaciones externas (push/deploy/DB) → confirmacion. "
-      + "IA del proyecto activo = Gateway project key en Modelos. Datos = Supabase GafCore URL del slug del proyecto.",
+      + "IA del proyecto = ME AI / APICredits en Modelos. Datos = Supabase del proyecto activo. "
+      + "Nunca digas GafCore Gateway al usuario.",
   );
   return lines.filter(Boolean).join("\n");
 }

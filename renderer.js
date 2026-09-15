@@ -391,16 +391,34 @@ function uid() {
 function userFacingError(message) {
   const text = String(message || "").trim();
   if (!text) return "No pude completar la acción. Intenta de nuevo.";
+  // Nunca mostrar GafCore Gateway / admin / hostnames en el chat.
+  if (/gafcore/i.test(text)
+    || /admin\s+de\s+/i.test(text)
+    || /Tu modelo seleccionado se conserv/i.test(text)
+    || /PROVIDER_TEMPORARILY_UNAVAILABLE/i.test(text)) {
+    if (/saldo|balance|402/i.test(text)) {
+      return "El proveedor no tiene saldo disponible ahora. Revisa ME AI o APICredits e intenta de nuevo.";
+    }
+    if (/401|403|api.?key|token|forbidden/i.test(text)) {
+      return "No pude autenticar el modelo. Revisa la API key en Modelos e intenta de nuevo.";
+    }
+    return "El proveedor no respondió a tiempo. Reintenta en unos segundos; tu modelo se conserva.";
+  }
   if (/Cannot find module|Require stack|ENOENT|\.asar[\\/]|node_modules|jarvis-adapter|ipcMain/i.test(text)) {
     return "No pude procesar tu mensaje ahora. Verifica que tengas un modelo verificado en Modelos y vuelve a intentar.";
   }
-  if (/respuesta vacia|EMPTY_PROVIDER|gafcore-gateway|apicredits\/|meai\/|devolvio una respuesta|proveedor .+ devolvio|upstream|502|503|429|timeout|invalid.?token|no available accounts|no est[aá] disponible/i.test(text)) {
+  if (/respuesta vacia|EMPTY_PROVIDER|gafcore-gateway|apicredits\/|meai\/|devolvio una respuesta|proveedor .+ devolvio|upstream|502|503|429|timeout|invalid.?token|no available accounts|no est[aá] disponible|tard[oó] demasiado/i.test(text)) {
     return "No pude completar la respuesta. Intenta de nuevo.";
   }
   if (typeof AutoModel !== "undefined" && AutoModel?.isProviderFailureMessage?.(text)) {
     return "No pude completar la respuesta. Intenta de nuevo.";
   }
-  return text.replace(/^Error invoking remote method '[^']+':\s*/i, "");
+  const cleaned = text
+    .replace(/^Error invoking remote method '[^']+':\s*/i, "")
+    .replace(/https?:\/\/[^\s]+/gi, "")
+    .replace(/gafcore(?:\s*gateway)?/gi, "")
+    .trim();
+  return cleaned || "No pude completar la respuesta. Intenta de nuevo.";
 }
 
 function loadJson(key, fallback) {
@@ -1452,6 +1470,11 @@ async function quarantineModelForAuto(job = {}, message = "") {
 }
 
 async function handleProviderFailureForAuto(message, job = {}) {
+  // Timeouts / 503 temporales: NO cuarentenar 20 min (mataba APICredits con saldo).
+  const shouldQuarantine = typeof AutoModel?.shouldQuarantineModelForAuto === "function"
+    ? AutoModel.shouldQuarantineModelForAuto(message)
+    : /401|403|402|invalid.?token|forbidden|no est[aá] permitido|EMPTY_PROVIDER|saldo|balance/i.test(String(message || ""));
+  if (!shouldQuarantine) return;
   if (!isGatewayProviderFailure(message, job.model) && !AutoModel.isProviderFailureMessage?.(message)) return;
   await quarantineModelForAuto(job, message);
 }
@@ -6238,6 +6261,21 @@ function updateStatus() {
 
 function prepareChatProseForRender(text) {
   let value = repairMojibakeText(String(text || ""));
+  // Nunca pintar GafCore Gateway / admin / URLs de gateway en el chat.
+  if (/gafcore|gafcore-gateway\.vercel\.app|x-project-key|project\s*key/i.test(value)) {
+    if (/no est[aá] disponible|tard[oó] demasiado|PROVIDER_TEMPORARILY|Tu modelo seleccionado se conserv/i.test(value)) {
+      value = "El proveedor no respondió a tiempo. Reintenta en unos segundos; tu modelo se conserva.";
+    } else {
+      value = value
+        .replace(/gafcore(?:\s*gateway)?/gi, "el proveedor de modelos")
+        .replace(/https?:\/\/[^\s)]*gafcore[^\s)]*/gi, "")
+        .replace(/\bgafcore-gateway\.vercel\.app\b/gi, "")
+        .replace(/\bx-project-key\b/gi, "API key")
+        .replace(/\bproject\s*keys?\b/gi, "API keys")
+        .replace(/\s{2,}/g, " ")
+        .trim();
+    }
+  }
   const Elite = window.EditCoreEliteCommunication;
   try {
     if (typeof Elite?.normalizeSpanishProse === "function") {
@@ -10041,9 +10079,8 @@ function localAppInfoAnswer(project = null) {
     "**EditCoreAI** es el IDE + agente: edita código, preview, Publicar, Inspector y Cerebro.",
     "",
     "### Dependencias del operador",
-    "- **Conexiones (bóveda):** GitHub (git), Vercel (deploy), Supabase GafCore (datos por proyecto), SSH.",
-    "- **GafCore Gateway** (`https://gafcore-gateway.vercel.app`): ahí se **crean los proyectos de IA**, se genera la **project key** (`x-project-key`) y el endpoint `POST /api/v1/chat`. Esa key se pone en **Modelos** como proveedor GafCore Gateway para alimentar el chat/agente (ME AI / APICredits con saldo del proyecto).",
-    "- **No mezclar:** Supabase GafCore = base de datos; GafCore Gateway = alimentación de modelos.",
+    "- **Conexiones (bóveda):** GitHub (git), Vercel (deploy), Supabase (datos por proyecto), SSH.",
+    "- **Modelos:** ME AI y APICredits con tus API keys en el panel Modelos (Auto elige el mejor activo).",
     "",
     root
       ? `Ahora tienes abierto **${name}** (\`${root}\`). Para inspección: *analiza el proyecto*. Para cambios: dilo en concreto.`

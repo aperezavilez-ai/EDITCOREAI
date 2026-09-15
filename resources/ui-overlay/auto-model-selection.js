@@ -583,6 +583,16 @@
     return /no est[aá] disponible|tard[oó] demasiado|502|503|401|403|upstream|forbidden|temporarily unavailable|no available accounts|invalid.?token|inv[aá]lid.?token|无效|令牌|上游|timeout|ECONNRESET|ETIMEDOUT|ENOTFOUND|aborted|proveedor respondio|respuesta vacia|EMPTY_PROVIDER|devolvio una respuesta|no est[aá] permitido|not allowed|permitido en la API|modelo .* no permitido/i.test(text);
   }
 
+  /** Solo auth/billing/modelo prohibido sacan el modelo de Auto. Timeouts NO. */
+  function shouldQuarantineModelForAuto(message) {
+    const text = String(message || "");
+    if (/no est[aá] disponible|tard[oó] demasiado|reintenta en \d+|PROVIDER_TEMPORARILY|circuit.?breaker|502|503|504|524|timeout|timed?\s*out|overloaded|rate.?limit|POOL_EXHAUSTED/i.test(text)
+      && !/401|403|402|invalid.?token|forbidden|saldo|balance|no est[aá] permitido|not allowed|permitido en la API/i.test(text)) {
+      return false;
+    }
+    return /401|403|402|invalid.?token|inv[aá]lid.?token|forbidden|api.?key|unauthorized|saldo|balance|PROVIDER_NO_BALANCE|no est[aá] permitido|not allowed|permitido en la API|modelo .* no permitido|EMPTY_PROVIDER|respuesta vacia/i.test(text);
+  }
+
   function isSafeDefaultModel(model) {
     const normalized = String(model || "").toLowerCase();
     return AUTO_SAFE_MODEL_PATTERNS.some((pattern) => pattern.test(normalized));
@@ -835,6 +845,7 @@
     isRecentlyFailedCapability,
     isHealthyCapability,
     isProviderFailureMessage,
+    shouldQuarantineModelForAuto,
     isSafeDefaultModel,
     filterAutoModelOptions,
     pickBalancedAutoEntry,
