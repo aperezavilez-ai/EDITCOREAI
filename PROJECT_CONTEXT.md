@@ -7,8 +7,9 @@ IDE Electron de pair-programming / agentic coding: chat + agente con tools en di
 
 ## Versión de producto
 - Semver: ver `package.json` → `version` / `build.buildVersion`
-- Release actual objetivo: **3.0.1** / FileVersion **3.0.1.0**
+- Release actual objetivo: **3.0.2** / FileVersion **3.0.2.0**
 - Artefactos: `EDITCOREAI.exe` (raíz) + `release/EDITCOREAI-Setup.exe`
+- 3.0.2: contraste chat por theme (azul/gris/negro) + recuadros Pensamiento difuminados (glass), no sólidos blancos
 
 ## Entry points
 | Capa | Archivo | Rol |
@@ -55,7 +56,7 @@ EDITCOREAI/
 ```bash
 npm run check          # syntax check
 npm test               # tests
-node scripts/verify-release-3.0.1.js
+node scripts/verify-release-3.0.2.js
 npm run dist:win       # Setup.exe + launcher raíz
 ```
 
@@ -68,5 +69,5 @@ npm run dist:win       # Setup.exe + launcher raíz
 
 ## Cómo diagnosticar
 1. `npm run check` o `node --check` de archivos tocados
-2. `node scripts/verify-release-3.0.1.js`
+2. `node scripts/verify-release-3.0.2.js`
 3. Si falla el preview de un proyecto usuario: errores reales del terminal del proyecto (no inventar puertos)

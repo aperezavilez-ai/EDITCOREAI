@@ -1,45 +1,62 @@
-# EDITCOREAI — Roadmap & Arquitectura (v3.0.1)
+# EDITCOREAI — ROADMAP
 
-EDITCOREAI es el IDE Electron de pair-programming y agentic coding: orquesta tools reales en disco, publica con bóveda `safeStorage` (GitHub / Vercel / Supabase) y prioriza co-creación con evidencia.
+Fuente de verdad del proceso del proyecto para el agente. LEER ESTO ANTES de cualquier tool.
+PROHIBIDO reexplorar el repo entero si este documento cubre la tarea. Solo read_file de lo que vas a editar.
+EditCore actualiza este archivo tras cambios. No pedirlo al usuario. No pegar codigo largo.
 
-Fuente de mapa: `PROJECT_CONTEXT.md` · reglas: `.cursorrules` · manifiesto: `EDITCORE-MANIFEST.md`.
+## Proceso
+- Fase: implementacion
+- Estado: v3.0.2 — contraste chat + Pensamiento glass por theme. Release publicada.
+- Actualizado: 2026-09-15 10:30
+- Preview: desconocido — usa el preview del IDE, no inventes puertos
 
----
+## Mapa
+- styles.css — chat/Pensamiento theme-aware (glass + --ec-text)
+- resources/ui-overlay/styles.css — mirror empaquetado
+- package.json — editcoreai · v3.0.2
+- PROJECT_CONTEXT.md
+- ROADMAP.md
+- main.js
+- editcore-chat-kernel/
+- runtime/
+- preload.js
+- index.html
+- .cursorrules
 
-## Proceso del producto (v3.0.1)
+## Archivos clave (no reexplorar)
+- styles.css
+- resources/ui-overlay/styles.css
+- package.json
+- editcore-chat-kernel/index.js
+- editcore-chat-kernel/orchestrator.js
+- runtime/chat-kernel-bridge.js
+- preload.js
+- main.js
+- PROJECT_CONTEXT.md
 
-- **Fase:** listo (release)
-- **Stack:** Electron + chat-kernel + Monaco + preview local + bóveda safeStorage
-- **Entry:** `main.js` · `renderer.js` · `editcore-chat-kernel/orchestrator.js`
-- **Scripts:** `npm start` · `npm test` · `npm run dist:win` · `npm run check`
-- **Estado:** Release **3.0.1** — red de seguridad Cursor (rama + rules + PROJECT_CONTEXT), cero GafCore en chat, Auto sin cuarentena por timeout, CONTINUA con memoria
+## Tarea activa
+- (cerrada) Contraste theme chat + release 3.0.2
 
----
+## Bloqueos / bugs conocidos
+- Ninguno abierto tras 3.0.2 theme contrast
 
-## Hotfixes incluidos (desde 2.9.9 → 3.0.1)
+## Decisiones
+- Recuadros de chat/Pensamiento usan `color-mix` + `backdrop-filter` con variables `--ec-*` (no fondos sólidos claros)
 
-- [x] Pensamiento limpio (prosa solo abajo)
-- [x] Anti doble escritura de chat
-- [x] CONTINUA con recoveryPrompt + lastNarration
-- [x] Incomplete-intent nudge («Voy a…» sin tools)
-- [x] Sanitizar errores: nunca «GafCore Gateway» en el chat
-- [x] Timeouts 503: reintento; no blacklist Auto 20 min
-- [x] `PROJECT_CONTEXT.md` + `.cursorrules` endurecidas
-- [x] Versión alineada a semver mayor **3.0.1** / FileVersion **3.0.1.0**
+## Cambios recientes
+- styles.css — contraste chat + Pensamiento difuminado por theme (2026-09-15)
+- resources/ui-overlay/styles.css — sync
+- package.json — v3.0.2 / FileVersion 3.0.2.0
+- PROJECT_CONTEXT.md — v3.0.2
+- ROADMAP.md — v3.0.2
 
-## Conexiones
-- GitHub / Vercel / Supabase / SSH vía bóveda.
-- Modelos: ME AI + APICredits.
+## Verificado
+- verify-release-3.0.2.js
 
-## Empaquetado
-- `resources/ui-overlay` sincronizado
-- `release/EDITCOREAI-Setup.exe` + `EDITCOREAI.exe` raíz → **3.0.1.0**
+## Siguiente
+- Abrir EXE 3.0.2 y validar themes azul/gris/negro: letras legibles + Pensamiento glass
 
----
-
-## Checklist al reanudar
-
-1. Leer `PROJECT_CONTEXT.md` + `.editcore/context.md`
-2. Abrir con `EDITCOREAI.exe` 3.0.1
-3. Agente + Acceso completo si hay que mutar
-4. Chat: sin GafCore; CONTINUA reanuda; Pensamiento sin prosa duplicada
+## Regla anti-reexploracion
+- Si el pedido del usuario apunta a un archivo ya listado arriba: ve DIRECTO a read_file/replace_in_file de ese path.
+- PROHIBIDO list_files('.') / project_discovery / codebase_map del repo completo en el mismo turno si el Mapa ya tiene >= 5 entradas utiles.
+- Tras mutar: EditCore refresca este ROADMAP; continua desde aqui en el siguiente mensaje.
