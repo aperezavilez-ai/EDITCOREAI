@@ -4,9 +4,23 @@
  * Worker Thread de subagentes EditCore.
  * Escucha mensajes de parentPort y ejecuta runAnalyst / runVerifier / runExplorer / vision
  * en un hilo secundario.
+ *
+ * Cancelación cooperativa: cada tarea corre con un AbortController que se dispara
+ * cuando llega {type:"cancel"}. Los subagentes reciben `signal` para abortar
+ * limpiamente (a mitad de read_file, write_file, etc.).
  */
 
 const { parentPort } = require("worker_threads");
+const agentBus = require("./agent-bus");
+
+const runningTasks = new Map(); // taskId → AbortController
+
+function finish(projectRoot, threadId, agent, result, postMsg) {
+  try {
+    if (projectRoot && threadId) agentBus.wrapSubagentResult(projectRoot, threadId, agent, result);
+  } catch { /* ignore */ }
+  post(postMsg);
+}
 
 function post(msg) {
   try {
@@ -35,16 +49,12 @@ function normalizeType(taskType) {
   return String(taskType || "analyst").toLowerCase();
 }
 
-async function executeTask({ taskId, taskType, taskData }) {
+async function executeTask({ taskId, taskType, taskData }, signal) {
   const data = taskData && typeof taskData === "object" ? taskData : {};
   const projectRoot = String(data.projectRoot || "").trim();
   const kind = normalizeType(taskType);
 
-  post({
-    status: "running",
-    text: `Ejecutando subagente ${kind}…`,
-    taskId,
-  });
+  post({ status: "running", text: `Ejecutando subagente ${kind}…`, taskId });
 
   if (!projectRoot) {
     post({ status: "failed", error: "projectRoot requerido", taskId });
@@ -60,8 +70,11 @@ async function executeTask({ taskId, taskType, taskData }) {
         projectRoot,
         onProgress,
         maxReads: Number(data.maxReads) || 8,
+        userMessage: data.message || "",
+        threadId: data.threadId,
+        signal,
       });
-      post({
+      finish(projectRoot, data.threadId, "analyst", result, {
         status: "completed",
         kind: "ANALYZE",
         text: result?.summary || result?.report || "Análisis completado",
@@ -82,8 +95,10 @@ async function executeTask({ taskId, taskType, taskData }) {
         target,
         onProgress,
         maxItems: Number(data.maxItems) || 50,
+        threadId: data.threadId,
+        signal,
       });
-      post({
+      finish(projectRoot, data.threadId, "explorer", result, {
         status: "completed",
         kind: "LIST",
         text: result?.summary || "Exploración completada",
@@ -102,8 +117,10 @@ async function executeTask({ taskId, taskType, taskData }) {
         scope: String(data.scope || ""),
         autoRollback: data.autoRollback !== false,
         timeoutMs: Number(data.timeoutMs) || 60_000,
+        threadId: data.threadId,
+        signal,
       });
-      post({
+      finish(projectRoot, data.threadId, "verifier", result, {
         status: "completed",
         kind: "VERIFY",
         text: result?.ok
@@ -150,26 +167,44 @@ if (!parentPort) {
 } else {
   parentPort.on("message", (msg) => {
     const message = msg && typeof msg === "object" ? msg : {};
+
     if (message.type === "cancel") {
+      const ctrl = runningTasks.get(message.taskId);
+      if (ctrl) {
+        try { ctrl.abort(new Error("Cancelado por el usuario")); } catch { /* ignore */ }
+        runningTasks.delete(message.taskId);
+      }
       post({ status: "failed", error: "Cancelado", taskId: message.taskId });
       return;
     }
+
     if (message.type === "ping") {
       post({ type: "pong", taskId: message.taskId });
       return;
     }
+
     if (message.type === "run" || message.taskType || message.taskData) {
-      executeTask({
-        taskId: message.taskId,
-        taskType: message.taskType,
-        taskData: message.taskData || message.input || {},
-      }).catch((err) => {
-        post({
-          status: "failed",
-          error: String(err?.message || err).slice(0, 800),
+      const ctrl = new AbortController();
+      runningTasks.set(message.taskId, ctrl);
+
+      executeTask(
+        {
           taskId: message.taskId,
+          taskType: message.taskType,
+          taskData: message.taskData || message.input || {},
+        },
+        ctrl.signal,
+      )
+        .catch((err) => {
+          post({
+            status: "failed",
+            error: String(err?.message || err).slice(0, 800),
+            taskId: message.taskId,
+          });
+        })
+        .finally(() => {
+          runningTasks.delete(message.taskId);
         });
-      });
     }
   });
 

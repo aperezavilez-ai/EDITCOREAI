@@ -95,16 +95,33 @@ function extractKernelCases(src = "") {
   return [...String(src).matchAll(/case\s+["']([a-z0-9_]+)["']\s*:/g)].map((m) => m[1]);
 }
 
+function resolveNodeExecutable() {
+  // Dentro de Electron, process.execPath es EDITCOREAI-host.exe — NO sirve para --check
+  // sin ELECTRON_RUN_AS_NODE (cargaría el .js como main y rompe preload).
+  if (process.versions && process.versions.electron) return "node";
+  const base = path.basename(String(process.execPath || "")).toLowerCase();
+  if (/electron|editcoreai-host|editcoreai\.exe/.test(base)) return "node";
+  return process.execPath || "node";
+}
+
 function nodeCheck(file) {
-  const r = spawnSync(process.execPath, ["--check", file], { encoding: "utf8" });
+  const nodeBin = resolveNodeExecutable();
+  const r = spawnSync(nodeBin, ["--check", file], {
+    encoding: "utf8",
+    env: { ...process.env, ELECTRON_RUN_AS_NODE: "1" },
+    windowsHide: true,
+  });
   return { ok: r.status === 0, error: String(r.stderr || r.stdout || "").slice(0, 300) };
 }
 
 function runNodeFile(file, args = []) {
-  const r = spawnSync(process.execPath, [file, ...args], {
+  const nodeBin = resolveNodeExecutable();
+  const r = spawnSync(nodeBin, [file, ...args], {
     encoding: "utf8",
     timeout: 120_000,
     cwd: repoRootFromHere(),
+    env: { ...process.env, ELECTRON_RUN_AS_NODE: "1" },
+    windowsHide: true,
   });
   return {
     ok: r.status === 0,

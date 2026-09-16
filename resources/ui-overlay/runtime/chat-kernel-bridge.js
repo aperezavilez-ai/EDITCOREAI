@@ -4,6 +4,8 @@ const path = require("path");
 const {
   handleChat,
   stopChat,
+  steerChat,
+  isChatRunning,
   classify,
 } = require("../editcore-chat-kernel");
 
@@ -36,6 +38,8 @@ async function runKernelChat({
   message,
   history,
   messages,
+  threadId,
+  chatId,
   projectRoot,
   apiBaseUrl,
   apiKey,
@@ -51,10 +55,12 @@ async function runKernelChat({
   planAuthorizedExecution,
 }) {
   const mode = String(permissionMode || "").toLowerCase();
-  const isFull = fullAccess === true
-    || permissionFull === true
-    || mode === "full"
-    || (planAuthorizedExecution === true && mode === "full");
+  const isFull = Boolean(
+    fullAccess === true ||
+    permissionFull === true ||
+    mode === "full" ||
+    (planAuthorizedExecution === true && mode === "plan")
+  );
 
   const chatHistory = Array.isArray(history)
     ? history
@@ -62,10 +68,14 @@ async function runKernelChat({
       ? messages
       : [];
 
+  const tid = String(threadId || chatId || "").trim();
+
   return handleChat({
     message,
     history: chatHistory,
     messages: chatHistory,
+    threadId: tid,
+    chatId: tid,
     projectRoot,
     apiBaseUrl,
     apiKey,
@@ -85,9 +95,12 @@ async function runKernelChat({
 module.exports = {
   handleChatKernel: runKernelChat,
   stopChatKernel: stopChat,
+  steerChatKernel: steerChat,
+  isChatKernelRunning: isChatRunning,
   classifyChatKernel: classify,
   buildKernelHelpers,
   handleChat,
   stopChat,
+  steerChat,
   classify,
 };

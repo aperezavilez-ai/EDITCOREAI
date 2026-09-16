@@ -1,4 +1,13 @@
-const { contextBridge, ipcRenderer } = require("electron");
+const electron = require("electron");
+const contextBridge = electron?.contextBridge;
+const ipcRenderer = electron?.ipcRenderer;
+
+// Si este archivo se ejecuta como proceso (p.ej. EDITCOREAI-host.exe --check preload.js),
+// contextBridge no existe en main y no debe tumbar la app con Uncaught Exception.
+if (!contextBridge || typeof contextBridge.exposeInMainWorld !== "function") {
+  module.exports = { skipped: true, reason: "not-electron-preload-context" };
+  return;
+}
 
 contextBridge.exposeInMainWorld("editcoreChat", {
   chat: async (input) => {
@@ -124,6 +133,7 @@ contextBridge.exposeInMainWorld("editcoreApp", {
   checkUpdates: () => ipcRenderer.invoke("app:check-updates"),
   openExternal: (url) => ipcRenderer.invoke("app:open-external", url),
   version: () => ipcRenderer.invoke("app:version").catch(() => ""),
+  setUiTheme: (theme = "blanco") => ipcRenderer.invoke("app:set-ui-theme", theme).catch(() => null),
   transcribeAudio: (audioBuffer, mimeType = "audio/webm") => {
     let base64 = "";
     try {
@@ -392,6 +402,9 @@ contextBridge.exposeInMainWorld("editcorePatch", {
   apply: (filePath, diffText, opts) => ipcRenderer.invoke("patch:apply", filePath, diffText, opts),
   rollback: (filePath, backupPath) => ipcRenderer.invoke("patch:rollback", filePath, backupPath),
   listBackups: (filePath) => ipcRenderer.invoke("patch:list-backups", filePath),
+});
+contextBridge.exposeInMainWorld("editcoreInlineEdit", {
+  generate: (input = {}) => ipcRenderer.invoke("editor:inline-edit", input),
 });
 contextBridge.exposeInMainWorld("editcoreComposer", {
   plan: (input = {}) => ipcRenderer.invoke("composer:plan", input),

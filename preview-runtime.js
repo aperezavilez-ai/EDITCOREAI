@@ -203,14 +203,69 @@ function staticPreviewLaunch(runtimeRoot, port, executable, serverScript) {
   };
 }
 
+/**
+ * 🔧 FIX: normalizePreviewUrl defensiva.
+ *
+ * Antes: new URL("") → TypeError: Invalid URL.
+ * Ahora: si la entrada no es una URL válida, devuelve "" (string vacía)
+ * para que el caller pueda decidir qué hacer sin reventar.
+ *
+ * Acepta:
+ *  - string ("http://127.0.0.1:4100")
+ *  - object con .url o .href ({ url: "http://..." })
+ *  - number (puerto suelto → no aplica, devuelve "")
+ */
 function normalizePreviewUrl(value) {
-  const parsed = new URL(String(value || ""));
+  let raw = "";
+  if (typeof value === "string") {
+    raw = value.trim();
+  } else if (value && typeof value === "object") {
+    raw = String(value.url || value.href || "").trim();
+    if (!raw && typeof value.toString === "function") {
+      const str = String(value);
+      if (str && str !== "[object Object]") raw = str.trim();
+    }
+  } else if (typeof value === "number" && Number.isFinite(value)) {
+    // Un puerto suelto → construir URL base
+    raw = `http://127.0.0.1:${Math.trunc(value)}`;
+  }
+  if (!raw) return "";
+  let parsed;
+  try {
+    parsed = new URL(raw);
+  } catch {
+    return "";
+  }
   if (["localhost", "0.0.0.0", "[::1]", "::1"].includes(parsed.hostname)) parsed.hostname = "127.0.0.1";
   return parsed.href.replace(/\/$/, "");
+}
+
+/**
+ * 🔧 FIX NUEVO: buildPreviewUrl(port, pathName)
+ *
+ * Helper seguro para construir URLs de preview a partir de un puerto.
+ * Evita el bug "{}" al devolver siempre una string válida o "".
+ */
+function buildPreviewUrl(port, pathName = "") {
+  const p = Number(port);
+  if (!Number.isFinite(p) || p <= 0 || p > 65535) return "";
+  const suffix = String(pathName || "").replace(/^\/+/, "");
+  return `http://127.0.0.1:${Math.trunc(p)}${suffix ? "/" + suffix : ""}`;
 }
 
 function isPreviewDocumentContentType(value) {
   return /(?:^|;)\s*(?:text\/html|application\/xhtml\+xml)\b/i.test(String(value || ""));
 }
 
-module.exports = { builtNextPreviewLaunch, directPreviewLaunch, findRunnableProjectRoot, isPreviewDocumentContentType, normalizePreviewUrl, previewRuntimeFingerprint, readProjectPreviewEnv, stablePreviewPort, staticPreviewLaunch };
+module.exports = {
+  builtNextPreviewLaunch,
+  directPreviewLaunch,
+  findRunnableProjectRoot,
+  isPreviewDocumentContentType,
+  normalizePreviewUrl,
+  buildPreviewUrl,
+  previewRuntimeFingerprint,
+  readProjectPreviewEnv,
+  stablePreviewPort,
+  staticPreviewLaunch,
+};

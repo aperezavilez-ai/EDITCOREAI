@@ -37,6 +37,12 @@ class PersistentMemory {
   touchFile(rel, action) {
     this.data.files.push({ t: Date.now(), rel, action });
     this.save();
+    try {
+      const tm = require("./thread-memory");
+      const state = tm.loadProjectState(this.projectRoot);
+      state.files = [...(state.files || []), { t: Date.now(), rel, action }].slice(-80);
+      tm.saveProjectState(this.projectRoot, state);
+    } catch (_) {}
   }
 
   setReport(md) {

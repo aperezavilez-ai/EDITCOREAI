@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, Menu, shell, safeStorage, session, clipboard, nativeImage } = require("electron");
+const { app, BrowserWindow, ipcMain, dialog, Menu, shell, safeStorage, session, clipboard, nativeImage, nativeTheme } = require("electron");
 // No forzar --disable-gpu: genera ruido ContextResult::kFatalFailure y degrada estabilidad.
 try {
   app.setName("EditCoreAI");
@@ -9,6 +9,7 @@ try {
   // ignore
 }
 app.commandLine.appendSwitch("use-fake-ui-for-media-stream");
+app.commandLine.appendSwitch("disable-features", "CalculateNativeWinOcclusion");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
@@ -162,6 +163,8 @@ const { localConversationResponse, isCasualPrompt } = require("./runtime/chat-lo
 const {
   handleChatKernel,
   stopChatKernel,
+  steerChatKernel,
+  isChatKernelRunning,
   classifyChatKernel,
   buildKernelHelpers,
 } = require("./runtime/chat-kernel-bridge");
@@ -236,6 +239,20 @@ addExistingPathEntries([
   path.join(os.homedir(), "AppData", "Roaming", "Python", "Python312", "Scripts"),
   path.join(os.homedir(), "AppData", "Roaming", "Python", "Python311", "Scripts"),
   path.join(os.homedir(), "AppData", "Roaming", "Python", "Python310", "Scripts"),
+]);
+
+// FIX A: Node.js + npm al PATH. Sin esto, spawn("npm install") falla con ENOENT
+// cuando EditCore se lanza desde el acceso directo (PATH sin Node).
+addExistingPathEntries([
+  "C:\\Program Files\\nodejs",
+  "C:\\Program Files (x86)\\nodejs",
+  path.join(os.homedir(), "AppData", "Roaming", "npm"),
+  path.join(os.homedir(), "AppData", "Local", "Programs", "nodejs"),
+  path.join(os.homedir(), "scoop", "apps", "nodejs", "current"),
+  path.join(os.homedir(), "scoop", "shims"),
+  path.join("C:\\", "ProgramData", "chocolatey", "bin"),
+  path.join("C:\\", "nvm4w", "nodejs"),
+  path.join(os.homedir(), "AppData", "Roaming", "nvm"),
 ]);
 
 function logStartup(message, error) {
@@ -449,12 +466,8 @@ app.on("second-instance", () => {
     return;
   }
   if (mainWindow.isMinimized()) mainWindow.restore();
-  mainWindow.show();
+  if (!mainWindow.isVisible()) mainWindow.show();
   mainWindow.focus();
-  try {
-    mainWindow.setAlwaysOnTop(true);
-    mainWindow.setAlwaysOnTop(false);
-  } catch {}
 });
 
 function stopPreviewRuntime(runtime) {
@@ -1239,7 +1252,8 @@ function createWindow(options = {}) {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
-      backgroundThrottling: false,
+      // true: al minimizar/ocultar no sigue quemando CPU en el renderer (botones/restauration lentos).
+      backgroundThrottling: true,
       webviewTag: true,
       spellcheck: false,
     };
@@ -1250,7 +1264,8 @@ function createWindow(options = {}) {
       minHeight: 620,
       title: `EditCoreAI v${RUNTIME_VERSION}`,
       backgroundColor: "#f5f6f8",
-      show: true,
+      // false: no mostrar shell vacía mientras parsean ~600KB de JS (evita "unresponsive").
+      show: false,
       center: true,
       webPreferences: prefs,
     };
@@ -1283,14 +1298,17 @@ function createWindow(options = {}) {
   };
 
   win.once("ready-to-show", displayWindow);
-  win.webContents.once("did-finish-load", displayWindow);
+  win.webContents.once("did-finish-load", () => {
+    try { win.setTitle(appWindowTitle()); } catch { /* ignore */ }
+    displayWindow();
+  });
 
   // Failsafe: mostrar antes si la carga se demora.
   setTimeout(() => {
     if (win.isDestroyed() || windowShown || hiddenAcceptance) return;
     logStartup("failsafe:show-window (mostrando ventana tras timeout de carga)");
     displayWindow();
-  }, 2500);
+  }, 1800);
 
   // Context menu nativo para cortar/copiar/pegar en inputs y textareas
   win.webContents.on("context-menu", (_event, params) => {
@@ -1661,6 +1679,9 @@ ipcMain.handle("editcore:chat", async (_event, input = {}) => {
     });
     const out = await handleChatKernel({
       message: effectivePrompt,
+      history: Array.isArray(input.history) ? input.history : (Array.isArray(input.messages) ? input.messages : []),
+      threadId: input.chatId || input.threadId || input.conversationId || "",
+      chatId: input.chatId || input.threadId || "",
       projectRoot: rootPath,
       apiBaseUrl: baseUrl,
       apiKey: chatApiKey,
@@ -2453,9 +2474,18 @@ function emitPreviewDaemonEvent(projectRoot, payload) {
       }
     } catch { /* ignore */ }
   }
-  if (payload?.type === "preview-issue" && payload.autoHeal && payload.issue) {
-    maybeAutoHealPreview(projectRoot, payload.issue).catch(() => {});
-  }
+  // FIX B: AUTO-HEAL DESACTIVADO POR DEFECTO. El loop preview-issue -> autoHeal
+// -> handleChatKernel -> dev-server -> preview-issue arrancaba corridas en
+// paralelo con la principal y dejaba el chat 'Trabajando...' para siempre.
+// Reactivar con EDITCORE_ENABLE_AUTOHEAL=1 cuando se redisenne el debounce.
+if (
+  payload?.type === "preview-issue"
+  && payload.autoHeal
+  && payload.issue
+  && process.env.EDITCORE_ENABLE_AUTOHEAL === "1"
+) {
+  maybeAutoHealPreview(projectRoot, payload.issue).catch(() => {});
+}
 }
 
 /** Hooks de streaming para run_command del kernel (process-runner). */
@@ -2714,7 +2744,19 @@ async function startProjectPreviewNow(safeRoot, ownerId) {
     previewProcesses.delete(safeRoot);
   }
   const manager = fs.existsSync(path.join(runtimeRoot, "bun.lockb")) || fs.existsSync(path.join(runtimeRoot, "bun.lock")) ? "bun" : fs.existsSync(path.join(runtimeRoot, "pnpm-lock.yaml")) ? "pnpm" : "npm";
-  const dependencyReport = await ensureProjectDependencies(runtimeRoot, pkg, manager);
+  // FIX C: pasar onProgress para ver las lineas de npm install en el panel Terminal.
+const dependencyReport = await ensureProjectDependencies(runtimeRoot, pkg, manager, {
+  onProgress: (ev) => {
+    try {
+      emitPreviewDaemonEvent(safeRoot, {
+        type: "preview-deps-progress",
+        phase: String(ev?.phase || "deps"),
+        line: String(ev?.line || "").slice(0, 500),
+        at: Date.now(),
+      });
+    } catch { /* ignore UI */ }
+  },
+});
   const script = pkg.scripts.dev ? "dev" : "start";
   const dependencies = { ...(pkg.dependencies || {}), ...(pkg.devDependencies || {}) };
   const expectedPort = dependencies["@lovable.dev/vite-tanstack-config"] ? 8080
@@ -4698,6 +4740,97 @@ ipcMain.handle("patch:rollback", async (_event, filePath, backupPath, opts = {})
   }
 });
 
+ipcMain.handle("editor:inline-edit", async (_event, input = {}) => {
+  const {
+    path: relPath,
+    language = "plaintext",
+    startLine = 1,
+    endLine = 1,
+    before = "",
+    selection = "",
+    after = "",
+    instruction = "",
+    previousProposal = "",
+    model = "",
+    providerKey = "",
+    apiKey = "",
+    baseUrl = "",
+  } = input || {};
+
+  if (!instruction || !String(instruction).trim()) {
+    return { ok: false, error: "Falta la instrucción." };
+  }
+  if (!selection && !previousProposal) {
+    return { ok: false, error: "Seleccioná código o mové el cursor a una línea." };
+  }
+
+  const creds = resolveKernelProviderCredentials();
+  const resolvedApiKey = String(apiKey || creds.apiKey || "").trim();
+  const resolvedModel = String(model || creds.model || "").trim();
+  const resolvedBaseUrl = String(baseUrl || creds.baseUrl || "").trim();
+  const resolvedProviderKey = String(providerKey || creds.providerKey || "").trim();
+  if (!resolvedApiKey || !resolvedModel || !resolvedBaseUrl) {
+    return { ok: false, error: "Configurá un modelo en Modelos antes de usar Inline Edit." };
+  }
+
+  const system = [
+    "Sos un editor inline de código.",
+    "Devolvés EXCLUSIVAMENTE el código nuevo que reemplaza la selección.",
+    "Reglas:",
+    "- Sin markdown, sin ```, sin explicaciones, sin texto previo ni posterior.",
+    "- Sin comentarios agregados salvo que la instrucción lo pida.",
+    "- Mantené el estilo del código circundante (indentación, comillas, semicolons).",
+    "- Si la instrucción es imposible o ambigua, devolvé la selección sin cambios.",
+    "- Preservá imports/exports si están en la selección.",
+  ].join("\n");
+
+  const userParts = [
+    `Archivo: ${relPath || "(sin path)"}`,
+    `Lenguaje: ${language}`,
+    `Rango: líneas ${startLine}-${endLine}`,
+    before ? `\n--- CONTEXTO ANTES ---\n${before}` : "",
+    `\n--- SELECCIÓN A EDITAR ---\n${selection || "(cursor vacío)"}`,
+    after ? `\n--- CONTEXTO DESPUÉS ---\n${after}` : "",
+    previousProposal ? `\n--- PROPUESTA ANTERIOR (refinar) ---\n${previousProposal}` : "",
+    `\n--- INSTRUCCIÓN ---\n${instruction}`,
+    "",
+    "Devolvé SOLO el código nuevo.",
+  ].filter(Boolean).join("\n");
+
+  try {
+    const result = await callProvider({
+      baseUrl: resolvedBaseUrl,
+      apiKey: resolvedApiKey,
+      model: resolvedModel,
+      providerKey: resolvedProviderKey,
+      messages: [
+        { role: "system", content: system },
+        { role: "user", content: userParts },
+      ],
+      timeoutMs: 60_000,
+      maxAttempts: 1,
+      enableTools: false,
+      rawToolCalls: false,
+      allowProviderFallback: false,
+    });
+
+    let proposal = String(result?.text || "").trim();
+    const fenced = proposal.match(/```[\w-]*\r?\n([\s\S]*?)\r?\n```/);
+    if (fenced) proposal = fenced[1];
+    proposal = proposal.replace(/^```[\w-]*\r?\n?/, "").replace(/\r?\n?```$/, "").trim();
+
+    if (!proposal) {
+      return { ok: false, error: "El modelo devolvió una respuesta vacía." };
+    }
+    return { ok: true, proposal };
+  } catch (error) {
+    return {
+      ok: false,
+      error: String(error?.message || error).slice(0, 400),
+    };
+  }
+});
+
 ipcMain.handle("patch:list-backups", async (_event, filePath, opts = {}) => {
   try {
     const projectRoot = String(opts?.projectRoot || "").trim();
@@ -5847,6 +5980,34 @@ ipcMain.handle("app:open-external", async (_event, url = "") => {
 
 ipcMain.handle("app:version", () => String(RUNTIME_VERSION || "2.7.0"));
 
+function appWindowTitle() {
+  return `EditCoreAI v${String(RUNTIME_VERSION || "2.7.0").trim()}`;
+}
+
+function applyNativeChromeForTheme(theme = "blanco", win = null) {
+  const next = String(theme || "blanco").trim().toLowerCase();
+  const dark = next === "gris" || next === "negro" || next === "azul";
+  try {
+    nativeTheme.themeSource = dark ? "dark" : "light";
+  } catch { /* ignore */ }
+  const bg = dark
+    ? (next === "azul" ? "#0c1a2e" : next === "gris" ? "#1e1e1e" : "#0f1419")
+    : "#f5f6f8";
+  const targets = win && !win.isDestroyed()
+    ? [win]
+    : BrowserWindow.getAllWindows().filter((w) => w && !w.isDestroyed());
+  for (const target of targets) {
+    try { target.setTitle(appWindowTitle()); } catch { /* ignore */ }
+    try { target.setBackgroundColor(bg); } catch { /* ignore */ }
+  }
+  return { theme: next, dark, title: appWindowTitle() };
+}
+
+ipcMain.handle("app:set-ui-theme", (event, theme = "blanco") => {
+  const owner = BrowserWindow.fromWebContents(event.sender) || mainWindow;
+  return applyNativeChromeForTheme(theme, owner);
+});
+
 ipcMain.handle("session:load", () => {
   const { loadUiSession } = require("./runtime/ui-session-store");
   return loadUiSession(app.getPath("userData"));
@@ -6137,6 +6298,21 @@ ipcMain.handle("agent:run", async (event, input = {}) => {
     const rootPath = assertProjectRoot(requestedRoot);
     rememberActiveWorkspace(event?.sender?.id, rootPath);
     const runId = String(input.runId || crypto.randomUUID());
+    const runKey = agentRunKey(event.sender.id, runId);
+    const runController = new AbortController();
+    const runState = {
+      key: runKey,
+      runId,
+      senderId: event.sender.id,
+      startedAt: Date.now(),
+      controller: runController,
+      requestController: null,
+      steering: [],
+      kernel: true,
+      projectRoot: rootPath,
+      projectId: String(input.projectId || ""),
+    };
+    activeAgentRuns.set(runKey, runState);
     try {
       const helpers = buildKernelHelpers({
         BrowserWindow,
@@ -6147,6 +6323,9 @@ ipcMain.handle("agent:run", async (event, input = {}) => {
       });
       const out = await handleChatKernel({
         message: task,
+        history: Array.isArray(input.history) ? input.history : (Array.isArray(input.messages) ? input.messages : []),
+        threadId: input.chatId || input.threadId || input.conversationId || input.runId || "",
+        chatId: input.chatId || input.threadId || "",
         projectRoot: rootPath,
         apiBaseUrl: baseUrl,
         apiKey,
@@ -6265,6 +6444,8 @@ ipcMain.handle("agent:run", async (event, input = {}) => {
       };
     } catch (error) {
       throw new Error(typeof toUserFacingError === "function" ? toUserFacingError(error) : String(error?.message || error));
+    } finally {
+      if (activeAgentRuns.get(runKey) === runState) activeAgentRuns.delete(runKey);
     }
   }
 
@@ -8744,13 +8925,16 @@ ipcMain.handle("project:browser-inspect", async (event, input = {}) => {
 function isUserStopInstruction(text = "") {
   const value = String(text || "").trim().toLowerCase().replace(/[.!?,;]+$/g, "");
   if (!value) return false;
-  if (/^(?:por\s+favor\s+)?(?:alto|detente|det[eé]n(?:lo)?|detener|parar?|p[aá]ralo|stop|cancela(?:r|lo)?|aborta(?:r|lo)?|interrump(?:e|ir|alo)?|basta|escala|pausa(?:r)?|no\s+sigas)$/i.test(value)) {
+  if (/^(?:por\s+favor\s+)?(?:alto|detente|det[eé]n(?:lo)?|detener|parar?|p[aá]ralo|stop|cancela(?:r|lo)?|aborta(?:r|lo)?|interrump(?:e|ir|alo)?|basta|escala|pausa(?:r)?|no\s+sigas|termina(?:r)?)$/i.test(value)) {
     return true;
   }
-  if (/^(?:por\s+favor\s+)?(?:cancela|cancelar|det[eé]n|detener|parar?|p[aá]ralo|aborta|abortar|pausa|pausar|interrumpir)\s+(?:el\s+an[aá]lisis|la\s+tarea|la\s+ejecuci[oó]n|esto|todo|el\s+proceso|la\s+b[uú]squeda)$/i.test(value)) {
+  if (/^(?:por\s+favor\s+)?(?:cancela|cancelar|det[eé]n|detener|parar?|p[aá]ralo|aborta|abortar|pausa|pausar|interrumpir|termina(?:r)?)\s+(?:el\s+an[aá]lisis|la\s+tarea|la\s+ejecuci[oó]n|esto|todo|toda(?:\s+acci[oó]n|s)?|el\s+proceso|la\s+b[uú]squeda|todas?\s+las?\s+acciones?)$/i.test(value)) {
     return true;
   }
   if (/^(?:ya\s+)?(?:no\s+sigas|deja\s+de\s+(?:analizar|buscar|ejecutar|trabajar|hacer\s+nada))$/i.test(value)) {
+    return true;
+  }
+  if (/^(?:termina|cancel[ae]|det[eé]n|para|aborta)\s+(?:toda|todo|todas)\b/i.test(value)) {
     return true;
   }
   return false;
@@ -8769,18 +8953,28 @@ ipcMain.handle("agent:steer", async (event, input = {}) => {
         run.requestController?.abort(new Error(reason));
         run.controller.abort(new Error(reason));
         activeAgentRuns.delete(agentRunKey(event.sender.id, run.runId || runId));
+        try { stopChatKernel(); } catch { /* ignore */ }
         return { accepted: true, cancelled: true };
       }
     }
     cancelRunsForSender(event.sender.id, reason);
+    try { stopChatKernel(); } catch { /* ignore */ }
     return { accepted: true, cancelled: true };
   }
 
-  const run = agentRunForEvent(event, runId);
-  if (!run) return { accepted: false };
-  run.steering.push({ instruction, at: Date.now() });
+  // Kernel path: el orquestador singleton recibe la dirección de inmediato.
+  let kernelResult = null;
+  try {
+    if (typeof steerChatKernel === "function" && (typeof isChatKernelRunning !== "function" || isChatKernelRunning())) {
+      kernelResult = steerChatKernel(instruction);
+    }
+  } catch { /* ignore */ }
 
-  if (run.adapterInput) {
+  const run = agentRunForEvent(event, runId);
+  if (!run && !(kernelResult && kernelResult.accepted)) return { accepted: false };
+  if (run) run.steering.push({ instruction, at: Date.now() });
+
+  if (run?.adapterInput) {
     const steerPlan = resolveUnifiedAgentPlan({
       prompt: run.adapterInput.prompt,
       steeringInstruction: instruction,
@@ -8803,21 +8997,30 @@ ipcMain.handle("agent:steer", async (event, input = {}) => {
 
   if (!event.sender.isDestroyed()) {
     publishAgentProgress(event.sender, {
-      runId: run.runId || runId,
+      runId: run?.runId || runId,
       phase: "direction",
       stage: "running",
       text: instruction,
     });
   }
 
-  let interrupted = false;
-  if (run.requestController) {
+  let interrupted = Boolean(kernelResult?.interrupted);
+  if (run?.requestController) {
     const steerError = Object.assign(new Error("Nueva instruccion del usuario."), { code: "AGENT_STEER" });
     run.requestController.abort(steerError);
     interrupted = true;
   }
 
-  return { accepted: true, pendingDirections: run.steering.length, interrupted };
+  const pendingDirections = Math.max(
+    Number(run?.steering?.length) || 0,
+    Number(kernelResult?.pendingDirections) || 0,
+  );
+  return {
+    accepted: true,
+    pendingDirections,
+    interrupted,
+    kernel: Boolean(kernelResult?.accepted || run?.kernel),
+  };
 });
 
 

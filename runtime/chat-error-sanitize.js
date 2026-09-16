@@ -1,8 +1,8 @@
 "use strict";
 
 /**
- * Sanitiza errores de proveedor para el chat del usuario.
- * Nunca mencionar GafCore Gateway / hostnames internos / admin tokens.
+ * Sanitiza errores de proveedor y prosa de chat.
+ * Nunca dejar nombres/hostnames internos del proveedor en el chat.
  */
 
 const TRANSIENT_PROVIDER_RE = /no est[aá] disponible|tard[oó] demasiado|PROVIDER_TEMPORARILY_UNAVAILABLE|temporarily unavailable|reintenta en \d+|502|503|504|408|425|429|timeout|timed?\s*out|ECONNRESET|ETIMEDOUT|ENOTFOUND|fetch failed|socket|overloaded|rate.?limit|try again|cloudflare|524|gateway time-?out|circuit.?breaker|POOL_EXHAUSTED|sin cuentas disponibles/i;
@@ -11,14 +11,22 @@ const HARD_AUTH_RE = /401|403|invalid.?token|inv[aá]lid.?token|forbidden|api.?k
 
 const BILLING_RE = /402|sin saldo|no balance|PROVIDER_NO_BALANCE|insufficient.?fund|quota|billing|saldo disponible/i;
 
-const GAFCORE_CHAT_RE = /gafcore(?:\s*gateway)?|gafcore-gateway\.vercel\.app|admin\s+de\s+gafcore|project\s*key|x-project-key/gi;
-
-function stripGafcoreMentions(text = "") {
+function scrubInternalProviderNames(text = "") {
   return String(text || "")
-    .replace(GAFCORE_CHAT_RE, "")
+    .replace(/https?:\/\/[^\s)]*gafcore-gateway[^\s)]*/gi, "")
+    .replace(/\bgafcore-gateway(?:\.vercel\.app)?\b/gi, "el proveedor de modelos")
+    .replace(/\bGafCore\s+Gateway\b/gi, "el proveedor de modelos")
+    .replace(/\bGafCore\b/gi, "el proveedor")
+    .replace(/\bGAFCORE_(?:GATEWAY_URL|API_KEY|ADMIN_TOKEN)\b/g, "credencial del proveedor")
+    .replace(/\bx-project-key\b/gi, "API key")
+    .replace(/\bproject\s*keys?\b/gi, "API keys")
     .replace(/\s{2,}/g, " ")
     .replace(/\s+([.,;:!?])/g, "$1")
     .trim();
+}
+
+function stripGafcoreMentions(text = "") {
+  return scrubInternalProviderNames(text);
 }
 
 function isTransientProviderFailure(message = "", status = 0) {
@@ -48,13 +56,12 @@ function sanitizeChatProviderError(errorOrMessage, { status } = {}) {
     ? errorOrMessage
     : String(errorOrMessage?.message || errorOrMessage || "");
   const code = Number(status || errorOrMessage?.status || 0) || 0;
-  const cleaned = stripGafcoreMentions(raw);
+  const cleaned = scrubInternalProviderNames(raw);
 
   if (!cleaned) {
     return "No pude completar la respuesta. Intenta de nuevo.";
   }
 
-  // Timeouts / 503 primero (el texto del gateway menciona "API keys" y no es auth real).
   if (isTransientProviderFailure(cleaned, code)
     || /PROVIDER_TEMPORARILY_UNAVAILABLE|Tu modelo seleccionado se conserv|reintenta en \d+\s*segundos/i.test(cleaned)
     || /no est[aá] disponible o tard/i.test(cleaned)) {
@@ -77,13 +84,12 @@ function sanitizeChatProviderError(errorOrMessage, { status } = {}) {
     return "No pude completar la respuesta. Intenta de nuevo.";
   }
 
-  // Cualquier resto: nunca dejar "GafCore" ni hostnames de gateway.
   let out = cleaned
     .replace(/^Error invoking remote method '[^']+':\s*/i, "")
     .replace(/https?:\/\/[^\s]+/gi, "")
     .replace(/\bvercel\.app\b/gi, "")
     .trim();
-  out = stripGafcoreMentions(out);
+  out = scrubInternalProviderNames(out);
   if (!out || /gafcore/i.test(out)) {
     return "No pude completar la respuesta. Intenta de nuevo.";
   }
@@ -91,6 +97,7 @@ function sanitizeChatProviderError(errorOrMessage, { status } = {}) {
 }
 
 module.exports = {
+  scrubInternalProviderNames,
   stripGafcoreMentions,
   isTransientProviderFailure,
   isHardProviderFailure,

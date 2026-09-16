@@ -3001,7 +3001,16 @@ input, textarea, button { font: inherit; }
 .btn-outline-teal:hover { background: #edf7f6; }
 
 /* toolbar brand elements */
-.toolbar-brand { font-size: 14px; font-weight: 700; color: #17202a; white-space: nowrap; }
+.toolbar-brand { font-size: 14px; font-weight: 700; color: var(--ec-text); white-space: nowrap; }
+html[data-theme="gris"] .toolbar-brand,
+html[data-theme="negro"] .toolbar-brand,
+html[data-theme="azul"] .toolbar-brand {
+  color: #ffffff;
+}
+html[data-theme="blanco"] .toolbar-brand,
+html[data-theme=""] .toolbar-brand {
+  color: #17202a;
+}
 
 /* ── providers dialog details/summary ── */
 .providers-section-title {
@@ -4249,9 +4258,50 @@ html[data-theme="azul"] .permission-menu,
 html[data-theme="gris"] .toolbar-more-menu,
 html[data-theme="negro"] .toolbar-more-menu,
 html[data-theme="azul"] .toolbar-more-menu {
-  background: var(--ec-bg-elevated) !important;
-  color: var(--ec-text) !important;
+  background: color-mix(in srgb, var(--ec-bg-elevated) 88%, transparent) !important;
+  color: #ffffff !important;
   border-color: var(--ec-border-strong) !important;
+  backdrop-filter: blur(14px) saturate(1.1);
+  -webkit-backdrop-filter: blur(14px) saturate(1.1);
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.45);
+}
+html[data-theme="gris"] .permission-menu button,
+html[data-theme="negro"] .permission-menu button,
+html[data-theme="azul"] .permission-menu button {
+  background: transparent !important;
+  color: #ffffff !important;
+}
+html[data-theme="gris"] .permission-menu button strong,
+html[data-theme="negro"] .permission-menu button strong,
+html[data-theme="azul"] .permission-menu button strong {
+  color: #ffffff !important;
+}
+html[data-theme="gris"] .permission-menu button span,
+html[data-theme="negro"] .permission-menu button span,
+html[data-theme="azul"] .permission-menu button span {
+  color: color-mix(in srgb, #ffffff 72%, var(--ec-text-muted)) !important;
+}
+html[data-theme="gris"] .permission-menu button:hover,
+html[data-theme="negro"] .permission-menu button:hover,
+html[data-theme="azul"] .permission-menu button:hover {
+  background: color-mix(in srgb, var(--ec-bg-soft) 70%, transparent) !important;
+}
+html[data-theme="gris"] .permission-menu button.is-active,
+html[data-theme="negro"] .permission-menu button.is-active,
+html[data-theme="azul"] .permission-menu button.is-active {
+  background: color-mix(in srgb, var(--ec-accent-soft) 75%, transparent) !important;
+  border: 1px solid color-mix(in srgb, var(--ec-accent) 55%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ec-accent) 25%, transparent);
+}
+html[data-theme="gris"] .permission-menu button.is-active strong,
+html[data-theme="negro"] .permission-menu button.is-active strong,
+html[data-theme="azul"] .permission-menu button.is-active strong {
+  color: #ffffff !important;
+}
+html[data-theme="gris"] .permission-menu button.is-active span,
+html[data-theme="negro"] .permission-menu button.is-active span,
+html[data-theme="azul"] .permission-menu button.is-active span {
+  color: color-mix(in srgb, #ffffff 85%, var(--ec-accent)) !important;
 }
 html[data-theme="gris"] .msg.assistant .msg-head,
 html[data-theme="negro"] .msg.assistant .msg-head,

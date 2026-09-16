@@ -3,7 +3,7 @@
 Versión producto: **2.9.7**. Este archivo es la fuente de verdad que el agente debe leer (vía system prompt) para saber qué es EDITCOREAI, qué puede hacer y qué no debe re-escanear.
 
 ## Qué es
-IDE de escritorio Electron con agente embebido: chat, preview web, explorador, publicar (GitHub/Vercel/Supabase) y alimentación AI vía **GafCore Gateway**.
+IDE de escritorio Electron con agente embebido: chat, preview web, explorador, publicar (GitHub/Vercel/Supabase) y alimentación AI vía **ME AI / APICredits**.
 
 ## Arquitectura de directorios (raíz del repo)
 | Ruta | Rol |
@@ -18,7 +18,7 @@ IDE de escritorio Electron con agente embebido: chat, preview web, explorador, p
 | `runtime/session-state.js` | Caché árbol/mods → `.editcore/session-state.json` |
 | `runtime/project-roadmap.js` | `ROADMAP.md` índice tokens |
 | `runtime/workspace-siblings.js` | Mapa de carpetas hermanas (`D:\PROGRAMAS IA\…`) |
-| `runtime/probe-endpoint.js` | Health HTTP local / gateway |
+| `runtime/probe-endpoint.js` | Health HTTP local / proveedor |
 | `runtime/fullstack-deploy.js` | Pipeline Publicar 1 clic + `project-infra.json` |
 | `agent-core/` | Loop LLM / evidence |
 | `editcore-chat-kernel/` | Kernel chat / workers |
@@ -31,7 +31,7 @@ IDE de escritorio Electron con agente embebido: chat, preview web, explorador, p
 - **Chat**: tabs, cola de prompts, progreso fullstack; auto-bind de proyecto activo.
 - **Preview**: `<webview>` + URL bar; fondo sigue tema (`--ec-preview-bg`). Tabs **Web | Móvil | Código** (Monaco; webview se oculta, no se destruye).
 - **Explorer**: árbol del proyecto activo; clic en archivo abre el editor Código.
-- **Conexiones**: GitHub, Vercel, Supabase propio, **GafCore Gateway**, SSH.
+- **Conexiones**: GitHub, Vercel, Supabase propio, proveedores ME AI / APICredits, SSH.
 - **Branding**: launcher/runtime siempre EditCoreAI (`assets/logo.ico`); never Electron.
 
 ## Herramientas del agente (selección)
@@ -47,7 +47,7 @@ Visión: paste/drop imágenes + auto-route multimodal. Clone: tool `clone_web_pa
 
 ## Bridges / IPC relevantes
 - `secure-config:*` — bóveda
-- `connections:*` / `connections:gafcore-*` — Conexiones + Gateway
+- `connections:*` — Conexiones (GitHub / Vercel / Supabase / SSH / Modelos)
 - `cloud:*` — vault bridge tools
 - `agent:*` / chat kernel — corridas
 - `preview:*` — arranque preview
@@ -56,12 +56,12 @@ Visión: paste/drop imágenes + auto-route multimodal. Clone: tool `clone_web_pa
 ## Memoria / tokens (obligatorio)
 1. **Step 0**: `ROADMAP.md` + `.editcore/session-state.json` (+ este manifiesto).
 2. No reexplorar el repo entero si el índice cubre la pregunta.
-3. Hermanos: `../GAFCORE GATEWAY/...` o `GAFCORE GATEWAY/package.json`.
+3. Hermanos: rutas `../NombreHermano/...` bajo el padre del workspace.
 4. Tras `applyPatch`/write OK, EditCore actualiza ROADMAP + session-state solo.
 5. Chat-kernel: tras writes guarda `agent-last-run` (Undo All / Keep All / Review); no re-listar `.` si ya hay ROADMAP.
 
 ## Límites
 - No inventar archivos ni secretos en el chat.
 - Tokens de bóveda nunca se imprimen en claro.
-- Supabase propio ≠ GafCore Gateway (DB vs AI).
+- Supabase propio ≠ proveedores de IA (DB vs modelos).
 - Preview CORS: sesión `persist:editcore-browser` + proxy local `/__editcore_proxy__/`.

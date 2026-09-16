@@ -513,7 +513,7 @@ function registerAgentCapabilityTools(dispatcher, {
     dispatcher.register({
       name: "fullstack_deploy",
       write: true,
-      description: "Pipeline 1 clic: GitHub repo → Vercel env sync → Supabase GafCore/.env → commit/push/deploy → project-infra.json. Usa bóveda Conexiones.",
+      description: "Pipeline 1 clic: GitHub repo → Vercel env sync → Supabase/.env → commit/push/deploy → project-infra.json. Usa bóveda Conexiones.",
       execute: async (toolInput = {}) => {
         const { executeFullStackDeploy } = require("./fullstack-deploy");
         const connections = typeof readConnections === "function" ? readConnections() : {};
@@ -552,7 +552,7 @@ function registerAgentCapabilityTools(dispatcher, {
     dispatcher.register({
       name: "onboard_project",
       write: true,
-      description: "Onboard proyecto nuevo: npm install, Supabase GafCore (supabase/), GitHub, Vercel, envs, GafCore Gateway. Usar tras create_project o proyecto recien creado.",
+      description: "Onboard proyecto nuevo: npm install, Supabase (supabase/), GitHub, Vercel, envs, proveedor de IA. Usar tras create_project o proyecto recien creado.",
       execute: async (toolInput = {}) => {
         const connections = typeof readConnections === "function" ? readConnections() : {};
         return onboardProject(rootPath, connections, {
@@ -622,7 +622,7 @@ function registerAgentCapabilityTools(dispatcher, {
     dispatcher.register({
       name: "provision_supabase",
       write: true,
-      description: "Provisiona/enlaza Supabase GafCore del proyecto con credenciales de bóveda.",
+      description: "Provisiona/enlaza Supabase del proyecto con credenciales de bóveda.",
       execute: async (toolInput = {}) => {
         const bridge = require("./cloud-vault-bridge").createCloudVaultBridge({
           getConnections: typeof readConnections === "function" ? readConnections : () => ({}),
@@ -633,7 +633,7 @@ function registerAgentCapabilityTools(dispatcher, {
     dispatcher.register({
       name: "provision_gafcore_ai",
       write: true,
-      description: "Crea/reutiliza proyecto AI en GafCore Gateway y escribe GAFCORE_GATEWAY_URL + GAFCORE_API_KEY en .env.local.",
+      description: "Crea/reutiliza proyecto de IA (ME AI / APICredits) y escribe las variables del proveedor en .env.local.",
       execute: async (toolInput = {}) => {
         const bridge = require("./cloud-vault-bridge").createCloudVaultBridge({
           getConnections: typeof readConnections === "function" ? readConnections : () => ({}),
@@ -654,7 +654,7 @@ function registerAgentCapabilityTools(dispatcher, {
     dispatcher.register({
       name: "provision_fullstack_project",
       write: true,
-      description: "Orquestador 1 clic: GitHub + Vercel + Supabase + GafCore AI + project-infra.json (bóveda).",
+      description: "Orquestador 1 clic: GitHub + Vercel + Supabase + proveedor de IA + project-infra.json (bóveda).",
       execute: async (toolInput = {}) => {
         const bridge = require("./cloud-vault-bridge").createCloudVaultBridge({
           getConnections: typeof readConnections === "function" ? readConnections : () => ({}),
@@ -724,14 +724,14 @@ function registerAgentCapabilityTools(dispatcher, {
   if (readConnections && connectionSummary) {
     dispatcher.register({
       name: "connection_status",
-      description: "Consulta conexiones del operador (GitHub, Vercel, Supabase GafCore, SSH, GafCore Gateway) sin secretos.",
+      description: "Consulta conexiones del operador (GitHub, Vercel, Supabase, SSH, proveedores ME AI / APICredits) sin secretos.",
       execute: async (toolInput = {}) => {
         if (typeof getOperatorConnectionsSnapshot === "function") {
           const snapshot = getOperatorConnectionsSnapshot();
           const service = String(toolInput.service || "").toLowerCase();
           if (!service) return snapshot;
-          if (service === "gafcore" || service === "gateway" || service === "gafcoregateway") {
-            return { gafcoreGateway: snapshot.gafcoreGateway };
+          if (service === "ai" || service === "meai" || service === "apicredits" || service === "models" || service === "gafcore" || service === "gateway" || service === "gafcoregateway") {
+            return { aiProvider: snapshot.aiProvider || { configured: false, label: "Proveedores de IA (ME AI / APICredits)" } };
           }
           return { [service]: snapshot[service] || { configured: false } };
         }
@@ -868,7 +868,7 @@ function registerAgentCapabilityTools(dispatcher, {
 
   dispatcher.register({
     name: "probe_endpoint",
-    description: "Prueba health HTTP de loopback o gafcore-gateway.vercel.app (diagnóstico de puentes AI).",
+    description: "Prueba health HTTP de loopback o del endpoint del proveedor de modelos (diagnóstico).",
     execute: async (toolInput = {}) => {
       const { probeEndpoint } = require("./probe-endpoint");
       return probeEndpoint(toolInput);

@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, Menu, shell, safeStorage, session, clipboard, nativeImage } = require("electron");
+const { app, BrowserWindow, ipcMain, dialog, Menu, shell, safeStorage, session, clipboard, nativeImage, nativeTheme } = require("electron");
 // No forzar --disable-gpu: genera ruido ContextResult::kFatalFailure y degrada estabilidad.
 try {
   app.setName("EditCoreAI");
@@ -9,6 +9,7 @@ try {
   // ignore
 }
 app.commandLine.appendSwitch("use-fake-ui-for-media-stream");
+app.commandLine.appendSwitch("disable-features", "CalculateNativeWinOcclusion");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
@@ -1283,7 +1284,10 @@ function createWindow(options = {}) {
   };
 
   win.once("ready-to-show", displayWindow);
-  win.webContents.once("did-finish-load", displayWindow);
+  win.webContents.once("did-finish-load", () => {
+    try { win.setTitle(appWindowTitle()); } catch { /* ignore */ }
+    displayWindow();
+  });
 
   // Failsafe: mostrar antes si la carga se demora.
   setTimeout(() => {
@@ -4698,6 +4702,97 @@ ipcMain.handle("patch:rollback", async (_event, filePath, backupPath, opts = {})
   }
 });
 
+ipcMain.handle("editor:inline-edit", async (_event, input = {}) => {
+  const {
+    path: relPath,
+    language = "plaintext",
+    startLine = 1,
+    endLine = 1,
+    before = "",
+    selection = "",
+    after = "",
+    instruction = "",
+    previousProposal = "",
+    model = "",
+    providerKey = "",
+    apiKey = "",
+    baseUrl = "",
+  } = input || {};
+
+  if (!instruction || !String(instruction).trim()) {
+    return { ok: false, error: "Falta la instrucción." };
+  }
+  if (!selection && !previousProposal) {
+    return { ok: false, error: "Seleccioná código o mové el cursor a una línea." };
+  }
+
+  const creds = resolveKernelProviderCredentials();
+  const resolvedApiKey = String(apiKey || creds.apiKey || "").trim();
+  const resolvedModel = String(model || creds.model || "").trim();
+  const resolvedBaseUrl = String(baseUrl || creds.baseUrl || "").trim();
+  const resolvedProviderKey = String(providerKey || creds.providerKey || "").trim();
+  if (!resolvedApiKey || !resolvedModel || !resolvedBaseUrl) {
+    return { ok: false, error: "Configurá un modelo en Modelos antes de usar Inline Edit." };
+  }
+
+  const system = [
+    "Sos un editor inline de código.",
+    "Devolvés EXCLUSIVAMENTE el código nuevo que reemplaza la selección.",
+    "Reglas:",
+    "- Sin markdown, sin ```, sin explicaciones, sin texto previo ni posterior.",
+    "- Sin comentarios agregados salvo que la instrucción lo pida.",
+    "- Mantené el estilo del código circundante (indentación, comillas, semicolons).",
+    "- Si la instrucción es imposible o ambigua, devolvé la selección sin cambios.",
+    "- Preservá imports/exports si están en la selección.",
+  ].join("\n");
+
+  const userParts = [
+    `Archivo: ${relPath || "(sin path)"}`,
+    `Lenguaje: ${language}`,
+    `Rango: líneas ${startLine}-${endLine}`,
+    before ? `\n--- CONTEXTO ANTES ---\n${before}` : "",
+    `\n--- SELECCIÓN A EDITAR ---\n${selection || "(cursor vacío)"}`,
+    after ? `\n--- CONTEXTO DESPUÉS ---\n${after}` : "",
+    previousProposal ? `\n--- PROPUESTA ANTERIOR (refinar) ---\n${previousProposal}` : "",
+    `\n--- INSTRUCCIÓN ---\n${instruction}`,
+    "",
+    "Devolvé SOLO el código nuevo.",
+  ].filter(Boolean).join("\n");
+
+  try {
+    const result = await callProvider({
+      baseUrl: resolvedBaseUrl,
+      apiKey: resolvedApiKey,
+      model: resolvedModel,
+      providerKey: resolvedProviderKey,
+      messages: [
+        { role: "system", content: system },
+        { role: "user", content: userParts },
+      ],
+      timeoutMs: 60_000,
+      maxAttempts: 1,
+      enableTools: false,
+      rawToolCalls: false,
+      allowProviderFallback: false,
+    });
+
+    let proposal = String(result?.text || "").trim();
+    const fenced = proposal.match(/```[\w-]*\r?\n([\s\S]*?)\r?\n```/);
+    if (fenced) proposal = fenced[1];
+    proposal = proposal.replace(/^```[\w-]*\r?\n?/, "").replace(/\r?\n?```$/, "").trim();
+
+    if (!proposal) {
+      return { ok: false, error: "El modelo devolvió una respuesta vacía." };
+    }
+    return { ok: true, proposal };
+  } catch (error) {
+    return {
+      ok: false,
+      error: String(error?.message || error).slice(0, 400),
+    };
+  }
+});
+
 ipcMain.handle("patch:list-backups", async (_event, filePath, opts = {}) => {
   try {
     const projectRoot = String(opts?.projectRoot || "").trim();
@@ -5846,6 +5941,34 @@ ipcMain.handle("app:open-external", async (_event, url = "") => {
 });
 
 ipcMain.handle("app:version", () => String(RUNTIME_VERSION || "2.7.0"));
+
+function appWindowTitle() {
+  return `EditCoreAI v${String(RUNTIME_VERSION || "2.7.0").trim()}`;
+}
+
+function applyNativeChromeForTheme(theme = "blanco", win = null) {
+  const next = String(theme || "blanco").trim().toLowerCase();
+  const dark = next === "gris" || next === "negro" || next === "azul";
+  try {
+    nativeTheme.themeSource = dark ? "dark" : "light";
+  } catch { /* ignore */ }
+  const bg = dark
+    ? (next === "azul" ? "#0c1a2e" : next === "gris" ? "#1e1e1e" : "#0f1419")
+    : "#f5f6f8";
+  const targets = win && !win.isDestroyed()
+    ? [win]
+    : BrowserWindow.getAllWindows().filter((w) => w && !w.isDestroyed());
+  for (const target of targets) {
+    try { target.setTitle(appWindowTitle()); } catch { /* ignore */ }
+    try { target.setBackgroundColor(bg); } catch { /* ignore */ }
+  }
+  return { theme: next, dark, title: appWindowTitle() };
+}
+
+ipcMain.handle("app:set-ui-theme", (event, theme = "blanco") => {
+  const owner = BrowserWindow.fromWebContents(event.sender) || mainWindow;
+  return applyNativeChromeForTheme(theme, owner);
+});
 
 ipcMain.handle("session:load", () => {
   const { loadUiSession } = require("./runtime/ui-session-store");

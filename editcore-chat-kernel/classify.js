@@ -9,6 +9,8 @@ const APPROVAL_RE = /^\s*(?:procede|continua|continúa|hazlo|autorizado|adelante
 const CHAT_INFO_RE = /\b(?:para\s+qu[eé]\s+(?:sirve|funciona|es)|qu[eé]\s+(?:hace|es)|qui[eé]n\s+eres|c[oó]mo\s+te\s+llamas|ayuda|hola|buenos\s+d[ií]as|buenas\s+tardes|buenas\s+noches)\b/i;
 
 const TASK_FIX_RE = /\b(?:corrije|corrige|arregla|implementa|aplica|repara|soluciona|crea|escribe|modifica|refactoriza|actualiza|audita|añade|agrega|cambia|haz|hacer|ejecuta|run_command|run|build|tsc|npx|npm)\b/i;
+const TASK_CLONE_RE = /\b(?:clona|clonar|copia\s+esta\s+p[aá]gina|replica(?:r)?\s+(?:esta\s+)?(?:web|p[aá]gina|sitio)|clone_web_page)\b/i;
+const HTTP_URL_RE = /https?:\/\/[^\s)>"']+/i;
 
 const TASK_ANALYZE_RE = /\b(?:analiza|audita|diagnostica|revisa\s+errores|hallazgos|reporte\s+completo|plan\s+de\s+acci[oó]n)\b/i;
 const TASK_LIST_RE = /\b(?:lista|listar|qu[eé]\s+contiene|qu[eé]\s+hay\s+en|contenido\s+de|muestra\s+(?:la\s+)?carpeta|explora|explorar|explorer|directorio|arbol|árbol)\b/i;
@@ -46,6 +48,18 @@ function classify(message, opts = {}) {
   }
   if (full && APPROVAL_RE.test(text)) {
     return { kind: "EXECUTE", label: "Ejecución (Acceso completo)", allowTools: true, allowWrite: true, background: false };
+  }
+
+
+  if (TASK_CLONE_RE.test(text) || (HTTP_URL_RE.test(text) && /\b(?:clona|clonar|copia|replica)\b/i.test(text))) {
+    return {
+      kind: "EXECUTE",
+      label: "Clonar página web",
+      allowTools: true,
+      allowWrite: true,
+      background,
+      preferredTool: "clone_web_page",
+    };
   }
 
   if (TASK_LIST_RE.test(text)) {

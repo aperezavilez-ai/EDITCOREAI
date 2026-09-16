@@ -535,6 +535,61 @@ class EditCoreClaudeAdapter {
   }
 
   /**
+   * Andamiaje de razonamiento explícito antes de tools (solo análisis).
+   */
+  buildReasoningPhase(input) {
+    const prompt = String(input.prompt || "").trim();
+    const isAnalysis = input.analysisMode === true
+      || /^(?:analiza|audita|diagnostica|revisa|explora|investiga|compara|eval[uú]a|explica)\b/i.test(prompt);
+  const isExecution = input.planAuthorized === true
+    || input.planAuthorizedExecution === true;
+  // FIX: solo PROCEDE/plan autorizado cuenta como ejecución.
+  // "Acceso completo" en modo análisis NO debe saltar el razonamiento.
+
+    if (!isAnalysis || isExecution) {
+      // No aplicar a ejecución: la fase de razonamiento retrasa el accionar.
+      return "";
+    }
+
+    return [
+      "═══════════════════════════════════════════════════════════════",
+      "FASE 1 — RAZONAMIENTO OBLIGATORIO (antes de cualquier tool call)",
+      "═══════════════════════════════════════════════════════════════",
+      "Antes de ejecutar tools, escribí en el chat este bloque EXACTO.",
+      "No ejecutes ninguna herramienta hasta terminar este bloque.",
+      "",
+      "## Hipótesis inicial",
+      "Qué creés que es este proyecto y por qué. Basado en el nombre,",
+      "la tarea, el historial y cualquier evidencia previa. 2-4 líneas.",
+      "",
+      "## Preguntas críticas a responder",
+      "Listá 3-5 preguntas que un experto haría. Ejemplo:",
+      "- ¿Qué stack usa y por qué?",
+      "- ¿Cómo se comunican los módulos entre sí?",
+      "- ¿Dónde está el punto de falla más probable?",
+      "- ¿Qué NO está documentado y debería?",
+      "",
+      "## Plan de evidencia",
+      "Listá QUÉ archivos/directorios leer para responder cada pregunta.",
+      "Cada lectura debe tener un objetivo. Ejemplo:",
+      "- Leer package.json → confirmar stack y dependencias.",
+      "- Leer main.js → entender el bootstrap de la app.",
+      "- Listar runtime/ → descubrir módulos internos.",
+      "",
+      "## Criterio de suficiencia",
+      "Cuándo vas a considerar que tenés evidencia suficiente para",
+      "escribir el reporte final. Ejemplo:",
+      "\"Cuando haya leído: (1) package.json, (2) al menos 3 módulos",
+      "core, (3) listado de runtime/ y (4) un archivo representativo",
+      "de cada capa (UI, lógica, datos).\"",
+      "",
+      "DESPUÉS de escribir este bloque, empezá a ejecutar tools.",
+      "Cada tool call debe mapear a una pregunta del plan.",
+      "═══════════════════════════════════════════════════════════════",
+    ].join("\n");
+  }
+
+  /**
    * Ejecuta una tarea completa del agente
    */
   async executeTask(input) {
@@ -644,7 +699,9 @@ class EditCoreClaudeAdapter {
         }
       }
       this.forceTextOnlyClose = false;
+      input.allowWrite = true;
       input.analysisMode = false;
+      input.planAuthorizedExecution = true;
       input.onProgress?.({
         phase: "startup",
         text: "PROCEDE: ejecucion libre autorizada (write_file/replace_in_file)...",
@@ -756,6 +813,7 @@ class EditCoreClaudeAdapter {
     }
 
     this.analysisFinalizedText = "";
+    this.requiresReasoningBlock = false;
     if (input.orchestratorPlan?.runProfile) {
       applyRunProfile(input, input.orchestratorPlan.runProfile);
     } else if (input.runProfile) {
@@ -899,6 +957,13 @@ class EditCoreClaudeAdapter {
           "CACHE: no repitas list_files/read_file/search_files identicos; reutiliza hits.",
         ].join("\n"));
       }
+
+      // FASE 1 — Razonamiento explícito obligatorio antes de tools.
+      const reasoningPhase = this.buildReasoningPhase(input);
+      if (reasoningPhase) {
+        this.conversation.appendUser(reasoningPhase);
+        this.requiresReasoningBlock = true;
+      }
     }
 
     try {
@@ -985,7 +1050,7 @@ class EditCoreClaudeAdapter {
           stopReason = String(input.signal.reason?.message || input.signal.reason || "Ejecucion cancelada.");
           break;
         }
-        // El presupuesto economico lo gobierna GafCore Gateway. Este contador
+        // El presupuesto economico lo gobierna el proveedor de modelos. Este contador
         // es telemetria y nunca detiene una tarea localmente.
 
         // Detectar loops
@@ -1051,6 +1116,7 @@ class EditCoreClaudeAdapter {
 
         // Obtener siguiente turno del modelo (texto narrativo + tool calls)
         let turn;
+        const forcedTextOnlyThisTurn = this.forceTextOnlyClose === true || input.forceTextOnlyClose === true;
         try {
           const workerDeathErr = typeof input.pullWorkerDeathError === "function" ? input.pullWorkerDeathError() : null;
           if (workerDeathErr) throw workerDeathErr;
@@ -1210,6 +1276,11 @@ class EditCoreClaudeAdapter {
           throw apiError;
         }
 
+        if (forcedTextOnlyThisTurn) {
+          this.forceTextOnlyClose = false;
+          input.forceTextOnlyClose = false;
+        }
+
         // BUG 4 FIX: Si el modelo devolvió texto sin herramientas y el contexto es muy
         // grande (>60k chars), es probable overflow de ventana. Compactar agresivamente
         // y reintentar para que el modelo trabaje con contexto reducido.
@@ -1252,6 +1323,33 @@ class EditCoreClaudeAdapter {
           else finalAction = parsed;
         }
         const narration = plainActions.length ? narrationWithoutToolCalls(turn.text) : String(turn.text || "").trim();
+
+        // FASE 1 enforcement: si requiere razonamiento y el modelo saltó directo
+        // a tool calls sin escribir el bloque, cortarlo y forzarlo.
+        if (this.requiresReasoningBlock === true && actions.length > 0) {
+          const wroteReasoning = /##\s*Hip[oó]tesis\s+inicial/i.test(narration)
+            || /##\s*Preguntas\s+cr[ií]ticas/i.test(narration)
+            || /##\s*Plan\s+de\s+evidencia/i.test(narration);
+          if (!wroteReasoning) {
+            // Cancelar los tool calls y pedir el bloque primero.
+            for (const action of actions) {
+              if (action.callId) {
+                this.conversation.appendToolResult(action.callId, action.name, {
+                  error: "Pausa: primero escribí el bloque de RAZONAMIENTO (Hipótesis inicial, Preguntas críticas, Plan de evidencia, Criterio de suficiencia). Después ejecutá herramientas.",
+                });
+              }
+            }
+            actions.length = 0;
+            this.conversation.appendUser(
+              "VALIDACION EDITCORE: Antes de ejecutar tools, escribí el bloque de RAZONAMIENTO obligatorio en el chat. Formato: ## Hipótesis inicial / ## Preguntas críticas a responder / ## Plan de evidencia / ## Criterio de suficiencia. Solo después de escribirlo podés ejecutar herramientas."
+            );
+            input.onProgress?.({ phase: "model", text: "Formulando hipótesis y plan antes de investigar..." });
+            continue;
+          }
+          // Ya escribió el bloque, dejarlo trabajar libremente.
+          this.requiresReasoningBlock = false;
+        }
+
         const narrationTrack = narration ? this.trackNarrationEmission(narration) : { emit: false, duplicate: false };
         const writeExecution = input.allowWrite === true && input.analysisMode !== true && input.listOnly !== true;
         const listOnlyDone = input.listOnly === true && steps.some((step) => step.name === "list_files" && step.ok === true);
@@ -2718,14 +2816,39 @@ class EditCoreClaudeAdapter {
     // Analisis de hallazgos: IGNORAR ROADMAP (docs de estado). Codigo real primero.
     // Bootstrap LIGERO (estilo Cursor): raiz + package.json + UNA carpeta clave.
     // El resto se hace tool a tool con avance visible en el chat (sin saturar).
-    if (names.has("package.json")) {
+    const isSelfAnalysis = /\beditcoreai\b|\beditcore\b|\beste proyecto\b|\beste codebase\b/i.test(String(input.prompt || ""));
+    if (isSelfAnalysis) {
+      // Análisis auto-referencial: leer estructura completa antes de responder.
+      for (const rel of [
+        "package.json",
+        "main.js",
+        "preload.js",
+        "renderer.js",
+        "runtime/tool-dispatcher.js",
+        "runtime/action-registry.js",
+        "runtime/ai-core.js",
+        "runtime/intent-orchestrator.js",
+      ]) {
+        const exists = names.has(rel) || names.has(rel.split("/")[0]);
+        if (exists) {
+          await this.executeSeedTool(input, steps, "read_file", { path: rel });
+        }
+      }
+      if (names.has("runtime")) {
+        await this.executeSeedTool(input, steps, "list_files", { path: "runtime" });
+      }
+      for (const dir of ["ide", "src", "api", "scripts"]) {
+        if (names.has(dir)) {
+          await this.executeSeedTool(input, steps, "list_files", { path: dir });
+        }
+      }
+    } else if (names.has("package.json")) {
       await this.executeSeedTool(input, steps, "read_file", { path: "package.json" });
-    }
-
-    const firstDir = ["src", "app", "apps", "api", "packages", "pages", "components", "lib"]
-      .find((dir) => names.has(dir));
-    if (firstDir) {
-      await this.executeSeedTool(input, steps, "list_files", { path: firstDir });
+      const firstDir = ["src", "app", "apps", "api", "packages", "pages", "components", "lib"]
+        .find((dir) => names.has(dir));
+      if (firstDir) {
+        await this.executeSeedTool(input, steps, "list_files", { path: firstDir });
+      }
     }
 
     for (const config of [
@@ -3895,8 +4018,52 @@ SI ES TAREA DE ANÁLISIS/REPORTE/AUDITORIA:
 - PROHIBIDO write_file/replace_in_file.
 - PROHIBIDO reiniciar el proyecto o decir que el path era incorrecto tras CONTINUA; reutiliza evidencia ya leida.
 
-Para el mensaje final:
-1. Responde SIEMPRE en español de forma profesional, clara y DIRECTA, en markdown.
+CIERRE OBLIGATORIO — El modelo DEBE terminar cada respuesta con UNO de estos 3 encabezados de estado (nunca una respuesta abierta sin encabezado):
+
+## ✅ TAREA COMPLETADA
+Usar cuando terminaste de ejecutar y verificaste cambios reales.
+Formato:
+  ## ✅ TAREA COMPLETADA
+  <1-2 líneas: qué se hizo>
+  ### Evidencia
+  - `<archivo>` modificado
+  - Verificado con `<tool>`
+  ## Siguientes pasos
+  **1. [RECOMENDADA] <título>**
+  - Qué hacer: <1 línea concreta>
+  - Por qué ahora: <1 línea de impacto>
+  **2. <título>**
+  - Qué hacer: ...
+  - Por qué ahora: ...
+  **3. <título>**
+  - Qué hacer: ...
+  - Por qué ahora: ...
+
+## ⏸️ ESPERANDO TU ACCIÓN
+Usar cuando terminaste el análisis y necesitás que el usuario autorice, elija o confirme algo.
+Formato:
+  ## ⏸️ ESPERANDO TU ACCIÓN
+  <1-2 líneas: qué encontraste y qué necesitás>
+  ### Qué necesito
+  - <instrucción exacta>
+  ### Si decidís continuar
+  <qué harás cuando responda>
+
+## ℹ️ RESPUESTA
+Usar cuando el usuario solo hizo una pregunta informativa, conceptual, o es chat casual.
+Formato:
+  ## ℹ️ RESPUESTA
+  <contenido>
+  (opcional) Si querés que profundice en algo o haga alguna acción, decímelo.
+
+REGLAS DURAS:
+- NUNCA termines sin uno de estos 3 encabezados (excepto saludo simple como "hola" que puede ser solo texto breve).
+- NUNCA mezcles estados: o es COMPLETADA, o ESPERANDO, o RESPUESTA.
+- NUNCA uses "TAREA COMPLETADA" si NO hubo write_file/replace_in_file verificados.
+- NUNCA uses "ESPERANDO" si el usuario no tiene nada que decidir.
+- "Siguientes pasos" SOLO aparece en ✅ COMPLETADA, nunca en ℹ️ RESPUESTA.
+- En ⏸️ ESPERANDO NO agregues "Siguientes pasos" (el propio "Qué necesito" es la acción).
+
 2. NO pegues codigo fuente, imports ni bloques fenced en el chat; explica en prosa lo que encontraste o cambiaste.
 3. Indica: resultado, archivos modificados, verificaciones ejecutadas y qué falta para que arranque.
 4. No afirmes que leíste, modificaste o verificaste algo sin herramienta exitosa que lo demuestre.
@@ -4227,7 +4394,7 @@ ${input.analysisMode ? (isCodeAudit ? `MODO ANALISIS ACTIVO:
           repoName: { type: "string" },
         }),
         tool("assess_project_connections", "Diagnostica que falta para publicar (git, tokens, supabase, vercel)."),
-        tool("onboard_project", "Onboard completo: npm install, Supabase GafCore, GitHub, Vercel, envs, GafCore Gateway.", {
+        tool("onboard_project", "Onboard completo: npm install, Supabase, GitHub, Vercel, envs, proveedor de IA.", {
           installDeps: { type: "boolean" },
           bootstrapSupabase: { type: "boolean" },
           connectServices: { type: "boolean" },
@@ -4246,7 +4413,7 @@ ${input.analysisMode ? (isCodeAudit ? `MODO ANALISIS ACTIVO:
           commitMessage: { type: "string" },
         }),
         tool("project_health", "Estado de salud: git, remote, migraciones, ultima publicacion."),
-        tool("create_supabase_project", "Bootstrap supabase/ + env + bucket en proyecto (GafCore self-hosted).", {
+        tool("create_supabase_project", "Bootstrap supabase/ + env + bucket en proyecto (Supabase propio).", {
           projectName: { type: "string" },
           useCloud: { type: "boolean" },
           bucketName: { type: "string" },

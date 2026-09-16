@@ -2,8 +2,7 @@
 
 /**
  * Memoria operativa de Conexiones (sin secretos).
- * Todos los proyectos del operador dependen de estas cuentas:
- * GitHub, Vercel, Supabase GafCore, Servidor SSH, GafCore Gateway.
+ * Cuentas: GitHub, Vercel, Supabase, Servidor SSH, proveedores ME AI / APICredits.
  */
 
 const fs = require("node:fs");
@@ -11,6 +10,20 @@ const path = require("node:path");
 
 const GLOBAL_MEMORY_ID = "operator-connections-global";
 const PROJECT_MEMORY_PREFIX = "operator-connections:";
+
+function scrubInternalProviderNames(text = "") {
+  return String(text || "")
+    .replace(/https?:\/\/[^\s)]*gafcore-gateway[^\s)]*/gi, "")
+    .replace(/\bgafcore-gateway(?:\.vercel\.app)?\b/gi, "el proveedor de modelos")
+    .replace(/\bGafCore\s+Gateway\b/gi, "el proveedor de modelos")
+    .replace(/\bGafCore\b/gi, "el proveedor")
+    .replace(/\bGAFCORE_(?:GATEWAY_URL|API_KEY|ADMIN_TOKEN)\b/g, "credencial del proveedor")
+    .replace(/\bx-project-key\b/gi, "API key")
+    .replace(/\bproject\s*keys?\b/gi, "API keys")
+    .replace(/\s{2,}/g, " ")
+    .replace(/\s+([.,;:!?])/g, "$1")
+    .trim();
+}
 
 function stripSecrets(value) {
   if (value == null) return value;
@@ -287,8 +300,7 @@ function buildSafeConnectionsSnapshot(options = {}) {
       "EDITCOREAI = IDE + agente. Conexiones globales (bóveda): GitHub, Vercel, Supabase (URL por proyecto), SSH. "
       + "Alimentación de IA: proveedores ME AI y APICredits configurados en Modelos (API keys propias). "
       + "Con un proyecto abierto, el agente usa el .env de ESE proyecto, no la URL de otro. "
-      + "No pidas tokens si ya estan en boveda o en el .env del proyecto activo. "
-      + "Nunca menciones GafCore Gateway en respuestas al usuario.";
+      + "No pidas tokens si ya estan en boveda o en el .env del proyecto activo.";
 
   const gatewayConfigured = Boolean(
     gatewayLink?.projectId
@@ -314,7 +326,7 @@ function buildSafeConnectionsSnapshot(options = {}) {
     },
     selfsupabase: {
       configured: Boolean(summary.selfsupabase?.configured),
-      label: "Supabase GafCore (datos)",
+      label: "Supabase (datos del proyecto)",
       url: String(summary.selfsupabase?.url || connections.selfSupabaseUrl || "").replace(/\/+$/, ""),
       scope: resolved.projectScoped ? "proyecto-activo" : "boveda-global",
       source: resolved.source || undefined,
@@ -328,18 +340,12 @@ function buildSafeConnectionsSnapshot(options = {}) {
         : undefined,
       keyConfigured: Boolean(connections.serverKeyPath),
     },
-    gafcoreGateway: {
+    aiProvider: {
       configured: gatewayConfigured,
-      disabled: false,
-      url: "https://gafcore-gateway.vercel.app",
-      chatEndpoint: "https://gafcore-gateway.vercel.app/api/v1/chat",
-      openaiCompatible: "https://gafcore-gateway.vercel.app/api/openai/v1",
-      header: "x-project-key",
+      label: "Proveedores de IA (ME AI / APICredits)",
       projectId: gatewayLink?.projectId || undefined,
       projectName: gatewayLink?.projectName || undefined,
-      note:
-        "Fuente de IA: modelos ME AI / APICredits en el panel Modelos de EDITCOREAI. "
-        + "Nunca mencionar GafCore Gateway al usuario.",
+      note: "Usa Modelos → ME AI / APICredits. No inventes nombres internos de infraestructura.",
     },
     projectLinks: projectManifest || null,
   };
@@ -353,7 +359,7 @@ function statusLabel(configured) {
 
 function formatOperatorConnectionsMemory(snapshot = {}) {
   const s = snapshot && typeof snapshot === "object" ? snapshot : {};
-  const gw = s.gafcoreGateway || {};
+  const ai = s.aiProvider || s.gafcoreGateway || {};
   const lines = [
     "MEMORIA DE CONEXIONES Y DEPENDENCIAS DE EDITCOREAI (fuente de verdad — sin secretos):",
     String(s.operatorNote || "").trim(),
@@ -362,7 +368,6 @@ function formatOperatorConnectionsMemory(snapshot = {}) {
     "1) EDITCOREAI (esta app): IDE, agente, preview, Publicar, Inspector, Cerebro.",
     "2) Conexiones bóveda: GitHub (git), Vercel (deploy), Supabase (DB por proyecto), SSH (servidor).",
     "3) Modelos: ME AI y APICredits en el panel Modelos (API keys propias).",
-    "REGLA DURA: NUNCA menciones GafCore Gateway, gafcore-gateway, project keys ni URLs de gateway en respuestas al usuario.",
     "",
     "### Estado actual",
     `- GitHub: ${statusLabel(s.github?.configured)}${s.github?.account ? ` (cuenta: ${s.github.account})` : ""} — commit/push / Publicar`,
@@ -373,8 +378,8 @@ function formatOperatorConnectionsMemory(snapshot = {}) {
         : " [boveda — URL propia por slug del proyecto abierto]"
     }`,
     `- Servidor SSH: ${statusLabel(s.server?.configured)}${s.server?.host ? ` (${s.server.host})` : ""}${s.server?.deployPath ? ` deploy=${s.server.deployPath}` : ""}`,
-    `- Proveedores de IA (ME AI / APICredits): ${statusLabel(gw.configured)}${gw.projectName ? ` proyecto=${gw.projectName}` : ""}`,
-    `  ${gw.note || "Usa Modelos → ME AI / APICredits. No digas GafCore Gateway al usuario."}`,
+    `- Proveedores de IA (ME AI / APICredits): ${statusLabel(ai.configured)}${ai.projectName ? ` proyecto=${ai.projectName}` : ""}`,
+    `  ${ai.note || "Usa Modelos → ME AI / APICredits."}`,
   ];
 
   const links = s.projectLinks;
@@ -391,16 +396,15 @@ function formatOperatorConnectionsMemory(snapshot = {}) {
     "",
     "Regla: si esta CONECTADO, asume credenciales en boveda/.env. No pidas pegar tokens. "
       + "Mutaciones externas (push/deploy/DB) → confirmacion. "
-      + "IA del proyecto = ME AI / APICredits en Modelos. Datos = Supabase del proyecto activo. "
-      + "Nunca digas GafCore Gateway al usuario.",
+      + "IA del proyecto = ME AI / APICredits en Modelos. Datos = Supabase del proyecto activo.",
   );
-  return lines.filter(Boolean).join("\n");
+  return scrubInternalProviderNames(lines.filter(Boolean).join("\n"));
 }
 
 async function persistOperatorConnectionsMemory(brainService, snapshot, options = {}) {
   if (!brainService?.memoryStore?.upsertMemory && !brainService?.remember) return null;
   const text = formatOperatorConnectionsMemory(snapshot);
-  const title = "Conexiones del operador (GitHub / Vercel / GafCore / Servidor / Gateway)";
+  const title = "Conexiones del operador (GitHub / Vercel / Supabase / Servidor)";
   const projectRoot = String(options.projectRoot || "").trim();
   const projectId = String(options.projectId || "").trim();
   const results = [];
@@ -444,6 +448,7 @@ module.exports = {
   GLOBAL_MEMORY_ID,
   PROJECT_MEMORY_PREFIX,
   stripSecrets,
+  scrubInternalProviderNames,
   readProjectLinkManifest,
   gafcoreProjectSlug,
   isGafcoreSupabaseUrl,

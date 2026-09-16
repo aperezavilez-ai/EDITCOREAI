@@ -12,6 +12,7 @@ const os = require("os");
 
 const WORKER_PATH = path.join(__dirname, "agent-worker.js");
 const DEFAULT_CONCURRENCY = Math.max(1, Math.min(4, (os.cpus() || []).length || 2));
+const GRACEFUL_CANCEL_MS = 800;
 
 class TaskQueue extends EventEmitter {
   constructor({ concurrency = DEFAULT_CONCURRENCY } = {}) {
@@ -24,12 +25,6 @@ class TaskQueue extends EventEmitter {
     this.isShuttingDown = false;
   }
 
-  /**
-   * Encola y ejecuta un subagente en un Worker. Retorna taskId de inmediato.
-   * @param {string} taskType
-   * @param {object} taskData
-   * @param {{ onProgress?: Function }} [options]
-   */
   runInBackground(taskType, taskData = {}, options = {}) {
     if (this.isShuttingDown) {
       throw new Error("Queue is shutdown and cannot accept new tasks");
@@ -80,11 +75,7 @@ class TaskQueue extends EventEmitter {
     try {
       worker = new Worker(WORKER_PATH);
     } catch (err) {
-      const payload = {
-        taskId,
-        status: "failed",
-        error: String(err?.message || err),
-      };
+      const payload = { taskId, status: "failed", error: String(err?.message || err) };
       this.meta.delete(taskId);
       onProgress?.(payload);
       this.emit("task_error", payload);
@@ -102,11 +93,7 @@ class TaskQueue extends EventEmitter {
       this.emit("task_progress", payload);
     };
 
-    emitProgress({
-      taskId,
-      status: "running",
-      text: `Worker iniciado (${taskType})`,
-    });
+    emitProgress({ taskId, status: "running", text: `Worker iniciado (${taskType})` });
 
     worker.on("message", (msg) => {
       const payload = { taskId, ...(msg && typeof msg === "object" ? msg : { data: msg }) };
@@ -139,11 +126,7 @@ class TaskQueue extends EventEmitter {
     worker.on("exit", (code) => {
       if (!this.workers.has(taskId)) return;
       if (code !== 0) {
-        const payload = {
-          taskId,
-          status: "failed",
-          error: `Worker salió con código ${code}`,
-        };
+        const payload = { taskId, status: "failed", error: `Worker salió con código ${code}` };
         onProgress?.(payload);
         this.emit("task_error", payload);
         this.emit("task_progress", payload);
@@ -152,43 +135,46 @@ class TaskQueue extends EventEmitter {
       this._pump();
     });
 
-    worker.postMessage({
-      type: "run",
-      taskId,
-      taskType,
-      taskData,
-    });
+    worker.postMessage({ type: "run", taskId, taskType, taskData });
   }
 
   _cleanup(taskId, worker) {
     this.workers.delete(taskId);
     this.meta.delete(taskId);
-    try {
-      worker.terminate();
-    } catch (_) { /* ignore */ }
+    try { worker.terminate(); } catch (_) { /* ignore */ }
   }
 
+  /**
+   * Cancelación con gracia: postMessage({type:"cancel"}) → esperar GRACEFUL_CANCEL_MS
+   * → terminate() si el worker no salió solo. Evita matar a mitad de write_file.
+   */
   cancel(taskId) {
     const id = String(taskId || "");
+
     this.pending = this.pending.filter((job) => {
       if (job.taskId !== id) return true;
-      const payload = { taskId: id, status: "failed", error: "Cancelado" };
+      const payload = { taskId: id, status: "failed", error: "Cancelado (pendiente)" };
       job.onProgress?.(payload);
       this.emit("task_error", payload);
       this.emit("task_progress", payload);
       this.meta.delete(id);
       return false;
     });
+
     const worker = this.workers.get(id);
     if (worker) {
       try { worker.postMessage({ type: "cancel", taskId: id }); } catch (_) { /* ignore */ }
-      try { worker.terminate(); } catch (_) { /* ignore */ }
-      const payload = { taskId: id, status: "failed", error: "Cancelado" };
+      setTimeout(() => {
+        try { worker.terminate(); } catch (_) { /* ignore */ }
+      }, GRACEFUL_CANCEL_MS);
+
       this.workers.delete(id);
       this.meta.delete(id);
+      const payload = { taskId: id, status: "failed", error: "Cancelado" };
       this.emit("task_error", payload);
       this.emit("task_progress", payload);
     }
+
     this._pump();
     return { ok: true, taskId: id };
   }
@@ -210,6 +196,11 @@ class TaskQueue extends EventEmitter {
   shutdown() {
     this.isShuttingDown = true;
     this.cancelAll();
+  }
+
+  /** Reactiva la cola después de un shutdown (por ej. cuando se reabre la ventana). */
+  resume() {
+    this.isShuttingDown = false;
   }
 
   getStats() {

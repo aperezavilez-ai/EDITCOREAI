@@ -1,0 +1,85 @@
+.inline-edit-widget {
+  font-family: var(--ec-font-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
+  background: rgba(30, 30, 35, 0.96);
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  border-radius: 10px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.55), 0 2px 8px rgba(0, 0, 0, 0.4);
+  padding: 10px 12px 8px;
+  width: min(620px, 90vw);
+  min-width: 380px;
+  max-width: 640px;
+  backdrop-filter: blur(12px);
+  animation: inlineEditIn 0.12s ease-out;
+}
+@keyframes inlineEditIn {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.inline-edit-widget-head {
+  display: flex; align-items: center; gap: 8px;
+  margin-bottom: 6px;
+  font-size: 11px; color: #cbd5e1;
+}
+.inline-edit-icon { color: #a78bfa; font-size: 13px; }
+.inline-edit-title { font-weight: 600; letter-spacing: 0.02em; }
+.inline-edit-close {
+  margin-left: auto; background: transparent; border: none;
+  color: #94a3b8; cursor: pointer; font-size: 16px; padding: 0 4px;
+}
+.inline-edit-close:hover { color: #f1f5f9; }
+.inline-edit-input {
+  width: 100%; box-sizing: border-box;
+  background: rgba(15, 15, 20, 0.7);
+  color: #e2e8f0;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  padding: 8px 10px; font-family: inherit; font-size: 13px;
+  resize: none; outline: none;
+}
+.inline-edit-input:focus { border-color: rgba(167, 139, 250, 0.55); }
+.inline-edit-actions {
+  display: flex; justify-content: flex-end; gap: 6px;
+  margin-top: 8px; min-height: 26px; align-items: center;
+}
+.inline-edit-generate {
+  background: #6366f1; color: #fff;
+  border: none; padding: 5px 14px; border-radius: 6px;
+  font-size: 12px; font-weight: 600; cursor: pointer;
+}
+.inline-edit-generate:hover { background: #4f46e5; }
+.inline-edit-spinner { color: #a78bfa; font-size: 12px; }
+.inline-edit-error {
+  margin-top: 6px; color: #f87171; font-size: 12px;
+}
+.inline-edit-diff-container {
+  background: #0f0f14;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  display: flex; flex-direction: column;
+}
+.inline-edit-diff-host { flex: 1; min-height: 0; }
+.inline-edit-diff-actions {
+  display: flex; justify-content: flex-end; gap: 8px;
+  padding: 8px 12px; border-top: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(20, 20, 26, 0.95);
+}
+.inline-edit-btn {
+  background: rgba(255, 255, 255, 0.06); color: #e2e8f0;
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  padding: 6px 14px; border-radius: 6px;
+  font-size: 12px; cursor: pointer;
+}
+.inline-edit-btn:hover { background: rgba(255, 255, 255, 0.10); }
+.inline-edit-btn.primary {
+  background: #16a34a; border-color: #16a34a; color: #fff; font-weight: 600;
+}
+.inline-edit-btn.primary:hover { background: #15803d; }
+.inline-edit-toast {
+  position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(8px);
+  background: rgba(30, 30, 40, 0.95); color: #e2e8f0;
+  padding: 8px 16px; border-radius: 8px; font-size: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  opacity: 0; transition: opacity 0.2s, transform 0.2s; z-index: 10001;
+  pointer-events: none;
+}
+.inline-edit-toast.visible { opacity: 1; transform: translateX(-50%) translateY(0); }
+body.inline-edit-diff-active .monaco-editor { visibility: hidden; }

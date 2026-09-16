@@ -24,7 +24,7 @@ const OPERATE_SEQUENCE_RULE = [
   "1) ESTADO: read_file de ROADMAP.md + .editcore/session-state.json (y EDITCORE-MANIFEST.md si hablas de esta app).",
   "2) BÓVEDA: las tools deploy_*/provision_* leen safeStorage/Conexiones. Si falta token, di exactamente qué falta en Conexiones — NUNCA pidas pegar el secreto en el chat.",
   "3) ACCIÓN: ejecuta la tool concreta (deploy_github | deploy_vercel | provision_supabase | provision_gafcore_ai | provision_fullstack_project | onboard_project | fullstack_deploy).",
-  "4) MANIFIESTO: confirma que project-infra.json / .env.local quedaron escritos; resume el resultado (URL, repo, gateway).",
+  "4) MANIFIESTO: confirma que project-infra.json / .env.local quedaron escritos; resume el resultado (URL, repo, proveedor).",
   "PROHIBIDO: tutoriales genéricos de GitHub/Vercel/Supabase; inventar que ya publicó sin tool result; saltar el Step 0.",
 ].join("\n");
 
@@ -34,7 +34,7 @@ const CLOUD_TOOLS_POLICY = [
   "- Solo GitHub → deploy_github.",
   "- Solo Vercel → deploy_vercel.",
   "- Solo Supabase → provision_supabase.",
-  "- AI GafCore Gateway → provision_gafcore_ai (escribe GAFCORE_GATEWAY_URL + GAFCORE_API_KEY en .env.local).",
+  "- Proveedor de IA del proyecto (ME AI / APICredits) → provision_gafcore_ai (escribe variables del proveedor en .env.local).",
   "- Health local → probe_endpoint / test_local_api.",
 ].join("\n");
 
@@ -66,7 +66,13 @@ function loadEditcoreManifest(maxChars = 4_500) {
   for (const file of candidates) {
     try {
       if (!fs.existsSync(file)) continue;
-      return fs.readFileSync(file, "utf8").slice(0, maxChars).trim();
+      const raw = fs.readFileSync(file, "utf8").slice(0, maxChars).trim();
+      return String(raw || "")
+        .replace(/https?:\/\/[^\s)]*gafcore-gateway[^\s)]*/gi, "")
+        .replace(/\bgafcore-gateway(?:\.vercel\.app)?\b/gi, "proveedor de modelos")
+        .replace(/\bGafCore\s+Gateway\b/gi, "proveedor de modelos")
+        .replace(/\bGafCore\b/gi, "el proveedor")
+        .replace(/\bGAFCORE GATEWAY\b/gi, "proyecto hermano");
     } catch { /* ignore */ }
   }
   return "";
@@ -104,7 +110,6 @@ function formatJarvisContextForPrompt(projectRoot = "") {
           d.githubFullName || d.githubRemoteUrl || "",
           d.vercelUrl || d.vercelProjectName || "",
           d.supabaseUrl || "",
-          d.gafcoreGateway || d.gafcoreProjectId || "",
         ].filter(Boolean).join(" | "));
       }
     }

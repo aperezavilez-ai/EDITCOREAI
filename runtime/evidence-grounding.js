@@ -25,6 +25,16 @@ function normalizeProjectRoot(value = "") {
   return String(value || "").replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
 }
 
+function extractAnalysisTargets(prompt = "") {
+  const targets = [];
+  const pathPattern = /(?:^|\s)([a-zA-Z0-9_\-./]+\.[a-zA-Z0-9]+)(?:\s|$|,|;)/g;
+  let match;
+  while ((match = pathPattern.exec(prompt)) !== null) {
+    targets.push(match[1]);
+  }
+  return targets;
+}
+
 function normalizeRunScope(scope = {}) {
   return {
     runId: String(scope.runId || "").trim(),

@@ -6,7 +6,10 @@ const { resolveFactualTemperature } = require("./anti-hallucination-policy");
 
 const GATEWAY_TIMEOUT_USER_MESSAGE =
   "La respuesta tardó demasiado tiempo. Intenta reducir el alcance de la solicitud.";
-const DEFAULT_PROVIDER_TIMEOUT_MS = 180_000;
+
+// 🔧 PARCHE: 180_000 (3 min) → 60_000 (1 min).
+// Con stepsLimit = 32 en orchestrator.js, el techo teórico baja de 96 min a 32 min.
+const DEFAULT_PROVIDER_TIMEOUT_MS = 60_000;
 
 function isGatewayHtmlBody(value = "") {
   const text = String(value || "").trim();
@@ -89,9 +92,6 @@ function usage(raw = {}) {
 function withCacheControl(messages) {
   return messages.map((msg, idx) => {
     if (typeof msg.content !== "string" || !msg.content) return msg;
-    // Mark system message and first user message for prefix caching.
-    // Providers that support it (OpenRouter, Together AI, Fireworks AI, etc.) will cache the prefix.
-    // Providers that don't support cache_control safely ignore the unknown field.
     if (msg.role === "system" || (msg.role === "user" && idx <= 1)) {
       return { ...msg, content: [{ type: "text", text: msg.content, cache_control: { type: "ephemeral" } }] };
     }
@@ -106,14 +106,8 @@ function normalizeToolCallsOut(toolCalls = []) {
       const fn = call.function || call;
       const rawArgs = fn.arguments ?? fn.input ?? "{}";
       const sanitized = sanitizeToolCallArguments(rawArgs);
-      // Si el modelo devolvió argumentos no vacíos que no son JSON válido,
-      // el sanitizer los convierte a "{}". Detectar este caso y lanzar
-      // MALFORMED_TOOL_JSON para que el adapter pueda recuperarse.
       if (sanitized === "{}" && rawArgs !== null && rawArgs !== undefined) {
         const raw = typeof rawArgs === "string" ? rawArgs.trim() : String(rawArgs ?? "").trim();
-        // Solo lanzar si el modelo envió argumentos sustantivos (>10 chars) que no
-        // comienzan con '{' — eso indica texto plano/prosa en lugar de JSON.
-        // Fragmentos cortos como "}" son residuos de streaming incompleto: silenciar.
         if (raw && raw !== "{}" && raw.length > 10 && !raw.startsWith("{")) {
           const err = Object.assign(
             new Error(`MALFORMED_TOOL_JSON: tool "${fn.name}" arguments no son JSON válido: ${raw.slice(0, 120)}`),
@@ -132,7 +126,6 @@ function normalizeToolCallsOut(toolCalls = []) {
       };
     });
 }
-
 
 function normalizeForAnthropic(messages) {
   let convertPart = null;
@@ -210,6 +203,23 @@ function deltaText(content) {
   return content.map((part) => typeof part === "string" ? part : String(part?.text || "")).join("");
 }
 
+/**
+ * 🔧 PARCHE: extrae el motivo del abort con código claro.
+ * Antes, AbortSignal.timeout() (DOMException) NO es instanceof Error →
+ * quedaba como "Solicitud cancelada." y el catch superior no lo detectaba.
+ */
+function abortReasonToError(signal, fallbackMessage) {
+  const r = signal?.reason;
+  if (r instanceof Error) return r;
+  if (r && typeof r === "object") {
+    const isTimeout = r.name === "TimeoutError";
+    const err = new Error(isTimeout ? "PROVIDER_TIMEOUT" : (r.message || fallbackMessage));
+    if (isTimeout) err.code = "PROVIDER_TIMEOUT";
+    return err;
+  }
+  return new Error(fallbackMessage);
+}
+
 async function readOpenAiStream(response, onTextDelta, signal) {
   const reader = response.body?.getReader?.();
   if (!reader) return null;
@@ -240,7 +250,7 @@ async function readOpenAiStream(response, onTextDelta, signal) {
       const content = deltaText(delta.content ?? data?.choices?.[0]?.text);
       if (content) {
         text += content;
-        try { onTextDelta?.(content); } catch {}
+        try { onTextDelta?.(content); } catch { /* ignore */ }
       }
       for (const call of delta.tool_calls || []) {
         const index = Number(call.index) || 0;
@@ -265,9 +275,8 @@ async function readOpenAiStream(response, onTextDelta, signal) {
     let done = false;
     while (!done) {
       if (signal?.aborted) {
-        const err = signal.reason instanceof Error ? signal.reason : new Error("Solicitud cancelada.");
-        err.code = err.code || "PROVIDER_TIMEOUT";
-        throw err;
+        // 🔧 PARCHE: código correcto según motivo (TimeoutError → PROVIDER_TIMEOUT).
+        throw abortReasonToError(signal, "Solicitud cancelada.");
       }
       const item = await reader.read();
       done = item.done;
@@ -336,9 +345,8 @@ async function readAnthropicStream(response, onTextDelta, signal) {
     let done = false;
     while (!done) {
       if (signal?.aborted) {
-        const err = signal.reason instanceof Error ? signal.reason : new Error("Solicitud cancelada.");
-        err.code = err.code || "PROVIDER_TIMEOUT";
-        throw err;
+        // 🔧 PARCHE: mismo fix que readOpenAiStream.
+        throw abortReasonToError(signal, "Solicitud cancelada.");
       }
       const item = await reader.read();
       done = item.done;
@@ -355,14 +363,12 @@ async function readAnthropicStream(response, onTextDelta, signal) {
   }
 }
 
-
 function adapterFor(definition) {
   if (definition.kind === "openai-compatible" || definition.kind === "ollama") {
     return async (input) => {
       const base = definition.baseUrl.replace(/\/+$/, "");
       const safeMessages = sanitizeMessagesToolArguments(input.messages || []);
       const messages = definition.kind === "openai-compatible" ? withCacheControl(safeMessages) : safeMessages;
-      // Streaming por defecto: evita timeouts del gateway (524) al no esperar el cuerpo completo.
       const wantStream = input.stream !== false;
       const response = await fetch(`${base}/chat/completions`, {
         method: "POST",
@@ -526,6 +532,7 @@ class AiCore {
         error?.code === "PROVIDER_GATEWAY_TIMEOUT"
         || Number(error?.status) === 524
         || error?.name === "TimeoutError"
+        || error?.code === "PROVIDER_TIMEOUT"
         || /timeout|gateway time-?out|cloudflare|API 524|<!DOCTYPE\s+html/i.test(msg)
       ) {
         throw createGatewayTimeoutError(error?.status || 524, msg);

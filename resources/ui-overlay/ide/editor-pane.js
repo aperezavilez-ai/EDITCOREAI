@@ -229,6 +229,14 @@
       keybindings: [monaco.KeyCode.F12],
       run: () => { goToDefinition().catch(() => undefined); },
     });
+    editor.addAction({
+      id: "editcore-inline-edit",
+      label: "Editar con IA (Inline Edit)",
+      keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyK],
+      run: () => {
+        try { window.EditCoreInlineEdit?.open?.(); } catch { /* ignore */ }
+      },
+    });
     requestAnimationFrame(() => editor.layout());
     return editor;
   }

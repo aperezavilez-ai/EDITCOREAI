@@ -57,6 +57,13 @@ async function callChat({
       signal: requestSignal,
     });
   } catch (error) {
+    const abortReason = requestSignal?.reason || signal?.reason || error?.cause || error;
+    if (abortReason?.code === "AGENT_STEER" || error?.code === "AGENT_STEER") {
+      throw Object.assign(
+        new Error(String(abortReason?.message || error?.message || "Nueva instruccion del usuario.")),
+        { code: "AGENT_STEER" },
+      );
+    }
     if (error?.name === "TimeoutError" || /timeout|aborted|abort/i.test(String(error?.message || ""))) {
       throw createGatewayTimeoutError(524, error?.message || "");
     }

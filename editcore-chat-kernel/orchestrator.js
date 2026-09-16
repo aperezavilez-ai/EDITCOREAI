@@ -8,23 +8,42 @@ const { runExplorer } = require("./subagents/explorer");
 const { runAnalyst } = require("./subagents/analyst");
 const { runImplementer } = require("./subagents/implementer");
 const { runVerifier } = require("./subagents/verifier");
-const { dispatchSpecialist } = require("./subagents/dispatcher");
+
+// dispatcher.js es opcional. Si falta o está corrupto (encoding roto),
+// el chat arranca igual. Solo pierde la asignación de "rol especialista" al prompt.
+let dispatchSpecialist = () => null;
+try {
+  const _dispatcher = require("./subagents/dispatcher");
+  if (_dispatcher && typeof _dispatcher.dispatchSpecialist === "function") {
+    dispatchSpecialist = _dispatcher.dispatchSpecialist;
+  }
+} catch (_) {
+  dispatchSpecialist = () => null;
+}
+
 const { parseTextToolCalls, stripTextToolMarkup, toRelativePath, visibleNarrationText } = require("./parse-text-tools");
 const tools = require("./tools");
 const { callChat } = require("./provider");
 const { capture_preview_screenshot, DEFAULT_PREVIEW_URL } = require("./vision-inspector");
 const globalMemory = require("./global-memory");
 const taskQueue = require("./task-queue");
+const threadCore = require("./thread-core");
+const { pickModel } = require("./model-router");
+const agentBus = require("./agent-bus");
 
 let intentOrchestrator = null;
-try {
-  intentOrchestrator = require("../runtime/intent-orchestrator");
-} catch (_) {
+function getIntentOrchestrator() {
+  if (intentOrchestrator !== null) return intentOrchestrator;
   try {
-    intentOrchestrator = require("./intent-orchestrator");
-  } catch (e) {
-    intentOrchestrator = null;
+    intentOrchestrator = require("../runtime/intent-orchestrator");
+  } catch (_) {
+    try {
+      intentOrchestrator = require("./intent-orchestrator");
+    } catch (e) {
+      intentOrchestrator = false;
+    }
   }
+  return intentOrchestrator || null;
 }
 
 let projectMapApi = null;
@@ -34,34 +53,26 @@ try {
   projectMapApi = null;
 }
 
-/** Límite útil para ciclos Lectura → Modificación → Verificación (OODA). */
 const DEFAULT_MAX_STEPS = 28;
 const AUTHORIZED_MAX_STEPS = 32;
+const DEFAULT_TOTAL_TIMEOUT_MS = 240_000;
+const MAX_INCOMPLETE_RETRIES = 3;
+const HEARTBEAT_INTERVAL_MS = 5_000;
 
+// NOTA: la detección de comandos long-running y el timeout de run_command
+// viven en editcore-chat-kernel/process-runner.js + tools.js. NO duplicar acá.
+
+// v5: prompts cortos y humanos. La voz completa vive en elite-communication-policy.
 const LEADERSHIP_PROMPT = [
-  "ROL: GUÍA LÍDER (inversión del control) — pero SIEMPRE subordinado al alcance de la petición.",
-  "Ante objetivos de alto nivel o solicitudes generales:",
-  "1) Genera tu propia hoja de ruta de 3 a 5 pasos concretos (basada en el mapa cognitivo real).",
-  "2) Informa al usuario en 2-4 líneas qué vas a hacer (sin pedir permiso ni esperar confirmación si ya hay autorización, Acceso completo, o la tarea es exploratoria/análisis).",
-  "3) Ejecuta paso a paso de forma autónoma con tools: Observar → Orientar → Decidir → Actuar.",
-  "4) No te detengas por fallos leves (oldText desfasado, git auxiliar, carpetas inexistentes): relee contexto cercano y reintenta.",
-  "5) Al TERMINAR: responde el resultado de LO PEDIDO. Solo ofrece siguientes pasos si el usuario pidió un plan o un análisis amplio.",
-  "PROHIBIDO inventar carpetas típicas (src/, app/, lib/) si no aparecen en el MAPA COGNITIVO.",
-  "PROHIBIDO devolver solo un plan vacío sin ejecutar tools cuando el modo permite herramientas.",
-  "PROHIBIDO ampliar una pregunta puntual a un análisis total del proyecto.",
-  "Con Acceso completo: PROHIBIDO pedir PROCEDE/¿Procedo? durante la tarea pedida.",
+  "Sos guía líder del proyecto, pero te mantenés dentro del alcance de lo pedido.",
+  "Antes de cada tool: 1 frase de qué vas a hacer y por qué. Después: el hallazgo concreto.",
+  "Si falla algo leve (oldText, git auxiliar, ruta ausente), releé contexto y reintentá. No detengas la sesión por eso.",
+  "Con Acceso completo, no pidas PROCEDE durante la tarea pedida.",
 ].join("\n");
 
-/** Narración continua en el stream (estilo Cursor) — obligatoria en cada turno con tools. */
 const LIVE_NARRATION_PROMPT = [
-  "NARRACIÓN EN VIVO (OBLIGATORIO — el usuario lee tu texto token a token):",
-  "- PROHIBIDO callar y solo devolver tools, un checkmark, \"Done\", \"Listo\" o un resumen corto al final.",
-  "- ANTES de cada tool: 1-3 oraciones en prosa (qué vas a leer/buscar/cambiar y por qué).",
-  "- DURANTE: si razonas, escríbelo en el chat; no lo escondas.",
-  "- DESPUÉS de cada tool: di qué encontraste o qué cambiaste en 1-2 frases concretas.",
-  "- Escribe como conversación continua; el UI muestra tu texto en tiempo real.",
-  "- No uses solo badges/checks: el cuerpo del mensaje debe ser prosa legible.",
-  "- PÁRRAFOS: separa ideas con línea en blanco (\\n\\n). PROHIBIDO una sola plasta de texto sin saltos.",
+  "Voz EditCoreAI. Primera frase = hallazgo o decisión.",
+  "Si el hilo basta, no llames tools. Si llamás una, contá el porqué en el mismo mensaje.",
 ].join("\n");
 
 let eliteCommunication = null;
@@ -125,16 +136,7 @@ function scopeUserMessage(message = "", evidence = "") {
   return String(message || "");
 }
 
-function nextStepsClosingText({ fullAccess = false, wroteFiles = false } = {}) {
-  if (wroteFiles) {
-    return fullAccess
-      ? "\n\nCambios aplicados con Acceso completo."
-      : "";
-  }
-  // Acceso completo / ejecución directa: NUNCA pedir PROCEDE.
-  if (fullAccess) {
-    return "\n\nAcceso completo activo: las correcciones comprobables se aplican sin pedir PROCEDE.";
-  }
+function nextStepsClosingText() {
   return "";
 }
 
@@ -153,7 +155,6 @@ function formatCognitiveBlock(projectRoot) {
   return "MAPA COGNITIVO: usa list_files('.') — no asumas src/ ni app/.";
 }
 
-/** ROADMAP + session-state inyectados al prompt (ahorro de tokens). */
 function buildRoadmapFirstBlock(projectRoot) {
   if (!projectRoot) return "";
   const parts = [];
@@ -178,23 +179,19 @@ function buildRoadmapFirstBlock(projectRoot) {
     parts.push(formatSessionStateForPrompt(projectRoot, 2_000));
   } catch { /* ignore */ }
     parts.push([
-    "ROADMAP-FIRST (OBLIGATORIO — ahorro de tokens, se evalúa como incumplimiento):",
-    "1) El ROADMAP y session-state YA están arriba (incluye ## Proceso, ## Bloqueos, ## Tarea activa, ## Mapa). NO ejecutes list_files('.') ni project_discovery ni codebase_map del repo entero si el mapa cubre la tarea.",
-    "2) Lee primero ## Proceso (fase/stack/preview) y ## Bloqueos / bugs conocidos: es la memoria del estado del proyecto entre mensajes.",
-    "3) Prohibido re-listar o re-leer archivos que ya aparezcan en ## Mapa o ## Archivos clave salvo que el usuario pida explícitamente 'léelo ahora'.",
-    "4) Para agregar/modificar: read_file SOLO de los archivos concretos que vas a tocar. Máximo 1 lectura por archivo.",
-    "5) Si el ROADMAP está vacío o parece stub y crees que hace falta explorar, primero di en 1-2 frases qué falta y por qué; luego haz UNA sola llamada a list_files('.') — nunca dos seguidas.",
-    "6) Tras write_file/replace_in_file, EditCore actualiza ROADMAP.md por ti (Proceso+Cambios+Bloqueos). NO lo reescribas a mano.",
-    "7) Prohibido re-leer un archivo que ya leíste en este mismo turno. Si necesitas más contexto, usa search_files acotado o symbol_search.",
+    "ROADMAP-FIRST (obligatorio, ahorro de tokens):",
+    "1) El ROADMAP y session-state YA están arriba (## Proceso, ## Bloqueos, ## Tarea activa, ## Mapa). NO ejecutes list_files('.') ni project_discovery ni codebase_map del repo entero si el mapa cubre la tarea.",
+    "2) Lee primero ## Proceso y ## Bloqueos: es la memoria entre mensajes.",
+    "3) Prohibido re-listar o re-leer archivos que ya aparezcan en ## Mapa salvo que el usuario pida 'léelo ahora'.",
+    "4) Para modificar: read_file SOLO de los archivos concretos que vas a tocar. Máximo 1 lectura por archivo.",
+    "5) Si el ROADMAP está vacío y necesitás explorar, di en 1-2 frases qué falta y por qué, luego UNA sola llamada a list_files('.') — nunca dos seguidas.",
+    "6) Tras write_file/replace_in_file, EditCore actualiza ROADMAP.md solo. No lo reescribas a mano.",
+    "7) Prohibido re-leer un archivo que ya leíste en este turno. Si necesitás más contexto, usá search_files acotado o symbol_search.",
     "8) Si el usuario pide algo simple y el ROADMAP ya dice dónde está: ve DIRECTO al archivo. No explores.",
   ].join("\n"));
   return parts.filter(Boolean).join("\n\n").slice(0, 7_500);
 }
 
-/**
- * Auto-corrección transparente OODA ante fallo leve de herramienta.
- * Devuelve payload enriquecido para el modelo (sin detener la sesión).
- */
 function recoverSoftToolFailure(name, args, result, projectRoot) {
   const soft = tools.isSoftToolFailure?.(name, result, args) || result?.soft === true;
   if (!soft) return { recovered: false, payload: result };
@@ -256,14 +253,24 @@ function isVisualUiPath(rel) {
     || /(?:components|ui|app|pages|styles)\//i.test(String(rel || "").replace(/\\/g, "/"));
 }
 
+// v5: narración humana natural (primera persona, verbo conjugado).
 function formatToolActionNarration(name, args = {}) {
   const rel = String(args.path || "").replace(/\\/g, "/");
   const file = rel.split("/").filter(Boolean).pop() || rel;
-  if (name === "write_file") return file ? `Creando ${file}…` : "Creando archivo…";
-  if (name === "replace_in_file") return file ? `Editando ${file}…` : "Editando archivo…";
-  if (name === "read_file") return file ? `Leyendo ${file}…` : "Leyendo archivo…";
-  if (name === "run_command") return "Verificando cambios…";
-  if (name === "list_files") return "Explorando el proyecto…";
+  if (name === "write_file") return file ? `Creo \`${file}\`.` : "Creo archivo.";
+  if (name === "replace_in_file") return file ? `Edito \`${file}\`.` : "Edito archivo.";
+  if (name === "read_file") return file ? `Leo \`${file}\`.` : "Leo archivo.";
+  if (name === "run_command") {
+    const cmd = String(args.command || "").slice(0, 60);
+    return cmd ? `Ejecuto \`${cmd}\`.` : "Ejecuto comando.";
+  }
+  if (name === "list_files") return "Listo la carpeta.";
+  if (name === "search_files") {
+    const q = String(args.query || "").slice(0, 40);
+    return q ? `Busco \`${q}\`.` : "Busco.";
+  }
+  if (name === "clone_web_page") return "Clono la página.";
+  if (name === "capture_preview_screenshot") return "Capturo el preview.";
   return "";
 }
 
@@ -282,10 +289,6 @@ function backgroundWorkerType(decisionKind) {
   return kind || "ANALYZE";
 }
 
-/**
- * Antes había un router que sustituía sonnet→haiku etc. Eso rompía MEAI
- * ("modelo no permitido"). Se conserva el modelo seleccionado por el usuario.
- */
 function pickModelForKind(_kind, currentModel) {
   return currentModel;
 }
@@ -295,11 +298,6 @@ const APPROVAL_WORDS = new Set([
   "continua", "continúa", "ejecuta", "si", "sí", "ok", "dale", "va",
 ]);
 
-/**
- * Sincroniza ROADMAP.md con el resumen de la corrida del kernel.
- * Se llama al cerrar cada turno (éxito, temprano o error) para que la
- * siguiente corrida lea un ROADMAP fresco y evite re-explorar el proyecto.
- */
 function persistKernelRoadmap(projectRoot, { task, steps, kind, text, completed } = {}) {
   if (!projectRoot) return false;
   try {
@@ -342,21 +340,66 @@ function persistKernelRoadmap(projectRoot, { task, steps, kind, text, completed 
   }
 }
 
+/**
+ * Cleanup defensivo: cierra streams de procesos long-running que quedaron vivos.
+ * process-runner.js expone `detach` en el resultado para cortar stdout/stderr
+ * sin matar el proceso. Sin esto, un dev-server mantiene el event loop ocupado.
+ */
+function detachLongRunningStreams(steps) {
+  if (!Array.isArray(steps)) return;
+  for (const s of steps) {
+    const detach = s?.result?.detach;
+    if (typeof detach === "function") {
+      try { detach(); } catch { /* ignore */ }
+    }
+  }
+}
+
 class ChatOrchestrator {
   constructor() {
     this.session = new ChatSession();
     this.abort = null;
+    this.turnAbort = null;
+    this.steering = [];
+    this.running = false;
     this.pendingTask = null;
   }
 
   stop() {
+    const reason = Object.assign(new Error("Detenido por el usuario."), { code: "AGENT_STEER" });
+    if (this.turnAbort) {
+      try { this.turnAbort.abort(reason); } catch (_) { /* ignore */ }
+      this.turnAbort = null;
+    }
     if (this.abort) {
-      try { this.abort.abort(); } catch (_) { /* ignore */ }
+      try { this.abort.abort(reason); } catch (_) { /* ignore */ }
     }
     this.session.kill();
     this.pendingTask = null;
+    this.steering = [];
+    this.running = false;
     try { taskQueue.cancelAll(); } catch (_) { /* ignore */ }
-    return { kind: "STOP", text: "Ejecución cancelada. Tareas pendientes limpiadas. ¿Qué deseas hacer ahora?" };
+    return { kind: "STOP", text: "Frené lo que estaba haciendo. ¿Qué querés que haga ahora?" };
+  }
+
+  steer(instruction = "") {
+    const text = String(instruction || "").trim();
+    if (!text) return { accepted: false };
+    if (!this.running && !this.abort) return { accepted: false };
+    this.steering.push({ instruction: text, at: Date.now() });
+    let interrupted = false;
+    if (this.turnAbort) {
+      const steerError = Object.assign(new Error("Nueva instruccion del usuario."), { code: "AGENT_STEER" });
+      try {
+        this.turnAbort.abort(steerError);
+        interrupted = true;
+      } catch (_) { /* ignore */ }
+    }
+    return { accepted: true, pendingDirections: this.steering.length, interrupted };
+  }
+
+  isRunning() {
+    return this.running === true;
   }
 
   enqueueBackgroundTask({ decision, message, projectRoot, onProgress, extra = {} }) {
@@ -398,6 +441,14 @@ class ChatOrchestrator {
         result: data.result,
         ok: true,
       });
+      try {
+        agentBus.wrapSubagentResult(
+          projectRoot,
+          extra.threadId || this._threadId,
+          String(taskType || "worker").toLowerCase(),
+          data.result || { text: data.text, ok: true },
+        );
+      } catch { /* bus best-effort */ }
     };
     const onError = (data) => {
       if (data.taskId !== taskId) return;
@@ -426,9 +477,9 @@ class ChatOrchestrator {
       background: true,
       taskId,
       text: [
-        `⚡ Tarea [${taskId}] iniciada en segundo plano (${decision.label || decision.kind}).`,
-        `Puedes seguir dando instrucciones mientras el subagente trabaja.`,
-        `Te avisaré en el panel cuando termine.`,
+        `Lancé la tarea [${taskId}] en segundo plano (${decision.label || decision.kind}).`,
+        `Podés seguir dándome instrucciones mientras trabaja.`,
+        `Te aviso en el panel cuando termine.`,
       ].join(" "),
     };
   }
@@ -451,6 +502,10 @@ class ChatOrchestrator {
       permissionFull,
       fullAccess: inputFullAccess,
       planAuthorizedExecution: inputPlanAuth,
+      history,
+      messages: inputMessages,
+      threadId: inputThreadId,
+      chatId,
     } = input;
 
     const rawText = typeof message === "object" && message?.text ? message.text : String(message || "");
@@ -470,7 +525,6 @@ class ChatOrchestrator {
       mode: permissionMode,
     }) || String(permissionMode || "").toLowerCase() === "full";
 
-    // Acceso completo: anular pendingTask / CONFIRM — ejecutar directo
     if (fullAccess) {
       this.pendingTask = null;
     }
@@ -478,7 +532,7 @@ class ChatOrchestrator {
     if (!fullAccess && this.pendingTask && isApprovalText) {
       const taskToRun = this.pendingTask;
       this.pendingTask = null;
-      onProgress?.({ phase: "start", text: "Autorización confirmada. Ejecutando cambios en disco..." });
+      onProgress?.({ phase: "start", text: "Dale, ejecuto los cambios en disco." });
       const runner = runModelTaskFn || this.runModelTask.bind(this);
       return runner({
         decision: taskToRun.decision,
@@ -515,8 +569,6 @@ class ChatOrchestrator {
       }
     }
 
-    // Imagen adjunta: NUNCA degradar a ANALYZE ciego (el analyst de archivos no ve la foto).
-    // Ruta vision-first → runModelTask con multimodal + tools.
     if (hasImages && (decision.kind === "ANALYZE" || decision.kind === "ASK" || visionAsk)) {
       decision = fullAccess
         ? { kind: "EXECUTE", label: "Análisis visual + acción", allowTools: true, allowWrite: true, background: false }
@@ -536,8 +588,9 @@ class ChatOrchestrator {
 
     let unifiedPlan = null;
     try {
-      if (intentOrchestrator?.resolveUnifiedAgentPlan) {
-        unifiedPlan = intentOrchestrator.resolveUnifiedAgentPlan({
+      const _orch = getIntentOrchestrator();
+      if (_orch?.resolveUnifiedAgentPlan) {
+        unifiedPlan = _orch.resolveUnifiedAgentPlan({
           prompt: text,
           projectOpen: Boolean(projectRoot),
           allowWrite: fullAccess ? true : (decision.allowWrite ?? true),
@@ -556,12 +609,12 @@ class ChatOrchestrator {
       if (!this.pendingTask || !this.pendingTask.message) {
         return {
           kind: "CHAT",
-          text: "No hay ninguna acción pendiente por autorizar. Dime qué archivo o cambio necesitas.",
+          text: "No hay nada pendiente de autorizar. Decime qué archivo o cambio necesitás.",
         };
       }
       const taskToRun = this.pendingTask;
       this.pendingTask = null;
-      onProgress?.({ phase: "start", text: "Autorización confirmada. Procesando modificaciones..." });
+      onProgress?.({ phase: "start", text: "Dale, proceso los cambios." });
       const runner = runModelTaskFn || this.runModelTask.bind(this);
       return runner({
         decision: taskToRun.decision,
@@ -582,16 +635,37 @@ class ChatOrchestrator {
     }
 
     if (!projectRoot && decision.kind !== "CHAT") {
-      return { kind: "CHAT", text: "Por favor, abre un proyecto primero antes de ejecutar acciones en disco." };
+      return { kind: "CHAT", text: "Abrí un proyecto primero y después te ayudo con eso." };
     }
 
     const memory = projectRoot ? new PersistentMemory(projectRoot) : null;
     if (memory) memory.load();
 
+    const threadId = threadCore.resolveThreadId({
+      threadId: inputThreadId,
+      chatId,
+      conversationId: input.conversationId,
+      sessionId: input.sessionId,
+    });
+    const historyInput = Array.isArray(history) && history.length
+      ? history
+      : (Array.isArray(inputMessages) ? inputMessages : []);
+    if (projectRoot) {
+      threadCore.seedThreadFromInput(projectRoot, threadId, { history: historyInput }, text);
+    }
+    input._threadId = threadId;
+    input._historyInput = historyInput;
+    this._threadId = threadId;
+    this._historyInput = historyInput;
+    this._currentUserText = text;
+    if (projectRoot) {
+      agentBus.record(projectRoot, threadId, { goal: text, phase: "ingest" });
+    }
+
     if (autoHeal?.summary) {
       onProgress?.({ phase: "subagent", name: "auto-heal", text: autoHeal.summary });
       if (!apiKey) {
-        return { kind: "CHAT", text: `Error de preview:\n${autoHeal.summary}\n\nConfigura API key para auto-corregir.` };
+        return { kind: "CHAT", text: `Error de preview:\n${autoHeal.summary}\n\nConfigurá API key para auto-corregir.` };
       }
       onProgress?.({ phase: "subagent", name: "verifier", text: "Auto-heal: verificando / rollback..." });
       let verif = null;
@@ -626,8 +700,33 @@ class ChatOrchestrator {
       if (!apiKey) {
         return {
           kind: "CHAT",
-          text: "EDITCOREAI es un IDE con agente autónomo para crear, editar y verificar proyectos. Abre un proyecto y pide un cambio concreto, o escribe *ayuda*.",
+          text: "EditCoreAI es un IDE con agente autónomo. Abrí un proyecto y pedime un cambio concreto, o escribí *ayuda*.",
         };
+      }
+      const liveBus = projectRoot ? agentBus.loadBus(projectRoot, threadId) : null;
+      const followThread = Boolean(liveBus && (liveBus.goal || liveBus.findings.length || liveBus.files.length));
+      const wantsAction = /\b(?:corrige|arregla|implementa|escribe|cambia|aplica|crea|haz|replace_in_file|write_file)\b/i.test(text);
+      const continueLike = /^(?:contin[uú]a|procede|sigue)\b/i.test(text) && wantsAction;
+      if (followThread && continueLike && projectRoot) {
+        decision = {
+          kind: fullAccess ? "EXECUTE" : "ASK",
+          label: "Seguimiento del mismo hilo",
+          allowTools: true,
+          allowWrite: fullAccess,
+          background: false,
+        };
+        return this.runModelTask({
+          decision,
+          message: text,
+          projectRoot,
+          apiBaseUrl, apiKey, model, memory, onProgress,
+          allowWrite: fullAccess,
+          maxSteps: fullAccess ? 12 : 6,
+          helpers,
+          images: taskImages,
+          fullAccess,
+          permissionMode,
+        });
       }
       return this.runModelTask({
         decision, message: text, projectRoot: projectRoot || ".", apiBaseUrl, apiKey, model, memory, onProgress,
@@ -639,7 +738,7 @@ class ChatOrchestrator {
     if (decision.kind === "LIST" || decision.kind === "ASK") {
       ensureCognitiveMap(projectRoot);
       if (hasImages) {
-        onProgress?.({ phase: "start", text: "Analizando imagen adjunta…" });
+        onProgress?.({ phase: "start", text: "Analizando la imagen que adjuntaste…" });
         return this.runModelTask({
           decision,
           message: text,
@@ -653,16 +752,20 @@ class ChatOrchestrator {
       if (wantsBackground(text, decision, input)) {
         return this.enqueueBackgroundTask({
           decision, message: text, projectRoot, onProgress,
-          extra: { target: extractListTarget(text, projectRoot) || "." },
+          extra: { target: extractListTarget(text, projectRoot) || ".", threadId: this._threadId },
         });
       }
       const target = extractListTarget(text, projectRoot) || ".";
       this.session.start(decision.kind, projectRoot);
-      const out = await runExplorer({ projectRoot, target, onProgress });
+      const out = agentBus.wrapSubagentResult(
+        projectRoot,
+        this._threadId,
+        "explorer",
+        await runExplorer({ projectRoot, target, onProgress, threadId: this._threadId }),
+      );
       this.session.kill();
       if (memory) memory.note(`listó ${out.target || target}`);
 
-      // Pasar datos al modelo para que la respuesta sea interactiva y coherente
       if (apiKey) {
         return this.runModelTask({
           decision,
@@ -678,7 +781,7 @@ class ChatOrchestrator {
 
     if (decision.kind === "ANALYZE") {
       if (hasImages) {
-        onProgress?.({ phase: "start", text: "Analizando imagen adjunta…" });
+        onProgress?.({ phase: "start", text: "Analizando la imagen que adjuntaste…" });
         return this.runModelTask({
           decision: fullAccess
             ? { kind: "EXECUTE", label: "Análisis visual", allowTools: true, allowWrite: true }
@@ -697,14 +800,19 @@ class ChatOrchestrator {
       }
       if (wantsBackground(text, decision, input)) {
         return this.enqueueBackgroundTask({
-          decision, message: text, projectRoot, onProgress, extra: { maxReads: 8 },
+          decision, message: text, projectRoot, onProgress, extra: { maxReads: 8, threadId: this._threadId },
         });
       }
       this.session.start("ANALYZE", projectRoot);
       const scope = requestScopePolicy?.classifyRequestScope?.(text) || "focused";
       const maxReads = scope === "broad" ? 16 : scope === "action" ? 10 : 6;
-      onProgress?.({ phase: "start", text: scope === "broad" ? "Análisis amplio del proyecto…" : "Revisando lo necesario para tu pregunta…" });
-      const out = await runAnalyst({ projectRoot, onProgress, maxReads, userMessage: text });
+      onProgress?.({ phase: "start", text: scope === "broad" ? "Dando una mirada amplia al proyecto…" : "Revisando lo necesario para tu pregunta…" });
+      const out = agentBus.wrapSubagentResult(
+        projectRoot,
+        this._threadId,
+        "analyst",
+        await runAnalyst({ projectRoot, onProgress, maxReads, userMessage: text, threadId: this._threadId }),
+      );
       if (memory) {
         memory.setReport(out.report);
         memory.note("análisis completado");
@@ -726,16 +834,21 @@ class ChatOrchestrator {
 
     if (decision.kind === "VERIFY") {
       if (wantsBackground(text, decision, input)) {
-        return this.enqueueBackgroundTask({ decision, message: text, projectRoot, onProgress });
+        return this.enqueueBackgroundTask({ decision, message: text, projectRoot, onProgress, extra: { threadId: this._threadId } });
       }
       this.session.start("VERIFY", projectRoot);
-      const out = await runVerifier({ projectRoot, onProgress, timeoutMs: 60_000 });
+      const out = agentBus.wrapSubagentResult(
+        projectRoot,
+        this._threadId,
+        "verifier",
+        await runVerifier({ projectRoot, onProgress, timeoutMs: 60_000, threadId: this._threadId }),
+      );
       this.session.kill();
       return {
         kind: "VERIFY",
         text: out?.ok
           ? "Verificación OK."
-          : `Verificación falló: ${String(out?.result?.error || out?.result?.stderr || "").slice(0, 600)}`,
+          : `Falló la verificación: ${String(out?.result?.error || out?.result?.stderr || "").slice(0, 600)}`,
         steps: out?.steps || [],
       };
     }
@@ -746,13 +859,13 @@ class ChatOrchestrator {
       || unifiedPlan?.planAuthorizedExecution === true;
 
     if (wantsWrite) {
-      if (!apiKey) return { kind: "CHAT", text: "Falta API key para ejecutar modificaciones." };
+      if (!apiKey) return { kind: "CHAT", text: "Me falta la API key para ejecutar cambios." };
 
       onProgress?.({
         phase: "start",
         text: fullAccess
-          ? "Acceso completo: ejecutando sin confirmación…"
-          : "Ejecutando modificaciones directamente...",
+          ? "Acceso completo, ejecuto directo."
+          : "Ejecutando los cambios…",
       });
       this.pendingTask = null;
 
@@ -777,7 +890,7 @@ class ChatOrchestrator {
       });
     }
 
-    return { kind: "CHAT", text: "Instrucción no reconocida. Especifica qué deseas analizar, listar o corregir." };
+    return { kind: "CHAT", text: "No terminé de entender el pedido. ¿Me lo reformulás?" };
   }
 
   async runModelTask(opts) {
@@ -785,13 +898,28 @@ class ChatOrchestrator {
       decision, message, projectRoot, apiBaseUrl, apiKey, model, memory, onProgress,
       allowWrite, maxSteps, helpers, chatOnly, authorizedFromPending,
       fullAccess, permissionMode, images: taskImages = [],
+      history: taskHistory,
+      threadId: taskThreadId,
     } = opts;
+    const threadId = threadCore.resolveThreadId({
+      threadId: taskThreadId || this._threadId,
+      chatId: this._threadId,
+    });
+    const historyInput = Array.isArray(taskHistory) && taskHistory.length
+      ? taskHistory
+      : (Array.isArray(this._historyInput) ? this._historyInput : []);
 
     const accessFull = fullAccess === true
       || isFullAccess({ allowWrite, permissionMode, fullAccess, planAuthorizedExecution: authorizedFromPending });
 
     this.session.start(decision?.kind || "EXECUTE", projectRoot);
     this.abort = new AbortController();
+    this.running = true;
+    this.turnAbort = null;
+    if (!Array.isArray(this.steering)) this.steering = [];
+
+    const deadline = Date.now() + Math.max(30_000, Number(opts.totalTimeoutMs) || DEFAULT_TOTAL_TIMEOUT_MS);
+    let incompleteRetries = 0;
 
     const toolHistory = new Map();
     const softRetryCounts = new Map();
@@ -819,15 +947,15 @@ class ChatOrchestrator {
     const previewBlock = previewUrl
       ? [
         `PREVIEW ACTIVO DEL IDE: ${previewUrl}`,
-        "Usa esa URL (o la tool capture_preview_screenshot). PROHIBIDO inventar puertos/URLs (ej. :1420) si el preview ya está publicado.",
+        "Usá esa URL (o la tool capture_preview_screenshot). No inventes puertos/URLs (ej. :1420) si el preview ya está publicado.",
       ].join("\n")
-      : "Sin URL de preview conocida en este turno. No inventes localhost:puerto; pregunta o usa capture_preview_screenshot.";
+      : "Sin URL de preview conocida en este turno. No inventes localhost:puerto; preguntá o usá capture_preview_screenshot.";
 
     const visionHardRule = (Array.isArray(taskImages) && taskImages.length)
       ? [
         `VISION: Hay ${taskImages.length} imagen(es) adjunta(s) en este mensaje multimodal.`,
         "PROHIBIDO decir que no hay imagen, que no la ves, o pedir que el usuario la suba otra vez.",
-        "Analiza el contenido visual en la PRIMERA respuesta (errores Vite/overlay, UI, texto legible).",
+        "Analizá el contenido visual en la PRIMERA respuesta (errores Vite/overlay, UI, texto legible).",
       ].join("\n")
       : "";
 
@@ -835,14 +963,14 @@ class ChatOrchestrator {
       ? [
         "ACCESO COMPLETO / EJECUCIÓN AUTORIZADA:",
         "PROHIBIDO preguntar: '¿Deseas que proceda?', 'Confirma para aplicar los cambios.', 'Escribe procede.', '¿Procedo?'.",
-        "Ejecuta YA tools: write_file, replace_in_file, run_command. Sin preguntas previas.",
+        "Ejecutá YA tools: write_file, replace_in_file, run_command. Sin preguntas previas.",
       ].join("\n")
       : "";
 
-    const system = wrapSystemPrompt(chatOnly || decision?.kind === "CHAT"
+    let system = wrapSystemPrompt(chatOnly || decision?.kind === "CHAT"
       ? [
-        "Eres EDITCOREAI: asistente del IDE. Responde SIEMPRE en español, claro y directo.",
-        "Habla en prosa continua con párrafos separados por línea en blanco; nunca una plasta de texto.",
+        "Sos EditCoreAI: asistente del IDE. Respondé siempre en español, claro y directo.",
+        "Hablá en prosa continua con párrafos separados por línea en blanco; nunca una plasta de texto.",
         "PROHIBIDO: fingir que abriste tools o inventar exploración sin haberla hecho.",
         `Proyecto abierto: ${projectRoot || "(ninguno)"}.`,
         previewBlock,
@@ -850,18 +978,19 @@ class ChatOrchestrator {
       ].filter(Boolean).join("\n\n")
       : authorizedFromPending || accessFull
         ? [
-          "Eres EditCore Agent — GUÍA LÍDER autónomo.",
+          "Sos EditCoreAI. Hablá como un ingeniero senior al lado del usuario.",
           LEADERSHIP_PROMPT,
           LIVE_NARRATION_PROMPT,
           noConfirmBlock,
-          "Ejecuta YA la instrucción con tools (write_file, replace_in_file, run_command).",
-          "Antes de mutar: narra en 2-4 líneas tu hoja de ruta (3-5 pasos) y procede sin pedir confirmación.",
-          "NO reexplores el proyecto: usa ROADMAP + session-state. Solo read_file de lo que editarás.",
-          "EditCore actualiza ROADMAP.md automáticamente tras cada write. NUNCA digas que no puedes modificar ROADMAP.",
+          "Ejecutá YA la instrucción con tools (write_file, replace_in_file, run_command).",
+          "Antes de mutar: contá en 2-4 líneas tu plan y procedé sin pedir confirmación.",
+          "No reexplores el proyecto: usá ROADMAP + session-state. Solo read_file de lo que vas a editar.",
+          "EditCore actualiza ROADMAP.md automáticamente tras cada write. Nunca digas que no podés modificarlo.",
           "PROHIBIDO inventar tareas genéricas ajenas a la instrucción del usuario.",
-          "Ante fallo leve de tool: relee y reintenta; NUNCA abandones con 'Detenido' por errores secundarios.",
+          "Ante fallo leve de tool: releé y reintentá; nunca abandones con 'Detenido' por errores secundarios.",
+          "IMPORTANTE: 'npm run dev' o 'vite' NO son comandos de verificación. Si necesitás el preview, usá inspect_preview. El dev-server ya está corriendo en el IDE.",
           `Permiso de escritura: SÍ.${accessFull ? " Acceso completo activo." : ""}`,
-          "Responde SIEMPRE en español al usuario.",
+          "Respondé siempre en español al usuario.",
           previewBlock,
           visionHardRule,
           roadmapFirstBlock,
@@ -869,27 +998,28 @@ class ChatOrchestrator {
           specialistInstruction,
         ].filter(Boolean).join("\n\n")
         : [
-          "Eres EditCore Agent — entorno autónomo y GUÍA LÍDER del IDE.",
+          "Sos EditCoreAI. Hablá como un ingeniero senior al lado del usuario.",
           LEADERSHIP_PROMPT,
           LIVE_NARRATION_PROMPT,
           `Modo actual: ${decision?.kind || "EXECUTE"}. Permiso de escritura: ${allowWrite ? "SÍ" : "NO"}.`,
           specialistInstruction,
           "REGLAS OBLIGATORIAS:",
-          "1. Usa SOLO function calling / tools nativas. NUNCA escribas XML como <list_directory>, <read_file>, <execute_command>, <tool_call>.",
-          "2. ROADMAP-FIRST: lee el bloque ROADMAP/session-state; PROHIBIDO list_files('.') del repo entero si el mapa ya está cargado.",
-          "3. Narra en prosa cada paso; no te limites a badges o checks.",
-          "4. NO repitas exactamente la misma herramienta con los mismos parámetros.",
+          "1. Usá SOLO function calling / tools nativas. Nunca escribas XML como <list_directory>, <read_file>, <execute_command>, <tool_call>.",
+          "2. ROADMAP-FIRST: leé el bloque ROADMAP/session-state; PROHIBIDO list_files('.') del repo entero si el mapa ya está cargado.",
+          "3. Contá en prosa cada paso; no te limites a badges o checks.",
+          "4. No repitas exactamente la misma herramienta con los mismos parámetros.",
           "5. Paths relativos al proyecto (ej. package.json), nunca absolutos.",
-          "6. Si ejecutas 'run_command' o un test/build, analiza la salida y aplica corrección inmediata (OODA).",
-          "7. Fallos leves (oldText, git auxiliar, list_files de ruta ausente): recupera y continúa; no detengas la sesión.",
+          "6. Si ejecutás 'run_command' o un test/build, analizá la salida y aplicá corrección inmediata (OODA).",
+          "7. Fallos leves (oldText, git auxiliar, list_files de ruta ausente): recuperá y continuá; no detengas la sesión.",
           "8. EditCore actualiza ROADMAP.md solo tras cambios. No digas que está prohibido actualizarlo.",
-          "9. Responde SIEMPRE en español al usuario.",
+          "9. Respondé siempre en español al usuario.",
           previewBlock,
           visionHardRule,
           roadmapFirstBlock,
           cognitiveBlock,
           skillsPrompt(projectRoot, decision?.kind, message),
           memory && !authorizedFromPending ? memory.promptBlock() : "",
+          projectRoot ? threadCore.threadMemory.projectPromptBlock(projectRoot, threadId, message) : "",
           globalLearned,
         ].filter(Boolean).join("\n\n"));
 
@@ -899,19 +1029,31 @@ class ChatOrchestrator {
         ? String(message || "")
         : scopeUserMessage(message));
     const userText = authorizedFromPending
-      ? `Proyecto: ${projectRoot}\nEjecuta ahora:\n${scopedBody}`
+      ? `Proyecto: ${projectRoot}\nEjecutá ahora:\n${scopedBody}`
       : `Proyecto: ${projectRoot}\n${scopedBody}`;
-    const messages = [{ role: "system", content: system }];
+    if (projectRoot) {
+      const threadBlock = threadCore.threadMemory.projectPromptBlock(projectRoot, threadId, message);
+      if (threadBlock) system = `${system}\n\n${threadBlock}`;
+      const busBlock = agentBus.promptBlock(projectRoot, threadId);
+      if (busBlock) system = `${system}\n\n${busBlock}`;
+    }
+    const messages = threadCore.buildMessageList({
+      system,
+      userText,
+      projectRoot,
+      threadId,
+      historyInput,
+      query: String(this._currentUserText || message || ""),
+    });
     if (Array.isArray(taskImages) && taskImages.length) {
       try {
         const { buildOpenAiImageContent, VISION_ACK_RULE } = require("../runtime/vision-intake");
-        messages.push({ role: "system", content: VISION_ACK_RULE });
-        messages.push({ role: "user", content: buildOpenAiImageContent(userText, taskImages) });
-      } catch {
-        messages.push({ role: "user", content: userText });
-      }
-    } else {
-      messages.push({ role: "user", content: userText });
+        messages.splice(1, 0, { role: "system", content: VISION_ACK_RULE });
+        const last = messages[messages.length - 1];
+        if (last && last.role === "user") {
+          last.content = buildOpenAiImageContent(userText, taskImages);
+        }
+      } catch { /* keep text-only user turn */ }
     }
 
     const steps = [];
@@ -919,15 +1061,69 @@ class ChatOrchestrator {
     const runMutations = [];
     const stepsLimit = Math.max(1, Number(maxSteps) || DEFAULT_MAX_STEPS);
 
-    // Router: NUNCA sustituir el modelo del usuario (evita "modelo no permitido").
-    const routedModel = String(model || "").trim();
+    const routed = pickModel({
+      requested: model,
+      kind: decision?.kind || "CHAT",
+      hasTools: !(chatOnly || decision?.kind === "CHAT"),
+    });
+    const routedModel = String(routed.model || model || "").trim();
+    const rememberOut = (textOut) => {
+      try {
+        threadCore.rememberExchange(
+          projectRoot,
+          threadId,
+          this._currentUserText || message,
+          textOut
+        );
+        if (projectRoot && textOut) {
+          threadCore.threadMemory.noteDecision(projectRoot, String(textOut).slice(0, 280));
+        }
+      } catch { /* persist best-effort */ }
+    };
 
     try {
       for (let i = 0; i < stepsLimit; i++) {
-        if (!this.session.alive) return { kind: "STOP", text: "Detenido.", steps };
+        if (Date.now() > deadline) {
+          this.session.kill();
+          const partial = formatAgentVisibleText(
+            steps.length
+              ? "Me quedé sin tiempo para terminar la tarea. Avance parcial:\n" +
+                steps.slice(-6).map((s) => `- ${s.name}${s.input?.path ? ` (${s.input.path})` : ""}`).join("\n")
+              : "Me quedé sin tiempo y no llegué a hacer nada. Reformulame la instrucción más concreta, porfa."
+          );
+          persistKernelRoadmap(projectRoot, {
+            task: message, steps, kind: decision?.kind, text: partial, completed: false,
+          });
+          rememberOut(partial);
+          detachLongRunningStreams(steps);
+          return { kind: decision?.kind || "CHAT", text: partial, steps, incomplete: true, threadId };
+        }
 
-        // Tools: filtro write-safe original (NO filterToolsByPlan — dejaba al agente
-        // sin tools del kernel y provocaba turnos vacíos).
+        if (!this.session.alive) {
+          rememberOut("Detenido.");
+          detachLongRunningStreams(steps);
+          return { kind: "STOP", text: "Detenido.", steps, threadId };
+        }
+
+        if (Array.isArray(this.steering) && this.steering.length) {
+          const directions = this.steering.splice(0, this.steering.length);
+          for (const direction of directions) {
+            const instruction = String(direction?.instruction || "").trim();
+            if (!instruction) continue;
+            messages.push({
+              role: "user",
+              content: [
+                "NUEVA INSTRUCCIÓN DEL USUARIO (prioridad inmediata):",
+                instruction,
+                "Incorpórala YA. Conservá el avance útil y ajustá el plan a esta dirección. No reinicies exploración innecesaria.",
+              ].join("\n"),
+            });
+            try {
+              onProgress?.({ phase: "direction", stage: "running", text: instruction });
+            } catch { /* ignore */ }
+          }
+        }
+
         const availableTools = allowWrite
           ? tools.DEFINITIONS
           : tools.DEFINITIONS.filter((t) => ![
@@ -940,7 +1136,6 @@ class ChatOrchestrator {
         let streamAccum = "";
         let lastVisible = "";
         let toolStreamNotified = false;
-        // Separar párrafos entre turnos del modelo (evita pasos pegados).
         if (steps.length > 0) {
           try {
             onProgress?.({
@@ -951,69 +1146,85 @@ class ChatOrchestrator {
             });
           } catch { /* ignore */ }
         }
-        const turn = await callChat({
-          apiBaseUrl, apiKey, model: routedModel, messages,
-          tools: (chatOnly || decision?.kind === "CHAT") ? [] : availableTools,
-          signal: this.abort.signal,
-          stream: true,
-          onTextDelta: (delta) => {
-            const chunk = String(delta || "");
-            if (!chunk) return;
-            try {
-              // Acumular y emitir SOLO prosa visible (nunca <tool_call> / código interno).
-              streamAccum += chunk;
-              const visible = visibleNarrationText(streamAccum);
-              let piece = "";
-              if (visible.startsWith(lastVisible)) {
-                piece = visible.slice(lastVisible.length);
-              } else if (visible.length < lastVisible.length && lastVisible.startsWith(visible)) {
-                // Encogió por corte de tool markup: no resetear el chat.
-                piece = "";
-              } else if (visible !== lastVisible) {
-                // Sanitizer cambió el prefijo: emitir solo el sufijo nuevo, NUNCA
-                // reenviar `visible` completo (eso duplicaba el párrafo en el chat).
-                let shared = 0;
-                const lim = Math.min(lastVisible.length, visible.length);
-                for (let n = lim; n >= 1; n -= 1) {
-                  if (lastVisible.endsWith(visible.slice(0, n))) {
-                    shared = n;
-                    break;
+        this.turnAbort = new AbortController();
+        const turnSignal = (typeof AbortSignal.any === "function" && this.abort?.signal)
+          ? AbortSignal.any([this.abort.signal, this.turnAbort.signal])
+          : (this.turnAbort.signal || this.abort?.signal);
+
+        const hb = setInterval(() => {
+          try { onProgress?.({ phase: "heartbeat", text: "Esperando al modelo…" }); } catch { /* ignore */ }
+        }, HEARTBEAT_INTERVAL_MS);
+
+        let turn;
+        try {
+          turn = await callChat({
+            apiBaseUrl, apiKey, model: routedModel, messages,
+            tools: (chatOnly || decision?.kind === "CHAT") ? [] : availableTools,
+            signal: turnSignal,
+            stream: true,
+            onTextDelta: (delta) => {
+              const chunk = String(delta || "");
+              if (!chunk) return;
+              try {
+                streamAccum += chunk;
+                const visible = visibleNarrationText(streamAccum);
+                let piece = "";
+                if (visible.startsWith(lastVisible)) {
+                  piece = visible.slice(lastVisible.length);
+                } else if (visible.length < lastVisible.length && lastVisible.startsWith(visible)) {
+                  piece = "";
+                } else if (visible !== lastVisible) {
+                  let shared = 0;
+                  const lim = Math.min(lastVisible.length, visible.length);
+                  for (let n = lim; n >= 1; n -= 1) {
+                    if (lastVisible.endsWith(visible.slice(0, n))) {
+                      shared = n;
+                      break;
+                    }
                   }
-                }
-                if (shared > 0) {
-                  piece = visible.slice(shared);
-                } else {
-                  const idx = visible.indexOf(lastVisible);
-                  if (idx >= 0) {
-                    piece = visible.slice(idx + lastVisible.length);
-                  } else if (!lastVisible) {
-                    piece = visible;
+                  if (shared > 0) {
+                    piece = visible.slice(shared);
                   } else {
-                    // Tramo realmente nuevo: un párrafo, sin re-pegar lo anterior.
-                    piece = `\n\n${visible}`;
+                    const idx = visible.indexOf(lastVisible);
+                    if (idx >= 0) {
+                      piece = visible.slice(idx + lastVisible.length);
+                    } else if (!lastVisible) {
+                      piece = visible;
+                    } else {
+                      piece = `\n\n${visible}`;
+                    }
                   }
                 }
-              }
-              lastVisible = visible;
-              if (!piece) {
-                if (/<(?:tool_call|function\s*=)/i.test(streamAccum) && !toolStreamNotified) {
-                  toolStreamNotified = true;
-                  onProgress?.({
-                    phase: "model",
-                    text: "Ejecutando herramienta…",
-                  });
+                lastVisible = visible;
+                if (!piece) {
+                  if (/<(?:tool_call|function\s*=)/i.test(streamAccum) && !toolStreamNotified) {
+                    toolStreamNotified = true;
+                    onProgress?.({ phase: "model", text: "Ejecutando herramienta…" });
+                  }
+                  return;
                 }
-                return;
-              }
-              onProgress?.({
-                phase: "narration_delta",
-                text: piece,
-                index: steps.length,
-                streaming: true,
-              });
-            } catch { /* ignore UI errors */ }
-          },
-        });
+                onProgress?.({
+                  phase: "narration_delta",
+                  text: piece,
+                  index: steps.length,
+                  streaming: true,
+                });
+              } catch { /* ignore UI errors */ }
+            },
+          });
+        } catch (turnErr) {
+          const steerHit = turnErr?.code === "AGENT_STEER"
+            || this.turnAbort?.signal?.reason?.code === "AGENT_STEER"
+            || turnErr?.cause?.code === "AGENT_STEER";
+          if (steerHit && i < stepsLimit - 1) {
+            this.turnAbort = null;
+            continue;
+          }
+          throw turnErr;
+        } finally {
+          clearInterval(hb);
+          this.turnAbort = null;
+        }
 
         let toolCalls = Array.isArray(turn.toolCalls) ? turn.toolCalls : [];
         if (chatOnly || decision?.kind === "CHAT") {
@@ -1021,7 +1232,6 @@ class ChatOrchestrator {
         } else if (!toolCalls.length && turn.text) {
           toolCalls = parseTextToolCalls(turn.text, { projectRoot });
         }
-        // Si write_file vino sin path, intentar inferirlo de la prosa previa.
         for (const call of toolCalls) {
           if (call.function?.name !== "write_file") continue;
           let args = {};
@@ -1037,29 +1247,37 @@ class ChatOrchestrator {
         const cleanText = stripTextToolMarkup(turn.text || "");
 
         if (!toolCalls.length) {
-          // "Voy a leer X…" sin tool_calls = intención incompleta: no cerrar el turno.
           const incompleteIntent = /(?:^|\n)\s*(?:voy\s+a|ahora\s+(?:voy\s+a|leer[eé]|abrir[eé]|revisar[eé]|ejecutar[eé]|verificar[eé]|corregir[eé])|procedo\s+a|dejar[eé]\s+que)\b/i.test(cleanText)
             && !/(?:completad[oa]|listo\.|verificad[oa]|aplicad[oa]|hecho\.|sin errores)/i.test(cleanText)
             && cleanText.trim().length < 900;
+
           if (incompleteIntent && i < stepsLimit - 1 && !chatOnly && decision?.kind !== "CHAT") {
-            messages.push({
-              role: "assistant",
-              content: cleanText || null,
-            });
+            incompleteRetries += 1;
+            if (incompleteRetries > MAX_INCOMPLETE_RETRIES) {
+              this.session.kill();
+              const textOut = formatAgentVisibleText(
+                "El modelo no me dio una acción concreta después de varios intentos. Reformulá la instrucción o probá con otro modelo."
+              );
+              persistKernelRoadmap(projectRoot, {
+                task: message, steps, kind: decision?.kind, text: textOut, completed: false,
+              });
+              rememberOut(textOut);
+              detachLongRunningStreams(steps);
+              return { kind: decision?.kind || "CHAT", text: textOut, steps, incomplete: true, threadId };
+            }
+
+            messages.push({ role: "assistant", content: cleanText || null });
             messages.push({
               role: "user",
-              content: "CONTINUA YA: anunciaste una acción y no la ejecutaste. Usa tools ahora (read_file/replace_in_file/run_command). No repitas el anuncio ni reexplores el proyecto.",
+              content: "CONTINUA YA: anunciaste una acción y no la ejecutaste. Usá tools ahora (read_file/replace_in_file/run_command). No repitas el anuncio ni reexplores el proyecto.",
             });
-            onProgress?.({
-              phase: "narration",
-              text: "Retomando la acción anunciada…",
-            });
+            onProgress?.({ phase: "narration", text: "Retomo la acción que había anunciado…" });
             continue;
           }
 
           this.session.kill();
           if (memory) memory.note(`finalizó ${decision?.kind || "task"}`);
-          
+
           const written = steps
             .filter((s) => (s.name === "write_file" || s.name === "replace_in_file") && s.ok)
             .map((s) => s.input?.path)
@@ -1067,33 +1285,37 @@ class ChatOrchestrator {
 
           let textOut = cleanText;
           if (written.length > 0) {
-            textOut = `Se aplicaron las modificaciones correctamente en los archivos:\n` +
-              written.map((p) => `- \`${p}\``).join("\n");
-            if (accessFull) textOut += nextStepsClosingText({ fullAccess: true, wroteFiles: true });
+            const head = cleanText && cleanText.length > 20 && !/^Cambios en:/.test(cleanText)
+              ? cleanText + "\n\n"
+              : "";
+            const lista = written.map((p) => `- \`${p}\``).join("\n");
+            const cierre = written.length === 1
+              ? "Listo, quedó. Revisalo y si algo no cierra, ajustamos."
+              : `Listo, quedaron ${written.length} archivos modificados. Revisalos cuando puedas y me contás si algo no cierra.`;
+            textOut = `${head}${cierre}\n\n${lista}`;
           } else if (!textOut || textOut === "Listo.") {
-            textOut = nextStepsClosingText({ fullAccess: accessFull, wroteFiles: false });
+            textOut = "Terminé el turno. Decime cuál querés que sea el próximo paso.";
           } else if (accessFull && /procede|¿procedo|cuando autorices/i.test(textOut)) {
-            textOut = `${textOut.replace(/\s*(Cuando autorices procedo[^.]*\.?|Escribe\s+\*{0,2}procede\*{0,2}[^.]*\.?|Si deseas que aplique[^.]*\.?)\s*$/gi, "").trim()}${nextStepsClosingText({ fullAccess: true, wroteFiles: false })}`;
+            textOut = `${textOut.replace(/\s*(Cuando autorices procedo[^.]*\.?|Escribe\s+\*{0,2}procede\*{0,2}[^.]*\.?|Si deseas que aplique[^.]*\.?)\s*$/gi, "").trim()} ¿Avanzo con eso?`;
           }
           if (!String(textOut || "").trim()) {
             const toolNames = steps.map((s) => s.name).filter(Boolean).slice(-8);
             const errHint = String(turn?.error || turn?.message || "").trim();
             textOut = toolNames.length
-              ? `Completé ${toolNames.length} acción(es): ${toolNames.join(", ")}.`
+              ? `Terminé ${toolNames.length} acción(es): ${toolNames.join(", ")}.`
               : (errHint
-                ? `El proveedor no devolvió texto usable: ${errHint.slice(0, 240)}`
-                : "No pude generar texto visible en este turno. Reintenta con el mismo modelo o cambia de modelo en Auto.");
+                ? `El proveedor no me devolvió texto usable: ${errHint.slice(0, 240)}`
+                : "No pude generar texto visible este turno. Probá de nuevo con el mismo modelo o cambiá de modelo en Auto.");
           }
           textOut = formatAgentVisibleText(textOut);
 
           const stillIncomplete = incompleteIntent && !written.length;
           persistKernelRoadmap(projectRoot, {
-            task: message,
-            steps,
-            kind: decision?.kind,
-            text: textOut,
+            task: message, steps, kind: decision?.kind, text: textOut,
             completed: !stillIncomplete,
           });
+          rememberOut(textOut);
+          detachLongRunningStreams(steps);
           return {
             kind: decision?.kind || "CHAT",
             text: textOut,
@@ -1101,6 +1323,7 @@ class ChatOrchestrator {
             mutations: runMutations,
             incomplete: stillIncomplete,
             report: { completed: !stillIncomplete },
+            threadId,
           };
         }
 
@@ -1138,12 +1361,7 @@ class ChatOrchestrator {
           }
           toolHistory.set(callKey, execCount + 1);
 
-          onProgress?.({
-            phase: "tool",
-            stage: "running",
-            name,
-            input: args,
-          });
+          onProgress?.({ phase: "tool", stage: "running", name, input: args });
 
           let result;
           if (name === "write_file" || name === "replace_in_file") {
@@ -1154,14 +1372,20 @@ class ChatOrchestrator {
               oldText: args.oldText,
               newText: args.newText,
               onProgress,
+              threadId,
             });
+            try {
+              agentBus.wrapSubagentResult(projectRoot, threadId, "implementer", impl);
+              agentBus.record(projectRoot, threadId, {
+                agent: "implementer",
+                file: args.path,
+                action: name,
+                tool: name,
+              });
+            } catch { /* ignore */ }
             result = impl.result || impl;
 
-            if (
-              specialist?.name === "UI/UX Specialist"
-              && result?.ok
-              && isVisualUiPath(args.path)
-            ) {
+            if (specialist?.name === "UI/UX Specialist" && result?.ok && isVisualUiPath(args.path)) {
               try {
                 const vision = await capture_preview_screenshot({
                   url: helpers?.previewUrl || DEFAULT_PREVIEW_URL,
@@ -1192,11 +1416,14 @@ class ChatOrchestrator {
               .slice(-4)
               .map((s) => s.input?.path)
               .filter(Boolean);
+            const heavy = /\bnpm run build\b|\bnext build\b/i.test(String(args.command || ""));
             const verif = await runVerifier({
               projectRoot,
-              command: args.command,
+              command: heavy ? "" : args.command,
               onProgress,
-              autoRollback: true,
+              autoRollback: false,
+              incremental: true,
+              timeoutMs: 45_000,
               priorError: lastVerifyError,
               solutionApplied: recentWrites.length
                 ? `Corrección aplicada en: ${recentWrites.join(", ")}`
@@ -1209,6 +1436,9 @@ class ChatOrchestrator {
               lastVerifyError = null;
             }
           } else {
+            // tools.js → runCommand → process-runner.js ya gestiona:
+            //  - long-running (npm run dev, vite…) → background + streaming + detach()
+            //  - comandos normales → timeout 25s + captura stdout/stderr
             result = await tools.execute(name, args, projectRoot, allowWrite, helpers || {});
           }
 
@@ -1241,8 +1471,8 @@ class ChatOrchestrator {
               onProgress?.({
                 phase: "narration",
                 text: name === "replace_in_file"
-                  ? "Ajuste automático: releyendo contexto para reintentar…"
-                  : "Fallo leve ignorado; continuando…",
+                  ? "Ajusto: releo el contexto para reintentar…"
+                  : "Fallo leve, sigo…",
               });
             } else {
               result = {
@@ -1282,7 +1512,6 @@ class ChatOrchestrator {
               const existedBefore = Boolean(backupPath);
               const idx = runMutations.findIndex((m) => m.path === rel);
               if (idx >= 0) {
-                // Conservar el primer backup (estado pre-corrida) y el flag created.
                 runMutations[idx].action = name;
               } else {
                 runMutations.push({
@@ -1315,24 +1544,18 @@ class ChatOrchestrator {
         .map((s) => s.input?.path)
         .filter(Boolean);
 
-      let textOut = "";
+      let textOut = "Terminé el ciclo de tools de este turno. Decime el próximo paso concreto.";
       if (written.length > 0) {
-        textOut = `Se aplicaron las modificaciones correctamente en los archivos:\n` +
-          written.map((p) => `- \`${p}\``).join("\n");
-        if (accessFull) textOut += nextStepsClosingText({ fullAccess: true, wroteFiles: true });
-      } else {
-        textOut = nextStepsClosingText({ fullAccess: accessFull, wroteFiles: false });
+        textOut = "Listo, quedó. Archivos modificados:\n" + written.map((p) => `- \`${p}\``).join("\n");
       }
       textOut = formatAgentVisibleText(textOut);
 
       persistKernelRoadmap(projectRoot, {
-        task: message,
-        steps,
-        kind: decision?.kind,
-        text: textOut,
-        completed: true,
+        task: message, steps, kind: decision?.kind, text: textOut, completed: true,
       });
-      return { kind: decision?.kind || "EXECUTE", text: textOut, steps, incomplete: false, mutations: runMutations };
+      rememberOut(textOut);
+      detachLongRunningStreams(steps);
+      return { kind: decision?.kind || "EXECUTE", text: textOut, steps, incomplete: false, mutations: runMutations, threadId };
     } catch (err) {
       this.session.kill();
       let safeMsg = String(err?.message || err || "Error desconocido");
@@ -1341,18 +1564,20 @@ class ChatOrchestrator {
         safeMsg = sanitizeChatProviderError(err);
       } catch {
         if (/gafcore/i.test(safeMsg)) {
-          safeMsg = "El proveedor no respondió a tiempo. Reintenta en unos segundos; tu modelo se conserva.";
+          safeMsg = "El proveedor no respondió a tiempo. Reintentá en unos segundos; tu modelo se conserva.";
         }
       }
-      const errText = formatAgentVisibleText("Atención durante la ejecución: " + safeMsg);
+      const errText = formatAgentVisibleText("Algo falló durante la ejecución: " + safeMsg);
       persistKernelRoadmap(projectRoot, {
-        task: message,
-        steps,
-        kind: decision?.kind,
-        text: errText,
-        completed: false,
+        task: message, steps, kind: decision?.kind, text: errText, completed: false,
       });
-      return { kind: "CHAT", text: errText, steps, mutations: runMutations };
+      rememberOut(errText);
+      detachLongRunningStreams(steps);
+      return { kind: "CHAT", text: errText, steps, mutations: runMutations, threadId };
+    } finally {
+      this.running = false;
+      this.turnAbort = null;
+      try { onProgress?.({ phase: "done", text: "" }); } catch { /* ignore */ }
     }
   }
 }

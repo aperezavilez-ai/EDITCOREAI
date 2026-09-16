@@ -10,7 +10,12 @@
   if (root && browserProjectAnalysis) root.EditCoreAgentOrchestrator = api;
 })(typeof window !== "undefined" ? window : globalThis, function createIntentOrchestrator(ProjectAnalysis) {
   if (!ProjectAnalysis) {
-    throw new Error("EditCoreProjectAnalysis requerido para el orquestador unificado.");
+    console.warn("[intent-orchestrator] ProjectAnalysis no disponible, retornando stub.");
+    return {
+      buildSystemPrompt: () => "",
+      classifyIntent: () => ({ scope: "UNKNOWN", needsExploration: false }),
+      shouldUseSubagent: () => false,
+    };
   }
 
   const browserRoot = typeof window !== "undefined" ? window : globalThis;
@@ -170,6 +175,8 @@ const PHASES = {
 
 const RESEARCH_TOOLS = [
   "fetch_url",
+  "web_scrape",
+  "clone_web_page",
   "github_repo_info",
   "github_list_files",
   "github_read_file",
@@ -211,6 +218,7 @@ const TOOL_ALLOWLIST = {
   ],
   [MODES.EXECUTE]: [
     "write_file", "replace_in_file", "create_project",
+    "clone_web_page", "web_scrape", "images_to_code",
     "list_files", "read_file", "search_files", "run_command",
     "create_pdf", "create_word", "create_excel", "create_csv",
     ...CODE_INTEL_TOOLS,
@@ -248,6 +256,7 @@ const TOOL_ALLOWLIST = {
 
 const GREENFIELD_TOOL_ALLOWLIST = [
   "write_file", "replace_in_file", "create_project",
+  "clone_web_page", "web_scrape", "images_to_code",
   "list_files", "read_file", "run_command",
   "create_pdf", "create_word", "create_excel", "create_csv",
   "inspect_preview", "inspect_browser", "browser_interact",
@@ -273,6 +282,15 @@ const FILESYSTEM_EXPLORATION_TOOLS = new Set([
 ]);
 
 const BRAIN_TOOLS = new Set(BRAIN_TOOL_NAMES);
+
+
+function isCloneWebPageRequest(prompt = "") {
+  const text = String(prompt || "");
+  if (!text.trim()) return false;
+  const hasUrl = /https?:\/\/[^\s)>"']+/i.test(text);
+  const wantsClone = /\b(?:clona|clonar|copia\s+esta\s+p[aá]gina|replica(?:r)?\s+(?:esta\s+)?(?:web|p[aá]gina|sitio)|clone_web_page)\b/i.test(text);
+  return wantsClone || (hasUrl && /\b(?:clona|clonar|copia|replica)\b/i.test(text));
+}
 
 function wantsExplicitFilesystemWork(prompt = "") {
   const text = String(prompt || "").trim();
@@ -415,6 +433,16 @@ function formatOrchestrationBlock(profile = {}) {
     ].filter(Boolean).join("\n");
   }
   if (profile.subAgent === SUB_AGENTS.IMPLEMENTER) {
+    if (isCloneWebPageRequest(profile.prompt || "")) {
+      return [
+        "CLONAR WEB (prioridad absoluta):",
+        "- Extrae la URL https del mensaje.",
+        "- PRIMERA tool: clone_web_page({ url }). PROHIBIDO list_files('.') antes.",
+        "- Luego narra secciones/botones clonados y mejoras aplicadas.",
+        "- PROHIBIDO </think> o tags internos en el chat.",
+      ].join("\n");
+    }
+
     if (profile.cursorParityMode) {
       const cursorBlock = CursorParity?.buildCursorParityOrchestrationBlock?.() || "Agente EditCore: investiga, corrige y verifica con herramientas.";
       if (profile.greenfieldCreate) {
@@ -458,8 +486,8 @@ function formatOrchestrationBlock(profile = {}) {
       return [
         "ORQUESTACION EDITCORE (ONBOARD PROYECTO NUEVO):",
         "- El usuario pidio aplicar dependencias y conectar servicios del operador.",
-        "- Ejecuta onboard_project (una llamada) para: npm install, Supabase GafCore (self-hosted), GitHub, Vercel, sync envs y GafCore Gateway.",
-        "- Las conexiones globales ya estan en EditCore (github, vercel, supabase.gafcore, gateway). NO pidas tokens ni uses Supabase Cloud.",
+        "- Ejecuta onboard_project (una llamada) para: npm install, Supabase, GitHub, Vercel, sync envs y proveedor de IA.",
+      "- Las conexiones globales ya estan en EditCore (GitHub, Vercel, Supabase, proveedores ME AI / APICredits). NO pidas tokens ni uses Supabase Cloud.",
         "- Si aun no hay codigo/plantilla: create_project primero; luego onboard_project.",
         "- Informa el checklist devuelto (dependencias, supabase, github, vercel, gateway).",
         profile.reason ? `- Motivo: ${profile.reason}.` : "",
@@ -525,7 +553,7 @@ function formatOrchestrationBlock(profile = {}) {
       "- Para UI de alta calidad: aplica frontend-design y verifica con inspect_preview (desktop y mobile).",
       "- Tras escrituras: EditCore actualiza ROADMAP.md solo. NUNCA digas que no puedes modificar ROADMAP.",
       "- Tras escrituras relevantes: run_diagnostics si hay lint/typecheck; si AUTO-FIX llega, corrige de inmediato.",
-      "- Si pide conectar servicios (GitHub, Vercel, supabase.gafcore, GafCore Gateway): usa onboard_project.",
+      "- Si pide conectar servicios (GitHub, Vercel, Supabase, proveedor de IA): usa onboard_project.",
       "- generate_image / generate_video solo con config y pedido explicito de assets.",
       "- Web/PWA nuevas: siempre micro-interacciones, scroll triggers y asset placeholders responsive.",
     ].join("\n");
@@ -646,6 +674,9 @@ function resolveUnifiedAgentPlan(options = {}) {
     mode = MODES.EXECUTE;
     projectOnboarding = isProjectOnboardingRequest(effectivePrompt);
     reason = "operacion nube (publicar/conectar/bóveda)";
+  } else if (isCloneWebPageRequest(effectivePrompt)) {
+    mode = MODES.EXECUTE;
+    reason = "clonar pagina web (clone_web_page primero, no listar raiz)";
   } else if (isAgent && isListAndExplainRequest(effectivePrompt) && !userAuth) {
     mode = MODES.DISCOVER;
     reason = "listar y explicar con tools";
@@ -855,17 +886,27 @@ function resolveUnifiedAgentPlan(options = {}) {
         : "Ejecutando con herramientas...",
   };
 
-  const allowedTools = listOnly
-    ? ["list_files"]
-    : (mode === MODES.EXECUTE)
-    ? (cursorParityMode
-      ? (CursorParity?.CURSOR_PARITY_ALLOWLIST || TOOL_ALLOWLIST[MODES.EXECUTE])
-      : (greenfieldCreate && !permissionFull
-        ? (lovableOneShot ? LOVABLE_ONESHOT_TOOL_ALLOWLIST : GREENFIELD_TOOL_ALLOWLIST)
-        : TOOL_ALLOWLIST[MODES.EXECUTE]))
-    : analysisMode
-    ? TOOL_ALLOWLIST[MODES.DISCOVER]
-    : (TOOL_ALLOWLIST[mode] || []);
+  let allowedTools;
+  if (listOnly) {
+    allowedTools = ["list_files"];
+  } else if (mode === MODES.EXECUTE) {
+    if (cursorParityMode && CursorParity?.CURSOR_PARITY_ALLOWLIST) {
+      allowedTools = [...CursorParity.CURSOR_PARITY_ALLOWLIST];
+    } else if (greenfieldCreate && !permissionFull) {
+      allowedTools = [...(lovableOneShot ? LOVABLE_ONESHOT_TOOL_ALLOWLIST : GREENFIELD_TOOL_ALLOWLIST)];
+    } else {
+      allowedTools = [...TOOL_ALLOWLIST[MODES.EXECUTE]];
+    }
+    // Garantia dura: en EXECUTE, write_file y replace_in_file SIEMPRE presentes,
+    // incluso si el cursor-parity allowlist no los trae (bug de filtrado).
+    for (const required of ["write_file", "replace_in_file", "list_files", "read_file", "run_command"]) {
+      if (!allowedTools.includes(required)) allowedTools.push(required);
+    }
+  } else if (analysisMode) {
+    allowedTools = [...TOOL_ALLOWLIST[MODES.DISCOVER]];
+  } else {
+    allowedTools = [...(TOOL_ALLOWLIST[mode] || [])];
+  }
 
   const runProfile = buildProfile({
     mode,
@@ -1053,6 +1094,19 @@ function filterToolsByPlan(tools = [], plan = {}) {
     return tools;
   }
   const allowed = new Set(allowlist);
+  // Defensa: si el plan es planAuthorizedExecution o mode=execute, NUNCA
+  // filtrar write_file/replace_in_file aunque falten del allowlist. Esto
+  // cubre el bug donde cursor-parity u otro filtro recorta herramientas de
+  // escritura y el agente narra sin ejecutar.
+  const writeGuaranteed = plan.planAuthorizedExecution === true
+    || plan.mode === MODES.EXECUTE
+    || plan.runProfile?.mode === MODES.EXECUTE
+    || plan.runProfile?.planAuthorizedExecution === true;
+  if (writeGuaranteed) {
+    for (const name of ["write_file", "replace_in_file", "list_files", "read_file", "run_command", "search_files"]) {
+      allowed.add(name);
+    }
+  }
   return tools.filter((item) => allowed.has(item?.function?.name));
 }
 
@@ -1068,6 +1122,7 @@ return {
   resolveAgentRunProfile,
   applyRunProfile,
   wantsExplicitFilesystemWork,
+  isCloneWebPageRequest,
   isListOnlyRequest,
   isListAndExplainRequest,
   isExplainOrReadFileRequest,

@@ -139,6 +139,8 @@ const activePlanStreams = new Map();
 const activeAgentThinkingRuns = new Map();
 const pendingPromptFingerprints = new Set();
 const pendingAgentApprovalCards = new Map();
+/** Tras ALTO/CANCEL: ignorar progress que reencendería bolitas/Pensamiento. */
+let agentUiHardStopUntil = 0;
 let promptProcessorRunning = false;
 const MAX_PARALLEL_AGENTS = 4;
 const MIN_AGENT_CONTINUATION_TOKENS = 1000;
@@ -6261,20 +6263,24 @@ function updateStatus() {
 
 function prepareChatProseForRender(text) {
   let value = repairMojibakeText(String(text || ""));
-  // Nunca pintar GafCore Gateway / admin / URLs de gateway en el chat.
-  if (/gafcore|gafcore-gateway\.vercel\.app|x-project-key|project\s*key/i.test(value)) {
-    if (/no est[aá] disponible|tard[oó] demasiado|PROVIDER_TEMPORARILY|Tu modelo seleccionado se conserv/i.test(value)) {
-      value = "El proveedor no respondió a tiempo. Reintenta en unos segundos; tu modelo se conserva.";
-    } else {
-      value = value
-        .replace(/gafcore(?:\s*gateway)?/gi, "el proveedor de modelos")
-        .replace(/https?:\/\/[^\s)]*gafcore[^\s)]*/gi, "")
-        .replace(/\bgafcore-gateway\.vercel\.app\b/gi, "")
-        .replace(/\bx-project-key\b/gi, "API key")
-        .replace(/\bproject\s*keys?\b/gi, "API keys")
-        .replace(/\s{2,}/g, " ")
-        .trim();
-    }
+  if (/PROVIDER_TEMPORARILY_UNAVAILABLE|Tu modelo seleccionado se conserv/i.test(value)
+    || /gafcore(?:\s*gateway)?|gafcore-gateway\.vercel\.app/i.test(value)
+      && /no est[aá] disponible|tard[oó] demasiado|PROVIDER_TEMPORARILY/i.test(value)) {
+    value = "El proveedor no respondió a tiempo. Reintenta en unos segundos; tu modelo se conserva.";
+  } else {
+    value = value
+      .replace(/https?:\/\/[^\s)]*gafcore-gateway[^\s)]*/gi, "")
+      .replace(/\bgafcore-gateway(?:\.vercel\.app)?\b/gi, "el proveedor de modelos")
+      .replace(/\bGafCore\s+Gateway\b/gi, "el proveedor de modelos")
+      .replace(/\bGafCore\b/gi, "el proveedor")
+      .replace(/\bx-project-key\b/gi, "API key")
+      .replace(/\bproject\s*keys?\b/gi, "API keys")
+      .replace(
+        /([?&](?:key|api_key|apikey|token|access_token)=)[^&\s]+/gi,
+        "$1[REDACTED]",
+      )
+      .replace(/\s{2,}/g, " ")
+      .trim();
   }
   const Elite = window.EditCoreEliteCommunication;
   try {
@@ -6388,6 +6394,9 @@ function rememberMessage(role, content, usage, images = [], documents = []) {
 // ── Thinking indicator ────────────────────────────────────────────────────────
 
 function appendThinking(statusText = "Pensando...", isAgent = false, runLabel = "") {
+  document.querySelectorAll?.(".thinking-msg, .is-thinking-live")?.forEach?.((el) => {
+    try { settleAgentTurnChrome(el, { failed: false, force: true }); } catch {}
+  });
   const item = document.createElement("article");
   item.className = "msg assistant thinking-msg agent-execution-card";
   item.dataset.agentCard = "1";
@@ -6902,6 +6911,7 @@ function setThinkingStatus(item, text) {
 /** Una sola linea de actividad dinamica en las bolitas de pensamiento. */
 function setAgentLiveActivity(thinkingItem, text) {
   if (!thinkingItem) return;
+  if (Date.now() < agentUiHardStopUntil) return;
   const value = String(text || "").trim();
   if (!value) return; // no borrar label ni scrollear en vacio
   setThinkingStatus(thinkingItem, value);
@@ -7212,6 +7222,7 @@ function hideThinkingIndicator(_thinkingItem) {
 
 function showThinkingIndicator(thinkingItem) {
   if (!thinkingItem) return;
+  if (Date.now() < agentUiHardStopUntil) return;
   thinkingItem.classList.remove("agent-execution-done");
   thinkingItem.classList.add("thinking-msg", "is-thinking-live");
   let primary = thinkingItem.querySelector?.(".thinking-primary");
@@ -7810,23 +7821,62 @@ function stopThinkingAnimations(thinking) {
 function settleAgentTurnChrome(thinking, { failed = false, force = false } = {}) {
   if (!thinking) return;
   const runId = String(thinking._runId || thinking.dataset?.runId || "").trim();
-  const stillLive = !force && ((runId && activeAgentThinkingRuns.has(runId))
+  const stillLive = !force && (
+    (runId && activeAgentThinkingRuns.has(runId))
+    || [...activeAgentThinkingRuns.values()].some((entry) => entry?.thinking === thinking)
     || [...activePromptRequests.values()].some((job) => job.agentExecuting && (
-      !runId || String(job.runId || "") === runId
-    )));
+      job.thinking === thinking
+      || (runId && (String(job.runId || "") === runId || String(job.planRunId || "") === runId))
+    ))
+  );
   if (stillLive && !failed) {
     showThinkingIndicator(thinking);
     setAgentLiveActivity(thinking, "Trabajando…");
     return;
   }
   stopThinkingAnimations(thinking);
-  thinking.classList.remove("thinking-msg");
+  thinking.classList.remove("thinking-msg", "is-thinking-live");
   thinking.classList.add("assistant", "agent-execution-done");
   if (failed) thinking.classList.add("is-failed");
   const thoughtSummary = thinking.querySelector?.(".agent-thought-summary");
   if (thoughtSummary) thoughtSummary.textContent = "Pensamiento";
   if (thinking._thoughtAccordion) thinking._thoughtAccordion.open = false;
+  const primary = thinking.querySelector?.(".thinking-primary");
+  if (primary) {
+    primary.classList.add("hidden");
+    primary.hidden = true;
+    primary.style.display = "none";
+  }
+  setAgentLiveActivity(thinking, "");
   revealAgentTurnActions(thinking, { failed });
+}
+
+/** Mata bolitas + Pensamiento vivo de inmediato (ALTO / CANCELA TODO). */
+function forceKillAllAgentUi(statusText = "Detenido.") {
+  agentUiHardStopUntil = Date.now() + 8000;
+  const thinkings = new Set();
+  for (const entry of activeAgentThinkingRuns.values()) {
+    if (entry?.thinking) thinkings.add(entry.thinking);
+  }
+  for (const job of activePromptRequests.values()) {
+    job.agentExecuting = false;
+    job.cancelled = true;
+    if (job.thinking) thinkings.add(job.thinking);
+  }
+  document.querySelectorAll?.(".thinking-msg, .is-thinking-live, .msg.assistant.is-thinking")?.forEach?.((el) => {
+    thinkings.add(el);
+  });
+  activeAgentThinkingRuns.clear();
+  activePlanStreams.clear();
+  for (const thinking of thinkings) {
+    try {
+      setThinkingStatus(thinking, statusText);
+      settleAgentTurnChrome(thinking, { failed: true, force: true });
+    } catch {}
+  }
+  if ($("status")) $("status").textContent = statusText;
+  setRunningControls();
+  updateSendButtonState?.();
 }
 
 function collapseDuplicateNarrations(parts = []) {
@@ -7922,7 +7972,17 @@ function isAvanceProgressOnly(text = "") {
 }
 
 function finalizeThinkingAsAssistant(thinking, text, usage, elapsedSeconds, options = {}) {
-  settleAgentTurnChrome(thinking, { failed: false });
+  const runId = String(thinking?._runId || thinking?.dataset?.runId || "").trim();
+  if (runId) activeAgentThinkingRuns.delete(runId);
+  for (const [key, entry] of [...activeAgentThinkingRuns.entries()]) {
+    if (entry?.thinking === thinking) activeAgentThinkingRuns.delete(key);
+  }
+  for (const job of activePromptRequests.values()) {
+    if (job.thinking === thinking || (runId && (String(job.runId || "") === runId || String(job.planRunId || "") === runId))) {
+      job.agentExecuting = false;
+    }
+  }
+  settleAgentTurnChrome(thinking, { failed: false, force: true });
   flushAgentStreamRender(thinking);
   const serverText = collapseDuplicateReportText(repairMojibakeText(stripAgentToolXml(String(text || ""))).trim());
   const streamedRaw = stripAgentToolXml(String(thinking?._streamBuffer || "")).trim();
@@ -9616,7 +9676,20 @@ function applyEditCoreTheme(theme = "blanco") {
   if (btn) btn.textContent = `Tema: ${next}`;
   syncPreviewChromeForTheme();
   try { window.EditCoreEditor?.applyTheme?.(); } catch { /* ignore */ }
+  void syncAppWindowChrome(next);
   return next;
+}
+
+async function syncAppWindowChrome(theme = "blanco") {
+  try {
+    const version = String(await window.editcoreApp?.version?.() || "").trim();
+    document.title = version ? `EditCoreAI v${version}` : "EditCoreAI";
+  } catch {
+    document.title = "EditCoreAI";
+  }
+  try {
+    await window.editcoreApp?.setUiTheme?.(theme);
+  } catch { /* ignore */ }
 }
 
 function syncPreviewChromeForTheme() {
@@ -10091,8 +10164,16 @@ function localAppInfoAnswer(project = null) {
 function isUserStopCommand(prompt = "") {
   const text = String(prompt || "").trim().toLowerCase().replace(/[.!?,;]+$/g, "");
   if (!text) return false;
-  return /^(?:por\s+favor\s+)?(?:alto|detente|det[eé]n(?:lo)?|detener|parar?|p[aá]ralo|stop|cancela(?:r|lo)?|aborta(?:r|lo)?|interrump(?:e|ir|alo)?|basta|pausa(?:r)?|no\s+sigas)$/i.test(text)
-    || /^(?:por\s+favor\s+)?(?:cancela|cancelar|det[eé]n|detener|parar?|stop|aborta|pausa)\s+(?:el\s+an[aá]lisis|la\s+tarea|la\s+ejecuci[oó]n|esto|todo|el\s+proceso)$/i.test(text);
+  if (/^(?:por\s+favor\s+)?(?:alto|detente|det[eé]n(?:lo)?|detener|parar?|p[aá]ralo|stop|cancela(?:r|lo)?|aborta(?:r|lo)?|interrump(?:e|ir|alo)?|basta|pausa(?:r)?|no\s+sigas|termina(?:r)?)$/i.test(text)) {
+    return true;
+  }
+  if (/^(?:por\s+favor\s+)?(?:cancela|cancelar|det[eé]n|detener|parar?|stop|aborta|pausa|termina(?:r)?)\s+(?:el\s+an[aá]lisis|la\s+tarea|la\s+ejecuci[oó]n|esto|todo|toda(?:\s+acci[oó]n|s)?|el\s+proceso|todas?\s+las?\s+acciones?)$/i.test(text)) {
+    return true;
+  }
+  if (/^(?:termina|cancel[ae]|det[eé]n|para|aborta)\s+(?:toda|todo|todas)\b/i.test(text)) {
+    return true;
+  }
+  return false;
 }
 
 function isMetaChatCommand(prompt = "") {
@@ -10107,6 +10188,7 @@ function isMetaChatCommand(prompt = "") {
 }
 
 async function hardStopFromChat(reason = "terminal-stop") {
+  forceKillAllAgentUi("Detenido.");
   const project = activeProject();
   const steering = [...activePromptRequests.values()].find((job) => job.runId || job.planRunId);
   const runId = steering?.runId || steering?.planRunId || project?.agentWorkflow?.runId || "";
@@ -10117,6 +10199,7 @@ async function hardStopFromChat(reason = "terminal-stop") {
     await window.editcoreAgent.cancel({ runId }).catch(() => false);
   }
   await cancelActiveResponse();
+  forceKillAllAgentUi("Detenido.");
   if (project) {
     const taskId = project.agentWorkflow?.taskId || project.durableWorkflow?.taskId || "";
     if (taskId && window.editcoreTasks?.cancel) await window.editcoreTasks.cancel(taskId).catch(() => null);
@@ -10140,6 +10223,7 @@ async function hardStopFromChat(reason = "terminal-stop") {
     project.durableWorkflow = null;
     saveProjects();
   }
+  if ($("status")) $("status").textContent = "Detenido.";
 }
 
 function agentTaskIsLive() {
@@ -11502,6 +11586,7 @@ function throwIfJobCancelled(job) {
 
 async function cancelActiveResponse() {
   promptQueue = [];
+  forceKillAllAgentUi("Detenido.");
 
   for (const [requestId, card] of pendingAgentApprovalCards.entries()) {
     try {
@@ -11521,32 +11606,20 @@ async function cancelActiveResponse() {
     job.agentExecuting = false;
     if (job.runId) runIds.add(job.runId);
     if (job.planRunId) runIds.add(job.planRunId);
-    const live = activeAgentThinkingRuns.get(job.planRunId || job.runId);
-    if (live?.thinking) setThinkingStatus(live.thinking, "Cancelando...");
   });
 
   const project = activeProject();
   if (project?.agentWorkflow?.runId) runIds.add(project.agentWorkflow.runId);
 
-  if (!active.length && !runIds.size) {
-    await Promise.all([
-      window.editcoreAgent.cancel({ runId: "" }).catch(() => false),
-      window.editcoreChat.cancel().catch(() => false),
-    ]);
-    renderPromptQueue();
-    setRunningControls();
-    $("status").textContent = "Listo";
-    return;
-  }
-
-  $("status").textContent = `Cancelando ${active.length} tarea(s)...`;
   await Promise.all([
     ...[...runIds].map((id) => window.editcoreAgent.cancel({ runId: id }).catch(() => false)),
     window.editcoreAgent.cancel({ runId: "" }).catch(() => false),
     window.editcoreChat.cancel().catch(() => false),
   ]);
+  forceKillAllAgentUi("Detenido.");
   renderPromptQueue();
   setRunningControls();
+  if ($("status")) $("status").textContent = "Detenido.";
 }
 
 function countActiveAgents(active = []) {
@@ -11731,10 +11804,15 @@ async function executePromptJob(job) {
   let elapsedSeconds = 0;
   if (showAgentLog) {
     job.runId = job.runId || uid();
-    activeAgentThinkingRuns.set(job.runId, {
-      thinking,
-      projectId: job.projectId || projectForJob?.id || "",
-    });
+    thinking._runId = job.runId;
+    if (thinking.dataset) thinking.dataset.runId = job.runId;
+    job.thinking = thinking;
+    if (!(job.cancelled || Date.now() < agentUiHardStopUntil)) {
+      activeAgentThinkingRuns.set(job.runId, {
+        thinking,
+        projectId: job.projectId || projectForJob?.id || "",
+      });
+    }
     // No meter el mismo texto otra vez en el log: ya esta junto a las bolitas.
   }
 
@@ -11860,7 +11938,10 @@ async function executePromptJob(job) {
       const resumeCount = Number(recoveryProjection?.lastCheckpoint?.completedSteps?.length || 0);
       const runId = job.runId || uid();
       job.runId = runId;
-      if (showAgentLog) {
+      if (showAgentLog && !(job.cancelled || Date.now() < agentUiHardStopUntil)) {
+        thinking._runId = runId;
+        if (thinking.dataset) thinking.dataset.runId = runId;
+        job.thinking = thinking;
         activeAgentThinkingRuns.set(runId, { thinking, projectId: project?.id || job.projectId || "" });
       }
       job.agentExecuting = true;
@@ -12669,6 +12750,28 @@ async function boot() {
     storedActiveProjectId,
     bootPermission,
   }));
+
+  // Inicializar Inline Edit (Cmd+K / Ctrl+K)
+  try {
+    if (window.EditCoreEditor?.ensureEditor) {
+      const origEnsure = window.EditCoreEditor.ensureEditor.bind(window.EditCoreEditor);
+      window.EditCoreEditor.ensureEditor = async (...args) => {
+        const ed = await origEnsure(...args);
+        window.__monacoEditor = ed;
+        window.EditCoreEditor._editor = ed;
+        if (!window.EditCoreEditor.getMonacoEditor) {
+          window.EditCoreEditor.getMonacoEditor = () => window.__monacoEditor || window.EditCoreEditor._editor || null;
+        }
+        try {
+          window.EditCoreInlineEdit?.bindMonacoShortcut?.(ed, window.monaco);
+        } catch { /* ignore */ }
+        return ed;
+      };
+    }
+    if (typeof window.EditCoreInlineEdit?.open === "function") {
+      // ya cargado vía <script> en index.html
+    }
+  } catch { /* ignore */ }
 }
 
 async function bootBackground({
@@ -13397,7 +13500,7 @@ if (typeof window.editcoreAgent.onTaskComplete === "function") {
     if (Array.isArray(payload?.changedFiles)) {
       thinking._changedFiles = [...new Set([...(thinking._changedFiles || []), ...payload.changedFiles])];
     }
-    settleAgentTurnChrome(thinking, { failed: payload?.ok === false });
+    settleAgentTurnChrome(thinking, { failed: payload?.ok === false, force: true });
   });
 }
 if (typeof window.editcoreAgent.onComplete === "function") {
@@ -13411,20 +13514,21 @@ if (typeof window.editcoreAgent.onComplete === "function") {
       thinking._changedFiles = [...new Set([...(thinking._changedFiles || []), ...files])];
       for (const filePath of files) markInlineDiffApplied(thinking, filePath);
     }
-    settleAgentTurnChrome(thinking, { failed: payload?.completed === false });
+    settleAgentTurnChrome(thinking, { failed: payload?.completed === false, force: true });
   });
 }
 if (typeof window.editcoreAgent.onError === "function") {
   window.editcoreAgent.onError((payload) => {
     const thinking = resolveThinkingForTransparency(payload);
     if (!thinking) return;
-    settleAgentTurnChrome(thinking, { failed: true });
+    settleAgentTurnChrome(thinking, { failed: true, force: true });
     setAgentLiveActivity(thinking, String(payload?.error || payload?.message || "Error del agente").slice(0, 160));
   });
 }
 
 window.editcoreAgent.onProgress((progress) => {
   try {
+    if (Date.now() < agentUiHardStopUntil) return;
     if (progress?.phase === "pipeline" || progress?.pipeline) {
       applyPipelineProgress(progress);
       if (progress?.phase === "pipeline" && !progress?.name && !progress?.text) return;
@@ -13451,6 +13555,12 @@ window.editcoreAgent.onProgress((progress) => {
     const thinkingEl = liveRun?.thinking
       || (!progress?.runId ? document.querySelector(".thinking-msg") : null);
     if (!thinkingEl) return;
+    if (
+      thinkingEl.classList.contains("agent-execution-done")
+      && !activeAgentThinkingRuns.has(progress?.runId)
+    ) {
+      return;
+    }
 
     if (progress.phase === "narration_reset") {
       // NO borrar el texto ya mostrado (provocaba pasos a medias / rearmados).
