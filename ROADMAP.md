@@ -6,10 +6,13 @@ EditCore actualiza este archivo tras cambios. No pedirlo al usuario. No pegar co
 
 ## Proceso
 - Fase: release
-- Estado: v3.0.4 — mensaje final Publicar limpio + barra/% + deploy pipeline; build/release en curso.
-- Actualizado: 2026-09-16 19:35
+- Estado: v3.0.4 cerrada — GitHub push + Vercel prod + Setup.exe + launcher raíz OK.
+- Actualizado: 2026-09-16 19:52
 - Preview: desconocido — usa el preview del IDE, no inventes puertos
-- Siguiente: commit/push GitHub + dist:win + verificar arranque
+- Siguiente: reiniciar EditCoreAI 3.0.4; Publicar muestra “Publicado correctamente”
+
+## Siguiente
+- Validar arranque del Setup/EXE y mensaje final corto en Publicar.
 
 ## Mapa
 - renderer.js — Publicar: barra/% + chat final corto
