@@ -5,56 +5,46 @@ PROHIBIDO reexplorar el repo entero si este documento cubre la tarea. Solo read_
 EditCore actualiza este archivo tras cambios. No pedirlo al usuario. No pegar codigo largo.
 
 ## Proceso
-- Fase: release
-- Estado: v3.0.4 cerrada — GitHub push + Vercel prod + Setup.exe + launcher raíz OK.
-- Actualizado: 2026-09-16 19:52
+- Fase: release 3.0.5 (Chat Home + perf boot + panel Sesión + mic)
+- Estado: empaquetando / publicando 3.0.5
+- Actualizado: 2026-09-17 09:10
 - Preview: desconocido — usa el preview del IDE, no inventes puertos
-- Siguiente: reiniciar EditCoreAI 3.0.4; Publicar muestra “Publicado correctamente”
-
-## Siguiente
-- Validar arranque del Setup/EXE y mensaje final corto en Publicar.
+- Siguiente: tras release — E2E Chat↔IDE + historial durable en userData
 
 ## Mapa
-- renderer.js — Publicar: barra/% + chat final corto
-- styles.css / index.html — panel fullstack progress
-- runtime/fullstack-deploy.js / publish-pipeline.js / deploy-one-click.js / vercel-env-sync.js
-- resources/ui-overlay/ — mirror empaquetable
-- package.json — editcoreai · v3.0.4
-- PROJECT_CONTEXT.md
-- ROADMAP.md
-- main.js
-- preload.js
-- editcore-chat-kernel/
-- runtime/
+- chat-home.js / chat-home.css / index.html — Chat-first + Settings + panel Sesión (2 hojas)
+- renderer.js — boot chat-first, EditCoreDictation, EditCoreSessionContext, sin preview en Chat
+- preload.js — editcoreApp único (setUiTheme)
+- styles.css — titlebar theme-aware + splitters 1px
+- editcore-chat-kernel/ — Agent Core real
+- resources/ui-overlay/ — mirror instalador
 
-## Archivos clave (no reexplorar)
+## Archivos clave
+- chat-home.js
+- chat-home.css
+- index.html
 - renderer.js
-- package.json
-- main.js
 - preload.js
-- runtime/fullstack-deploy.js
-- runtime/publish-pipeline.js
-- runtime/deploy-one-click.js
-- runtime/vercel-env-sync.js
-- resources/ui-overlay/renderer.js
+- styles.css
+- package.json
+- scripts/verify-release-3.0.5.js
 - scripts/build-windows.js
 
 ## Tarea activa
-- Release 3.0.4: commit + push + Setup.exe + launcher raíz sin romper arranque.
+Release 3.0.5: GitHub + Vercel + Supabase + Setup/EXE.
 
-## Bloqueos / bugs conocidos
-- Actualizado: 2026-09-16 19:35
-- Publicar: VERCEL_ORG_ID + soft-skip supabase sin link (OK).
-- Chat final Publicar ya no vuelca dump de pasos (OK).
+## Bloqueos / pendientes reales
+- Persistencia historial Home aún en localStorage (migrar a userData/IPC)
+- SocialProvider / SEO / Marketing productizados: NO EXISTEN (no inventar)
 
 ## Decisiones
-- Éxito de Publicar en chat = “Publicado correctamente” + Live URL + invitación a otra tarea.
-- Detalle de pasos solo en fallo o en el panel de progreso.
-
-## Cambios recientes
-- Publicar progreso % + barra por etapa
-- Fix deploy Vercel orgId / BOM / spawn Windows
-- Mensaje final Publicar corto (3.0.4)
+- Arranque = Chat Home; IDE = botón IDE
+- Preview/servidor solo en IDE (no en Chat)
+- Mic: Windows STT → MediaRecorder → Web Speech
+- Guardar manual eliminado
+- Proveedores visibles: ME AI / APICredits
 
 ## Siguiente
-- Tras release: reiniciar EditCoreAI 3.0.4 y validar Publicar + arranque.
+1. Completar publish 3.0.5
+2. E2E Chat↔IDE
+3. Historial durable

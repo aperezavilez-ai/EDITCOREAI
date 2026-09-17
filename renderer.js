@@ -1548,15 +1548,34 @@ function positionFloatingMenu(menu, anchor, { align = "right", gap = 8 } = {}) {
   menu.style.zIndex = "10050";
 }
 
-function setPermissionMenuOpen(open) {
+function setPermissionMenuOpen(open, anchorEl = null) {
   const menu = $("permissionMenu");
   const button = $("permissionsBtn");
   if (!menu || !button) return;
-  menu.classList.toggle("hidden", !open);
-  button.setAttribute("aria-expanded", String(Boolean(open)));
   if (open) {
+    // En Chat Home el menú debe vivir en body (main está off-screen / sin pointer-events).
+    if (document.body.dataset.appMode === "chat") {
+      if (!menu.dataset.homeParked) {
+        menu.dataset.homeParked = "1";
+        menu._editcoreOrigParent = menu.parentElement;
+        document.body.appendChild(menu);
+      }
+    }
+    menu.classList.remove("hidden");
+    button.setAttribute("aria-expanded", "true");
     syncPermissionMenuSelection(state.permissionMode);
-    positionFloatingMenu(menu, button, { align: "left", gap: 6 });
+    const anchor = anchorEl && typeof anchorEl.getBoundingClientRect === "function"
+      ? anchorEl
+      : button;
+    positionFloatingMenu(menu, anchor, { align: "left", gap: 6 });
+  } else {
+    menu.classList.add("hidden");
+    button.setAttribute("aria-expanded", "false");
+    if (menu.dataset.homeParked === "1" && menu._editcoreOrigParent) {
+      menu._editcoreOrigParent.appendChild(menu);
+      delete menu.dataset.homeParked;
+      menu._editcoreOrigParent = null;
+    }
   }
 }
 
@@ -1600,18 +1619,37 @@ function applyPermissionMode(mode) {
   return next;
 }
 
-function setModelPickerOpen(open) {
+function setModelPickerOpen(open, anchorEl = null) {
   const menu = $("modelPickerMenu");
   const button = $("modelPickerBtn");
   if (!menu || !button) return;
   if (open) {
+    // En Chat Home el menú debe vivir en body (main está off-screen).
+    if (document.body.dataset.appMode === "chat") {
+      if (!menu.dataset.homeParked) {
+        menu.dataset.homeParked = "1";
+        menu._editcoreOrigParent = menu.parentElement;
+        document.body.appendChild(menu);
+      }
+    }
     renderModelPickerMenu();
     menu.classList.remove("hidden");
     button.setAttribute("aria-expanded", "true");
-    positionFloatingMenu(menu, button, { align: "right", gap: 8 });
+    const anchor = anchorEl && typeof anchorEl.getBoundingClientRect === "function"
+      ? anchorEl
+      : (document.body.dataset.appMode === "chat" && $("chatHomeModelPill")) || button;
+    positionFloatingMenu(menu, anchor, {
+      align: document.body.dataset.appMode === "chat" ? "left" : "right",
+      gap: 8,
+    });
   } else {
     menu.classList.add("hidden");
     button.setAttribute("aria-expanded", "false");
+    if (menu.dataset.homeParked === "1" && menu._editcoreOrigParent) {
+      menu._editcoreOrigParent.appendChild(menu);
+      delete menu.dataset.homeParked;
+      menu._editcoreOrigParent = null;
+    }
   }
 }
 
@@ -3221,6 +3259,11 @@ function renderWelcomeRecents() {
 }
 
 function showWelcomeScreen() {
+  // En modo Chat Home el welcome de proyectos no debe tapar el agente generalista.
+  if (document.body.dataset.appMode === "chat") {
+    hideWelcomeScreen();
+    return;
+  }
   const screen = $("welcomeScreen");
   if (!screen) return;
   renderWelcomeRecents();
@@ -3253,6 +3296,11 @@ function renderFeed(options = {}) {
     state.history = [];
     $("projectPathLabel").textContent = "Sin proyecto";
     updateCloseProjectButton();
+    // Chat Home generalista: vacío silencioso (el empty-state lo pinta chat-home).
+    if (document.body.dataset.appMode === "chat") {
+      try { window.EditCoreChatHome?.refresh?.(); } catch { /* ignore */ }
+      return;
+    }
     append("assistant", "Abre un proyecto para comenzar.", null, false);
     return;
   }
@@ -3402,6 +3450,16 @@ function markAgentTouchedFromPayload(payload = {}, { writing = false } = {}) {
     state.fileListWritingNames = [];
   }
   scheduleClearAgentTouchedHighlights(180000);
+  try {
+    if (document.body.dataset.appMode === "chat") {
+      // Debounce: no refrescar el panel en cada write del agente (mata la UI).
+      clearTimeout(window.__editcoreCtxRefreshTimer);
+      window.__editcoreCtxRefreshTimer = setTimeout(() => {
+        window.__editcoreCtxRefreshTimer = null;
+        try { window.EditCoreChatHome?.refreshContextPanel?.(); } catch { /* ignore */ }
+      }, 700);
+    }
+  } catch { /* ignore */ }
   return {
     viewDir: Object.prototype.hasOwnProperty.call(payload, "viewDir")
       ? String(payload.viewDir ?? "")
@@ -4663,6 +4721,13 @@ async function renderedPreviewIsDocument(webview) {
         || document.querySelector("[data-nextjs-scroll-focus-boundary], nextjs-portal, #__next-build-watcher")
         || /__NEXT_DATA__|\\/_next\\/static/i.test(html)
       );
+      const viteShell = Boolean(
+        document.getElementById("root")
+        || document.getElementById("app")
+        || document.getElementById("__nuxt")
+        || document.querySelector('script[type="module"][src*="/src/"], script[src*="/@vite/client"], script[src*="vite"]')
+        || /@vite\/client|<div id="root"|<div id="app"/i.test(html)
+      );
       const renderedElements = body ? body.querySelectorAll("body *").length : 0;
       const visibleText = text.length > 0;
       const visibleElement = Boolean(body && [...body.querySelectorAll("body *")].some((element) => {
@@ -4676,6 +4741,7 @@ async function renderedPreviewIsDocument(webview) {
         apiDocument,
         serverError,
         nextShell,
+        viteShell,
         renderedElements,
         hasVisibleContent: visibleText || visibleElement,
       };
@@ -4684,8 +4750,8 @@ async function renderedPreviewIsDocument(webview) {
     if (snapshot?.onlyPre && snapshot?.apiDocument) return "api";
     if (snapshot?.serverError) return "server-error";
     if (snapshot?.hasVisibleContent) return "ready";
-    // Next.js: shell vacio/#__next sin paint aun → seguir esperando, no marcar blank.
-    if (snapshot?.nextShell) return "loading";
+    // Vite / Next.js: shell inicial vacio (#root / #app / #__next) sin paint aún → esperar compilación
+    if (snapshot?.nextShell || snapshot?.viteShell) return "loading";
     return "blank";
   } catch {
     return false;
@@ -4698,13 +4764,13 @@ async function settlePreviewDocument() {
   const navigationId = previewNavigationId;
   const validationId = ++previewDocumentValidationId;
   let documentState = await renderedPreviewIsDocument(webview);
-  // Vite/Next: primer paint suele ser shell vacio; esperar mas antes de fallar.
+  // Vite/Next: primer paint suele ser shell vacio mientras compila; esperar mas antes de fallar.
   if (documentState === "blank" || documentState === "loading") {
     showPreviewLoading(documentState === "loading"
-      ? "Next.js cargando el App Router..."
-      : "Esperando a que la aplicacion pinte contenido...");
-    for (let attempt = 0; attempt < 10; attempt += 1) {
-      await new Promise((resolve) => setTimeout(resolve, 400 + attempt * 200));
+      ? "El servidor de desarrollo está cargando la aplicación..."
+      : "Esperando a que la aplicación pinte contenido...");
+    for (let attempt = 0; attempt < 12; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 350 + attempt * 150));
       if (validationId !== previewDocumentValidationId || navigationId !== previewNavigationId || !previewEventMatches(webview)) return;
       documentState = await renderedPreviewIsDocument(webview);
       if (documentState === "ready" || documentState === "api" || documentState === "server-error" || documentState === false) break;
@@ -4737,13 +4803,13 @@ async function settlePreviewDocument() {
     return;
   }
   if (documentState === "blank" || documentState === "loading") {
-    // Si el origen es el esperado, mostrar igual (evitar overlay blanco falso).
+    // Si el webview tiene URL activa local o coincide con el origen esperado, conectar y quitar overlay
     const current = currentPreviewUrl(webview);
-    if (previewOrigin(current) === previewOrigin(previewExpectedUrl) && current && current !== "about:blank") {
+    if (current && current !== "about:blank") {
       webview.dataset.previewReady = "1";
       previewLastSuccessfulUrl = normalizedPreviewUrl(current);
       $("previewStatus").classList.add("hidden");
-      $("status").textContent = "Navegador conectado (contenido aun cargando)";
+      $("status").textContent = "Navegador conectado";
       return;
     }
     webview.dataset.previewReady = "0";
@@ -4761,7 +4827,7 @@ async function settlePreviewDocument() {
   }
   if (documentState !== "ready") {
     const current = currentPreviewUrl(webview);
-    if (previewOrigin(current) === previewOrigin(previewExpectedUrl) && current && current !== "about:blank") {
+    if (current && current !== "about:blank") {
       webview.dataset.previewReady = "1";
       previewLastSuccessfulUrl = normalizedPreviewUrl(current);
       $("previewStatus").classList.add("hidden");
@@ -4969,7 +5035,11 @@ async function selectProject(id, options = {}) {
   updateCloseProjectButton();
   syncPreviewChromeForTheme();
   if ($("connectionsDialog")?.open) loadConnections();
-  resetPreview("Iniciando servidor del proyecto...");
+  // Preview solo en IDE: en Chat Home arrancar servidor frena UI y navegación.
+  const wantPreview = options.preview !== false && document.body.dataset.appMode !== "chat";
+  if (wantPreview) {
+    resetPreview("Iniciando servidor del proyecto...");
+  }
   $("projectPathLabel").textContent = selected.projectRoot;
   if (options.render !== false) {
     saveProjects();
@@ -4980,9 +5050,11 @@ async function selectProject(id, options = {}) {
       && (activePromptRequests.size > 0 || activeAgentThinkingRuns.size > 0 || document.querySelector(".thinking-msg"));
     if (!preserveLiveChat) renderFeed({ force: options.force });
     syncChatModelFromConfig();
+  } else {
+    try { saveProjects(); } catch { /* ignore */ }
   }
   const project = activeProject();
-  // Preview en background: el clic no debe esperar al servidor.
+  // Preview / archivos en background: el clic no debe esperar al servidor.
   void (async () => {
     if (project?.projectRoot && (project?.gafcoreProjectId || project?.provider === "custom:gafcore-gateway")) {
       delete project.gafcoreProjectId;
@@ -5000,6 +5072,11 @@ async function selectProject(id, options = {}) {
     if (selectionId !== projectSelectionId || activeProject()?.id !== project.id) return;
     state.projectRoot = project.projectRoot;
     $("projectPathLabel").textContent = project.projectRoot;
+    if (!wantPreview) {
+      // Chat Home: no listar archivos ni levantar preview hasta entrar al IDE.
+      try { window.EditCoreChatHome?.refresh?.(); } catch { /* ignore */ }
+      return;
+    }
     renderProjectFiles("").catch(() => undefined);
     try {
       const preview = await window.editcoreProject.startPreview(project.projectRoot);
@@ -9699,7 +9776,10 @@ function refreshAppStatusBar() {
   }
   if (msg) msg.textContent = String($("status")?.textContent || "Listo").trim() || "Listo";
   if (cache) cache.textContent = String($("savingsStatus")?.textContent || "Cache 0%").trim() || "Cache 0%";
-  if (themeEl) themeEl.textContent = document.documentElement.getAttribute("data-theme") || "blanco";
+  if (themeEl) {
+    const themeName = document.documentElement.getAttribute("data-theme") || "blanco";
+    themeEl.textContent = `Tema ${themeName}`;
+  }
   const modelLabel = String($("modelPickerLabel")?.textContent || "").trim();
   if (model) model.textContent = modelLabel || "Auto";
 }
@@ -9708,10 +9788,18 @@ async function initAppStatusBar() {
   const verEl = $("statusBarVersion");
   let ver = "";
   try { ver = String(await window.editcoreApp?.version?.() || "").trim(); } catch { /* ignore */ }
-  if (verEl) verEl.textContent = ver ? `EditCore ${ver}` : "EditCore";
+  if (verEl) verEl.textContent = ver ? (ver.startsWith("v") ? `EditCore ${ver}` : `EditCore v${ver}`) : "EditCore v3.0.5";
   refreshAppStatusBar();
   try {
-    const obs = new MutationObserver(() => refreshAppStatusBar());
+    let refreshTimer = null;
+    const debouncedRefresh = () => {
+      if (refreshTimer) return;
+      refreshTimer = requestAnimationFrame(() => {
+        refreshTimer = null;
+        refreshAppStatusBar();
+      });
+    };
+    const obs = new MutationObserver(debouncedRefresh);
     if ($("status")) obs.observe($("status"), { childList: true, characterData: true, subtree: true });
     if ($("savingsStatus")) obs.observe($("savingsStatus"), { childList: true, characterData: true, subtree: true });
     if ($("modelPickerLabel")) obs.observe($("modelPickerLabel"), { childList: true, characterData: true, subtree: true });
@@ -9723,6 +9811,15 @@ async function initAppStatusBar() {
     }
     try { $("toggleProjectsBtn")?.click(); } catch { /* ignore */ }
   });
+  $("statusBarTheme")?.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    cycleEditCoreTheme();
+  });
+  if ($("statusBarTheme")) {
+    $("statusBarTheme").style.cursor = "pointer";
+    $("statusBarTheme").title = "Clic para cambiar tema";
+  }
 }
 
 async function syncAppWindowChrome(theme = "blanco") {
@@ -12692,14 +12789,29 @@ async function boot() {
     document.body.classList.remove("ide-code-mode");
     document.body.classList.add("ide-web-mode");
   } catch { /* ignore */ }
-  {
+
+  // Arranque Chat-first: fijar modo ANTES de cualquier trabajo IDE.
+  try {
+    if (!localStorage.getItem("editcore-app-mode")) localStorage.setItem("editcore-app-mode", "chat");
+    document.body.dataset.appMode = localStorage.getItem("editcore-app-mode") === "ide" ? "ide" : "chat";
+  } catch {
+    document.body.dataset.appMode = "chat";
+  }
+  const chatFirst = document.body.dataset.appMode === "chat";
+
+  // Preview / paneles / menús de archivos: en Chat no bloquean la 1ª pintura.
+  if (!chatFirst) {
     const savedMode = localStorage.getItem(PREVIEW_MODE_STORAGE_KEY);
     const bootMode = savedMode === "code" || savedMode === "mobile" ? savedMode : "web";
     setPreviewMode(bootMode);
+    bindFeedScrollGuard();
+    initFileListContextMenu();
+    loadPanelSizes();
+  } else {
+    // Defaults mínimos; el resto al entrar al IDE o en idle.
+    try { document.querySelector(".viewer")?.setAttribute("data-preview-mode", "web"); } catch { /* ignore */ }
   }
-  bindFeedScrollGuard();
-  initFileListContextMenu();
-  loadPanelSizes();
+
   loadConfig();
   loadMetrics();
   try {
@@ -12727,7 +12839,7 @@ async function boot() {
 
   localStorage.removeItem("editcore-projects-collapsed");
   document.body.classList.remove("projects-collapsed");
-  $("projectPathLabel").textContent = "Sin proyecto";
+  if ($("projectPathLabel")) $("projectPathLabel").textContent = "Sin proyecto";
   updateCloseProjectButton();
 
   const autoPick = _appParams.get("autoPick") === "1";
@@ -12737,32 +12849,46 @@ async function boot() {
     : null;
 
   if (autoPick) {
-    showWelcomeScreen();
-    renderFeed();
+    if (!chatFirst) showWelcomeScreen();
+    else hideWelcomeScreen();
   } else if (explicitOpenRoot) {
     const matched = state.projects.find((p) => normalizeProjectRoot(p.projectRoot) === normalizeProjectRoot(explicitOpenRoot));
     if (matched) {
       state.activeProjectId = matched.id;
       state.projectRoot = matched.projectRoot;
       hideWelcomeScreen();
-      $("projectPathLabel").textContent = matched.projectRoot;
-      renderFeed();
-    } else {
+      if ($("projectPathLabel")) $("projectPathLabel").textContent = matched.projectRoot;
+    } else if (!chatFirst) {
       showWelcomeScreen();
-      renderFeed();
+    } else {
+      hideWelcomeScreen();
     }
   } else if (localActive) {
     state.activeProjectId = localActive.id;
     state.projectRoot = localActive.projectRoot;
     hideWelcomeScreen();
-    $("projectPathLabel").textContent = localActive.projectRoot;
-    renderFeed();
+    if ($("projectPathLabel")) $("projectPathLabel").textContent = localActive.projectRoot;
   } else {
-    showWelcomeScreen();
-    renderFeed();
+    hideWelcomeScreen();
+    if (!chatFirst) showWelcomeScreen();
   }
-  renderProjects();
-  renderAttachments();
+
+  // Chat-first: no bloquear 1ª pintura con historial/DOM pesado; pintar en idle inmediato.
+  if (chatFirst) {
+    try { window.EditCoreChatHome?.refresh?.(); } catch { /* ignore */ }
+    const paintSoon = typeof requestIdleCallback === "function"
+      ? (fn) => requestIdleCallback(fn, { timeout: 600 })
+      : (fn) => setTimeout(fn, 50);
+    paintSoon(() => {
+      try { renderFeed({ force: true }); } catch { /* ignore */ }
+      try { window.EditCoreChatHome?.refresh?.(); } catch { /* ignore */ }
+    });
+  } else {
+    renderFeed();
+    renderProjects();
+    renderAttachments();
+  }
+
   const bootPermission = ["readonly", "step", "full"].includes(state.permissionMode) ? state.permissionMode : "step";
   applyPermissionMode(bootPermission);
   document.body.dataset.editcoreReady = "1";
@@ -12784,37 +12910,74 @@ async function boot() {
 
   // SLOW PATH: hidratar en background (no bloquea clics).
   const idle = typeof requestIdleCallback === "function"
-    ? (fn) => requestIdleCallback(() => { void fn(); }, { timeout: 1200 })
-    : (fn) => setTimeout(() => { void fn(); }, 0);
-  idle(() => bootBackground({
+    ? (fn, ms) => requestIdleCallback(() => { void fn(); }, { timeout: ms })
+    : (fn, ms) => setTimeout(() => { void fn(); }, Math.min(ms, 80));
+  // Chat: diferir más. IDE: hidratar antes.
+  const deferMs = chatFirst ? 4500 : 900;
+  const startBg = () => idle(() => bootBackground({
     autoPick,
     explicitOpenRoot,
     storedProjects,
     storedActiveProjectId,
     bootPermission,
-  }));
+    chatFirst,
+  }), deferMs);
+  if (chatFirst) setTimeout(startBg, 700);
+  else startBg();
 
-  // Inicializar Inline Edit (Cmd+K / Ctrl+K)
-  try {
-    if (window.EditCoreEditor?.ensureEditor) {
-      const origEnsure = window.EditCoreEditor.ensureEditor.bind(window.EditCoreEditor);
-      window.EditCoreEditor.ensureEditor = async (...args) => {
-        const ed = await origEnsure(...args);
-        window.__monacoEditor = ed;
-        window.EditCoreEditor._editor = ed;
-        if (!window.EditCoreEditor.getMonacoEditor) {
-          window.EditCoreEditor.getMonacoEditor = () => window.__monacoEditor || window.EditCoreEditor._editor || null;
-        }
-        try {
-          window.EditCoreInlineEdit?.bindMonacoShortcut?.(ed, window.monaco);
-        } catch { /* ignore */ }
-        return ed;
-      };
-    }
-    if (typeof window.EditCoreInlineEdit?.open === "function") {
-      // ya cargado vía <script> en index.html
-    }
-  } catch { /* ignore */ }
+  // Inline Edit / Monaco: solo preparar cuando el usuario entra al IDE.
+  const bootIdeChrome = () => {
+    if (window.__editcoreIdeChromeBooted) return;
+    window.__editcoreIdeChromeBooted = true;
+    try {
+      const savedMode = localStorage.getItem(PREVIEW_MODE_STORAGE_KEY);
+      const bootMode = savedMode === "code" || savedMode === "mobile" ? savedMode : "web";
+      setPreviewMode(bootMode);
+    } catch { /* ignore */ }
+    try { bindFeedScrollGuard(); } catch { /* ignore */ }
+    try { initFileListContextMenu(); } catch { /* ignore */ }
+    try { loadPanelSizes(); } catch { /* ignore */ }
+    try {
+      if (window.EditCoreEditor?.ensureEditor) {
+        const origEnsure = window.EditCoreEditor.ensureEditor.bind(window.EditCoreEditor);
+        window.EditCoreEditor.ensureEditor = async (...args) => {
+          const ed = await origEnsure(...args);
+          window.__monacoEditor = ed;
+          window.EditCoreEditor._editor = ed;
+          if (!window.EditCoreEditor.getMonacoEditor) {
+            window.EditCoreEditor.getMonacoEditor = () => window.__monacoEditor || window.EditCoreEditor._editor || null;
+          }
+          try { window.EditCoreInlineEdit?.bindMonacoShortcut?.(ed, window.monaco); } catch { /* ignore */ }
+          return ed;
+        };
+      }
+    } catch { /* ignore */ }
+  };
+
+  if (!chatFirst) {
+    bootIdeChrome();
+  } else {
+    window.addEventListener("editcore:app-mode", (ev) => {
+      if (ev?.detail?.mode !== "ide") return;
+      bootIdeChrome();
+      // Primera entrada al IDE: pintar feed/proyectos y arrancar preview si hay proyecto.
+      if (!window.__editcoreIdeFeedPainted) {
+        window.__editcoreIdeFeedPainted = true;
+        idle(() => {
+          try { renderFeed({ force: true }); } catch { /* ignore */ }
+          try { renderProjects(); } catch { /* ignore */ }
+          try { renderAttachments(); } catch { /* ignore */ }
+          const activeId = state.activeProjectId;
+          if (activeId) {
+            selectProject(activeId, { render: true, preview: true, force: false }).catch(() => undefined);
+          }
+        }, 400);
+      } else if (state.activeProjectId && !String($("previewUrl")?.value || "").trim()) {
+        // Reentrada al IDE sin URL de preview: arrancar servidor.
+        selectProject(state.activeProjectId, { render: false, preview: true }).catch(() => undefined);
+      }
+    });
+  }
 }
 
 async function bootBackground({
@@ -12823,6 +12986,7 @@ async function bootBackground({
   storedProjects = [],
   storedActiveProjectId = "",
   bootPermission = "step",
+  chatFirst = false,
 } = {}) {
   try {
     await initializeSecureState();
@@ -12860,7 +13024,10 @@ async function bootBackground({
       || state.projects.find((p) => p.id === sourceActiveId && p.projectRoot);
     if (activeNow) await hydrateProjectChatsFromDisk(activeNow);
 
-    refreshProjectCatalog().catch(() => undefined);
+    // En Chat Home no refrescar catálogo/preview de inmediato (roba frames a la UI).
+    if (!chatFirst) {
+      refreshProjectCatalog().catch(() => undefined);
+    }
 
     if (autoPick) {
       pickProject().catch(() => undefined);
@@ -12868,7 +13035,8 @@ async function bootBackground({
       const matched = state.projects.find((p) => normalizeProjectRoot(p.projectRoot) === normalizeProjectRoot(explicitOpenRoot));
       if (matched) selectProject(matched.id, { render: true }).catch(() => undefined);
     } else if (activeNow && (!state.activeProjectId || state.activeProjectId === activeNow.id)) {
-      selectProject(activeNow.id, { render: true }).catch(() => undefined);
+      // Chat: seleccionar sin re-render síncrono pesado (ya pintamos feed en idle).
+      selectProject(activeNow.id, { render: !chatFirst, preview: !chatFirst }).catch(() => undefined);
     }
 
     // Tareas durables: no bloquean UI.
@@ -12914,10 +13082,22 @@ async function bootBackground({
     }
 
     ensureDefaultModelSelectionMode().catch(() => undefined);
-    refreshModelCapabilities(false).catch(() => undefined);
-    syncChatModelFromConfig();
-    renderConnectionStatus(false).catch(() => undefined);
-    if (!isWelcomeScreenVisible()) renderProjectFiles().catch(() => undefined);
+    // Capacidades de modelos / conexiones: en Chat diferir hasta idle largo o IDE.
+    if (chatFirst) {
+      const later = typeof requestIdleCallback === "function"
+        ? (fn) => requestIdleCallback(() => { void fn(); }, { timeout: 12000 })
+        : (fn) => setTimeout(() => { void fn(); }, 5000);
+      later(() => {
+        refreshModelCapabilities(false).catch(() => undefined);
+        syncChatModelFromConfig();
+        renderConnectionStatus(false).catch(() => undefined);
+      });
+    } else {
+      refreshModelCapabilities(false).catch(() => undefined);
+      syncChatModelFromConfig();
+      renderConnectionStatus(false).catch(() => undefined);
+      if (!isWelcomeScreenVisible()) renderProjectFiles().catch(() => undefined);
+    }
     window.editcoreAgent.setPermission(bootPermission).then((mode) => {
       applyPermissionMode(mode);
     }).catch(() => undefined);
@@ -13110,90 +13290,270 @@ function wireComposerControls() {
 
   let _editcoreSpeechRecognizer = null;
   let _isVoiceRecording = false;
+  let _dictationWindowsUnsub = null;
+  let _dictationMode = ""; // "webkit" | "windows" | "media"
+  let _dictationMediaRecorder = null;
+  let _dictationMediaStream = null;
+  let _dictationMediaChunks = [];
 
-  function _toggleLiveVoiceDictation() {
+  function getActiveDictationTargets() {
+    const home = $("chatHomePrompt");
+    const ide = $("prompt");
+    const chatMode = document.body.dataset.appMode === "chat";
+    const primary = chatMode ? (home || ide) : (ide || home);
+    const secondary = chatMode ? (ide && ide !== primary ? ide : null) : (home && home !== primary ? home : null);
+    return { primary, secondary, home, ide, chatMode };
+  }
+
+  function writeDictationToPrompts(text) {
+    const value = String(text || "");
+    const { primary, secondary } = getActiveDictationTargets();
+    const apply = (el) => {
+      if (!el) return;
+      el.value = value;
+      try { el.focus({ preventScroll: true }); } catch { try { el.focus(); } catch { /* ignore */ } }
+      try {
+        const len = el.value.length;
+        el.setSelectionRange(len, len);
+      } catch { /* ignore */ }
+      try { el.dispatchEvent(new Event("input", { bubbles: true })); } catch { /* ignore */ }
+      try { el.dispatchEvent(new Event("change", { bubbles: true })); } catch { /* ignore */ }
+    };
+    apply(primary);
+    apply(secondary);
+    try { updateSendButtonState?.(); } catch { /* ignore */ }
+  }
+
+  function setDictationUiActive(active) {
+    $("voiceBtn")?.classList.toggle("active", Boolean(active));
+    $("voiceBtn")?.setAttribute("aria-pressed", active ? "true" : "false");
+    $("chatHomeMicBtn")?.classList.toggle("is-listening", Boolean(active));
+    $("chatHomeMicBtn")?.setAttribute("aria-pressed", active ? "true" : "false");
+  }
+
+  async function stopWindowsDictationBridge() {
+    try { _dictationWindowsUnsub?.(); } catch { /* ignore */ }
+    _dictationWindowsUnsub = null;
+    try { await window.editcoreApp?.windowsSttStop?.(); } catch { /* ignore */ }
+  }
+
+  async function stopLiveVoiceDictation({ silent = false } = {}) {
+    if (_dictationMode === "webkit" && _editcoreSpeechRecognizer) {
+      try { _editcoreSpeechRecognizer.stop(); } catch { /* ignore */ }
+      _editcoreSpeechRecognizer = null;
+    }
+    if (_dictationMode === "media" && _dictationMediaRecorder) {
+      try {
+        if (_dictationMediaRecorder.state !== "inactive") _dictationMediaRecorder.stop();
+      } catch { /* ignore */ }
+      _dictationMediaRecorder = null;
+      try { _dictationMediaStream?.getTracks?.().forEach((t) => t.stop()); } catch { /* ignore */ }
+      _dictationMediaStream = null;
+    }
+    if (_dictationMode === "windows" || _dictationWindowsUnsub) {
+      await stopWindowsDictationBridge();
+    }
+    _dictationMode = "";
+    _isVoiceRecording = false;
+    setDictationUiActive(false);
+    if (!silent) toast("Dictado finalizado");
+  }
+
+  async function startWindowsDictationFallback(initialPrompt = "") {
+    if (typeof window.editcoreApp?.windowsSttStart !== "function") {
+      return { ok: false, error: "Windows STT no disponible" };
+    }
+    let base = String(initialPrompt || "");
+    if (base && !base.endsWith(" ")) base += " ";
+    let committed = "";
+    try { _dictationWindowsUnsub?.(); } catch { /* ignore */ }
+    _dictationWindowsUnsub = window.editcoreApp.onWindowsSttText?.((text) => {
+      const chunk = String(text || "").trim();
+      if (!chunk) return;
+      committed = committed ? `${committed} ${chunk}` : chunk;
+      writeDictationToPrompts(`${base}${committed}`.trimStart());
+    }) || null;
+    const result = await window.editcoreApp.windowsSttStart();
+    if (!result?.ok) {
+      await stopWindowsDictationBridge();
+      return result || { ok: false, error: "Windows STT no inició" };
+    }
+    _dictationMode = "windows";
+    _isVoiceRecording = true;
+    setDictationUiActive(true);
+    try { getActiveDictationTargets().primary?.focus?.(); } catch { /* ignore */ }
+    toast("Escuchando… habla ahora (Windows)");
+    return { ok: true };
+  }
+
+  async function startMediaRecorderDictation(initialPrompt = "") {
+    if (!navigator?.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
+      return { ok: false, error: "MediaRecorder no disponible" };
+    }
+    if (typeof window.editcoreApp?.transcribeAudio !== "function") {
+      return { ok: false, error: "Bridge de transcripción ausente" };
+    }
+    let stream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch (err) {
+      return { ok: false, error: err?.message || "Sin permiso de micrófono" };
+    }
+    _dictationMediaStream = stream;
+    _dictationMediaChunks = [];
+    const mime = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
+      ? "audio/webm;codecs=opus"
+      : (MediaRecorder.isTypeSupported("audio/webm") ? "audio/webm" : "");
+    const recorder = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream);
+    _dictationMediaRecorder = recorder;
+    recorder.ondataavailable = (ev) => {
+      if (ev.data && ev.data.size > 0) _dictationMediaChunks.push(ev.data);
+    };
+    recorder.onstop = () => {
+      void (async () => {
+        try {
+          const blob = new Blob(_dictationMediaChunks, { type: recorder.mimeType || "audio/webm" });
+          _dictationMediaChunks = [];
+          if (!blob.size) {
+            toast("No se capturó audio. Intenta de nuevo.");
+            return;
+          }
+          toast("Transcribiendo…");
+          const buffer = await blob.arrayBuffer();
+          const result = await window.editcoreApp.transcribeAudio(buffer, blob.type || "audio/webm");
+          const text = String(result?.text || result?.transcript || "").trim();
+          if (!text) {
+            toast(result?.error || "No se pudo transcribir el audio.");
+            return;
+          }
+          const base = String(initialPrompt || "");
+          const next = base && !base.endsWith(" ") ? `${base} ${text}` : `${base}${text}`;
+          writeDictationToPrompts(next.trimStart());
+          toast("Dictado listo");
+        } catch (err) {
+          toast(err?.message || "Error al transcribir");
+        } finally {
+          try { stream.getTracks().forEach((t) => t.stop()); } catch { /* ignore */ }
+          if (_dictationMediaStream === stream) _dictationMediaStream = null;
+          _dictationMediaRecorder = null;
+          if (_dictationMode === "media") {
+            _dictationMode = "";
+            _isVoiceRecording = false;
+            setDictationUiActive(false);
+          }
+        }
+      })();
+    };
+    recorder.start(250);
+    _dictationMode = "media";
+    _isVoiceRecording = true;
+    setDictationUiActive(true);
+    toast("Grabando… pulsa el mic otra vez para transcribir");
+    return { ok: true };
+  }
+
+  async function _toggleLiveVoiceDictation() {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    const btn = $("voiceBtn");
-    const promptInput = $("prompt");
+    const { primary } = getActiveDictationTargets();
 
-    if (!SpeechRecognition) {
-      toast("Reconocimiento de voz no disponible en este entorno");
+    if (!primary) {
+      toast("No hay campo de chat para dictar.");
       return;
     }
 
     if (_isVoiceRecording) {
-      if (_editcoreSpeechRecognizer) {
-        try { _editcoreSpeechRecognizer.stop(); } catch (_) {}
+      // Media: stop dispara transcripción; Windows/Webkit: cortar escucha.
+      if (_dictationMode === "media" && _dictationMediaRecorder) {
+        try { _dictationMediaRecorder.stop(); } catch { /* ignore */ }
+        return;
       }
-      _isVoiceRecording = false;
-      btn?.classList.remove("active");
-      toast("Dictado finalizado");
+      await stopLiveVoiceDictation();
       return;
     }
 
-    try {
-      _editcoreSpeechRecognizer = new SpeechRecognition();
-      _editcoreSpeechRecognizer.lang = "es-MX";
-      _editcoreSpeechRecognizer.continuous = true;
-      _editcoreSpeechRecognizer.interimResults = true;
+    const initialPrompt = String(primary.value || "");
+    try { primary.focus({ preventScroll: true }); } catch { try { primary.focus(); } catch { /* ignore */ } }
 
-      let initialPrompt = promptInput?.value || "";
-      if (initialPrompt && !initialPrompt.endsWith(" ")) initialPrompt += " ";
-
-      _editcoreSpeechRecognizer.onstart = () => {
-        _isVoiceRecording = true;
-        btn?.classList.add("active");
-        toast("🎙️ Escuchando... Di tu instrucción");
-      };
-
-      _editcoreSpeechRecognizer.onresult = (event) => {
-        let finalStr = "";
-        let interimStr = "";
-
-        for (let i = 0; i < event.results.length; i++) {
-          const item = event.results[i];
-          if (item.isFinal) {
-            finalStr += item[0].transcript + " ";
-          } else {
-            interimStr += item[0].transcript;
-          }
-        }
-
-        if (promptInput) {
-          promptInput.value = (initialPrompt + finalStr + interimStr).trimStart();
-          promptInput.dispatchEvent(new Event("input", { bubbles: true }));
-        }
-      };
-
-      _editcoreSpeechRecognizer.onerror = (event) => {
-        console.warn("[VoiceMode] Event error:", event?.error);
-        _isVoiceRecording = false;
-        btn?.classList.remove("active");
-        if (event?.error === "network") {
-          toast("Dictado rápido: Presiona Win + H en Windows para dictar con tu micrófono directamente.");
-        } else if (event?.error === "not-allowed") {
-          toast("Permiso de micrófono no concedido. Habilita el micrófono en la configuración de Windows.");
-        }
-      };
-
-      _editcoreSpeechRecognizer.onend = () => {
-        _isVoiceRecording = false;
-        btn?.classList.remove("active");
-      };
-
-      _editcoreSpeechRecognizer.start();
-    } catch (err) {
-      console.error("[VoiceMode] Error starting recognition:", err);
-      _isVoiceRecording = false;
-      btn?.classList.remove("active");
+    // En Electron, Web Speech suele “activar” y no devolver texto (error network).
+    // Preferir Windows STT nativo; luego MediaRecorder+Whisper; Web Speech al final.
+    if (typeof window.editcoreApp?.windowsSttStart === "function") {
+      const win = await startWindowsDictationFallback(initialPrompt);
+      if (win?.ok) return;
+      console.warn("[Dictation] Windows STT falló:", win?.error);
     }
+
+    const media = await startMediaRecorderDictation(initialPrompt);
+    if (media?.ok) return;
+
+    if (SpeechRecognition) {
+      try {
+        _editcoreSpeechRecognizer = new SpeechRecognition();
+        _editcoreSpeechRecognizer.lang = "es-MX";
+        _editcoreSpeechRecognizer.continuous = true;
+        _editcoreSpeechRecognizer.interimResults = true;
+        const initialWithSpace = initialPrompt && !initialPrompt.endsWith(" ")
+          ? `${initialPrompt} `
+          : initialPrompt;
+
+        _editcoreSpeechRecognizer.onstart = () => {
+          _dictationMode = "webkit";
+          _isVoiceRecording = true;
+          setDictationUiActive(true);
+          toast("Escuchando… habla ahora");
+        };
+
+        _editcoreSpeechRecognizer.onresult = (event) => {
+          let finalStr = "";
+          let interimStr = "";
+          for (let i = 0; i < event.results.length; i++) {
+            const item = event.results[i];
+            if (item.isFinal) finalStr += `${item[0].transcript} `;
+            else interimStr += item[0].transcript;
+          }
+          writeDictationToPrompts((initialWithSpace + finalStr + interimStr).trimStart());
+        };
+
+        _editcoreSpeechRecognizer.onerror = (event) => {
+          const err = String(event?.error || "");
+          console.warn("[Dictation] webkit error:", err);
+          _isVoiceRecording = false;
+          setDictationUiActive(false);
+          _dictationMode = "";
+          if (err === "not-allowed") toast("Permiso de micrófono denegado.");
+          else if (err === "no-speech") toast("No se escuchó voz.");
+          else toast(err ? `Dictado: ${err}` : "Dictado falló");
+        };
+
+        _editcoreSpeechRecognizer.onend = () => {
+          if (_dictationMode === "webkit") {
+            _isVoiceRecording = false;
+            setDictationUiActive(false);
+            _dictationMode = "";
+          }
+        };
+
+        _editcoreSpeechRecognizer.start();
+        return;
+      } catch (err) {
+        console.warn("[Dictation] webkit start failed", err?.message || err);
+      }
+    }
+
+    toast(media?.error || "Dictado no disponible. Prueba Win + H o revisa el micrófono.");
   }
+
+  window.EditCoreDictation = {
+    toggle: () => { void _toggleLiveVoiceDictation(); },
+    isActive: () => _isVoiceRecording === true,
+    write: (text) => writeDictationToPrompts(text),
+  };
 
   $("voiceBtn")?.addEventListener("click", (event) => {
     event.preventDefault();
     event.stopPropagation();
-    _toggleLiveVoiceDictation();
+    void _toggleLiveVoiceDictation();
   });
+  // chatHomeMicBtn → chat-home.js → EditCoreDictation.toggle (sin doble toggle).
   $("stopBtn")?.addEventListener("click", (event) => {
     event.preventDefault();
     event.stopPropagation();
@@ -13714,7 +14074,7 @@ document.querySelector(".conn-connect-btn[data-service='selfsupabase']")
   ?.addEventListener("click", connectSelfSupabase);
 
 $("newProjectBtn").addEventListener("click", openNewProjectDialog);
-$("saveProjectBtn").addEventListener("click", saveCurrentProjectEntry);
+$("saveProjectBtn")?.addEventListener("click", saveCurrentProjectEntry);
 $("saveProjectForm").addEventListener("submit", confirmCurrentProjectSave);
 $("closeSaveProjectBtn").addEventListener("click", () => $("saveProjectDialog").close());
 $("cancelSaveProjectBtn").addEventListener("click", () => $("saveProjectDialog").close());
@@ -14809,6 +15169,102 @@ async function checkAppUpdates() {
 }
 $("inspectorPublishBtn")?.addEventListener("click", () => publishChanges("editcore"));
 $("inspectorSaveBtn")?.addEventListener("click", () => saveEditCoreChanges());
+
+// Bridge Chat Home ↔ IDE (sin duplicar Agent Core).
+window.createNewChatThread = createNewChatThread;
+window.switchChatThread = switchChatThread;
+window.openProjectFromDisk = () => pickProject();
+window.openConnections = openConnections;
+window.EditCoreModels = {
+  openPicker: (anchor) => setModelPickerOpen(true, anchor || null),
+  closePicker: () => setModelPickerOpen(false),
+  isOpen: () => !$("modelPickerMenu")?.classList.contains("hidden"),
+  openProviders: () => openProviders(),
+};
+window.EditCoreTheme = {
+  apply: (theme) => applyEditCoreTheme(theme),
+  cycle: () => cycleEditCoreTheme(),
+  get: () => document.documentElement.getAttribute("data-theme") || "blanco",
+  list: () => EDITCORE_THEMES.slice(),
+};
+window.EditCorePermissions = {
+  apply: (mode) => applyPermissionMode(mode),
+  get: () => state.permissionMode || "step",
+  openMenu: (anchor) => setPermissionMenuOpen(true, anchor || null),
+  closeMenu: () => setPermissionMenuOpen(false),
+};
+window.EditCoreSessionContext = {
+  snapshot: async () => {
+    const project = typeof activeProject === "function" ? activeProject() : null;
+    const filesChanged = (Array.isArray(state.touchedRelativePaths) ? state.touchedRelativePaths : [])
+      .filter(Boolean)
+      .slice()
+      .reverse()
+      .map((path) => ({ title: path, path, meta: "modificado" }));
+    const uploads = (Array.isArray(state.attachments) ? state.attachments : []).map((a) => ({
+      title: a.name || "adjunto",
+      meta: a.mimeType || (a.size ? `${Math.round(a.size / 1024)} KB` : ""),
+    }));
+    const agents = Array.isArray(project?.agents) ? project.agents : [];
+    const subagents = agents
+      .filter((a) => a && a.id !== project?.activeAgentId)
+      .map((a) => ({
+        title: a.name || "Subagente",
+        meta: a.status || "idle",
+      }));
+    if (!subagents.length && agents.length > 1) {
+      // fallback: list all but primary label
+      for (const a of agents.slice(1)) {
+        subagents.push({ title: a.name || "Subagente", meta: a.status || "idle" });
+      }
+    }
+    const artifacts = [];
+    const planTodos = document.querySelectorAll("#agentPlanTodos li");
+    if (planTodos?.length) {
+      artifacts.push({ title: "Plan del agente", meta: `${planTodos.length} paso(s)` });
+    }
+    const checkpoints = document.querySelectorAll("#agentPlanCheckpoints .agent-plan-checkpoint, #agentPlanCheckpoints [data-checkpoint]");
+    if (checkpoints?.length) {
+      artifacts.push({ title: "Checkpoints", meta: `${checkpoints.length}` });
+    }
+    if (project?.agentWorkflow?.plan) {
+      artifacts.push({ title: "Plan persistente", meta: String(project.agentWorkflow.phase || "plan") });
+    }
+    if (project?.durableWorkflow?.taskId) {
+      artifacts.push({
+        title: `Task ${String(project.durableWorkflow.taskId).slice(0, 10)}…`,
+        meta: project.durableWorkflow.state || "durable",
+      });
+    }
+    let tasks = [];
+    try {
+      const list = await window.editcoreTasks?.list?.();
+      tasks = (Array.isArray(list) ? list : [])
+        .filter((t) => !["DONE", "CANCELLED", "FAILED"].includes(String(t.status || "").toUpperCase()))
+        .slice(0, 20)
+        .map((t) => ({
+          title: t.goal || t.taskId || "Tarea",
+          meta: t.status || "",
+        }));
+    } catch { /* ignore */ }
+    let skills = [];
+    try {
+      const list = await window.editcoreSkills?.list?.(state.projectRoot || "");
+      skills = (Array.isArray(list) ? list : [])
+        .filter((s) => !s.disabled)
+        .slice(0, 30)
+        .map((s) => ({
+          title: s.name || "skill",
+          meta: s.category || s.description || "activa",
+        }));
+    } catch { /* ignore */ }
+    return { subagents, filesChanged, artifacts, uploads, tasks, skills };
+  },
+};
+window.EditCoreAppMode = {
+  setChat: () => window.EditCoreChatHome?.setMode?.("chat"),
+  setIde: () => window.EditCoreChatHome?.setMode?.("ide"),
+};
 
 boot().catch((error) => {
   $("status").textContent = error?.message || "No se pudo iniciar la aplicacion";

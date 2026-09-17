@@ -177,6 +177,13 @@ contextBridge.exposeInMainWorld("editcoreApp", {
   },
 });
 
+contextBridge.exposeInMainWorld("editcoreSkills", {
+  list: (projectRoot) => ipcRenderer.invoke("skills:list", projectRoot),
+  save: (payload) => ipcRenderer.invoke("skills:save", payload),
+  delete: (payload) => ipcRenderer.invoke("skills:delete", payload),
+  toggle: (payload) => ipcRenderer.invoke("skills:toggle", payload),
+});
+
 contextBridge.exposeInMainWorld("editcoreWindow", {
   open: () => ipcRenderer.invoke("window:new"),
   status: () => ipcRenderer.invoke("window:status"),
@@ -452,3 +459,4 @@ contextBridge.exposeInMainWorld("editcorePty", {
     return () => ipcRenderer.removeListener("pty:data", listener);
   },
 });
+

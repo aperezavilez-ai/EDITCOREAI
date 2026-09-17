@@ -9,11 +9,135 @@
     <link rel="shortcut icon" href="./assets/logo.ico" type="image/x-icon" />
     <link rel="apple-touch-icon" href="./assets/logo.png" />
     <link rel="stylesheet" href="./styles.css" />
+    <link rel="stylesheet" href="./chat-home.css" />
     <link rel="stylesheet" href="./logs-panel.css" />
     <link rel="stylesheet" href="./editor-inline-edit.css" />
   </head>
-  <body>
-    <!-- Pantalla de inicio (tipo Cursor): elegir proyecto antes del editor -->
+  <body data-app-mode="chat">
+    <!-- CHAT AGENT HOME (arranque). IDE existente se abre con el botón IDE. -->
+    <section id="chatHomeShell" class="chat-home-shell" aria-label="EditCoreAI Chat">
+      <header class="chat-home-top">
+        <div class="chat-home-brand">
+          <img src="./assets/editcore-logo.png" alt="" width="20" height="20" decoding="async" />
+          <span>EDITCORE AI</span>
+        </div>
+        <div class="chat-home-top-actions">
+          <button id="chatHomeFolderBtn" type="button" class="chat-home-folder-btn" title="Conectar carpeta local">Conectar carpeta</button>
+          <button id="chatHomeSettingsTopBtn" type="button" class="chat-home-settings-top" title="Settings">Settings</button>
+          <button id="chatHomeContextBtn" type="button" class="chat-home-context-btn" title="Contexto de sesión" aria-expanded="false" aria-controls="chatHomeContextPanel">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <rect x="7" y="4" width="11" height="14" rx="1.5" stroke="currentColor" stroke-width="1.7"/>
+              <rect x="4" y="7" width="11" height="14" rx="1.5" stroke="currentColor" stroke-width="1.7" fill="var(--ch-bg, #fff)"/>
+            </svg>
+          </button>
+          <button id="chatHomeIdeBtn" type="button" class="chat-home-ide-btn" title="Abrir el IDE existente de EditCore">IDE</button>
+        </div>
+      </header>
+      <div class="chat-home-body">
+        <aside class="chat-home-sidebar" aria-label="Consultas">
+          <div class="chat-home-sidebar-head">
+            <h2>Consultas</h2>
+            <button id="chatHomeNewBtn" type="button" class="chat-home-new-btn">+ New Chat</button>
+            <input id="chatHomeSearch" class="chat-home-search" type="search" placeholder="Buscar…" autocomplete="off" />
+          </div>
+          <nav class="chat-home-nav" aria-label="Navegación">
+            <button type="button" class="chat-home-nav-item" id="chatHomeNavChats">Chats</button>
+            <button type="button" class="chat-home-nav-item" id="chatHomeNavFolder" title="Conectar carpeta">Codebase</button>
+          </nav>
+          <div class="chat-home-section-label">Recientes</div>
+          <ul id="chatHomeThreadList" class="chat-home-thread-list" role="list"></ul>
+          <div class="chat-home-sidebar-foot">
+            <button type="button" class="chat-home-settings-btn" id="chatHomeSettingsBtn" title="Settings">⚙ Settings</button>
+          </div>
+        </aside>
+        <div class="chat-home-main">
+          <div id="chatHomeStage" class="chat-home-stage">
+            <div class="chat-home-empty" aria-hidden="false">
+              <img src="./assets/editcore-logo.png" alt="EditCoreAI" width="48" height="48" decoding="async" />
+              <h1>¿En qué puedo ayudarte?</h1>
+              <p>Escribe lo que necesitas. EditCore decide cómo resolverlo.</p>
+            </div>
+            <div id="chatHomeFeedHost" class="chat-home-feed-host"></div>
+          </div>
+          <div class="chat-home-composer-wrap">
+            <div id="chatHomeFolderChip" class="chat-home-folder-chip" aria-live="polite"></div>
+            <form id="chatHomeComposer" class="chat-home-composer" autocomplete="off">
+              <textarea id="chatHomePrompt" rows="2" placeholder="Ask EditCore to build, fix bugs, explore…" spellcheck="false"></textarea>
+              <div class="chat-home-composer-row">
+                <button type="button" id="chatHomePlusBtn" class="chat-home-icon-btn" title="Adjuntar / carpeta">+</button>
+                <button type="button" id="chatHomeModelPill" class="chat-home-model-pill" title="Elegir modelo">Auto · ME AI ▾</button>
+                <button type="button" id="chatHomeMicBtn" class="chat-home-mic-btn" title="Micrófono / dictado" aria-label="Micrófono">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 14a3 3 0 0 0 3-3V7a3 3 0 1 0-6 0v4a3 3 0 0 0 3 3Z" stroke="currentColor" stroke-width="1.7"/><path d="M19 11a7 7 0 0 1-14 0M12 18v3" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+                </button>
+                <button type="submit" id="chatHomeSendBtn" class="chat-home-send-btn" title="Enviar" aria-label="Enviar">↑</button>
+              </div>
+            </form>
+            <div class="chat-home-hints"></div>
+          </div>
+        </div>
+        <aside id="chatHomeContextPanel" class="chat-home-context" hidden aria-hidden="true" aria-label="Contexto de sesión">
+          <div class="chat-home-context-head">
+            <strong>Sesión</strong>
+            <button type="button" id="chatHomeContextClose" class="chat-home-context-close" title="Cerrar">✕</button>
+          </div>
+          <div class="chat-home-context-scroll">
+            <section class="chat-home-context-section" data-ctx="subagents">
+              <h4>Subagents <span id="chatHomeCtxSubagentsCount">0</span></h4>
+              <ul id="chatHomeCtxSubagents" class="chat-home-context-list"></ul>
+            </section>
+            <section class="chat-home-context-section" data-ctx="files">
+              <h4>Files Changed <span id="chatHomeCtxFilesCount">0</span></h4>
+              <ul id="chatHomeCtxFiles" class="chat-home-context-list"></ul>
+            </section>
+            <section class="chat-home-context-section" data-ctx="artifacts">
+              <h4>Artifacts <span id="chatHomeCtxArtifactsCount">0</span></h4>
+              <ul id="chatHomeCtxArtifacts" class="chat-home-context-list"></ul>
+            </section>
+            <section class="chat-home-context-section" data-ctx="uploads">
+              <h4>Uploads <span id="chatHomeCtxUploadsCount">0</span></h4>
+              <ul id="chatHomeCtxUploads" class="chat-home-context-list"></ul>
+            </section>
+            <section class="chat-home-context-section" data-ctx="tasks">
+              <h4>Background Tasks <span id="chatHomeCtxTasksCount">0</span></h4>
+              <ul id="chatHomeCtxTasks" class="chat-home-context-list"></ul>
+            </section>
+            <section class="chat-home-context-section" data-ctx="skills">
+              <h4>Skills Used <span id="chatHomeCtxSkillsCount">0</span></h4>
+              <ul id="chatHomeCtxSkills" class="chat-home-context-list"></ul>
+            </section>
+          </div>
+        </aside>
+      </div>
+    </section>
+
+    <div id="chatHomeSettingsSheet" aria-hidden="true">
+      <div class="chat-home-settings-card" role="dialog" aria-label="Settings">
+        <h3 id="chatHomeSettingsTitle">Settings</h3>
+        <div class="chat-home-settings-list" id="chatHomeSettingsMain">
+          <button type="button" data-ch-setting="models"><strong>Modelos</strong><span>Elegir modelo / Auto / proveedores</span></button>
+          <button type="button" data-ch-setting="skills"><strong>Habilidades (Skills)</strong><span>Añadir o gestionar habilidades del agente</span></button>
+          <button type="button" data-ch-setting="connections"><strong>Conexiones</strong><span>GitHub, Vercel, Supabase</span></button>
+          <button type="button" data-ch-setting="theme"><strong>Apariencia</strong><span>Cambiar tema</span></button>
+          <button type="button" data-ch-setting="permissions"><strong>Permisos del agente</strong><span>Solo lectura / paso a paso / acceso completo</span></button>
+          <button type="button" data-ch-setting="ide"><strong>Abrir IDE</strong><span>Entorno de desarrollo existente</span></button>
+        </div>
+        <div class="chat-home-settings-list is-hidden" id="chatHomeSettingsTheme" hidden>
+          <button type="button" data-ch-theme="blanco"><strong>Blanco</strong><span>Tema claro</span></button>
+          <button type="button" data-ch-theme="gris"><strong>Gris</strong><span>Carbón tipo editor</span></button>
+          <button type="button" data-ch-theme="negro"><strong>Negro</strong><span>Oscuro profundo</span></button>
+          <button type="button" data-ch-theme="azul"><strong>Azul</strong><span>Azul noche</span></button>
+          <button type="button" data-ch-settings-back>← Volver</button>
+        </div>
+        <div class="chat-home-settings-list is-hidden" id="chatHomeSettingsPerms" hidden>
+          <button type="button" data-ch-perm="readonly"><strong>Solo lectura</strong><span>El agente no escribe archivos</span></button>
+          <button type="button" data-ch-perm="step"><strong>Paso a paso</strong><span>Confirmar cada acción</span></button>
+          <button type="button" data-ch-perm="full"><strong>Acceso completo</strong><span>Escribe y ejecuta sin pausas</span></button>
+          <button type="button" data-ch-settings-back>← Volver</button>
+        </div>
+        <button type="button" class="chat-home-settings-close" id="chatHomeSettingsClose">Cerrar</button>
+      </div>
+    </div>
+
     <section id="welcomeScreen" class="welcome-screen" hidden aria-hidden="true">
       <div class="welcome-inner">
         <div class="welcome-brand">
@@ -62,7 +186,6 @@
           <button id="welcomeHomeBtn" type="button" title="Pantalla de inicio: elegir proyecto">Inicio</button>
           <button id="toggleProjectsBtn" type="button" title="Lista de proyectos abiertos">Proyectos</button>
           <button id="newProjectBtn" type="button" title="Crear un proyecto en blanco">Nuevo</button>
-          <button id="saveProjectBtn" type="button" title="Guardar proyecto activo (metadatos + commit local)">Guardar</button>
           <button id="newWindowBtn" type="button" title="Abrir otra ventana de EditCoreAI">Ventana +</button>
         </div>
         <span class="toolbar-divider" aria-hidden="true"></span>
@@ -93,6 +216,7 @@
           </div>
           <button id="connectProjectBtn" type="button" class="toolbar-connect-btn" title="Conectar: npm install + GitHub + Vercel + Supabase">Conectar</button>
           <button id="publishBtn" type="button" class="toolbar-publish-btn" title="Publicar proyecto: GitHub → Vercel → Supabase → Live">Publicar</button>
+          <button id="openChatHomeBtn" type="button" title="Volver al Chat Agent">Chat</button>
         </div>
       </nav>
     </header>
@@ -552,6 +676,59 @@
           </footer>
         </form>
       </dialog>
+
+      <!-- Skills dialog -->
+      <dialog id="skillsDialog" class="skills-dialog">
+        <div class="skills-dialog-container">
+          <header class="dlg-head">
+            <div>
+              <h2>Habilidades del Agente (Skills)</h2>
+              <p>Alimenta a EditCore con nuevas habilidades y reglas. Puedes agregarlas aquí o pedirle al agente en el chat: <code>Aprende esta habilidad: ...</code></p>
+            </div>
+            <button id="closeSkillsBtn" type="button" class="dlg-close" aria-label="Cerrar">✕</button>
+          </header>
+
+          <div class="skills-toolbar">
+            <input type="text" id="skillsSearchInput" class="skills-search" placeholder="Buscar habilidades instaladas..." />
+            <button type="button" id="skillsNewBtn" class="btn-primary">+ Nueva Habilidad</button>
+          </div>
+
+          <div id="skillsNewFormCard" class="skills-form-card" style="display: none;">
+            <h4 id="skillsFormTitle">Nueva Habilidad</h4>
+            <div class="skills-form-grid">
+              <label>
+                <span>Identificador (slug)</span>
+                <input type="text" id="skillInputName" placeholder="ej. experto-copywriting" />
+              </label>
+              <label>
+                <span>Categoría</span>
+                <input type="text" id="skillInputCategory" placeholder="ej. marketing, seo, coding" />
+              </label>
+            </div>
+            <label>
+              <span>Cuándo activar (descripción)</span>
+              <input type="text" id="skillInputDesc" placeholder="ej. Usar cuando el usuario pida redactar textos o landing pages." />
+            </label>
+            <label>
+              <span>Instrucciones / Reglas detalladas (Markdown)</span>
+              <textarea id="skillInputContent" rows="6" placeholder="Pega aquí el contenido, directrices, ejemplos o instrucciones que el agente debe seguir..."></textarea>
+            </label>
+            <div class="skills-form-actions">
+              <button type="button" id="skillsCancelFormBtn" class="btn-outline">Cancelar</button>
+              <button type="button" id="skillsSaveBtn" class="btn-primary">Guardar Habilidad</button>
+            </div>
+          </div>
+
+          <div class="skills-list-container">
+            <div id="skillsList" class="skills-cards-list"></div>
+          </div>
+
+          <footer class="dlg-footer skills-footer">
+            <span id="skillsCountLabel" class="skills-count">0 habilidades activas</span>
+            <button type="button" id="skillsCloseBottomBtn" class="btn-primary">Listo</button>
+          </footer>
+        </div>
+      </dialog>
     </div><!-- #modals -->
 
     <script src="./ide/live-hunks.js"></script>
@@ -573,6 +750,7 @@
     <script src="./runtime/agent-plan-view.js"></script>
     <script src="./auto-model-selection.js"></script>
     <script src="./renderer.js"></script>
+    <script src="./chat-home.js"></script>
     <script src="./runtime/voice-orb.js" defer></script>
     <script src="./runtime/voice-mode.js" defer></script>
     <script src="./logs-panel.js" defer></script>
@@ -591,7 +769,7 @@
         <span class="statusbar-sep" aria-hidden="true"></span>
         <span id="statusBarTheme" class="statusbar-item" title="Tema actual">blanco</span>
         <span class="statusbar-sep" aria-hidden="true"></span>
-        <span id="statusBarVersion" class="statusbar-item statusbar-version" title="Versión EditCore">EditCore</span>
+        <span id="statusBarVersion" class="statusbar-item statusbar-version" title="Versión EditCore">EditCore v3.0.4</span>
       </div>
     </footer>
   </body>

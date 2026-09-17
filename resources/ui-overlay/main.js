@@ -5938,7 +5938,46 @@ ipcMain.handle("app:open-external", async (_event, url = "") => {
   return { ok: true };
 });
 
-ipcMain.handle("app:version", () => String(RUNTIME_VERSION || "2.7.0"));
+ipcMain.handle("app:version", () => {
+  try {
+    const pkgVer = app.getVersion() || require("./package.json").version || "3.0.4";
+    return pkgVer.startsWith("v") ? pkgVer : `v${pkgVer}`;
+  } catch {
+    return "v3.0.4";
+  }
+});
+
+const skillsEngine = require("./runtime/skills-engine");
+
+ipcMain.handle("skills:list", (_event, projectRoot = "") => {
+  return skillsEngine.listAllSkills({
+    projectRoot: String(projectRoot || globalActiveWorkspacePath || "").trim(),
+    userDataPath: app.getPath("userData"),
+  });
+});
+
+ipcMain.handle("skills:save", (_event, input = {}) => {
+  return skillsEngine.saveSkill({
+    ...input,
+    projectRoot: String(input?.projectRoot || globalActiveWorkspacePath || "").trim(),
+    userDataPath: app.getPath("userData"),
+  });
+});
+
+ipcMain.handle("skills:delete", (_event, input = {}) => {
+  return skillsEngine.deleteSkill({
+    ...input,
+    projectRoot: String(input?.projectRoot || globalActiveWorkspacePath || "").trim(),
+    userDataPath: app.getPath("userData"),
+  });
+});
+
+ipcMain.handle("skills:toggle", (_event, input = {}) => {
+  return skillsEngine.toggleSkill({
+    ...input,
+    userDataPath: app.getPath("userData"),
+  });
+});
 
 function appWindowTitle() {
   return "EditCore";
@@ -6246,6 +6285,40 @@ ipcMain.handle("agent:run", async (event, input = {}) => {
     };
   }
 
+  const learnSkill = skillsEngine.parseLearnPrompt(task);
+  if (learnSkill && learnSkill.isLearn) {
+    try {
+      const saved = skillsEngine.saveSkill({
+        name: learnSkill.name,
+        description: learnSkill.description,
+        category: learnSkill.category,
+        content: learnSkill.content,
+        scope: "global",
+        userDataPath: app.getPath("userData"),
+        projectRoot: resolveIncomingWorkspaceRoot(event, input, task) || "",
+      });
+      const confirmText = [
+        `## ✅ Habilidad aprendida e integrada con éxito`,
+        ``,
+        `- **Nombre:** \`${saved.name}\``,
+        `- **Categoría:** \`${learnSkill.category}\``,
+        `- **Descripción:** ${learnSkill.description}`,
+        `- **Ubicación:** \`${saved.filePath}\``,
+        ``,
+        `He registrado e indexado esta habilidad en el repositorio de habilidades. A partir de ahora, cuando me pidas tareas que requieran esta especialidad, activaré automáticamente estas directivas.`,
+      ].join("\n");
+      return {
+        text: confirmText,
+        steps: [{ name: "skill_learned", ok: true, input: { name: saved.name } }],
+        usage: { confirmed_input_tokens: 0, confirmed_output_tokens: 0, local_response: true },
+        report: { completed: true, toolCount: 1, changedFiles: [saved.filePath], kernel: true },
+        kernel: true,
+      };
+    } catch (err) {
+      /* fall through to normal execution if saving failed */
+    }
+  }
+
   if (!apiKey) throw new Error("Falta API key.");
   if (!model) throw new Error("Falta modelo.");
 
@@ -6294,8 +6367,25 @@ ipcMain.handle("agent:run", async (event, input = {}) => {
         appUserData: app.getPath("userData"),
         ...buildKernelProcessHooks(rootPath),
       });
+
+      // Match & attach active skills
+      let effectiveTask = task;
+      try {
+        const allSkills = skillsEngine.listAllSkills({
+          projectRoot: rootPath,
+          userDataPath: app.getPath("userData"),
+        });
+        const matchedSkills = skillsEngine.matchSkillsForPrompt(task, allSkills);
+        if (matchedSkills.length > 0) {
+          const skillsBlock = skillsEngine.assembleSkillsSystemPrompt(matchedSkills);
+          effectiveTask = `${skillsBlock}\n\n${task}`;
+        }
+      } catch (err) {
+        /* proceed with original task if skills match fails */
+      }
+
       const out = await handleChatKernel({
-        message: task,
+        message: effectiveTask,
         history: Array.isArray(input.history) ? input.history : (Array.isArray(input.messages) ? input.messages : []),
         threadId: input.chatId || input.threadId || input.conversationId || input.runId || "",
         chatId: input.chatId || input.threadId || "",

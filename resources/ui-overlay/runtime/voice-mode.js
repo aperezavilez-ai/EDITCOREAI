@@ -1,7 +1,7 @@
 "use strict";
 
 /**
- * EditCore AI - Modo de Voz Manos Libres con Orbe Interactivo (Estilo ChatGPT Voice).
+ * EDITCOREAI - Modo de Voz Manos Libres con Orbe Interactivo (Estilo ChatGPT Voice).
  * - Reconocimiento de voz continuo con doble motor (WebSpeech API + MediaRecorder AI STT Fallback).
  * - Cierre y envío automático al detectar palabras clave ("basta", "alto", "fin de consulta", "listo", "enviar", etc.) o al presionar 🎤/✕.
  * - Registro automático de la transcripción en el historial del chat como evidencia pública al finalizar.
@@ -91,16 +91,41 @@
   }
 
   function getDom() {
+    const chatMode = typeof document !== "undefined" && document.body?.dataset?.appMode === "chat";
+    const homePrompt = document.getElementById("chatHomePrompt");
+    const idePrompt = document.getElementById("prompt");
+    const homeForm = document.getElementById("chatHomeComposer");
+    const ideForm = document.getElementById("chatForm");
     return {
       overlay: document.getElementById("voiceOverlay"),
       canvas: document.getElementById("voiceOrbCanvas"),
       statusLabel: document.getElementById("voiceStatusLabel"),
       subtitle: document.getElementById("voiceSubtitle"),
       hangupBtn: document.getElementById("voiceHangupBtn"),
-      voiceBtn: document.getElementById("voiceBtn"),
-      prompt: document.getElementById("prompt"),
-      form: document.getElementById("chatForm"),
+      voiceBtn: document.getElementById("chatHomeMicBtn") || document.getElementById("voiceBtn"),
+      prompt: chatMode ? (homePrompt || idePrompt) : (idePrompt || homePrompt),
+      form: chatMode ? (homeForm || ideForm) : (ideForm || homeForm),
+      homePrompt,
+      idePrompt,
     };
+  }
+
+  function writePromptValue(text) {
+    const dom = getDom();
+    const value = String(text || "");
+    if (dom.prompt) {
+      dom.prompt.value = value;
+      try { dom.prompt.dispatchEvent(new Event("input", { bubbles: true })); } catch (_) {}
+    }
+    // Mantener ambos composers alineados (Chat Home ↔ IDE).
+    if (dom.homePrompt && dom.homePrompt !== dom.prompt) {
+      dom.homePrompt.value = value;
+      try { dom.homePrompt.dispatchEvent(new Event("input", { bubbles: true })); } catch (_) {}
+    }
+    if (dom.idePrompt && dom.idePrompt !== dom.prompt) {
+      dom.idePrompt.value = value;
+      try { dom.idePrompt.dispatchEvent(new Event("input", { bubbles: true })); } catch (_) {}
+    }
   }
 
   function updateStatus(text) {
@@ -212,7 +237,7 @@
       window.EditCoreVoiceOrb.setState("speaking");
       window.EditCoreVoiceOrb.setVolume(0.7);
     }
-    updateStatus("EditCore hablando...");
+    updateStatus("EDITCOREAI hablando...");
 
     let doneCalled = false;
     const finish = () => {
@@ -249,16 +274,14 @@
 
     pushCallTurn("user", cleaned);
     isProcessing = true;
-    updateStatus("EditCore pensando...");
+    updateStatus("EDITCOREAI pensando...");
     if (window.EditCoreVoiceOrb) {
       window.EditCoreVoiceOrb.setState("thinking");
       window.EditCoreVoiceOrb.setVolume(0.5);
     }
 
     const dom = getDom();
-    if (dom.prompt) {
-      dom.prompt.value = cleaned;
-    }
+    writePromptValue(cleaned);
 
     // Misma ruta que escribir en el chat: steer si hay agente en curso; si no, send/Agente.
     liveTranscript = "";
@@ -359,7 +382,7 @@
 
   function getTranscribeFn() {
     if (typeof window === "undefined") return null;
-    // Bridge real de EditCore (preload). Compat: electronAPI legacy si existiera.
+    // Bridge real de EDITCOREAI (preload). Compat: electronAPI legacy si existiera.
     const fn = window.editcoreApp?.transcribeAudio
       || window.electronAPI?.transcribeAudio
       || null;
@@ -422,7 +445,7 @@
       "",
     ];
     for (const turn of callLog) {
-      const who = turn.role === "user" ? "Tú" : "EditCore";
+      const who = turn.role === "user" ? "Tú" : "EDITCOREAI";
       lines.push(`**${who}:** ${turn.text}`);
       lines.push("");
     }
@@ -545,7 +568,7 @@
     }
   }
 
-  async function start(greeting = "Hola. Soy EditCore AI. Te escucho: dime qué necesitas para tu proyecto.") {
+  async function start(greeting = "Hola. Soy EDITCOREAI. Te escucho: dime qué necesitas para tu proyecto.") {
     if (isActive) return;
     isActive = true;
     isSpeaking = false;
@@ -704,7 +727,7 @@
           pushCallTurn("user", cleaned);
           if (typeof optionsCallbacks.onSend === "function") {
             try {
-              if (dom.prompt) dom.prompt.value = cleaned;
+              writePromptValue(cleaned);
               optionsCallbacks.onSend(cleaned);
               dispatchedPending = true;
             } catch (_) {}
@@ -718,7 +741,7 @@
       } else if (!dispatchedPending && dispatchPending && pendingText) {
         const cleaned = cleanQueryText(pendingText);
         if (cleaned && typeof optionsCallbacks.onSend === "function") {
-          if (dom.prompt) dom.prompt.value = cleaned;
+          writePromptValue(cleaned);
           optionsCallbacks.onSend(cleaned);
         }
       }

@@ -91,16 +91,41 @@
   }
 
   function getDom() {
+    const chatMode = typeof document !== "undefined" && document.body?.dataset?.appMode === "chat";
+    const homePrompt = document.getElementById("chatHomePrompt");
+    const idePrompt = document.getElementById("prompt");
+    const homeForm = document.getElementById("chatHomeComposer");
+    const ideForm = document.getElementById("chatForm");
     return {
       overlay: document.getElementById("voiceOverlay"),
       canvas: document.getElementById("voiceOrbCanvas"),
       statusLabel: document.getElementById("voiceStatusLabel"),
       subtitle: document.getElementById("voiceSubtitle"),
       hangupBtn: document.getElementById("voiceHangupBtn"),
-      voiceBtn: document.getElementById("voiceBtn"),
-      prompt: document.getElementById("prompt"),
-      form: document.getElementById("chatForm"),
+      voiceBtn: document.getElementById("chatHomeMicBtn") || document.getElementById("voiceBtn"),
+      prompt: chatMode ? (homePrompt || idePrompt) : (idePrompt || homePrompt),
+      form: chatMode ? (homeForm || ideForm) : (ideForm || homeForm),
+      homePrompt,
+      idePrompt,
     };
+  }
+
+  function writePromptValue(text) {
+    const dom = getDom();
+    const value = String(text || "");
+    if (dom.prompt) {
+      dom.prompt.value = value;
+      try { dom.prompt.dispatchEvent(new Event("input", { bubbles: true })); } catch (_) {}
+    }
+    // Mantener ambos composers alineados (Chat Home ↔ IDE).
+    if (dom.homePrompt && dom.homePrompt !== dom.prompt) {
+      dom.homePrompt.value = value;
+      try { dom.homePrompt.dispatchEvent(new Event("input", { bubbles: true })); } catch (_) {}
+    }
+    if (dom.idePrompt && dom.idePrompt !== dom.prompt) {
+      dom.idePrompt.value = value;
+      try { dom.idePrompt.dispatchEvent(new Event("input", { bubbles: true })); } catch (_) {}
+    }
   }
 
   function updateStatus(text) {
@@ -256,9 +281,7 @@
     }
 
     const dom = getDom();
-    if (dom.prompt) {
-      dom.prompt.value = cleaned;
-    }
+    writePromptValue(cleaned);
 
     // Misma ruta que escribir en el chat: steer si hay agente en curso; si no, send/Agente.
     liveTranscript = "";
@@ -704,7 +727,7 @@
           pushCallTurn("user", cleaned);
           if (typeof optionsCallbacks.onSend === "function") {
             try {
-              if (dom.prompt) dom.prompt.value = cleaned;
+              writePromptValue(cleaned);
               optionsCallbacks.onSend(cleaned);
               dispatchedPending = true;
             } catch (_) {}
@@ -718,7 +741,7 @@
       } else if (!dispatchedPending && dispatchPending && pendingText) {
         const cleaned = cleanQueryText(pendingText);
         if (cleaned && typeof optionsCallbacks.onSend === "function") {
-          if (dom.prompt) dom.prompt.value = cleaned;
+          writePromptValue(cleaned);
           optionsCallbacks.onSend(cleaned);
         }
       }

@@ -1,6 +1,6 @@
 {
   "name": "editcoreai",
-  "version": "3.0.4",
+  "version": "3.0.5",
   "description": "EditCoreAI â€” IDE con agente (MEAI/APICREDITS)",
   "author": "EditCoreAI",
   "private": true,
@@ -10,7 +10,7 @@
     "url": "https://github.com/aperezavilez-ai/EDITCOREAI.git"
   },
   "scripts": {
-    "start": "node scripts/sync-app.js && node scripts/ensure-editcore-shortcuts.js && node scripts/start-editcore.js",
+    "start": "node scripts/start-editcore.js",
     "postinstall": "node scripts/brand-electron-runtime.js",
     "brand:electron": "node scripts/brand-electron-runtime.js --force",
     "sync": "node scripts/sync-app.js",
@@ -53,7 +53,7 @@
     "appId": "com.editcoreai.app",
     "productName": "EditCoreAI",
     "executableName": "EDITCOREAI",
-    "buildVersion": "3.0.4.0",
+    "buildVersion": "3.0.5.0",
     "artifactName": "EDITCOREAI-Setup.${ext}",
     "win": {
       "icon": "assets/logo.ico",

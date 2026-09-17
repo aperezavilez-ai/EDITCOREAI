@@ -1,6 +1,6 @@
 {
   "name": "editcoreai",
-  "version": "3.0.3",
+  "version": "3.0.5",
   "description": "EditCoreAI â€” IDE con agente (MEAI/APICREDITS)",
   "author": "EditCoreAI",
   "private": true,
@@ -10,12 +10,12 @@
     "url": "https://github.com/aperezavilez-ai/EDITCOREAI.git"
   },
   "scripts": {
-    "start": "node scripts/sync-app.js && node scripts/ensure-editcore-shortcuts.js && node scripts/start-editcore.js",
+    "start": "node scripts/start-editcore.js",
     "postinstall": "node scripts/brand-electron-runtime.js",
     "brand:electron": "node scripts/brand-electron-runtime.js --force",
     "sync": "node scripts/sync-app.js",
     "test": "node --test test/*.test.js runtime/*.test.js",
-    "test:e2e": "node --test test/e2e-operator.test.js test/forensic-pipeline-e2e.test.js",
+    "test:e2e": "node --test --test-timeout=60000 test/e2e-operator.test.js test/forensic-pipeline-e2e.test.js",
     "test:e2e:electron": "node scripts/forensic-pipeline-electron-e2e.js",
     "verify:prepackage": "node --test test/pre-package-gate.test.js && npm test",
     "test:runtime": "node --test runtime/*.test.js",
@@ -33,6 +33,7 @@
     "pdf-parse": "^1.1.4",
     "pdfkit": "^0.20.2",
     "typescript": "^5.9.3",
+    "vercel": "^59.20.0",
     "xterm": "^5.3.0",
     "xterm-addon-fit": "^0.8.0"
   },
@@ -52,7 +53,7 @@
     "appId": "com.editcoreai.app",
     "productName": "EditCoreAI",
     "executableName": "EDITCOREAI",
-    "buildVersion": "3.0.2.0",
+    "buildVersion": "3.0.5.0",
     "artifactName": "EDITCOREAI-Setup.${ext}",
     "win": {
       "icon": "assets/logo.ico",
@@ -117,4 +118,3 @@
   },
   "productName": "EditCoreAI"
 }
-

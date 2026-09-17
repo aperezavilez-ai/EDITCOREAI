@@ -7,8 +7,9 @@ IDE Electron de pair-programming / agentic coding: chat + agente con tools en di
 
 ## Versión de producto
 - Semver: ver `package.json` → `version` / `build.buildVersion`
-- Release actual objetivo: **3.0.4** / FileVersion **3.0.4.0**
+- Release actual objetivo: **3.0.5** / FileVersion **3.0.5.0**
 - Artefactos: `EDITCOREAI.exe` (raíz) + `release/EDITCOREAI-Setup.exe`
+- 3.0.5: Chat Home panel Sesión (2 hojas), Settings tema/permisos/modelos, mic IDE+Chat (Windows STT), boot chat-first sin preview, titlebar/bordes
 - 3.0.4: Publicar end-to-end (barra/%, Vercel orgId, mensaje final corto) + release Windows
 - 3.0.2: contraste chat por theme (azul/gris/negro) + recuadros Pensamiento difuminados (glass)
 
@@ -18,6 +19,7 @@ IDE Electron de pair-programming / agentic coding: chat + agente con tools en di
 | Main process | `main.js` | IPC, chat kernel bridge, providers, bóveda, preview |
 | Preload | `preload.js` | Bridge seguro al renderer |
 | UI | `renderer.js` + `styles.css` | Chat, pensamiento, Modelos, Conexiones |
+| Chat Home | `chat-home.js` / `chat-home.css` | Shell chat-first + panel Sesión |
 | Kernel | `editcore-chat-kernel/orchestrator.js` | Loop agente + tools + stream |
 | Runtime | `runtime/*` | AI core, roadmap, session-state, sanitize errores, vault |
 | Auto modelos | `auto-model-selection.js` | Auto · ME AI / APICredits |
@@ -34,6 +36,7 @@ IDE Electron de pair-programming / agentic coding: chat + agente con tools en di
 ```
 EDITCOREAI/
   main.js, preload.js, renderer.js, package.json
+  chat-home.js, chat-home.css
   editcore-chat-kernel/     # orchestrator, tools, subagents
   runtime/                  # ai-core, session-state, project-roadmap, chat-error-sanitize
   scripts/                  # build-windows, verify-release-*, sync-app
@@ -57,7 +60,7 @@ EDITCOREAI/
 ```bash
 npm run check          # syntax check
 npm test               # tests
-node scripts/verify-release-3.0.2.js
+node scripts/verify-release-3.0.5.js
 npm run dist:win       # Setup.exe + launcher raíz
 ```
 
@@ -67,8 +70,9 @@ npm run dist:win       # Setup.exe + launcher raíz
 - No espejar prosa del modelo dentro de «Pensamiento · en curso».
 - CONTINUA debe usar `recoveryPrompt` con tarea + último avance.
 - Timeouts temporales ≠ cuarentena Auto de 20 minutos.
+- En modo Chat no arrancar preview/servidor del proyecto.
 
 ## Cómo diagnosticar
 1. `npm run check` o `node --check` de archivos tocados
-2. `node scripts/verify-release-3.0.2.js`
+2. `node scripts/verify-release-3.0.5.js`
 3. Si falla el preview de un proyecto usuario: errores reales del terminal del proyecto (no inventar puertos)

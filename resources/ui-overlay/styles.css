@@ -6,8 +6,8 @@
   --ec-bg-soft: #ebebeb;
   --ec-text: #1f1f1f;
   --ec-text-muted: #616161;
-  --ec-border: #e5e5e5;
-  --ec-border-strong: #d4d4d4;
+  --ec-border: #ececec;
+  --ec-border-strong: #e0e0e0;
   --ec-accent: #0e639c;
   --ec-accent-soft: #e8f2fa;
   --ec-danger-bg: #fde7e9;
@@ -45,8 +45,8 @@ html[data-theme="gris"] {
   --ec-bg-soft: #252526;
   --ec-text: #cccccc;
   --ec-text-muted: #9d9d9d;
-  --ec-border: #2b2b2b;
-  --ec-border-strong: #3c3c3c;
+  --ec-border: #2a2a2a;
+  --ec-border-strong: #333333;
   --ec-accent: #3794ff;
   --ec-accent-soft: #1a2a3a;
   --ec-danger-bg: #5a1d1d;
@@ -76,8 +76,8 @@ html[data-theme="negro"] {
   --ec-bg-soft: #1a1a1a;
   --ec-text: #d4d4d4;
   --ec-text-muted: #8a8a8a;
-  --ec-border: #252525;
-  --ec-border-strong: #333333;
+  --ec-border: #1f1f1f;
+  --ec-border-strong: #2a2a2a;
   --ec-accent: #4fc1ff;
   --ec-accent-soft: #123040;
   --ec-danger-bg: #3a1717;
@@ -107,8 +107,8 @@ html[data-theme="azul"] {
   --ec-bg-soft: #1a2734;
   --ec-text: #d7e2ec;
   --ec-text-muted: #8fa3b5;
-  --ec-border: #243140;
-  --ec-border-strong: #314556;
+  --ec-border: #1e2a36;
+  --ec-border-strong: #2a3848;
   --ec-accent: #5b9fd4;
   --ec-accent-soft: #1a3348;
   --ec-danger-bg: #3a1a28;
@@ -146,6 +146,14 @@ body {
   color: var(--ec-text);
 }
 
+/* Línea fina continua bajo el titlebar (no la tapa el overlay de min/max/cerrar) */
+body > main,
+body > .viewer,
+body > .files,
+body > .splitter {
+  border-top: 1px solid var(--ec-border);
+}
+
 body.projects-collapsed {
   grid-template-columns: minmax(400px, var(--chat-width, 0.85fr)) 10px minmax(280px, var(--browser-width, 1.35fr)) 0 0;
 }
@@ -175,9 +183,11 @@ body.welcome-open {
   align-items: center;
   gap: 6px;
   padding: 0 138px 0 8px; /* espacio para botones nativos de ventana */
-  border-bottom: 1px solid var(--ec-border);
-  background: var(--ec-bg-elevated);
-  color: var(--ec-text);
+  /* Sin border-bottom: el overlay nativo tapa la esquina y “corta” la línea.
+     La regla continua vive en el borde superior del contenido (y=36). */
+  border-bottom: 0;
+  background: var(--ec-titlebar-bg);
+  color: var(--ec-titlebar-fg, var(--ec-text));
   overflow: visible;
   z-index: 100;
   -webkit-app-region: drag;
@@ -2505,7 +2515,7 @@ body:not(.ide-code-mode) .monaco-editor-host {
 .preview-runtime-errors-title { font-weight: 600; margin-bottom: 4px; }
 .preview-runtime-error-line + .preview-runtime-error-line { margin-top: 2px; }
 
-/* ── splitters ── */
+/* ── splitters (hit-area 10px, línea 1px tipo Cursor) ── */
 .splitter {
   position: relative;
   width: 10px;
@@ -2517,13 +2527,18 @@ body:not(.ide-code-mode) .monaco-editor-host {
 .splitter::before {
   content: "";
   position: absolute;
-  inset: 0 4px;
-  border-radius: 2px;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 1px;
+  margin-left: -0.5px;
+  border-radius: 0;
   background: var(--ec-border);
+  opacity: 1;
 }
 #splitChatBrowser { grid-column: 2; grid-row: 2; }
 #splitBrowserProjects { grid-column: 4; grid-row: 2; }
-.splitter:hover::before, .splitter.dragging::before { background: var(--ec-accent); }
+.splitter:hover::before, .splitter.dragging::before { background: var(--ec-accent); opacity: 1; }
 
 /* ── dialogs base ── */
 dialog:not([open]) { display: none !important; }

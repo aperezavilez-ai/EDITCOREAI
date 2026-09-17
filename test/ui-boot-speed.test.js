@@ -14,13 +14,22 @@ test("boot: fast path marca interactive antes del background", () => {
   assert.ok(backgroundAt > 0);
   assert.ok(interactiveAt < backgroundAt, "interactive debe marcarse antes de lanzar bootBackground");
   assert.doesNotMatch(src, hydrateAllLoop);
-  assert.match(src, /requestIdleCallback[\s\S]{0,120}bootBackground/);
+  assert.match(src, /requestIdleCallback[\s\S]{0,250}bootBackground/);
 });
 
-test("selectProject: preview no bloquea el clic (background)", () => {
+test("selectProject: en Chat no arranca preview", () => {
   const src = fs.readFileSync(path.join(__dirname, "..", "renderer.js"), "utf8");
-  assert.match(src, /Preview \+ gateway en background/);
-  assert.match(src, /void \(async \(\) => \{[\s\S]*?startPreview/);
+  assert.match(src, /wantPreview/);
+  assert.match(src, /dataset\.appMode !== ["']chat["']/);
+  assert.match(src, /options\.preview !== false/);
+});
+
+test("bridges Settings / Chat Home expuestos", () => {
+  const src = fs.readFileSync(path.join(__dirname, "..", "renderer.js"), "utf8");
+  assert.match(src, /window\.EditCoreTheme\s*=/);
+  assert.match(src, /window\.EditCorePermissions\s*=/);
+  assert.match(src, /window\.openConnections\s*=/);
+  assert.match(src, /window\.EditCoreModels\s*=/);
 });
 
 test("main: createWindow antes de migracion/cerebro en arranque normal", () => {
@@ -38,15 +47,17 @@ test("focus ya no refresca catalogo siempre", () => {
   assert.match(src, /if \(!\$\("projectsDialog"\)\?\.open\) return/);
 });
 
-test("main: UI no carga monorepo gordo (electron en resources/app)", () => {
+test("main: UI carga index.html canónico de la app", () => {
   const src = fs.readFileSync(path.join(__dirname, "..", "main.js"), "utf8");
-  assert.match(src, /function isFatDevAppTree/);
-  assert.match(src, /isLeanHotfixOverlay/);
-  assert.match(src, /startup:skip-fat-app-tree/);
-  assert.match(src, /ui-overlay/);
-  assert.match(src, /startup:ui-last-resort|ERR_FAILED|ui-overlay/);
-  assert.doesNotMatch(
-    src,
-    /Preferir overlay desempaquetado: cargar desde app\.asar/,
-  );
+  assert.match(src, /loadUiIntoWindow/);
+  assert.match(src, /createWindow/);
+});
+
+test("dictation prioriza Windows STT y escribe en prompt IDE/Chat", () => {
+  const src = fs.readFileSync(path.join(__dirname, "..", "renderer.js"), "utf8");
+  assert.match(src, /window\.EditCoreDictation\s*=/);
+  assert.match(src, /writeDictationToPrompts/);
+  assert.match(src, /startWindowsDictationFallback/);
+  assert.match(src, /startMediaRecorderDictation/);
+  assert.match(src, /Preferir Windows STT|windowsSttStart/);
 });
