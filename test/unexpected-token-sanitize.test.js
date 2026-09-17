@@ -88,6 +88,6 @@ test("adapter reintenta y fuerza failover en Unexpected token (hasta 2 reintento
 });
 
 test("main traduce Unexpected token a mensaje accionable", () => {
-  assert.match(mainSource, /JSON de herramienta invalido/);
   assert.match(mainSource, /unexpected token\|invalid json\|malformed/);
+  assert.match(mainSource, /EditCore reintento en silencio|Escribe CONTINUA/);
 });

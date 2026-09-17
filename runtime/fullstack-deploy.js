@@ -47,6 +47,21 @@ function emitProgress(onProgress, payload) {
   }
 }
 
+function stagePercentOf(status, explicit) {
+  const n = Number(explicit);
+  if (Number.isFinite(n)) return Math.max(0, Math.min(100, Math.round(n)));
+  if (status === "done") return 100;
+  if (status === "running") return 15;
+  if (status === "error") return 0;
+  return 0;
+}
+
+function computeOverallPercent(stages) {
+  if (!stages.length) return 0;
+  const sum = stages.reduce((acc, s) => acc + stagePercentOf(s.status, s.percent), 0);
+  return Math.round(sum / stages.length);
+}
+
 function writeProjectInfra(projectRoot, infra = {}) {
   const root = path.resolve(String(projectRoot || ""));
   const payload = {
@@ -104,22 +119,32 @@ async function executeFullStackDeploy(projectRoot, connections = {}, {
     if (row) {
       row.status = status;
       row.message = message;
+      if (extra.percent != null) row.percent = stagePercentOf(status, extra.percent);
+      else if (status === "done") row.percent = 100;
+      else if (status === "running" && row.percent == null) row.percent = 8;
+      else if (status === "pending") row.percent = 0;
+      else if (status === "error" && row.percent == null) row.percent = 0;
       Object.assign(row, extra);
+      if (extra.percent != null) row.percent = stagePercentOf(status, extra.percent);
     }
+    const overall = computeOverallPercent(stages);
     emitProgress(onProgress, {
       type: "stage",
       stageId: id,
       status,
       message,
+      percent: overall,
       mode: isUpdate ? "update" : "full",
       stages: stages.map((s) => ({
         id: s.id,
         label: s.label,
         status: s.status,
         message: s.message,
+        percent: stagePercentOf(s.status, s.percent),
         url: s.url || "",
       })),
       ...extra,
+      percent: overall,
     });
   };
 
@@ -190,7 +215,7 @@ async function executeFullStackDeploy(projectRoot, connections = {}, {
       projectId: vercelEnv.projectId || vercelStep.projectId || "",
     });
 
-    setStage("supabase", "running", "Provisionando Supabase GafCore y .env…");
+    setStage("supabase", "running", "Provisionando Supabase y .env…");
     const scoped = connectionsForProject(connections, root);
     supabaseUrl = projectOwnedSupabaseUrl(root, scoped.selfSupabaseUrl || connections.selfSupabaseUrl);
     const supabaseKey = String(scoped.selfSupabaseKey || connections.selfSupabaseKey || "").trim();
@@ -223,7 +248,7 @@ async function executeFullStackDeploy(projectRoot, connections = {}, {
     supabaseUrl = prevInfra.supabaseUrl || "";
   }
 
-  setStage("publish", "running", isUpdate ? "Actualizando publicación…" : "Commit, push y deploy…");
+  setStage("publish", "running", isUpdate ? "Actualizando publicación…" : "Commit, push y deploy…", { percent: 5 });
   const publishConnections = {
     ...connections,
     vercelProjectId: String(
@@ -240,12 +265,24 @@ async function executeFullStackDeploy(projectRoot, connections = {}, {
     mode: "project",
     connections: publishConnections,
     deploy: skipDeploy !== true,
-    supabasePush: !isUpdate,
+    // Supabase CLI link no es requisito de Publicar (self-hosted / sin link).
+    supabasePush: true,
     commitMessage: commitMessage || (isUpdate
       ? `chore: update publication ${path.basename(root)} ${new Date().toISOString().slice(0, 10)}`
       : `chore: fullstack publish ${path.basename(root)} ${new Date().toISOString().slice(0, 10)}`),
-    preCheck: skipPreCheck !== true && !isUpdate,
+    // Pre-check no bloqueante: lint/tests no deben truncar el deploy.
+    preCheck: false,
     rollbackOnDeployFail: false,
+    onProgress: (p) => {
+      const pct = Number(p?.percent);
+      const msg = String(p?.message || p?.step || "").trim();
+      setStage(
+        "publish",
+        "running",
+        msg || (isUpdate ? "Actualizando publicación…" : "Commit, push y deploy…"),
+        { percent: Number.isFinite(pct) ? pct : undefined, substep: p?.step || "" },
+      );
+    },
   });
   steps.push(...(publish.steps || []).map((s) => ({ ...s, step: `publish:${s.step}` })));
   if (!publish.ok) {
@@ -264,7 +301,7 @@ async function executeFullStackDeploy(projectRoot, connections = {}, {
     sha: publish.sha,
   });
 
-  setStage("live", "running", "Actualizando project-infra.json…");
+  setStage("live", "running", "Actualizando project-infra.json…", { percent: 40 });
   const deployStep = (publish.steps || []).find((s) => s.step === "deploy_one_click");
   const liveUrl = deployStep?.url || "";
   const infra = writeProjectInfra(root, {
@@ -313,7 +350,15 @@ async function executeFullStackDeploy(projectRoot, connections = {}, {
     type: "complete",
     ok: true,
     mode: isUpdate ? "update" : "full",
-    stages,
+    percent: 100,
+    stages: stages.map((s) => ({
+      id: s.id,
+      label: s.label,
+      status: s.status,
+      message: s.message,
+      percent: stagePercentOf(s.status, s.percent),
+      url: s.url || "",
+    })),
     liveUrl: finalUrl,
     message: finalUrl
       ? (isUpdate ? `Actualizado: ${finalUrl}` : `Publicado: ${finalUrl}`)

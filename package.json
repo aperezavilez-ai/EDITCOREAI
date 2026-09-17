@@ -1,6 +1,6 @@
 {
   "name": "editcoreai",
-  "version": "3.0.3",
+  "version": "3.0.4",
   "description": "EditCoreAI â€” IDE con agente (MEAI/APICREDITS)",
   "author": "EditCoreAI",
   "private": true,
@@ -33,6 +33,7 @@
     "pdf-parse": "^1.1.4",
     "pdfkit": "^0.20.2",
     "typescript": "^5.9.3",
+    "vercel": "^59.20.0",
     "xterm": "^5.3.0",
     "xterm-addon-fit": "^0.8.0"
   },
@@ -52,7 +53,7 @@
     "appId": "com.editcoreai.app",
     "productName": "EditCoreAI",
     "executableName": "EDITCOREAI",
-    "buildVersion": "3.0.2.0",
+    "buildVersion": "3.0.4.0",
     "artifactName": "EDITCOREAI-Setup.${ext}",
     "win": {
       "icon": "assets/logo.ico",
@@ -117,4 +118,3 @@
   },
   "productName": "EditCoreAI"
 }
-

@@ -36,10 +36,10 @@ test("anti-alucinacion: wrapper idempotente y prioriza el marcador", () => {
 test("elite apila anti-alucinacion encima (maxima prioridad)", () => {
   const stacked = withEliteCommunicationPolicy("Eres EDITCOREAI Agent. Completa la tarea.");
   assert.match(stacked, /POLITICA_ANTIALUCINACION_V1/);
-  assert.match(stacked, /POLITICA_COMUNICACION_ELITE_V2/);
+  assert.match(stacked, /POLITICA_COMUNICACION_ELITE_V/);
   assert.ok(
     stacked.indexOf("POLITICA_ANTIALUCINACION_V1")
-      < stacked.indexOf("POLITICA_COMUNICACION_ELITE_V2"),
+      < stacked.search(/POLITICA_COMUNICACION_ELITE_V/),
     "anti-alucinacion debe ir antes que elite",
   );
 });

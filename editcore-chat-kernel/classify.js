@@ -51,7 +51,9 @@ function classify(message, opts = {}) {
   }
 
 
-  if (TASK_CLONE_RE.test(text) || (HTTP_URL_RE.test(text) && /\b(?:clona|clonar|copia|replica)\b/i.test(text))) {
+  const isNegativeClone = /\b(?:no\s+(?:te\s+ped[ií]\s+)?clonar|sin\s+clonar|no\s+clonar|no\s+quiero\s+clonar)\b/i.test(text);
+
+  if (!isNegativeClone && (TASK_CLONE_RE.test(text) || (HTTP_URL_RE.test(text) && /\b(?:clona|clonar|copia|replica)\b/i.test(text)))) {
     return {
       kind: "EXECUTE",
       label: "Clonar página web",

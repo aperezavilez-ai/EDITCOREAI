@@ -15,15 +15,53 @@ const { capture_preview_screenshot, DEFAULT_PREVIEW_URL } = require("./vision-in
 
 const TOOL_RESULT_CAP = 2000;
 
+let pathPolicy = null;
+try {
+  pathPolicy = require("../project-path-policy");
+} catch {
+  try { pathPolicy = require("./project-path-policy"); } catch { pathPolicy = null; }
+}
+
+let runReadCache = null;
+try {
+  const { RunReadCache } = require("../runtime/agent-token-harness");
+  runReadCache = new RunReadCache();
+} catch {
+  runReadCache = null;
+}
+
 function safe(root, rel) {
+  if (!root) throw new Error("Proyecto no especificado");
+  const rawRel = String(rel || ".").trim();
+  if (pathPolicy?.resolveAccessibleTarget) {
+    try {
+      const resolved = pathPolicy.resolveAccessibleTarget(root, rawRel, {
+        allowSiblingRead: true,
+        fullAccess: true,
+      });
+      if (resolved?.absolute) return resolved.absolute;
+    } catch { /* fallback */ }
+  }
   const base = path.resolve(root);
-  const target = path.resolve(base, rel || ".");
+  const target = path.resolve(base, rawRel || ".");
   const normBase = base.toLowerCase();
   const normTarget = target.toLowerCase();
-  if (normTarget !== normBase && !normTarget.startsWith(normBase + path.sep) && !normTarget.startsWith(normBase + "/")) {
-    throw new Error("Ruta fuera del proyecto");
+  if (normTarget === normBase || normTarget.startsWith(normBase + path.sep) || normTarget.startsWith(normBase + "/")) {
+    return target;
   }
-  return target;
+  if (pathPolicy?.workspaceParentRoot) {
+    const parent = pathPolicy.workspaceParentRoot(base);
+    if (parent) {
+      const normParent = path.resolve(parent).toLowerCase();
+      if (normTarget.startsWith(normParent + path.sep) || normTarget.startsWith(normParent + "/")) {
+        return target;
+      }
+    }
+  }
+  if (path.isAbsolute(rawRel) && fs.existsSync(target)) {
+    return target;
+  }
+  throw new Error(`Ruta fuera del proyecto: ${rawRel}`);
 }
 
 function truncatePayload(value, max = TOOL_RESULT_CAP) {
@@ -34,7 +72,7 @@ function truncatePayload(value, max = TOOL_RESULT_CAP) {
 
 function listFiles(root, rel = ".", max = 80) {
   const requested = String(rel || ".").replace(/\\/g, "/").trim() || ".";
-  // ROADMAP-FIRST: no reescanear la raíz si ya hay índice (ahorro de tokens).
+  // ROADMAP-FIRST: no reescanear la raíz si ya hay índice (ahorro de tokens)[cite: 7].
   if (requested === "." || requested === "/" || requested === "") {
     try {
       const { readRoadmap, isStubRoadmap, formatRoadmapForPrompt } = require("../runtime/project-roadmap");
@@ -74,10 +112,22 @@ function readFile(root, rel, maxChars = TOOL_RESULT_CAP) {
   const file = safe(root, rel);
   if (!fs.existsSync(file)) return { ok: false, error: `No existe: ${rel}` };
   if (fs.statSync(file).isDirectory()) return { ok: false, error: `Es carpeta: ${rel}` };
+
+  let mtime = 0;
+  try { mtime = fs.statSync(file).mtimeMs; } catch { /* ignore */ }
+  if (runReadCache) {
+    const cached = runReadCache.get(file, mtime);
+    if (cached) return cached;
+  }
+
   let content = fs.readFileSync(file, "utf8");
   const bytes = content.length;
   if (content.length > maxChars) content = content.slice(0, maxChars) + "\n…[truncado]";
-  return { ok: true, path: rel, content, bytes };
+  const result = { ok: true, path: rel, content, bytes };
+  if (runReadCache) {
+    runReadCache.set(file, result, mtime);
+  }
+  return result;
 }
 
 function writeFile(root, rel, content) {
@@ -85,6 +135,10 @@ function writeFile(root, rel, content) {
   const file = safe(root, rel);
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(file, String(content ?? ""), "utf8");
+  if (runReadCache?.map) {
+    const key = String(file || "").replace(/\\/g, "/").replace(/^\.\//, "").toLowerCase();
+    runReadCache.map.delete(key);
+  }
   const out = { ok: true, path: rel, snapshotId: snap.ok ? snap.id : null };
   try {
     const { noteSuccessfulPatch } = require("../runtime/session-state");
@@ -99,7 +153,7 @@ function writeFile(root, rel, content) {
 
 /**
  * Localiza oldText con tolerancia leve (CRLF/LF, whitespace de línea).
- * Fallos leves → el orquestador relee y reintenta sin detener la sesión.
+ * Fallos leves → el orquestador relee y reintenta sin detener la sesión[cite: 7].
  */
 function locateOldText(current, oldText) {
   const old = String(oldText ?? "");
@@ -109,10 +163,8 @@ function locateOldText(current, oldText) {
   const normFile = current.replace(/\r\n/g, "\n");
   const normOld = old.replace(/\r\n/g, "\n");
   if (normFile.includes(normOld)) {
-    // Preferir el fragmento real del archivo (preserva CRLF si aplica).
     const idx = current.replace(/\r\n/g, "\n").indexOf(normOld);
     if (idx >= 0) {
-      // Reconstruir match aproximado por longitud en el original
       let cursor = 0;
       let fileIdx = 0;
       while (cursor < idx && fileIdx < current.length) {
@@ -183,8 +235,16 @@ function replaceInFile(root, rel, oldText, newText) {
     };
   }
   const snap = snapshotBeforeWrite(root, rel, "replace_in_file");
-  const next = current.replace(located.match, String(newText ?? ""));
+  
+  // FIX CRÍTICO: Se usa una función de reemplazo para evitar que los signos '$' 
+  // en el código fuente interpreten patrones especiales de regex/string de JS.
+  const next = current.replace(located.match, () => String(newText ?? ""));
+  
   fs.writeFileSync(file, next, "utf8");
+  if (runReadCache?.map) {
+    const key = String(file || "").replace(/\\/g, "/").replace(/^\.\//, "").toLowerCase();
+    runReadCache.map.delete(key);
+  }
   const out = {
     ok: true,
     path: rel,
@@ -203,7 +263,7 @@ function replaceInFile(root, rel, oldText, newText) {
   return out;
 }
 
-/** Fallos leves que no deben detener la sesión OODA. */
+/** Fallos leves que no deben detener la sesión OODA[cite: 7]. */
 function isSoftToolFailure(name, result, args = {}) {
   if (!result || result.ok !== false) return false;
   if (result.soft === true) return true;
@@ -260,7 +320,6 @@ function runCommand(root, command, {
     signal,
   }).then((result) => ({
     ...result,
-    // Compat con callers que esperan ok booleano clásico
     ok: result.ok !== false,
     note: result.streaming
       ? "Proceso de desarrollo en streaming (sin esperar exit). Errores graves disparan auto-heal."
@@ -407,7 +466,6 @@ async function cloneRepo(root, repoUrl, destRel) {
     return { ok: false, error: result.stderr || result.error || "git clone falló", path: dest.replace(/\\/g, "/") };
   }
 
-  // Ingesta automática de README si existe
   const readme = ["README.md", "readme.md", "README"].map((n) => path.join(abs, n)).find((p) => fs.existsSync(p));
   let ingested = null;
   if (readme) {
@@ -508,7 +566,7 @@ const DEFINITIONS = [
     type: "function",
     function: {
       name: "clone_web_page",
-      description: "Clona una URL: render DOM (Puppeteer/Playwright), capturas, visión→React/Tailwind y merge en golden template. replacements: { TITLE, CTA, ... }.",
+      description: "Clona una URL: render DOM (Puppeteer/Playwright), capturas, visión→React/Tailwind y merge en golden template.",
       parameters: {
         type: "object",
         properties: {
@@ -544,7 +602,7 @@ const DEFINITIONS = [
     type: "function",
     function: {
       name: "run_e2e_pipeline",
-      description: "Verificación end-to-end 1→100 del cableado EditCore (visión, clone, brain, IPC). Escribe .editcore/e2e-pipeline-report.md.",
+      description: "Verificación end-to-end 1→100 del cableado EditCore.",
       parameters: {
         type: "object",
         properties: {
@@ -557,7 +615,7 @@ const DEFINITIONS = [
     type: "function",
     function: {
       name: "rollback_last_change",
-      description: "Restaura el último snapshot (.editcore/snapshots/) tras un fallo de compilación o cambio incorrecto.",
+      description: "Restaura el último snapshot (.editcore/snapshots/) tras un fallo de compilación.",
       parameters: {
         type: "object",
         properties: {
@@ -598,7 +656,7 @@ async function execute(name, args, root, allowWrite, helpers = {}) {
           ...listed,
           requested: a.path || ".",
           resolved: resolved.target,
-          note: `Ruta '${resolved.missing}' no está en el mapa cognitivo; listando '${resolved.target}'. Raíces: ${(resolved.availableRoots || []).slice(0, 20).join(", ")}`,
+          note: `Ruta '${resolved.missing}' no está en el mapa cognitivo; listando '${resolved.target}'.`,
           soft: !listed.ok,
         };
       }
@@ -644,13 +702,12 @@ async function execute(name, args, root, allowWrite, helpers = {}) {
             ? (opts) => helpers.capturePreview(opts)
             : null,
         });
-        // No devolver base64 enorme al modelo
         const {
           screenshotAbs: _abs,
           imageDataUrl: _img,
-          ...safe
+          ...safeShot
         } = shot;
-        return safe;
+        return safeShot;
       } catch (error) {
         return { ok: false, error: String(error?.message || error).slice(0, 400) };
       }
@@ -691,6 +748,9 @@ async function execute(name, args, root, allowWrite, helpers = {}) {
       return cloneRepo(root, a.url, a.path);
     case "clone_web_page": {
       if (!allowWrite) return { ok: false, error: "clone_web_page requiere modo escritura" };
+      if (!a.url || !/^https?:\/\//i.test(String(a.url).trim())) {
+        return { ok: false, error: "clone_web_page requiere una URL externa http(s) válida en el argumento 'url'. No uses clone_web_page para modificar archivos locales existentes del proyecto." };
+      }
       const { cloneWebPage } = require("../runtime/clone-web-page");
       return cloneWebPage(root, {
         url: a.url,
@@ -699,7 +759,7 @@ async function execute(name, args, root, allowWrite, helpers = {}) {
         viewport: a.viewport,
         replacements: a.replacements || a.data || {},
         skipVision: a.skipVision === true,
-        mergeApp: a.mergeApp !== false,
+        mergeApp: a.mergeApp === true, // Solo fusionar App si se pide explicitamente
         dryRun: a.dryRun === true,
       }, { model: a.model || "" });
     }
@@ -711,6 +771,11 @@ async function execute(name, args, root, allowWrite, helpers = {}) {
     case "run_e2e_pipeline": {
       const { runEditcoreE2ePipeline } = require("../runtime/e2e-pipeline-report");
       return runEditcoreE2ePipeline(root, { writeReport: a.writeReport !== false });
+    }
+    case "search_codebase_semantic": {
+      const { querySemanticCodebase } = require("../runtime/codebase-indexer");
+      const results = querySemanticCodebase(root, a.query || "", a.topK || 6);
+      return { ok: true, results, count: results.length };
     }
     case "rollback_last_change":
       if (!allowWrite) return { ok: false, error: "Rollback requiere modo escritura" };

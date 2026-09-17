@@ -1231,6 +1231,12 @@
     };
   }
 
+  function wantsAuthorizedFinish(value) {
+    const prompt = text(value);
+    if (!prompt) return false;
+    return /\b(?:continua\s+y\s+termina(?:\s+ya)?|termina\s+ya|finaliza\s+ya)\b/i.test(prompt);
+  }
+
   return {
     analysisContext,
     assessCompletion,
@@ -1247,6 +1253,7 @@
     extractReferencedProjectName,
     isOpenNamedProjectRequest,
     isPureOpenProjectRequest,
+    wantsAuthorizedFinish,
     isCloseProjectRequest,
     isSwitchProjectRequest,
     extractSwitchProjectName,

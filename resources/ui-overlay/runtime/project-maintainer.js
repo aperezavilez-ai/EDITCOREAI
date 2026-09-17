@@ -67,12 +67,16 @@ async function prePublishValidation(projectRoot, { runTests = true, runLint = tr
       ok: result.code === 0,
       message: result.code === 0 ? "lint OK" : detail,
     });
-    if (result.code !== 0) {
+    const isMissingLinter = /no se reconoce como un comando|not recognized as an internal|command not found|cannot find module|missing script/i.test(detail);
+    if (result.code !== 0 && !isMissingLinter) {
       return {
         ok: false,
         steps,
         message: `Pre-publicacion bloqueada: lint fallo.\n\n${detail}`,
       };
+    } else if (result.code !== 0 && isMissingLinter) {
+      steps[steps.length - 1].ok = true;
+      steps[steps.length - 1].message = "lint omitido (herramienta de lint no instalada localmente)";
     }
   }
 

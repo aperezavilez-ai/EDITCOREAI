@@ -37,8 +37,6 @@ const TOOL_ALIASES = Object.freeze({
   github_deploy: "deploy_github",
   vercel_deploy: "deploy_vercel",
   supabase_provision: "provision_supabase",
-  gafcore_ai: "provision_gafcore_ai",
-  provision_ai: "provision_gafcore_ai",
   fullstack_provision: "provision_fullstack_project",
   probe_url: "probe_endpoint",
   test_api: "test_local_api",

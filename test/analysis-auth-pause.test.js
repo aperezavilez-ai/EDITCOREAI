@@ -42,7 +42,7 @@ test("analisis: al pedir autorizacion cierra y NO sigue con mas tools", async (t
       providerCalls += 1;
       if (providerCalls === 1) {
         return {
-          text: "",
+          text: "## Hipótesis inicial\nAnalizar el repo\n\n## Preguntas críticas\n¿Qué hay?\n\n## Plan de evidencia\nlist_files\n\n## Criterio de suficiencia\nleer archivos",
           toolCalls: [toolCall("list_files", { path: "" }, "list-1")],
           usage: { total_tokens: 5 },
         };

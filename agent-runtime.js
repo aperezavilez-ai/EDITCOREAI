@@ -1,6 +1,7 @@
 "use strict";
 
 const path = require("node:path");
+const { classify, isFullAccess } = require("./editcore-chat-kernel/classify");
 
 const GENERATED_PROJECT_DIRS = new Set([
   ".git", ".next", ".nuxt", ".output", ".svelte-kit", ".turbo", ".vercel", ".wrangler",
@@ -99,7 +100,7 @@ function compactAgentMessages(messages, steps = [], options = {}) {
   }).join("\n");
   return [
     normalized[0],
-    normalized,
+    normalized[1] || {},
     ...(summary ? [{
       role: "user",
       content: `CHECKPOINTS ANTERIORES (no repetir):\n${summary}`,
@@ -392,25 +393,12 @@ function createAgentBudget(task, canWrite = true, resumeSteps = [], session = {}
   const packageSignals = Math.max(0, Number(session.packageSignals) || 0);
   const taskSignals = Math.max(0, Math.ceil(String(task || "").length / 120));
   const complexity = Math.min(4, Math.floor(fileCount / 80) + Math.floor(rootEntryCount / 20) + Math.min(2, packageSignals) + Math.min(2, taskSignals));
-  const usedProviderCalls = Math.max(0, Number(session.usedProviderCalls) || 0);
-  const usedNetInputTokens = Math.max(0, Number(session.usedNetInputTokens) || 0);
   const segmentProviderCalls = Math.min(80, (requirements.write ? 28 : 24) + complexity * 4 + (requirements.exhaustive ? 16 : 0) - (usefulResume ? 2 : 0));
   const segmentNetInputTokens = (requirements.write ? 80_000 : 60_000) + complexity * 8_000 + (requirements.exhaustive ? 20_000 : 0);
   return {
     maxProviderCalls: segmentProviderCalls,
     verificationReserve: requirements.write ? 2 : 1,
     maxNetInputTokens: segmentNetInputTokens,
-    totalProviderCalls: null,
-    hasProviderCallLimit: false,
-    totalNetInputTokens: null,
-    usedProviderCalls,
-    usedNetInputTokens,
-    remainingProviderCalls: null,
-    remainingNetInputTokens: null,
-    maxDiscoveryStreak: 4,
-    maxNoProgressStreak: 5,
-    maxExactAttempts: 3,
-    maxDuplicateBlocks: 3,
     requirements,
   };
 }
@@ -528,59 +516,214 @@ function validateAgentCompletion(task, steps = [], canWrite = true, options = {}
     return { ok: false, reason: "El analisis no puede terminar sin evidencia de lectura del proyecto." };
   }
   if (options.analysisMode === true && !options.planAuthorized && !hasRealFileRead) {
-    return { ok: false, reason: "El analisis no puede terminar leyendo solo la carpeta raiz. Usa read_file con archivos concretos (package.json, componentes, servicios)." };
+    return { ok: false, reason: "El analisis no puede terminar leyendo solo la carpeta raiz. Usa read_file con archivos concretos." };
   }
   const realFileReads = meaningfulSuccessful.filter((step) => getResolvedName(step) === "read_file" && step.result?.isDirectory !== true).length;
-  let analysisTargetsSatisfied = false;
-  if (options.analysisMode === true && !options.planAuthorized) {
-    try {
-      const {
-        collectToolEvidence,
-        analysisEvidenceSufficient,
-        extractAnalysisTargets,
-      } = require("./runtime/evidence-grounding");
-      const prompt = String(task || "");
-      const targets = extractAnalysisTargets(prompt);
-      const evidence = collectToolEvidence(allSteps, projectRoot);
-      const sufficiency = analysisEvidenceSufficient(evidence, { prompt, targets });
-      if (!sufficiency.ok) {
-        return { ok: false, reason: sufficiency.reasons.join(" ") || "Falta evidencia de lectura para el analisis." };
-      }
-      if (targets.length) analysisTargetsSatisfied = true;
-    } catch {
-      if (realFileReads < 1) {
-        return { ok: false, reason: `El analisis requiere al menos 1 archivo concreto leido con read_file (ahora ${realFileReads}).` };
-      }
-    }
-  }
-  if (options.analysisMode === true && !options.planAuthorized && !analysisTargetsSatisfied
-    && analysisEvidence < requirements.minimumEvidence) {
-    return { ok: false, reason: `El analisis requiere ${requirements.minimumEvidence} evidencias concretas distintas y solo existen ${analysisEvidence}.` };
-  }
-  if (options.planAuthorized === true && requirements.write && !hasWrite) {
-    return { ok: false, reason: "El plan ya fue autorizado: debes aplicar cambios reales con write_file o replace_in_file; narrar no cuenta." };
+  if (options.analysisMode === true && !options.planAuthorized && realFileReads < 1) {
+    return { ok: false, reason: `El analisis requiere al menos 1 archivo concreto leido con read_file (ahora ${realFileReads}).` };
   }
   if (requirements.write && !hasWrite) return { ok: false, reason: "La tarea solicita cambios, pero aun no has escrito ni creado archivos con una herramienta real." };
   if (requirements.write && missingTargetFiles.length) return { ok: false, reason: `Faltan mutaciones requeridas en: ${missingTargetFiles.join(", ")}.` };
   if (requirements.verification && verificationFailed) {
     return {
       ok: false,
-      reason: "La verificacion (lint/test/build) se ejecuto pero FALLO. Corrige los errores y vuelve a verificar; un exit distinto de 0 no cuenta como exito.",
+      reason: "La verificacion se ejecuto pero FALLO. Corrige los errores y vuelve a verificar.",
       hasVerification: false,
       verificationFailed: true,
       verificationAttempted: false,
     };
   }
-  if (requirements.verification && !hasVerification && !verificationAttempted) return { ok: false, reason: "La tarea modifico el proyecto, pero falta una verificacion real con test, build, lint, check o typecheck." };
-  if (requirements.verification && missingVerificationCommands.length) return { ok: false, reason: `Faltan verificaciones requeridas: ${missingVerificationCommands.join(", ")}.` };
-  if (requirements.visual && !hasVisualInspection) return { ok: false, reason: "La tarea visual requiere verificar con read_file del componente o run_command build/lint antes de completarse." };
+  if (requirements.verification && !hasVerification && !verificationAttempted) return { ok: false, reason: "La tarea modifico el proyecto, pero falta una verificacion real con test, build o lint." };
   return { ok: true, requirements, hasRead, hasWrite, hasVerification, verificationAttempted, verificationFailed, hasVisualInspection, missingTargetFiles, missingVerificationCommands, lastWriteIndex };
 }
 
+class ChatOrchestrator {
+  constructor() {
+    this.session = new ChatSession();
+    this.abort = null;
+    this.turnAbort = null;
+    this.steering = [];
+    this.running = false;
+    this.pendingTask = null;
+  }
+
+  stop() {
+    const reason = Object.assign(new Error("Detenido por el usuario."), { code: "AGENT_STEER" });
+    if (this.turnAbort) {
+      try { this.turnAbort.abort(reason); } catch (_) {}
+      this.turnAbort = null;
+    }
+    if (this.abort) {
+      try { this.abort.abort(reason); } catch (_) {}
+    }
+    this.session.kill();
+    this.pendingTask = null;
+    this.steering = [];
+    this.running = false;
+    try { taskQueue.cancelAll(); } catch (_) {}
+    return { kind: "STOP", text: "Frené lo que estaba haciendo. ¿Qué querés que haga ahora?" };
+  }
+
+  steer(instruction = "") {
+    const text = String(instruction || "").trim();
+    if (!text) return { accepted: false };
+    if (!this.running && !this.abort) return { accepted: false };
+    this.steering.push({ instruction: text, at: Date.now() });
+    let interrupted = false;
+    if (this.turnAbort) {
+      const steerError = Object.assign(new Error("Nueva instruccion del usuario."), { code: "AGENT_STEER" });
+      try {
+        this.turnAbort.abort(steerError);
+        interrupted = true;
+      } catch (_) {}
+    }
+    return { accepted: true, pendingDirections: this.steering.length, interrupted };
+  }
+
+  isRunning() {
+    return this.running === true;
+  }
+
+  async handle(input = {}) {
+    const {
+      message, projectRoot, apiBaseUrl, apiKey, model, images, onProgress, helpers,
+      allowWrite: inputAllowWrite, permissionMode, fullAccess: inputFullAccess, history,
+      messages: inputMessages, threadId: inputThreadId, chatId,
+    } = input;
+
+    const rawText = typeof message === "object" && message?.text ? message.text : String(message || "");
+    const text = rawText.trim() || "Analiza esto.";
+
+    const fullAccess = isFullAccess({ allowWrite: inputAllowWrite, permissionMode, fullAccess: inputFullAccess });
+    if (fullAccess) this.pendingTask = null;
+
+    let decision = classify(text, { allowWrite: fullAccess || inputAllowWrite === true, permissionMode });
+
+    if (!projectRoot && decision.kind !== "CHAT") {
+      return { kind: "CHAT", text: "Abrí un proyecto primero y después te ayudo con eso." };
+    }
+
+    const memory = projectRoot ? new PersistentMemory(projectRoot) : null;
+    if (memory) memory.load();
+
+    const threadId = threadCore.resolveThreadId({ threadId: inputThreadId, chatId });
+    this._threadId = threadId;
+
+    if (decision.kind === "CHAT") {
+      return this.runModelTask({
+        decision, message: text, projectRoot: projectRoot || ".", apiBaseUrl, apiKey, model, memory, onProgress,
+        allowWrite: false, maxSteps: 1, helpers, chatOnly: true,
+      });
+    }
+
+    const wantsWrite = fullAccess || decision.allowWrite;
+
+    return this.runModelTask({
+      decision,
+      message: text,
+      projectRoot,
+      apiBaseUrl,
+      apiKey,
+      model,
+      memory,
+      onProgress,
+      allowWrite: wantsWrite,
+      maxSteps: wantsWrite ? AUTHORIZED_MAX_STEPS : 8,
+      helpers,
+      fullAccess,
+      permissionMode,
+    });
+  }
+
+  async runModelTask(opts) {
+    const {
+      decision, message, projectRoot, apiBaseUrl, apiKey, model, memory, onProgress,
+      allowWrite, maxSteps, helpers, chatOnly, fullAccess, permissionMode
+    } = opts;
+
+    this.session.start(decision?.kind || "EXECUTE", projectRoot);
+    this.abort = new AbortController();
+    this.running = true;
+
+    try {
+      const availableTools = allowWrite
+        ? tools.DEFINITIONS
+        : tools.DEFINITIONS.filter((t) => !["write_file", "replace_in_file", "run_command"].includes(t.function.name));
+
+      let system = "Sos EditCoreAI. Respondé siempre en español, claro y directo usando herramientas de forma segura.";
+      const messages = [{ role: "system", content: system }, { role: "user", content: message }];
+      const steps = [];
+
+      for (let i = 0; i < (maxSteps || 10); i++) {
+        if (!this.session.alive) break;
+
+        const turn = await callChat({
+          apiBaseUrl, apiKey, model: model || "claude-sonnet-4-6", messages,
+          tools: chatOnly ? [] : availableTools,
+          signal: this.abort.signal,
+        });
+
+        let toolCalls = Array.isArray(turn.toolCalls) ? turn.toolCalls : [];
+        if (!toolCalls.length && turn.text) {
+          toolCalls = parseTextToolCalls(turn.text, { projectRoot });
+        }
+
+        if (!toolCalls.length) {
+          this.session.kill();
+          return { kind: decision?.kind || "CHAT", text: turn.text || "Terminado.", steps };
+        }
+
+        messages.push({
+          role: "assistant",
+          content: turn.text || null,
+          tool_calls: toolCalls.map((c) => ({ id: c.id, type: "function", function: c.function })),
+        });
+
+        for (const call of toolCalls) {
+          const name = call.function?.name;
+          let args = {};
+          try { args = JSON.parse(call.function?.arguments || "{}"); } catch { args = {}; }
+
+          onProgress?.({ phase: "tool", stage: "running", name, input: args });
+
+          // Blindaje determinista: evitar escrituras si no hay permisos de escritura reales
+          if ((name === "write_file" || name === "replace_in_file") && !allowWrite) {
+            const res = { ok: false, error: "Escritura denegada por política de permisos (Solo lectura)." };
+            steps.push({ name, input: args, result: res, ok: false });
+            messages.push({ role: "tool", tool_call_id: call.id, name, content: JSON.stringify(res) });
+            continue;
+          }
+
+          const result = await tools.execute(name, args, projectRoot, allowWrite, helpers || {});
+          steps.push({ name, input: args, result, ok: result?.ok !== false });
+
+          messages.push({
+            role: "tool",
+            tool_call_id: call.id,
+            name,
+            content: tools.truncatePayload(result || {}, 2000),
+          });
+        }
+      }
+
+      this.session.kill();
+      return { kind: "EXECUTE", text: "Ciclo de herramientas completado.", steps };
+    } catch (err) {
+      this.session.kill();
+      return { kind: "CHAT", text: "Error en la ejecución: " + (err?.message || err) };
+    } finally {
+      this.running = false;
+      try { onProgress?.({ phase: "done", text: "" }); } catch {}
+    }
+  }
+}
+
 module.exports = {
-  GENERATED_PROJECT_DIRS,
-  TOOL_ALIASES,
-  normalizeToolCall,
+  ChatOrchestrator,
+  SKILL_IDS: [],
+  taskQueue: require("./task-queue"),
+  classify,
+  isFullAccess,
   boundToolResult,
   calculateAgentNetInputTokens,
   classifyAgentStep,

@@ -423,7 +423,9 @@ function mergeIntoProject(projectRoot, files, { mergeApp = true, appName = "Clon
     const hasCloned = files.some((f) => /ClonedPage\.tsx$/i.test(f.path || ""));
     if (hasCloned) {
       const appPath = path.join(root, "src", "App.tsx");
-      const clonedApp = `import * as React from "react";
+      const appExists = fs.existsSync(appPath) && fs.readFileSync(appPath, "utf8").trim().length > 40;
+      if (!appExists) {
+        const clonedApp = `import * as React from "react";
 import { ClonedPage } from "@/pages/ClonedPage";
 
 /** App entry — layout clonado desde URL (EditCore clone_web_page). */
@@ -431,9 +433,10 @@ export default function App() {
   return <ClonedPage />;
 }
 `;
-      fs.mkdirSync(path.dirname(appPath), { recursive: true });
-      fs.writeFileSync(appPath, clonedApp, "utf8");
-      written.push("src/App.tsx");
+        fs.mkdirSync(path.dirname(appPath), { recursive: true });
+        fs.writeFileSync(appPath, clonedApp, "utf8");
+        written.push("src/App.tsx");
+      }
     }
   }
 

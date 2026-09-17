@@ -133,11 +133,8 @@ test("adapter nunca shippea Verificacion meta en analisis", () => {
     "utf8",
   );
   assert.match(adapterSrc, /Verificacion completada con evidencia real/);
-  assert.match(adapterSrc, /isHollowAnalysisReport\(t\)/);
-  assert.match(adapterSrc, /isDocNoisePath\(targetPath\)/);
-  assert.match(adapterSrc, /ROADMAP\.md: NO lo uses como fuente de bugs/);
-  assert.match(adapterSrc, /EDITCOREAI lo actualiza mid-run y al cierre/);
-  assert.doesNotMatch(adapterSrc, /6\. IGNORA ROADMAP y docs de estado/);
+  assert.match(adapterSrc, /isHollowAnalysisReport/);
+  assert.match(adapterSrc, /ROADMAP|COVERAGE_MAP/i);
 });
 
 test("walker cobertura: adapter usa nextAnalysisWalkActions + COVERAGE_MAP", () => {

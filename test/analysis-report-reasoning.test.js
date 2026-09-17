@@ -26,7 +26,7 @@ test("Acceso completo + analiza/reporte = DISCOVER analysisMode (no execute/lint
   assert.equal(plan.runProfile?.cursorParityMode, false);
   assert.ok(!plan.allowedTools.includes("run_command"), "analisis no debe tener run_command");
   assert.ok(!plan.allowedTools.includes("write_file"), "analisis no debe tener write_file");
-  assert.match(plan.statusLabel, /reporte|Analizando/i);
+  assert.match(plan.statusLabel, /reporte|Analizando|Analisis/i);
 });
 
 test("corrige con Acceso completo sigue en EXECUTE", () => {

@@ -15,9 +15,9 @@ const path = require("node:path");
 const fs = require("node:fs");
 const os = require("node:os");
 
-const { runAgent } = require("../src/orchestrator");
-const { classifyMode, extractPathsFromPrompt } = require("../src/modes");
-const { isSufficient } = require("../src/verifier");
+const { runAgent } = require("../agent-core/src/orchestrator");
+const { classifyMode, extractPathsFromPrompt } = require("../agent-core/src/modes");
+const { isSufficient } = require("../agent-core/src/verifier");
 
 // ---------------------------------------------------------------------------
 // Helpers

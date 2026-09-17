@@ -15,10 +15,10 @@ const SKIP = new Set([
 
 function inferSiblingRole(name = "") {
   const n = String(name || "").toLowerCase();
-  if (/gafcore\s*gateway|gafcore-gateway/.test(n)) return "AI Gateway (modelos, project keys, /api/v1/chat)";
+  if (/gafcore\s*gateway|gafcore-gateway/.test(n)) return "Proyecto hermano (legado)";
   if (/^editcoreai$|^editcore ai$/.test(n)) return "IDE EditCore (este runtime)";
   if (/editcore.*web/.test(n)) return "EditCore Web";
-  if (/fuxion/.test(n)) return "App de negocio (consumidor típico del Gateway)";
+  if (/fuxion/.test(n)) return "App de negocio";
   if (/supabase|postgres/.test(n)) return "Infra datos";
   return "Proyecto hermano en el mismo workspace";
 }
@@ -69,12 +69,12 @@ function formatWorkspaceSiblingMap(projectRoot = "", maxChars = 2_200) {
     "WORKSPACE SIBLINGS (lectura permitida sin Acceso completo; escritura en hermanos requiere Acceso completo):",
     `Padre: ${map.parent}`,
     `Activo: ${path.basename(map.primary)}`,
-    "Relación típica: apps (FUXION, etc.) consumen GafCore Gateway para AI; Supabase GafCore = DB aparte.",
+    "Relación típica: apps hermanas bajo el mismo padre; Supabase propio = DB del proyecto; modelos en ME AI / APICredits.",
     ...map.siblings.slice(0, 28).map((row) => {
       const mark = row.active ? "★" : "·";
       return `${mark} ${row.name} — ${row.role}. ${row.readHint}`;
     }),
-    "Ejemplo: read_file path=\"../GAFCORE GATEWAY/src/app/api/admin/projects/route.ts\" o path=\"GAFCORE GATEWAY/package.json\".",
+    `Ejemplo: read_file path="../${path.basename(map.siblings.find((s) => !s.active)?.name || "Hermano")}/package.json".`,
     "Para health de servicios locales: probe_endpoint / test_local_api (http://127.0.0.1:<port>).",
   ];
   return lines.join("\n").slice(0, maxChars);

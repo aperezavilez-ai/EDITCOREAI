@@ -39,7 +39,7 @@ function isPreferredUserHost(baseUrl = "") {
 
 function isBlockedHost(baseUrl = "") {
   const host = hostOf(baseUrl);
-  // AiPrimeTech: el usuario no lo usa. GafCore Gateway: no soporta /audio/transcriptions.
+  // AiPrimeTech: el usuario no lo usa. Endpoints de chat (meai/apicredits) no soportan /audio/transcriptions.
   return (
     host.includes("aiprimetech")
     || host.includes("openai.com")
@@ -165,7 +165,17 @@ function collectWhisperCandidates(secure = {}, userDataPath = "") {
   for (const profile of profiles) {
     const key = String(profile?.providerKey || "");
     const base = String(profile?.baseUrl || "");
-    if (key.includes("gafcore") || hostOf(base).includes("gafcore-gateway")) continue;
+    if (key.includes("gafcore") || hostOf(base).includes("gafcore-gateway")) {
+      if (profile.apiKey) {
+        push({
+          providerKey: "meai",
+          label: "meai-profile",
+          apiKey: profile.apiKey,
+          baseUrl: "https://api.meai.cloud/v1",
+        });
+      }
+      continue;
+    }
     if (hostOf(base).includes("meai.cloud") || /meai/i.test(key)) {
       push({
         providerKey: "meai",
@@ -173,6 +183,15 @@ function collectWhisperCandidates(secure = {}, userDataPath = "") {
         apiKey: profile.apiKey,
         baseUrl: "https://api.meai.cloud/v1",
       });
+    } else if (hostOf(base).includes("apicredits.site") || /apicredits/i.test(key)) {
+      push({
+        providerKey: "apicredits",
+        label: "apicredits-profile",
+        apiKey: profile.apiKey,
+        baseUrl: "https://api.apicredits.site/v1",
+      });
+    } else {
+      push(profile);
     }
   }
 

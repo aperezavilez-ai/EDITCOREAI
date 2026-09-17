@@ -90,8 +90,10 @@ class DeployBridge {
       VERCEL_TOKEN: String(this.credentials.vercelToken),
     };
     const result = runArgs(
-      process.platform === "win32" ? "npx.cmd" : "npx",
-      ["vercel", "--prod", "--yes"],
+      process.platform === "win32" ? (process.env.ComSpec || "cmd.exe") : "npx",
+      process.platform === "win32"
+        ? ["/d", "/s", "/c", "npx vercel --prod --yes"]
+        : ["vercel", "--prod", "--yes"],
       { cwd: this.projectRoot, env },
     );
     return result.ok

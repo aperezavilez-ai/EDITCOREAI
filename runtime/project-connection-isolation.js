@@ -60,7 +60,7 @@ function validateProjectConnectionTarget(projectRoot = {}, intended = {}) {
       reasons.push(`supabaseProjectId no coincide con project-infra.json (${expectedId}).`);
     }
     if (intendedGateway && expectedGw && intendedGateway !== expectedGw) {
-      reasons.push(`GafCore Gateway no coincide con project-infra.json (${expectedGw}).`);
+      reasons.push(`Endpoint de modelos no coincide con project-infra.json (${expectedGw}).`);
     }
   }
 

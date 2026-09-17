@@ -80,12 +80,10 @@ test("H3b: analisis no pone skipBrain", () => {
 });
 
 test("H4: Limpiar restaura Bienvenido", () => {
-  const clearFn = rendererSource.slice(
-    rendererSource.indexOf("function clearActiveProject"),
-    rendererSource.indexOf("function updateCloseProjectButton"),
-  );
+  const start = rendererSource.indexOf("function clearActiveProject");
+  const clearFn = rendererSource.slice(start, start + 800);
   assert.match(clearFn, /chatCleared = false/);
-  assert.match(clearFn, /Bienvenido a EDITCOREAI/);
+  assert.match(clearFn, /Bienvenido a EditCoreAI/i);
 });
 
 test("H4b: preferSourceOverAsar evita app-progress.asar", () => {

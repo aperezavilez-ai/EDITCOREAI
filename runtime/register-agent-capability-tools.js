@@ -561,12 +561,12 @@ function registerAgentCapabilityTools(dispatcher, {
           installDeps: toolInput.installDeps !== false,
           bootstrapSupabase: toolInput.bootstrapSupabase !== false,
           connectServices: toolInput.connectServices !== false,
-          connectGateway: toolInput.connectGateway !== false,
+          connectGateway: false,
           firstDeploy: toolInput.firstDeploy === true,
           initialBalanceUsd: Number(toolInput.initialBalanceUsd) || 0,
           adminToken: String(toolInput.adminToken || ""),
           repoName: String(toolInput.repoName || ""),
-          connectGatewayProject: typeof connectGatewayProject === "function" ? connectGatewayProject : null,
+          connectGatewayProject: null,
         });
       },
     });
@@ -631,40 +631,12 @@ function registerAgentCapabilityTools(dispatcher, {
       },
     });
     dispatcher.register({
-      name: "provision_gafcore_ai",
-      write: true,
-      description: "Crea/reutiliza proyecto de IA (ME AI / APICredits) y escribe las variables del proveedor en .env.local.",
-      execute: async (toolInput = {}) => {
-        const bridge = require("./cloud-vault-bridge").createCloudVaultBridge({
-          getConnections: typeof readConnections === "function" ? readConnections : () => ({}),
-          getGatewayAdminToken: () => {
-            if (typeof getGatewayAdminToken === "function") {
-              try { return String(getGatewayAdminToken() || "").trim(); } catch { /* ignore */ }
-            }
-            return String(process.env.GAFCORE_ADMIN_TOKEN || "").trim();
-          },
-          connectGatewayProject: typeof connectGatewayProject === "function" ? connectGatewayProject : null,
-        });
-        return bridge.provisionGafcoreAI(String(toolInput.projectName || path.basename(rootPath)), {
-          ...toolInput,
-          projectRoot: rootPath,
-        });
-      },
-    });
-    dispatcher.register({
       name: "provision_fullstack_project",
       write: true,
-      description: "Orquestador 1 clic: GitHub + Vercel + Supabase + proveedor de IA + project-infra.json (bóveda).",
+      description: "Orquestador 1 clic: GitHub + Vercel + Supabase + project-infra.json (bóveda). Configura ME AI o APICredits en Modelos.",
       execute: async (toolInput = {}) => {
         const bridge = require("./cloud-vault-bridge").createCloudVaultBridge({
           getConnections: typeof readConnections === "function" ? readConnections : () => ({}),
-          getGatewayAdminToken: () => {
-            if (typeof getGatewayAdminToken === "function") {
-              try { return String(getGatewayAdminToken() || "").trim(); } catch { /* ignore */ }
-            }
-            return String(process.env.GAFCORE_ADMIN_TOKEN || "").trim();
-          },
-          connectGatewayProject: typeof connectGatewayProject === "function" ? connectGatewayProject : null,
         });
         return bridge.provisionFullStackProject(rootPath, toolInput);
       },
@@ -730,7 +702,7 @@ function registerAgentCapabilityTools(dispatcher, {
           const snapshot = getOperatorConnectionsSnapshot();
           const service = String(toolInput.service || "").toLowerCase();
           if (!service) return snapshot;
-          if (service === "ai" || service === "meai" || service === "apicredits" || service === "models" || service === "gafcore" || service === "gateway" || service === "gafcoregateway") {
+          if (service === "ai" || service === "meai" || service === "apicredits" || service === "models") {
             return { aiProvider: snapshot.aiProvider || { configured: false, label: "Proveedores de IA (ME AI / APICredits)" } };
           }
           return { [service]: snapshot[service] || { configured: false } };

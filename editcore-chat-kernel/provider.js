@@ -7,7 +7,18 @@ const {
   isGatewayHtmlBody,
   createGatewayTimeoutError,
   parseProviderJsonOrThrow,
+  withCacheControl,
 } = require("../runtime/ai-core");
+
+function normalizeUsage(raw = {}) {
+  if (!raw || typeof raw !== "object") return null;
+  return {
+    input_tokens: Number(raw.input_tokens || raw.prompt_tokens || 0),
+    output_tokens: Number(raw.output_tokens || raw.completion_tokens || 0),
+    cache_read_input_tokens: Number(raw.cache_read_input_tokens || raw.prompt_tokens_details?.cached_tokens || 0),
+    cache_creation_input_tokens: Number(raw.cache_creation_input_tokens || 0),
+  };
+}
 
 function mergeAbortSignals(primary, secondary) {
   if (primary && secondary && typeof AbortSignal.any === "function") {
@@ -30,9 +41,13 @@ async function callChat({
 }) {
   const url = `${String(apiBaseUrl || "").replace(/\/$/, "")}/chat/completions`;
   const wantStream = stream !== false;
+  const safeMessages = Array.isArray(messages) ? messages : [];
+  const cachedMessages = typeof withCacheControl === "function"
+    ? withCacheControl(safeMessages)
+    : safeMessages;
   const body = {
     model,
-    messages,
+    messages: cachedMessages,
     temperature: 0.2,
     stream: wantStream,
     ...(wantStream ? { stream_options: { include_usage: true } } : {}),
@@ -52,6 +67,8 @@ async function callChat({
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${apiKey}`,
+        "x-api-key": apiKey || "",
+        "anthropic-beta": "prompt-caching-2024-07-31",
       },
       body: JSON.stringify(body),
       signal: requestSignal,
@@ -84,7 +101,7 @@ async function callChat({
       return {
         text: msg.content || "",
         toolCalls: Array.isArray(msg.tool_calls) ? msg.tool_calls : [],
-        usage: streamed?.usage || null,
+        usage: streamed?.usage ? normalizeUsage(streamed.usage) : null,
       };
     }
     if (contentType.includes("text/html")) {
@@ -111,7 +128,7 @@ async function callChat({
     return {
       text: msg.content || "",
       toolCalls,
-      usage: data.usage || null,
+      usage: data?.usage ? normalizeUsage(data.usage) : null,
     };
   } catch (error) {
     if (error?.code === "PROVIDER_GATEWAY_TIMEOUT" || Number(error?.status) === 524 || isGatewayHtmlBody(error?.message)) {
@@ -127,6 +144,8 @@ async function callChat({
 
 module.exports = {
   callChat,
+  normalizeUsage,
+  withCacheControl,
   GATEWAY_TIMEOUT_USER_MESSAGE,
   DEFAULT_PROVIDER_TIMEOUT_MS,
 };

@@ -71,7 +71,7 @@ test("voice-mode: limpieza de texto para sintesis de voz natural", () => {
 test("voice-mode: integracion en index.html y styles.css", () => {
   const indexHtml = fs.readFileSync(path.join(__dirname, "..", "index.html"), "utf8");
   assert.match(indexHtml, /id="voiceBtn"/, "Boton de voz presente en index.html");
-  assert.match(indexHtml, /Modo de voz desactivado|hidden aria-hidden="true"/, "Voz desactivada en UI");
+  assert.match(indexHtml, /class="voice-btn"/, "Clase voice-btn presente");
   assert.match(indexHtml, /id="voiceOverlay"/, "Overlay de voz presente en index.html");
   assert.match(indexHtml, /src="\.\/runtime\/voice-orb\.js"/, "voice-orb.js cargado en index.html");
   assert.match(indexHtml, /src="\.\/runtime\/voice-mode\.js"/, "voice-mode.js cargado en index.html");
@@ -79,13 +79,11 @@ test("voice-mode: integracion en index.html y styles.css", () => {
   const stylesCss = fs.readFileSync(path.join(__dirname, "..", "styles.css"), "utf8");
   assert.match(stylesCss, /\.voice-btn/, "Estilos de .voice-btn en styles.css");
   assert.match(stylesCss, /\.voice-overlay/, "Estilos de .voice-overlay en styles.css");
-  assert.match(stylesCss, /display:\s*none\s*!important/, "Voz oculta en CSS");
 });
 
-test("voice-mode: renderer no inicializa modo de voz", () => {
+test("voice-mode: renderer cablea dictado en vivo", () => {
   const renderer = fs.readFileSync(path.join(__dirname, "..", "renderer.js"), "utf8");
-  assert.match(renderer, /Voz desactivada|Modo de voz DESACTIVADO|no cablear EditCoreVoiceMode/i);
-  assert.doesNotMatch(renderer, /EditCoreVoiceMode\?\.toggle/);
+  assert.match(renderer, /_toggleLiveVoiceDictation|\$("voiceBtn")/, "Handler de voiceBtn presente");
 });
 
 test("voice-mode: bridge STT usa editcoreApp (no solo electronAPI)", () => {

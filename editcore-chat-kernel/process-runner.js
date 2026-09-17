@@ -1,8 +1,8 @@
 "use strict";
 
 /**
- * Process runner EditCoreAI — spawn + streaming (reemplaza exec síncrono).
- * Evita timeouts en builds/dev servers capturando stdout/stderr en vivo.
+ * Process runner EditCoreAI — spawn + streaming.
+ * Captura stdout/stderr en vivo y detecta errores críticos de compilación.
  */
 
 const { spawn } = require("child_process");
@@ -26,7 +26,6 @@ function isLongRunningCommand(command) {
 
 function detectSevereIssue(chunk, bufferTail) {
   const text = `${chunk || ""}\n${bufferTail || ""}`;
-  // Ruido GPU de Electron/Chromium: no es fallo del proyecto
   if (/gpu_ipc_service|gpu_channel_manager|ContextResult::kFatalFailure|shared context for virtualization/i.test(text)
     && !/Failed to compile|Module not found|EADDRINUSE|ELIFECYCLE/i.test(text)) {
     return null;
@@ -54,9 +53,6 @@ function detectSevereIssue(chunk, bufferTail) {
   return null;
 }
 
-/**
- * Adjunta listeners de stream a un child ya spawnado.
- */
 function attachProcessStreams(child, {
   onChunk,
   onSevereError,
@@ -71,7 +67,7 @@ function attachProcessStreams(child, {
     const text = stripAnsi(raw);
     if (!text) return;
     buffer = (buffer + text).slice(-maxCapture);
-    try { onChunk?.({ stream, chunk: text, buffer }); } catch { /* ignore */ }
+    try { onChunk?.({ stream, chunk: text, buffer }); } catch {}
 
     const issue = detectSevereIssue(text, buffer.slice(-2500));
     if (!issue) return;
@@ -86,7 +82,7 @@ function attachProcessStreams(child, {
         at: now,
         autoHeal: true,
       });
-    } catch { /* ignore */ }
+    } catch {}
   };
 
   const onOut = (c) => handle(c, "stdout");
@@ -105,17 +101,6 @@ function attachProcessStreams(child, {
   };
 }
 
-/**
- * Ejecuta un comando con spawn + captura streaming.
- * @param {object} opts
- * @param {string} opts.cwd
- * @param {string} opts.command
- * @param {number} [opts.timeoutMs]
- * @param {boolean} [opts.background] forzar modo background (dev servers)
- * @param {(ev: object) => void} [opts.onChunk]
- * @param {(issue: object) => void} [opts.onSevereError]
- * @param {AbortSignal} [opts.signal]
- */
 function runProcess({
   cwd,
   command,
@@ -162,11 +147,11 @@ function runProcess({
       settled = true;
       const keepStreams = Boolean(payload.streaming && payload.ok !== false);
       if (!keepStreams) {
-        try { streams.detach(); } catch { /* ignore */ }
+        try { streams.detach(); } catch {}
       }
       if (timer) clearTimeout(timer);
       if (onAbort) {
-        try { signal.removeEventListener("abort", onAbort); } catch { /* ignore */ }
+        try { signal.removeEventListener("abort", onAbort); } catch {}
       }
       resolve({
         ok: payload.ok !== false,
@@ -187,7 +172,7 @@ function runProcess({
     if (!longLived && timeoutMs > 0) {
       timer = setTimeout(() => {
         timedOut = true;
-        try { child.kill(); } catch { /* ignore */ }
+        try { child.kill(); } catch {}
         finish({
           ok: false,
           error: `Timeout tras ${timeoutMs}ms (spawn streaming).`,
@@ -199,7 +184,7 @@ function runProcess({
     let onAbort = null;
     if (signal) {
       onAbort = () => {
-        try { child.kill(); } catch { /* ignore */ }
+        try { child.kill(); } catch {}
         finish({ ok: false, error: "Abortado", code: null });
       };
       if (signal.aborted) onAbort();
@@ -211,7 +196,6 @@ function runProcess({
     });
 
     if (longLived) {
-      // Dev servers: no esperar exit; devolver cuando el proceso esté vivo o tras breve arranque.
       const bootMs = Math.min(4000, Math.max(1500, timeoutMs || 4000));
       setTimeout(() => {
         if (settled) return;
@@ -223,7 +207,6 @@ function runProcess({
           });
           return;
         }
-        // Mantener streams activos vía onSevereError; el caller gestiona el child si guarda pid.
         finish({
           ok: true,
           streaming: true,
@@ -245,13 +228,11 @@ function runProcess({
     }
 
     child.on("close", (code) => {
-      finish({
-        ok: !timedOut && code === 0,
-        error: timedOut
-          ? `Timeout tras ${timeoutMs}ms (spawn streaming).`
-          : (code === 0 ? undefined : `Exit code ${code}`),
-        code,
-      });
+      finish(
+        !timedOut && code === 0,
+        timedOut ? `Timeout tras ${timeoutMs}ms` : (code === 0 ? undefined : `Exit code ${code}`),
+        code
+      );
     });
   });
 }

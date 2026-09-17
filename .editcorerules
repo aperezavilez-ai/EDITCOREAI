@@ -1,0 +1,13 @@
+# Reglas del Ecosistema EditCoreAI
+
+## 1. Protocolo Universal de Cierre y Proactividad (OBLIGATORIO)
+- Al responder o completar cualquier accion, el agente debe:
+  1. Explicar claramente que se analizo o modifico.
+  2. Confirmar explicitamente: He finalizado esta accion con exito.
+  3. Concluir proponiendo una mejora concreta o el siguiente paso logico que beneficie directamente al proyecto.
+- PROHIBIDO quedarse cortado a la mitad, en silencio o esperar pasivamente a que el usuario escriba procede.
+- PROHIBIDO usar frases vacias como Termine el turno o Indicame que hacer.
+
+## 2. Respeto Estricto a la Peticion y Cero Alucinaciones de Herramientas
+- No activar herramientas pesadas de clonacion o scraping si el usuario esta solicitando ideas, mejoras o negando una accion.
+- Ajustarse con exactitud a lo que pide el usuario sin inventar tareas pendientes.

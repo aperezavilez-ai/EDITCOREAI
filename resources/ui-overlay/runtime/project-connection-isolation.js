@@ -60,7 +60,7 @@ function validateProjectConnectionTarget(projectRoot = {}, intended = {}) {
       reasons.push(`supabaseProjectId no coincide con project-infra.json (${expectedId}).`);
     }
     if (intendedGateway && expectedGw && intendedGateway !== expectedGw) {
-      reasons.push(`GafCore Gateway no coincide con project-infra.json (${expectedGw}).`);
+      reasons.push(`Endpoint de modelos no coincide con project-infra.json (${expectedGw}).`);
     }
   }
 
@@ -71,9 +71,18 @@ function validateProjectConnectionTarget(projectRoot = {}, intended = {}) {
     }
   }
 
-  // Sin manifiesto: no bloquear, pero exigir que no se mezcle un ID global hardcodeado.
-  if (!infra && /supabase\.co|hardcoded/i.test(intendedUrl) && !links) {
-    reasons.push("Proyecto sin project-infra.json ni .editcore/connections.json: configura conexiones por proyecto antes de mutar Supabase.");
+  // Sin manifiesto: rechazar URL GafCore de otro slug distinto al de esta carpeta.
+  if (intendedUrl && /supabase\.gafcore\.com\//i.test(intendedUrl)) {
+    const slug = String(path.basename(root || ""))
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "");
+    try {
+      const intendedSlug = new URL(intendedUrl).pathname.replace(/^\/+|\/+$/g, "").split("/")[0] || "";
+      if (slug && intendedSlug && intendedSlug !== slug) {
+        reasons.push(`URL Supabase /${intendedSlug} no pertenece a este proyecto (/${slug}). Cada proyecto tiene URL propia.`);
+      }
+    } catch { /* ignore */ }
   }
 
   return { ok: reasons.length === 0, reasons, infraPath: infra?.path || "", connectionsPath: links?.path || "" };

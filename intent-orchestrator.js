@@ -61,8 +61,9 @@
     if (phase === "awaiting_authorization") return false;
     const phaseOk = ["interrupted", "executing"].includes(phase);
     if (!options.resumableTask && !phaseOk) return false;
-    // PROCEDE / ADELANTE / AUTORIZO = autorizar EJECUCION, nunca reabrir analisis eterno.
+    // PROCEDE / ADELANTE / AUTORIZO / CONTINUA Y TERMINA YA = autorizar EJECUCION, nunca reabrir analisis eterno.
     if (/^\s*(?:procede|adelante|autorizo)\b/i.test(text)) return false;
+    if (/\b(?:continua\s+y\s+termina(?:\s+ya)?|termina\s+ya|finaliza\s+ya)\b/i.test(text)) return false;
     // Pedido explicito de correccion/escritura: no forzar analisis.
     if (/\b(corrige|repara|arregla|fix|implementa|crea|escribe|modifica|write_file|replace_in_file)\b/i.test(text)
       && !/\b(reporte|diagn[oó]stico|an[aá]lisis|auditor[ií]a)\b/i.test(text)) {
@@ -444,7 +445,7 @@ function formatOrchestrationBlock(profile = {}) {
       return [
         "ORQUESTACION EDITCORE (ONBOARD PROYECTO NUEVO):",
         "- El usuario pidio aplicar dependencias y conectar servicios del operador.",
-        "- Ejecuta onboard_project (una llamada) para: npm install, Supabase GafCore (self-hosted), GitHub, Vercel, sync envs y GafCore Gateway.",
+        "- Ejecuta onboard_project (una llamada) para: npm install, Supabase propio, GitHub, Vercel y sync envs. Modelos: ME AI / APICredits en Modelos.",
         "- Las conexiones globales ya estan en EditCore (github, vercel, supabase.gafcore, gateway). NO pidas tokens ni uses Supabase Cloud.",
         "- Si aun no hay codigo/plantilla: create_project primero; luego onboard_project.",
         "- Informa el checklist devuelto (dependencias, supabase, github, vercel, gateway).",
@@ -506,7 +507,7 @@ function formatOrchestrationBlock(profile = {}) {
       "- Para explorar rapido: semantic_search o run_parallel_explore (solo lectura).",
       "- Para UI de alta calidad: aplica frontend-design y verifica con inspect_preview (desktop y mobile).",
       "- Tras escrituras relevantes: run_diagnostics si hay lint/typecheck; si AUTO-FIX llega, corrige de inmediato.",
-      "- Si pide conectar servicios (GitHub, Vercel, supabase.gafcore, GafCore Gateway): usa onboard_project.",
+      "- Si pide conectar servicios (GitHub, Vercel, Supabase propio): usa onboard_project. Modelos AI: panel Modelos (ME AI / APICredits).",
       "- generate_image solo con config y pedido explicito de assets.",
     ].join("\n");
   }

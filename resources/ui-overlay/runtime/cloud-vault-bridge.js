@@ -84,9 +84,7 @@ function createCloudVaultBridge(deps = {}) {
       return { service: "supabase", url, key };
     }
     if (name === "gafcore" || name === "gateway") {
-      const token = String(getGatewayAdminToken() || "").trim();
-      if (!token) throw new Error("Falta admin token de GafCore Gateway en la bóveda.");
-      return { service: "gafcore", adminToken: token, origin: gatewayOrigin };
+      throw new Error("Esta integración ya no está disponible. Configura ME AI o APICredits en Modelos.");
     }
     throw new Error(`Servicio de bóveda desconocido: ${service}`);
   }
@@ -109,7 +107,7 @@ function createCloudVaultBridge(deps = {}) {
   function formatInfraForPrompt(projectRoot = "") {
     const loaded = readProjectInfra(projectRoot);
     if (!loaded?.data) {
-      return "project-infra.json ausente. Tras conectar GitHub/Vercel/Supabase/GafCore, el runtime lo escribe automáticamente.";
+      return "project-infra.json ausente. Tras conectar GitHub/Vercel/Supabase, el runtime lo escribe automáticamente.";
     }
     const d = loaded.data;
     return [
@@ -118,8 +116,8 @@ function createCloudVaultBridge(deps = {}) {
       d.vercelProjectName || d.vercelUrl ? `- Vercel: ${d.vercelProjectName || d.vercelUrl}` : "- Vercel: (sin ligar)",
       d.supabaseUrl ? `- Supabase: ${d.supabaseUrl}` : "- Supabase: (sin ligar)",
       d.gafcoreGateway || d.gafcoreProjectId
-        ? `- GafCore AI: ${d.gafcoreGateway || gatewayOrigin}${d.gafcoreProjectId ? ` · project=${d.gafcoreProjectId}` : ""}`
-        : "- GafCore AI: (sin ligar)",
+        ? `- IA (legacy): ${d.gafcoreGateway || gatewayOrigin}${d.gafcoreProjectId ? ` · project=${d.gafcoreProjectId}` : ""}`
+        : "- IA: configura ME AI o APICredits en Modelos del IDE.",
       d.liveUrl ? `- Live: ${d.liveUrl}` : "",
     ].filter(Boolean).join("\n");
   }
@@ -240,57 +238,9 @@ function createCloudVaultBridge(deps = {}) {
     });
   }
 
-  /**
-   * Crea/reutiliza proyecto AI en GafCore Gateway y escribe URL + key en .env.local.
-   * @returns {{ ok: boolean, GAFCORE_GATEWAY_URL: string, GAFCORE_API_KEY: string, ... }}
-   *   GAFCORE_API_KEY en el return va enmascarado; el valor real solo en .env.local.
-   */
-  async function provisionGafcoreAI(projectName, aiOptions = {}) {
-    const name = String(projectName || aiOptions.projectName || "").trim();
-    const projectRoot = path.resolve(String(aiOptions.projectRoot || "").trim());
-    if (!name) throw new Error("provisionGafcoreAI requiere projectName.");
-    if (!projectRoot || !fs.existsSync(projectRoot)) {
-      throw new Error("provisionGafcoreAI requiere projectRoot existente.");
-    }
-    if (!connectGatewayProject) {
-      throw new Error("connectGatewayProject no inyectado en cloud-vault-bridge.");
-    }
-    getVaultCredentials("gafcore");
-    const link = await connectGatewayProject({
-      projectRoot,
-      projectName: name,
-      localProjectId: String(aiOptions.localProjectId || ""),
-      initialBalanceUsd: Number(aiOptions.initialBalanceUsd) || 0,
-      adminToken: String(aiOptions.adminToken || getGatewayAdminToken() || ""),
-    });
-    const projectKey = String(link?.projectKey || "").trim();
-    if (!projectKey) throw new Error("GafCore Gateway no devolvió project key.");
-    const { writeLocalEnv } = require("./project-connect");
-    writeLocalEnv(projectRoot, {
-      GAFCORE_GATEWAY_URL: gatewayOrigin,
-      GAFCORE_API_KEY: projectKey,
-      GAFCORE_PROJECT_ID: String(link.projectId || ""),
-      GAFCORE_PROJECT_NAME: String(link.projectName || name),
-    });
-    mergeProjectInfra(projectRoot, {
-      gafcoreGateway: gatewayOrigin,
-      gafcoreProjectId: String(link.projectId || ""),
-      gafcoreProjectName: String(link.projectName || name),
-      notes: [`GafCore AI provision ${new Date().toISOString().slice(0, 19)}`],
-    });
-    return {
-      ok: true,
-      tool: "provision_gafcore_ai",
-      reused: link.reused === true,
-      GAFCORE_GATEWAY_URL: gatewayOrigin,
-      GAFCORE_API_KEY: maskSecret(projectKey),
-      GAFCORE_API_KEY_CONFIGURED: true,
-      writtenTo: [".env.local", "project-infra.json"],
-      projectId: String(link.projectId || ""),
-      projectName: String(link.projectName || name),
-      selectedModel: link.selectedModel || "",
-      vault: { gafcore: true },
-    };
+  /** @deprecated Integración Gateway AI descontinuada — usar ME AI / APICredits en Modelos. */
+  async function provisionGafcoreAI(_projectName, _aiOptions = {}) {
+    throw new Error("Esta integración ya no está disponible. Configura ME AI o APICredits en Modelos.");
   }
 
   async function provisionFullStackProject(projectRoot, options = {}) {
@@ -307,19 +257,11 @@ function createCloudVaultBridge(deps = {}) {
       rollbackOnFail: options.rollbackOnFail !== false,
       mode: options.mode === "update" ? "update" : "full",
     });
-    let gafcore = null;
-    if (options.provisionAi !== false && connectGatewayProject) {
-      try {
-        gafcore = await provisionGafcoreAI(projectName, {
-          projectRoot: root,
-          localProjectId: String(options.localProjectId || ""),
-          initialBalanceUsd: Number(options.initialBalanceUsd) || 0,
-          adminToken: String(options.adminToken || ""),
-        });
-      } catch (error) {
-        gafcore = { ok: false, error: String(error?.message || error).slice(0, 240) };
-      }
-    }
+    const gafcore = {
+      ok: true,
+      skipped: true,
+      message: "Integración Gateway AI descontinuada. Configura ME AI o APICredits en Modelos.",
+    };
     return redactDeep({
       ok: deploy?.ok !== false,
       tool: "provision_fullstack_project",

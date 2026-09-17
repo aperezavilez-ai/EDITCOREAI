@@ -7,7 +7,7 @@ const AutoModel = require("../auto-model-selection");
 
 const raw = Protocol.withAutoRouterTransparentProtocol("Eres agente.");
 assert.ok(Protocol.hasAutoRouterProtocol(raw), "protocol marker present");
-assert.ok(raw.includes("Paso 1 (Diagnosticar)"), "diagnose step present");
+assert.ok(raw.includes("Diagnóstico") || raw.includes("Paso 1"), "diagnose step present");
 assert.ok(raw.includes("CUMPLIMIENTO DE STREAMING"), "streaming compliance present");
 
 const viaElite = Elite.withEliteCommunicationPolicy("Responde en español.");

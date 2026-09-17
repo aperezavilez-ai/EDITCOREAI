@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: file: blob:; font-src 'self' data:; worker-src 'self' blob: data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-src http: https: file:;" />
-    <title>EditCoreAI</title>
+    <title>EditCore</title>
     <link rel="icon" href="./assets/logo.ico" type="image/x-icon" />
     <link rel="shortcut icon" href="./assets/logo.ico" type="image/x-icon" />
     <link rel="apple-touch-icon" href="./assets/logo.png" />
@@ -51,11 +51,11 @@
       </div>
     </section>
 
-    <!-- Top toolbar: esenciales a la vista; secundarios en Herramientas / Publicar -->
+    <!-- Barra principal: logo + EditCore + acciones (titleBarOverlay = sin doble título OS) -->
     <header class="app-toolbar">
-      <div class="toolbar-brand-wrap">
-        <img src="./assets/editcore-logo.png" class="toolbar-logo" alt="EditCoreAI" width="28" height="28" decoding="async" />
-        <span class="toolbar-brand">EditCoreAI</span>
+      <div class="toolbar-brand-wrap" title="EditCore">
+        <img src="./assets/editcore-logo.png" class="toolbar-logo" alt="" width="18" height="18" decoding="async" />
+        <span class="toolbar-brand">EditCore</span>
       </div>
       <nav class="toolbar-nav" aria-label="Barra principal">
         <div class="toolbar-group" aria-label="Proyecto">
@@ -91,18 +91,16 @@
               <button id="updatesBtn" type="button" role="menuitem" data-tool="reload-app" title="Recargar EditCoreAI con el código actual">Recargar app</button>
             </div>
           </div>
-          <button id="connectProjectBtn" type="button" class="toolbar-connect-btn" title="Conectar: npm install + GitHub repo + Vercel + Supabase GafCore">Conectar</button>
+          <button id="connectProjectBtn" type="button" class="toolbar-connect-btn" title="Conectar: npm install + GitHub + Vercel + Supabase">Conectar</button>
           <button id="publishBtn" type="button" class="toolbar-publish-btn" title="Publicar proyecto: GitHub → Vercel → Supabase → Live">Publicar</button>
         </div>
       </nav>
     </header>
 
-    <!-- Main chat column -->
+    <!-- Main chat column (estado → barra inferior; sin topbar duplicada) -->
     <main>
-      <header class="topbar">
-        <span id="status" class="chat-status">Listo</span>
-        <span id="savingsStatus" class="savings-badge">Cache 0%</span>
-      </header>
+      <span id="status" class="chat-status visually-hidden" aria-live="polite">Listo</span>
+      <span id="savingsStatus" class="savings-badge visually-hidden">Cache 0%</span>
       <div id="chatTabsBar" class="chat-tabs-bar" aria-label="Chats">
         <span id="agentSpecialistBadge" class="agent-specialist-badge is-idle" hidden aria-live="polite">Agente</span>
         <div id="chatTabs" class="chat-tabs" role="tablist"></div>
@@ -116,7 +114,11 @@
       <section id="fullStackProgress" class="fullstack-progress hidden" hidden aria-live="polite">
         <div class="fullstack-progress-head">
           <strong>Publicar</strong>
+          <span id="fullStackProgressPct" class="fullstack-progress-pct" aria-live="polite">0%</span>
           <span id="fullStackProgressStatus">en curso…</span>
+        </div>
+        <div class="fullstack-progress-track" aria-hidden="true">
+          <div id="fullStackProgressFill" class="fullstack-progress-fill" style="width:0%"></div>
         </div>
         <ol id="fullStackProgressStages" class="fullstack-progress-stages"></ol>
       </section>
@@ -146,8 +148,9 @@
           <div id="attachmentList" class="attachment-list"></div>
           <div class="prompt-ghost-stack">
             <div id="promptGhost" class="prompt-ghost" aria-hidden="true"></div>
-            <textarea id="prompt" rows="3" placeholder="Escribe tu mensaje…" spellcheck="false"></textarea>
+            <textarea id="prompt" rows="3" placeholder="Escribe tu mensaje… (usa @ para archivos, git, problemas o docs)" spellcheck="false"></textarea>
           </div>
+          <div id="mentionPopup" class="mention-popup hidden" role="listbox" aria-label="Menciones contextuales"></div>
         </div>
         <div class="composer-bar">
           <button id="attachBtn" type="button" title="Adjuntar imagen (o archivo)">+</button>
@@ -169,7 +172,7 @@
             </select>
             <div id="modelPickerMenu" class="model-picker-menu hidden" role="listbox" aria-label="Modelos disponibles"></div>
           </div>
-          <button id="voiceBtn" type="button" class="voice-btn" hidden aria-hidden="true" tabindex="-1" disabled title="Modo de voz desactivado: ME AI / APICredits no ofrecen Whisper STT" aria-label="Modo de voz desactivado">
+          <button id="voiceBtn" type="button" class="voice-btn" title="Dictado por voz (Haz clic para hablar a EditCoreAI)" aria-label="Dictar por voz">
             <svg class="voice-mic-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/>
               <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
@@ -462,7 +465,7 @@
           <header class="dlg-head">
             <div>
               <h2>Conexiones</h2>
-              <p>Bóveda segura. <strong>Supabase propio</strong> = base de datos del proyecto. <strong>GafCore Gateway</strong> = AI (distintos).</p>
+              <p>Bóveda segura. Conecta GitHub, Vercel, Supabase propio y SSH. Los modelos de IA se configuran en <strong>Modelos</strong> (ME AI / APICredits).</p>
             </div>
             <button id="closeConnectionsBtn" type="button" class="dlg-close">✕</button>
           </header>
@@ -503,29 +506,6 @@
               <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:6px;flex-wrap:wrap">
                 <button type="button" id="createSupabaseProjectBtn" class="conn-connect-btn" title="Crea supabase/ en el proyecto activo">Crear en proyecto</button>
                 <button type="button" class="conn-connect-btn" data-service="selfsupabase">Guardar →</button>
-              </div>
-            </div>
-
-            <div class="conn-section">
-              <div class="conn-section-title">GafCore Gateway <span class="conn-status" data-service="gafcore">sin conectar</span></div>
-              <div class="oauth-row">
-                <div class="conn-field">
-                  <span>Admin token</span>
-                  <input id="gafcoreAdminToken" type="password" autocomplete="off" placeholder="desde Gateway → Configuración" />
-                </div>
-                <button type="button" id="saveGafcoreAdminTokenBtn" class="conn-connect-btn" title="Guarda el admin token en la bóveda">Autorizar →</button>
-              </div>
-              <div class="conn-grid" style="margin-top:6px">
-                <div class="conn-field">
-                  <span>Presupuesto inicial USD</span>
-                  <input id="gafcoreInitialBalance" type="number" min="0" step="0.01" value="0" />
-                </div>
-              </div>
-              <div id="gafcoreProjectDetail" style="display:none;margin-top:8px;padding:6px 8px;border-radius:4px;background:rgba(142,107,191,.12);font-size:.85em;word-break:break-word"></div>
-              <div class="conn-error-detail" data-service="gafcore" style="display:none;color:#e55;font-size:0.8em;margin-top:4px;padding:4px 8px;background:rgba(255,80,80,0.08);border-radius:4px;word-break:break-word;"></div>
-              <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:6px;flex-wrap:wrap">
-                <button type="button" id="openGafcoreDashboardBtn" class="conn-connect-btn" title="Abre el dashboard para copiar el admin token">Abrir Gateway</button>
-                <button type="button" id="connectGatewayProjectBtn" class="conn-connect-btn" title="Crea o reutiliza el proyecto AI en GafCore Gateway">Vincular proyecto →</button>
               </div>
             </div>
 
@@ -596,5 +576,23 @@
     <script src="./runtime/voice-orb.js" defer></script>
     <script src="./runtime/voice-mode.js" defer></script>
     <script src="./logs-panel.js" defer></script>
+
+    <!-- Barra de estado inferior (tipo Cursor) -->
+    <footer id="appStatusBar" class="app-statusbar" role="contentinfo" aria-label="Estado">
+      <div class="statusbar-left">
+        <button type="button" id="statusBarBranch" class="statusbar-item statusbar-btn" title="Proyecto activo">Sin proyecto</button>
+        <span class="statusbar-sep" aria-hidden="true"></span>
+        <span id="statusBarMessage" class="statusbar-item" title="Estado">Listo</span>
+        <span class="statusbar-sep" aria-hidden="true"></span>
+        <span id="statusBarModel" class="statusbar-item" title="Modelo activo">Auto</span>
+      </div>
+      <div class="statusbar-right">
+        <span id="statusBarCache" class="statusbar-item" title="Ahorro de caché">Cache 0%</span>
+        <span class="statusbar-sep" aria-hidden="true"></span>
+        <span id="statusBarTheme" class="statusbar-item" title="Tema actual">blanco</span>
+        <span class="statusbar-sep" aria-hidden="true"></span>
+        <span id="statusBarVersion" class="statusbar-item statusbar-version" title="Versión EditCore">EditCore</span>
+      </div>
+    </footer>
   </body>
 </html>

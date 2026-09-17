@@ -23,7 +23,7 @@ const OPERATE_SEQUENCE_RULE = [
   "SECUENCIA OPERAR (OBLIGATORIA — no saltes pasos; no narres sin tool_calls):",
   "1) ESTADO: read_file de ROADMAP.md + .editcore/session-state.json (y EDITCORE-MANIFEST.md si hablas de esta app).",
   "2) BÓVEDA: las tools deploy_*/provision_* leen safeStorage/Conexiones. Si falta token, di exactamente qué falta en Conexiones — NUNCA pidas pegar el secreto en el chat.",
-  "3) ACCIÓN: ejecuta la tool concreta (deploy_github | deploy_vercel | provision_supabase | provision_gafcore_ai | provision_fullstack_project | onboard_project | fullstack_deploy).",
+  "3) ACCIÓN: ejecuta la tool concreta (deploy_github | deploy_vercel | provision_supabase | provision_fullstack_project | onboard_project | fullstack_deploy).",
   "4) MANIFIESTO: confirma que project-infra.json / .env.local quedaron escritos; resume el resultado (URL, repo, proveedor).",
   "PROHIBIDO: tutoriales genéricos de GitHub/Vercel/Supabase; inventar que ya publicó sin tool result; saltar el Step 0.",
 ].join("\n");
@@ -34,7 +34,7 @@ const CLOUD_TOOLS_POLICY = [
   "- Solo GitHub → deploy_github.",
   "- Solo Vercel → deploy_vercel.",
   "- Solo Supabase → provision_supabase.",
-  "- Proveedor de IA del proyecto (ME AI / APICredits) → provision_gafcore_ai (escribe variables del proveedor en .env.local).",
+  "- Proveedor de IA (ME AI / APICredits) → configúralo en el panel Modelos del IDE (no hay tool de aprovisionamiento automático).",
   "- Health local → probe_endpoint / test_local_api.",
 ].join("\n");
 

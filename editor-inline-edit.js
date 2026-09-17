@@ -132,9 +132,22 @@
       }
     } catch { /* ignore */ }
 
-    const ctx = getEditor();
+    let ctx = getEditor();
     if (!ctx) {
-      showToast("Abrí la pestaña Código y un archivo primero");
+      // Si el usuario está en otra pestaña (Web/Móvil), intentar cambiar a Código
+      const codeTabBtn = document.querySelector('[data-view="code"], #tabCode, .tab-btn-code, button[data-tab="code"], .tab-btn:has(span:contains("Código"))')
+        || Array.from(document.querySelectorAll("button, .tab, .tab-btn")).find((el) => /c[oó]digo/i.test(el.textContent || ""));
+      if (codeTabBtn) {
+        codeTabBtn.click();
+      }
+      setTimeout(() => {
+        const retryCtx = getEditor();
+        if (retryCtx) {
+          openWidget();
+        } else {
+          showToast("Abre un archivo en la pestaña Código para usar Ctrl+K");
+        }
+      }, 120);
       return;
     }
     const { editor, monaco } = ctx;
@@ -144,7 +157,7 @@
 
     const path = String(window.EditCoreEditor?.getCurrentPath?.() || "").trim();
     if (!path) {
-      showToast("Abrí un archivo primero");
+      showToast("Selecciona un archivo en la pestaña Código");
       return;
     }
 
@@ -183,30 +196,41 @@
       fullOriginal: model.getValue(),
     };
 
-    const pos = editor.getScrolledVisiblePosition({ lineNumber: startLine, column: 1 });
-    const editorDom = editor.getDomNode();
-    if (!pos || !editorDom) return;
-    const rect = editorDom.getBoundingClientRect();
+    const pos = editor.getScrolledVisiblePosition ? editor.getScrolledVisiblePosition({ lineNumber: startLine, column: 1 }) : null;
+    const editorDom = editor.getDomNode ? editor.getDomNode() : document.getElementById("monacoEditorHost");
+    const rect = editorDom?.getBoundingClientRect?.() || { left: 100, top: 100, width: 600, height: 400 };
 
     destroyWidget();
     const widget = document.createElement("div");
     widget.className = "inline-edit-widget";
     widget.innerHTML = `
       <div class="inline-edit-widget-head">
-        <span class="inline-edit-icon">✦</span>
-        <span class="inline-edit-title">Editar con IA</span>
-        <button type="button" class="inline-edit-close" aria-label="Cancelar">×</button>
+        <span class="inline-edit-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/><path d="M5 3v4"/><path d="M19 17v4"/></svg></span>
+        <span class="inline-edit-title">EditCore Inline Edit</span>
+        <span class="inline-edit-badge"><kbd>Ctrl+K</kbd></span>
+        <button type="button" class="inline-edit-close" aria-label="Cancelar"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
       </div>
       <textarea class="inline-edit-input" rows="2"
-        placeholder="Instrucción para editar… (Enter=generar, Shift+Enter=nueva línea, Esc=cancelar)"></textarea>
-      <div class="inline-edit-actions">
-        <button type="button" class="inline-edit-generate">Generar</button>
+        placeholder="Instrucción de edición... (ej. refactoriza a TypeScript estricto)"></textarea>
+      <div class="inline-edit-footer">
+        <div class="inline-edit-hints">
+          <span class="hint-item"><kbd>↵</kbd> Generar</span>
+          <span class="hint-item"><kbd>Esc</kbd> Cancelar</span>
+        </div>
+        <div class="inline-edit-actions">
+          <button type="button" class="inline-edit-generate">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+            <span>Generar</span>
+          </button>
+        </div>
       </div>
       <div class="inline-edit-error" hidden></div>
     `;
     widget.style.position = "absolute";
-    widget.style.left = `${Math.max(8, Math.min(rect.left + pos.left, window.innerWidth - 400))}px`;
-    widget.style.top = `${Math.max(8, rect.top + pos.top - 90)}px`;
+    const posX = pos ? Math.max(12, Math.min(rect.left + pos.left, window.innerWidth - 450)) : Math.max(12, rect.left + 40);
+    const posY = pos ? Math.max(12, rect.top + pos.top - 90) : Math.max(12, rect.top + 50);
+    widget.style.left = `${posX}px`;
+    widget.style.top = `${posY}px`;
     widget.style.zIndex = "10000";
     document.body.appendChild(widget);
     state.widget = widget;

@@ -164,15 +164,83 @@ async function createGithubRepo(connections, { name, privateRepo = true, descrip
   };
 }
 
+function normalizeGithubHttpsRemote(url = "") {
+  const raw = String(url || "").trim().replace(/\.git$/i, "");
+  const https = raw.match(/github\.com[/:]([^/]+)\/([^/.]+)/i);
+  if (!https) return { ok: false, url: raw };
+  return {
+    ok: true,
+    owner: https[1],
+    name: https[2],
+    httpsUrl: `https://github.com/${https[1]}/${https[2]}.git`,
+    fullName: `${https[1]}/${https[2]}`,
+  };
+}
+
+async function githubRepoExists(connections, owner, name) {
+  const token = String(connections.githubToken || "").trim();
+  if (!token || !owner || !name) return false;
+  try {
+    const result = await executeServiceRequest({
+      service: "github",
+      method: "GET",
+      path: `/repos/${owner}/${name}`,
+      connections,
+    });
+    return Boolean(result?.data?.full_name || result?.status === 200);
+  } catch {
+    return false;
+  }
+}
+
 async function ensureGithubRemote(gitRoot, connections, { createIfMissing = true, repoName = "" } = {}) {
+  const desiredName = String(repoName || path.basename(gitRoot) || "")
+    .trim()
+    .replace(/[^a-zA-Z0-9._-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .toLowerCase();
   const current = await git(gitRoot, ["remote", "get-url", "origin"]).catch(() => ({ code: 1, stdout: "" }));
   if (current.code === 0 && current.stdout) {
+    const parsed = normalizeGithubHttpsRemote(current.stdout);
+    // Si el remote local aún dice -advance (u otro nombre) pero el repo deseado existe en GitHub, actualizar origin.
+    if (parsed.ok && desiredName && parsed.name.toLowerCase() !== desiredName) {
+      const existsDesired = await githubRepoExists(connections, parsed.owner, desiredName);
+      if (existsDesired) {
+        const nextUrl = `https://github.com/${parsed.owner}/${desiredName}.git`;
+        const setUrl = await git(gitRoot, ["remote", "set-url", "origin", nextUrl]);
+        if (setUrl.code === 0) {
+          return {
+            ok: true,
+            created: false,
+            updated: true,
+            remoteUrl: nextUrl,
+            message: `Remote actualizado: ${parsed.name} → ${desiredName}`,
+          };
+        }
+      }
+    }
     return { ok: true, created: false, remoteUrl: current.stdout };
   }
   if (!createIfMissing) {
     return { ok: false, message: "Sin remote origin. Activa createIfMissing o agrega el remote manualmente." };
   }
-  const name = repoName || path.basename(gitRoot);
+  const name = desiredName || path.basename(gitRoot);
+  // Preferir repo ya renombrado en GitHub antes de crear uno nuevo.
+  const whoami = await executeServiceRequest({
+    service: "github",
+    method: "GET",
+    path: "/user",
+    connections,
+  }).catch(() => null);
+  const owner = String(whoami?.data?.login || "").trim();
+  if (owner && await githubRepoExists(connections, owner, name)) {
+    const url = `https://github.com/${owner}/${name}.git`;
+    const add = await git(gitRoot, ["remote", "add", "origin", url]);
+    if (add.code !== 0) {
+      return { ok: false, message: add.stderr || "No se pudo agregar remote origin." };
+    }
+    return { ok: true, created: false, remoteUrl: url, message: `Remote enlazado a ${owner}/${name}` };
+  }
   const created = await createGithubRepo(connections, { name, privateRepo: true });
   if (!created.ok) return created;
   const url = created.cloneUrl || created.sshUrl;
@@ -230,7 +298,7 @@ async function ensureSupabaseEnv(projectRoot, connections) {
       linked: true,
     },
     notes: [
-      "Supabase GafCore es por proyecto: URL propia, sin heredar de otros.",
+      "Supabase propio es por proyecto: URL propia, sin heredar de otros.",
       `Slug: ${gafcoreProjectSlug(projectRoot)}`,
     ],
   });

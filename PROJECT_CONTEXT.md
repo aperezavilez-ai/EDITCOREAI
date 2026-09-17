@@ -7,9 +7,10 @@ IDE Electron de pair-programming / agentic coding: chat + agente con tools en di
 
 ## Versión de producto
 - Semver: ver `package.json` → `version` / `build.buildVersion`
-- Release actual objetivo: **3.0.2** / FileVersion **3.0.2.0**
+- Release actual objetivo: **3.0.4** / FileVersion **3.0.4.0**
 - Artefactos: `EDITCOREAI.exe` (raíz) + `release/EDITCOREAI-Setup.exe`
-- 3.0.2: contraste chat por theme (azul/gris/negro) + recuadros Pensamiento difuminados (glass), no sólidos blancos
+- 3.0.4: Publicar end-to-end (barra/%, Vercel orgId, mensaje final corto) + release Windows
+- 3.0.2: contraste chat por theme (azul/gris/negro) + recuadros Pensamiento difuminados (glass)
 
 ## Entry points
 | Capa | Archivo | Rol |

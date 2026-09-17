@@ -33,5 +33,5 @@ test("agentes: knowledge pack y contrato de trabajo en fuentes", () => {
 test("agentes: guia de profundidad pide recomendacion concreta", () => {
   const src = fs.readFileSync(path.join(__dirname, "..", "runtime", "analysis-depth.js"), "utf8");
   assert.match(src, /Qué falta para que funcione/);
-  assert.match(src, /recomienda en 2-4 lineas|correccion de mayor impacto/i);
+  assert.match(src, /recomienda SOLO correcciones|recomienda en 2-4 lineas|correccion de mayor impacto/i);
 });

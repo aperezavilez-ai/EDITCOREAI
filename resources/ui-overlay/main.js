@@ -9,12 +9,19 @@ try {
   // ignore
 }
 app.commandLine.appendSwitch("use-fake-ui-for-media-stream");
-app.commandLine.appendSwitch("disable-features", "CalculateNativeWinOcclusion");
+app.commandLine.appendSwitch("disable-renderer-backgrounding");
+app.commandLine.appendSwitch("disable-background-timer-throttling");
+app.commandLine.appendSwitch("disable-backgrounding-occluded-windows");
+app.commandLine.appendSwitch("disable-features", "CalculateNativeWinOcclusion,IntensiveWakeUpThrottling,HighPriorityBeforeUnload");
+app.commandLine.appendSwitch("enable-gpu-rasterization");
+app.commandLine.appendSwitch("enable-zero-copy");
+app.commandLine.appendSwitch("ignore-gpu-blocklist");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const crypto = require("node:crypto");
 const net = require("node:net");
+const { pathToFileURL } = require("node:url");
 const { execFile, spawn, spawnSync } = require("node:child_process");
 const { promisify } = require("node:util");
 const { EditCoreBrainService } = require("./brain-service");
@@ -163,6 +170,8 @@ const { localConversationResponse, isCasualPrompt } = require("./runtime/chat-lo
 const {
   handleChatKernel,
   stopChatKernel,
+  steerChatKernel,
+  isChatKernelRunning,
   classifyChatKernel,
   buildKernelHelpers,
 } = require("./runtime/chat-kernel-bridge");
@@ -237,6 +246,20 @@ addExistingPathEntries([
   path.join(os.homedir(), "AppData", "Roaming", "Python", "Python312", "Scripts"),
   path.join(os.homedir(), "AppData", "Roaming", "Python", "Python311", "Scripts"),
   path.join(os.homedir(), "AppData", "Roaming", "Python", "Python310", "Scripts"),
+]);
+
+// FIX A: Node.js + npm al PATH. Sin esto, spawn("npm install") falla con ENOENT
+// cuando EditCore se lanza desde el acceso directo (PATH sin Node).
+addExistingPathEntries([
+  "C:\\Program Files\\nodejs",
+  "C:\\Program Files (x86)\\nodejs",
+  path.join(os.homedir(), "AppData", "Roaming", "npm"),
+  path.join(os.homedir(), "AppData", "Local", "Programs", "nodejs"),
+  path.join(os.homedir(), "scoop", "apps", "nodejs", "current"),
+  path.join(os.homedir(), "scoop", "shims"),
+  path.join("C:\\", "ProgramData", "chocolatey", "bin"),
+  path.join("C:\\", "nvm4w", "nodejs"),
+  path.join(os.homedir(), "AppData", "Roaming", "nvm"),
 ]);
 
 function logStartup(message, error) {
@@ -450,12 +473,8 @@ app.on("second-instance", () => {
     return;
   }
   if (mainWindow.isMinimized()) mainWindow.restore();
-  mainWindow.show();
+  if (!mainWindow.isVisible()) mainWindow.show();
   mainWindow.focus();
-  try {
-    mainWindow.setAlwaysOnTop(true);
-    mainWindow.setAlwaysOnTop(false);
-  } catch {}
 });
 
 function stopPreviewRuntime(runtime) {
@@ -1103,12 +1122,22 @@ const RUNTIME_VERSION = (() => {
 })();
 
 function resolveUiIndexHtml() {
-  // Preferir overlay desempaquetado: cargar desde app.asar a veces falla con ERR_FAILED (-2).
+  // En desarrollo (no empaquetado) SIEMPRE la UI de la raíz del repo.
+  // Preferir resources/app solo en builds empaquetados — evita ERR_FAILED (-2) y UI fantasma.
+  const packaged = (() => {
+    try { return app.isPackaged === true; } catch { return false; }
+  })();
+  const localIndex = path.join(__dirname, "index.html");
+  if (!packaged) {
+    try {
+      if (fs.existsSync(localIndex)) return localIndex;
+    } catch { /* fallthrough */ }
+  }
   const candidates = [
+    localIndex,
     path.join(process.resourcesPath || "", "app", "index.html"),
     path.join(path.dirname(process.execPath || ""), "resources", "app", "index.html"),
     path.join(__dirname, "..", "app", "index.html"),
-    path.join(__dirname, "index.html"),
   ];
   for (const candidate of candidates) {
     try {
@@ -1126,22 +1155,50 @@ function resolveUiIndexHtml() {
       // continue
     }
   }
-  return path.join(__dirname, "index.html");
+  return localIndex;
+}
+
+function buildUiFileUrl(indexHtml, hash = "") {
+  // pathToFileURL codifica espacios (PROGRAMAS IA) — loadFile a veces emite file:///D:\... inválido.
+  let href = pathToFileURL(path.resolve(indexHtml)).href;
+  const fragment = String(hash || "").replace(/^#/, "").trim();
+  if (fragment) href += `#${fragment}`;
+  return href;
 }
 
 function loadUiIntoWindow(win, hash = "") {
   const indexHtml = resolveUiIndexHtml();
-  logStartup(`startup:load-ui ${indexHtml}`);
-  const opts = hash ? { hash } : undefined;
-  return win.loadFile(indexHtml, opts).catch((error) => {
+  const href = buildUiFileUrl(indexHtml, hash);
+  logStartup(`startup:load-ui ${indexHtml} -> ${href}`);
+  const loadOne = (filePath) => {
+    const url = buildUiFileUrl(filePath, hash);
+    logStartup(`startup:load-ui-attempt ${url}`);
+    return win.loadURL(url).catch((error) => {
+      logStartup(`startup:loadURL-failed ${filePath}`, error);
+      // Fallback nativo por si loadURL falla en alguna build.
+      const opts = hash ? { hash: String(hash).replace(/^#/, "") } : undefined;
+      return win.loadFile(filePath, opts);
+    });
+  };
+  return loadOne(indexHtml).catch((error) => {
     logStartup("No se pudo cargar index.html.", error);
     const fallbacks = [
+      path.join(__dirname, "index.html"),
       path.join(process.resourcesPath || "", "app", "index.html"),
       path.join(path.dirname(process.execPath || ""), "resources", "app", "index.html"),
-      path.join(__dirname, "index.html"),
-    ].filter((p) => p && p !== indexHtml);
+    ].filter((p) => p && path.resolve(p) !== path.resolve(indexHtml));
     const tryNext = (i = 0) => {
-      if (i >= fallbacks.length || win.isDestroyed()) return Promise.resolve();
+      if (i >= fallbacks.length || win.isDestroyed()) {
+        // Último recurso: HTML mínimo para no dejar pantalla en blanco.
+        const emergency = "data:text/html;charset=utf-8," + encodeURIComponent(
+          "<!doctype html><html><body style=\"font-family:Segoe UI,sans-serif;padding:32px;background:#f5f6f8;color:#1a1a1a\">"
+          + "<h1>EditCoreAI</h1><p>No se pudo cargar la UI. Cierra todas las ventanas de EditCoreAI y vuelve a abrir.</p>"
+          + "<pre style=\"white-space:pre-wrap;color:#a00\">" + String(error?.message || error || "ERR_FAILED") + "</pre>"
+          + "</body></html>"
+        );
+        logStartup("startup:load-ui-emergency-html");
+        return win.loadURL(emergency).catch(() => undefined);
+      }
       const next = fallbacks[i];
       try {
         if (!fs.existsSync(next)) return tryNext(i + 1);
@@ -1149,7 +1206,7 @@ function loadUiIntoWindow(win, hash = "") {
         return tryNext(i + 1);
       }
       logStartup(`startup:load-ui-fallback ${next}`);
-      return win.loadFile(next, opts).catch((err) => {
+      return loadOne(next).catch((err) => {
         logStartup(`startup:load-ui-fallback-failed ${next}`, err);
         return tryNext(i + 1);
       });
@@ -1240,6 +1297,7 @@ function createWindow(options = {}) {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
+      // false: no throttlear el renderer (botones / IPC vivos al primer clic).
       backgroundThrottling: false,
       webviewTag: true,
       spellcheck: false,
@@ -1249,10 +1307,19 @@ function createWindow(options = {}) {
       height: 760,
       minWidth: 880,
       minHeight: 620,
-      title: `EditCoreAI v${RUNTIME_VERSION}`,
-      backgroundColor: "#f5f6f8",
+      title: "EditCore",
+      backgroundColor: "#1e1e1e",
+      // true: ventana visible de inmediato (welcome / shell, no pantalla en blanco).
       show: true,
       center: true,
+      autoHideMenuBar: true,
+      // Una sola barra: sin title bar nativa duplicada (marca solo en status bar).
+      titleBarStyle: "hidden",
+      titleBarOverlay: {
+        color: "#181818",
+        symbolColor: "#cccccc",
+        height: 36,
+      },
       webPreferences: prefs,
     };
     try {
@@ -1289,7 +1356,7 @@ function createWindow(options = {}) {
     displayWindow();
   });
 
-  // Failsafe: mostrar antes si la carga se demora.
+  // Failsafe: asegurar foco/visibilidad si ready-to-show se demora.
   setTimeout(() => {
     if (win.isDestroyed() || windowShown || hiddenAcceptance) return;
     logStartup("failsafe:show-window (mostrando ventana tras timeout de carga)");
@@ -1311,17 +1378,33 @@ function createWindow(options = {}) {
     }
     if (menu.items.length) menu.popup({ window: win });
   });
+  win.webContents.on("did-finish-load", () => {
+    try {
+      logStartup(`startup:did-finish-load url=${win.webContents.getURL()}`);
+    } catch {
+      logStartup("startup:did-finish-load");
+    }
+  });
+  win.webContents.on("console-message", (event) => {
+    try {
+      const msg = String(event?.message || "").slice(0, 240);
+      if (!msg) return;
+      if (/Security Warning|Insecure Content-Security-Policy|allowpopups/i.test(msg)) return;
+      logStartup(`renderer-console level=${event?.level} ${msg}`);
+    } catch { /* ignore */ }
+  });
   win.webContents.on("did-fail-load", (_event, code, description, validatedURL, isMainFrame) => {
     logStartup(`did-fail-load ${code}: ${description} url=${validatedURL || ""} main=${isMainFrame}`);
-    if (!win.isDestroyed() && isMainFrame !== false) {
+    if (!win.isDestroyed() && isMainFrame !== false && Number(code) !== -3) {
+      // -3 = ERR_ABORTED (navegación sustituida). No reintentar en bucle.
       setTimeout(() => {
-        if (!win.isDestroyed()) {
-          const overlay = path.join(process.resourcesPath || "", "app", "index.html");
-          const target = fs.existsSync(overlay) ? overlay : path.join(__dirname, "index.html");
-          logStartup(`startup:did-fail-retry ${target}`);
-          win.loadFile(target).catch((err) => logStartup("Reintento loadFile falló", err));
-        }
-      }, 400);
+        if (win.isDestroyed()) return;
+        const target = path.join(__dirname, "index.html");
+        if (!fs.existsSync(target)) return;
+        const href = buildUiFileUrl(target);
+        logStartup(`startup:did-fail-retry ${href}`);
+        win.loadURL(href).catch((err) => logStartup("Reintento loadURL falló", err));
+      }, 500);
     }
   });
   win.webContents.on("render-process-gone", (_event, details) => {
@@ -1665,6 +1748,9 @@ ipcMain.handle("editcore:chat", async (_event, input = {}) => {
     });
     const out = await handleChatKernel({
       message: effectivePrompt,
+      history: Array.isArray(input.history) ? input.history : (Array.isArray(input.messages) ? input.messages : []),
+      threadId: input.chatId || input.threadId || input.conversationId || "",
+      chatId: input.chatId || input.threadId || "",
       projectRoot: rootPath,
       apiBaseUrl: baseUrl,
       apiKey: chatApiKey,
@@ -2457,9 +2543,18 @@ function emitPreviewDaemonEvent(projectRoot, payload) {
       }
     } catch { /* ignore */ }
   }
-  if (payload?.type === "preview-issue" && payload.autoHeal && payload.issue) {
-    maybeAutoHealPreview(projectRoot, payload.issue).catch(() => {});
-  }
+  // FIX B: AUTO-HEAL DESACTIVADO POR DEFECTO. El loop preview-issue -> autoHeal
+// -> handleChatKernel -> dev-server -> preview-issue arrancaba corridas en
+// paralelo con la principal y dejaba el chat 'Trabajando...' para siempre.
+// Reactivar con EDITCORE_ENABLE_AUTOHEAL=1 cuando se redisenne el debounce.
+if (
+  payload?.type === "preview-issue"
+  && payload.autoHeal
+  && payload.issue
+  && process.env.EDITCORE_ENABLE_AUTOHEAL === "1"
+) {
+  maybeAutoHealPreview(projectRoot, payload.issue).catch(() => {});
+}
 }
 
 /** Hooks de streaming para run_command del kernel (process-runner). */
@@ -2718,7 +2813,19 @@ async function startProjectPreviewNow(safeRoot, ownerId) {
     previewProcesses.delete(safeRoot);
   }
   const manager = fs.existsSync(path.join(runtimeRoot, "bun.lockb")) || fs.existsSync(path.join(runtimeRoot, "bun.lock")) ? "bun" : fs.existsSync(path.join(runtimeRoot, "pnpm-lock.yaml")) ? "pnpm" : "npm";
-  const dependencyReport = await ensureProjectDependencies(runtimeRoot, pkg, manager);
+  // FIX C: pasar onProgress para ver las lineas de npm install en el panel Terminal.
+const dependencyReport = await ensureProjectDependencies(runtimeRoot, pkg, manager, {
+  onProgress: (ev) => {
+    try {
+      emitPreviewDaemonEvent(safeRoot, {
+        type: "preview-deps-progress",
+        phase: String(ev?.phase || "deps"),
+        line: String(ev?.line || "").slice(0, 500),
+        at: Date.now(),
+      });
+    } catch { /* ignore UI */ }
+  },
+});
   const script = pkg.scripts.dev ? "dev" : "start";
   const dependencies = { ...(pkg.dependencies || {}), ...(pkg.devDependencies || {}) };
   const expectedPort = dependencies["@lovable.dev/vite-tanstack-config"] ? 8080
@@ -3390,7 +3497,7 @@ app.whenReady().then(() => {
     fs.writeFileSync(scriptPath, code, "utf8");
     const result = spawnSync(process.execPath, [electronCli, scriptPath], {
       encoding: "utf8",
-      timeout: 90_000,
+      timeout: 12_000,
       windowsHide: true,
       env: { ...process.env },
     });
@@ -3497,7 +3604,7 @@ function readGatewayPrivateState() {
   try {
     return readSecureStateFile(gatewayPrivateStatePath());
   } catch (error) {
-    logStartup("No se pudo leer la vinculacion privada de GafCore Gateway", error);
+    logStartup("No se pudo leer estado privado legado de proveedores", error);
     return {};
   }
 }
@@ -3545,7 +3652,7 @@ async function gatewayJson(pathname, { method = "GET", token = "", projectKey = 
   });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok || payload?.ok === false) {
-    throw new Error(payload?.error?.message || payload?.message || `GafCore Gateway respondio HTTP ${response.status}`);
+    throw new Error(payload?.error?.message || payload?.message || `El proveedor respondio HTTP ${response.status}`);
   }
   return payload?.data ?? payload;
 }
@@ -3625,60 +3732,87 @@ function expandGatewayCatalogModels(models = []) {
   return [...expanded].filter((model) => !isBlockedGatewayModel(model));
 }
 
-function applyGatewayProjectToSecureState(link) {
-  const models = expandGatewayCatalogModels(Array.isArray(link?.models) ? link.models.filter(Boolean) : []);
-  if (!link?.projectKey || !models.length) throw new Error("La vinculacion de GafCore Gateway no contiene una project key o modelos validos.");
-  link.models = models;
-  link.modelCount = models.length;
+function isGatewayResidueProvider(provider) {
+  const id = String(provider?.id || "").toLowerCase();
+  const url = String(provider?.baseUrl || "").toLowerCase();
+  const name = String(provider?.name || "").toLowerCase();
+  return id === "gafcore-gateway"
+    || url.includes("gafcore-gateway")
+    || name.includes("gafcore gateway")
+    || name === "gafcore";
+}
+
+function isGatewayResidueProfile(profile) {
+  const key = String(profile?.providerKey || "");
+  const url = String(profile?.baseUrl || "").toLowerCase();
+  const id = String(profile?.id || "").toLowerCase();
+  return key === "custom:gafcore-gateway"
+    || id.startsWith("gafcore-gateway")
+    || url.includes("gafcore-gateway");
+}
+
+/** Elimina residuos del gateway AI de la bóveda. No reinyecta endpoints. */
+function scrubGatewayFromSecureState() {
   const secure = readSecureState();
-  const currentProviders = Array.isArray(secure["editcore-custom-providers"]) ? secure["editcore-custom-providers"] : [];
-  secure["editcore-custom-providers"] = [
-    ...currentProviders.filter((provider) => provider?.id !== "gafcore-gateway"),
-    {
-      id: "gafcore-gateway",
-      name: "GafCore Gateway",
-      baseUrl: GAFCORE_API_BASE,
-      apiKey: link.projectKey,
-      models,
-      enabledModels: models,
-      modelCount: models.length,
-      status: "active",
-      checkedAt: Date.now(),
-    },
-  ];
-  const currentProfiles = Array.isArray(secure["editcore-provider-profiles"]) ? secure["editcore-provider-profiles"] : [];
-  secure["editcore-provider-profiles"] = [
-    ...currentProfiles.filter((profile) => profile?.providerKey !== "custom:gafcore-gateway"),
-    ...models.map((model) => ({
-      id: `gafcore-gateway:${model}`,
-      providerKey: "custom:gafcore-gateway",
-      providerName: "GafCore Gateway",
-      baseUrl: GAFCORE_API_BASE,
-      apiKey: link.projectKey,
-      model,
-      modelCount: models.length,
-      status: "active",
-      catalogConfirmed: true,
-      chatVerified: true,
-      checkedAt: Date.now(),
-      error: "",
-    })),
-  ];
-  const selectedModel = models.includes(secure["editcore-chat-config"]?.model)
-    ? secure["editcore-chat-config"].model
-    : models[0];
-  secure["editcore-chat-config"] = {
-    ...(secure["editcore-chat-config"] || {}),
-    remember: true,
-    mode: /claude/i.test(selectedModel) ? "claude" : "gpt",
-    baseUrl: GAFCORE_API_BASE,
-    apiKey: link.projectKey,
-    model: selectedModel,
-    providerKey: "custom:gafcore-gateway",
-    providerProfileId: `gafcore-gateway:${selectedModel}`,
-  };
-  writeSecureState(secure);
-  return selectedModel;
+  let changed = false;
+  const rawProviders = Array.isArray(secure["editcore-custom-providers"]) ? secure["editcore-custom-providers"] : [];
+  const cleanedProviders = rawProviders.filter((provider) => !isGatewayResidueProvider(provider));
+  if (cleanedProviders.length !== rawProviders.length) {
+    secure["editcore-custom-providers"] = cleanedProviders;
+    changed = true;
+  }
+  const rawProfiles = Array.isArray(secure["editcore-provider-profiles"]) ? secure["editcore-provider-profiles"] : [];
+  const cleanedProfiles = rawProfiles.filter((profile) => !isGatewayResidueProfile(profile));
+  if (cleanedProfiles.length !== rawProfiles.length) {
+    secure["editcore-provider-profiles"] = cleanedProfiles;
+    changed = true;
+  }
+  const chat = secure["editcore-chat-config"];
+  if (chat && (isGatewayResidueProfile(chat) || String(chat.baseUrl || "").toLowerCase().includes("gafcore-gateway"))) {
+    const fallback = cleanedProfiles.find((profile) =>
+      (profile.providerKey === "meai" || profile.providerKey === "apicredits")
+      && profile.apiKey
+      && profile.model,
+    ) || cleanedProfiles.find((profile) => profile.apiKey && profile.model);
+    if (fallback) {
+      secure["editcore-chat-config"] = {
+        ...chat,
+        baseUrl: fallback.baseUrl
+          || (fallback.providerKey === "meai" ? "https://api.meai.cloud/v1" : "https://api.apicredits.site/v1"),
+        apiKey: fallback.apiKey,
+        model: fallback.model,
+        providerKey: fallback.providerKey,
+        providerProfileId: fallback.id || "",
+        modelSelectionMode: chat.modelSelectionMode || "auto",
+      };
+    } else {
+      secure["editcore-chat-config"] = {
+        ...chat,
+        baseUrl: "https://api.meai.cloud/v1",
+        apiKey: "",
+        model: "claude-sonnet-4.6",
+        providerKey: "meai",
+        providerProfileId: "",
+        modelSelectionMode: "auto",
+      };
+    }
+    changed = true;
+  }
+  try {
+    const privateState = readGatewayPrivateState();
+    if (privateState?.adminToken || (privateState?.links && Object.keys(privateState.links || {}).length)) {
+      writeGatewayPrivateState({});
+      changed = true;
+    }
+  } catch { /* ignore */ }
+  if (changed) writeSecureState(secure);
+  return changed;
+}
+
+function applyGatewayProjectToSecureState(_link) {
+  // Integración eliminada: nunca reinyectar el gateway en la bóveda.
+  scrubGatewayFromSecureState();
+  return "";
 }
 
 function sanitizedGatewayLink(link, extra = {}) {
@@ -3739,22 +3873,11 @@ function getOperatorConnectionsSnapshot(input = {}) {
   const globalConnections = readConnections();
   const projectRoot = String(input.projectRoot || "").trim();
   const connections = connectionsForProject(globalConnections, projectRoot);
-  const gatewayLink = gatewayLinkForInput({
-    localProjectId: input.projectId || input.localProjectId || "",
-    projectRoot,
-  });
-  let gatewayAdminConfigured = false;
-  try {
-    const privateState = readGatewayPrivateState();
-    gatewayAdminConfigured = Boolean(privateState?.adminToken);
-  } catch {
-    gatewayAdminConfigured = false;
-  }
   return buildSafeConnectionsSnapshot({
     connections,
     connectionSummary,
-    gatewayLink,
-    gatewayAdminConfigured,
+    gatewayLink: null,
+    gatewayAdminConfigured: false,
     projectRoot,
     projectManifest: readProjectLinkManifest(projectRoot),
     accounts: input.accounts || {},
@@ -3887,109 +4010,24 @@ ipcMain.handle("connections:operator-memory", async (_event, input = {}) => {
     memory: formatOperatorConnectionsMemory(snapshot),
   };
 });
-ipcMain.handle("connections:gafcore-status", async (_event, input = {}) => {
-  const privateState = readGatewayPrivateState();
-  const adminTokenStored = Boolean(String(
-    privateState?.adminToken || process.env.GAFCORE_ADMIN_TOKEN || "",
-  ).trim());
-  const link = gatewayLinkForInput(input);
-  if (!link || !link.projectKey) {
-    return {
-      connected: false,
-      adminTokenStored,
-      vaultActive: adminTokenStored,
-    };
-  }
-  try {
-    const modelPayload = await gatewayJson("/api/openai/v1/models", { projectKey: link.projectKey });
-    const models = gatewayModelsFromPayload(modelPayload);
-    if (models.length) {
-      link.models = models;
-      link.modelCount = models.length;
-      const next = readGatewayPrivateState();
-      next.links = next.links || {};
-      next.links[gatewayLinkKey(input)] = link;
-      writeGatewayPrivateState(next);
-      applyGatewayProjectToSecureState(link);
-    }
-  } catch (error) {
-    console.error("Error al sincronizar modelos de GafCore Gateway:", error);
-  }
-  return sanitizedGatewayLink(link, {
-    adminTokenStored,
-    vaultActive: adminTokenStored,
-  });
+ipcMain.handle("connections:gafcore-status", async () => {
+  scrubGatewayFromSecureState();
+  return { connected: false, adminTokenStored: false, vaultActive: false, removed: true };
 });
 
-ipcMain.handle("connections:gafcore-admin-token", async (_event, token) => {
-  const adminToken = String(token || "").trim();
-  if (!adminToken) throw new Error("Falta el token administrativo de GafCore Gateway.");
-  await gatewayJson("/api/admin/projects", { token: adminToken });
-  const privateState = readGatewayPrivateState();
-  writeGatewayPrivateState({ ...privateState, adminToken });
-  syncOperatorConnectionsToBrain("");
-  return { stored: true };
+ipcMain.handle("connections:gafcore-admin-token", async () => {
+  scrubGatewayFromSecureState();
+  throw new Error("Esta integración ya no está disponible. Configura ME AI o APICredits en Modelos.");
 });
 
-ipcMain.handle("connections:gafcore-activate", async (_event, input = {}) => {
-  const link = gatewayLinkForInput(input);
-  if (!link) return { connected: false };
-  const selectedModel = applyGatewayProjectToSecureState(link);
-  syncOperatorConnectionsToBrain(String(input?.projectRoot || link.projectRoot || ""));
-  return sanitizedGatewayLink(link, { selectedModel });
+ipcMain.handle("connections:gafcore-activate", async () => {
+  scrubGatewayFromSecureState();
+  return { connected: false, removed: true };
 });
 
-async function connectGatewayProjectInternal(input = {}) {
-  const localProjectId = String(input.localProjectId || "").trim();
-  const projectRoot = String(input.projectRoot || "").trim();
-  const projectName = String(input.projectName || "").trim().slice(0, 100);
-  if (!projectRoot || !projectName) throw new Error("Abre un proyecto con ruta local antes de conectarlo a GafCore Gateway.");
-  const resolvedLocalId = localProjectId || `root:${digest(projectRoot)}`;
-  const initialBalance = Number(input.initialBalanceUsd ?? 0);
-  if (!Number.isFinite(initialBalance) || initialBalance < 0) throw new Error("El presupuesto inicial debe ser un numero mayor o igual a cero.");
-
-  const privateState = readGatewayPrivateState();
-  const suppliedToken = String(input.adminToken || "").trim();
-  const adminToken = suppliedToken || String(privateState.adminToken || process.env.GAFCORE_ADMIN_TOKEN || "").trim();
-  if (!adminToken) throw new Error("Falta el token administrativo de GafCore Gateway.");
-
-  const projects = await gatewayJson("/api/admin/projects", { token: adminToken });
-  const rows = Array.isArray(projects) ? projects : [];
-  const priorLink = gatewayLinkForInput({ localProjectId: resolvedLocalId, projectRoot });
-  let remote = priorLink?.projectId ? rows.find((project) => project.id === priorLink.projectId) : null;
-  if (!remote) remote = rows.find((project) => normalizedGatewayProjectName(project?.name) === normalizedGatewayProjectName(projectName));
-  let reused = Boolean(remote);
-  if (!remote) {
-    const owner = rows.find((project) => normalizedGatewayProjectName(project?.name) === "editcore ai") || rows[0];
-    if (!owner?.user_id) throw new Error("GafCore Gateway no tiene un propietario disponible para crear el proyecto.");
-    remote = await gatewayJson("/api/admin/projects", {
-      method: "POST",
-      token: adminToken,
-      body: { user_id: owner.user_id, name: projectName, initial_balance_usd: initialBalance },
-    });
-    reused = false;
-  }
-  if (!remote?.project_key) throw new Error("GafCore Gateway no devolvio la project key del proyecto.");
-
-  const modelPayload = await gatewayJson("/api/openai/v1/models", { projectKey: remote.project_key });
-  const models = gatewayModelsFromPayload(modelPayload);
-  if (!models.length) throw new Error("GafCore Gateway no devolvio modelos para el proyecto.");
-  const link = {
-    localProjectId: resolvedLocalId,
-    projectRoot: path.resolve(projectRoot).replace(/[\\/]+$/, "").toLowerCase(),
-    projectId: remote.id,
-    projectName: remote.name,
-    projectKey: remote.project_key,
-    balanceUsd: Number(remote.balance?.current_balance_usd ?? initialBalance),
-    models,
-    connectedAt: Date.now(),
-  };
-  const links = privateState.links && typeof privateState.links === "object" ? privateState.links : {};
-  links[gatewayLinkKey({ localProjectId: resolvedLocalId, projectRoot })] = link;
-  writeGatewayPrivateState({ ...privateState, adminToken, links });
-  const selectedModel = applyGatewayProjectToSecureState(link);
-  syncOperatorConnectionsToBrain(projectRoot);
-  return sanitizedGatewayLink(link, { reused, selectedModel });
+async function connectGatewayProjectInternal() {
+  scrubGatewayFromSecureState();
+  throw new Error("Esta integración ya no está disponible. Configura ME AI o APICredits en Modelos.");
 }
 
 ipcMain.handle("connections:gafcore-project", async (_event, input = {}) => connectGatewayProjectInternal(input));
@@ -3998,15 +4036,9 @@ function getCloudVaultBridge() {
   const { createCloudVaultBridge } = require("./runtime/cloud-vault-bridge");
   return createCloudVaultBridge({
     getConnections: readConnections,
-    getGatewayAdminToken: () => {
-      try {
-        return String(readGatewayPrivateState()?.adminToken || process.env.GAFCORE_ADMIN_TOKEN || "").trim();
-      } catch {
-        return String(process.env.GAFCORE_ADMIN_TOKEN || "").trim();
-      }
-    },
-    connectGatewayProject: connectGatewayProjectInternal,
-    gatewayOrigin: GAFCORE_ORIGIN,
+    getGatewayAdminToken: () => "",
+    connectGatewayProject: null,
+    gatewayOrigin: "",
   });
 }
 
@@ -4023,16 +4055,17 @@ ipcMain.handle("cloud:provision-supabase", async (_event, input = {}) => {
   const root = String(input.projectRoot || "").trim();
   return getCloudVaultBridge().provisionSupabase(root, input);
 });
-ipcMain.handle("cloud:provision-gafcore-ai", async (_event, input = {}) => {
-  const root = String(input.projectRoot || "").trim();
-  return getCloudVaultBridge().provisionGafcoreAI(String(input.projectName || path.basename(root)), {
-    ...input,
-    projectRoot: root,
-  });
+ipcMain.handle("cloud:provision-gafcore-ai", async () => {
+  scrubGatewayFromSecureState();
+  throw new Error("Esta integración ya no está disponible. Configura ME AI o APICredits en Modelos.");
 });
 ipcMain.handle("cloud:provision-fullstack", async (_event, input = {}) => {
   const root = String(input.projectRoot || "").trim();
-  return getCloudVaultBridge().provisionFullStackProject(root, input);
+  return getCloudVaultBridge().provisionFullStackProject(root, {
+    ...input,
+    provisionAi: false,
+    connectGateway: false,
+  });
 });
 ipcMain.handle("cloud:probe-endpoint", async (_event, input = {}) => {
   const { probeEndpoint } = require("./runtime/probe-endpoint");
@@ -4300,58 +4333,12 @@ async function importLocalConnections(input = {}) {
     }
   }
 
-  // GafCore Gateway ADMIN_TOKEN: hermano local o GAFCORE_ADMIN_TOKEN env (no es Supabase).
-  let gafcoreImported = false;
-  try {
-    const privateState = readGatewayPrivateState();
-    const existing = String(privateState?.adminToken || process.env.GAFCORE_ADMIN_TOKEN || "").trim();
-    if (!existing) {
-      const siblingCandidates = [];
-      const activeRoot = String(input.projectRoot || "").trim();
-      if (activeRoot) {
-        const parent = path.dirname(activeRoot);
-        siblingCandidates.push(
-          path.join(parent, "GAFCORE GATEWAY", ".env.local"),
-          path.join(parent, "GAFCORE GATEWAY", ".env"),
-          path.join(parent, "gafcore-gateway", ".env.local"),
-        );
-      }
-      siblingCandidates.push(
-        path.join(path.dirname(app.getAppPath()), "GAFCORE GATEWAY", ".env.local"),
-        path.join("D:", "PROGRAMAS IA", "GAFCORE GATEWAY", ".env.local"),
-      );
-      for (const envPath of siblingCandidates) {
-        if (!fs.existsSync(envPath)) continue;
-        const values = readEnvValues(envPath);
-        const token = String(values.ADMIN_TOKEN || values.GAFCORE_ADMIN_TOKEN || "").trim();
-        if (!token) continue;
-        try {
-          await gatewayJson("/api/admin/projects", { token });
-          writeGatewayPrivateState({ ...privateState, adminToken: token });
-          gafcoreImported = true;
-          sources.gafcore = path.basename(path.dirname(envPath));
-          imported.gafcore = true;
-          break;
-        } catch {
-          // Token local puede no coincidir con producción; guardar igual para uso local.
-          writeGatewayPrivateState({ ...privateState, adminToken: token });
-          gafcoreImported = true;
-          sources.gafcore = `${path.basename(path.dirname(envPath))} (sin validar red)`;
-          imported.gafcore = true;
-          break;
-        }
-      }
-    } else {
-      sources.gafcore = "bóveda";
-    }
-  } catch (error) {
-    logStartup("connections:gafcore-import-failed", error);
-  }
+  // Importación de tokens de gateway AI eliminada a propósito.
 
   secure["editcore-connections"] = connections;
   writeSecureState(secure);
   const validation = await Promise.all(["github", "vercel", "selfsupabase"].map(validateConnection));
-  return { imported, sources, validation, legacyImport, gafcoreImported };
+  return { imported, sources, validation, legacyImport, gafcoreImported: false };
 }
 
 async function verifyModelAgentProfile(profile, providers, projectRoot) {
@@ -4894,6 +4881,17 @@ ipcMain.handle("workspace:close-current", async (event) => {
     };
   } catch (error) {
     return { ok: false, error: error?.message || String(error) };
+  }
+});
+
+ipcMain.handle("project:query-mentions", async (_event, payload = {}) => {
+  try {
+    const { queryMentionCandidates } = require("./runtime/at-mentions-resolver");
+    const root = payload.projectRoot || "";
+    const query = payload.query || "";
+    return queryMentionCandidates(root, query);
+  } catch (error) {
+    return [];
   }
 });
 
@@ -5714,7 +5712,7 @@ ipcMain.handle("project:onboard", async (event, input = {}) => {
       defaultId: 1,
       cancelId: 0,
       title: "Conectar proyecto",
-      message: "Instalar dependencias y enlazar este proyecto a GitHub, Vercel y Supabase GafCore?",
+      message: "Instalar dependencias y enlazar este proyecto a GitHub, Vercel y Supabase?",
       detail: rootPath,
     });
     if (result.response !== 1) {
@@ -5727,12 +5725,12 @@ ipcMain.handle("project:onboard", async (event, input = {}) => {
     installDeps: input.installDeps !== false,
     bootstrapSupabase: input.bootstrapSupabase !== false,
     connectServices: input.connectServices !== false,
-    connectGateway: input.connectGateway !== false,
+    connectGateway: false,
     firstDeploy: input.firstDeploy === true,
-    initialBalanceUsd: Number(input.initialBalanceUsd) || 0,
-    adminToken: String(input.adminToken || ""),
+    initialBalanceUsd: 0,
+    adminToken: "",
     repoName: String(input.repoName || ""),
-    connectGatewayProject: connectGatewayProjectInternal,
+    connectGatewayProject: null,
   });
 });
 
@@ -5786,9 +5784,9 @@ ipcMain.handle("project:fullstack-deploy", async (event, input = {}) => {
       cancelId: 0,
       title: isUpdate ? "Actualizar publicación" : "Publicar",
       message: isUpdate
-        ? "Actualizará la publicación en vivo: commit → push → redeploy (sin reconectar servicios)."
-        : "Publicará el proyecto paso a paso: GitHub → Vercel → Supabase → Push/Deploy → Live.",
-      detail: `${rootPath}\n\nCredenciales: bóveda EditCoreAI (safeStorage).`,
+        ? "Actualizará la publicación en vivo: commit → push → redeploy Vercel (token de Conexiones; sin login OAuth aparte)."
+        : "Publicará el proyecto: GitHub (push) → Vercel (token en Conexiones) → Supabase → Live. Vercel no pide permiso OAuth aparte: usa el token guardado.",
+      detail: `${rootPath}\n\nCredenciales: bóveda EditCoreAI (safeStorage). Git puede pedir confirmación al hacer push; Vercel usa el token de Conexiones en silencio.`,
     });
     if (result.response !== 1) {
       return { ok: false, cancelled: true, message: "Publicación cancelada por el usuario." };
@@ -5943,7 +5941,7 @@ ipcMain.handle("app:open-external", async (_event, url = "") => {
 ipcMain.handle("app:version", () => String(RUNTIME_VERSION || "2.7.0"));
 
 function appWindowTitle() {
-  return `EditCoreAI v${String(RUNTIME_VERSION || "2.7.0").trim()}`;
+  return "EditCore";
 }
 
 function applyNativeChromeForTheme(theme = "blanco", win = null) {
@@ -5952,15 +5950,28 @@ function applyNativeChromeForTheme(theme = "blanco", win = null) {
   try {
     nativeTheme.themeSource = dark ? "dark" : "light";
   } catch { /* ignore */ }
-  const bg = dark
-    ? (next === "azul" ? "#0c1a2e" : next === "gris" ? "#1e1e1e" : "#0f1419")
-    : "#f5f6f8";
+  const palette = {
+    blanco: { bg: "#f3f3f3", bar: "#fcfcfc", fg: "#1f1f1f" },
+    gris: { bg: "#1e1e1e", bar: "#181818", fg: "#cccccc" },
+    negro: { bg: "#0d0d0d", bar: "#141414", fg: "#d4d4d4" },
+    azul: { bg: "#0f1720", bar: "#15202b", fg: "#d7e2ec" },
+  };
+  const colors = palette[next] || palette.blanco;
   const targets = win && !win.isDestroyed()
     ? [win]
     : BrowserWindow.getAllWindows().filter((w) => w && !w.isDestroyed());
   for (const target of targets) {
     try { target.setTitle(appWindowTitle()); } catch { /* ignore */ }
-    try { target.setBackgroundColor(bg); } catch { /* ignore */ }
+    try { target.setBackgroundColor(colors.bg); } catch { /* ignore */ }
+    try {
+      if (typeof target.setTitleBarOverlay === "function") {
+        target.setTitleBarOverlay({
+          color: colors.bar,
+          symbolColor: colors.fg,
+          height: 36,
+        });
+      }
+    } catch { /* ignore */ }
   }
   return { theme: next, dark, title: appWindowTitle() };
 }
@@ -6260,6 +6271,21 @@ ipcMain.handle("agent:run", async (event, input = {}) => {
     const rootPath = assertProjectRoot(requestedRoot);
     rememberActiveWorkspace(event?.sender?.id, rootPath);
     const runId = String(input.runId || crypto.randomUUID());
+    const runKey = agentRunKey(event.sender.id, runId);
+    const runController = new AbortController();
+    const runState = {
+      key: runKey,
+      runId,
+      senderId: event.sender.id,
+      startedAt: Date.now(),
+      controller: runController,
+      requestController: null,
+      steering: [],
+      kernel: true,
+      projectRoot: rootPath,
+      projectId: String(input.projectId || ""),
+    };
+    activeAgentRuns.set(runKey, runState);
     try {
       const helpers = buildKernelHelpers({
         BrowserWindow,
@@ -6270,6 +6296,9 @@ ipcMain.handle("agent:run", async (event, input = {}) => {
       });
       const out = await handleChatKernel({
         message: task,
+        history: Array.isArray(input.history) ? input.history : (Array.isArray(input.messages) ? input.messages : []),
+        threadId: input.chatId || input.threadId || input.conversationId || input.runId || "",
+        chatId: input.chatId || input.threadId || "",
         projectRoot: rootPath,
         apiBaseUrl: baseUrl,
         apiKey,
@@ -6388,6 +6417,8 @@ ipcMain.handle("agent:run", async (event, input = {}) => {
       };
     } catch (error) {
       throw new Error(typeof toUserFacingError === "function" ? toUserFacingError(error) : String(error?.message || error));
+    } finally {
+      if (activeAgentRuns.get(runKey) === runState) activeAgentRuns.delete(runKey);
     }
   }
 
@@ -7432,15 +7463,8 @@ ipcMain.handle("agent:run", async (event, input = {}) => {
         projectRoot: rootPath,
         projectId: input.projectId || "",
       }),
-      connectGatewayProject: connectGatewayProjectInternal,
-      getGatewayAdminToken: () => {
-        try {
-          const privateState = readGatewayPrivateState();
-          return String(privateState?.adminToken || process.env.GAFCORE_ADMIN_TOKEN || "").trim();
-        } catch {
-          return String(process.env.GAFCORE_ADMIN_TOKEN || "").trim();
-        }
-      },
+      connectGatewayProject: null,
+      getGatewayAdminToken: () => "",
       appUserData: app.getPath("userData"),
       brain: brain(),
       runProjectCommand,
@@ -8867,13 +8891,16 @@ ipcMain.handle("project:browser-inspect", async (event, input = {}) => {
 function isUserStopInstruction(text = "") {
   const value = String(text || "").trim().toLowerCase().replace(/[.!?,;]+$/g, "");
   if (!value) return false;
-  if (/^(?:por\s+favor\s+)?(?:alto|detente|det[eé]n(?:lo)?|detener|parar?|p[aá]ralo|stop|cancela(?:r|lo)?|aborta(?:r|lo)?|interrump(?:e|ir|alo)?|basta|escala|pausa(?:r)?|no\s+sigas)$/i.test(value)) {
+  if (/^(?:por\s+favor\s+)?(?:alto|detente|det[eé]n(?:lo)?|detener|parar?|p[aá]ralo|stop|cancela(?:r|lo)?|aborta(?:r|lo)?|interrump(?:e|ir|alo)?|basta|escala|pausa(?:r)?|no\s+sigas|termina(?:r)?)$/i.test(value)) {
     return true;
   }
-  if (/^(?:por\s+favor\s+)?(?:cancela|cancelar|det[eé]n|detener|parar?|p[aá]ralo|aborta|abortar|pausa|pausar|interrumpir)\s+(?:el\s+an[aá]lisis|la\s+tarea|la\s+ejecuci[oó]n|esto|todo|el\s+proceso|la\s+b[uú]squeda)$/i.test(value)) {
+  if (/^(?:por\s+favor\s+)?(?:cancela|cancelar|det[eé]n|detener|parar?|p[aá]ralo|aborta|abortar|pausa|pausar|interrumpir|termina(?:r)?)\s+(?:el\s+an[aá]lisis|la\s+tarea|la\s+ejecuci[oó]n|esto|todo|toda(?:\s+acci[oó]n|s)?|el\s+proceso|la\s+b[uú]squeda|todas?\s+las?\s+acciones?)$/i.test(value)) {
     return true;
   }
   if (/^(?:ya\s+)?(?:no\s+sigas|deja\s+de\s+(?:analizar|buscar|ejecutar|trabajar|hacer\s+nada))$/i.test(value)) {
+    return true;
+  }
+  if (/^(?:termina|cancel[ae]|det[eé]n|para|aborta)\s+(?:toda|todo|todas)\b/i.test(value)) {
     return true;
   }
   return false;
@@ -8892,18 +8919,28 @@ ipcMain.handle("agent:steer", async (event, input = {}) => {
         run.requestController?.abort(new Error(reason));
         run.controller.abort(new Error(reason));
         activeAgentRuns.delete(agentRunKey(event.sender.id, run.runId || runId));
+        try { stopChatKernel(); } catch { /* ignore */ }
         return { accepted: true, cancelled: true };
       }
     }
     cancelRunsForSender(event.sender.id, reason);
+    try { stopChatKernel(); } catch { /* ignore */ }
     return { accepted: true, cancelled: true };
   }
 
-  const run = agentRunForEvent(event, runId);
-  if (!run) return { accepted: false };
-  run.steering.push({ instruction, at: Date.now() });
+  // Kernel path: el orquestador singleton recibe la dirección de inmediato.
+  let kernelResult = null;
+  try {
+    if (typeof steerChatKernel === "function" && (typeof isChatKernelRunning !== "function" || isChatKernelRunning())) {
+      kernelResult = steerChatKernel(instruction);
+    }
+  } catch { /* ignore */ }
 
-  if (run.adapterInput) {
+  const run = agentRunForEvent(event, runId);
+  if (!run && !(kernelResult && kernelResult.accepted)) return { accepted: false };
+  if (run) run.steering.push({ instruction, at: Date.now() });
+
+  if (run?.adapterInput) {
     const steerPlan = resolveUnifiedAgentPlan({
       prompt: run.adapterInput.prompt,
       steeringInstruction: instruction,
@@ -8926,21 +8963,30 @@ ipcMain.handle("agent:steer", async (event, input = {}) => {
 
   if (!event.sender.isDestroyed()) {
     publishAgentProgress(event.sender, {
-      runId: run.runId || runId,
+      runId: run?.runId || runId,
       phase: "direction",
       stage: "running",
       text: instruction,
     });
   }
 
-  let interrupted = false;
-  if (run.requestController) {
+  let interrupted = Boolean(kernelResult?.interrupted);
+  if (run?.requestController) {
     const steerError = Object.assign(new Error("Nueva instruccion del usuario."), { code: "AGENT_STEER" });
     run.requestController.abort(steerError);
     interrupted = true;
   }
 
-  return { accepted: true, pendingDirections: run.steering.length, interrupted };
+  const pendingDirections = Math.max(
+    Number(run?.steering?.length) || 0,
+    Number(kernelResult?.pendingDirections) || 0,
+  );
+  return {
+    accepted: true,
+    pendingDirections,
+    interrupted,
+    kernel: Boolean(kernelResult?.accepted || run?.kernel),
+  };
 });
 
 
@@ -8971,19 +9017,21 @@ function gatewayToolsDir() {
 
 function ensureDirectUpstreamProfiles() {
   try {
-    const toolsDir = gatewayToolsDir();
-    if (!toolsDir) return false;
+    scrubGatewayFromSecureState();
     const secure = readSecureState();
-    const hasGateway = (Array.isArray(secure["editcore-custom-providers"]) ? secure["editcore-custom-providers"] : [])
-      .some((provider) => provider?.id === "gafcore-gateway" && provider?.apiKey);
-    if (hasGateway) return false;
-    const apicreditsKeys = readLocalKeysFile(path.join(toolsDir, ".apicredits-keys.local"));
-    const meaiKeys = readLocalKeysFile(path.join(toolsDir, ".meai-keys.local"));
+    const toolsDir = gatewayToolsDir();
+    const rawProviders = Array.isArray(secure["editcore-custom-providers"]) ? secure["editcore-custom-providers"] : [];
+    const rawProfiles = Array.isArray(secure["editcore-provider-profiles"]) ? secure["editcore-provider-profiles"] : [];
+    const cleanedProviders = rawProviders.filter((provider) => !isGatewayResidueProvider(provider));
+    let profiles = rawProfiles.filter((profile) => !isGatewayResidueProfile(profile));
+    let changed = cleanedProviders.length !== rawProviders.length || profiles.length !== rawProfiles.length;
+    if (changed) {
+      secure["editcore-custom-providers"] = cleanedProviders;
+      secure["editcore-provider-profiles"] = profiles;
+    }
     const providers = secure["editcore-providers"] && typeof secure["editcore-providers"] === "object"
       ? { ...secure["editcore-providers"] }
       : {};
-    let profiles = Array.isArray(secure["editcore-provider-profiles"]) ? [...secure["editcore-provider-profiles"]] : [];
-    let changed = false;
 
     const upsertDirect = ({ providerKey, providerName, baseUrl, model, apiKey }) => {
       const key = String(apiKey || "").trim();
@@ -9020,34 +9068,38 @@ function ensureDirectUpstreamProfiles() {
       }
     };
 
-    const claudeApicredits = String(apicreditsKeys.claude || apicreditsKeys.claude_default || apicreditsKeys.apicredits || "").trim();
-    if (claudeApicredits.startsWith("sk-")) {
-      for (const model of ["claude-fable-5", "claude-haiku-4-5"]) {
+    if (toolsDir) {
+      const apicreditsKeys = readLocalKeysFile(path.join(toolsDir, ".apicredits-keys.local"));
+      const meaiKeys = readLocalKeysFile(path.join(toolsDir, ".meai-keys.local"));
+      const claudeApicredits = String(apicreditsKeys.claude || apicreditsKeys.claude_default || apicreditsKeys.apicredits || "").trim();
+      if (claudeApicredits.startsWith("sk-")) {
+        for (const model of ["claude-fable-5", "claude-haiku-4-5"]) {
+          upsertDirect({
+            providerKey: "apicredits",
+            providerName: "APICredits",
+            baseUrl: "https://api.apicredits.site/v1",
+            model,
+            apiKey: claudeApicredits,
+          });
+        }
+      }
+      for (const model of MEAI_GATEWAY_MODELS) {
+        const apiKey = String(meaiKeys[model] || meaiKeys.default || meaiKeys.meai || "").trim();
+        if (!apiKey.startsWith("sk-")) continue;
         upsertDirect({
-          providerKey: "apicredits",
-          providerName: "APICredits",
-          baseUrl: "https://api.apicredits.site/v1",
+          providerKey: "meai",
+          providerName: "ME AI Cloud",
+          baseUrl: "https://api.meai.cloud/v1",
           model,
-          apiKey: claudeApicredits,
+          apiKey,
         });
       }
-    }
-
-    for (const model of MEAI_GATEWAY_MODELS) {
-      const apiKey = String(meaiKeys[model] || meaiKeys.default || meaiKeys.meai || "").trim();
-      if (!apiKey.startsWith("sk-")) continue;
-      upsertDirect({
-        providerKey: "meai",
-        providerName: "ME AI Cloud",
-        baseUrl: "https://api.meai.cloud/v1",
-        model,
-        apiKey,
-      });
     }
 
     if (!changed) return false;
     secure["editcore-providers"] = providers;
     secure["editcore-provider-profiles"] = profiles;
+    secure["editcore-custom-providers"] = cleanedProviders;
     writeSecureState(secure);
     return true;
   } catch (error) {
@@ -9057,47 +9109,11 @@ function ensureDirectUpstreamProfiles() {
 }
 
 function ensureExpandedMeaiGatewayModels() {
+  // Ya no se amplía catálogo vía gateway; solo se limpia residuo.
   try {
-    const secure = readSecureState();
-    const providers = Array.isArray(secure["editcore-custom-providers"]) ? secure["editcore-custom-providers"] : [];
-    const gateway = providers.find((provider) => provider?.id === "gafcore-gateway");
-    if (!gateway?.apiKey) return false;
-    const previous = Array.isArray(gateway.models) ? gateway.models : Array.isArray(gateway.enabledModels) ? gateway.enabledModels : [];
-    const models = expandGatewayCatalogModels(previous);
-    if (!models.length) return false;
-    const previousSet = new Set(previous);
-    const modelSet = new Set(models);
-    const unchanged = models.length === previous.length
-      && models.every((model) => previousSet.has(model))
-      && previous.every((model) => modelSet.has(model));
-    if (unchanged) return false;
-    const preferred = models.includes("apicredits/claude-fable-5")
-      ? "apicredits/claude-fable-5"
-      : models.includes("meai/claude-sonnet-4.6")
-        ? "meai/claude-sonnet-4.6"
-        : models[0];
-    applyGatewayProjectToSecureState({
-      projectKey: gateway.apiKey,
-      models,
-      projectId: gateway.projectId || "",
-      projectName: gateway.name || "GafCore Gateway",
-    });
-    // Si el modelo activo quedó bloqueado, forzar uno verificado.
-    const chat = secure["editcore-chat-config"] || {};
-    if (isBlockedGatewayModel(chat.model) || !models.includes(chat.model)) {
-      const next = readSecureState();
-      next["editcore-chat-config"] = {
-        ...(next["editcore-chat-config"] || {}),
-        model: preferred,
-        providerKey: "custom:gafcore-gateway",
-        providerProfileId: `gafcore-gateway:${preferred}`,
-        modelSelectionMode: "auto",
-      };
-      writeSecureState(next);
-    }
-    return true;
+    return scrubGatewayFromSecureState();
   } catch (error) {
-    console.error("No se pudieron ampliar los modelos ME AI del gateway:", error);
+    console.error("No se pudo limpiar residuo de gateway:", error);
     return false;
   }
 }
@@ -9187,8 +9203,8 @@ app.whenReady().then(async () => {
   createWindow({ windowId: "main" });
   logStartup("startup:window-created");
 
-  // Accesos directos Escritorio/Inicio con logo oficial (nunca electron.exe).
-  setImmediate(() => {
+  // Accesos directos Escritorio/Inicio con logo oficial (en segundo plano diferido).
+  setTimeout(() => {
     try {
       const { ensureEditCoreShortcuts } = require("./scripts/ensure-editcore-shortcuts");
       const result = ensureEditCoreShortcuts({ rebuild: !fs.existsSync(path.join(__dirname, "EDITCOREAI.exe")) });
@@ -9196,7 +9212,7 @@ app.whenReady().then(async () => {
     } catch (error) {
       logStartup("startup:shortcuts-failed", error);
     }
-  });
+  }, 5000);
 
   setImmediate(() => {
     try {
@@ -9205,15 +9221,19 @@ app.whenReady().then(async () => {
     } catch (error) {
       logStartup("La migracion de datos no pudo completarse.", error);
     }
-    try {
-      const conn = readSecureState()["editcore-connections"] || {};
-      if (connectionsNeedLegacyImport(conn)) {
-        const legacy = importLegacyConnectionsIntoCurrentVault({ force: true });
-        logStartup(`startup:legacy-connections ok=${Boolean(legacy?.ok)} imported=${Boolean(legacy?.imported)}`);
+    // Legacy vault import usa spawnSync de otro Electron — NO bloquear el arranque.
+    // Se difiere para que welcome + botones respondan al instante.
+    setTimeout(() => {
+      try {
+        const conn = readSecureState()["editcore-connections"] || {};
+        if (connectionsNeedLegacyImport(conn)) {
+          const legacy = importLegacyConnectionsIntoCurrentVault({ force: true });
+          logStartup(`startup:legacy-connections ok=${Boolean(legacy?.ok)} imported=${Boolean(legacy?.imported)}`);
+        }
+      } catch (error) {
+        logStartup("startup:legacy-connections-failed", error);
       }
-    } catch (error) {
-      logStartup("startup:legacy-connections-failed", error);
-    }
+    }, 8000);
     try {
       if (ensureDirectUpstreamProfiles()) logStartup("startup:direct-upstream-profiles");
     } catch (error) {

@@ -151,9 +151,10 @@ function systemPromptForMode(mode, allowWrite, opts = {}) {
   if (fullAccess || (allowWrite && mode === "execute")) {
     base.push(
       "MODO ACCESO COMPLETO / EJECUCION AUTORIZADA:",
-      "PROHIBIDO preguntar: '¿Deseas que proceda?', 'Confirma para aplicar los cambios.', 'Escribe procede.', '¿Procedo?', u equivalents.",
+      "PROHIBIDO detenerte o devolver solo texto diciendo 'Voy a buscar...', 'Voy a revisar...' o 'Voy a hacer...': DEBES invocar la tool (read_file, search_files, replace_in_file, write_file) EN ESTE MISMO MENSAJE.",
+      "PROHIBIDO preguntar: '¿Deseas que proceda?', 'Confirma para aplicar los cambios.', 'Escribe procede.', '¿Procedo?', u equivalentes.",
       "NO esperes confirmacion del usuario. Ejecuta YA write_file / replace_in_file / run_command.",
-      "Narra brevemente (2-4 lineas) que haras y aplica las tools de inmediato.",
+      "Narra brevemente (1 frase) que haras y aplica las tools de inmediato en la misma respuesta.",
     );
   }
   if (mode === "diagnose") {
@@ -165,13 +166,16 @@ function systemPromptForMode(mode, allowWrite, opts = {}) {
   } else if (mode === "execute") {
     base.push(
       "MODO EJECUCION: el usuario autorizo cambios (o Acceso completo esta activo).",
-      "Narra brevemente tu hoja de ruta (3-5 pasos) y ejecuta YA.",
+      "EJECUCION DIRECTA: no te detengas tras narrar. Si mencionas buscar o editar, invoca la herramienta correspondiente en este turno.",
       "No esperes oldText del usuario: lee el archivo con read_file y construye replace_in_file con oldText EXACTO del contenido leido.",
       "Puedes hacer varios replace_in_file / write_file en la misma corrida.",
       "Usa delete_file solo si el usuario pide borrar un archivo concreto.",
       "Si hay tests/verificacion, usa run_command (npm test, node --test, etc.). Si falla, lee el error, corrige y reintenta (ciclo OODA completo).",
       "Si no hay defecto real, di que no hay mutaciones y termina (no inventes cambios).",
-      "Al final: ## Evidencia de correccion con tools y paths mutados.",
+      "AL FINALIZAR LA EJECUCIÓN (CIERRE OBLIGATORIO):",
+      "1. Informa claramente qué tarea quedó completada y qué archivos se modificaron.",
+      "2. Resume el cambio visual o funcional logrado.",
+      "3. Propón proactivamente el siguiente paso o mejora técnica/visual que beneficie al proyecto y pregunta si avanzamos con eso.",
     );
   } else if (mode === "list" || mode === "explain") {
     base.push(

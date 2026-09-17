@@ -39,7 +39,7 @@ Disco: `list_files`, `read_file`, `search_files`, `write_file`, `replace_in_file
 Workspace: `open_project`, `close_project`, `switch_project`.
 Assets: `generate_image`, `generate_video` → `public/assets/`.
 ERP: `create_project template=enterprise-erp-base`, `add_erp_module` (inventory|payroll|invoicing|crm).
-Nube: `deploy_github`, `deploy_vercel`, `provision_supabase`, `provision_gafcore_ai`, `provision_fullstack_project`, `publish_project`, `onboard_project`, `fullstack_deploy`.
+Nube: `deploy_github`, `deploy_vercel`, `provision_supabase`, `provision_fullstack_project`, `publish_project`, `onboard_project`, `fullstack_deploy`. Modelos: ME AI / APICredits en panel Modelos.
 Diag: `probe_endpoint`, `test_local_api`, `project_discovery`, `codebase_map`.
 Cerebro: `brain_skill`, `brain_search`, `brain_install_repo`; audit/heal vía `runtime/skill-registry.js`.
 Bodega UI: usable sin proyecto abierto (no NPE `brainSnapshot`). Persistencia web/RAG automática + `run_e2e_pipeline` (reporte 0→100 en `.editcore/e2e-pipeline-report.md`).

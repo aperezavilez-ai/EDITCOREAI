@@ -455,7 +455,7 @@ async function renderGatewayProjectStatus() {
 }
 
 async function connectGatewayProject() {
-  throw new Error("GafCore Gateway fue eliminado. Usa meai o apicredits en Modelos.");
+  throw new Error("Esta integración ya no está disponible. Usa ME AI o APICredits en Modelos.");
 }
 
 async function saveConnections() {
@@ -1153,7 +1153,7 @@ function mapProfileToModelOption(profile, customProvidersByKey) {
   return {
     providerKey: profile.providerKey,
     providerLabel: profile.providerKey === "custom:gafcore-gateway"
-      ? ({ meai: "ME AI Cloud", apicredits: "APICredits" }[String(profile.model).split("/", 1)[0]] || "GafCore Gateway")
+      ? ({ meai: "ME AI Cloud", apicredits: "APICredits" }[String(profile.model).split("/", 1)[0]] || "Proveedor")
       : (PRIMARY_PROVIDER_KEYS.includes(profile.providerKey)
         ? PROVIDERS[profile.providerKey]?.label
         : customProvidersByKey.get(profile.providerKey)?.name || profile.providerName || profile.providerKey),
@@ -1432,7 +1432,7 @@ function renderCustomProviderBlock(prov, container, { readOnlyEndpoint = false }
   dot.className = "prov-dot";
   dot.style.background = prov.id === "gafcore-gateway" ? "#8e6bbf" : "#0ea5a4";
   const nameSpan = document.createElement("span");
-  nameSpan.textContent = prov.name || (prov.id === "gafcore-gateway" ? "GafCore Gateway" : "Endpoint personalizado");
+  nameSpan.textContent = prov.name || "Endpoint personalizado";
   const stateSpan = document.createElement("span");
   stateSpan.className = `provider-state${prov.status === "active" ? " active" : ""}`;
   stateSpan.dataset.providerState = provKey;
@@ -1620,25 +1620,20 @@ async function removeCustomProvider(id) {
 }
 
 async function addGafCoreGateway() {
-  const list = loadCustomProviders();
-  const existing = list.find((provider) => provider.id === "gafcore-gateway"
-    || String(provider.baseUrl || "").toLowerCase().includes("gafcore-gateway.vercel.app"));
-  if (existing) {
-    existing.name = existing.name || "GafCore Gateway";
-    existing.baseUrl = existing.baseUrl || "https://gafcore-gateway.vercel.app/api/openai/v1";
-  } else {
-    list.push({
-      id: "gafcore-gateway",
-      name: "GafCore Gateway",
-      baseUrl: "https://gafcore-gateway.vercel.app/api/openai/v1",
-      apiKey: "",
-      models: [],
-      enabledModels: [],
-      status: "",
-    });
-  }
+  // No reintroducir Gateway. Solo limpia residuos.
+  const list = loadCustomProviders().filter((provider) => {
+    const id = String(provider?.id || "").toLowerCase();
+    const url = String(provider?.baseUrl || "").toLowerCase();
+    return id !== "gafcore-gateway" && !url.includes("gafcore-gateway");
+  });
   await saveCustomProviders(list);
-  renderCustomProviders();
+  const profiles = loadProviderProfiles().filter((profile) => {
+    const key = String(profile?.providerKey || "");
+    const url = String(profile?.baseUrl || "").toLowerCase();
+    return key !== "custom:gafcore-gateway" && !url.includes("gafcore-gateway");
+  });
+  await saveProviderProfiles(profiles);
+  if (typeof renderCustomProviders === "function") renderCustomProviders();
 }
 
 // ── Savings / status ──────────────────────────────────────────────────────────
@@ -4232,13 +4227,13 @@ function activeModelConfigForInspector(requireTools = false) {
   const selectEl = $("inspectorModelSelect");
   const selectedValue = selectEl?.value || "";
   const active = loadProviderProfiles()
-    .filter((profile) => profile?.providerKey === "custom:gafcore-gateway")
+    .filter((profile) => profile?.providerKey !== "custom:gafcore-gateway")
+    .filter((profile) => !String(profile.baseUrl || "").toLowerCase().includes("gafcore-gateway"))
     .filter((profile) => ["active", "enabled"].includes(profile?.status) && profile?.apiKey && profile?.baseUrl && profile?.model)
-    .filter((profile) => String(profile.baseUrl).toLowerCase().includes("gafcore-gateway.vercel.app"))
     .sort((a, b) => Number(b.updatedAt || 0) - Number(a.updatedAt || 0));
   const selected = active.find((profile) => profile.id === selectedValue) || active[0];
   if (!selected) {
-    throw new Error("Conecta el proyecto a GafCore Gateway y selecciona un modelo activo.");
+    throw new Error("Configura un modelo en Modelos (ME AI / APICredits) y vuelve a intentar.");
   }
   return { mode: "inspector", baseUrl: selected.baseUrl, apiKey: selected.apiKey, model: selected.model, provider: selected.providerKey, providerKey: selected.providerKey, providerProfileId: selected.id };
 }
@@ -4275,7 +4270,7 @@ function populateInspectorModelSelect() {
     const upstream = String(p.model).split("/", 1)[0].toLowerCase();
     const key = upstream || hostname || p.id;
     const upstreamLabel = ({ meai: "ME AI Cloud", apicredits: "APICredits" }[upstream] || upstream || "Proveedor");
-    const label = `GafCore Gateway > ${upstreamLabel}`;
+    const label = `Directo · ${upstreamLabel}`;
     if (!providerMap.has(key)) providerMap.set(key, { label, key, profiles: [] });
     providerMap.get(key).profiles.push(p);
   }
@@ -4327,8 +4322,8 @@ function populateInspectorModelSelect() {
   if (status) {
     status.className = `inspector-api-status ${activeProfiles.length ? "ok" : "error"}`;
     status.textContent = activeProfiles.length
-      ? `Inspector conectado al catalogo unificado de GafCore Gateway: ${activeProfiles.length} modelo(s). El escaneo local no consume API.`
-      : "Inspector local disponible. Para chat o reparacion asistida, conecta este proyecto a GafCore Gateway.";
+      ? `Inspector conectado: ${activeProfiles.length} modelo(s) directos. El escaneo local no consume API.`
+      : "Inspector local disponible. Para chat o reparación asistida, configura ME AI o APICredits en Modelos.";
   }
 }
 

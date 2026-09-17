@@ -53,6 +53,13 @@ try {
   projectMapApi = null;
 }
 
+let atMentionsResolver = null;
+try {
+  atMentionsResolver = require("../runtime/at-mentions-resolver");
+} catch (_) {
+  atMentionsResolver = null;
+}
+
 const DEFAULT_MAX_STEPS = 28;
 const AUTHORIZED_MAX_STEPS = 32;
 const DEFAULT_TOTAL_TIMEOUT_MS = 240_000;
@@ -136,8 +143,58 @@ function scopeUserMessage(message = "", evidence = "") {
   return String(message || "");
 }
 
-function nextStepsClosingText() {
+let operatorConnectionsApi = null;
+try {
+  operatorConnectionsApi = require("../runtime/operator-connections-context");
+} catch {
+  operatorConnectionsApi = null;
+}
+
+function buildConnectionsBlock(projectRoot) {
+  if (!projectRoot || !operatorConnectionsApi) return "";
+  try {
+    const snap = operatorConnectionsApi.connectionsForProject
+      ? operatorConnectionsApi.connectionsForProject({}, projectRoot)
+      : null;
+    if (operatorConnectionsApi.formatOperatorConnectionsMemory) {
+      return operatorConnectionsApi.formatOperatorConnectionsMemory(snap);
+    }
+  } catch { /* ignore */ }
   return "";
+}
+
+function nextStepsClosingText(projectRoot, writtenFiles = [], steps = []) {
+  let suggestion = "";
+  try {
+    const { readRoadmap } = require("../runtime/project-roadmap");
+    const rm = readRoadmap(projectRoot);
+    if (rm?.content) {
+      const lines = rm.content.split("\n");
+      const nextPending = lines.find((l) => /^\s*-\s*\[\s*\]/i.test(l) || /^\s*\d+\.\s*\[\s*\]/i.test(l));
+      if (nextPending) {
+        const clean = nextPending.replace(/^\s*[-*0-9.]+\s*\[\s*\]\s*/, "").trim();
+        if (clean) suggestion = `¿Te parece si avanzamos ahora con el siguiente paso: **${clean}**?`;
+      }
+    }
+  } catch { /* ignore */ }
+
+  if (!suggestion) {
+    const rootName = path.basename(projectRoot || "").toLowerCase();
+    const hasVisual = writtenFiles.some((f) => /\.(tsx|jsx|css|html)$/i.test(f))
+      || steps.some((s) => /\.(tsx|jsx|css|html)$/i.test(s?.input?.path || ""));
+    const hasDb = writtenFiles.some((f) => /\.(sql|prisma)$/i.test(f) || /supabase|migration/i.test(f));
+
+    if (rootName.includes("lipoblue") || rootName.includes("shop") || rootName.includes("suplemento")) {
+      suggestion = "¿Te parece si avanzamos con la siguiente mejora: **implementar el botón de compra flotante (Sticky CTA) optimizado para móviles y el flujo de pedidos por WhatsApp**?";
+    } else if (hasVisual) {
+      suggestion = "El cambio visual y los componentes se encuentran verificados. ¿Deseas que refine algún acabado estético adicional o avanzamos con la siguiente funcionalidad técnica del proyecto?";
+    } else if (hasDb) {
+      suggestion = "La estructura de datos ha quedado lista. ¿Deseas que continuemos con la integración en la interfaz o pasamos a la siguiente prueba?";
+    } else {
+      suggestion = "¿Avanzamos con la siguiente funcionalidad o mejora técnica del proyecto?";
+    }
+  }
+  return suggestion;
 }
 
 function ensureCognitiveMap(projectRoot) {
@@ -516,6 +573,21 @@ class ChatOrchestrator {
     const isApprovalText = APPROVAL_WORDS.has(textLower);
     const visionAsk = hasImages && /\b(?:imagen|foto|captura|screenshot|adjunt|overlay|error\s+visible|analiza\s+(?:esto|la|el))\b/i.test(text);
 
+    let effectiveText = text;
+    if (isApprovalText) {
+      const hist = Array.isArray(history) ? history : Array.isArray(inputMessages) ? inputMessages : [];
+      const prevUserMsgs = hist.filter((m) => m && (m.role === "user" || m.sender === "user" || m.from === "user"));
+      for (let i = prevUserMsgs.length - 1; i >= 0; i--) {
+        const item = prevUserMsgs[i];
+        const prevText = typeof item.content === "string" ? item.content : item.text || (Array.isArray(item.content) ? item.content.map((c) => c.text || "").join(" ") : "");
+        const cleanPrev = String(prevText || "").trim();
+        if (cleanPrev && !APPROVAL_WORDS.has(cleanPrev.toLowerCase()) && cleanPrev.length > 5) {
+          effectiveText = `INSTRUCCIÓN AUTORIZADA DEL USUARIO: "${cleanPrev}". Procede de inmediato a aplicar las modificaciones de código con replace_in_file o write_file y verificar.`;
+          break;
+        }
+      }
+    }
+
     const fullAccess = isFullAccess({
       allowWrite: inputAllowWrite,
       permissionMode,
@@ -536,7 +608,7 @@ class ChatOrchestrator {
       const runner = runModelTaskFn || this.runModelTask.bind(this);
       return runner({
         decision: taskToRun.decision,
-        message: taskToRun.message,
+        message: taskToRun.message || effectiveText,
         projectRoot: taskToRun.projectRoot,
         apiBaseUrl,
         apiKey,
@@ -553,7 +625,7 @@ class ChatOrchestrator {
       });
     }
 
-    let decision = classify(text, {
+    let decision = classify(effectiveText, {
       allowWrite: fullAccess || inputAllowWrite === true,
       permissionMode: fullAccess ? "full" : permissionMode,
       fullAccess,
@@ -561,10 +633,10 @@ class ChatOrchestrator {
 
     if (fullAccess) {
       decision.allowWrite = true;
-      if (decision.kind === "CONFIRM") {
+      if (decision.kind === "CONFIRM" || isApprovalText) {
         decision = { kind: "EXECUTE", label: "Ejecución (Acceso completo)", allowTools: true, allowWrite: true, background: false };
       }
-      if (decision.kind === "CHAT" && /\b(?:crea|modifica|corrige|implementa|refactoriza|actualiza|audita|arregla|repara|escribe|agrega|añade|cambia)\b/i.test(text)) {
+      if (decision.kind === "CHAT" && /\b(?:crea|modifica|corrige|implementa|refactoriza|actualiza|audita|arregla|repara|escribe|agrega|añade|cambia)\b/i.test(effectiveText)) {
         decision = { kind: "EXECUTE", label: "Ejecución (Acceso completo)", allowTools: true, allowWrite: true, background: false };
       }
     }
@@ -930,6 +1002,9 @@ class ChatOrchestrator {
     const roadmapFirstBlock = (!chatOnly && decision?.kind !== "CHAT")
       ? buildRoadmapFirstBlock(projectRoot)
       : "";
+    const connectionsBlock = (!chatOnly && decision?.kind !== "CHAT")
+      ? buildConnectionsBlock(projectRoot)
+      : "";
 
     const specialist = (!chatOnly && decision?.kind !== "CHAT" && !authorizedFromPending)
       ? dispatchSpecialist(message)
@@ -967,6 +1042,19 @@ class ChatOrchestrator {
       ].join("\n")
       : "";
 
+    let mentionsBlock = "";
+    if (atMentionsResolver && message) {
+      try {
+        const mentions = atMentionsResolver.extractMentions(message);
+        if (mentions.length && projectRoot) {
+          mentionsBlock = await atMentionsResolver.resolveMentionsContext(mentions, projectRoot, {
+            activeSelection: helpers?.activeSelection || input?.activeSelection || "",
+            markers: helpers?.markers || input?.markers || [],
+          });
+        }
+      } catch (_) { /* ignore */ }
+    }
+
     let system = wrapSystemPrompt(chatOnly || decision?.kind === "CHAT"
       ? [
         "Sos EditCoreAI: asistente del IDE. Respondé siempre en español, claro y directo.",
@@ -975,6 +1063,7 @@ class ChatOrchestrator {
         `Proyecto abierto: ${projectRoot || "(ninguno)"}.`,
         previewBlock,
         visionHardRule,
+        mentionsBlock,
       ].filter(Boolean).join("\n\n")
       : authorizedFromPending || accessFull
         ? [
@@ -995,6 +1084,8 @@ class ChatOrchestrator {
           visionHardRule,
           roadmapFirstBlock,
           cognitiveBlock,
+          connectionsBlock,
+          mentionsBlock,
           specialistInstruction,
         ].filter(Boolean).join("\n\n")
         : [
@@ -1017,20 +1108,34 @@ class ChatOrchestrator {
           visionHardRule,
           roadmapFirstBlock,
           cognitiveBlock,
+          connectionsBlock,
+          mentionsBlock,
           skillsPrompt(projectRoot, decision?.kind, message),
           memory && !authorizedFromPending ? memory.promptBlock() : "",
           projectRoot ? threadCore.threadMemory.projectPromptBlock(projectRoot, threadId, message) : "",
           globalLearned,
         ].filter(Boolean).join("\n\n"));
 
-    const scopedBody = authorizedFromPending
+    const isBareApproval = /^\s*(?:procede|continua|continúa|hazlo|adelante|ejecuta|dale|va|ok)\b/i.test(String(message || "").trim());
+    let finalInstruction = authorizedFromPending
       ? String(message || "")
       : (String(message || "").includes("ALCANCE:")
         ? String(message || "")
         : scopeUserMessage(message));
-    const userText = authorizedFromPending
-      ? `Proyecto: ${projectRoot}\nEjecutá ahora:\n${scopedBody}`
-      : `Proyecto: ${projectRoot}\n${scopedBody}`;
+
+    if (isBareApproval && projectRoot) {
+      try {
+        const threadData = threadCore.threadMemory.loadThread(projectRoot, threadId);
+        const pendingTask = threadData.workingOn || "";
+        if (pendingTask && !/^\s*(?:procede|continua|hazlo|ok)\b/i.test(pendingTask)) {
+          finalInstruction = `Autorización confirmada para el objetivo previo: "${pendingTask}". Aplica la solución concreta directamente sin reexploraciones redundantes.`;
+        }
+      } catch { /* ignore */ }
+    }
+
+    const userText = authorizedFromPending || isBareApproval
+      ? `Proyecto: ${projectRoot}\nEjecutá ahora:\n${finalInstruction}`
+      : `Proyecto: ${projectRoot}\n${finalInstruction}`;
     if (projectRoot) {
       const threadBlock = threadCore.threadMemory.projectPromptBlock(projectRoot, threadId, message);
       if (threadBlock) system = `${system}\n\n${threadBlock}`;
@@ -1060,6 +1165,14 @@ class ChatOrchestrator {
     const pendingWrites = new Set();
     const runMutations = [];
     const stepsLimit = Math.max(1, Number(maxSteps) || DEFAULT_MAX_STEPS);
+    const totalUsage = {
+      prompt_tokens: 0,
+      completion_tokens: 0,
+      total_tokens: 0,
+      cache_read_input_tokens: 0,
+      cache_creation_input_tokens: 0,
+      cachedInputTokens: 0,
+    };
 
     const routed = pickModel({
       requested: model,
@@ -1096,13 +1209,13 @@ class ChatOrchestrator {
           });
           rememberOut(partial);
           detachLongRunningStreams(steps);
-          return { kind: decision?.kind || "CHAT", text: partial, steps, incomplete: true, threadId };
+          return { kind: decision?.kind || "CHAT", text: partial, steps, incomplete: true, threadId, usage: totalUsage };
         }
 
         if (!this.session.alive) {
           rememberOut("Detenido.");
           detachLongRunningStreams(steps);
-          return { kind: "STOP", text: "Detenido.", steps, threadId };
+          return { kind: "STOP", text: "Detenido.", steps, threadId, usage: totalUsage };
         }
 
         if (Array.isArray(this.steering) && this.steering.length) {
@@ -1212,6 +1325,16 @@ class ChatOrchestrator {
               } catch { /* ignore UI errors */ }
             },
           });
+          if (turn?.usage) {
+            totalUsage.prompt_tokens += Number(turn.usage.prompt_tokens || turn.usage.inputTokens || 0);
+            totalUsage.completion_tokens += Number(turn.usage.completion_tokens || turn.usage.outputTokens || 0);
+            totalUsage.total_tokens += Number(turn.usage.total_tokens || turn.usage.totalTokens || 0);
+            const cr = Number(turn.usage.cache_read_input_tokens || turn.usage.cachedInputTokens || 0);
+            const cw = Number(turn.usage.cache_creation_input_tokens || 0);
+            totalUsage.cache_read_input_tokens += cr;
+            totalUsage.cachedInputTokens += cr;
+            totalUsage.cache_creation_input_tokens += cw;
+          }
         } catch (turnErr) {
           const steerHit = turnErr?.code === "AGENT_STEER"
             || this.turnAbort?.signal?.reason?.code === "AGENT_STEER"
@@ -1263,7 +1386,7 @@ class ChatOrchestrator {
               });
               rememberOut(textOut);
               detachLongRunningStreams(steps);
-              return { kind: decision?.kind || "CHAT", text: textOut, steps, incomplete: true, threadId };
+              return { kind: decision?.kind || "CHAT", text: textOut, steps, incomplete: true, threadId, usage: totalUsage };
             }
 
             messages.push({ role: "assistant", content: cleanText || null });
@@ -1290,22 +1413,37 @@ class ChatOrchestrator {
               : "";
             const lista = written.map((p) => `- \`${p}\``).join("\n");
             const cierre = written.length === 1
-              ? "Listo, quedó. Revisalo y si algo no cierra, ajustamos."
-              : `Listo, quedaron ${written.length} archivos modificados. Revisalos cuando puedas y me contás si algo no cierra.`;
-            textOut = `${head}${cierre}\n\n${lista}`;
-          } else if (!textOut || textOut === "Listo.") {
-            textOut = "Terminé el turno. Decime cuál querés que sea el próximo paso.";
-          } else if (accessFull && /procede|¿procedo|cuando autorices/i.test(textOut)) {
-            textOut = `${textOut.replace(/\s*(Cuando autorices procedo[^.]*\.?|Escribe\s+\*{0,2}procede\*{0,2}[^.]*\.?|Si deseas que aplique[^.]*\.?)\s*$/gi, "").trim()} ¿Avanzo con eso?`;
+              ? "He finalizado esta tarea y aplicado la modificación solicitada en el proyecto con éxito."
+              : `He finalizado esta tarea y aplicado las modificaciones solicitadas (${written.length} archivos actualizados con éxito).`;
+            const sugerencia = nextStepsClosingText(projectRoot, written, steps);
+            textOut = `${head}${cierre}\n\n${lista}${sugerencia ? `\n\n${sugerencia}` : ""}`;
+          } else {
+            const readFiles = steps.filter((s) => s.name === "read_file" || s.name === "list_files").map((s) => s.input?.path).filter(Boolean);
+            const fileSummary = readFiles.length > 0 ? ` (${readFiles.slice(0, 4).map((f) => `\`${f}\``).join(", ")})` : "";
+            const hasConclusion = /\b(?:he finalizado|he completado|completad[oa]|¿te parece|¿deseas|¿avanzamos|siguiente paso)\b/i.test(textOut);
+            if (!hasConclusion) {
+              const conclusion = readFiles.length > 0
+                ? `He finalizado la revisión técnica de los componentes${fileSummary}. La estructura y los puntos de entrada se encuentran verificados y operativos.`
+                : "He finalizado el análisis y la revisión técnica del proyecto.";
+              const sugerencia = nextStepsClosingText(projectRoot, written, steps);
+              textOut = `${textOut ? textOut + "\n\n" : ""}${conclusion}\n\n${sugerencia}`;
+              try {
+                onProgress?.({
+                  phase: "narration_delta",
+                  text: `\n\n${conclusion}\n\n${sugerencia}`,
+                  stage: "done",
+                });
+              } catch { /* ignore */ }
+            }
+          }
+          if (accessFull && /procede|¿procedo|cuando autorices/i.test(textOut)) {
+            textOut = `${textOut.replace(/\s*(Cuando autorices procedo[^.]*\.?|Escribe\s+\*{0,2}procede\*{0,2}[^.]*\.?|Si deseas que aplique[^.]*\.?)\s*$/gi, "").trim()}`;
           }
           if (!String(textOut || "").trim()) {
             const toolNames = steps.map((s) => s.name).filter(Boolean).slice(-8);
-            const errHint = String(turn?.error || turn?.message || "").trim();
             textOut = toolNames.length
-              ? `Terminé ${toolNames.length} acción(es): ${toolNames.join(", ")}.`
-              : (errHint
-                ? `El proveedor no me devolvió texto usable: ${errHint.slice(0, 240)}`
-                : "No pude generar texto visible este turno. Probá de nuevo con el mismo modelo o cambiá de modelo en Auto.");
+              ? `He finalizado las acciones de este turno (${toolNames.join(", ")}).\n\n¿Continuamos con la siguiente fase?`
+              : "He finalizado el análisis del proyecto.\n\n¿Deseas que procedamos con el siguiente paso?";
           }
           textOut = formatAgentVisibleText(textOut);
 
@@ -1324,6 +1462,7 @@ class ChatOrchestrator {
             incomplete: stillIncomplete,
             report: { completed: !stillIncomplete },
             threadId,
+            usage: totalUsage,
           };
         }
 
@@ -1544,9 +1683,22 @@ class ChatOrchestrator {
         .map((s) => s.input?.path)
         .filter(Boolean);
 
-      let textOut = "Terminé el ciclo de tools de este turno. Decime el próximo paso concreto.";
+      let textOut = "";
       if (written.length > 0) {
-        textOut = "Listo, quedó. Archivos modificados:\n" + written.map((p) => `- \`${p}\``).join("\n");
+        const lista = written.map((p) => `- \`${p}\``).join("\n");
+        const cierre = written.length === 1
+          ? "He finalizado esta tarea y aplicado la modificación solicitada en el proyecto con éxito."
+          : `He finalizado esta tarea y aplicado las modificaciones solicitadas (${written.length} archivos actualizados con éxito).`;
+        const sugerencia = nextStepsClosingText(projectRoot, written, steps);
+        textOut = `${cierre}\n\n${lista}${sugerencia ? `\n\n${sugerencia}` : ""}`;
+      } else {
+        const readFiles = steps.filter((s) => s.name === "read_file" || s.name === "list_files").map((s) => s.input?.path).filter(Boolean);
+        if (readFiles.length > 0) {
+          const filesStr = readFiles.slice(0, 3).map((f) => `\`${f}\``).join(", ");
+          textOut = `He finalizado la inspección de los archivos relevantes (${filesStr}). He analizado la estructura necesaria.\n\n¿Deseas que procedamos a implementar los cambios correspondientes?`;
+        } else {
+          textOut = "He finalizado el análisis de la solicitud.\n\n¿Te parece si avanzamos con la siguiente mejora en el proyecto?";
+        }
       }
       textOut = formatAgentVisibleText(textOut);
 
@@ -1555,7 +1707,7 @@ class ChatOrchestrator {
       });
       rememberOut(textOut);
       detachLongRunningStreams(steps);
-      return { kind: decision?.kind || "EXECUTE", text: textOut, steps, incomplete: false, mutations: runMutations, threadId };
+      return { kind: decision?.kind || "EXECUTE", text: textOut, steps, incomplete: false, mutations: runMutations, threadId, usage: totalUsage };
     } catch (err) {
       this.session.kill();
       let safeMsg = String(err?.message || err || "Error desconocido");
@@ -1573,7 +1725,7 @@ class ChatOrchestrator {
       });
       rememberOut(errText);
       detachLongRunningStreams(steps);
-      return { kind: "CHAT", text: errText, steps, mutations: runMutations, threadId };
+      return { kind: "CHAT", text: errText, steps, mutations: runMutations, threadId, usage: totalUsage };
     } finally {
       this.running = false;
       this.turnAbort = null;

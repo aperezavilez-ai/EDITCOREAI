@@ -245,7 +245,6 @@ const TOOL_ALLOWLIST = {
     "deploy_github",
     "deploy_vercel",
     "provision_supabase",
-    "provision_gafcore_ai",
     "provision_fullstack_project",
     "probe_endpoint",
     "test_local_api",
@@ -265,7 +264,7 @@ const GREENFIELD_TOOL_ALLOWLIST = [
   "publish_project", "fullstack_deploy", "connect_project", "assess_project_connections",
   "provision_project", "project_health", "sync_vercel_env", "supabase_manage", "ssh_deploy",
   "create_supabase_project", "onboard_project",
-  "deploy_github", "deploy_vercel", "provision_supabase", "provision_gafcore_ai", "provision_fullstack_project",
+  "deploy_github", "deploy_vercel", "provision_supabase", "provision_fullstack_project",
   "probe_endpoint", "test_local_api",
   "run_tdd_cycle", "run_test_repair_loop",
 ];
@@ -489,7 +488,7 @@ function formatOrchestrationBlock(profile = {}) {
         "- Ejecuta onboard_project (una llamada) para: npm install, Supabase, GitHub, Vercel, sync envs y proveedor de IA.",
       "- Las conexiones globales ya estan en EditCore (GitHub, Vercel, Supabase, proveedores ME AI / APICredits). NO pidas tokens ni uses Supabase Cloud.",
         "- Si aun no hay codigo/plantilla: create_project primero; luego onboard_project.",
-        "- Informa el checklist devuelto (dependencias, supabase, github, vercel, gateway).",
+        "- Informa el checklist devuelto (dependencias, supabase, github, vercel, aiProvider).",
         profile.reason ? `- Motivo: ${profile.reason}.` : "",
       ].filter(Boolean).join("\n");
     }
@@ -517,7 +516,7 @@ function formatOrchestrationBlock(profile = {}) {
           "- Si un comando tiene riesgo (push, deploy, rm -rf), EditCore pedira confirmacion al usuario.",
           "- PROHIBIDO solo narrar; sin write_file/create_project no hay progreso.",
           "- Si el usuario solo pidio README/package.json o esqueleto minimo: crea SOLO archivos base. NO inventes producto, dashboards ni datos ficticios.",
-          "- Si el usuario pide conectar GitHub/Vercel/Supabase/GafCore: tras crear, ejecuta onboard_project.",
+          "- Si el usuario pide conectar GitHub/Vercel/Supabase: tras crear, ejecuta onboard_project.",
           "- Escribe ROADMAP.md compacto al crear: estado, mapa de archivos clave, siguiente accion. En siguientes turnos: LEER ROADMAP.md + .editcore/session-state.json primero y ACTUALIZAR al cerrar cambios.",
           oneShotExtra,
           profile.reason ? `- Motivo: ${profile.reason}.` : "",
@@ -535,7 +534,7 @@ function formatOrchestrationBlock(profile = {}) {
         "- PROHIBIDO run_command con cmd, powershell, mkdir, type, cat, pwd o uname.",
         "- PROHIBIDO solo narrar; sin write_file/create_project no hay progreso.",
         "- Si el usuario solo pidio README/package.json o esqueleto minimo: crea SOLO archivos base. NO inventes producto, dashboards ni datos ficticios.",
-        "- Si el usuario pide conectar GitHub/Vercel/Supabase/GafCore: tras crear, ejecuta onboard_project.",
+        "- Si el usuario pide conectar GitHub/Vercel/Supabase: tras crear, ejecuta onboard_project.",
         oneShotExtra,
         profile.reason ? `- Motivo: ${profile.reason}.` : "",
       ].filter(Boolean).join("\n");

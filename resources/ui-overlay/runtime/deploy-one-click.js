@@ -2,6 +2,7 @@
 
 const fs = require("node:fs");
 const path = require("node:path");
+const os = require("node:os");
 const { spawn } = require("node:child_process");
 
 /**
@@ -36,6 +37,27 @@ function runProcess(command, args, { cwd, env, timeoutMs = 300_000, shell = fals
   });
 }
 
+/** Node real del sistema (nunca el host Electron: eso provoca spawn EINVAL / arranques raros). */
+function resolveSystemNode() {
+  const candidates = [];
+  if (process.platform === "win32") {
+    candidates.push(
+      path.join(process.env.ProgramFiles || "C:\\Program Files", "nodejs", "node.exe"),
+      path.join(process.env["ProgramFiles(x86)"] || "C:\\Program Files (x86)", "nodejs", "node.exe"),
+      path.join(os.homedir(), "AppData", "Local", "Programs", "nodejs", "node.exe"),
+      path.join(os.homedir(), "scoop", "apps", "nodejs", "current", "node.exe"),
+    );
+  } else {
+    candidates.push("/usr/local/bin/node", "/usr/bin/node");
+  }
+  for (const candidate of candidates) {
+    if (candidate && fs.existsSync(candidate)) return candidate;
+  }
+  const exe = String(process.execPath || "");
+  if (exe && !/electron|EDITCOREAI-host/i.test(exe)) return exe;
+  return process.platform === "win32" ? "node.exe" : "node";
+}
+
 function detectProvider(projectRoot, requested = "") {
   const forced = String(requested || "").toLowerCase().trim();
   if (forced === "vercel" || forced === "netlify") return forced;
@@ -46,7 +68,8 @@ function detectProvider(projectRoot, requested = "") {
 
 function readJsonSafe(filePath) {
   try {
-    return JSON.parse(fs.readFileSync(filePath, "utf8"));
+    const raw = fs.readFileSync(filePath, "utf8").replace(/^\uFEFF/, "");
+    return JSON.parse(raw);
   } catch {
     return null;
   }
@@ -94,7 +117,13 @@ function readVercelIds(projectRoot, connections = {}) {
   // Prioridad: .vercel local (fuente de verdad CLI) > infra > conexiones.
   // Evita IDs stale/mock en project-infra.json que rompen el deploy.
   const projectId = String(link.projectId || infra.vercelProjectId || fromConn.projectId || "").trim();
-  const orgId = String(link.orgId || fromConn.orgId || "").trim();
+  const orgId = String(
+    link.orgId
+    || infra.vercelOrgId
+    || infra.vercelTeamId
+    || fromConn.orgId
+    || "",
+  ).trim();
   return {
     deployRoot,
     projectId,
@@ -111,6 +140,15 @@ function summarizeDeployFailure(combined = "", exitCode = 1) {
   return snippet || `Deploy fallo (exit ${exitCode}).`;
 }
 
+function sanitizeEnv(extra = {}) {
+  const out = {};
+  for (const [key, value] of Object.entries(extra || {})) {
+    if (value === undefined || value === null) continue;
+    out[key] = String(value);
+  }
+  return out;
+}
+
 async function deployOneClick(projectRoot, input = {}, { connections = {} } = {}) {
   const root = path.resolve(String(projectRoot || ""));
   if (!root || !fs.existsSync(root)) throw new Error("deploy_one_click requiere projectRoot valido.");
@@ -124,34 +162,53 @@ async function deployOneClick(projectRoot, input = {}, { connections = {} } = {}
         ok: false,
         available: false,
         provider,
-        message: "Vercel no configurado. Anade vercelToken en Conexiones (token gratis en vercel.com/account/tokens).",
+        message: "Vercel no configurado. Añade el token en Conexiones (vercel.com/account/tokens).",
       };
     }
     const ids = readVercelIds(root, connections);
     const deployRoot = ids.deployRoot || root;
-    const args = ["--yes"];
-    if (production) args.push("--prod");
-    // En Windows: npx.cmd necesita shell, pero sin args con espacios. Preferimos node + cli.
-    let command = process.platform === "win32" ? "npx.cmd" : "npx";
-    let commandArgs = ["--yes", "vercel", ...args];
-    let shell = process.platform === "win32";
+    const vercelArgs = ["--yes"];
+    if (production) vercelArgs.push("--prod");
+    let command;
+    let commandArgs;
+    let shell = false;
+    // Preferir vercel empaquetado en EditCoreAI + Node del sistema (nunca Electron host).
+    const nodeBin = resolveSystemNode();
+    let vcJs = "";
     try {
-      const vc = require.resolve("vercel/dist/vc.js");
-      command = process.execPath;
-      commandArgs = [vc, ...args];
-      shell = false;
+      vcJs = require.resolve("vercel/dist/vc.js");
     } catch {
-      /* usar npx global */
+      const localVc = path.join(__dirname, "..", "node_modules", "vercel", "dist", "vc.js");
+      if (fs.existsSync(localVc)) vcJs = localVc;
+    }
+    if (vcJs) {
+      command = nodeBin;
+      commandArgs = [vcJs, ...vercelArgs];
+      shell = false;
+    } else if (process.platform === "win32") {
+      const comspec = process.env.ComSpec || "cmd.exe";
+      command = comspec;
+      commandArgs = ["/d", "/s", "/c", ["npx", "--yes", "vercel", ...vercelArgs].join(" ")];
+      shell = false;
+    } else {
+      command = "npx";
+      commandArgs = ["--yes", "vercel", ...vercelArgs];
+      shell = false;
     }
     try {
       const result = await runProcess(command, commandArgs, {
         cwd: deployRoot,
         shell,
-        env: {
-          VERCEL_TOKEN: token,
-          VERCEL_ORG_ID: ids.orgId,
-          VERCEL_PROJECT_ID: ids.projectId,
-        },
+        env: sanitizeEnv((() => {
+          const envExtra = { VERCEL_TOKEN: token };
+          // Vercel exige ORG_ID + PROJECT_ID juntos; si falta uno, no enviar ninguno
+          // y dejar que la CLI use .vercel/project.json del cwd.
+          if (ids.projectId && ids.orgId) {
+            envExtra.VERCEL_PROJECT_ID = ids.projectId;
+            envExtra.VERCEL_ORG_ID = ids.orgId;
+          }
+          return envExtra;
+        })()),
         timeoutMs: 480_000,
       });
       const combined = `${result.stdout}\n${result.stderr}`;
@@ -172,14 +229,17 @@ async function deployOneClick(projectRoot, input = {}, { connections = {} } = {}
           : summarizeDeployFailure(combined, result.code),
       };
     } catch (error) {
+      const msg = String(error?.message || error).slice(0, 400);
       return {
         ok: false,
         available: true,
         provider: "vercel",
         deployRoot,
         projectId: ids.projectId,
-        message: String(error?.message || error).slice(0, 400),
-        hint: "Instala Vercel CLI (`npm i -g vercel`) o usa el token en Conexiones.",
+        message: /EINVAL/i.test(msg)
+          ? "No se pudo lanzar Vercel CLI en Windows (spawn EINVAL). Revisa que Node/npx estén en PATH o reinstala Node.js."
+          : msg,
+        hint: "Instala Node.js + Vercel CLI (`npm i -g vercel`) y verifica el token en Conexiones.",
       };
     }
   }
@@ -198,13 +258,18 @@ async function deployOneClick(projectRoot, input = {}, { connections = {} } = {}
     if (production) args.push("--prod");
     if (connections.netlifySiteId) args.push("--site", String(connections.netlifySiteId));
     args.push("--dir", String(input.dir || "dist"));
-    const bin = process.platform === "win32" ? "netlify.cmd" : "netlify";
     try {
-      const result = await runProcess(bin, args, {
-        cwd: root,
-        shell: process.platform === "win32",
-        env: { NETLIFY_AUTH_TOKEN: token },
-      });
+      const result = await runProcess(
+        process.platform === "win32" ? (process.env.ComSpec || "cmd.exe") : "netlify",
+        process.platform === "win32"
+          ? ["/d", "/s", "/c", ["netlify", ...args].join(" ")]
+          : args,
+        {
+          cwd: root,
+          shell: false,
+          env: sanitizeEnv({ NETLIFY_AUTH_TOKEN: token }),
+        },
+      );
       const combined = `${result.stdout}\n${result.stderr}`;
       const urlMatch = combined.match(/https:\/\/[^\s]+\.netlify\.app[^\s]*/i);
       return {
@@ -234,4 +299,5 @@ module.exports = {
   detectProvider,
   resolveDeployRoot,
   readVercelIds,
+  resolveSystemNode,
 };

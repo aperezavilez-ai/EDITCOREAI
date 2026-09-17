@@ -87,7 +87,7 @@ async function installProjectDependencies(projectRoot, { force = false } = {}) {
 
 /**
  * Onboarding completo de proyecto nuevo:
- * dependencias → Supabase GafCore → GitHub/Vercel/env → GafCore Gateway → publicar opcional.
+ * dependencias → Supabase GafCore → GitHub/Vercel/env → publicar opcional.
  */
 async function onboardProject(projectRoot, connections = {}, {
   localProjectId = "",
@@ -95,7 +95,7 @@ async function onboardProject(projectRoot, connections = {}, {
   installDeps = true,
   bootstrapSupabase = true,
   connectServices = true,
-  connectGateway = true,
+  connectGateway = false,
   firstDeploy = false,
   initialBalanceUsd = 0,
   adminToken = "",
@@ -169,41 +169,21 @@ async function onboardProject(projectRoot, connections = {}, {
     }
   }
 
-  if (connectGateway) {
-    if (typeof connectGatewayProject !== "function") {
-      steps.push({ step: "gafcore_gateway", ok: true, skipped: true, message: "Gateway no disponible en este contexto." });
-    } else {
-      try {
-        const gateway = await connectGatewayProject({
-          localProjectId: String(localProjectId || `root:${name}`),
-          projectRoot: root,
-          projectName: name,
-          initialBalanceUsd: Number(initialBalanceUsd) || 0,
-          adminToken: String(adminToken || "").trim(),
-        });
-        steps.push({
-          step: "gafcore_gateway",
-          ok: gateway?.connected === true || Boolean(gateway?.projectId),
-          reused: gateway?.reused === true,
-          projectId: gateway?.projectId || "",
-          modelCount: gateway?.modelCount || 0,
-          message: gateway?.connected ? "Proyecto conectado a GafCore Gateway." : (gateway?.message || "Gateway sin conectar."),
-        });
-      } catch (error) {
-        const msg = error?.message || String(error);
-        const softSkip = /falta el token administrativo|gateway no/i.test(msg);
-        steps.push({ step: "gafcore_gateway", ok: softSkip, skipped: softSkip, message: msg });
-        if (!softSkip) return fail("gafcore_gateway", msg);
-      }
-    }
-  }
+  steps.push({
+    step: "ai_provider",
+    ok: true,
+    skipped: true,
+    message: connectGateway
+      ? "Integración Gateway AI descontinuada. Configura ME AI o APICredits en Modelos."
+      : "Configura ME AI o APICredits en Modelos del IDE.",
+  });
 
   const checklist = {
     dependencies: steps.some((item) => item.step === "install_dependencies" && (item.ok || item.skipped)),
     supabase: steps.some((item) => item.step === "supabase_bootstrap" && (item.ok || item.skipped)),
     github: summary.github.configured,
     vercel: summary.vercel.configured,
-    gateway: steps.some((item) => item.step === "gafcore_gateway" && item.ok),
+    aiProvider: steps.some((item) => item.step === "ai_provider" && (item.ok || item.skipped)),
     published: firstDeploy,
   };
 
@@ -222,7 +202,7 @@ async function onboardProject(projectRoot, connections = {}, {
     checklist,
     message: firstDeploy
       ? "Proyecto creado, conectado y publicado."
-      : "Proyecto onboarded: dependencias, Supabase GafCore, GitHub/Vercel y Gateway.",
+      : "Proyecto onboarded: dependencias, Supabase, GitHub/Vercel. Configura ME AI o APICredits en Modelos.",
   };
 }
 

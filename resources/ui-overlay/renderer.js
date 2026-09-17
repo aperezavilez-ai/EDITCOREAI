@@ -393,7 +393,7 @@ function uid() {
 function userFacingError(message) {
   const text = String(message || "").trim();
   if (!text) return "No pude completar la acción. Intenta de nuevo.";
-  // Nunca mostrar GafCore Gateway / admin / hostnames en el chat.
+  // Nunca mostrar hostnames internos de proveedores en el chat.
   if (/gafcore/i.test(text)
     || /admin\s+de\s+/i.test(text)
     || /Tu modelo seleccionado se conserv/i.test(text)
@@ -499,24 +499,32 @@ async function initializeSecureState() {
   const storedProfiles = Array.isArray(secureState["editcore-provider-profiles"])
     ? secureState["editcore-provider-profiles"]
     : [];
-  const gatewayProfiles = storedProfiles.filter((profile) => profile?.providerKey === "custom:gafcore-gateway"
-    && profile?.apiKey && profile?.baseUrl && profile?.model
-    && String(profile.baseUrl).toLowerCase().includes("gafcore-gateway.vercel.app"));
-  const userCustomProfiles = storedProfiles.filter((profile) => profile?.providerKey?.startsWith("custom:")
-    && profile.providerKey !== "custom:gafcore-gateway");
-  const userCustomProviders = (secureState["editcore-custom-providers"] || [])
-    .filter((provider) => provider?.id && provider.id !== "gafcore-gateway");
-  let removedLegacyDirectProviders = false;
-  if (gatewayProfiles.length) {
-    removedLegacyDirectProviders = storedProfiles.some((profile) => PRIMARY_PROVIDER_KEYS.includes(String(profile?.providerKey || "")))
-      || Object.keys(secureState["editcore-providers"] || {}).length > 0;
-    secureState["editcore-provider-profiles"] = [...gatewayProfiles, ...userCustomProfiles];
-    secureState["editcore-providers"] = {};
-    const gafcoreProvider = (secureState["editcore-custom-providers"] || []).find((provider) => provider?.id === "gafcore-gateway");
-    secureState["editcore-custom-providers"] = [
-      ...(gafcoreProvider ? [gafcoreProvider] : []),
-      ...userCustomProviders,
-    ];
+  const isGatewayProfile = (profile) => {
+    const key = String(profile?.providerKey || "");
+    const url = String(profile?.baseUrl || "").toLowerCase();
+    const id = String(profile?.id || "").toLowerCase();
+    return key === "custom:gafcore-gateway"
+      || id.startsWith("gafcore-gateway")
+      || url.includes("gafcore-gateway");
+  };
+  const isGatewayProvider = (provider) => {
+    const id = String(provider?.id || "").toLowerCase();
+    const url = String(provider?.baseUrl || "").toLowerCase();
+    const name = String(provider?.name || "").toLowerCase();
+    return id === "gafcore-gateway"
+      || url.includes("gafcore-gateway")
+      || name.includes("gafcore");
+  };
+  const cleanedProfiles = storedProfiles.filter((profile) => !isGatewayProfile(profile));
+  const cleanedCustomProviders = (Array.isArray(secureState["editcore-custom-providers"])
+    ? secureState["editcore-custom-providers"]
+    : []).filter((provider) => !isGatewayProvider(provider));
+  let removedGatewayResidue = false;
+  if (cleanedProfiles.length !== storedProfiles.length
+    || cleanedCustomProviders.length !== (secureState["editcore-custom-providers"] || []).length) {
+    removedGatewayResidue = true;
+    secureState["editcore-provider-profiles"] = cleanedProfiles;
+    secureState["editcore-custom-providers"] = cleanedCustomProviders;
   }
   let compactedSecure = false;
   if (Array.isArray(secureState["editcore-provider-profiles"])) {
@@ -541,7 +549,7 @@ async function initializeSecureState() {
     migratedKeys.push(key);
     migrated = true;
   }
-  if (migrated || repairedSecure || compactedSecure || removedLegacyInspectorProvider || removedLegacyDirectProviders) {
+  if (migrated || repairedSecure || compactedSecure || removedLegacyInspectorProvider || removedGatewayResidue) {
     await window.editcoreSecureConfig.save(secureState);
     migratedKeys.forEach((key) => localStorage.removeItem(key));
   }
@@ -850,140 +858,19 @@ function loadConnections() {
     void saveSecureJson("editcore-connections", { ...saved, selfSupabaseUrl: safeVaultUrl });
   }
   renderConnectionStatus();
-  renderGatewayProjectStatus().catch(() => undefined);
 }
 
 async function renderGatewayProjectStatus() {
-  const project = activeProject();
-  const badge = document.querySelector('.conn-status[data-service="gafcore"]');
-  const detail = $("gafcoreProjectDetail");
-  const err = document.querySelector('.conn-error-detail[data-service="gafcore"]');
-  if (err) { err.style.display = "none"; err.textContent = ""; }
-  if (!badge) return;
-  if (!window.editcoreConnections?.gatewayProjectStatus) {
-    badge.textContent = "sin API";
-    badge.classList.remove("connected", "error");
-    if (detail) detail.style.display = "none";
-    return;
-  }
-  try {
-    const result = await window.editcoreConnections.gatewayProjectStatus({
-      localProjectId: project?.id || state.activeProjectId || "",
-      projectRoot: project?.projectRoot || state.projectRoot || "",
-    });
-    const vaultActive = Boolean(result?.vaultActive || result?.adminTokenStored);
-    const linked = Boolean(result?.connected);
-    badge.classList.remove("error");
-    if (linked) {
-      badge.textContent = "conectado";
-      badge.classList.add("connected");
-    } else if (vaultActive) {
-      // Igual que GitHub/Vercel: token en bóveda = activo (crear/vincular proyectos listo).
-      badge.textContent = "en boveda";
-      badge.classList.add("connected");
-    } else {
-      badge.textContent = "sin configurar";
-      badge.classList.remove("connected");
-    }
-    if (detail) {
-      if (linked) {
-        detail.style.display = "block";
-        detail.textContent = `${result.projectName} · ${result.modelCount} modelos · USD ${Number(result.balanceUsd || 0).toFixed(2)}`;
-      } else if (vaultActive && (project?.projectRoot || state.projectRoot)) {
-        detail.style.display = "block";
-        detail.textContent = "Bóveda activa. Usa Vincular proyecto para este workspace.";
-      } else {
-        detail.style.display = "none";
-        detail.textContent = "";
-      }
-    }
-  } catch (error) {
-    badge.textContent = "error";
-    badge.classList.add("error");
-    badge.classList.remove("connected");
-    if (detail) {
-      detail.style.display = "block";
-      detail.textContent = error?.message || String(error);
-    }
-  }
+  // Sección eliminada del panel Conexiones.
+  return;
 }
 
 async function saveGafcoreAdminToken() {
-  const token = String($("gafcoreAdminToken")?.value || "").trim();
-  if (!token) throw new Error("Pega el admin token de GafCore Gateway.");
-  if (!window.editcoreConnections?.storeGatewayAdminToken) {
-    throw new Error("API de bóveda GafCore no disponible. Reinicia EditCoreAI.");
-  }
-  await window.editcoreConnections.storeGatewayAdminToken(token);
-  $("gafcoreAdminToken").value = "";
-  // Asegura el proveedor AI en Modelos (independiente de Supabase propio).
-  try { await addGafCoreGateway(); } catch { /* ignore */ }
-  $("status").textContent = "GafCore Gateway autorizado en bóveda.";
-  await renderGatewayProjectStatus();
+  throw new Error("Esta integración ya no está disponible. Configura ME AI o APICredits en Modelos.");
 }
 
 async function connectGatewayProject() {
-  const project = activeProject();
-  const projectRoot = project?.projectRoot || state.projectRoot || "";
-  if (!projectRoot) throw new Error("Abre o crea un proyecto antes de conectarlo a GafCore Gateway.");
-  const button = $("connectGatewayProjectBtn");
-  const badge = document.querySelector('.conn-status[data-service="gafcore"]');
-  const detail = $("gafcoreProjectDetail");
-  const err = document.querySelector('.conn-error-detail[data-service="gafcore"]');
-  if (button) button.disabled = true;
-  if (badge) {
-    badge.textContent = "conectando...";
-    badge.classList.remove("connected", "error");
-  }
-  if (err) { err.style.display = "none"; err.textContent = ""; }
-  try {
-    const result = await window.editcoreConnections.connectGatewayProject({
-      localProjectId: project?.id || state.activeProjectId || "",
-      projectRoot,
-      projectName: project ? projectDisplayName(project) : (pathBasename(projectRoot) || "proyecto"),
-      initialBalanceUsd: Number($("gafcoreInitialBalance")?.value || 0),
-      adminToken: String($("gafcoreAdminToken")?.value || "").trim(),
-    });
-    if ($("gafcoreAdminToken")) $("gafcoreAdminToken").value = "";
-    secureState = await window.editcoreSecureConfig.load().catch(() => secureState);
-    if (project) {
-      project.gafcoreProjectId = result.projectId;
-      project.gafcoreProjectName = result.projectName;
-      project.gafcoreConnectedAt = result.connectedAt;
-      project.gafcoreModelCount = result.modelCount;
-      project.provider = "custom:gafcore-gateway";
-      project.providerProfileId = `gafcore-gateway:${result.selectedModel}`;
-      project.model = result.selectedModel;
-      project.updatedAt = Date.now();
-      saveProjects();
-    }
-    if (typeof loadConfig === "function") loadConfig();
-    if (typeof syncChatModelFromConfig === "function") syncChatModelFromConfig();
-    if (typeof renderProjects === "function") renderProjects();
-    await renderGatewayProjectStatus();
-    if (detail) {
-      detail.style.display = "block";
-      detail.textContent = `${result.reused ? "Proyecto reutilizado" : "Proyecto creado"}: ${result.projectName} · ${result.modelCount} modelos`;
-    }
-    $("status").textContent = `${result.projectName} conectado a GafCore Gateway`;
-  } catch (error) {
-    if (badge) {
-      badge.textContent = "error";
-      badge.classList.add("error");
-    }
-    const message = error?.message || String(error);
-    if (detail) {
-      detail.style.display = "block";
-      detail.textContent = message;
-    }
-    if (err) {
-      err.style.display = "block";
-      err.textContent = message;
-    }
-    throw error;
-  } finally {
-    if (button) button.disabled = false;
-  }
+  throw new Error("Esta integración ya no está disponible. Configura ME AI o APICredits en Modelos.");
 }
 
 function pathBasename(filePath = "") {
@@ -1128,7 +1015,9 @@ async function detectConnections() {
     const parts = [];
     if (legacyOk) parts.push("legacy");
     if (ok.length) parts.push(...ok);
-    if (report?.imported?.gafcore || report?.gafcoreImported) parts.push("GafCore Gateway");
+    if (report?.imported?.gafcore || report?.gafcoreImported) {
+      // Residuo legado ignorado: el gateway AI ya no se importa.
+    }
     $("status").textContent = parts.length
       ? `Conexiones detectadas: ${parts.join(", ")}`
       : "No se detectaron conexiones locales válidas";
@@ -1220,36 +1109,84 @@ function renderProviderStatus(key, status = {}) {
   if (status.error) badge.title = String(status.error).slice(0, 240);
 }
 
+function resolveProviderApiKey(key, formKey = "") {
+  const typed = String(formKey || "").trim();
+  if (typed) return typed;
+  const saved = loadJson("editcore-providers", {})[key] || {};
+  if (String(saved.apiKey || "").trim()) return String(saved.apiKey).trim();
+  const profile = loadProviderProfiles().find((item) =>
+    item.providerKey === key && String(item.apiKey || "").trim(),
+  );
+  if (profile) return String(profile.apiKey).trim();
+  const chat = loadJson("editcore-chat-config", {});
+  if (String(chat.providerKey || "") === key && String(chat.apiKey || "").trim()) {
+    return String(chat.apiKey).trim();
+  }
+  return "";
+}
+
+function sanitizeProviderIpcError(error) {
+  const raw = String(error?.message || error || "");
+  const unwrapped = raw.replace(/^Error invoking remote method '[^']+':\s*/i, "").trim() || raw;
+  if (/Falta la API key/i.test(unwrapped)) {
+    return "Falta la API key. Pégala en Modelos y vuelve a verificar.";
+  }
+  if (/Error invoking remote method/i.test(unwrapped) && unwrapped.length < 80) {
+    return "No se pudo verificar el proveedor. Revisa la API key y el endpoint.";
+  }
+  return unwrapped.slice(0, 240);
+}
+
 function readProviderForm(key) {
   const def = PROVIDERS[key] || {};
+  const formKey = document.querySelector(`[data-prov-key="${key}"]`)?.value.trim() || "";
   return {
     baseUrl: document.querySelector(`[data-prov-url="${key}"]`)?.value.trim() || def.baseUrl || "",
-    apiKey: document.querySelector(`[data-prov-key="${key}"]`)?.value.trim() || "",
+    apiKey: resolveProviderApiKey(key, formKey),
     model: document.querySelector(`[data-prov-model="${key}"]`)?.value.trim() || def.model || "",
   };
 }
 
 async function saveProviderForm(key, extra = {}) {
   const data = loadJson("editcore-providers", {});
-  data[key] = { ...(data[key] || {}), ...readProviderForm(key), ...extra };
+  const previous = data[key] || {};
+  const form = readProviderForm(key);
+  if (!form.apiKey && previous.apiKey) form.apiKey = previous.apiKey;
+  data[key] = { ...previous, ...form, ...extra };
+  if (!String(data[key].apiKey || "").trim() && previous.apiKey) data[key].apiKey = previous.apiKey;
   await saveSecureJson("editcore-providers", data);
+  const keyEl = document.querySelector(`[data-prov-key="${key}"]`);
+  if (keyEl && data[key].apiKey && !keyEl.value.trim()) keyEl.value = data[key].apiKey;
   return data[key];
 }
 
 async function verifyProvider(key) {
   renderProviderStatus(key, { status: "checking" });
   const provider = await saveProviderForm(key, { status: "checking", error: "" });
+  if (!String(provider.apiKey || "").trim()) {
+    const message = "Falta la API key. Pégala en Modelos y vuelve a verificar.";
+    await saveProviderForm(key, { status: "inactive", checkedAt: Date.now(), error: message });
+    renderProviderStatus(key, { status: "inactive", error: message });
+    throw new Error(message);
+  }
   try {
     const result = await window.editcoreProviders.test({ ...provider, providerKey: key });
-    const verified = await saveProviderForm(key, { model: result.model, models: result.models, status: "active", modelCount: result.modelCount, checkedAt: Date.now(), error: "" });
+    const verified = await saveProviderForm(key, {
+      model: result.model,
+      models: result.models,
+      status: "active",
+      modelCount: result.modelCount,
+      checkedAt: Date.now(),
+      error: "",
+    });
     setChatModelOptions(result.models, result.model);
     renderProviderStatus(key, { status: "active", modelCount: result.modelCount });
     return { ...verified, providerKey: key };
   } catch (error) {
-    const message = error?.message || String(error);
+    const message = sanitizeProviderIpcError(error);
     await saveProviderForm(key, { status: "inactive", checkedAt: Date.now(), error: message });
     renderProviderStatus(key, { status: "inactive", error: message });
-    throw error;
+    throw new Error(message);
   }
 }
 
@@ -1257,17 +1194,28 @@ async function saveProviders() {
   const data = loadJson("editcore-providers", {});
   PRIMARY_PROVIDER_KEYS.forEach((key) => {
     const urlEl = document.querySelector(`[data-prov-url="${key}"]`);
+    const keyEl = document.querySelector(`[data-prov-key="${key}"]`);
     const previous = data[key] || {};
-    data[key] = { ...previous, baseUrl: urlEl?.value.trim() || PROVIDERS[key].baseUrl };
+    const nextKey = keyEl?.value.trim() || previous.apiKey || "";
+    data[key] = {
+      ...previous,
+      baseUrl: urlEl?.value.trim() || PROVIDERS[key].baseUrl,
+      ...(nextKey ? { apiKey: nextKey } : {}),
+    };
   });
   await saveSecureJson("editcore-providers", data);
-  const customProviders = loadCustomProviders();
+  const customProviders = loadCustomProviders().filter((provider) => {
+    const id = String(provider?.id || "").toLowerCase();
+    const url = String(provider?.baseUrl || "").toLowerCase();
+    const name = String(provider?.name || "").toLowerCase();
+    return id !== "gafcore-gateway" && !url.includes("gafcore-gateway") && !name.includes("gafcore");
+  });
   for (const provider of customProviders) {
     const provKey = `custom:${provider.id}`;
     const nameEl = document.querySelector(`[data-prov-name="${provKey}"]`);
     const urlEl = document.querySelector(`[data-prov-url="${provKey}"]`);
     if (nameEl) provider.name = nameEl.value.trim() || provider.name || "Endpoint personalizado";
-    if (urlEl && provider.id !== "gafcore-gateway") provider.baseUrl = urlEl.value.trim() || provider.baseUrl || "";
+    if (urlEl) provider.baseUrl = urlEl.value.trim() || provider.baseUrl || "";
     if (!provider?.apiKey || !provider?.baseUrl || !Array.isArray(provider.enabledModels) || !provider.enabledModels.length) continue;
     provider.status = "active";
     provider.error = "";
@@ -1283,8 +1231,8 @@ async function saveProviders() {
 
 function openProviders() {
   renderDialogAfterOpen($("providersDialog"), () => {
+    renderCustomProviders();
     loadProviders();
-    renderCustomProviders(); // llama renderProviderProfiles() internamente
     syncChatModelFromConfig();
     if (window.editcoreAgent?.privacyGet) {
       window.editcoreAgent.privacyGet().then((pm) => {
@@ -1895,7 +1843,7 @@ function mapProfileToModelOption(profile, customProvidersByKey) {
   return {
     providerKey: profile.providerKey,
     providerLabel: profile.providerKey === "custom:gafcore-gateway"
-      ? ({ meai: "ME AI Cloud", apicredits: "APICredits" }[String(profile.model).split("/", 1)[0]] || "GafCore Gateway")
+      ? ({ meai: "ME AI Cloud", apicredits: "APICredits" }[String(profile.model).split("/", 1)[0]] || "Proveedor")
       : (PRIMARY_PROVIDER_KEYS.includes(profile.providerKey)
         ? PROVIDERS[profile.providerKey]?.label
         : customProvidersByKey.get(profile.providerKey)?.name || profile.providerName || profile.providerKey),
@@ -2177,7 +2125,7 @@ function renderCustomProviderBlock(prov, container, { readOnlyEndpoint = false }
   dot.className = "prov-dot";
   dot.style.background = prov.id === "gafcore-gateway" ? "#8e6bbf" : "#0ea5a4";
   const nameSpan = document.createElement("span");
-  nameSpan.textContent = prov.name || (prov.id === "gafcore-gateway" ? "GafCore Gateway" : "Endpoint personalizado");
+  nameSpan.textContent = prov.name || "Endpoint personalizado";
   const stateSpan = document.createElement("span");
   stateSpan.className = `provider-state${prov.status === "active" ? " active" : ""}`;
   stateSpan.dataset.providerState = provKey;
@@ -2317,15 +2265,19 @@ function renderCustomProviders() {
     container.appendChild(item);
   });
 
-  const gafcore = list.find((provider) => provider.id === "gafcore-gateway");
-  const userCustom = list.filter((provider) => provider.id !== "gafcore-gateway");
-  if (gafcore || userCustom.length) {
+  const gafcore = null; // Gateway eliminado del panel Modelos (solo ME AI / APICredits).
+  const userCustom = list.filter((provider) => {
+    const id = String(provider?.id || "").toLowerCase();
+    const url = String(provider?.baseUrl || "").toLowerCase();
+    const name = String(provider?.name || "").toLowerCase();
+    return id !== "gafcore-gateway" && !url.includes("gafcore-gateway") && !name.includes("gafcore");
+  });
+  if (userCustom.length) {
     const customTitle = document.createElement("div");
     customTitle.className = "providers-section-title";
     customTitle.textContent = "Tus endpoints";
     container.appendChild(customTitle);
   }
-  if (gafcore) renderCustomProviderBlock(gafcore, container, { readOnlyEndpoint: true });
 
   userCustom.forEach((prov) => {
     renderCustomProviderBlock(prov, container, { readOnlyEndpoint: false });
@@ -2365,24 +2317,19 @@ async function removeCustomProvider(id) {
 }
 
 async function addGafCoreGateway() {
-  const list = loadCustomProviders();
-  const existing = list.find((provider) => provider.id === "gafcore-gateway"
-    || String(provider.baseUrl || "").toLowerCase().includes("gafcore-gateway.vercel.app"));
-  if (existing) {
-    existing.name = existing.name || "GafCore Gateway";
-    existing.baseUrl = existing.baseUrl || "https://gafcore-gateway.vercel.app/api/openai/v1";
-  } else {
-    list.push({
-      id: "gafcore-gateway",
-      name: "GafCore Gateway",
-      baseUrl: "https://gafcore-gateway.vercel.app/api/openai/v1",
-      apiKey: "",
-      models: [],
-      enabledModels: [],
-      status: "",
-    });
-  }
+  // No reintroducir Gateway en Modelos. Solo proveedores directos ME AI / APICredits.
+  const list = loadCustomProviders().filter((provider) => {
+    const id = String(provider?.id || "").toLowerCase();
+    const url = String(provider?.baseUrl || "").toLowerCase();
+    return id !== "gafcore-gateway" && !url.includes("gafcore-gateway");
+  });
   await saveCustomProviders(list);
+  const profiles = loadProviderProfiles().filter((profile) => {
+    const key = String(profile?.providerKey || "");
+    const url = String(profile?.baseUrl || "").toLowerCase();
+    return key !== "custom:gafcore-gateway" && !url.includes("gafcore-gateway");
+  });
+  await saveProviderProfiles(profiles);
   renderCustomProviders();
 }
 
@@ -3330,6 +3277,7 @@ function renderFeed(options = {}) {
   $("permissionsBtn").dataset.permissionMode = state.permissionMode;
   syncPermissionMenuSelection(state.permissionMode);
   $("projectPathLabel").textContent = state.projectRoot || "Sin proyecto";
+  refreshAppStatusBar();
   renderProjectFiles().catch(() => undefined);
   updateCloseProjectButton();
   if (!state.history.length) {
@@ -3421,7 +3369,7 @@ function clearAgentTouchedHighlights() {
   state.fileListWritingNames = [];
 }
 
-function scheduleClearAgentTouchedHighlights(delayMs = 45000) {
+function scheduleClearAgentTouchedHighlights(delayMs = 180000) {
   if (state.fileListHighlightClearTimer) clearTimeout(state.fileListHighlightClearTimer);
   state.fileListHighlightClearTimer = setTimeout(() => {
     state.fileListHighlightClearTimer = null;
@@ -3453,6 +3401,7 @@ function markAgentTouchedFromPayload(payload = {}, { writing = false } = {}) {
   } else {
     state.fileListWritingNames = [];
   }
+  scheduleClearAgentTouchedHighlights(180000);
   return {
     viewDir: Object.prototype.hasOwnProperty.call(payload, "viewDir")
       ? String(payload.viewDir ?? "")
@@ -4119,7 +4068,16 @@ async function renderProjectFiles(relativePath = "") {
       }
       const writingName = state.fileListWritingNames.includes(String(row.name || "").toLowerCase());
       if (writingName && row.kind === "file") button.classList.add("is-writing");
-      button.textContent = `${fileIcon(row.kind)} ${row.name}`;
+      // Bolita anclada a la izquierda del panel; nombre/carpeta a la derecha.
+      const dot = document.createElement("span");
+      dot.className = touched ? "file-item-dot" : "file-item-dot is-idle";
+      dot.title = touched ? (writingName ? "Escribiendo…" : "Modificado por el agente") : "";
+      dot.setAttribute("aria-hidden", "true");
+      button.appendChild(dot);
+      const label = document.createElement("span");
+      label.className = "file-item-label";
+      label.textContent = `${fileIcon(row.kind)} ${row.name}`;
+      button.appendChild(label);
       button.onclick = () => {
         if (row.kind === "directory") {
           renderProjectFiles(row.path);
@@ -5024,26 +4982,19 @@ async function selectProject(id, options = {}) {
     syncChatModelFromConfig();
   }
   const project = activeProject();
-  // Preview + gateway en background: el clic no debe esperar al servidor.
+  // Preview en background: el clic no debe esperar al servidor.
   void (async () => {
-    if (project?.projectRoot && project?.gafcoreProjectId) {
-      try {
-        const gateway = await window.editcoreConnections.activateGatewayProject({
-          localProjectId: project.id,
-          projectRoot: project.projectRoot,
-        });
-        if (gateway?.connected) {
-          secureState = await window.editcoreSecureConfig.load();
-          project.provider = "custom:gafcore-gateway";
-          project.providerProfileId = `gafcore-gateway:${gateway.selectedModel}`;
-          project.model = gateway.selectedModel;
-          saveProjects();
-          loadConfig();
-          syncChatModelFromConfig();
-        }
-      } catch (error) {
-        $("status").textContent = `GafCore Gateway: ${error?.message || String(error)}`;
+    if (project?.projectRoot && (project?.gafcoreProjectId || project?.provider === "custom:gafcore-gateway")) {
+      delete project.gafcoreProjectId;
+      delete project.gafcoreProjectName;
+      delete project.gafcoreConnectedAt;
+      delete project.gafcoreModelCount;
+      if (project.provider === "custom:gafcore-gateway") {
+        project.provider = "meai";
+        project.providerProfileId = "";
       }
+      saveProjects();
+      try { await addGafCoreGateway(); } catch { /* ignore */ }
     }
     if (!project?.projectRoot) return;
     if (selectionId !== projectSelectionId || activeProject()?.id !== project.id) return;
@@ -8853,7 +8804,7 @@ function inspectorContextPrompt(snapshot) {
     ];
   return [
     "Eres Inspector Core AI, supervisor NATIVO LOCAL de EditCore. Responde SIEMPRE en español.",
-    "Modo: Inspector Nativo Autónomo Activo (Modo Local). NO uses ni menciones GafCore Gateway.",
+    "Modo: Inspector Nativo Autónomo Activo (Modo Local). Usa solo ME AI / APICredits.",
     "Herramientas de kernel disponibles: process-runner (spawn/logs), vision-inspector (captura preview), global-memory (aprendizajes), snapshot (checkpoints/rollback).",
     "Eres un solo inspector visible para el usuario, pero internamente razonas como Planner, Debug, QA, Security, DevOps y Report Agent.",
     "Tu objetivo principal es diagnosticar EditCore: runtime, interfaz, APIs, modelos, agentes, colas, logs, herramientas y empaquetado.",
@@ -9412,10 +9363,10 @@ async function onboardProjectFull() {
     openConnections();
     return;
   }
-  appendUserWithImages("🔗 Conectar (deps → GitHub → Vercel → Supabase GafCore)", []);
-  rememberMessage("user", "🔗 Conectar (deps → GitHub → Vercel → Supabase GafCore)");
+  appendUserWithImages("🔗 Conectar (deps → GitHub → Vercel → Supabase)", []);
+  rememberMessage("user", "🔗 Conectar (deps → GitHub → Vercel → Supabase)");
   $("status").textContent = "Conectando proyecto...";
-  const thinking = appendThinking("Conectando: npm install + GitHub + Vercel + Supabase GafCore...");
+  const thinking = appendThinking("Conectando: npm install + GitHub + Vercel + Supabase...");
   try {
     const project = activeProject();
     const result = await window.editcoreProject.onboard({
@@ -9426,7 +9377,7 @@ async function onboardProjectFull() {
       installDeps: true,
       bootstrapSupabase: true,
       connectServices: true,
-      connectGateway: true,
+      connectGateway: false,
       firstDeploy: false,
     });
     removeThinking(thinking);
@@ -9441,7 +9392,6 @@ async function onboardProjectFull() {
     $("status").textContent = result.ok ? "Proyecto conectado" : "Conexion parcial";
     if (result.ok) {
       loadConnections();
-      await renderGatewayProjectStatus();
       if (typeof syncProjectsToMaintenanceScheduler === "function") syncProjectsToMaintenanceScheduler();
     }
   } catch (error) {
@@ -9502,18 +9452,47 @@ function formatStepReport(title, result = {}) {
   return lines.filter((line, index, arr) => !(line === "" && arr[index - 1] === ""));
 }
 
+function stagePercentValue(stage = {}) {
+  const st = String(stage.status || "pending");
+  if (st === "done") return 100;
+  if (st === "error") {
+    const n = Number(stage.percent);
+    return Number.isFinite(n) ? Math.max(0, Math.min(100, Math.round(n))) : 0;
+  }
+  if (st === "running") {
+    const n = Number(stage.percent);
+    if (Number.isFinite(n)) return Math.max(1, Math.min(99, Math.round(n)));
+    return 12;
+  }
+  return 0;
+}
+
+function computeFullStackOverallPercent(stages = [], payloadPercent) {
+  const fromPayload = Number(payloadPercent);
+  if (Number.isFinite(fromPayload)) return Math.max(0, Math.min(100, Math.round(fromPayload)));
+  if (!stages.length) return 0;
+  const sum = stages.reduce((acc, stage) => acc + stagePercentValue(stage), 0);
+  return Math.round(sum / stages.length);
+}
+
 function renderFullStackProgress(payload = {}) {
   const panel = $("fullStackProgress");
   const list = $("fullStackProgressStages");
   const status = $("fullStackProgressStatus");
+  const pctEl = $("fullStackProgressPct");
+  const fillEl = $("fullStackProgressFill");
   if (!panel || !list) return;
   const stages = Array.isArray(payload.stages) ? payload.stages : [];
+  const overall = computeFullStackOverallPercent(stages, payload.percent);
   panel.classList.remove("hidden");
   panel.hidden = false;
+  panel.classList.toggle("is-error", payload.ok === false || payload.status === "error" || stages.some((s) => s.status === "error"));
+  panel.classList.toggle("is-done", payload.type === "complete" && payload.ok !== false && overall >= 100);
   list.replaceChildren();
   for (const stage of stages) {
     const li = document.createElement("li");
     const st = String(stage.status || "pending");
+    const pct = stagePercentValue(stage);
     li.className = `is-${st}`;
     const mark = document.createElement("span");
     mark.className = "mark";
@@ -9534,10 +9513,24 @@ function renderFullStackProgress(payload = {}) {
       link.textContent = stage.url;
       meta.appendChild(link);
     }
+    const track = document.createElement("div");
+    track.className = "stage-track";
+    const fill = document.createElement("div");
+    fill.className = "stage-fill";
+    fill.style.width = `${pct}%`;
+    track.appendChild(fill);
+    meta.appendChild(track);
+    const pctLabel = document.createElement("span");
+    pctLabel.className = "stage-pct";
+    pctLabel.textContent = `${pct}%`;
+    pctLabel.setAttribute("aria-label", `Progreso ${pct} por ciento`);
     li.appendChild(mark);
     li.appendChild(meta);
+    li.appendChild(pctLabel);
     list.appendChild(li);
   }
+  if (pctEl) pctEl.textContent = `${overall}%`;
+  if (fillEl) fillEl.style.width = `${overall}%`;
   if (status) {
     if (payload.type === "complete") {
       status.textContent = payload.ok === false ? "falló" : "listo";
@@ -9545,7 +9538,9 @@ function renderFullStackProgress(payload = {}) {
       status.textContent = "error";
     } else {
       const running = stages.find((s) => s.status === "running");
-      status.textContent = running ? `${running.label}…` : "en curso…";
+      status.textContent = running
+        ? `${running.label} ${stagePercentValue(running)}%…`
+        : "en curso…";
     }
   }
 }
@@ -9588,17 +9583,18 @@ async function fullStackDeployOneClick({ mode = "full" } = {}) {
   $("status").textContent = isUpdate ? "Actualizando publicación…" : "Publicando…";
   renderFullStackProgress({
     type: "stage",
+    percent: 0,
     stages: isUpdate
       ? [
-          { id: "publish", label: "Push + Deploy", status: "pending" },
-          { id: "live", label: "Live URL", status: "pending" },
+          { id: "publish", label: "Push + Deploy", status: "pending", percent: 0 },
+          { id: "live", label: "Live URL", status: "pending", percent: 0 },
         ]
       : [
-          { id: "github", label: "GitHub Repo", status: "pending" },
-          { id: "vercel", label: "Vercel Link", status: "pending" },
-          { id: "supabase", label: "Supabase DB", status: "pending" },
-          { id: "publish", label: "Push + Deploy", status: "pending" },
-          { id: "live", label: "Live URL", status: "pending" },
+          { id: "github", label: "GitHub Repo", status: "pending", percent: 0 },
+          { id: "vercel", label: "Vercel Link", status: "pending", percent: 0 },
+          { id: "supabase", label: "Supabase DB", status: "pending", percent: 0 },
+          { id: "publish", label: "Push + Deploy", status: "pending", percent: 0 },
+          { id: "live", label: "Live URL", status: "pending", percent: 0 },
         ],
   });
   const head = document.querySelector("#fullStackProgress strong");
@@ -9622,31 +9618,39 @@ async function fullStackDeployOneClick({ mode = "full" } = {}) {
     });
     removeThinking(thinking);
     if (typeof unsub === "function") unsub();
-    if (result?.stages) renderFullStackProgress({ type: "complete", ok: result.ok, stages: result.stages, liveUrl: result.liveUrl });
+    if (result?.stages) renderFullStackProgress({ type: "complete", ok: result.ok, stages: result.stages, liveUrl: result.liveUrl, percent: result.ok ? 100 : undefined });
     if (result?.cancelled) {
       append("assistant", result.message || "Cancelado.", null, true, 0);
       $("status").textContent = "Cancelado";
       hideFullStackProgressSoon(true);
       return;
     }
-    const lines = formatStepReport(
-      result.ok
-        ? (isUpdate ? "## Publicación actualizada" : "## Publicado")
-        : (isUpdate ? "## Actualización incompleta" : "## Publicación incompleta"),
-      result
-    );
-    if (result.stages?.length) {
-      lines.push("", "### Etapas");
-      for (const stage of result.stages) {
-        const mark = stage.status === "done" ? "✓" : stage.status === "error" ? "✗" : "·";
-        lines.push(`- ${mark} **${stage.label}**: ${stage.message || stage.status}${stage.url ? ` → ${stage.url}` : ""}`);
+    let chatText = "";
+    if (result.ok) {
+      const live = String(result.liveUrl || "").trim();
+      chatText = [
+        isUpdate ? "## Publicado correctamente" : "## Publicado correctamente",
+        "",
+        live ? `Live: ${live}` : (result.message || "Push y deploy completados."),
+        "",
+        "EditCoreAI listo. ¿Continuamos con otra tarea?",
+      ].join("\n");
+    } else {
+      const lines = formatStepReport(
+        isUpdate ? "## Actualización incompleta" : "## Publicación incompleta",
+        result
+      );
+      if (result.stages?.length) {
+        lines.push("", "### Etapas");
+        for (const stage of result.stages) {
+          const mark = stage.status === "done" ? "✓" : stage.status === "error" ? "✗" : "·";
+          lines.push(`- ${mark} **${stage.label}**: ${stage.message || stage.status}${stage.url ? ` → ${stage.url}` : ""}`);
+        }
       }
+      chatText = lines.join("\n");
     }
-    if (result.infra) {
-      lines.push("", "### project-infra.json", "```json", JSON.stringify(result.infra, null, 2), "```");
-    }
-    append("assistant", lines.join("\n"), null, true, 0);
-    rememberMessage("assistant", lines.join("\n"));
+    append("assistant", chatText, null, true, 0);
+    rememberMessage("assistant", chatText);
     $("status").textContent = result.ok
       ? (result.liveUrl ? `Live: ${result.liveUrl}` : title + " OK")
       : (result.message || "Error");
@@ -9677,16 +9681,53 @@ function applyEditCoreTheme(theme = "blanco") {
   syncPreviewChromeForTheme();
   try { window.EditCoreEditor?.applyTheme?.(); } catch { /* ignore */ }
   void syncAppWindowChrome(next);
+  refreshAppStatusBar();
   return next;
 }
 
-async function syncAppWindowChrome(theme = "blanco") {
-  try {
-    const version = String(await window.editcoreApp?.version?.() || "").trim();
-    document.title = version ? `EditCoreAI v${version}` : "EditCoreAI";
-  } catch {
-    document.title = "EditCoreAI";
+function refreshAppStatusBar() {
+  const branch = $("statusBarBranch");
+  const msg = $("statusBarMessage");
+  const model = $("statusBarModel");
+  const cache = $("statusBarCache");
+  const themeEl = $("statusBarTheme");
+  const root = String(state.projectRoot || "").trim();
+  const leaf = root ? root.split(/[/\\]/).filter(Boolean).pop() : "Sin proyecto";
+  if (branch) {
+    branch.textContent = leaf || "Sin proyecto";
+    branch.title = root || "Sin proyecto — clic para Inicio";
   }
+  if (msg) msg.textContent = String($("status")?.textContent || "Listo").trim() || "Listo";
+  if (cache) cache.textContent = String($("savingsStatus")?.textContent || "Cache 0%").trim() || "Cache 0%";
+  if (themeEl) themeEl.textContent = document.documentElement.getAttribute("data-theme") || "blanco";
+  const modelLabel = String($("modelPickerLabel")?.textContent || "").trim();
+  if (model) model.textContent = modelLabel || "Auto";
+}
+
+async function initAppStatusBar() {
+  const verEl = $("statusBarVersion");
+  let ver = "";
+  try { ver = String(await window.editcoreApp?.version?.() || "").trim(); } catch { /* ignore */ }
+  if (verEl) verEl.textContent = ver ? `EditCore ${ver}` : "EditCore";
+  refreshAppStatusBar();
+  try {
+    const obs = new MutationObserver(() => refreshAppStatusBar());
+    if ($("status")) obs.observe($("status"), { childList: true, characterData: true, subtree: true });
+    if ($("savingsStatus")) obs.observe($("savingsStatus"), { childList: true, characterData: true, subtree: true });
+    if ($("modelPickerLabel")) obs.observe($("modelPickerLabel"), { childList: true, characterData: true, subtree: true });
+  } catch { /* ignore */ }
+  $("statusBarBranch")?.addEventListener("click", () => {
+    if (!state.projectRoot) {
+      showWelcomeScreen();
+      return;
+    }
+    try { $("toggleProjectsBtn")?.click(); } catch { /* ignore */ }
+  });
+}
+
+async function syncAppWindowChrome(theme = "blanco") {
+  // Título OS corto — la versión vive en la status bar (sin doble branding).
+  document.title = "EditCore";
   try {
     await window.editcoreApp?.setUiTheme?.(theme);
   } catch { /* ignore */ }
@@ -11030,7 +11071,8 @@ async function send(event) {
     updateSendButtonState();
     return;
   }
-  if (!hasAttachments && ProjectAnalysis.isProposalFollowUp?.(effectivePrompt)) {
+  // Las preguntas de propuesta / mejoras deben ser respondidas por el LLM con razonamiento real, no con plantillas estáticas locales de 0s
+  if (!hasAttachments && false && ProjectAnalysis.isProposalFollowUp?.(effectivePrompt)) {
     if (!userBubblePainted) appendUserMessageImmediate(userVisiblePrompt || effectivePrompt, []);
     const hydrated = ProjectAnalysis.hydrateAnalysisMemoryFromSources?.(project?.analysisMemory, {
       history: state.history || [],
@@ -12255,7 +12297,7 @@ async function executePromptJob(job) {
         refreshUndoAgentRunButton();
       }
       refreshProjectFilesFromDisk({ viewDir: state.fileListRelativePath || "" });
-      scheduleClearAgentTouchedHighlights(45000);
+      scheduleClearAgentTouchedHighlights(180000);
     } else {
       // streaming chat
       let accumulated = "";
@@ -12724,6 +12766,7 @@ async function boot() {
   const bootPermission = ["readonly", "step", "full"].includes(state.permissionMode) ? state.permissionMode : "step";
   applyPermissionMode(bootPermission);
   document.body.dataset.editcoreReady = "1";
+  void initAppStatusBar();
   window.__editcorePipeline = {
     update: updateAgentPipelineUi,
     getState: () => ({ ...agentPipelineState }),
@@ -13064,10 +13107,92 @@ function wireComposerControls() {
     }
     triggerChatSend();
   });
+
+  let _editcoreSpeechRecognizer = null;
+  let _isVoiceRecording = false;
+
+  function _toggleLiveVoiceDictation() {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    const btn = $("voiceBtn");
+    const promptInput = $("prompt");
+
+    if (!SpeechRecognition) {
+      toast("Reconocimiento de voz no disponible en este entorno");
+      return;
+    }
+
+    if (_isVoiceRecording) {
+      if (_editcoreSpeechRecognizer) {
+        try { _editcoreSpeechRecognizer.stop(); } catch (_) {}
+      }
+      _isVoiceRecording = false;
+      btn?.classList.remove("active");
+      toast("Dictado finalizado");
+      return;
+    }
+
+    try {
+      _editcoreSpeechRecognizer = new SpeechRecognition();
+      _editcoreSpeechRecognizer.lang = "es-MX";
+      _editcoreSpeechRecognizer.continuous = true;
+      _editcoreSpeechRecognizer.interimResults = true;
+
+      let initialPrompt = promptInput?.value || "";
+      if (initialPrompt && !initialPrompt.endsWith(" ")) initialPrompt += " ";
+
+      _editcoreSpeechRecognizer.onstart = () => {
+        _isVoiceRecording = true;
+        btn?.classList.add("active");
+        toast("🎙️ Escuchando... Di tu instrucción");
+      };
+
+      _editcoreSpeechRecognizer.onresult = (event) => {
+        let finalStr = "";
+        let interimStr = "";
+
+        for (let i = 0; i < event.results.length; i++) {
+          const item = event.results[i];
+          if (item.isFinal) {
+            finalStr += item[0].transcript + " ";
+          } else {
+            interimStr += item[0].transcript;
+          }
+        }
+
+        if (promptInput) {
+          promptInput.value = (initialPrompt + finalStr + interimStr).trimStart();
+          promptInput.dispatchEvent(new Event("input", { bubbles: true }));
+        }
+      };
+
+      _editcoreSpeechRecognizer.onerror = (event) => {
+        console.warn("[VoiceMode] Event error:", event?.error);
+        _isVoiceRecording = false;
+        btn?.classList.remove("active");
+        if (event?.error === "network") {
+          toast("Dictado rápido: Presiona Win + H en Windows para dictar con tu micrófono directamente.");
+        } else if (event?.error === "not-allowed") {
+          toast("Permiso de micrófono no concedido. Habilita el micrófono en la configuración de Windows.");
+        }
+      };
+
+      _editcoreSpeechRecognizer.onend = () => {
+        _isVoiceRecording = false;
+        btn?.classList.remove("active");
+      };
+
+      _editcoreSpeechRecognizer.start();
+    } catch (err) {
+      console.error("[VoiceMode] Error starting recognition:", err);
+      _isVoiceRecording = false;
+      btn?.classList.remove("active");
+    }
+  }
+
   $("voiceBtn")?.addEventListener("click", (event) => {
     event.preventDefault();
     event.stopPropagation();
-    // Modo de voz desactivado (sin Whisper en GafCore/meai chat).
+    _toggleLiveVoiceDictation();
   });
   $("stopBtn")?.addEventListener("click", (event) => {
     event.preventDefault();
@@ -13280,6 +13405,177 @@ function wireComposerControls() {
     const field = $("prompt");
     if (ghost && field) ghost.scrollTop = field.scrollTop;
   });
+
+  setupMentionAutocomplete($("prompt"), $("mentionPopup"));
+}
+
+function setupMentionAutocomplete(promptEl, popupEl) {
+  if (!promptEl || !popupEl) return;
+
+  const escapeHtml = (str) => String(str || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+
+  let mentionState = {
+    active: false,
+    query: "",
+    startIndex: -1,
+    candidates: [],
+    selectedIndex: 0,
+  };
+
+  const getMentionMatch = () => {
+    const text = promptEl.value || "";
+    const cursor = promptEl.selectionStart || 0;
+    const beforeCursor = text.slice(0, cursor);
+    const match = /(?:^|\s)@([a-zA-Z0-9_\-.:/]*)$/.exec(beforeCursor);
+    if (!match) return null;
+    const matchFull = match[0];
+    const atOffset = matchFull.indexOf("@");
+    const startIndex = match.index + atOffset;
+    return {
+      query: match[1] || "",
+      startIndex,
+      endIndex: cursor,
+    };
+  };
+
+  const renderCandidates = () => {
+    if (!mentionState.candidates.length) {
+      popupEl.classList.add("hidden");
+      popupEl.innerHTML = "";
+      mentionState.active = false;
+      return;
+    }
+    popupEl.innerHTML = "";
+    mentionState.candidates.forEach((cand, idx) => {
+      const itemEl = document.createElement("div");
+      itemEl.className = "mention-item" + (idx === mentionState.selectedIndex ? " selected" : "");
+      itemEl.setAttribute("role", "option");
+      itemEl.setAttribute("aria-selected", idx === mentionState.selectedIndex ? "true" : "false");
+
+      const icon = cand.type === "file" ? "📄" :
+                   cand.type === "symbol" ? "⚡" :
+                   cand.type === "problems" ? "⚠️" :
+                   cand.type === "git" ? "🌿" :
+                   cand.type === "docs" ? "🧠" : "📌";
+
+      itemEl.innerHTML = `
+        <span class="mention-item-icon">${icon}</span>
+        <span class="mention-item-label">${escapeHtml(cand.label || cand.insertText)}</span>
+        ${cand.detail ? `<span class="mention-item-detail">${escapeHtml(cand.detail)}</span>` : ""}
+      `;
+
+      itemEl.addEventListener("mousedown", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        applyCandidate(cand);
+      });
+
+      popupEl.appendChild(itemEl);
+    });
+    popupEl.classList.remove("hidden");
+    mentionState.active = true;
+
+    const selectedEl = popupEl.children[mentionState.selectedIndex];
+    if (selectedEl && typeof selectedEl.scrollIntoView === "function") {
+      selectedEl.scrollIntoView({ block: "nearest" });
+    }
+  };
+
+  const applyCandidate = (cand) => {
+    if (!cand) return;
+    const match = getMentionMatch();
+    const text = promptEl.value || "";
+    const start = match ? match.startIndex : mentionState.startIndex;
+    const end = promptEl.selectionStart || text.length;
+    if (start < 0) return;
+
+    const insert = cand.insertText ? (cand.insertText.endsWith(":") ? cand.insertText : cand.insertText + " ") : "";
+    const newText = text.slice(0, start) + insert + text.slice(end);
+    promptEl.value = newText;
+    const newCursor = start + insert.length;
+    promptEl.selectionStart = newCursor;
+    promptEl.selectionEnd = newCursor;
+
+    popupEl.classList.add("hidden");
+    popupEl.innerHTML = "";
+    mentionState.active = false;
+    promptEl.focus();
+    promptEl.dispatchEvent(new Event("input", { bubbles: true }));
+  };
+
+  const updateCandidates = async () => {
+    const match = getMentionMatch();
+    if (!match) {
+      popupEl.classList.add("hidden");
+      popupEl.innerHTML = "";
+      mentionState.active = false;
+      return;
+    }
+    mentionState.startIndex = match.startIndex;
+    mentionState.query = match.query;
+    try {
+      if (window.editcoreProject?.queryMentions) {
+        const list = await window.editcoreProject.queryMentions(state.projectRoot || "", match.query);
+        mentionState.candidates = Array.isArray(list) ? list : [];
+      } else {
+        mentionState.candidates = [];
+      }
+    } catch {
+      mentionState.candidates = [];
+    }
+    mentionState.selectedIndex = 0;
+    renderCandidates();
+  };
+
+  promptEl.addEventListener("input", () => {
+    updateCandidates().catch(() => undefined);
+  });
+
+  promptEl.addEventListener("keydown", (e) => {
+    if (!mentionState.active || popupEl.classList.contains("hidden")) return;
+
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      e.stopPropagation();
+      mentionState.selectedIndex = (mentionState.selectedIndex + 1) % mentionState.candidates.length;
+      renderCandidates();
+      return;
+    }
+    if (e.key === "ArrowUp") {
+      e.preventDefault();
+      e.stopPropagation();
+      mentionState.selectedIndex = (mentionState.selectedIndex - 1 + mentionState.candidates.length) % mentionState.candidates.length;
+      renderCandidates();
+      return;
+    }
+    if (e.key === "Enter" || e.key === "Tab") {
+      if (mentionState.candidates[mentionState.selectedIndex]) {
+        e.preventDefault();
+        e.stopPropagation();
+        applyCandidate(mentionState.candidates[mentionState.selectedIndex]);
+      }
+      return;
+    }
+    if (e.key === "Escape") {
+      e.preventDefault();
+      e.stopPropagation();
+      popupEl.classList.add("hidden");
+      mentionState.active = false;
+      return;
+    }
+  }, true);
+
+  document.addEventListener("click", (e) => {
+    if (!popupEl.contains(e.target) && e.target !== promptEl) {
+      popupEl.classList.add("hidden");
+      mentionState.active = false;
+    }
+  });
 }
 
 // ── Event wiring ──────────────────────────────────────────────────────────────
@@ -13298,13 +13594,13 @@ $("validateConnectionsBtn")?.addEventListener("click", () => {
   });
 });
 $("connectGatewayProjectBtn")?.addEventListener("click", () => {
-  connectGatewayProject().catch((error) => { $("status").textContent = error?.message || String(error); });
+  $("status").textContent = "Usa el panel Modelos (ME AI / APICredits) para conectar proveedores.";
 });
 $("saveGafcoreAdminTokenBtn")?.addEventListener("click", () => {
-  saveGafcoreAdminToken().catch((error) => { $("status").textContent = error?.message || String(error); });
+  $("status").textContent = "Usa el panel Modelos (ME AI / APICredits) para conectar proveedores.";
 });
 $("openGafcoreDashboardBtn")?.addEventListener("click", () => {
-  openExternal("https://gafcore-gateway.vercel.app/dashboard");
+  $("status").textContent = "Usa el panel Modelos (ME AI / APICredits) para conectar proveedores.";
 });
 $("providersBtn")?.addEventListener("click", openProviders);
 $("addCustomProviderBtn")?.addEventListener("click", () => addCustomProvider());
@@ -13404,7 +13700,9 @@ $("providersDialog").addEventListener("click", (e) => {
   e.stopPropagation();
   verifyProvider(key)
     .then((provider) => activateProvider(provider))
-    .catch((error) => { $("status").textContent = `API no activada: ${error?.message || String(error)}`; });
+    .catch((error) => {
+      $("status").textContent = `API no activada: ${sanitizeProviderIpcError(error)}`;
+    });
 });
 
 // Connection buttons

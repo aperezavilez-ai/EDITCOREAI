@@ -182,17 +182,45 @@ async function maybeSupabasePush(projectRoot) {
   if (!fs.existsSync(migrations)) {
     return { ok: true, skipped: true, message: "Sin carpeta supabase/migrations." };
   }
-  const bin = process.platform === "win32" ? "supabase.cmd" : "supabase";
+  // En Windows: cmd /c (evitar shell:true + args, y evitar .cmd → EINVAL).
   try {
-    const result = await runCapture(bin, ["db", "push"], { cwd: projectRoot, timeoutMs: 300_000 });
-    return {
-      ok: result.code === 0,
-      skipped: false,
-      message: result.code === 0 ? "supabase db push OK" : (result.stderr || result.stdout || "supabase db push fallo"),
-      code: result.code,
-    };
+    const result = await runCapture(
+      process.platform === "win32" ? (process.env.ComSpec || "cmd.exe") : "supabase",
+      process.platform === "win32"
+        ? ["/d", "/s", "/c", "supabase db push"]
+        : ["db", "push"],
+      {
+        cwd: projectRoot,
+        timeoutMs: 120_000,
+        shell: false,
+      },
+    );
+    if (result.code === 0) {
+      return { ok: true, skipped: false, message: "supabase db push OK", code: 0 };
+    }
+    const msg = String(result.stderr || result.stdout || "supabase db push fallo").trim();
+    // Publicar no debe truncarse: Supabase self-hosted / sin `supabase link` es normal.
+    // GitHub push + Vercel deploy siguen siendo el objetivo de Push + Deploy.
+    if (/project ref|supabase link|not linked|Cannot find project|No project linked|failed to (parse|inspect)|EINVAL|ENOENT|not recognized|no se encontr/i.test(msg)) {
+      return {
+        ok: true,
+        skipped: true,
+        warning: true,
+        message: `Supabase db push omitido (${msg.split(/\r?\n/).find(Boolean)?.slice(0, 140) || "sin link"}). El deploy Vercel continúa.`,
+        code: result.code,
+      };
+    }
+    return { ok: false, skipped: false, message: msg, code: result.code };
   } catch (error) {
-    return { ok: false, skipped: false, message: error?.message || String(error) };
+    const msg = String(error?.message || error || "");
+    if (/EINVAL|ENOENT|not recognized|no se encontr|command failed/i.test(msg)) {
+      return {
+        ok: true,
+        skipped: true,
+        message: "Supabase CLI no disponible en PATH; se omitió db push (el deploy Vercel continúa).",
+      };
+    }
+    return { ok: false, skipped: false, message: msg };
   }
 }
 
@@ -218,16 +246,26 @@ async function publishProject(projectRoot, {
   skipPush = false,
   preCheck = true,
   rollbackOnDeployFail = true,
+  onProgress = null,
 } = {}) {
   const root = path.resolve(String(projectRoot || ""));
   const steps = [];
+  const report = (step, percent, message = "") => {
+    if (typeof onProgress !== "function") return;
+    try {
+      onProgress({ step, percent, message: message || step });
+    } catch {
+      /* ignore */
+    }
+  };
   const fail = (step, message, extra = {}) => ({
     ok: false,
     completed: false,
     mode,
     projectRoot: root,
     steps: [...steps, { step, ok: false, message, ...extra }],
-    message,
+    message: `[${step}] ${message}`,
+    failedStep: step,
   });
 
   if (!root || !fs.existsSync(root)) {
@@ -239,18 +277,22 @@ async function publishProject(projectRoot, {
     return fail("git", "No hay repositorio git. Inicializa git o abre la raiz del repo.");
   }
 
+  report("git_status", 8, "Revisando cambios…");
   const status = await git(gitRoot, ["status", "--short"]);
   steps.push({ step: "git_status", ok: status.code === 0, message: status.stdout || "(limpio)", code: status.code });
   if (status.code !== 0) return fail("git_status", status.stderr || "git status fallo");
 
   if (mode === "editcore") {
+    report("asar_pack", 18, "Empaquetando ASAR…");
     const asar = await rebuildEditCoreAsar(root);
     steps.push({ step: "asar_pack", ok: asar.ok, message: asar.message, asarPath: asar.asarPath });
     if (!asar.ok) return fail("asar_pack", asar.message);
+    report("git_add", 28, "Preparando archivos…");
     const staged = await stageEditCoreFiles(gitRoot, root);
     steps.push({ step: "git_add", ok: staged.ok, staged: staged.staged, skipped: staged.skipped });
     if (!staged.ok) return fail("git_add", staged.message || "No se pudieron agregar archivos de EDITCOREAI.");
   } else {
+    report("git_add", 18, "Preparando archivos…");
     const staged = await stageProjectFiles(gitRoot);
     steps.push({
       step: "git_add",
@@ -266,14 +308,21 @@ async function publishProject(projectRoot, {
   steps.push({ step: "branch", ok: true, branch });
 
   if (mode === "project" && preCheck) {
+    report("pre_check", 28, "Validación previa…");
     const validation = await prePublishValidation(root, { runTests: true, runLint: true });
-    steps.push({ step: "pre_check", ok: validation.ok, message: validation.message, detail: validation.steps });
-    if (!validation.ok) {
-      appendAuditEvent(root, { action: "publish", ok: false, branch, message: validation.message });
-      return fail("pre_check", validation.message);
-    }
+    steps.push({
+      step: "pre_check",
+      ok: validation.ok !== false,
+      warning: validation.ok === false,
+      message: validation.ok
+        ? validation.message
+        : `Pre-check con avisos (no bloquea Publicar): ${validation.message || "revisar lint/tests"}`,
+      detail: validation.steps,
+    });
+    // No abortar Publicar por lint/tests: el deploy Vercel debe continuar.
   }
 
+  report("git_commit", 38, "Creando commit…");
   const commit = await commitIfNeeded(gitRoot, commitMessage || (
     mode === "editcore"
       ? `chore(editcore): publish ${new Date().toISOString().slice(0, 10)}`
@@ -284,6 +333,7 @@ async function publishProject(projectRoot, {
 
   let pushed = false;
   if (!skipPush) {
+    report("git_push", 52, "Push a GitHub…");
     const push = await pushCurrentBranch(gitRoot, branch, { connections });
     steps.push({ step: "git_push", ok: push.ok, branch: push.branch || branch, message: push.message });
     if (!push.ok) {
@@ -296,9 +346,17 @@ async function publishProject(projectRoot, {
   }
 
   if (mode === "project" && supabasePush) {
+    report("supabase_db_push", 62, "Supabase db push…");
     const sb = await maybeSupabasePush(root);
-    steps.push({ step: "supabase_db_push", ok: sb.ok, skipped: sb.skipped === true, message: sb.message });
-    if (!sb.ok && !sb.skipped) {
+    steps.push({
+      step: "supabase_db_push",
+      ok: sb.ok !== false,
+      skipped: sb.skipped === true,
+      warning: sb.warning === true,
+      message: sb.message,
+    });
+    // Solo abortar Publicar si es un fallo duro (no "sin link" / CLI ausente).
+    if (sb.ok === false && sb.skipped !== true) {
       appendAuditEvent(root, { action: "publish", ok: false, branch, sha: commit.sha, message: sb.message, steps });
       return fail("supabase_db_push", sb.message);
     }
@@ -309,6 +367,7 @@ async function publishProject(projectRoot, {
     let ids = readVercelIds(root, connections);
     // Antes de deploy: asegurar projectId (crear/linkear) si hay token y aún no hay id.
     if (!ids.projectId && String(connections.vercelToken || "").trim()) {
+      report("vercel_ensure_project", 72, "Enlazando proyecto Vercel…");
       try {
         const { ensureVercelProjectId } = require("./vercel-env-sync");
         const ensured = await ensureVercelProjectId(connections, {
@@ -348,6 +407,7 @@ async function publishProject(projectRoot, {
       vercelOrgId: String(connections.vercelOrgId || connections.vercelTeamId || ids.orgId || "").trim(),
       vercelTeamId: String(connections.vercelTeamId || connections.vercelOrgId || ids.orgId || "").trim(),
     };
+    report("deploy_one_click", 82, "Deploy en Vercel…");
     const deployResult = await deployOneClick(root, { provider: "auto", production: true }, { connections: deployConnections });
     steps.push({
       step: "deploy_one_click",
@@ -383,10 +443,12 @@ async function publishProject(projectRoot, {
         branch,
         steps,
         rollback,
-        message: deployResult.message || "Deploy fallo",
+        failedStep: "deploy_one_click",
+        message: `[deploy_one_click] ${deployResult.message || "Deploy fallo"}`,
         deploy: deployResult,
       };
     }
+    report("deploy_one_click", 96, deployResult.url ? `Deploy OK → ${deployResult.url}` : "Deploy OK");
   } else {
     steps.push({ step: "deploy_one_click", ok: true, skipped: true, message: "Deploy omitido." });
   }

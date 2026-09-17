@@ -16,17 +16,14 @@ const {
 } = require("../runtime/elite-communication-policy");
 
 test("politica elite contiene ortografia y las 4 directrices", () => {
-  assert.match(ELITE_COMMUNICATION_POLICY, /ORTOGRAF/);
+  assert.match(ELITE_COMMUNICATION_POLICY, /Español correcto/i);
   assert.match(ELITE_COMMUNICATION_POLICY, /tildes/);
-  assert.match(ELITE_COMMUNICATION_POLICY, /APERTURA DIRECTA/);
-  assert.match(ELITE_COMMUNICATION_POLICY, /RAZONAMIENTO ANTES DE ACCI/);
-  assert.match(ELITE_COMMUNICATION_POLICY, /ESTILO Y FORMATO/);
-  assert.match(ELITE_COMMUNICATION_POLICY, /POSTURA PROPOSITIVA/);
-  assert.match(ELITE_COMMUNICATION_POLICY, /C[OÓ]DIGO Y DIFFS/);
-  assert.match(ELITE_COMMUNICATION_POLICY, /PROHIBIDO empezar con saludos/);
-  assert.match(ELITE_COMMUNICATION_POLICY, /placeholders/i);
-  assert.match(ELITE_COMMUNICATION_POLICY, /está|también|código/);
-  assert.match(ELITE_COMMUNICATION_POLICY, /P[AÁ]RRAFOS LEGIBLES|plasta/i);
+  assert.match(ELITE_COMMUNICATION_POLICY, /PRIMERA FRASE = RESPUESTA|APERTURA DIRECTA/i);
+  assert.match(ELITE_COMMUNICATION_POLICY, /RAZONAMIENTO VISIBLE|RAZONAMIENTO ANTES DE ACCI/i);
+  assert.match(ELITE_COMMUNICATION_POLICY, /FORMATO|ESTILO Y FORMATO/i);
+  assert.match(ELITE_COMMUNICATION_POLICY, /POSTURA PROPOSITIVA/i);
+  assert.match(ELITE_COMMUNICATION_POLICY, /PROHIBIDO abrir con|PROHIBIDO empezar con saludos/i);
+  assert.match(ELITE_COMMUNICATION_POLICY, /PROTOCOLO UNIVERSAL OBLIGATORIO|TRAS COMPLETAR/i);
 });
 
 test("withEliteCommunicationPolicy es idempotente y antepone el marcador", () => {

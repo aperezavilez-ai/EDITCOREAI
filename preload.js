@@ -64,6 +64,7 @@ contextBridge.exposeInMainWorld("editcoreProject", {
   supabaseManage: (input) => ipcRenderer.invoke("project:supabase-manage", input),
   sshDeploy: (input) => ipcRenderer.invoke("project:ssh-deploy", input),
   supabaseCreate: (input) => ipcRenderer.invoke("project:supabase-create", input),
+  queryMentions: (projectRoot, query) => ipcRenderer.invoke("project:query-mentions", { projectRoot, query }),
   onFullStackProgress: (callback) => {
     const listener = (_event, value) => callback(value);
     ipcRenderer.on("project:fullstack-progress", listener);
@@ -329,10 +330,6 @@ contextBridge.exposeInMainWorld("editcoreConnections", {
   validate: (service) => ipcRenderer.invoke("connections:validate", service),
   importLocal: (input = {}) => ipcRenderer.invoke("connections:import-local", input),
   importLegacy: () => ipcRenderer.invoke("connections:import-legacy"),
-  connectGatewayProject: (input = {}) => ipcRenderer.invoke("connections:gafcore-project", input),
-  activateGatewayProject: (input = {}) => ipcRenderer.invoke("connections:gafcore-activate", input),
-  gatewayProjectStatus: (input = {}) => ipcRenderer.invoke("connections:gafcore-status", input),
-  storeGatewayAdminToken: (token) => ipcRenderer.invoke("connections:gafcore-admin-token", token),
   operatorMemory: (input = {}) => ipcRenderer.invoke("connections:operator-memory", input),
 });
 
@@ -341,7 +338,6 @@ contextBridge.exposeInMainWorld("editcoreCloud", {
   deployGithub: (input = {}) => ipcRenderer.invoke("cloud:deploy-github", input),
   deployVercel: (input = {}) => ipcRenderer.invoke("cloud:deploy-vercel", input),
   provisionSupabase: (input = {}) => ipcRenderer.invoke("cloud:provision-supabase", input),
-  provisionGafcoreAi: (input = {}) => ipcRenderer.invoke("cloud:provision-gafcore-ai", input),
   provisionFullstack: (input = {}) => ipcRenderer.invoke("cloud:provision-fullstack", input),
   probeEndpoint: (input = {}) => ipcRenderer.invoke("cloud:probe-endpoint", input),
   testLocalApi: (input = {}) => ipcRenderer.invoke("cloud:test-local-api", input),

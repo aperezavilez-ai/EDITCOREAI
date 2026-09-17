@@ -85,7 +85,12 @@ async function listVercelProjects(connections) {
 async function findVercelProjectId(connections, projectName, extraNames = []) {
   const candidates = vercelNameCandidates(projectName, ...extraNames);
   if (!candidates.length || !connections.vercelToken) {
-    return { id: String(connections.vercelProjectId || "").trim(), name: "", matched: false };
+    return {
+      id: String(connections.vercelProjectId || "").trim(),
+      orgId: String(connections.vercelOrgId || connections.vercelTeamId || "").trim(),
+      name: "",
+      matched: false,
+    };
   }
   try {
     const projects = await listVercelProjects(connections);
@@ -100,13 +105,23 @@ async function findVercelProjectId(connections, projectName, extraNames = []) {
           || nCompact === String(candidate).replace(/-/g, "");
       });
       if (hit?.id) {
-        return { id: hit.id, name: hit.name || candidate, matched: true };
+        return {
+          id: String(hit.id).trim(),
+          orgId: String(hit.accountId || hit.teamId || hit.orgId || "").trim(),
+          name: hit.name || candidate,
+          matched: true,
+        };
       }
     }
   } catch {
     /* fall through */
   }
-  return { id: String(connections.vercelProjectId || "").trim(), name: "", matched: false };
+  return {
+    id: String(connections.vercelProjectId || "").trim(),
+    orgId: String(connections.vercelOrgId || connections.vercelTeamId || "").trim(),
+    name: "",
+    matched: false,
+  };
 }
 
 /**
@@ -125,12 +140,27 @@ async function ensureVercelProjectId(connections, {
   const rootName = projectRoot ? path.basename(projectRoot) : "";
   const preferredName = vercelProjectSlug(projectName || rootName) || "editcore-project";
   let id = String(projectId || connections.vercelProjectId || "").trim();
+  let orgId = String(connections.vercelOrgId || connections.vercelTeamId || "").trim();
   let resolvedName = preferredName;
   let created = false;
+
+  // Preferir link local .vercel si ya existe.
+  if (projectRoot) {
+    try {
+      const linkPath = path.join(projectRoot, ".vercel", "project.json");
+      if (fs.existsSync(linkPath)) {
+        const link = JSON.parse(fs.readFileSync(linkPath, "utf8").replace(/^\uFEFF/, "")) || {};
+        if (!id && link.projectId) id = String(link.projectId).trim();
+        if (!orgId && link.orgId) orgId = String(link.orgId).trim();
+        if (link.projectName) resolvedName = String(link.projectName);
+      }
+    } catch { /* ignore */ }
+  }
 
   if (!id) {
     const found = await findVercelProjectId(connections, preferredName, [projectName, rootName]);
     id = found.id;
+    if (found.orgId) orgId = found.orgId;
     if (found.name) resolvedName = found.name;
   }
 
@@ -144,15 +174,17 @@ async function ensureVercelProjectId(connections, {
         connections,
       });
       id = String(createdRes?.data?.id || "").trim();
+      orgId = String(createdRes?.data?.accountId || createdRes?.data?.orgId || orgId || "").trim();
       resolvedName = String(createdRes?.data?.name || preferredName);
       created = Boolean(id);
     } catch (error) {
       const message = error?.message || String(error);
       if (!/already|exist|conflict|409/i.test(message)) {
-        return { ok: false, projectId: "", projectName: preferredName, message };
+        return { ok: false, projectId: "", orgId: "", projectName: preferredName, message };
       }
       const found = await findVercelProjectId(connections, preferredName, [projectName, rootName]);
       id = found.id;
+      if (found.orgId) orgId = found.orgId;
       if (found.name) resolvedName = found.name;
       created = false;
     }
@@ -162,6 +194,7 @@ async function ensureVercelProjectId(connections, {
     return {
       ok: false,
       projectId: "",
+      orgId: "",
       projectName: preferredName,
       message: "No se pudo resolver projectId de Vercel tras crear/buscar el proyecto.",
     };
@@ -173,15 +206,28 @@ async function ensureVercelProjectId(connections, {
       const infraPath = path.join(projectRoot, "project-infra.json");
       let infra = {};
       try {
-        if (fs.existsSync(infraPath)) infra = JSON.parse(fs.readFileSync(infraPath, "utf8")) || {};
+        if (fs.existsSync(infraPath)) {
+          infra = JSON.parse(fs.readFileSync(infraPath, "utf8").replace(/^\uFEFF/, "")) || {};
+        }
       } catch { infra = {}; }
       infra.vercelProjectId = id;
+      if (orgId) {
+        infra.vercelOrgId = orgId;
+        infra.vercelTeamId = orgId;
+      }
       infra.vercelProjectName = resolvedName;
       infra.updatedAt = new Date().toISOString();
       fs.writeFileSync(infraPath, `${JSON.stringify(infra, null, 2)}\n`, "utf8");
       const editcoreDir = path.join(projectRoot, ".editcore");
       fs.mkdirSync(editcoreDir, { recursive: true });
       fs.writeFileSync(path.join(editcoreDir, "project-infra.json"), `${JSON.stringify(infra, null, 2)}\n`, "utf8");
+      const vercelDir = path.join(projectRoot, ".vercel");
+      fs.mkdirSync(vercelDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(vercelDir, "project.json"),
+        `${JSON.stringify({ projectId: id, orgId: orgId || undefined, projectName: resolvedName }, null, 2)}\n`,
+        "utf8",
+      );
     }
   } catch { /* no bloquear publish por fallo de escritura infra */ }
 
@@ -189,6 +235,7 @@ async function ensureVercelProjectId(connections, {
     ok: true,
     created,
     projectId: id,
+    orgId,
     projectName: resolvedName,
     message: created
       ? `Proyecto Vercel creado: ${resolvedName}`

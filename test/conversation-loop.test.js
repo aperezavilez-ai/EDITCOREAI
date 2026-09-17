@@ -492,7 +492,7 @@ test("main.js registra capacidades por modelo y hace fallback de modelo en el ga
   assert.match(source, /function isModelUnavailableError/);
   assert.match(source, /isRecoverableModelError\(lastError\)/);
   assert.match(source, /isModelUnavailableError\(lastError\)/);
-  assert.match(source, /recordModelCapability\(\{ baseUrl: endpoint, model, providerKey, ok: true, latencyMs: result\.latencyMs \}\)/);
+  assert.match(source, /recordModelCapability\(\{ baseUrl: endpoint, model: activeModel, providerKey: activeProviderKey, ok: true/);
 });
 
 test("el adaptador no narra el cambio automatico de modelo tras un fallback", async (t) => {
