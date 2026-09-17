@@ -55,9 +55,24 @@ test("chat-home context panel (2 hojas) existe", () => {
   assert.match(html, /id="chatHomeContextPanel"/);
   assert.match(html, /id="chatHomeCtxFiles"/);
   assert.match(html, /id="chatHomeCtxSkills"/);
+  assert.match(html, /id="chatHomeContextDock"/);
+  assert.match(html, /chat-home-context-tabs/);
   assert.match(css, /\.chat-home-context\b/);
+  assert.match(css, /\.chat-home-context-tab\b/);
   assert.match(js, /toggleContextPanel/);
+  assert.match(js, /selectContextTab/);
   assert.match(js, /EditCoreSessionContext/);
+});
+
+test("chat-home top bar tiene IDE visible y sin Settings/context en titlebar", () => {
+  const html = fs.readFileSync(path.join(root, "index.html"), "utf8");
+  const actions = html.match(/chat-home-top-actions[\s\S]*?<\/div>/)?.[0] || "";
+  assert.match(actions, /id="chatHomeIdeBtn"/);
+  assert.match(actions, /id="chatHomeFolderBtn"/);
+  assert.doesNotMatch(actions, /chatHomeSettingsTopBtn/);
+  assert.doesNotMatch(actions, /chatHomeContextBtn/);
+  // Orden: carpeta antes que IDE
+  assert.ok(actions.indexOf("chatHomeFolderBtn") < actions.indexOf("chatHomeIdeBtn"));
 });
 
 test("IDE internals not replaced by chat-home", () => {

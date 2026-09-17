@@ -1,5 +1,6 @@
 "use strict";
 
+const path = require("path");
 const { classify, extractListTarget, isFullAccess } = require("./classify");
 const { ChatSession } = require("./session");
 const { PersistentMemory } = require("./memory");

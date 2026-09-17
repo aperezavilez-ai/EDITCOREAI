@@ -85,48 +85,39 @@ body[data-app-mode="ide"] #chatHomeShell {
 
 .chat-home-top-actions {
   display: inline-flex;
+  align-items: center;
   gap: 8px;
   -webkit-app-region: no-drag;
 }
 
 .chat-home-folder-btn,
-.chat-home-ide-btn,
-.chat-home-settings-top,
-.chat-home-context-btn {
-  height: 30px;
+.chat-home-ide-btn {
+  height: 28px;
   padding: 0 12px;
   border-radius: 8px;
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
   border: 0;
+}
+
+.chat-home-folder-btn {
   background: transparent;
   color: var(--ch-text);
 }
 
-.chat-home-context-btn {
-  width: 32px;
-  padding: 0;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--ch-muted);
-}
-
-.chat-home-folder-btn:hover,
-.chat-home-settings-top:hover,
-.chat-home-context-btn:hover,
-.chat-home-context-btn.is-open {
-  background: var(--ch-hover);
-  color: var(--ch-text);
-}
+.chat-home-folder-btn:hover {
   background: var(--ch-hover);
 }
 
 .chat-home-ide-btn {
   background: var(--ch-ide);
   color: #fff;
-  min-width: 56px;
+  min-width: 52px;
+}
+
+.chat-home-ide-btn:hover {
+  filter: brightness(1.06);
 }
 
 html[data-theme="blanco"] .chat-home-ide-btn,
@@ -320,12 +311,52 @@ html[data-theme=""] .chat-home-ide-btn {
   display: flex;
   flex-direction: column;
   background: var(--ch-bg);
+  position: relative;
+}
+
+.chat-home-main-head {
+  flex: 0 0 40px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 0 14px;
+  border-bottom: 1px solid var(--ch-line);
+  background: var(--ch-bg);
+}
+
+.chat-home-crumb {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ch-muted);
+}
+
+.chat-home-context-dock {
+  width: 30px;
+  height: 28px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ch-muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.chat-home-context-dock:hover {
+  background: var(--ch-hover);
+  color: var(--ch-text);
 }
 
 .chat-home-context {
-  flex: 0 0 300px;
-  width: 300px;
-  max-width: min(300px, 42vw);
+  flex: 0 0 320px;
+  width: 320px;
+  max-width: min(320px, 42vw);
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -339,13 +370,50 @@ html[data-theme=""] .chat-home-ide-btn {
 }
 
 .chat-home-context-head {
-  flex: 0 0 40px;
+  flex: 0 0 44px;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 0 12px;
+  gap: 10px;
+  padding: 0 10px 0 8px;
   border-bottom: 1px solid var(--ch-line);
   font-size: 12px;
+}
+
+.chat-home-context-tabs {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.chat-home-context-tab {
+  width: 30px;
+  height: 28px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--ch-muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.chat-home-context-tab:hover {
+  background: var(--ch-hover);
+  color: var(--ch-text);
+}
+
+.chat-home-context-tab.is-active {
+  background: var(--ch-hover);
+  color: var(--ch-text);
+}
+
+.chat-home-context-head > strong {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  font-weight: 650;
+  color: var(--ch-text);
 }
 
 .chat-home-context-close {

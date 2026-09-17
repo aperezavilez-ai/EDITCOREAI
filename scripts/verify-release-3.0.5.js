@@ -30,6 +30,9 @@ ok("preload-no-stale-303", !/v3\.0\.3/.test(preload));
 const html = fs.readFileSync(path.join(root, "index.html"), "utf8");
 ok("context-panel", /id="chatHomeContextPanel"/.test(html));
 ok("context-btn", /id="chatHomeContextBtn"/.test(html));
+ok("ide-in-top-actions", /chat-home-top-actions[\s\S]*?id="chatHomeIdeBtn"/.test(html));
+ok("no-settings-in-top", !/chat-home-top-actions[\s\S]*?chatHomeSettingsTopBtn/.test(html));
+ok("context-tabs", /chat-home-context-tabs/.test(html));
 ok("chat-after-publish", /publishBtn[\s\S]{0,260}openChatHomeBtn/.test(html));
 ok("no-save-btn", !/id="saveProjectBtn"/.test(html));
 
@@ -54,6 +57,10 @@ ok("roadmap-305", /3\.0\.5/.test(roadmap));
 const overlayRenderer = fs.readFileSync(path.join(root, "resources/ui-overlay/renderer.js"), "utf8");
 ok("overlay-wantPreview", /wantPreview/.test(overlayRenderer));
 ok("overlay-dictation", /EditCoreDictation/.test(overlayRenderer));
+
+const orch = fs.readFileSync(path.join(root, "editcore-chat-kernel/orchestrator.js"), "utf8");
+ok("orchestrator-path-require", /const path = require\(["']path["']\)/.test(orch));
+ok("orchestrator-basename-safe", /path\.basename\(projectRoot/.test(orch));
 
 const fail = checks.filter((c) => !c.ok);
 console.log(JSON.stringify({ pass: checks.length - fail.length, fail: fail.length, checks }, null, 2));

@@ -23,13 +23,6 @@
         </div>
         <div class="chat-home-top-actions">
           <button id="chatHomeFolderBtn" type="button" class="chat-home-folder-btn" title="Conectar carpeta local">Conectar carpeta</button>
-          <button id="chatHomeSettingsTopBtn" type="button" class="chat-home-settings-top" title="Settings">Settings</button>
-          <button id="chatHomeContextBtn" type="button" class="chat-home-context-btn" title="Contexto de sesión" aria-expanded="false" aria-controls="chatHomeContextPanel">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <rect x="7" y="4" width="11" height="14" rx="1.5" stroke="currentColor" stroke-width="1.7"/>
-              <rect x="4" y="7" width="11" height="14" rx="1.5" stroke="currentColor" stroke-width="1.7" fill="var(--ch-bg, #fff)"/>
-            </svg>
-          </button>
           <button id="chatHomeIdeBtn" type="button" class="chat-home-ide-btn" title="Abrir el IDE existente de EditCore">IDE</button>
         </div>
       </header>
@@ -51,6 +44,15 @@
           </div>
         </aside>
         <div class="chat-home-main">
+          <div class="chat-home-main-head">
+            <div id="chatHomeCrumb" class="chat-home-crumb" title="Conversación activa">Chat</div>
+            <button id="chatHomeContextDock" type="button" class="chat-home-context-dock" title="Abrir panel de sesión" aria-controls="chatHomeContextPanel" hidden>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <rect x="7" y="4" width="11" height="14" rx="1.5" stroke="currentColor" stroke-width="1.7"/>
+                <rect x="4" y="7" width="11" height="14" rx="1.5" stroke="currentColor" stroke-width="1.7" fill="var(--ch-bg, #fff)"/>
+              </svg>
+            </button>
+          </div>
           <div id="chatHomeStage" class="chat-home-stage">
             <div class="chat-home-empty" aria-hidden="false">
               <img src="./assets/editcore-logo.png" alt="EditCoreAI" width="48" height="48" decoding="async" />
@@ -75,33 +77,47 @@
             <div class="chat-home-hints"></div>
           </div>
         </div>
-        <aside id="chatHomeContextPanel" class="chat-home-context" hidden aria-hidden="true" aria-label="Contexto de sesión">
+        <aside id="chatHomeContextPanel" class="chat-home-context" aria-hidden="false" aria-label="Contexto de sesión">
           <div class="chat-home-context-head">
-            <strong>Sesión</strong>
+            <div class="chat-home-context-tabs" role="tablist" aria-label="Vistas de sesión">
+              <button type="button" id="chatHomeContextBtn" class="chat-home-context-tab is-active" data-ctx-tab="session" title="Sesión" aria-selected="true">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <rect x="7" y="4" width="11" height="14" rx="1.5" stroke="currentColor" stroke-width="1.7"/>
+                  <rect x="4" y="7" width="11" height="14" rx="1.5" stroke="currentColor" stroke-width="1.7" fill="var(--ch-bg, #fff)"/>
+                </svg>
+              </button>
+              <button type="button" class="chat-home-context-tab" data-ctx-tab="files" title="Files Changed" aria-selected="false">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 7.5h16M4 12h16M4 16.5h10" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+              </button>
+              <button type="button" class="chat-home-context-tab" data-ctx-tab="tasks" title="Background Tasks" aria-selected="false">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M9 6h11M9 12h11M9 18h11M5 6h.01M5 12h.01M5 18h.01" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+              </button>
+            </div>
+            <strong id="chatHomeContextTitle">Sesión</strong>
             <button type="button" id="chatHomeContextClose" class="chat-home-context-close" title="Cerrar">✕</button>
           </div>
           <div class="chat-home-context-scroll">
-            <section class="chat-home-context-section" data-ctx="subagents">
+            <section class="chat-home-context-section" data-ctx="subagents" id="chatHomeCtxSecSubagents">
               <h4>Subagents <span id="chatHomeCtxSubagentsCount">0</span></h4>
               <ul id="chatHomeCtxSubagents" class="chat-home-context-list"></ul>
             </section>
-            <section class="chat-home-context-section" data-ctx="files">
+            <section class="chat-home-context-section" data-ctx="files" id="chatHomeCtxSecFiles">
               <h4>Files Changed <span id="chatHomeCtxFilesCount">0</span></h4>
               <ul id="chatHomeCtxFiles" class="chat-home-context-list"></ul>
             </section>
-            <section class="chat-home-context-section" data-ctx="artifacts">
+            <section class="chat-home-context-section" data-ctx="artifacts" id="chatHomeCtxSecArtifacts">
               <h4>Artifacts <span id="chatHomeCtxArtifactsCount">0</span></h4>
               <ul id="chatHomeCtxArtifacts" class="chat-home-context-list"></ul>
             </section>
-            <section class="chat-home-context-section" data-ctx="uploads">
+            <section class="chat-home-context-section" data-ctx="uploads" id="chatHomeCtxSecUploads">
               <h4>Uploads <span id="chatHomeCtxUploadsCount">0</span></h4>
               <ul id="chatHomeCtxUploads" class="chat-home-context-list"></ul>
             </section>
-            <section class="chat-home-context-section" data-ctx="tasks">
+            <section class="chat-home-context-section" data-ctx="tasks" id="chatHomeCtxSecTasks">
               <h4>Background Tasks <span id="chatHomeCtxTasksCount">0</span></h4>
               <ul id="chatHomeCtxTasks" class="chat-home-context-list"></ul>
             </section>
-            <section class="chat-home-context-section" data-ctx="skills">
+            <section class="chat-home-context-section" data-ctx="skills" id="chatHomeCtxSecSkills">
               <h4>Skills Used <span id="chatHomeCtxSkillsCount">0</span></h4>
               <ul id="chatHomeCtxSkills" class="chat-home-context-list"></ul>
             </section>

@@ -84,9 +84,11 @@
       remountIdeComposer();
       syncFolderChip();
       syncModelPill();
+      syncCrumb();
       renderThreadList();
       syncEmptyState();
       closeSettings();
+      setContextPanelOpen(true);
       $("chatHomePrompt")?.focus();
     } else {
       remountFeedIntoIde();
@@ -204,18 +206,55 @@
   function setContextPanelOpen(open) {
     const panel = $("chatHomeContextPanel");
     const btn = $("chatHomeContextBtn");
+    const dock = $("chatHomeContextDock");
     if (!panel) return;
     const next = open === true;
     panel.hidden = !next;
     panel.setAttribute("aria-hidden", next ? "false" : "true");
-    btn?.classList.toggle("is-open", next);
-    btn?.setAttribute("aria-expanded", next ? "true" : "false");
+    btn?.classList.toggle("is-active", next);
+    btn?.setAttribute("aria-selected", next ? "true" : "false");
+    if (dock) dock.hidden = next;
     if (next) void refreshContextPanel();
   }
 
   function toggleContextPanel() {
     const panel = $("chatHomeContextPanel");
     setContextPanelOpen(Boolean(panel?.hidden));
+  }
+
+  function selectContextTab(tab) {
+    const key = String(tab || "session");
+    const title = $("chatHomeContextTitle");
+    const labels = {
+      session: "Sesión",
+      files: "Files Changed",
+      tasks: "Background Tasks",
+    };
+    document.querySelectorAll(".chat-home-context-tab").forEach((el) => {
+      const on = el.getAttribute("data-ctx-tab") === key;
+      el.classList.toggle("is-active", on);
+      el.setAttribute("aria-selected", on ? "true" : "false");
+    });
+    if (title) title.textContent = labels[key] || "Sesión";
+    setContextPanelOpen(true);
+    const map = {
+      session: "chatHomeCtxSecSubagents",
+      files: "chatHomeCtxSecFiles",
+      tasks: "chatHomeCtxSecTasks",
+    };
+    const target = $(map[key] || map.session);
+    try { target?.scrollIntoView?.({ block: "start", behavior: "smooth" }); } catch { /* ignore */ }
+  }
+
+  function syncCrumb() {
+    const crumb = $("chatHomeCrumb");
+    if (!crumb) return;
+    const root = String(window.state?.projectRoot || "").trim();
+    const project = root ? (root.split(/[\\/]/).filter(Boolean).pop() || root) : "Chat";
+    const thread = store.threads.find((t) => t.id === store.activeId);
+    const title = String(thread?.title || "Nueva conversación").trim() || "Nueva conversación";
+    crumb.textContent = root ? `${project} / ${title}` : title;
+    crumb.title = root ? `${root} · ${title}` : title;
   }
 
   function syncFolderChip() {
@@ -231,6 +270,7 @@
       chip.classList.remove("is-on");
       chip.textContent = "";
     }
+    syncCrumb();
   }
 
   function syncModelPill() {
@@ -637,6 +677,7 @@
       });
       list.appendChild(li);
     }
+    syncCrumb();
   }
 
   function selectThread(id) {
@@ -752,7 +793,19 @@
     $("chatHomeContextBtn")?.addEventListener("click", (ev) => {
       ev.preventDefault();
       ev.stopPropagation();
-      toggleContextPanel();
+      selectContextTab("session");
+    });
+    $("chatHomeContextDock")?.addEventListener("click", (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      setContextPanelOpen(true);
+    });
+    document.querySelectorAll("[data-ctx-tab]").forEach((btn) => {
+      btn.addEventListener("click", (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        selectContextTab(btn.getAttribute("data-ctx-tab"));
+      });
     });
     $("chatHomeContextClose")?.addEventListener("click", () => setContextPanelOpen(false));
     $("chatHomeSettingsClose")?.addEventListener("click", () => closeSettings());
