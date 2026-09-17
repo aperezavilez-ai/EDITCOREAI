@@ -90,9 +90,9 @@ async function assessProjectConnections(projectRoot, connections = {}) {
   }
 
   const missing = [];
-  if (!summary.github.configured) missing.push("github_token");
-  if (!summary.vercel.configured && !summary.netlify.configured) missing.push("vercel_or_netlify_token");
-  if (!summary.selfsupabase.configured) missing.push("selfsupabase");
+  if (!summary.github?.configured) missing.push("github_token");
+  if (!summary.vercel?.configured && !summary.netlify?.configured) missing.push("vercel_or_netlify_token");
+  if (!summary.selfsupabase?.configured) missing.push("selfsupabase");
   if (!gitRoot) missing.push("git_repo");
   if (gitRoot && !remoteUrl) missing.push("git_remote");
 
@@ -108,7 +108,7 @@ async function assessProjectConnections(projectRoot, connections = {}) {
     linked,
     connections: summary,
     missing,
-    readyToPublish: Boolean(gitRoot && remoteUrl && (summary.vercel.configured || summary.netlify.configured)),
+    readyToPublish: Boolean(gitRoot && remoteUrl && (summary.vercel?.configured || summary.netlify?.configured)),
   };
 }
 

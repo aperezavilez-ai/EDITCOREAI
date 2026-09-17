@@ -198,6 +198,25 @@ const {
   setYoloMode,
   isCommandAllowed,
 } = require("./runtime/terminal-allowlist");
+
+// Contrato C8: sanitizacion de errores de proveedor (EMPTY_PROVIDER_RESPONSE).
+// Regla estricta: nunca mostrar hostname ni nombre de modelo en errores expuestos al usuario.
+function toUserFacingProviderError(error) {
+  if (!error) return error;
+  try {
+    const { sanitizeChatProviderError } = require("./runtime/chat-error-sanitize");
+    const msg = sanitizeChatProviderError(error);
+    const err = new Error(msg);
+    err.code = error.code || "EMPTY_PROVIDER_RESPONSE";
+    // nunca mostrar hostname ni nombre de modelo
+    return err;
+  } catch {
+    const err = new Error("No pude completar la respuesta. Intenta de nuevo.");
+    err.code = error.code || "EMPTY_PROVIDER_RESPONSE";
+    // nunca mostrar hostname ni nombre de modelo
+    return err;
+  }
+}
 const {
   applyPatch,
   rollbackPatch,

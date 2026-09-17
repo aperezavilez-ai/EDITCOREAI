@@ -7,7 +7,58 @@
 const fs = require("node:fs");
 const path = require("node:path");
 
-const JARVIS_BOTS = [];
+const JARVIS_BOTS = [
+  {
+    id: "jarvis-code-health",
+    name: "Jarvis Code Health",
+    agentType: "quality",
+    subAgent: "Security Auditor",
+    description: "Escanea deuda técnica, TODOs y tamaño de archivos.",
+    skills: ["code-health", "lint-audit"],
+    wakeConditions: ["code.inspect", "health.check"],
+    source: "jarvis-port",
+  },
+  {
+    id: "jarvis-memory-gardener",
+    name: "Jarvis Memory Gardener",
+    agentType: "optimization",
+    subAgent: "DevOps",
+    description: "Monitorea presión de memoria y optimiza caché del agente.",
+    skills: ["memory-profile", "cache-prune"],
+    wakeConditions: ["memory.pressure", "cache.overflow"],
+    source: "jarvis-port",
+  },
+  {
+    id: "jarvis-api-guardian",
+    name: "Jarvis API Guardian",
+    agentType: "security",
+    subAgent: "DBA",
+    description: "Valida endpoints locales, contratos de datos y bóveda.",
+    skills: ["api-guard", "schema-audit"],
+    wakeConditions: ["api.probe", "schema.migrate"],
+    source: "jarvis-port",
+  },
+  {
+    id: "jarvis-ui-polisher",
+    name: "Jarvis UI Polisher",
+    agentType: "frontend",
+    subAgent: "UI/UX Architect",
+    description: "Verifica responsividad, contraste y accesibilidad visual.",
+    skills: ["ui-review", "responsive-audit"],
+    wakeConditions: ["ui.render", "style.inspect"],
+    source: "jarvis-port",
+  },
+  {
+    id: "jarvis-build-sentinel",
+    name: "Jarvis Build Sentinel",
+    agentType: "devops",
+    subAgent: "DevOps",
+    description: "Supervisa builds, packaging y dependencias del proyecto.",
+    skills: ["build-verify", "dep-audit"],
+    wakeConditions: ["build.package", "dep.install"],
+    source: "jarvis-port",
+  },
+];
 
 const ROADMAP_FIRST_RULE = [
   "ROADMAP-FIRST (OBLIGATORIO — Step 0 antes de cualquier tool de descubrimiento):",
@@ -47,7 +98,19 @@ function loadJarvisPlugins() {
 }
 
 function jarvisAgentCatalog() {
-  return { agents: [], plugins: [], jarvisRoot: "" };
+  return {
+    agents: JARVIS_BOTS.map((bot) => ({
+      id: bot.id,
+      name: bot.name,
+      subAgent: bot.subAgent,
+      description: bot.description,
+      skills: bot.skills,
+    })),
+    plugins: [],
+    jarvisRoot: "",
+    native: true,
+    requiresSidecar: false,
+  };
 }
 
 function enrichAgentInventory(inventory = {}) {
@@ -55,6 +118,10 @@ function enrichAgentInventory(inventory = {}) {
     skills: inventory.skills || [],
     installed: inventory.installed || [],
     catalog: inventory.catalog || [],
+    jarvis: {
+      native: true,
+      agents: JARVIS_BOTS,
+    },
   };
 }
 

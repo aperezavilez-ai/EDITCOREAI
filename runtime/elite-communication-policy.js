@@ -169,7 +169,7 @@
         /([.!?…])[ \t]+(?=(?:Además|También|Ahora|Luego|Después|Primero|Segundo|Tercero|Por otro lado|En resumen|El problema|La causa|Voy a |Voy |He |Entonces|Por tanto|Sin embargo|No obstante|Finalmente|Conclusión|Diagnóstico|Hallazgo|Corrección|Siguiente|Paso\s+\d|Perfecto|Entendido|Listo[,.]?\s|Bien[,.]?\s)[^\n]{8,})/g,
         "$1\n\n",
       );
-      value = value.replace(/([^\n])[ \t]*\n?(#{1,6}[ \t])/g, "$1\n\n$2");
+      value = value.replace(/([^\n#])[ \t]*\n+(#{1,6}[ \t])/g, "$1\n\n$2");
       value = value.replace(/([^\n])[ \t]*\n([*-][ \t]|\d+[.)][ \t])/g, "$1\n\n$2");
       const compactLen = value.replace(/\s+/g, " ").trim().length;
       const sentenceHits = (value.match(/[.!?…][ \t]+[¿¡A-ZÁÉÍÓÚÜÑ]/g) || []).length;

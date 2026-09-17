@@ -101,8 +101,19 @@ function removeStaleShortcuts(dirs) {
   }
 }
 
-function ensureEditCoreShortcuts({ rebuild = true } = {}) {
+function ensureEditCoreShortcuts({ rebuild = false } = {}) {
   const icon = ensureLogoIco();
+  const destinations = desktopDirs().filter((dir) => !/\\Public\\Desktop$/i.test(dir));
+  const startMenu = startMenuDir();
+  if (startMenu) destinations.push(startMenu);
+
+  if (!rebuild && fs.existsSync(launcherExe)) {
+    const allExist = destinations.length > 0 && destinations.every((dir) => fs.existsSync(path.join(dir, shortcutName)));
+    if (allExist) {
+      return { ok: true, cached: true, exe: launcherExe, icon, shortcuts: destinations.map((d) => path.join(d, shortcutName)), errors: [] };
+    }
+  }
+
   try {
     const { brandElectronRuntime } = require("./brand-electron-runtime");
     brandElectronRuntime({ force: false });
@@ -112,11 +123,6 @@ function ensureEditCoreShortcuts({ rebuild = true } = {}) {
   const exe = rebuild || !fs.existsSync(launcherExe)
     ? rebuildLauncherIfNeeded()
     : launcherExe;
-
-  // No Public\Desktop: suele exigir admin y no es el escritorio del usuario.
-  const destinations = desktopDirs().filter((dir) => !/\\Public\\Desktop$/i.test(dir));
-  const startMenu = startMenuDir();
-  if (startMenu) destinations.push(startMenu);
 
   removeStaleShortcuts([
     ...destinations,

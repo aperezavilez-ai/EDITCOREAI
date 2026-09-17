@@ -219,6 +219,7 @@ function formatFixQueueBlock(queue = [], options = {}) {
   ];
   if (options.focusOnly && synced.current) {
     lines.push(
+      `FOCO OBLIGATORIO: ${synced.current.target}`,
       `Archivo actual de la cola: ${synced.current.target}`,
       `Accion: ${synced.current.action}`,
       synced.current.evidence ? `Evidencia: ${synced.current.evidence}` : "",
@@ -243,7 +244,7 @@ function buildFixQueueExecutionPrompt(queue = [], report = "", options = {}) {
   const synced = syncFixQueueWithSteps(queue, options.steps || [], options.projectRoot || "");
   const block = formatFixQueueBlock(synced.queue, { ...options, focusOnly: true, steps: options.steps });
   return [
-    "COLA DE CORRECCIONES (obligatorio):",
+    "DISPATCHER DE COLA — COLA DE CORRECCIONES (obligatorio):",
     block,
     synced.done
       ? "Cola completa: cierra con ## Evidencia de correccion (archivos + verificaciones)."

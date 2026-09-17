@@ -589,6 +589,16 @@ class EditCoreClaudeAdapter {
     ].join("\n");
   }
 
+  publishKickoffBriefing(input = {}, steps = []) {
+    const isExecution = input.planAuthorized === true || input.planAuthorizedExecution === true;
+    const prevSteps = Array.isArray(steps) ? steps.length : 0;
+    const text = isExecution
+      ? `Avance — inicio: ejecución autorizada (escritura / write_file). Pasos locales previos: ${prevSteps}.`
+      : `Avance — inicio: modo análisis activo. Investigando el proyecto con herramientas de lectura.`;
+    input.onProgress?.({ phase: "narration_delta", text });
+    input.onProgress?.({ phase: "model", text: "Trabajando…" });
+  }
+
   /**
    * Ejecuta una tarea completa del agente
    */
@@ -771,20 +781,6 @@ class EditCoreClaudeAdapter {
         planAuthorizedExecution: input.planAuthorizedExecution === true,
         forceWrite: input.allowWrite === true && input.analysisMode !== true,
       });
-      const flags = toAgentFlags(classified);
-      if (input.planAuthorizedExecution !== true) {
-        if (input.allowWrite === false || input.analysisMode === true) {
-          input.analysisMode = true;
-          input.allowWrite = false;
-        } else if (flags.analysisMode) {
-          input.analysisMode = true;
-          input.allowWrite = false;
-        } else if (flags.allowWrite) {
-          input.analysisMode = false;
-          input.allowWrite = true;
-          input.planAuthorizedExecution = true;
-        }
-      }
       input._unifiedIntent = classified;
       input.onProgress?.({ phase: "start", text: `Intent: ${classified.label}` });
     } catch (e) {
@@ -1330,27 +1326,6 @@ class EditCoreClaudeAdapter {
         // FASE 1 enforcement: si requiere razonamiento y el modelo saltó directo
         // a tool calls sin escribir el bloque, dar 1 aviso y continuar.
         if (this.requiresReasoningBlock === true && actions.length > 0) {
-          const wroteReasoning = /##\s*Hip[oó]tesis\s+inicial/i.test(narration)
-            || /##\s*Preguntas\s+cr[ií]ticas/i.test(narration)
-            || /##\s*Plan\s+de\s+evidencia/i.test(narration);
-          if (!wroteReasoning) {
-            this.reasoningBlockRejects = (this.reasoningBlockRejects || 0) + 1;
-            if (this.reasoningBlockRejects < 2) {
-              for (const action of actions) {
-                if (action.callId) {
-                  this.conversation.appendToolResult(action.callId, action.name, {
-                    error: "Pausa: primero escribí el bloque de RAZONAMIENTO (Hipótesis inicial, Preguntas críticas, Plan de evidencia, Criterio de suficiencia). Después ejecutá herramientas.",
-                  });
-                }
-              }
-              actions.length = 0;
-              this.conversation.appendUser(
-                "VALIDACION EDITCORE: Antes de ejecutar tools, escribí el bloque de RAZONAMIENTO obligatorio en el chat. Formato: ## Hipótesis inicial / ## Preguntas críticas a responder / ## Plan de evidencia / ## Criterio de suficiencia. Solo después de escribirlo podés ejecutar herramientas."
-              );
-              input.onProgress?.({ phase: "model", text: "Formulando hipótesis y plan antes de investigar..." });
-              continue;
-            }
-          }
           this.requiresReasoningBlock = false;
         }
 
@@ -1538,10 +1513,12 @@ class EditCoreClaudeAdapter {
               const evidence = this.collectRunEvidence(steps, input.projectRoot || "");
               const sufficiencyOpts = this.analysisSufficiencyOpts(input);
               const codeReads = Number(evidence.realFileReadCount || (evidence.filesRead || []).length || 0);
+              const hasRealReads = codeReads >= 2 || (evidence.filesRead || []).length >= 2;
               // Con muchas lecturas reales, cerrar con reporte aunque el modelo deje de usar tools
-              if (analysisEvidenceSufficient(evidence, sufficiencyOpts).ok || codeReads >= 8 || steps.filter((s) => s.ok !== false).length >= 12) {
+              if (analysisEvidenceSufficient(evidence, sufficiencyOpts).ok || hasRealReads || codeReads >= 8 || steps.filter((s) => s.ok !== false).length >= 12) {
                 completed = true;
-                finalText = this.finalizeAnalysisOnce(input, steps, reportLooksComplete(finalText) ? finalText : "");
+                const safeFinal = reportLooksComplete(finalText) && !narrationLooksLikeInventedAnalysis(finalText, steps, input.projectRoot || "") && !narrationClaimsMissingTools(finalText) ? finalText : "";
+                finalText = this.finalizeAnalysisOnce(input, steps, safeFinal);
                 stopReason = "Analisis cerrado con evidencia real de lecturas (el modelo dejo de usar herramientas).";
               } else {
                 completed = false;
@@ -1561,9 +1538,12 @@ class EditCoreClaudeAdapter {
             if (input.analysisMode === true) {
               const evidence = this.collectRunEvidence(steps, input.projectRoot || "");
               const sufficiencyOpts = this.analysisSufficiencyOpts(input);
-              if (analysisEvidenceSufficient(evidence, sufficiencyOpts).ok) {
+              const codeReads = Number(evidence.realFileReadCount || (evidence.filesRead || []).length || 0);
+              const hasRealReads = codeReads >= 2 || (evidence.filesRead || []).length >= 2;
+              if (analysisEvidenceSufficient(evidence, sufficiencyOpts).ok || hasRealReads) {
                 completed = true;
-                finalText = this.finalizeAnalysisOnce(input, steps, reportLooksComplete(finalText) ? finalText : "");
+                const safeFinal = reportLooksComplete(finalText) && !narrationLooksLikeInventedAnalysis(finalText, steps, input.projectRoot || "") && !narrationClaimsMissingTools(finalText) ? finalText : "";
+                finalText = this.finalizeAnalysisOnce(input, steps, safeFinal);
                 stopReason = "Analisis cerrado: el modelo repitio la misma respuesta con evidencia suficiente.";
               } else {
                 completed = false;
@@ -1582,9 +1562,12 @@ class EditCoreClaudeAdapter {
           if (input.analysisMode === true && finalText) {
             const evidence = this.collectRunEvidence(steps, input.projectRoot || "");
             const sufficiencyOpts = this.analysisSufficiencyOpts(input);
-            if (analysisEvidenceSufficient(evidence, sufficiencyOpts).ok) {
+            const codeReads = Number(evidence.realFileReadCount || (evidence.filesRead || []).length || 0);
+            const hasRealReads = codeReads >= 2 || (evidence.filesRead || []).length >= 2;
+            if (analysisEvidenceSufficient(evidence, sufficiencyOpts).ok || hasRealReads) {
               completed = true;
-              finalText = this.finalizeAnalysisOnce(input, steps, reportLooksComplete(finalText) ? finalText : "");
+              const safeFinal = reportLooksComplete(finalText) && !narrationLooksLikeInventedAnalysis(finalText, steps, input.projectRoot || "") && !narrationClaimsMissingTools(finalText) ? finalText : "";
+              finalText = this.finalizeAnalysisOnce(input, steps, safeFinal);
               stopReason = "Analisis cerrado con evidencia suficiente.";
               break;
             }
@@ -2381,7 +2364,7 @@ class EditCoreClaudeAdapter {
 
       // Analisis: NUNCA cerrar solo con seeds/walker + plantilla (eso salia en 1s).
       // Exigir investigacion real del modelo antes de marcar completed.
-      if (input.analysisMode === true && !/se detiene para no quemar tokens|write tools no expuestas|Escritura no expuesta/i.test(String(stopReason || ""))) {
+      if (input.analysisMode === true && !/se detiene para no quemar tokens|write tools no expuestas|Escritura no expuesta|acciones fallidas/i.test(String(stopReason || ""))) {
         if (!this.analysisHasModelInvestigation(finalText)) {
           input.onProgress?.({
             phase: "model",
@@ -2432,7 +2415,7 @@ class EditCoreClaudeAdapter {
             finalText = this.finalizeAnalysisOnce(input, steps, finalText || "");
           }
         }
-      } else if (!completed && this.hasValidatedTaskEvidence(input, steps)) {
+      } else if (!completed && input.analysisMode !== true && this.hasValidatedTaskEvidence(input, steps)) {
         if (input.allowWrite === true) {
           const requirements = agentTaskRequirements(input.prompt, true, { planAuthorized: input.planAuthorized === true });
           const requiresMutation = input.planAuthorized === true || requirements.write === true;
@@ -2845,6 +2828,7 @@ class EditCoreClaudeAdapter {
       }
     }
 
+    let configsRead = 0;
     for (const config of [
       "next.config.js", "next.config.mjs", "next.config.ts",
       "vite.config.js", "vite.config.ts", "vite.config.mjs",
@@ -2852,7 +2836,8 @@ class EditCoreClaudeAdapter {
     ]) {
       if (!names.has(config)) continue;
       await this.executeSeedTool(input, steps, "read_file", { path: config });
-      break;
+      configsRead += 1;
+      if (configsRead >= 2) break;
     }
 
       this.conversation.appendUser([

@@ -1264,8 +1264,14 @@ function narrationLooksLikeInventedAnalysis(text, steps = [], projectRoot = "") 
   if (!raw.trim()) return false;
   if (detectPhantomStackClaims(raw, known).length) return true;
   if (!detectContradictoryEvidence(raw, evidence).ok) return true;
-  const validation = validateGroundedAnalysisReport(raw, evidence);
-  if (!validation.ok && /REPORTE|ERRORES ENCONTRADOS|Cuando autorices|##\s*An[aá]lisis|no\s+exist(?:en|e)/i.test(raw)) return true;
+  const claimed = extractClaimedPaths(raw);
+  const invented = claimed.filter((item) => !pathIsKnown(item, known));
+  const inventedRoots = invented
+    .map((item) => item.replace(/\\/g, "/").split("/")[0].toLowerCase())
+    .filter((root) => COMMON_INVENTED_ROOTS.includes(root));
+  if (inventedRoots.length >= 1) return true;
+  if (invented.length >= 3) return true;
+  if (isHollowAnalysisReport(raw)) return true;
   return false;
 }
 
@@ -2115,17 +2121,12 @@ function createDiscoveryLedger(options = {}) {
       // Targets explicitos del prompt: se pueden leer sin list_files previo.
       const explicitHit = [...explicitTargets].some((target) => {
         const t = toRelative(target) || String(target || "").replace(/\\/g, "/");
-        if (!t) return false;
-        if (rel === t || rel.endsWith(`/${t}`) || t.endsWith(`/${rel}`)) return true;
+        if (t === rel || rel.endsWith(t) || t.endsWith(rel)) return true;
         return base && (base === t || t.endsWith(`/${base}`));
       });
-      if (explicitHit && (fileExistsInProject(rel) || !projectRoot)) {
+      if (explicitHit) {
         files.add(rel);
         return { ok: true, reason: "explicit-target" };
-      }
-      if (explicitHit && fileExistsInProject(base) && !rel.includes("/")) {
-        files.add(base);
-        return { ok: true, reason: "explicit-target-base" };
       }
       // Basename match against explicit target that exists on disk.
       if (base && [...explicitTargets].some((target) => {

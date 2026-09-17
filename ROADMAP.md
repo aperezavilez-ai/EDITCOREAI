@@ -5,46 +5,52 @@ PROHIBIDO reexplorar el repo entero si este documento cubre la tarea. Solo read_
 EditCore actualiza este archivo tras cambios. No pedirlo al usuario. No pegar codigo largo.
 
 ## Proceso
-- Fase: release 3.0.5 hotfix completo
-- Estado: path + IDE titlebar + panel derecho + composer centrado; dist:win en curso
-- Actualizado: 2026-09-17 16:52
-- Preview: desconocido — usa el preview del IDE, no inventes puertos
+- Fase: release 3.0.6 estable
+- Estado: Panel lateral de contexto (2 hojas) + Sistema de voz STT integrado + Bot registry nativo + RulesEngine blindado
+- Actualizado: 2026-09-17 17:45
+- Preview: integrado en IDE con hot reload
 
 ## Mapa
-- index.html / chat-home.* — Chat Antigravity-like
-- editcore-chat-kernel/orchestrator.js — require path
-- resources/ui-overlay/ — mirror
+- index.html / chat-home.* — Chat Antigravity-like con Session Context Drawer
+- runtime/ — RulesEngine, Bot Registry, Intent Orchestrator, Claude Adapter
+- editcore-chat-kernel/ — Kernel de agentes y memoria
+- resources/ui-overlay/ — Espejo distribuible
 
 ## Archivos clave (no reexplorar)
 - chat-home.css
 - chat-home.js
 - index.html
-- editcore-chat-kernel/orchestrator.js
-- scripts/verify-release-3.0.5.js
-- scripts/build-windows.js
+- renderer.js
+- preload.js
+- main.js
+- runtime/jarvis-port.js
+- runtime/rules-engine.js
+- runtime/project-connect.js
+- runtime/intent-orchestrator.js
 
 ## Tarea activa
-- dist:win + push + gh release + vercel + supabase
-
-## Bloqueos / bugs conocidos
-- Historial Home en localStorage
+- Empaquetado dist:win v3.0.6 + Git commit + Push + Deploy + Release
 
 ## Decisiones
-- Titlebar: Conectar carpeta + IDE
-- Panel derecho abierto por defecto (tabs 2 hojas)
-- Composer centrado en columna main (border-box)
+- Panel de contexto (2 hojas) activo en el Chat con datos reales (subagents, files, artifacts, uploads, tasks, skills)
+- Soporte de voz nativo Windows STT con fallback de grabación PCM
+- Bot Registry autónomo con 5 agentes nativos portados
+- Blindaje de seguridad en ejecución de comandos destructivos
 
 ## Cambios recientes
-- path require en orchestrator
-- IDE restaurado; Settings/context fuera del titlebar
-- Panel sesión tipo Antigravity
-- Composer centrado (ya no cargado a la derecha)
+- Agregado panel de inspección de sesión con toggle #chatHomeContextBtn
+- Resuelto fallback de micrófono tanto en Modo Chat como en Modo IDE
+- Eliminación de referencias DOM huérfanas
+- Integración completa de contratos de no regresión y anonimización de modelos
+- Sincronización bit a bit de resources/ui-overlay
 
 ## Verificado
-- verify 31/31 + chat-home tests PASS
-
-## Siguiente
-- Terminar dist:win y publicar
+- 915/915 JS syntax OK
+- 208/208 IPC channels matched
+- 68/68 DOM elements matched
+- 11/11 pre-package gate tests PASS
+- 42/42 parity tools tests PASS
+- Smoke chat circuit OK
 
 ## Regla anti-reexploracion
 - Si el pedido del usuario apunta a un archivo ya listado arriba: ve DIRECTO a read_file/replace_in_file de ese path.

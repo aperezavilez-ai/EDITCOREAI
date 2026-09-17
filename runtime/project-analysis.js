@@ -94,11 +94,6 @@
     if (/^\s*(?:contin[u\u00fa]a|continuamos|procede|procedamos|adelante|retoma|reanuda|reanudamos|ejecuta|hazlo|autorizo|autoriza|dale|seguimos|sigamos)\b/i.test(prompt)) return true;
     // "vamos" solo es autorización si está solo o seguido de continuación, no de "a crear/hacer/..."
     if (/^\s*vamos\s*[?!.\s]*$/i.test(prompt)) return true;
-    // Pedido explícito de CORREGIR/ARREGLAR (no es análisis nuevo): autoriza escritura
-    if (/^\s*(?:corrije|corrige|arregla|arregla[rn]?|implementa|aplica|repara|soluciona)\b/i.test(prompt)
-      && !/\b(?:analiza|audita|diagnostica|revisa|explora|reporte|solo\s+lectura|NO\s+MODIFICAR)\b/i.test(prompt)) {
-      return true;
-    }
     // 🔧 FIX v4: "dale" / "sigamos" / "va" / "seguimos" SOLOS o muy cortos NO autorizan escritura.
     // Antes, un simple "dale" disparaba ejecución completa sin contexto.
     if (/^\s*(?:dale|seguimos|sigamos|va)\s*[.!?]*\s*$/i.test(prompt)) return false;
@@ -1231,6 +1226,12 @@
     };
   }
 
+  function wantsAuthorizedFinish(value) {
+    const prompt = text(value);
+    if (!prompt) return false;
+    return /\b(?:continua\s+y\s+termina(?:\s+ya)?|termina\s+ya|finaliza\s+ya)\b/i.test(prompt);
+  }
+
   return {
     analysisContext,
     assessCompletion,
@@ -1247,6 +1248,7 @@
     extractReferencedProjectName,
     isOpenNamedProjectRequest,
     isPureOpenProjectRequest,
+    wantsAuthorizedFinish,
     isCloseProjectRequest,
     isSwitchProjectRequest,
     extractSwitchProjectName,

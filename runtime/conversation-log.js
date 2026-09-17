@@ -6,7 +6,7 @@ class ConversationLog {
   constructor({ prefixMessages = [], maxChars = 240_000, keepLastTurns = 12, evidencePreservationBlock = "" } = {}) {
     this.prefix = Array.isArray(prefixMessages) ? [...prefixMessages] : [];
     this.turns = [];
-    this.maxChars = Math.max(20_000, Number(maxChars) || 240_000);
+    this.maxChars = Math.max(1_000, Number(maxChars) || 240_000);
     this.keepLastTurns = Math.max(2, Number(keepLastTurns) || 12);
     this.turnCounter = 0;
     this.compactedTurns = 0;
@@ -113,7 +113,8 @@ class ConversationLog {
     if (touchedFiles.size) {
       summaryParts.push(`ARCHIVOS MODIFICADOS/CONSULTADOS EN HISTORIAL PREVIO: ${[...touchedFiles].join(", ")}`);
     }
-    summaryParts.push(`RESUMEN ESTRUCTURAL PREVIO (EditCoreAI sin pérdida de contexto):\n${rows.join("\n").slice(0, 25_000)}`);
+    const summaryLimit = Math.max(1_500, Math.min(25_000, Math.floor(this.maxChars * 0.4)));
+    summaryParts.push(`RESUMEN DE EVIDENCIA PREVIA (EditCoreAI sin pérdida de contexto):\n${rows.join("\n").slice(0, summaryLimit)}`);
     this.turns = [
       { role: "user", content: summaryParts.join("\n") },
       ...this.turns.slice(cut),

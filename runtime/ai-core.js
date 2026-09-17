@@ -42,7 +42,23 @@ async function assertNotGatewayTimeoutResponse(response) {
 async function parseProviderJsonOrThrow(response) {
   const status = Number(response?.status || 0);
   const contentType = String(response?.headers?.get?.("content-type") || "").toLowerCase();
-  const raw = await response.text().catch(() => "");
+  let raw = "";
+  if (typeof response?.text === "function") {
+    raw = await response.text().catch(() => "");
+  } else if (typeof response?.json === "function") {
+    try {
+      const parsed = await response.json();
+      if (!response?.ok) {
+        throw createProviderHttpError(status || 500, parsed?.error?.message || parsed?.message || `HTTP ${status}`);
+      }
+      return { status, data: parsed, ok: true };
+    } catch (err) {
+      if (err?.status || err?.isProviderHttpError) throw err;
+      raw = "";
+    }
+  } else if (response?.body) {
+    raw = String(response.body);
+  }
   if (status === 524 || contentType.includes("text/html") || isGatewayHtmlBody(raw)) {
     throw createGatewayTimeoutError(status || 524, raw.slice(0, 200));
   }
@@ -57,8 +73,8 @@ async function parseProviderJsonOrThrow(response) {
       data = { message: raw.slice(0, 300) };
     }
   }
-  if (!response.ok) {
-    let rawMsg = data?.error?.message || data?.message || `HTTP ${status}`;
+  if (!response?.ok) {
+    let rawMsg = data?.error?.message || data?.message || raw || `HTTP ${status}`;
     try {
       const { sanitizeChatProviderError } = require("./chat-error-sanitize");
       rawMsg = sanitizeChatProviderError(rawMsg, { status });

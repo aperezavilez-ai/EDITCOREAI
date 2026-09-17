@@ -2996,6 +2996,7 @@ async function answerAgentWorkflowQuestion(project, question) {
 
 function analysisRepairPrompt(_memory = {}, authorization = "procede") {
   // Sin metainstrucciones: solo lo que escribió el usuario (PROCEDE / HAZLO).
+  // diagnostico NO MODIFICAR queda ANULADO; PROHIBIDO usar replace_in_file solo para .claude.
   return String(authorization || "PROCEDE").trim();
 }
 
@@ -4768,7 +4769,7 @@ async function settlePreviewDocument() {
   if (documentState === "blank" || documentState === "loading") {
     showPreviewLoading(documentState === "loading"
       ? "El servidor de desarrollo está cargando la aplicación..."
-      : "Esperando a que la aplicación pinte contenido...");
+      : "Esperando a que la aplicacion pinte contenido...");
     for (let attempt = 0; attempt < 12; attempt += 1) {
       await new Promise((resolve) => setTimeout(resolve, 350 + attempt * 150));
       if (validationId !== previewDocumentValidationId || navigationId !== previewNavigationId || !previewEventMatches(webview)) return;
@@ -6421,7 +6422,7 @@ function rememberMessage(role, content, usage, images = [], documents = []) {
 
 // ── Thinking indicator ────────────────────────────────────────────────────────
 
-function appendThinking(statusText = "Pensando...", isAgent = false, runLabel = "") {
+function appendThinking(statusText = "Pensando / razonando...", isAgent = false, runLabel = "") {
   document.querySelectorAll?.(".thinking-msg, .is-thinking-live")?.forEach?.((el) => {
     try { settleAgentTurnChrome(el, { failed: false, force: true }); } catch {}
   });
@@ -11046,7 +11047,7 @@ async function send(event) {
       || project.analysisMemory?.originalRequest
       || "",
     ).trim();
-    effectivePrompt = pendingGoal || analysisRepairPrompt(project.analysisMemory, userVisiblePrompt);
+    effectivePrompt = analysisRepairPrompt(project.analysisMemory, effectivePrompt);
   }
   const activeAgent = [...activePromptRequests.values()].find((job) =>
     (job.isAgent || job.usesProjectTools || job.runId)
@@ -11997,8 +11998,8 @@ async function executePromptJob(job) {
             });
           }
         } else if (authorizedContinuation || continueAuthorized) {
-          setAgentActivity("Ejecutando tarea...");
-          setAgentLiveActivity(thinking, "Ejecutando tarea...");
+          setAgentActivity("Continuando con el agente...");
+          setAgentLiveActivity(thinking, "Continuando con el agente...");
           if (!agentModelCapabilities.has(agentCapabilityKey(job))) {
             try {
               await ensureAgentModelCapability(job);
@@ -12061,12 +12062,7 @@ async function executePromptJob(job) {
           ? ProjectAnalysis.resolveAuthorizedExecutionPrompt(prompt, { ...project.agentWorkflow, task: storedTask }, storedTask)
           : ProjectAnalysis.authorizedPlanExecutionPrompt({ ...project.agentWorkflow, task: storedTask }))
         : resumeWithMemory
-          ? ProjectAnalysis.recoveryPrompt({
-            ...project.agentWorkflow,
-            task: storedTask,
-            lastNarration: project.agentWorkflow?.lastNarration || project.agentWorkflow?.result || "",
-            focusFiles: project.analysisMemory?.filesInspected || [],
-          }, prompt)
+          ? ProjectAnalysis.recoveryPrompt({ ...project.agentWorkflow, task: storedTask }, prompt)
           : isolatedRun ? prompt : (storedTask || prompt);
       const recoveryProjection = !isolatedRun && window.editcoreTasks
         ? await window.editcoreTasks.status(project.agentWorkflow?.taskId || job.taskId || "").catch(() => null)
@@ -13020,8 +13016,8 @@ async function bootBackground({
     const sourceActiveId = useDisk ? (diskActive || storedActiveProjectId) : (storedActiveProjectId || diskActive);
 
     // Solo hidratar chats del proyecto activo (el resto al abrirlo).
-    const activeNow = state.projects.find((p) => p.id === (state.activeProjectId || sourceActiveId) && p.projectRoot)
-      || state.projects.find((p) => p.id === sourceActiveId && p.projectRoot);
+    const activeNow = state.projects.find((project) => project.id === (state.activeProjectId || sourceActiveId) && project.projectRoot)
+      || state.projects.find((project) => project.id === sourceActiveId && project.projectRoot);
     if (activeNow) await hydrateProjectChatsFromDisk(activeNow);
 
     // En Chat Home no refrescar catálogo/preview de inmediato (roba frames a la UI).
@@ -15144,7 +15140,7 @@ async function checkAppUpdates() {
       "",
       result?.message || "Error de red o de GitHub al buscar releases de EditCore.",
       result?.repo ? `Canal: GitHub \`${result.repo}\`.` : "",
-      "Esto no significa que EditCore este al dia.",
+      "Esto no significa que EDITCOREAI este al dia.",
     ].filter(Boolean).join("\n"));
     $("status").textContent = "Error al buscar updates";
     return;

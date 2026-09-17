@@ -5,7 +5,7 @@
  *
  * FOCO (scoped / scoped_dir) RETIRADO: era mediocre, contaminaba el chat,
  * bloqueaba tools utiles y convertia frases normales en allowlists rotas.
- * EditCore opera como Cursor/Claude: el modelo elige tools; el usuario
+ * EDITCOREAI opera como Cursor/Claude: el modelo elige tools; el usuario
  * autoriza mutacion con procede/autorizo/adelante.
  *
  * Se conserva denylist suave solo si el usuario dice explicitamente
@@ -58,7 +58,6 @@ function resolveInstructionConstraints(prompt = "") {
   const text = isolateUserIntentPrompt(prompt);
   const denylist = extractDeniedRoots(text);
 
-  // FOCO retirado: nunca modo scoped / scoped_dir (aunque el prompt diga "solo X").
   if (!FOCO_ENABLED) {
     if (denylist.length) {
       return {
@@ -99,11 +98,7 @@ function resolveInstructionConstraints(prompt = "") {
       depthOverride: buildScopedFolderSurfaceDepth(folderAllowlist),
     };
   }
-
-  const scoped = allowlist.length > 0
-    || /\b(?:solo|unicamente|solamente)\b[\s\S]{0,60}\b(?:archivo|package\.json|[\w./\\-]+\.(?:js|ts|tsx|json|md))\b/i.test(text);
-
-  if (scoped && allowlist.length) {
+  if (allowlist.length) {
     return {
       active: true,
       mode: "scoped",
@@ -111,11 +106,10 @@ function resolveInstructionConstraints(prompt = "") {
       folderAllowlist: [],
       denylist,
       skipBootstrap: true,
-      maxIterations: 2,
-      depthOverride: buildScopedFocusSurfaceDepth(),
+      maxIterations: 4,
+      depthOverride: buildScopedFocusSurfaceDepth(allowlist),
     };
   }
-
   if (denylist.length) {
     return {
       active: true,
@@ -128,7 +122,6 @@ function resolveInstructionConstraints(prompt = "") {
       depthOverride: null,
     };
   }
-
   return {
     active: false,
     mode: "open",

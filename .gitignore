@@ -29,14 +29,17 @@ Thumbs.db
 .vscode/
 .idea/
 # Local EditCore runtime
-.editcore/context.md
-.editcore/memory.md
-.editcore/agent-memory/
+.editcore/
 scratch/
 phase4-results/
 verify-debug.log
 _electron-*.log
 _project-boot.log
+*.bak*
+context.md.js
+INSTALAR-ESTOS-ARCHIVOS.txt
+apply-main-fixes*.js
+editcore-chat-kernel/_VERIFY_REPORT.json
 # Large local blobs
 *.exe
 !EDITCOREAI.exe

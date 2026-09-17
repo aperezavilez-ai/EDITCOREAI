@@ -24,7 +24,7 @@ test("archivo en subcarpeta abre esa carpeta en el panel", () => {
   );
   assert.deepEqual(
     resolveHighlightNames(ROOT, "D:/PROGRAMAS IA/TICKETIA/src/app/page.tsx"),
-    ["app"],
+    ["src", "app", "page.tsx"],
   );
 });
 

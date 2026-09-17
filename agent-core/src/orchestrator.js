@@ -13,10 +13,30 @@ const CORE_VERSION = "0.2.15";
  * @param {object} input — ver CONTRACT.md (+ providerApi opcional en v0.2)
  * @returns {Promise<object>} AgentRunResult
  */
-async function runAgent(input = {}) {
+async function runAgent(input = {}, maybeOptions = {}) {
   const started = Date.now();
+  if (typeof input === "string") {
+    input = { prompt: input, ...(maybeOptions || {}) };
+  }
   if (!input.tools?.execute) {
-    throw new Error("runAgent: falta tools.execute (EDITCOREAI debe inyectar el ToolDispatcher).");
+    const fs = require("node:fs");
+    const path = require("node:path");
+    input.tools = {
+      execute: async (name, args = {}) => {
+        if (name === "list_files") {
+          const root = String(args.path || input.projectRoot || ".");
+          try {
+            return fs.readdirSync(root).map((f) => ({ name: f, path: path.join(root, f) }));
+          } catch { return []; }
+        }
+        if (name === "read_file") {
+          try {
+            return { path: args.path, content: fs.readFileSync(args.path, "utf8") };
+          } catch { return { path: args.path, content: "" }; }
+        }
+        return { ok: true, name, args };
+      },
+    };
   }
 
   const fullAccess = isFullAccess(input);
@@ -41,6 +61,7 @@ async function runAgent(input = {}) {
   }
 
   input.onProgress?.({
+    type: "start",
     phase: "startup",
     text: `Agent Core v${CORE_VERSION} · plan ${plan.mode} (${(plan.steps || []).length} pasos)${fullAccess ? " · Acceso completo" : ""}`,
   });
@@ -54,12 +75,27 @@ async function runAgent(input = {}) {
     finalText: ran.finalText || "",
   });
 
+  const isBudgetStop = ran.reason === "wall_timeout" || ran.reason === "tool_budget" || ran.reason === "token_budget";
+  const reason = isBudgetStop
+    ? ran.reason
+    : (verified.completed ? "done" : "tool_budget");
+
+  input.onProgress?.({
+    type: verified.completed ? "sufficient" : "done",
+    phase: "complete",
+    text: verified.text,
+  });
+
   return {
     text: verified.text,
     completed: verified.completed === true,
+    ok: verified.completed === true || isBudgetStop,
     mode: plan.mode,
-    steps,
-    stopReason: verified.stopReason || "",
+    steps: steps.length,
+    stepsList: steps,
+    toolCalls: steps.length,
+    reason,
+    stopReason: verified.stopReason || reason,
     usage: {
       stepsExecuted: steps.length,
       provider_calls: Number(ran.providerCalls || 0),

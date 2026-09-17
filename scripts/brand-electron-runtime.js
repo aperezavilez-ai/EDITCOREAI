@@ -152,13 +152,30 @@ function brandElectronRuntime({ force = false } = {}) {
     return { ok: false, skipped: true, reason: "electron.exe no instalado" };
   }
   const icon = resolveLogo();
+  const stampPath = path.join(distDir, ".editcore-branded");
+  const hostStampPath = path.join(distDir, ".editcore-host-branded");
+  const stamp = `${fs.statSync(electronExe).size}:${fs.statSync(icon).mtimeMs}:${icon}`;
+
+  if (!force && fs.existsSync(hostExe) && fs.existsSync(stampPath) && fs.existsSync(hostStampPath)) {
+    try {
+      if (fs.readFileSync(stampPath, "utf8") === stamp && fs.readFileSync(hostStampPath, "utf8") === stamp) {
+        return {
+          ok: true,
+          cached: true,
+          electronExe,
+          hostExe,
+          icon,
+          rcedit: "",
+        };
+      }
+    } catch { /* proceed to brand */ }
+  }
+
   const rcedit = resolveRcedit();
   if (!rcedit) {
     throw new Error("No se encontro rcedit.exe (electron-winstaller). Ejecuta npm install.");
   }
 
-  const stampPath = path.join(distDir, ".editcore-branded");
-  const stamp = `${fs.statSync(electronExe).size}:${fs.statSync(icon).mtimeMs}:${icon}`;
   let electronCached = false;
   if (!force && fs.existsSync(stampPath) && fs.readFileSync(stampPath, "utf8") === stamp) {
     electronCached = true;

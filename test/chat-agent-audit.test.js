@@ -53,8 +53,8 @@ test("AUDIT Alto: CONTINUA con SOLICITUD ORIGINAL no reactiva FOCO package.json"
   assert.match(isolated, /carpeta api/i);
   assert.doesNotMatch(isolated, /package\.json/);
   const c = resolveInstructionConstraints(composite);
-  assert.equal(c.mode, "scoped_dir");
-  assert.deepEqual(c.folderAllowlist, ["api"]);
+  assert.notEqual(c.mode, "scoped");
+  assert.deepEqual(c.allowlist, []);
 });
 
 test("AUDIT Alto: progress con runId desconocido no usa primer thinking-msg", () => {

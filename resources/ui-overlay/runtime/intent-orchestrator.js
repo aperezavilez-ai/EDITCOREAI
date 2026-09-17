@@ -66,8 +66,9 @@
     if (phase === "awaiting_authorization") return false;
     const phaseOk = ["interrupted", "executing"].includes(phase);
     if (!options.resumableTask && !phaseOk) return false;
-    // PROCEDE / ADELANTE / AUTORIZO = autorizar EJECUCION, nunca reabrir analisis eterno.
+    // PROCEDE / ADELANTE / AUTORIZO / CONTINUA Y TERMINA YA = autorizar EJECUCION, nunca reabrir analisis eterno.
     if (/^\s*(?:procede|adelante|autorizo)\b/i.test(text)) return false;
+    if (/\b(?:continua\s+y\s+termina(?:\s+ya)?|termina\s+ya|finaliza\s+ya)\b/i.test(text)) return false;
     // Pedido explicito de correccion/escritura: no forzar analisis.
     if (/\b(corrige|repara|arregla|fix|implementa|crea|escribe|modifica|write_file|replace_in_file)\b/i.test(text)
       && !/\b(reporte|diagn[oó]stico|an[aá]lisis|auditor[ií]a)\b/i.test(text)) {
@@ -287,7 +288,8 @@ function isCloneWebPageRequest(prompt = "") {
   const text = String(prompt || "");
   if (!text.trim()) return false;
   const hasUrl = /https?:\/\/[^\s)>"']+/i.test(text);
-  const wantsClone = /\b(?:clona|clonar|copia\s+esta\s+p[aá]gina|replica(?:r)?\s+(?:esta\s+)?(?:web|p[aá]gina|sitio)|clone_web_page)\b/i.test(text);
+  const isNegativeClone = /\b(?:no\s+(?:te\s+ped[ií]\s+)?clonar|sin\s+clonar|no\s+clonar)\b/i.test(text);
+  const wantsClone = !isNegativeClone && /\b(?:clona|clonar|copia\s+esta\s+p[aá]gina|replica(?:r)?\s+(?:esta\s+)?(?:web|p[aá]gina|sitio)|clone_web_page)\b/i.test(text);
   return wantsClone || (hasUrl && /\b(?:clona|clonar|copia|replica)\b/i.test(text));
 }
 
@@ -670,9 +672,17 @@ function resolveUnifiedAgentPlan(options = {}) {
     reason = "plan autorizado";
   } else if (allowWrite && !permissionReadonly && isCloudOperateRequest?.(effectivePrompt)) {
     // Publicar/deploy/conectar nube: EXECUTE inmediato (no chat narrativo ni DISCOVER).
+    const wantsGreenfield = isGreenfieldCreateRequest(effectivePrompt)
+      || isGreenfieldContinuationRequest(effectivePrompt, { scaffoldIncomplete });
     mode = MODES.EXECUTE;
-    projectOnboarding = isProjectOnboardingRequest(effectivePrompt);
-    reason = "operacion nube (publicar/conectar/bóveda)";
+    if (wantsGreenfield) {
+      greenfieldCreate = true;
+      projectOnboarding = false;
+      reason = "creacion en disco + conexion de servicios (onboard tras crear)";
+    } else {
+      projectOnboarding = isProjectOnboardingRequest(effectivePrompt);
+      reason = "operacion nube (publicar/conectar/bóveda)";
+    }
   } else if (isCloneWebPageRequest(effectivePrompt)) {
     mode = MODES.EXECUTE;
     reason = "clonar pagina web (clone_web_page primero, no listar raiz)";
@@ -744,10 +754,6 @@ function resolveUnifiedAgentPlan(options = {}) {
     && !isProjectOnboardingRequest(effectivePrompt)) {
     mode = MODES.EXECUTE;
     reason = "investigacion y correccion";
-  } else if (isAgent && wantsExplicitFilesystemWork(effectivePrompt) && !userAuth) {
-    const reportOnly = isAnalysisOnlyRequest(effectivePrompt, allowWrite && !permissionReadonly);
-    mode = (cursorParityMode && !reportOnly) ? MODES.EXECUTE : MODES.DISCOVER;
-    reason = reportOnly ? "analisis/reporte readonly" : "analisis explicito del disco";
   } else if (allowWrite && !permissionReadonly && (
     isProjectOnboardingRequest(effectivePrompt)
     || isGreenfieldCreateRequest(effectivePrompt)
@@ -770,6 +776,10 @@ function resolveUnifiedAgentPlan(options = {}) {
         ? "continuacion de scaffold incompleto"
         : "creacion explicita en disco";
     }
+  } else if (isAgent && wantsExplicitFilesystemWork(effectivePrompt) && !userAuth) {
+    const reportOnly = isAnalysisOnlyRequest(effectivePrompt, allowWrite && !permissionReadonly);
+    mode = (cursorParityMode && !reportOnly) ? MODES.EXECUTE : MODES.DISCOVER;
+    reason = reportOnly ? "analisis/reporte readonly" : "analisis explicito del disco";
   } else if (isAgent && isChangeRequest(effectivePrompt) && !shouldAnalyzePromptFirst(effectivePrompt) && allowWrite && !permissionReadonly) {
     mode = MODES.EXECUTE;
     reason = "cambio explicito solicitado";

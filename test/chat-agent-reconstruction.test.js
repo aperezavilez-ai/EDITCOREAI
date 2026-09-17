@@ -466,7 +466,7 @@ test("analisis readonly exige reporte markdown, no resumen meta de evidencia", a
     calls += 1;
     if (Array.isArray(options.tools) && options.tools.length === 0) {
       return {
-        text: "## Análisis del proyecto\n\nProyecto Next.js detectado.\n\n## Errores y riesgos encontrados\n\n- package.json sin script de lint.\n\n## Recomendaciones concretas\n\n- Agregar eslint en package.json.\n\nCuando autorices procedo con las correcciones.",
+        text: "## Análisis del proyecto\n\nProyecto detectado.\n\n## Errores y riesgos encontrados\n\n- package.json sin script de lint.\n\n## Recomendaciones concretas\n\n- Agregar eslint en package.json.\n\nCuando autorices procedo con las correcciones.",
         usage: { total_tokens: 40 },
       };
     }
@@ -476,7 +476,7 @@ test("analisis readonly exige reporte markdown, no resumen meta de evidencia", a
     if (calls === 4) return { text: "", toolCalls: [toolCall("read_file", { path: "README.md" })], usage: { total_tokens: 5 } };
     if (calls === 5) {
       return {
-        text: "## Análisis del proyecto\n\nProyecto Next.js detectado.\n\n## Errores y riesgos encontrados\n\n- package.json sin script de lint.\n\n## Recomendaciones concretas\n\n- Agregar eslint en package.json.\n\nCuando autorices procedo con las correcciones.",
+        text: "## Análisis del proyecto\n\nProyecto detectado.\n\n## Errores y riesgos encontrados\n\n- package.json sin script de lint.\n\n## Recomendaciones concretas\n\n- Agregar eslint en package.json.\n\nCuando autorices procedo con las correcciones.",
         toolCalls: [],
         usage: { total_tokens: 40 },
       };
@@ -644,6 +644,7 @@ test("Chat conserva analisis de solo lectura y escala cambios al Agente", () => 
     openNamedProject: false,
     referencedProjectName: "",
     closeProject: false,
+    switchProject: false,
     missingProject: false,
   });
   assert.deepEqual(ProjectAnalysis.resolveExecutionMode("corrige este proyecto", { requestedAgent: false, projectOpen: true }), {
@@ -657,6 +658,7 @@ test("Chat conserva analisis de solo lectura y escala cambios al Agente", () => 
     openNamedProject: false,
     referencedProjectName: "",
     closeProject: false,
+    switchProject: false,
     missingProject: false,
   });
   assert.equal(ProjectAnalysis.resolveExecutionMode("corrige este proyecto", { requestedAgent: false, projectOpen: false }).missingProject, true);

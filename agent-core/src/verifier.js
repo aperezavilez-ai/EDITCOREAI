@@ -433,6 +433,17 @@ function verifyAndReport({ plan, steps, input, finalText = "" }) {
   };
 }
 
+function isSufficient(state = {}, prompt = "") {
+  if (state?.mode === "chat") return false;
+  if (state?.mode === "list") {
+    return Array.isArray(state?.evidence) && state.evidence.some((e) => e.op === "list" || e.name === "list_files");
+  }
+  if (state?.mode === "diagnose" || state?.mode === "analysis") {
+    return Array.isArray(state?.evidence) && state.evidence.filter((e) => e.op === "read" || e.name === "read_file").length >= 2;
+  }
+  return false;
+}
+
 module.exports = {
   verifyAndReport,
   formatList,
@@ -446,4 +457,5 @@ module.exports = {
   isUngroundedModelText,
   hasFalseTruncationClaim,
   scrubFalseTruncationClaims,
+  isSufficient,
 };

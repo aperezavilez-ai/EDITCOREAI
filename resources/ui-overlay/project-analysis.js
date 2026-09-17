@@ -94,11 +94,9 @@
     if (/^\s*(?:contin[u\u00fa]a|continuamos|procede|procedamos|adelante|retoma|reanuda|reanudamos|ejecuta|hazlo|autorizo|autoriza|dale|seguimos|sigamos)\b/i.test(prompt)) return true;
     // "vamos" solo es autorización si está solo o seguido de continuación, no de "a crear/hacer/..."
     if (/^\s*vamos\s*[?!.\s]*$/i.test(prompt)) return true;
-    // Pedido explícito de CORREGIR/ARREGLAR (no es análisis nuevo): autoriza escritura
-    if (/^\s*(?:corrije|corrige|arregla|arregla[rn]?|implementa|aplica|repara|soluciona)\b/i.test(prompt)
-      && !/\b(?:analiza|audita|diagnostica|revisa|explora|reporte|solo\s+lectura|NO\s+MODIFICAR)\b/i.test(prompt)) {
-      return true;
-    }
+    // 🔧 FIX v4: "dale" / "sigamos" / "va" / "seguimos" SOLOS o muy cortos NO autorizan escritura.
+    // Antes, un simple "dale" disparaba ejecución completa sin contexto.
+    if (/^\s*(?:dale|seguimos|sigamos|va)\s*[.!?]*\s*$/i.test(prompt)) return false;
     return false;
   }
 
@@ -286,7 +284,15 @@
     if (/\b(solo\s+analiza|analiza\s+y\s+documenta|no\s+implementes|sin\s+implementar|dise[nñ]a\s+y\s+documenta|do\s+not\s+implement|empieza\s+entendiendo|primero\s+entiende|plan\s+de\s+an[aá]lisis)\b/i.test(prompt)) return false;
     if (/\b(solo\s+crea|no\s+quiero\s+conectar|sin\s+conectar)\b/i.test(prompt) && /\b(proyecto|archivos|ticket|estructura|c[oó]digo)\b/i.test(prompt)) return true;
     if (/\b(crea(?:r)?\s+el\s+proyecto|genera(?:r)?\s+el\s+proyecto|escribe(?:\s+los)?\s+archivos)\b/i.test(prompt)) return true;
-    if (/^\s*(?:crea|genera|implementa|construye|desarrolla|monta)\b/i.test(prompt) && prompt.length <= 180) return true;
+
+    // 🔧 FIX v4: "crea un plan/resumen/propuesta/esquema/borrador/lista" NO es crear proyecto.
+    // Antes, cualquier "crea..." ≤ 180 chars disparaba greenfield.
+    const asksForArtifact = /\b(?:plan|resumen|propuesta|esquema|borrador|lista|explicaci[oó]n|documento|informe)\b/i.test(prompt);
+    if (asksForArtifact && !/\b(?:proyecto|app|aplicaci[oó]n|web|sitio|repo)\b/i.test(prompt)) {
+      return false;
+    }
+
+    if (/^\s*(?:crea|genera|implementa|construye|desarrolla|monta)\b/i.test(prompt) && prompt.length <= 180 && !asksForArtifact) return true;
     const wantsNow = /\b(crea(?:r)?\s+(?:ya|ahora)|implementa(?:r)?\s+(?:ya|ahora)|empieza(?:\s+a)?\s+(?:a\s+)?(?:crear|implementar|escribir)|escribe(?:\s+los)?\s+archivos|genera(?:\s+la)?\s+estructura)\b/i.test(prompt)
       || /\b(crea(?:r)?|implementa(?:r)?|empieza(?:\s+a)?\s+(?:a\s+)?(?:crear|implementar|escribir))\b[\s\S]{0,48}?\b(ya|ahora)\b/i.test(prompt);
     return wantsNow && /\b(proyecto|archivos|estructura|ticket|readme|package\.json)\b/i.test(prompt);
@@ -528,13 +534,16 @@
   function isUserStopInstruction(value) {
     const prompt = text(value).trim().toLowerCase().replace(/[.!?,;]+$/g, "");
     if (!prompt) return false;
-    if (/^(?:por\s+favor\s+)?(?:alto|detente|det[eé]n(?:lo)?|detener|parar?|p[aá]ralo|stop|cancela(?:r|lo)?|aborta(?:r|lo)?|interrump(?:e|ir|alo)?|basta|escala|pausa(?:r)?|no\s+sigas)$/i.test(prompt)) {
+    if (/^(?:por\s+favor\s+)?(?:alto|detente|det[eé]n(?:lo)?|detener|parar?|p[aá]ralo|stop|cancela(?:r|lo)?|aborta(?:r|lo)?|interrump(?:e|ir|alo)?|basta|escala|pausa(?:r)?|no\s+sigas|termina(?:r)?)$/i.test(prompt)) {
       return true;
     }
-    if (/^(?:por\s+favor\s+)?(?:cancela|cancelar|det[eé]n|detener|parar?|p[aá]ralo|aborta|abortar|pausa|pausar|interrumpir)\s+(?:el\s+an[aá]lisis|la\s+tarea|la\s+ejecuci[oó]n|esto|todo|el\s+proceso|la\s+b[uú]squeda)$/i.test(prompt)) {
+    if (/^(?:por\s+favor\s+)?(?:cancela|cancelar|det[eé]n|detener|parar?|p[aá]ralo|aborta|abortar|pausa|pausar|interrumpir|termina(?:r)?)\s+(?:el\s+an[aá]lisis|la\s+tarea|la\s+ejecuci[oó]n|esto|todo|toda(?:\s+acci[oó]n|s)?|el\s+proceso|la\s+b[uú]squeda|todas?\s+las?\s+acciones?)$/i.test(prompt)) {
       return true;
     }
     if (/^(?:ya\s+)?(?:no\s+sigas|deja\s+de\s+(?:analizar|buscar|ejecutar|trabajar|hacer\s+nada))$/i.test(prompt)) {
+      return true;
+    }
+    if (/^(?:termina|cancel[ae]|det[eé]n|para|aborta)\s+(?:toda|todo|todas)\b/i.test(prompt)) {
       return true;
     }
     return false;
@@ -627,6 +636,17 @@
     const prompt = text(value);
     if (!prompt) return false;
     if (/\b(solo\s+explica|sin\s+publicar|no\s+public(?:ues|ar)|no\s+despliegues)\b/i.test(prompt)) return false;
+
+    // 🔧 FIX v4: preguntas sobre deploy NO son órdenes de deploy.
+    // Antes, "¿cómo hago deploy en Vercel?" disparaba EXECUTE con tools de deploy.
+    if (/^\s*(?:c[oó]mo|qu[eé]|d[oó]nde|cu[aá]ndo|por\s*qu[eé]|para\s+qu[eé]|puedo|se\s+puede|es\s+posible)\b/i.test(prompt)) {
+      return false;
+    }
+    if (/\b(?:c[oó]mo\s+(?:hago|hacer|se\s+hace)|qu[eé]\s+(?:es|significa))\b/i.test(prompt)
+      && /\b(?:deploy|desplegar|publicar|vercel|supabase|github)\b/i.test(prompt)) {
+      return false;
+    }
+
     return /\b(publica(?:r|ci[oó]n)?|deploy|despleg[aeo]|redeploy|actualizar?\s+publicaci[oó]n)\b/i.test(prompt)
       || (/\b(conecta(?:r)?|enlaza(?:r)?|vincula(?:r)?|aprovision(?:ar)?|onboard(?:ing)?)\b/i.test(prompt)
         && /\b(github|vercel|supabase|gafcore|gateway|servicios?)\b/i.test(prompt));
@@ -649,6 +669,14 @@
       && !isAuthorization(prompt)) {
       return false;
     }
+
+    // 🔧 FIX v4: "quiero/necesito que hagas" + análisis/reporte/diagnóstico = NO es cambio.
+    // Antes, "quiero que hagas un análisis del proyecto" se trataba como EXECUTE.
+    if (/\b(?:quiero|necesito|podr[ií]as?)\s+que\s+(?:hagas|hag[aá]s|realices|prepares|elabores)\b/i.test(prompt)
+      && /\b(?:an[aá]lisis|reporte|diagn[oó]stico|hallazgos|auditor[ií]a|revisi[oó]n)\b/i.test(prompt)) {
+      return false;
+    }
+
     if (isCloudOperateRequest(prompt)) return true;
     return /\b(crea|crear|corrige|corrije|corregir|modifica|modificar|agrega|agregar|elimina|eliminar|instala|instalar|implementa|implementar|repara|reparar|actualiza|actualizar|cambia|cambiar|construye|construir|desarrolla|desarrollar|configura|configurar|haz|hacer|arregla|arreglar|soluciona|solucionar|resuelve|resolver|integra|integrar|conecta|conectar|restaura|restaurar|recupera|recuperar|termina|terminar|aplica|aplicar|quiero que hagas|necesito que hagas|publica|publicar|deploy|despliega|desplegar)\b/i.test(prompt)
       || /\b(no puede|no puedo|no funciona|no responde|no modifica|no corrige|bloquead[oa]|error(?:es)?|fall[ao]|roto|rompe|permisos?|acceso)\b/i.test(prompt)
@@ -1198,6 +1226,12 @@
     };
   }
 
+  function wantsAuthorizedFinish(value) {
+    const prompt = text(value);
+    if (!prompt) return false;
+    return /\b(?:continua\s+y\s+termina(?:\s+ya)?|termina\s+ya|finaliza\s+ya)\b/i.test(prompt);
+  }
+
   return {
     analysisContext,
     assessCompletion,
@@ -1214,6 +1248,7 @@
     extractReferencedProjectName,
     isOpenNamedProjectRequest,
     isPureOpenProjectRequest,
+    wantsAuthorizedFinish,
     isCloseProjectRequest,
     isSwitchProjectRequest,
     extractSwitchProjectName,

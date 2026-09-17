@@ -139,7 +139,20 @@ function writeFile(root, rel, content) {
     const key = String(file || "").replace(/\\/g, "/").replace(/^\.\//, "").toLowerCase();
     runReadCache.map.delete(key);
   }
-  const out = { ok: true, path: rel, snapshotId: snap.ok ? snap.id : null };
+  let syntaxCheck = null;
+  try {
+    const { validateSyntax } = require("../runtime/syntax-validator");
+    syntaxCheck = validateSyntax(rel, String(content ?? ""));
+  } catch {}
+  const out = {
+    ok: true,
+    path: rel,
+    snapshotId: snap.ok ? snap.id : null,
+    ...(syntaxCheck && !syntaxCheck.ok ? {
+      syntaxWarning: syntaxCheck.message,
+      selfHealHint: syntaxCheck.hint,
+    } : {}),
+  };
   try {
     const { noteSuccessfulPatch } = require("../runtime/session-state");
     noteSuccessfulPatch(root, {
@@ -245,12 +258,21 @@ function replaceInFile(root, rel, oldText, newText) {
     const key = String(file || "").replace(/\\/g, "/").replace(/^\.\//, "").toLowerCase();
     runReadCache.map.delete(key);
   }
+  let syntaxCheck = null;
+  try {
+    const { validateSyntax } = require("../runtime/syntax-validator");
+    syntaxCheck = validateSyntax(rel, next);
+  } catch {}
   const out = {
     ok: true,
     path: rel,
     replaced: true,
     softMatch: located.mode !== "exact" ? located.mode : undefined,
     snapshotId: snap.ok ? snap.id : null,
+    ...(syntaxCheck && !syntaxCheck.ok ? {
+      syntaxWarning: syntaxCheck.message,
+      selfHealHint: syntaxCheck.hint,
+    } : {}),
   };
   try {
     const { noteSuccessfulPatch } = require("../runtime/session-state");

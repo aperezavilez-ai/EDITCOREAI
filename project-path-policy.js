@@ -347,7 +347,7 @@ function resolveAccessibleTarget(primaryRoot, maybePath = "", options = {}) {
   const scope = roots.join(" | ");
   throw new Error(
     `Ruta fuera del alcance permitido: ${raw || absolute}. ` +
-      `Raices activas: ${scope}. Usa ../Hermano/... o el nombre del hermano bajo ${workspaceParentRoot(primary) || "el padre"}.`,
+      `Raices activas: ${scope}. Con Acceso completo autorizas el proyecto y la ruta absoluta que indiques. Usa ../Hermano/... o el nombre del hermano bajo ${workspaceParentRoot(primary) || "el padre"}.`,
   );
 }
 
