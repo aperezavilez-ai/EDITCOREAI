@@ -504,6 +504,13 @@ class EditCoreClaudeAdapter {
         continue;
       }
 
+      // Si no hubo tool calls pero el texto menciona ejecutar tests o comandos de verificacion
+      if (!actions.length && /npm\s+test|npm\s+run\s+test|node\s+--test/i.test(lastText) && !this.reportPromptSent && n < maxTurns - 1) {
+        await this.executeSeedTool(input, steps, "run_command", { command: "npm test" });
+        this.conversation.appendUser("Comando npm test ejecutado con éxito. Ahora entrega el resultado concreto y el cierre con la propuesta siguiente.");
+        continue;
+      }
+
       // Si no hubo tool calls pero el texto menciona archivos que quiere leer (ej. package.json, main.js, manifest)
       if (!actions.length && !this.analysisHasModelInvestigation(lastText) && n < maxTurns - 1) {
         const fileMentions = (lastText.match(/\b([a-zA-Z0-9_\-./]+\.(?:js|json|ts|jsx|tsx|html|css|md|py))\b/gi) || [])

@@ -6749,14 +6749,14 @@ function appendThinking(statusText = "Pensando / razonando...", isAgent = false,
     const keepAllBtn = document.createElement("button");
     keepAllBtn.type = "button";
     keepAllBtn.className = "agent-footer-link";
-    keepAllBtn.textContent = "Conservar todo";
-    keepAllBtn.title = "Aceptar todos los cambios pendientes";
+    keepAllBtn.textContent = "Aceptar todo";
+    keepAllBtn.title = "Aceptar todos los cambios pendientes y guardarlos definitivamente";
     keepAllBtn.addEventListener("click", async () => {
       try {
         keepAllBtn.disabled = true;
         const root = String(state.projectRoot || "").trim();
         if (!root || !window.editcoreAgent?.acceptAllReview) {
-          appendMessage("assistant", "Conservar todo no está disponible (sin proyecto o API).");
+          appendMessage("assistant", "Aceptar todo no está disponible (sin proyecto o API).");
           keepAllBtn.disabled = false;
           return;
         }
@@ -6764,13 +6764,13 @@ function appendThinking(statusText = "Pensando / razonando...", isAgent = false,
         const n = Number(result?.accepted || 0);
         settleAgentTurnChrome(item, { failed: false });
         appendMessage("assistant", [
-          "## Conservar todo",
+          "## Cambios Aceptados",
           "",
           n > 0
-            ? `Aceptados **${n}** archivo(s) del último turno. Los cambios se conservan.`
+            ? `Aceptados **${n}** archivo(s) del último turno. Los cambios se han guardado con éxito.`
             : "No había cambios pendientes para aceptar (¿ya aceptados o sin checkpoint?).",
         ].join("\n"));
-        $("status").textContent = n > 0 ? `Conservar todo: ${n} archivo(s)` : "Conservar todo: sin pendientes";
+        $("status").textContent = n > 0 ? `Aceptar todo: ${n} archivo(s)` : "Aceptar todo: sin pendientes";
         if (n > 0) {
           footer.querySelectorAll(".agent-footer-link").forEach((btn) => { btn.disabled = true; });
         } else {
@@ -6778,8 +6778,8 @@ function appendThinking(statusText = "Pensando / razonando...", isAgent = false,
         }
       } catch (error) {
         keepAllBtn.disabled = false;
-        appendMessage("assistant", `Conservar todo falló: ${error?.message || error}`);
-        $("status").textContent = `Conservar: ${error?.message || error}`;
+        appendMessage("assistant", `Aceptar todo falló: ${error?.message || error}`);
+        $("status").textContent = `Aceptar: ${error?.message || error}`;
       }
     });
     const reviewBtn = document.createElement("button");

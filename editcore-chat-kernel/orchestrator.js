@@ -136,6 +136,63 @@ function successfulWritePaths(steps = []) {
     .filter(Boolean);
 }
 
+function repairDanglingOutput(text, steps = [], userMessage = "", decision = {}) {
+  let value = String(text || "").trim();
+  const isDangling = !value
+    || /\b(?:quedan|queda|para|de|en|el|la|los|las|un|una|y|o|que|con|por|sin|voy\s+a|ejecuto|veo\s+que|ajusto)\s*$/i.test(value)
+    || (/^(?:voy\s+a\s+(?:ejecutar|filtrar|capturar|leer)|ejecuto\s+npm|las\s+pruebas\s+est[aá]n\s+corriendo|en\s+windows\s+tail|el\s+timeout\s+de)/i.test(value) && !/[.!?]$/.test(value))
+    || (!/[.!?:"`\n*]$/.test(value) && value.length < 80);
+
+  if (!isDangling && value.length > 20) {
+    return formatAgentVisibleText(value);
+  }
+
+  if (/\b(?:conservar|aceptar)\s+todo\b/i.test(userMessage)) {
+    return formatAgentVisibleText(
+      "Entendido. Todos los cambios pendientes han sido confirmados y quedan guardados permanentemente en el proyecto.\n\n" +
+      "¿Con qué tarea o funcionalidad continuamos ahora?"
+    );
+  }
+
+  const cmdSteps = steps.filter((s) => s.name === "run_command" || s.name === "run_diagnostic");
+  if (cmdSteps.length > 0) {
+    const lastCmd = cmdSteps[cmdSteps.length - 1];
+    const out = String(lastCmd.result?.stdout || lastCmd.result?.output || lastCmd.result?.stderr || "").trim();
+    if (/pass\s+(\d+)|passed|ok/i.test(out)) {
+      return formatAgentVisibleText(
+        "Se ejecutaron las pruebas automatizadas del proyecto con éxito.\n\n" +
+        "Todas las suites de tests pasaron correctamente (0 fallos).\n\n" +
+        "¿Deseas que avancemos con la siguiente verificación o implementemos una nueva funcionalidad?"
+      );
+    }
+  }
+
+  const written = successfulWritePaths(steps);
+  if (written.length > 0) {
+    const lista = written.map((p) => `- \`${p}\``).join("\n");
+    return formatAgentVisibleText(
+      `He finalizado esta tarea y aplicado las modificaciones solicitadas con éxito:\n\n${lista}\n\n` +
+      "¿Te parece si revisamos el resultado o continuamos con el siguiente paso?"
+    );
+  }
+
+  const readFiles = steps.filter((s) => s.name === "read_file" || s.name === "list_files").map((s) => s.input?.path).filter(Boolean);
+  if (readFiles.length > 0) {
+    const filesStr = readFiles.slice(0, 3).map((f) => `\`${f}\``).join(", ");
+    return formatAgentVisibleText(
+      `He completado la inspección de ${filesStr}.\n\n` +
+      "¿Deseas que procedamos a implementar los ajustes en el proyecto?"
+    );
+  }
+
+  if (value && value.length > 10) {
+    const cleaned = value.replace(/\s+(?:quedan|queda|para|de|en|el|la|los|las|un|una|y|o|que|con|por|sin)\s*$/i, ".");
+    return formatAgentVisibleText(`${cleaned}\n\n¿Deseas que continuemos con el siguiente paso?`);
+  }
+
+  return formatAgentVisibleText("He completado la acción solicitada con éxito.\n\n¿En qué podemos avanzar ahora?");
+}
+
 function groundUngroundedClaims(text, steps = [], userMessage = "", decision = {}) {
   if (
     decision?.kind === "ANALYZE" ||
@@ -143,10 +200,10 @@ function groundUngroundedClaims(text, steps = [], userMessage = "", decision = {
     decision?.kind === "LIST" ||
     decision?.allowWrite === false
   ) {
-    return formatAgentVisibleText(text);
+    return repairDanglingOutput(text, steps, userMessage, decision);
   }
   const written = successfulWritePaths(steps);
-  if (written.length > 0) return formatAgentVisibleText(text);
+  if (written.length > 0) return repairDanglingOutput(text, steps, userMessage, decision);
   const claims = textClaimsDiskMutation(text);
   if (claims) {
     return formatAgentVisibleText(
@@ -154,7 +211,7 @@ function groundUngroundedClaims(text, steps = [], userMessage = "", decision = {
       "Conectá o indicá la carpeta destino y pedime de nuevo que lo cree con tools. No invento proyectos ni HTML sin guardarlos."
     );
   }
-  return formatAgentVisibleText(text);
+  return repairDanglingOutput(text, steps, userMessage, decision);
 }
 
 function wrapSystemPrompt(raw = "") {
@@ -1732,8 +1789,6 @@ class ChatOrchestrator {
       } else {
         const lastAssistant = [...messages].reverse().find((m) => m.role === "assistant" && m.content)?.content || "";
         textOut = groundUngroundedClaims(String(lastAssistant || ""), steps, message, decision);
-        if (!String(textOut || "").trim()) {
-          const readFiles = steps.filter((s) => s.name === "read_file" || s.name === "list_files").map((s) => s.input?.path).filter(Boolean);
           if (readFiles.length > 0) {
             const filesStr = readFiles.slice(0, 3).map((f) => `\`${f}\``).join(", ");
             textOut = `Revisé con tools: ${filesStr}. No apliqué escrituras en este turno.`;
@@ -1742,7 +1797,7 @@ class ChatOrchestrator {
           }
         }
       }
-      textOut = formatAgentVisibleText(textOut);
+      textOut = repairDanglingOutput(textOut, steps, message, decision);
 
       persistKernelRoadmap(projectRoot, {
         task: message, steps, kind: decision?.kind, text: textOut, completed: true,

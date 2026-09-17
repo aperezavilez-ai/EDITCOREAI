@@ -9,7 +9,7 @@ const { spawn } = require("child_process");
 const path = require("path");
 const { detectDevLogIssue } = require("./dev-log-detector");
 
-const DEFAULT_TIMEOUT_MS = 25_000;
+const DEFAULT_TIMEOUT_MS = 180_000;
 const MAX_CAPTURE = 12_000;
 const LONG_RUNNING_RE = /(?:^|\s)(?:npm\s+run\s+(?:dev|start)|pnpm\s+(?:dev|start)|yarn\s+(?:dev|start)|npx\s+next\s+dev|next\s+dev|vite(?:\s|$)|webpack-dev-server)\b/i;
 

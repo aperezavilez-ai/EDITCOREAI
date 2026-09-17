@@ -331,7 +331,7 @@ function searchFiles(root, query, maxHits = 30) {
 }
 
 function runCommand(root, command, {
-  timeoutMs = 25000,
+  timeoutMs = 180000,
   onChunk = null,
   onSevereError = null,
   signal = null,
