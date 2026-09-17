@@ -45,6 +45,8 @@ const css = fs.readFileSync(path.join(root, "chat-home.css"), "utf8");
 ok("context-css", /\.chat-home-context\b/.test(css));
 ok("send-not-black", !/\.chat-home-send-btn\s*\{[^}]*background:\s*var\(--ec-text\)/s.test(css));
 
+ok("composer-centered", /\.chat-home-composer-wrap\s*\{[^}]*box-sizing:\s*border-box/s.test(css) && /\.chat-home-main\s*\{[^}]*align-items:\s*center/s.test(css));
+
 const launcher = fs.readFileSync(path.join(root, "scripts/EditCoreAiRootLauncher.cs"), "utf8");
 ok("launcher-305", /AssemblyInformationalVersion\("3\.0\.5"\)/.test(launcher));
 

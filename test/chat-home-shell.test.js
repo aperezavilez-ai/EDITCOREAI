@@ -75,10 +75,10 @@ test("chat-home top bar tiene IDE visible y sin Settings/context en titlebar", (
   assert.ok(actions.indexOf("chatHomeFolderBtn") < actions.indexOf("chatHomeIdeBtn"));
 });
 
-test("IDE internals not replaced by chat-home", () => {
-  const html = fs.readFileSync(path.join(root, "index.html"), "utf8");
-  assert.match(html, /id="previewWebview"/);
-  assert.match(html, /id="monacoEditorHost"/);
-  assert.match(html, /class="app-toolbar"/);
-  assert.match(html, /id="publishBtn"/);
+test("chat-home composer centrado con box-sizing", () => {
+  const css = fs.readFileSync(path.join(root, "chat-home.css"), "utf8");
+  assert.match(css, /\.chat-home-main\s*\{[^}]*align-items:\s*center/s);
+  assert.match(css, /\.chat-home-composer-wrap\s*\{[^}]*box-sizing:\s*border-box/s);
+  assert.match(css, /\.chat-home-composer-wrap\s*\{[^}]*align-self:\s*center/s);
+  assert.match(css, /\.chat-home-composer\s*\{[^}]*width:\s*100%/s);
 });

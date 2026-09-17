@@ -310,12 +310,16 @@ html[data-theme=""] .chat-home-ide-btn {
   min-height: 0;
   display: flex;
   flex-direction: column;
+  align-items: center;
   background: var(--ch-bg);
   position: relative;
 }
 
 .chat-home-main-head {
   flex: 0 0 40px;
+  align-self: stretch;
+  width: 100%;
+  box-sizing: border-box;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -503,6 +507,9 @@ html[data-theme=""] .chat-home-ide-btn {
 .chat-home-stage {
   flex: 1;
   min-height: 0;
+  align-self: stretch;
+  width: 100%;
+  box-sizing: border-box;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -547,7 +554,9 @@ html[data-theme=""] .chat-home-ide-btn {
 
 .chat-home-feed-host {
   display: none;
-  width: min(760px, 100%);
+  box-sizing: border-box;
+  width: min(720px, 100%);
+  max-width: 100%;
   margin: 0 auto;
   flex: 1;
   overflow: auto;
@@ -604,13 +613,16 @@ body[data-app-mode="chat"] #chatHomeFeedHost .msg-body {
 }
 
 .chat-home-composer-wrap {
+  box-sizing: border-box;
   width: min(720px, 100%);
-  margin: 0 auto;
-  padding: 0 24px 22px;
+  max-width: 100%;
+  margin: 0;
+  padding: 0 24px 28px;
+  align-self: center;
 }
 
 .chat-home-main:has(.chat-home-stage.has-messages) .chat-home-composer-wrap {
-  width: min(760px, 100%);
+  width: min(720px, 100%);
 }
 
 .chat-home-folder-chip {
@@ -621,15 +633,18 @@ body[data-app-mode="chat"] #chatHomeFeedHost .msg-body {
 }
 
 .chat-home-folder-chip.is-on {
-  display: inline-flex;
+  display: flex;
   align-items: center;
   gap: 6px;
+  width: 100%;
 }
 
 .chat-home-composer {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  box-sizing: border-box;
+  width: 100%;
   padding: 12px 12px 10px;
   border: 1px solid var(--ch-line);
   border-radius: 22px;
