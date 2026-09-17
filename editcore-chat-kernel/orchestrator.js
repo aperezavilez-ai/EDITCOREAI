@@ -1789,6 +1789,8 @@ class ChatOrchestrator {
       } else {
         const lastAssistant = [...messages].reverse().find((m) => m.role === "assistant" && m.content)?.content || "";
         textOut = groundUngroundedClaims(String(lastAssistant || ""), steps, message, decision);
+        if (!String(textOut || "").trim()) {
+          const readFiles = steps.filter((s) => s.name === "read_file" || s.name === "list_files").map((s) => s.input?.path).filter(Boolean);
           if (readFiles.length > 0) {
             const filesStr = readFiles.slice(0, 3).map((f) => `\`${f}\``).join(", ");
             textOut = `Revisé con tools: ${filesStr}. No apliqué escrituras en este turno.`;
