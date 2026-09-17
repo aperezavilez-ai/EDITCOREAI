@@ -78,8 +78,10 @@ for (const archiveEntry of asar.listPackage(archivePath)) {
   } catch {
     continue;
   }
-  const source = fs.readFileSync(sourcePath);
-  if (!packed.equals(source)) mismatches.push(relative);
+  // Comparar contenido lógico: durante builds largos Git/editores pueden
+  // tocar CRLF y disparar falsos "ASAR corrupto" aunque el paquete esté bien.
+  const norm = (buf) => Buffer.from(String(buf).replace(/\r\n/g, "\n"));
+  if (!norm(packed).equals(norm(fs.readFileSync(sourcePath)))) mismatches.push(relative);
 }
 if (mismatches.length) {
   throw new Error(`ASAR corrupto o inconsistente: ${mismatches.slice(0, 20).join(", ")}`);
