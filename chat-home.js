@@ -920,105 +920,211 @@
     const q = String(store.search || "").trim().toLowerCase();
     list.replaceChildren();
 
-    const projects = getProjectsWithChats();
+    const allGroups = getProjectsWithChats();
     const activeId = getActiveThreadId();
 
-    for (const proj of projects) {
-      const matchingChats = proj.chats.filter((t) => 
-        !q || String(t.title || "").toLowerCase().includes(q) || String(proj.name || "").toLowerCase().includes(q)
-      );
+    const folderProjects = allGroups.filter((p) => p.projectRoot || (p.name && p.name !== "Conversaciones" && p.name !== "Proyecto"));
+    const standaloneChats = [];
 
-      if (q && !matchingChats.length && !String(proj.name || "").toLowerCase().includes(q)) {
-        continue;
+    for (const g of allGroups) {
+      if (!g.projectRoot && (!g.name || g.name === "Conversaciones" || g.name === "Proyecto")) {
+        for (const c of g.chats) standaloneChats.push(c);
       }
+    }
+    for (const st of store.threads) {
+      if (!standaloneChats.some((c) => c.id === st.id)) {
+        standaloneChats.push({
+          ...st,
+          projectId: "default",
+          projectName: "Conversaciones",
+          isActive: st.id === activeId || st.id === store.activeId,
+        });
+      }
+    }
 
-      const group = document.createElement("div");
-      group.className = `chat-home-project-group${proj.isActive ? " is-active-project" : ""}`;
+    // 1. PROJECTS SECTION
+    const projSectionLabel = document.createElement("div");
+    projSectionLabel.className = "chat-home-section-label";
+    projSectionLabel.textContent = "Projects";
+    list.appendChild(projSectionLabel);
 
-      const head = document.createElement("div");
-      head.className = "chat-home-project-group-head";
-      head.title = proj.projectRoot ? `Proyecto: ${proj.projectRoot}` : `Proyecto: ${proj.name}`;
-      
-      const icon = document.createElement("span");
-      icon.className = "chat-home-proj-icon";
-      icon.replaceChildren(createSvgIcon("folder", 13));
-      
-      const name = document.createElement("span");
-      name.className = "chat-home-proj-name";
-      name.textContent = proj.name || "Proyecto";
+    if (!folderProjects.length) {
+      const emptyDiv = document.createElement("div");
+      emptyDiv.className = "chat-home-thread-empty";
+      emptyDiv.textContent = "No projects connected";
+      list.appendChild(emptyDiv);
+    } else {
+      for (const proj of folderProjects) {
+        const matchingChats = proj.chats.filter((t) => 
+          !q || String(t.title || "").toLowerCase().includes(q) || String(proj.name || "").toLowerCase().includes(q)
+        );
 
-      const projDel = document.createElement("button");
-      projDel.type = "button";
-      projDel.className = "chat-home-proj-del";
-      projDel.title = "Quitar proyecto de la lista";
-      projDel.textContent = "×";
-      projDel.addEventListener("click", (ev) => {
-        ev.stopPropagation();
-        deleteProject(proj.id, proj.name);
-      });
+        if (q && !matchingChats.length && !String(proj.name || "").toLowerCase().includes(q)) {
+          continue;
+        }
 
-      head.appendChild(icon);
-      head.appendChild(name);
-      head.appendChild(projDel);
-      head.addEventListener("click", () => {
-        if (proj.id && proj.id !== window.state?.activeProjectId) {
-          if (typeof window.selectProject === "function") {
-            window.selectProject(proj.id);
+        const group = document.createElement("div");
+        group.className = `chat-home-project-group${proj.isActive ? " is-active-project" : ""}`;
+
+        const head = document.createElement("div");
+        head.className = "chat-home-project-group-head";
+        head.title = proj.projectRoot ? `Proyecto: ${proj.projectRoot}` : `Proyecto: ${proj.name}`;
+        
+        const icon = document.createElement("span");
+        icon.className = "chat-home-proj-icon";
+        icon.replaceChildren(createSvgIcon("folder", 13));
+        
+        const name = document.createElement("span");
+        name.className = "chat-home-proj-name";
+        name.textContent = proj.name || "Proyecto";
+
+        const projDel = document.createElement("button");
+        projDel.type = "button";
+        projDel.className = "chat-home-proj-del";
+        projDel.title = "Quitar proyecto de la lista";
+        projDel.textContent = "×";
+        projDel.addEventListener("click", (ev) => {
+          ev.stopPropagation();
+          deleteProject(proj.id, proj.name);
+        });
+
+        head.appendChild(icon);
+        head.appendChild(name);
+        head.appendChild(projDel);
+        head.addEventListener("click", () => {
+          if (proj.id && proj.id !== window.state?.activeProjectId) {
+            if (typeof window.selectProject === "function") {
+              window.selectProject(proj.id);
+            }
+          }
+        });
+        group.appendChild(head);
+
+        const ul = document.createElement("ul");
+        ul.className = "chat-home-project-chats";
+
+        if (!matchingChats.length) {
+          const emptyLi = document.createElement("li");
+          emptyLi.className = "chat-home-thread-empty";
+          emptyLi.textContent = "No conversations yet";
+          ul.appendChild(emptyLi);
+        } else {
+          for (const t of matchingChats) {
+            const li = document.createElement("li");
+            const isActive = t.id === activeId || (t.id === store.activeId && !activeId);
+            li.className = `chat-home-thread${isActive ? " is-active" : ""}`;
+            
+            const title = document.createElement("div");
+            title.className = "chat-home-thread-title";
+            title.textContent = t.title || "Conversación";
+            title.title = "Doble clic para renombrar";
+
+            const meta = document.createElement("span");
+            meta.className = "chat-home-thread-meta";
+            meta.textContent = formatTimeAgo(t.updatedAt || t.createdAt);
+
+            const del = document.createElement("button");
+            del.type = "button";
+            del.className = "chat-home-thread-del";
+            del.title = "Eliminar";
+            del.textContent = "×";
+            del.addEventListener("click", (ev) => {
+              ev.stopPropagation();
+              deleteThread(t.id, proj.id);
+            });
+
+            li.appendChild(title);
+            li.appendChild(meta);
+            li.appendChild(del);
+
+            li.addEventListener("click", () => selectThread(t.id, proj.id));
+            title.addEventListener("dblclick", (ev) => {
+              ev.stopPropagation();
+              renameThread(t.id, proj.id);
+            });
+
+            ul.appendChild(li);
           }
         }
-      });
-      group.appendChild(head);
 
-      const ul = document.createElement("ul");
-      ul.className = "chat-home-project-chats";
-
-      if (!matchingChats.length) {
-        const emptyLi = document.createElement("li");
-        emptyLi.className = "chat-home-thread-empty";
-        emptyLi.textContent = "Sin conversaciones";
-        ul.appendChild(emptyLi);
-      } else {
-        for (const t of matchingChats) {
-          const li = document.createElement("li");
-          const isActive = t.id === activeId || (t.id === store.activeId && !activeId);
-          li.className = `chat-home-thread${isActive ? " is-active" : ""}`;
-          
-          const title = document.createElement("div");
-          title.className = "chat-home-thread-title";
-          title.textContent = t.title || "Conversación";
-          title.title = "Doble clic para renombrar";
-
-          const meta = document.createElement("span");
-          meta.className = "chat-home-thread-meta";
-          meta.textContent = formatTimeAgo(t.updatedAt || t.createdAt);
-
-          const del = document.createElement("button");
-          del.type = "button";
-          del.className = "chat-home-thread-del";
-          del.title = "Eliminar";
-          del.textContent = "×";
-          del.addEventListener("click", (ev) => {
-            ev.stopPropagation();
-            deleteThread(t.id, proj.id);
-          });
-
-          li.appendChild(title);
-          li.appendChild(meta);
-          li.appendChild(del);
-
-          li.addEventListener("click", () => selectThread(t.id, proj.id));
-          title.addEventListener("dblclick", (ev) => {
-            ev.stopPropagation();
-            renameThread(t.id, proj.id);
-          });
-
-          ul.appendChild(li);
-        }
+        group.appendChild(ul);
+        list.appendChild(group);
       }
-
-      group.appendChild(ul);
-      list.appendChild(group);
     }
+
+    // 2. CONVERSATIONS SECTION (Global/Standalone)
+    const convSectionLabel = document.createElement("div");
+    convSectionLabel.className = "chat-home-section-label chat-home-section-with-add";
+    
+    const convTitle = document.createElement("span");
+    convTitle.textContent = "Conversations";
+    
+    const convAddBtn = document.createElement("button");
+    convAddBtn.type = "button";
+    convAddBtn.className = "chat-home-section-add-btn";
+    convAddBtn.title = "Nueva conversación";
+    convAddBtn.textContent = "+";
+    convAddBtn.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      createThread();
+    });
+
+    convSectionLabel.appendChild(convTitle);
+    convSectionLabel.appendChild(convAddBtn);
+    list.appendChild(convSectionLabel);
+
+    const matchingStandalone = standaloneChats.filter((t) =>
+      !q || String(t.title || "").toLowerCase().includes(q)
+    );
+
+    const convUl = document.createElement("ul");
+    convUl.className = "chat-home-project-chats chat-home-standalone-chats";
+
+    if (!matchingStandalone.length) {
+      const emptyLi = document.createElement("li");
+      emptyLi.className = "chat-home-thread-empty";
+      emptyLi.textContent = "No conversations yet";
+      convUl.appendChild(emptyLi);
+    } else {
+      for (const t of matchingStandalone) {
+        const li = document.createElement("li");
+        const isActive = t.id === activeId || (t.id === store.activeId && !activeId);
+        li.className = `chat-home-thread${isActive ? " is-active" : ""}`;
+        
+        const title = document.createElement("div");
+        title.className = "chat-home-thread-title";
+        title.textContent = t.title || "Conversación";
+        title.title = "Doble clic para renombrar";
+
+        const meta = document.createElement("span");
+        meta.className = "chat-home-thread-meta";
+        meta.textContent = formatTimeAgo(t.updatedAt || t.createdAt);
+
+        const del = document.createElement("button");
+        del.type = "button";
+        del.className = "chat-home-thread-del";
+        del.title = "Eliminar";
+        del.textContent = "×";
+        del.addEventListener("click", (ev) => {
+          ev.stopPropagation();
+          deleteThread(t.id, t.projectId || "default");
+        });
+
+        li.appendChild(title);
+        li.appendChild(meta);
+        li.appendChild(del);
+
+        li.addEventListener("click", () => selectThread(t.id, t.projectId || "default"));
+        title.addEventListener("dblclick", (ev) => {
+          ev.stopPropagation();
+          renameThread(t.id, t.projectId || "default");
+        });
+
+        convUl.appendChild(li);
+      }
+    }
+    list.appendChild(convUl);
+
     syncCrumb();
   }
 

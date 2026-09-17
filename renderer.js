@@ -575,8 +575,24 @@ function dedupeProjectsByRoot() {
       continue;
     }
     const existing = result[existingIndex];
-    const keepCurrent = project.id === state.activeProjectId || (existing.id !== state.activeProjectId && project.updatedAt > existing.updatedAt);
-    if (keepCurrent) result[existingIndex] = project;
+    const chatMap = new Map();
+    for (const c of (Array.isArray(existing.chats) ? existing.chats : [])) chatMap.set(c.id, c);
+    for (const c of (Array.isArray(project.chats) ? project.chats : [])) {
+      if (!chatMap.has(c.id)) {
+        chatMap.set(c.id, c);
+      } else {
+        const curC = chatMap.get(c.id);
+        const curMsgs = Array.isArray(curC.messages) ? curC.messages : [];
+        const newMsgs = Array.isArray(c.messages) ? c.messages : [];
+        if (newMsgs.length >= curMsgs.length) {
+          chatMap.set(c.id, { ...curC, ...c, messages: newMsgs });
+        }
+      }
+    }
+    const mergedChats = Array.from(chatMap.values());
+    const keepCurrent = project.id === state.activeProjectId || (existing.id !== state.activeProjectId && (Number(project.updatedAt) || 0) >= (Number(existing.updatedAt) || 0));
+    const merged = keepCurrent ? { ...existing, ...project, chats: mergedChats } : { ...project, ...existing, chats: mergedChats };
+    result[existingIndex] = merged;
   }
   state.projects = result;
 }
@@ -13230,17 +13246,47 @@ async function bootBackground({
     }
     const diskProjects = Array.isArray(diskSession?.projects) ? diskSession.projects : [];
     const diskActive = String(diskSession?.activeProjectId || "").trim();
-    const score = (list = []) => list.reduce((sum, project) => {
-      const chats = Array.isArray(project.chats) ? project.chats : [];
-      const msgCount = chats.reduce((n, chat) => n + (Array.isArray(chat.messages) ? chat.messages.length : 0), 0)
-        + (Array.isArray(project.messages) ? project.messages.length : 0);
-      return sum + msgCount + (Number(project.updatedAt) || 0) / 1e13;
-    }, 0);
-    const useDisk = diskProjects.length && (!storedProjects.length || score(diskProjects) >= score(storedProjects));
-    if (useDisk) {
-      state.projects = repairPersistedText(diskProjects).map(ensureProjectAgent);
+
+    if (diskProjects.length > 0) {
+      const mergedMap = new Map();
+      for (const p of state.projects) {
+        const key = p.projectRoot ? normalizeProjectRoot(p.projectRoot) : (p.id || "default");
+        mergedMap.set(key, { ...p });
+      }
+      for (const dp of repairPersistedText(diskProjects).map(ensureProjectAgent)) {
+        const key = dp.projectRoot ? normalizeProjectRoot(dp.projectRoot) : (dp.id || "default");
+        if (!mergedMap.has(key)) {
+          mergedMap.set(key, dp);
+        } else {
+          const existing = mergedMap.get(key);
+          const existingChats = Array.isArray(existing.chats) ? existing.chats : [];
+          const diskChats = Array.isArray(dp.chats) ? dp.chats : [];
+          const chatMap = new Map();
+          for (const c of existingChats) chatMap.set(c.id, c);
+          for (const dc of diskChats) {
+            if (!chatMap.has(dc.id)) {
+              chatMap.set(dc.id, dc);
+            } else {
+              const curC = chatMap.get(dc.id);
+              const curMsgs = Array.isArray(curC.messages) ? curC.messages : [];
+              const diskMsgs = Array.isArray(dc.messages) ? dc.messages : [];
+              if (diskMsgs.length >= curMsgs.length) {
+                chatMap.set(dc.id, { ...curC, ...dc, messages: diskMsgs });
+              }
+            }
+          }
+          existing.chats = Array.from(chatMap.values());
+          if ((!existing.messages || !existing.messages.length) && Array.isArray(dp.messages)) {
+            existing.messages = dp.messages;
+          }
+          if (dp.updatedAt && (!existing.updatedAt || dp.updatedAt > existing.updatedAt)) {
+            existing.updatedAt = dp.updatedAt;
+          }
+        }
+      }
+      state.projects = Array.from(mergedMap.values());
     }
-    const sourceActiveId = useDisk ? (diskActive || storedActiveProjectId) : (storedActiveProjectId || diskActive);
+    const sourceActiveId = state.activeProjectId || diskActive || storedActiveProjectId;
 
     // Solo hidratar chats del proyecto activo (el resto al abrirlo).
     const activeNow = state.projects.find((project) => project.id === (state.activeProjectId || sourceActiveId) && project.projectRoot)

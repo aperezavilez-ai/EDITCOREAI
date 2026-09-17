@@ -299,6 +299,31 @@ html[data-theme="azul"] .chat-home-new-btn {
   color: var(--ch-muted);
 }
 
+.chat-home-section-with-add {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 14px;
+}
+
+.chat-home-section-add-btn {
+  background: transparent !important;
+  border: 0 !important;
+  color: var(--ch-muted) !important;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+  padding: 0 4px;
+  line-height: 1;
+  border-radius: 4px;
+  box-shadow: none !important;
+}
+
+.chat-home-section-add-btn:hover {
+  color: var(--ch-text) !important;
+  background: var(--ch-hover) !important;
+}
+
 .chat-home-thread-list {
   list-style: none;
   margin: 0;
