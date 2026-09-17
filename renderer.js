@@ -3209,6 +3209,8 @@ async function loadProjectCatalogFromDisk() {
     }));
   }
   saveProjects();
+  try { window.EditCoreChatHome?.refresh?.(); } catch { /* ignore */ }
+  try { renderProjects(); } catch { /* ignore */ }
 }
 
 let projectCatalogRefreshInFlight = null;
@@ -13304,10 +13306,9 @@ async function bootBackground({
       try { window.EditCoreChatHome?.refresh?.(); } catch { /* ignore */ }
     }
 
-    // En Chat Home no refrescar catálogo/preview de inmediato (roba frames a la UI).
-    if (!chatFirst) {
-      refreshProjectCatalog().catch(() => undefined);
-    }
+    refreshProjectCatalog().then(() => {
+      try { window.EditCoreChatHome?.refresh?.(); } catch { /* ignore */ }
+    }).catch(() => undefined);
 
     if (autoPick) {
       pickProject().catch(() => undefined);
