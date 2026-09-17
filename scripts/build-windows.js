@@ -87,6 +87,23 @@ if (mismatches.length) {
   throw new Error(`ASAR corrupto o inconsistente: ${mismatches.slice(0, 20).join(", ")}`);
 }
 
+// Candado de release: nunca publicar un ASAR sin el hotfix path / chrome Chat.
+{
+  const orchPacked = asar.extractFile(archivePath, "editcore-chat-kernel/orchestrator.js").toString("utf8");
+  if (!/const path = require\(["']path["']\)/.test(orchPacked)) {
+    throw new Error("ASAR inválido: falta require('path') en orchestrator.js");
+  }
+  const htmlPacked = asar.extractFile(archivePath, "index.html").toString("utf8");
+  const topPacked = (htmlPacked.match(/chat-home-top-actions[\s\S]*?<\/div>/) || [""])[0];
+  if (!/id="chatHomeIdeBtn"/.test(topPacked)) {
+    throw new Error("ASAR inválido: falta botón IDE en titlebar Chat");
+  }
+  const cssPacked = asar.extractFile(archivePath, "chat-home.css").toString("utf8");
+  if (!/\.chat-home-composer-wrap\s*\{[^}]*box-sizing:\s*border-box/s.test(cssPacked)) {
+    throw new Error("ASAR inválido: composer no centrado (falta border-box)");
+  }
+}
+
 try {
   spawnSync("taskkill", ["/F", "/IM", "EDITCOREAI.exe"], { stdio: "ignore" });
   spawnSync("taskkill", ["/F", "/IM", "electron.exe"], { stdio: "ignore" });
