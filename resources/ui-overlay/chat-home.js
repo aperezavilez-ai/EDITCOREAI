@@ -335,7 +335,9 @@
   function syncCrumb() {
     const crumb = $("chatHomeCrumb");
     if (!crumb) return;
-    const root = String(window.state?.projectRoot || "").trim();
+    const curProj = window.state?.projects?.find?.((p) => p.id === window.state?.activeProjectId)
+      || (Array.isArray(window.state?.projects) ? window.state.projects[0] : null);
+    const root = String(window.state?.projectRoot || curProj?.projectRoot || "").trim();
     const projectName = curProj?.title && curProj.title !== "Nuevo chat" && curProj.title !== "Proyecto"
       ? curProj.title 
       : (root ? (root.split(/[\\/]/).filter(Boolean).pop() || root) : (curProj?.name && curProj.name !== "Proyecto" ? curProj.name : ""));
