@@ -82,3 +82,11 @@ test("chat-home composer centrado con box-sizing", () => {
   assert.match(css, /\.chat-home-composer-wrap\s*\{[^}]*align-self:\s*center/s);
   assert.match(css, /\.chat-home-composer\s*\{[^}]*width:\s*100%/s);
 });
+
+test("IDE internals not replaced by chat-home", () => {
+  const html = fs.readFileSync(path.join(root, "index.html"), "utf8");
+  assert.match(html, /id="previewWebview"/);
+  assert.match(html, /id="monacoEditorHost"/);
+  assert.match(html, /class="app-toolbar"/);
+  assert.match(html, /id="publishBtn"/);
+});

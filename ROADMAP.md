@@ -5,49 +5,46 @@ PROHIBIDO reexplorar el repo entero si este documento cubre la tarea. Solo read_
 EditCore actualiza este archivo tras cambios. No pedirlo al usuario. No pegar codigo largo.
 
 ## Proceso
-- Fase: release 3.0.5 hotfix
-- Estado: path fix + barra Antigravity (IDE visible) + panel derecho 2 hojas; rebuild pendiente
-- Actualizado: 2026-09-17 16:50
+- Fase: release 3.0.5 hotfix completo
+- Estado: path + IDE titlebar + panel derecho + composer centrado; dist:win en curso
+- Actualizado: 2026-09-17 16:52
 - Preview: desconocido — usa el preview del IDE, no inventes puertos
 
 ## Mapa
-- index.html / chat-home.* — Chat-first Antigravity-like
-- editcore-chat-kernel/orchestrator.js — require path (hotfix)
-- renderer.js / preload.js — boot + bridges
-- resources/ui-overlay/ — mirror instalador
+- index.html / chat-home.* — Chat Antigravity-like
+- editcore-chat-kernel/orchestrator.js — require path
+- resources/ui-overlay/ — mirror
 
 ## Archivos clave (no reexplorar)
-- editcore-chat-kernel/orchestrator.js
-- index.html
-- chat-home.js
 - chat-home.css
-- package.json
+- chat-home.js
+- index.html
+- editcore-chat-kernel/orchestrator.js
 - scripts/verify-release-3.0.5.js
 - scripts/build-windows.js
 
 ## Tarea activa
-- Rebuild EXE 3.0.5 + GitHub + Vercel + Supabase
+- dist:win + push + gh release + vercel + supabase
 
 ## Bloqueos / bugs conocidos
-- Draft dañado v3.0.5 eliminado (path is not defined)
-- Historial Home aún en localStorage
+- Historial Home en localStorage
 
 ## Decisiones
-- Titlebar: Conectar carpeta + IDE (Settings solo en sidebar)
-- Panel derecho: tabs 2 hojas / files / tasks (estilo Antigravity), abierto por defecto en Chat
-- Preview solo en IDE
+- Titlebar: Conectar carpeta + IDE
+- Panel derecho abierto por defecto (tabs 2 hojas)
+- Composer centrado en columna main (border-box)
 
 ## Cambios recientes
-- Fix `path is not defined` (orchestrator require path)
-- Restaurado IDE en titlebar; quitados Settings/context del titlebar
-- Panel sesión con tabs tipo Antigravity + dock para reabrir
+- path require en orchestrator
+- IDE restaurado; Settings/context fuera del titlebar
+- Panel sesión tipo Antigravity
+- Composer centrado (ya no cargado a la derecha)
 
 ## Verificado
-- verify-release 27+/27 + tests chat-home/boot PASS
-- CSS titlebar corrupto reparado
+- verify 31/31 + chat-home tests PASS
 
 ## Siguiente
-- npm run dist:win → push → gh release → vercel → supabase
+- Terminar dist:win y publicar
 
 ## Regla anti-reexploracion
 - Si el pedido del usuario apunta a un archivo ya listado arriba: ve DIRECTO a read_file/replace_in_file de ese path.
