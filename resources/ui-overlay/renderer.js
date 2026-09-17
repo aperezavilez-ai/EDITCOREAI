@@ -10584,15 +10584,17 @@ function agentTaskIsLive() {
   return [...activePromptRequests.values()].some((job) => job.isAgent && job.agentExecuting);
 }
 
-function triggerChatSend() {
+function triggerChatSend(promptOverride = "") {
+  const promptValue = String(promptOverride || $("prompt")?.value || $("chatHomePrompt")?.value || "").trim();
   const running = activePromptRequests.size > 0;
-  const hasDraft = Boolean($("prompt").value.trim()) || state.attachments.length > 0;
+  const hasDraft = Boolean(promptValue) || state.attachments.length > 0;
   if (running && !hasDraft) {
     void cancelActiveResponse();
     return;
   }
-  send({ preventDefault() {} }).catch((error) => {
-    $("prompt").value = "";
+  send({ preventDefault() {}, _promptOverride: promptValue }).catch((error) => {
+    if ($("prompt")) $("prompt").value = "";
+    if ($("chatHomePrompt")) $("chatHomePrompt").value = "";
     updateSendButtonState();
     $("status").textContent = error?.message || String(error);
   });
@@ -10601,11 +10603,14 @@ function triggerChatSend() {
 async function send(event) {
   event?.preventDefault?.();
   const promptField = $("prompt");
-  const prompt = promptField.value.trim();
+  const homePromptField = $("chatHomePrompt");
+  const promptOverride = typeof event === "string" ? event : (event?._promptOverride || "");
+  const prompt = String(promptOverride || promptField?.value || homePromptField?.value || "").trim();
   const hasAttachments = state.attachments.length > 0;
   const hasImages = state.attachments.some((item) => isImageAttachment(item));
   if (!prompt && !hasAttachments) return;
-  promptField.value = "";
+  if (promptField) promptField.value = "";
+  if (homePromptField) homePromptField.value = "";
   updateSendButtonState();
   let effectivePrompt = prompt || (hasImages ? "Analiza la imagen adjunta." : "Analiza los archivos adjuntos.");
 
@@ -15407,6 +15412,8 @@ window.selectProject = selectProject;
 window.switchProject = (id) => selectProject(id);
 window.removeProject = removeProject;
 window.deleteProject = removeProject;
+window.sendChatPrompt = (text) => triggerChatSend(text);
+window.triggerChatSend = triggerChatSend;
 window.getActiveChatThreadId = () => {
   const project = activeProject() || (Array.isArray(state.projects) && state.projects.length ? state.projects[0] : null);
   if (!project) return "";

@@ -1298,18 +1298,26 @@
   function submitHomePrompt() {
     const homePrompt = $("chatHomePrompt");
     const idePrompt = $("prompt");
-    const text = String(homePrompt?.value || "").trim();
+    const text = String(homePrompt?.value || idePrompt?.value || "").trim();
     const hasAttachments = Boolean(window.EditCoreAttachments?.list?.()?.length);
     if (!text && !hasAttachments) return;
     touchActiveFromPrompt(text || "Adjunto");
-    if (idePrompt) {
-      idePrompt.value = text;
-      idePrompt.dispatchEvent(new Event("input", { bubbles: true }));
-    }
     if (homePrompt) homePrompt.value = "";
-    const form = $("chatForm");
-    if (form && typeof form.requestSubmit === "function") form.requestSubmit();
-    else $("sendBtn")?.click();
+    if (idePrompt) idePrompt.value = "";
+
+    if (typeof window.sendChatPrompt === "function") {
+      window.sendChatPrompt(text);
+    } else if (typeof window.triggerChatSend === "function") {
+      window.triggerChatSend(text);
+    } else {
+      if (idePrompt) {
+        idePrompt.value = text;
+        idePrompt.dispatchEvent(new Event("input", { bubbles: true }));
+      }
+      const form = $("chatForm");
+      if (form && typeof form.requestSubmit === "function") form.requestSubmit();
+      else $("sendBtn")?.click();
+    }
     setTimeout(syncEmptyState, 80);
     setTimeout(syncEmptyState, 400);
     // El feed en Chat scrollea en #chatHomeFeedHost; forzar baja tras enviar.
@@ -1684,11 +1692,18 @@
     });
     $("chatHomeComposer")?.addEventListener("submit", (ev) => {
       ev.preventDefault();
+      ev.stopPropagation();
+      submitHomePrompt();
+    });
+    $("chatHomeSendBtn")?.addEventListener("click", (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
       submitHomePrompt();
     });
     $("chatHomePrompt")?.addEventListener("keydown", (ev) => {
       if (ev.key === "Enter" && !ev.shiftKey) {
         ev.preventDefault();
+        ev.stopPropagation();
         submitHomePrompt();
       }
     });
