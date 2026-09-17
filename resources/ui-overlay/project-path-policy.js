@@ -279,16 +279,28 @@ function collectSiblingReadRoots(primaryRoot, extraRoots = []) {
  */
 function resolveAccessibleTarget(primaryRoot, maybePath = "", options = {}) {
   const primary = assertProjectRoot(primaryRoot);
-  const allowed = collectAllowedRoots(
-    primary,
-    Array.isArray(options.allowedRoots) ? options.allowedRoots : [],
-  );
+  const extras = Array.isArray(options.allowedRoots) ? options.allowedRoots.slice() : [];
+  if (options.allowSiblingRead === true || options.fullAccess === true) {
+    const parent = workspaceParentRoot(primary);
+    if (parent) extras.push(parent);
+  }
+  const allowed = collectAllowedRoots(primary, extras);
   const roots = allowed.length ? allowed : [primary];
   const raw = String(maybePath || "").trim();
 
   const tryResolveAbsolute = (absolute) => {
     for (const root of roots) {
       const relative = path.relative(root, absolute);
+      // Permitir el propio root (p.ej. list_files('..') → carpeta padre).
+      if (relative === "" ) {
+        return {
+          root,
+          relative: "",
+          absolute: root,
+          primary,
+          outsidePrimary: root.toLowerCase() !== primary.toLowerCase(),
+        };
+      }
       if (relative.startsWith("..") || path.isAbsolute(relative)) continue;
       const target = resolveInside(root, relative || ".");
       return {

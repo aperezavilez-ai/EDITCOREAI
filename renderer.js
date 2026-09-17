@@ -623,21 +623,21 @@ function _flushDiskPersistenceNow() {
   syncProjectsToMaintenanceScheduler();
 }
 
-function persistActiveProjectChatsToDisk() {
-  if (!window.editcoreSession?.saveProjectChats) return;
-  const project = activeProject();
-  const root = String(project?.projectRoot || "").trim();
+function persistProjectChatsToDisk(project) {
+  if (!window.editcoreSession?.saveProjectChats || !project) return;
+  const root = String(project.projectRoot || "").trim();
   if (!root) return;
-  const chats = Array.isArray(project.chats) ? project.chats : [];
-  const msgCount = chats.reduce((n, c) => n + (Array.isArray(c.messages) ? c.messages.length : 0), 0)
-    + (Array.isArray(project.messages) ? project.messages.length : 0);
-  if (!msgCount) return;
   window.editcoreSession.saveProjectChats({
     projectRoot: root,
-    chats: project.chats,
-    activeChatId: project.activeChatId,
-    messages: project.messages,
+    chats: Array.isArray(project.chats) ? project.chats : [],
+    activeChatId: project.activeChatId || "",
+    messages: Array.isArray(project.messages) ? project.messages : [],
   }).catch(() => undefined);
+}
+
+function persistActiveProjectChatsToDisk() {
+  const project = activeProject();
+  if (project) persistProjectChatsToDisk(project);
 }
 
 function flushSessionSyncNow() {
@@ -660,12 +660,16 @@ async function hydrateProjectChatsFromDisk(project) {
   try {
     const disk = await window.editcoreSession.loadProjectChats({ projectRoot: project.projectRoot });
     if (!disk) return project;
+    const memUpdated = Number(project.updatedAt) || 0;
+    const diskUpdated = Number(disk.savedAt) || 0;
+    if (memUpdated > diskUpdated && Array.isArray(project.chats) && project.chats.length > 0) {
+      return project;
+    }
     const diskCount = (disk.chats || []).reduce((n, c) => n + (c.messages || []).length, 0)
       + (disk.messages || []).length;
     const memCount = (project.chats || []).reduce((n, c) => n + (c.messages || []).length, 0)
       + (project.messages || []).length;
-    if (diskCount <= memCount) return project;
-    // Preferir disco si tiene mas historial.
+    if (diskCount === 0 && memCount > 0) return project;
     const chats = Array.isArray(disk.chats) && disk.chats.length
       ? disk.chats
       : [{
@@ -740,49 +744,104 @@ function sniffMimeFromDataUrl(dataUrl = "") {
 }
 
 async function addFiles(files) {
-  for (const file of [...files].slice(0, 8)) {
+  const incoming = [...(files || [])].filter(Boolean).slice(0, 8);
+  for (const file of incoming) {
     const dataUrl = await readFileAsDataUrl(file);
     let mimeType = String(file.type || "").toLowerCase();
     if (mimeType === "image/jpg") mimeType = "image/jpeg";
+    const name = String(file.name || `archivo-${Date.now()}`).slice(0, 120);
     if (!mimeType || mimeType === "application/octet-stream") {
-      mimeType = sniffMimeFromDataUrl(dataUrl) || mimeType;
+      mimeType = sniffMimeFromDataUrl(dataUrl) || mimeFromFileName(name) || mimeType || "application/octet-stream";
     }
-    const name = String(file.name || `image-${Date.now()}`).slice(0, 120);
     state.attachments.push({ name, mimeType, size: file.size, dataUrl });
   }
   renderAttachments();
 }
 
-function renderAttachments() {
-  const list = $("attachmentList");
-  list.replaceChildren();
-  list.style.display = "";
-  $("chatForm")?.classList.toggle("has-attachments", state.attachments.length > 0);
-  for (const item of state.attachments) {
-    const chip = document.createElement("div");
-    chip.className = "attachment-chip";
-    chip.title = item.name;
-    if (/^image\//i.test(item.mimeType) || isImageAttachment(item)) {
-      chip.classList.add("has-image");
-      const img = document.createElement("img");
-      img.src = item.dataUrl;
-      img.alt = item.name;
-      chip.appendChild(img);
-    } else {
-      const name = document.createElement("span");
-      name.textContent = item.name;
-      chip.appendChild(name);
+function mimeFromFileName(name = "") {
+  const ext = String(name).toLowerCase().split(".").pop() || "";
+  const map = {
+    png: "image/png",
+    jpg: "image/jpeg",
+    jpeg: "image/jpeg",
+    webp: "image/webp",
+    gif: "image/gif",
+    bmp: "image/bmp",
+    pdf: "application/pdf",
+    doc: "application/msword",
+    docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    xls: "application/vnd.ms-excel",
+    xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    xlsm: "application/vnd.ms-excel.sheet.macroenabled.12",
+    csv: "text/csv",
+    txt: "text/plain",
+    md: "text/markdown",
+    json: "application/json",
+    ppt: "application/vnd.ms-powerpoint",
+    pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  };
+  return map[ext] || "";
+}
+
+function isAttachableFile(file) {
+  if (!file) return false;
+  const mime = String(file.type || "").toLowerCase();
+  const name = String(file.name || "").toLowerCase();
+  if (/^image\//i.test(mime)) return true;
+  if (/pdf|msword|officedocument|ms-excel|ms-powerpoint|text\/|json|csv/i.test(mime)) return true;
+  return /\.(png|jpe?g|webp|gif|bmp|pdf|docx?|xlsx?|xlsm|csv|txt|md|json|js|ts|tsx|jsx|css|html|pptx?)$/i.test(name);
+}
+
+function collectClipboardFiles(clipboardData) {
+  const files = [];
+  for (const item of [...(clipboardData?.items || [])]) {
+    if (item.kind === "file") {
+      const file = item.getAsFile();
+      if (file) files.push(file);
     }
-    const del = document.createElement("button");
-    del.type = "button";
-    del.className = "chip-del";
-    del.textContent = "×";
-    del.onclick = () => {
-      state.attachments = state.attachments.filter((c) => c !== item);
-      renderAttachments();
-    };
-    chip.appendChild(del);
-    list.appendChild(chip);
+  }
+  if (!files.length) {
+    for (const f of [...(clipboardData?.files || [])]) files.push(f);
+  }
+  return files.filter(isAttachableFile);
+}
+
+function renderAttachments() {
+  const lists = [$("attachmentList"), $("chatHomeAttachmentList")].filter(Boolean);
+  for (const list of lists) {
+    list.replaceChildren();
+    list.style.display = state.attachments.length ? "" : "none";
+    list.classList.toggle("is-empty", state.attachments.length === 0);
+  }
+  $("chatForm")?.classList.toggle("has-attachments", state.attachments.length > 0);
+  $("chatHomeComposer")?.classList.toggle("has-attachments", state.attachments.length > 0);
+  for (const item of state.attachments) {
+    for (const list of lists) {
+      const chip = document.createElement("div");
+      chip.className = "attachment-chip";
+      chip.title = item.name;
+      if (/^image\//i.test(item.mimeType) || isImageAttachment(item)) {
+        chip.classList.add("has-image");
+        const img = document.createElement("img");
+        img.src = item.dataUrl;
+        img.alt = item.name;
+        chip.appendChild(img);
+      } else {
+        const name = document.createElement("span");
+        name.textContent = item.name;
+        chip.appendChild(name);
+      }
+      const del = document.createElement("button");
+      del.type = "button";
+      del.className = "chip-del";
+      del.textContent = "×";
+      del.onclick = () => {
+        state.attachments = state.attachments.filter((c) => c !== item);
+        renderAttachments();
+      };
+      chip.appendChild(del);
+      list.appendChild(chip);
+    }
   }
 }
 
@@ -2583,18 +2642,38 @@ function createNewChatThread() {
   renderProjects();
   renderChatTabs();
   $("feed").replaceChildren();
-  append("assistant", "Bienvenido a EditCoreAI. ¿Qué haremos hoy?", null, false);
+  if (document.body.dataset.appMode !== "chat") {
+    append("assistant", "Bienvenido a EditCoreAI. ¿Qué haremos hoy?", null, false);
+  }
   renderAttachments();
   renderPromptQueue();
   scrollFeedToBottom();
   refreshUndoAgentRunButton();
   $("status").textContent = "Nuevo chat";
+  try { window.dispatchEvent(new CustomEvent("editcore:chats-updated", { detail: { activeChatId: chat.id, projectId: project.id } })); } catch {}
+  return chat;
 }
 
-function switchChatThread(chatId) {
-  const project = ensureProject();
+async function switchChatThread(chatId, targetProjectId = "") {
+  let project = activeProject() || ensureProject();
   ensureProjectChats(project);
-  const chat = project.chats.find((item) => item.id === String(chatId || ""));
+  let chat = project.chats.find((item) => item.id === String(chatId || ""));
+  if (!chat) {
+    const foundProject = (state.projects || []).find((p) => {
+      ensureProjectChats(p);
+      return (p.chats || []).some((item) => item.id === String(chatId || ""));
+    });
+    if (foundProject && foundProject.id !== state.activeProjectId) {
+      if (foundProject.projectRoot) {
+        await selectProject(foundProject.id, { render: false, preview: false }).catch(() => undefined);
+      } else {
+        state.activeProjectId = foundProject.id;
+      }
+      project = activeProject() || foundProject;
+      ensureProjectChats(project);
+      chat = project.chats.find((item) => item.id === String(chatId || ""));
+    }
+  }
   if (!chat) return;
   project.activeChatId = chat.id;
   project.messages = chat.messages;
@@ -2604,7 +2683,9 @@ function switchChatThread(chatId) {
   renderChatTabs();
   $("feed").replaceChildren();
   if (!state.history.length) {
-    append("assistant", "Bienvenido a EditCoreAI. ¿Qué haremos hoy?", null, false);
+    if (document.body.dataset.appMode !== "chat") {
+      append("assistant", "Bienvenido a EditCoreAI. ¿Qué haremos hoy?", null, false);
+    }
   } else {
     for (const message of state.history) {
       append(message.role, message.content, message.usage, false, null, message.images || [], message.documents || []);
@@ -2613,19 +2694,46 @@ function switchChatThread(chatId) {
   renderAttachments();
   scrollFeedToBottom(true);
   $("status").textContent = `Chat: ${chat.title || "sin titulo"}`;
+  try { window.dispatchEvent(new CustomEvent("editcore:chats-updated", { detail: { activeChatId: chat.id, projectId: project.id } })); } catch {}
 }
 
-function closeChatThread(chatId) {
-  const project = ensureProject();
-  ensureProjectChats(project);
+function renameChatThread(chatId, newTitle) {
+  const clean = String(newTitle || "").trim();
+  if (!clean) return;
+  for (const p of (state.projects || [])) {
+    ensureProjectChats(p);
+    const chat = (p.chats || []).find((c) => c.id === String(chatId || ""));
+    if (chat) {
+      chat.title = clean;
+      chat.updatedAt = Date.now();
+      saveProjects();
+      renderChatTabs();
+      try { window.dispatchEvent(new CustomEvent("editcore:chats-updated", { detail: { activeChatId: p.activeChatId, projectId: p.id } })); } catch {}
+      return;
+    }
+  }
+}
+
+function closeChatThread(chatId, targetProjectId) {
   const id = String(chatId || "");
-  const index = project.chats.findIndex((chat) => chat.id === id);
+  if (!id) return;
+
+  let targetProj = null;
+  if (targetProjectId) {
+    targetProj = (state.projects || []).find((p) => p.id === targetProjectId);
+  }
+  if (!targetProj) {
+    targetProj = (state.projects || []).find((p) => (p.chats || []).some((c) => c.id === id)) || ensureProject();
+  }
+  ensureProjectChats(targetProj);
+  const index = (targetProj.chats || []).findIndex((chat) => chat.id === id);
   if (index < 0) return;
 
-  const wasActive = project.activeChatId === id;
-  project.chats.splice(index, 1);
+  const isCurrentProject = targetProj.id === state.activeProjectId;
+  const wasActive = targetProj.activeChatId === id;
+  targetProj.chats.splice(index, 1);
 
-  if (!project.chats.length) {
+  if (!targetProj.chats.length) {
     const fresh = {
       id: uid(),
       title: "Chat 1",
@@ -2633,50 +2741,62 @@ function closeChatThread(chatId) {
       createdAt: Date.now(),
       updatedAt: Date.now(),
     };
-    project.chats = [fresh];
-    project.activeChatId = fresh.id;
-    project.messages = fresh.messages;
-    state.history = [];
-    state.attachments = [];
+    targetProj.chats = [fresh];
+    targetProj.activeChatId = fresh.id;
+    if (isCurrentProject) {
+      targetProj.messages = fresh.messages;
+      state.history = [];
+      state.attachments = [];
+      $("feed").replaceChildren();
+      if (document.body.dataset.appMode !== "chat") {
+        append("assistant", "Bienvenido a EditCoreAI. ¿Qué haremos hoy?", null, false);
+      }
+      renderAttachments();
+      scrollFeedToBottom();
+      refreshUndoAgentRunButton();
+    }
+    targetProj.updatedAt = Date.now();
     saveProjects();
     renderProjects();
     renderChatTabs();
-    $("feed").replaceChildren();
-    append("assistant", "Bienvenido a EditCoreAI. ¿Qué haremos hoy?", null, false);
-    renderAttachments();
-    scrollFeedToBottom();
-    refreshUndoAgentRunButton();
     $("status").textContent = "Chat cerrado";
+    try { window.dispatchEvent(new CustomEvent("editcore:chats-updated", { detail: { activeChatId: fresh.id, projectId: targetProj.id } })); } catch {}
     return;
   }
 
   if (wasActive) {
-    const next = project.chats[Math.min(index, project.chats.length - 1)];
-    project.activeChatId = next.id;
-    project.messages = next.messages;
-    state.history = [...(next.messages || [])];
-  } else {
-    const active = project.chats.find((chat) => chat.id === project.activeChatId) || project.chats[0];
-    project.activeChatId = active.id;
-    project.messages = active.messages;
+    const next = targetProj.chats[Math.min(index, targetProj.chats.length - 1)];
+    targetProj.activeChatId = next.id;
+    if (isCurrentProject) {
+      targetProj.messages = next.messages;
+      state.history = [...(next.messages || [])];
+      $("feed").replaceChildren();
+      if (!state.history.length) {
+        if (document.body.dataset.appMode !== "chat") {
+          append("assistant", "Bienvenido a EditCoreAI. ¿Qué haremos hoy?", null, false);
+        }
+      } else {
+        for (const message of state.history) {
+          append(message.role, message.content, message.usage, false, null, message.images || [], message.documents || []);
+        }
+      }
+      renderAttachments();
+      scrollFeedToBottom(true);
+    }
+  } else if (isCurrentProject) {
+    const active = targetProj.chats.find((chat) => chat.id === targetProj.activeChatId) || targetProj.chats[0];
+    targetProj.activeChatId = active.id;
+    targetProj.messages = active.messages;
   }
 
-  project.updatedAt = Date.now();
-  state.attachments = [];
-  saveProjects();
+  targetProj.updatedAt = Date.now();
+  if (isCurrentProject) state.attachments = [];
+  saveProjects({ immediate: true });
+  persistProjectChatsToDisk(targetProj);
   renderProjects();
   renderChatTabs();
-  $("feed").replaceChildren();
-  if (!state.history.length) {
-    append("assistant", "Bienvenido a EditCoreAI. ¿Qué haremos hoy?", null, false);
-  } else {
-    for (const message of state.history) {
-      append(message.role, message.content, message.usage, false, null, message.images || [], message.documents || []);
-    }
-  }
-  renderAttachments();
-  scrollFeedToBottom(true);
   $("status").textContent = "Chat cerrado";
+  try { window.dispatchEvent(new CustomEvent("editcore:chats-updated", { detail: { activeChatId: targetProj.activeChatId, projectId: targetProj.id } })); } catch {}
 }
 
 function isAgentAuthorization(value) {
@@ -3002,6 +3122,17 @@ function analysisRepairPrompt(_memory = {}, authorization = "procede") {
 
 function ensureProject() {
   if (activeProject()) return activeProject();
+  if (Array.isArray(state.projects) && state.projects.length) {
+    const candidate = (state.activeProjectId && state.projects.find((p) => p.id === state.activeProjectId))
+      || state.projects.find((p) => p.projectRoot)
+      || state.projects[0];
+    if (candidate) {
+      state.activeProjectId = candidate.id;
+      state.projectRoot = candidate.projectRoot || "";
+      ensureProjectChats(candidate);
+      return candidate;
+    }
+  }
   const project = {
     id: uid(),
     title: "Nuevo chat",
@@ -3110,6 +3241,37 @@ function projectForRoot(rootPath, fallbackName = "") {
   return project;
 }
 
+function removeProject(projectId) {
+  const id = String(projectId || "").trim();
+  if (!id) return;
+  const project = (state.projects || []).find((item) => item.id === id);
+  if (!project) return;
+  const isCurrent = project.id === state.activeProjectId;
+  state.projects = state.projects.filter((item) => item.id !== id);
+
+  if (isCurrent) {
+    const next = state.projects.find((p) => p.projectRoot) || state.projects[0];
+    if (next) {
+      state.activeProjectId = next.id;
+      state.projectRoot = next.projectRoot || "";
+      ensureProjectChats(next);
+      const curChat = activeChat(next);
+      state.history = [...(curChat?.messages || next.messages || [])];
+    } else {
+      state.activeProjectId = "";
+      state.projectRoot = "";
+      state.history = [];
+      const fresh = ensureProject();
+      state.activeProjectId = fresh.id;
+    }
+    renderFeed({ force: true });
+  }
+  saveProjects({ immediate: true });
+  renderProjects();
+  try { window.dispatchEvent(new CustomEvent("editcore:chats-updated", { detail: { projectId: id } })); } catch {}
+  try { window.dispatchEvent(new CustomEvent("editcore:project-updated", { detail: { projectId: id } })); } catch {}
+}
+
 function renderProjects() {
   const host = $("projectsManagerList");
   if (!host) return;
@@ -3142,12 +3304,9 @@ function renderProjects() {
     remove.type = "button";
     remove.className = "project-remove-btn";
     remove.textContent = "Quitar";
-    remove.disabled = project.id === state.activeProjectId;
-    remove.title = remove.disabled ? "Cambia de proyecto antes de quitar el activo" : "Quitar de Mis proyectos sin borrar carpeta";
+    remove.title = "Quitar de Mis proyectos sin borrar carpeta";
     remove.onclick = () => {
-      state.projects = state.projects.filter((item) => item.id !== project.id);
-      saveProjects();
-      renderProjects();
+      removeProject(project.id);
     };
     row.append(button, remove);
     host.appendChild(row);
@@ -3342,34 +3501,82 @@ function renderFeed(options = {}) {
 const FEED_STICK_BOTTOM_PX = 96;
 let feedStickToBottom = true;
 let feedScrollGuardBound = false;
+let feedScrollingProgrammatically = false;
 
 function isFeedNearBottom(feed, threshold = FEED_STICK_BOTTOM_PX) {
-  if (!feed) return true;
-  return (feed.scrollHeight - feed.scrollTop - feed.clientHeight) <= threshold;
+  const roots = getFeedScrollRoots();
+  const el = roots[0] || feed;
+  if (!el) return true;
+  return (el.scrollHeight - el.scrollTop - el.clientHeight) <= threshold;
+}
+
+function getFeedScrollRoots() {
+  const roots = [];
+  const chatMode = document.body?.dataset?.appMode === "chat";
+  if (chatMode) {
+    const host = $("chatHomeFeedHost");
+    const stage = $("chatHomeStage");
+    if (host) roots.push(host);
+    if (stage && stage !== host) roots.push(stage);
+  }
+  const feed = $("feed");
+  if (feed) roots.push(feed);
+  return roots;
 }
 
 function bindFeedScrollGuard() {
   if (feedScrollGuardBound) return;
-  const feed = $("feed");
-  if (!feed) return;
+  const roots = getFeedScrollRoots();
+  if (!roots.length) return;
   feedScrollGuardBound = true;
   const syncStick = () => {
-    feedStickToBottom = isFeedNearBottom(feed);
+    if (feedScrollingProgrammatically) return;
+    feedStickToBottom = isFeedNearBottom($("feed"));
   };
-  feed.addEventListener("scroll", syncStick, { passive: true });
-  feed.addEventListener("wheel", () => requestAnimationFrame(syncStick), { passive: true });
-  feed.addEventListener("touchmove", () => requestAnimationFrame(syncStick), { passive: true });
+  for (const el of roots) {
+    el.addEventListener("scroll", syncStick, { passive: true });
+    el.addEventListener("wheel", () => {
+      feedScrollingProgrammatically = false;
+      requestAnimationFrame(syncStick);
+    }, { passive: true });
+    el.addEventListener("touchmove", () => {
+      feedScrollingProgrammatically = false;
+      requestAnimationFrame(syncStick);
+    }, { passive: true });
+  }
 }
 
 function scrollFeedToBottom(force = false) {
   const feed = $("feed");
   if (!feed) return;
+  // Rebind si cambió el modo Chat/IDE (el scroll root no es el mismo).
+  feedScrollGuardBound = false;
   bindFeedScrollGuard();
   if (force === true) feedStickToBottom = true;
   if (!feedStickToBottom && force !== true) return;
-  feed.scrollTop = feed.scrollHeight;
-  feedStickToBottom = true;
+  feedScrollingProgrammatically = true;
+  const apply = () => {
+    for (const el of getFeedScrollRoots()) {
+      try { el.scrollTop = el.scrollHeight; } catch { /* ignore */ }
+    }
+    try {
+      const last = feed.lastElementChild;
+      last?.scrollIntoView?.({ block: "end", behavior: "auto" });
+    } catch { /* ignore */ }
+    feedStickToBottom = true;
+  };
+  apply();
+  requestAnimationFrame(apply);
+  setTimeout(apply, 40);
+  setTimeout(() => {
+    apply();
+    feedScrollingProgrammatically = false;
+  }, 160);
 }
+
+window.EditCoreChatScroll = {
+  toBottom: (force = true) => scrollFeedToBottom(force === true),
+};
 
 function notifyVoiceAssistant(text) {
   window.EditCoreVoiceMode?.notifyAssistant?.(String(text || "").trim());
@@ -5043,7 +5250,7 @@ async function selectProject(id, options = {}) {
   }
   $("projectPathLabel").textContent = selected.projectRoot;
   if (options.render !== false) {
-    saveProjects();
+    saveProjects({ immediate: true });
     renderProjects();
     renderWelcomeRecents();
     const preserveLiveChat = !options.force
@@ -5052,8 +5259,13 @@ async function selectProject(id, options = {}) {
     if (!preserveLiveChat) renderFeed({ force: options.force });
     syncChatModelFromConfig();
   } else {
-    try { saveProjects(); } catch { /* ignore */ }
+    try { saveProjects({ immediate: true }); } catch { /* ignore */ }
   }
+  try {
+    window.dispatchEvent(new CustomEvent("editcore:project-updated", { detail: { projectId: selected.id, projectRoot: selected.projectRoot } }));
+    window.dispatchEvent(new CustomEvent("editcore:chats-updated", { detail: { projectId: selected.id, activeChatId: selected.activeChatId } }));
+    window.EditCoreChatHome?.refresh?.();
+  } catch { /* ignore */ }
   const project = activeProject();
   // Preview / archivos en background: el clic no debe esperar al servidor.
   void (async () => {
@@ -12830,6 +13042,17 @@ async function boot() {
   const storedProjects = loadJson(PROJECTS_STORAGE_KEY, []);
   const storedActiveProjectId = String(localStorage.getItem(ACTIVE_PROJECT_STORAGE_KEY) || "").trim();
   state.projects = repairPersistedText(storedProjects).map(ensureProjectAgent);
+
+  // Limpiar proyectos huérfanos vacíos creados por recargas previas si existen proyectos reales.
+  if (state.projects.length > 1) {
+    state.projects = state.projects.filter((p) => {
+      const hasRoot = Boolean(p.projectRoot);
+      const hasMsgs = (Array.isArray(p.messages) && p.messages.length > 0) || (Array.isArray(p.chats) && p.chats.some((c) => Array.isArray(c.messages) && c.messages.length > 0));
+      const isActive = p.id === storedActiveProjectId;
+      return hasRoot || hasMsgs || isActive;
+    });
+  }
+
   state.activeProjectId = "";
   state.projectRoot = "";
 
@@ -12840,30 +13063,29 @@ async function boot() {
 
   const autoPick = _appParams.get("autoPick") === "1";
   const explicitOpenRoot = _appParams.get("projectRoot") || _appParams.get("openRoot");
-  const localActive = storedActiveProjectId
-    ? state.projects.find((project) => project.id === storedActiveProjectId && project.projectRoot)
-    : null;
+  
+  let matchedProject = null;
+  if (explicitOpenRoot) {
+    matchedProject = state.projects.find((p) => normalizeProjectRoot(p.projectRoot) === normalizeProjectRoot(explicitOpenRoot));
+  }
+  if (!matchedProject && storedActiveProjectId) {
+    matchedProject = state.projects.find((p) => p.id === storedActiveProjectId);
+  }
+  if (!matchedProject && state.projects.length) {
+    matchedProject = state.projects.find((p) => p.projectRoot) || state.projects[0];
+  }
 
   if (autoPick) {
     if (!chatFirst) showWelcomeScreen();
     else hideWelcomeScreen();
-  } else if (explicitOpenRoot) {
-    const matched = state.projects.find((p) => normalizeProjectRoot(p.projectRoot) === normalizeProjectRoot(explicitOpenRoot));
-    if (matched) {
-      state.activeProjectId = matched.id;
-      state.projectRoot = matched.projectRoot;
-      hideWelcomeScreen();
-      if ($("projectPathLabel")) $("projectPathLabel").textContent = matched.projectRoot;
-    } else if (!chatFirst) {
-      showWelcomeScreen();
-    } else {
-      hideWelcomeScreen();
-    }
-  } else if (localActive) {
-    state.activeProjectId = localActive.id;
-    state.projectRoot = localActive.projectRoot;
+  } else if (matchedProject) {
+    state.activeProjectId = matchedProject.id;
+    state.projectRoot = matchedProject.projectRoot || "";
+    ensureProjectChats(matchedProject);
+    const curChat = activeChat(matchedProject);
+    state.history = [...(curChat?.messages || matchedProject.messages || [])];
     hideWelcomeScreen();
-    if ($("projectPathLabel")) $("projectPathLabel").textContent = localActive.projectRoot;
+    if ($("projectPathLabel")) $("projectPathLabel").textContent = matchedProject.projectRoot || "Sin proyecto";
   } else {
     hideWelcomeScreen();
     if (!chatFirst) showWelcomeScreen();
@@ -12873,8 +13095,8 @@ async function boot() {
   if (chatFirst) {
     try { window.EditCoreChatHome?.refresh?.(); } catch { /* ignore */ }
     const paintSoon = typeof requestIdleCallback === "function"
-      ? (fn) => requestIdleCallback(fn, { timeout: 600 })
-      : (fn) => setTimeout(fn, 50);
+      ? (fn) => requestIdleCallback(fn, { timeout: 300 })
+      : (fn) => setTimeout(fn, 30);
     paintSoon(() => {
       try { renderFeed({ force: true }); } catch { /* ignore */ }
       try { window.EditCoreChatHome?.refresh?.(); } catch { /* ignore */ }
@@ -13017,8 +13239,19 @@ async function bootBackground({
 
     // Solo hidratar chats del proyecto activo (el resto al abrirlo).
     const activeNow = state.projects.find((project) => project.id === (state.activeProjectId || sourceActiveId) && project.projectRoot)
-      || state.projects.find((project) => project.id === sourceActiveId && project.projectRoot);
-    if (activeNow) await hydrateProjectChatsFromDisk(activeNow);
+      || state.projects.find((project) => project.id === sourceActiveId && project.projectRoot)
+      || state.projects.find((project) => project.id === sourceActiveId)
+      || (state.projects.length ? state.projects[0] : null);
+    if (activeNow) {
+      await hydrateProjectChatsFromDisk(activeNow);
+      ensureProjectChats(activeNow);
+      state.activeProjectId = activeNow.id;
+      state.projectRoot = activeNow.projectRoot || "";
+      const curChat = activeChat(activeNow);
+      state.history = [...(curChat?.messages || activeNow.messages || [])];
+      try { renderFeed({ force: true }); } catch { /* ignore */ }
+      try { window.EditCoreChatHome?.refresh?.(); } catch { /* ignore */ }
+    }
 
     // En Chat Home no refrescar catálogo/preview de inmediato (roba frames a la UI).
     if (!chatFirst) {
@@ -13031,7 +13264,6 @@ async function bootBackground({
       const matched = state.projects.find((p) => normalizeProjectRoot(p.projectRoot) === normalizeProjectRoot(explicitOpenRoot));
       if (matched) selectProject(matched.id, { render: true }).catch(() => undefined);
     } else if (activeNow && (!state.activeProjectId || state.activeProjectId === activeNow.id)) {
-      // Chat: seleccionar sin re-render síncrono pesado (ya pintamos feed en idle).
       selectProject(activeNow.id, { render: !chatFirst, preview: !chatFirst }).catch(() => undefined);
     }
 
@@ -13625,26 +13857,16 @@ function wireComposerControls() {
     e.target.value = "";
   });
 
-  $("prompt")?.addEventListener("paste", (e) => {
-    const files = [];
-    for (const item of [...(e.clipboardData?.items || [])]) {
-      if (item.kind === "file") {
-        const file = item.getAsFile();
-        if (file) files.push(file);
-      }
-    }
-    if (!files.length) {
-      for (const f of [...(e.clipboardData?.files || [])]) {
-        files.push(f);
-      }
-    }
-    if (files.length) {
-      e.preventDefault();
-      addFiles(files).catch((err) => { $("status").textContent = err?.message || String(err); });
-    }
-  });
+  const handlePasteAttach = (e) => {
+    const files = collectClipboardFiles(e.clipboardData);
+    if (!files.length) return;
+    e.preventDefault();
+    addFiles(files).catch((err) => { $("status").textContent = err?.message || String(err); });
+  };
+  $("prompt")?.addEventListener("paste", handlePasteAttach);
+  $("chatHomePrompt")?.addEventListener("paste", handlePasteAttach);
 
-  const setupImageDropTarget = (el) => {
+  const setupAttachDropTarget = (el) => {
     if (!el) return;
     el.addEventListener("dragover", (e) => {
       e.preventDefault();
@@ -13656,17 +13878,26 @@ function wireComposerControls() {
       e.preventDefault();
       e.stopPropagation();
       el.classList.remove("drag-over");
-      const files = [...(e.dataTransfer?.files || [])].filter((f) =>
-        /^image\//i.test(f.type || "") || /\.(png|jpe?g|webp|gif|bmp)$/i.test(f.name || "")
-      );
+      const files = [...(e.dataTransfer?.files || [])].filter(isAttachableFile);
       if (files.length) {
         addFiles(files).catch((err) => { $("status").textContent = err?.message || String(err); });
       }
     });
   };
-  setupImageDropTarget($("chatForm"));
-  setupImageDropTarget($("prompt"));
-  setupImageDropTarget($("feed"));
+  setupAttachDropTarget($("chatForm"));
+  setupAttachDropTarget($("prompt"));
+  setupAttachDropTarget($("feed"));
+  setupAttachDropTarget($("chatHomeComposer"));
+  setupAttachDropTarget($("chatHomePrompt"));
+  setupAttachDropTarget($("chatHomeStage"));
+  setupAttachDropTarget($("chatHomeFeedHost"));
+
+  window.EditCoreAttachments = {
+    openPicker: () => $("fileInput")?.click(),
+    addFiles: (files) => addFiles(files),
+    clear: () => { state.attachments = []; renderAttachments(); },
+    list: () => (state.attachments || []).slice(),
+  };
 
   $("prompt")?.addEventListener("keydown", (e) => {
     if (e.key === "Tab" && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
@@ -15169,6 +15400,75 @@ $("inspectorSaveBtn")?.addEventListener("click", () => saveEditCoreChanges());
 // Bridge Chat Home ↔ IDE (sin duplicar Agent Core).
 window.createNewChatThread = createNewChatThread;
 window.switchChatThread = switchChatThread;
+window.closeChatThread = closeChatThread;
+window.deleteChatThread = closeChatThread;
+window.renameChatThread = renameChatThread;
+window.selectProject = selectProject;
+window.switchProject = (id) => selectProject(id);
+window.removeProject = removeProject;
+window.deleteProject = removeProject;
+window.getActiveChatThreadId = () => {
+  const project = activeProject() || (Array.isArray(state.projects) && state.projects.length ? state.projects[0] : null);
+  if (!project) return "";
+  ensureProjectChats(project);
+  return project.activeChatId || project.chats?.[0]?.id || "";
+};
+window.getChatThreads = () => {
+  const list = [];
+  const currentProj = activeProject() || (Array.isArray(state.projects) && state.projects.length ? state.projects[0] : null);
+  for (const p of (state.projects || [])) {
+    ensureProjectChats(p);
+    const pName = p.title && p.title !== "Nuevo chat" && p.title !== "Proyecto" ? p.title : (p.projectRoot ? p.projectRoot.split(/[\\/]/).filter(Boolean).pop() : (p.name && p.name !== "Proyecto" ? p.name : "Proyecto"));
+    for (const c of (p.chats || [])) {
+      list.push({
+        id: c.id,
+        title: c.title || "Conversación",
+        updatedAt: c.updatedAt || c.createdAt || Date.now(),
+        createdAt: c.createdAt || Date.now(),
+        projectId: p.id,
+        projectRoot: p.projectRoot || "",
+        projectName: pName,
+        messageCount: Array.isArray(c.messages) ? c.messages.length : 0,
+        isActive: c.id === currentProj?.activeChatId && p.id === currentProj?.id,
+      });
+    }
+  }
+  return list.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+};
+window.getProjectsWithChats = () => {
+  const currentProjId = state.activeProjectId;
+  return (state.projects || []).map((p) => {
+    ensureProjectChats(p);
+    const pName = p.title && p.title !== "Nuevo chat" && p.title !== "Proyecto"
+      ? p.title 
+      : (p.projectRoot ? p.projectRoot.split(/[\\/]/).filter(Boolean).pop() : (p.name && p.name !== "Proyecto" ? p.name : "Proyecto"));
+    return {
+      id: p.id,
+      name: pName,
+      projectRoot: p.projectRoot || "",
+      isActive: p.id === currentProjId,
+      chats: (p.chats || []).map((c) => ({
+        id: c.id,
+        title: c.title || "Conversación",
+        updatedAt: c.updatedAt || c.createdAt || Date.now(),
+        createdAt: c.createdAt || Date.now(),
+        projectId: p.id,
+        projectName: pName,
+        projectRoot: p.projectRoot || "",
+        messageCount: Array.isArray(c.messages) ? c.messages.length : 0,
+        isActive: c.id === p.activeChatId && p.id === currentProjId,
+      })),
+    };
+  });
+};
+window.listProjects = () => {
+  return (state.projects || []).map((p) => ({
+    id: p.id,
+    name: p.title || p.name || (p.projectRoot ? p.projectRoot.split(/[\\/]/).filter(Boolean).pop() : "Proyecto"),
+    projectRoot: p.projectRoot || "",
+    isActive: p.id === state.activeProjectId,
+  }));
+};
 window.openProjectFromDisk = () => pickProject();
 window.openConnections = openConnections;
 window.EditCoreModels = {
@@ -15257,10 +15557,120 @@ window.EditCoreSessionContext = {
     return { subagents, filesChanged, artifacts, uploads, tasks, skills };
   },
 };
+
+window.EditCoreDiffDecisions = {
+  createCard: ({ filePath = "", diff = "", oldContent = "", newContent = "" } = {}) => {
+    const card = document.createElement("div");
+    card.className = "diff-decision-card";
+
+    const head = document.createElement("div");
+    head.className = "diff-decision-head";
+
+    const title = document.createElement("span");
+    title.className = "diff-decision-file";
+    title.textContent = `📝 ${filePath || "archivo modificado"}`;
+
+    const actions = document.createElement("div");
+    actions.className = "diff-decision-actions";
+
+    const acceptBtn = document.createElement("button");
+    acceptBtn.type = "button";
+    acceptBtn.className = "diff-decision-btn diff-btn-accept";
+    acceptBtn.textContent = "✅ Aceptar";
+
+    const rejectBtn = document.createElement("button");
+    rejectBtn.type = "button";
+    rejectBtn.className = "diff-decision-btn diff-btn-reject";
+    rejectBtn.textContent = "❌ Revertir";
+
+    acceptBtn.addEventListener("click", async () => {
+      acceptBtn.textContent = "✅ Aceptado";
+      acceptBtn.className = "diff-decision-btn diff-btn-done";
+      rejectBtn.remove();
+      try {
+        if (filePath && newContent && window.editcoreBridge?.writeFile) {
+          await window.editcoreBridge.writeFile({ path: filePath, content: newContent });
+        }
+      } catch (err) {
+        console.warn("[diff-decisions] accept error", err);
+      }
+    });
+
+    rejectBtn.addEventListener("click", async () => {
+      rejectBtn.textContent = "❌ Revertido";
+      rejectBtn.className = "diff-decision-btn diff-btn-done";
+      acceptBtn.remove();
+      try {
+        if (filePath && oldContent && window.editcoreBridge?.writeFile) {
+          await window.editcoreBridge.writeFile({ path: filePath, content: oldContent });
+        }
+      } catch (err) {
+        console.warn("[diff-decisions] reject error", err);
+      }
+    });
+
+    actions.appendChild(acceptBtn);
+    actions.appendChild(rejectBtn);
+    head.appendChild(title);
+    head.appendChild(actions);
+    card.appendChild(head);
+
+    const body = document.createElement("div");
+    body.className = "diff-decision-body";
+
+    const lines = String(diff || "").split("\n");
+    for (const line of lines) {
+      const lineEl = document.createElement("div");
+      if (line.startsWith("+") && !line.startsWith("+++")) {
+        lineEl.className = "diff-line-add";
+      } else if (line.startsWith("-") && !line.startsWith("---")) {
+        lineEl.className = "diff-line-del";
+      }
+      lineEl.textContent = line;
+      body.appendChild(lineEl);
+    }
+
+    card.appendChild(body);
+    return card;
+  },
+};
+
+window.EditCoreCodebaseIndex = {
+  symbols: new Map(),
+  indexProjectSymbols: (files = []) => {
+    const map = new Map();
+    for (const f of files) {
+      const path = f.path || f;
+      const content = f.content || "";
+      if (typeof content !== "string" || !content) continue;
+      const matches = content.matchAll(/(?:export\s+(?:default\s+)?(?:async\s+)?(?:function|class|const|let|interface|type)\s+([a-zA-Z0-9_$]+))/g);
+      for (const m of matches) {
+        if (m[1]) {
+          map.set(m[1], { symbol: m[1], path, line: 1 });
+        }
+      }
+    }
+    window.EditCoreCodebaseIndex.symbols = map;
+    return map;
+  },
+  findSymbol: (name) => {
+    return window.EditCoreCodebaseIndex.symbols.get(name) || null;
+  },
+};
+
 window.EditCoreAppMode = {
   setChat: () => window.EditCoreChatHome?.setMode?.("chat"),
   setIde: () => window.EditCoreChatHome?.setMode?.("ide"),
 };
+
+// Bind Autocomplete to IDE prompt if available
+document.addEventListener("DOMContentLoaded", () => {
+  const idePrompt = $("prompt");
+  const ideWrap = idePrompt?.closest(".composer-input-wrap") || idePrompt?.parentElement;
+  if (idePrompt && ideWrap && typeof window.EditCoreMentionAutocomplete?.setupAutocomplete === "function") {
+    window.EditCoreMentionAutocomplete.setupAutocomplete(idePrompt, ideWrap);
+  }
+});
 
 boot().catch((error) => {
   $("status").textContent = error?.message || "No se pudo iniciar la aplicacion";

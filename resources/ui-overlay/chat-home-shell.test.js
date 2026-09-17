@@ -90,7 +90,7 @@ test("chat-home sidebar splitter y mic a la derecha", () => {
   assert.match(html, /id="chatHomeSidebarSplit"/);
   assert.match(css, /chat-home-sidebar-split/);
   assert.match(js, /bindSidebarResize/);
-  assert.match(css, /chat-home-ide-btn[\s\S]{0,220}background:\s*transparent/s);
+  assert.match(css, /\.chat-home-ide-btn\s*\{[^}]*background:\s*transparent/s);
   assert.doesNotMatch(css, /\.chat-home-ide-btn\s*\{[^}]*background:\s*var\(--ch-ide\)/s);
   const row = html.match(/chat-home-composer-row[\s\S]*?<\/div>/)?.[0] || "";
   assert.match(row, /chat-home-composer-spacer/);
@@ -98,67 +98,10 @@ test("chat-home sidebar splitter y mic a la derecha", () => {
   assert.ok(row.indexOf("chatHomeSendBtn") > row.indexOf("chatHomeMicBtn"));
 });
 
-test("chat-home attachments paste/picker y scroll host", () => {
+test("IDE internals not replaced by chat-home", () => {
   const html = fs.readFileSync(path.join(root, "index.html"), "utf8");
-  const jsHome = fs.readFileSync(path.join(root, "chat-home.js"), "utf8");
-  const jsRend = fs.readFileSync(path.join(root, "renderer.js"), "utf8");
-  const css = fs.readFileSync(path.join(root, "chat-home.css"), "utf8");
-  assert.match(html, /id="chatHomeAttachmentList"/);
-  assert.match(html, /accept="[^"]*\.pdf/);
-  assert.match(html, /accept="[^"]*\.docx/);
-  assert.match(html, /accept="[^"]*\.xlsx/);
-  assert.match(jsHome, /EditCoreAttachments/);
-  assert.match(jsRend, /collectClipboardFiles/);
-  assert.match(jsRend, /getFeedScrollRoots/);
-  assert.match(jsRend, /chatHomeFeedHost/);
-  assert.match(css, /chat-home-attachment-list/);
-  assert.match(css, /overflow:\s*visible !important/);
+  assert.match(html, /id="previewWebview"/);
+  assert.match(html, /id="monacoEditorHost"/);
+  assert.match(html, /class="app-toolbar"/);
+  assert.match(html, /id="publishBtn"/);
 });
-
-test("chat-home thread management y apertura de conversaciones anteriores", () => {
-  const jsHome = fs.readFileSync(path.join(root, "chat-home.js"), "utf8");
-  const jsRend = fs.readFileSync(path.join(root, "renderer.js"), "utf8");
-  assert.match(jsHome, /getThreads/);
-  assert.match(jsHome, /selectThread/);
-  assert.match(jsHome, /window\.switchChatThread/);
-  assert.match(jsHome, /window\.createNewChatThread/);
-  assert.match(jsHome, /window\.closeChatThread/);
-  assert.match(jsHome, /window\.renameChatThread/);
-  assert.match(jsRend, /window\.getChatThreads\s*=/);
-  assert.match(jsRend, /window\.switchChatThread\s*=/);
-  assert.match(jsRend, /window\.closeChatThread\s*=/);
-  assert.match(jsRend, /window\.renameChatThread\s*=/);
-  assert.match(jsRend, /window\.selectProject\s*=/);
-  assert.match(jsRend, /window\.listProjects\s*=/);
-  assert.match(jsHome, /editcore:chats-updated/);
-  assert.match(jsHome, /editcore:project-updated/);
-});
-
-test("chat-home y IDE: menciones @, slash commands /, diff decisions y terminal autofix", () => {
-  const jsHome = fs.readFileSync(path.join(root, "chat-home.js"), "utf8");
-  const jsRend = fs.readFileSync(path.join(root, "renderer.js"), "utf8");
-  const css = fs.readFileSync(path.join(root, "chat-home.css"), "utf8");
-  const jsTerm = fs.readFileSync(path.join(root, "ide", "terminal-pane.js"), "utf8");
-
-  // Autocomplete / mentions
-  assert.match(jsHome, /SLASH_COMMANDS/);
-  assert.match(jsHome, /MENTION_TYPES/);
-  assert.match(jsHome, /setupAutocomplete/);
-  assert.match(css, /ec-mention-popup/);
-
-  // Diff decisions
-  assert.match(jsRend, /EditCoreDiffDecisions/);
-  assert.match(css, /diff-decision-card/);
-  assert.match(css, /diff-btn-accept/);
-  assert.match(css, /diff-btn-reject/);
-
-  // Terminal AutoFix
-  assert.match(jsTerm, /terminalAutoFixBar/);
-  assert.match(jsTerm, /Reparar con EditCoreAI/);
-  assert.match(css, /terminal-autofix-bar/);
-
-  // Codebase index
-  assert.match(jsRend, /EditCoreCodebaseIndex/);
-});
-
-

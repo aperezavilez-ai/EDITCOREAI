@@ -119,6 +119,44 @@ function formatAgentVisibleText(text = "") {
   return String(value || "").replace(/\n{3,}/g, "\n\n").trim();
 }
 
+function userWantsDiskMutation(message = "") {
+  return /\b(?:crea(?:r|ción)?|genera(?:r)?|implementa(?:r)?|escrib[ie]|haz|arma|scaffold|nuevo\s+proyecto|app\b|muev\w*|copiar?|guarda(?:r)?|fix|corrige|añad[ie]|agrega)\b/i.test(String(message || ""));
+}
+
+function textClaimsDiskMutation(text = "") {
+  const raw = String(text || "");
+  if (/<!DOCTYPE\s+html>/i.test(raw)) return true;
+  return /\b(he\s+(?:creado|escrito|generado|movido|implementado|guardado)|cre[eé]\s+(?:la\s+)?(?:carpeta|archivo|proyecto)|escrib[ií]|mov[ií]|gener[eé]|implement[eé]|guard[eé]|finalic[eé]\s+(?:la\s+)?(?:creaci[oó]n|implementaci[oó]n))\b/i.test(raw);
+}
+
+function successfulWritePaths(steps = []) {
+  return (Array.isArray(steps) ? steps : [])
+    .filter((s) => (s.name === "write_file" || s.name === "replace_in_file" || s.name === "scaffold_project") && s.ok !== false && s.result?.ok !== false)
+    .map((s) => s.input?.path || s.result?.path || s.result?.projectRoot)
+    .filter(Boolean);
+}
+
+function groundUngroundedClaims(text, steps = [], userMessage = "", decision = {}) {
+  if (
+    decision?.kind === "ANALYZE" ||
+    decision?.kind === "ASK" ||
+    decision?.kind === "LIST" ||
+    decision?.allowWrite === false
+  ) {
+    return formatAgentVisibleText(text);
+  }
+  const written = successfulWritePaths(steps);
+  if (written.length > 0) return formatAgentVisibleText(text);
+  const claims = textClaimsDiskMutation(text);
+  if (claims) {
+    return formatAgentVisibleText(
+      "No pude comprobar creación ni escritura real en disco en este turno (no hubo `write_file` / `replace_in_file` / `scaffold_project` exitoso).\n\n" +
+      "Conectá o indicá la carpeta destino y pedime de nuevo que lo cree con tools. No invento proyectos ni HTML sin guardarlos."
+    );
+  }
+  return formatAgentVisibleText(text);
+}
+
 function wrapSystemPrompt(raw = "") {
   const text = String(raw || "").trim();
   if (!text) return text;
@@ -637,9 +675,24 @@ class ChatOrchestrator {
       if (decision.kind === "CONFIRM" || isApprovalText) {
         decision = { kind: "EXECUTE", label: "Ejecución (Acceso completo)", allowTools: true, allowWrite: true, background: false };
       }
-      if (decision.kind === "CHAT" && /\b(?:crea|modifica|corrige|implementa|refactoriza|actualiza|audita|arregla|repara|escribe|agrega|añade|cambia)\b/i.test(effectiveText)) {
+      if (decision.kind === "CHAT" && userWantsDiskMutation(effectiveText)) {
         decision = { kind: "EXECUTE", label: "Ejecución (Acceso completo)", allowTools: true, allowWrite: true, background: false };
       }
+    }
+
+    // Sin acceso completo: nunca degradar crear/mover/arreglar a chat ciego (sin tools = inventa).
+    if (decision.kind === "CHAT" && userWantsDiskMutation(effectiveText)) {
+      decision = {
+        kind: "EXECUTE",
+        label: fullAccess ? "Ejecución (Acceso completo)" : "Construcción / Ejecución",
+        allowTools: true,
+        allowWrite: true,
+        background: false,
+      };
+    }
+
+    if (decision.kind === "CHAT" && /(?:^|[^\w])(?:analiz[aáá]|analizar|diagnostica|revis[aá]|inspecciona|explora(?:r)?\s+el\s+proyecto)(?=\s|$|[.!,?¿¡:])/i.test(effectiveText)) {
+      decision = { kind: "ANALYZE", label: "Análisis", allowTools: true, allowWrite: false, background: false };
     }
 
     if (hasImages && (decision.kind === "ANALYZE" || decision.kind === "ASK" || visionAsk)) {
@@ -778,7 +831,7 @@ class ChatOrchestrator {
       }
       const liveBus = projectRoot ? agentBus.loadBus(projectRoot, threadId) : null;
       const followThread = Boolean(liveBus && (liveBus.goal || liveBus.findings.length || liveBus.files.length));
-      const wantsAction = /\b(?:corrige|arregla|implementa|escribe|cambia|aplica|crea|haz|replace_in_file|write_file)\b/i.test(text);
+      const wantsAction = userWantsDiskMutation(text) || /\b(?:replace_in_file|write_file|scaffold_project)\b/i.test(text);
       const continueLike = /^(?:contin[uú]a|procede|sigue)\b/i.test(text) && wantsAction;
       if (followThread && continueLike && projectRoot) {
         decision = {
@@ -1060,7 +1113,7 @@ class ChatOrchestrator {
       ? [
         "Sos EditCoreAI: asistente del IDE. Respondé siempre en español, claro y directo.",
         "Hablá en prosa continua con párrafos separados por línea en blanco; nunca una plasta de texto.",
-        "PROHIBIDO: fingir que abriste tools o inventar exploración sin haberla hecho.",
+        "PROHIBIDO: fingir que abriste tools, inventar exploración, HTML, carpetas o 'ya creé el proyecto' sin tools reales.",
         `Proyecto abierto: ${projectRoot || "(ninguno)"}.`,
         previewBlock,
         visionHardRule,
@@ -1072,9 +1125,11 @@ class ChatOrchestrator {
           LEADERSHIP_PROMPT,
           LIVE_NARRATION_PROMPT,
           noConfirmBlock,
-          "Ejecutá YA la instrucción con tools (write_file, replace_in_file, run_command).",
+          "Ejecutá YA la instrucción con tools (write_file, replace_in_file, run_command, scaffold_project).",
           "Antes de mutar: contá en 2-4 líneas tu plan y procedé sin pedir confirmación.",
-          "No reexplores el proyecto: usá ROADMAP + session-state. Solo read_file de lo que vas a editar.",
+          "DISCO REAL: PROHIBIDO pegar HTML/código en el chat y decir que creaste un proyecto. Solo existe lo que write_file/replace_in_file/scaffold_project confirmen ok.",
+          "Proyecto hermano / carpeta nueva bajo el padre: list_files('..') y write_file('../Nombre/archivo').",
+          "No reexplores el proyecto abierto si el pedido es otro directorio: usá '..' o la ruta indicada.",
           "EditCore actualiza ROADMAP.md automáticamente tras cada write. Nunca digas que no podés modificarlo.",
           "PROHIBIDO inventar tareas genéricas ajenas a la instrucción del usuario.",
           "Ante fallo leve de tool: releé y reintentá; nunca abandones con 'Detenido' por errores secundarios.",
@@ -1097,14 +1152,15 @@ class ChatOrchestrator {
           specialistInstruction,
           "REGLAS OBLIGATORIAS:",
           "1. Usá SOLO function calling / tools nativas. Nunca escribas XML como <list_directory>, <read_file>, <execute_command>, <tool_call>.",
-          "2. ROADMAP-FIRST: leé el bloque ROADMAP/session-state; PROHIBIDO list_files('.') del repo entero si el mapa ya está cargado.",
+          "2. ROADMAP-FIRST: leé el bloque ROADMAP/session-state; PROHIBIDO list_files('.') del repo entero si el mapa ya está cargado. Para hermanos usá list_files('..').",
           "3. Contá en prosa cada paso; no te limites a badges o checks.",
           "4. No repitas exactamente la misma herramienta con los mismos parámetros.",
-          "5. Paths relativos al proyecto (ej. package.json), nunca absolutos.",
+          "5. Paths relativos al proyecto (ej. package.json) o '../Hermano/...'. No inventes rutas.",
           "6. Si ejecutás 'run_command' o un test/build, analizá la salida y aplicá corrección inmediata (OODA).",
           "7. Fallos leves (oldText, git auxiliar, list_files de ruta ausente): recuperá y continuá; no detengas la sesión.",
           "8. EditCore actualiza ROADMAP.md solo tras cambios. No digas que está prohibido actualizarlo.",
           "9. Respondé siempre en español al usuario.",
+          "10. DISCO REAL: nunca digas que creaste/moviste archivos sin write_file/replace_in_file/scaffold_project exitoso. No pegues HTML fingiendo un proyecto nuevo.",
           previewBlock,
           visionHardRule,
           roadmapFirstBlock,
@@ -1371,17 +1427,18 @@ class ChatOrchestrator {
         const cleanText = stripTextToolMarkup(turn.text || "");
 
         if (!toolCalls.length) {
-          const incompleteIntent = /(?:^|\n)\s*(?:voy\s+a|ahora\s+(?:voy\s+a|leer[eé]|abrir[eé]|revisar[eé]|ejecutar[eé]|verificar[eé]|corregir[eé])|procedo\s+a|dejar[eé]\s+que)\b/i.test(cleanText)
+          const incompleteIntent = /(?:^|\n)\s*(?:voy\s+a|ahora\s+(?:voy\s+a|leer[eé]|abrir[eé]|revisar[eé]|ejecutar[eé]|verificar[eé]|corregir[eé]|crear[eé]|generar[eé]|mover[eé])|procedo\s+a|dejar[eé]\s+que)\b/i.test(cleanText)
             && !/(?:completad[oa]|listo\.|verificad[oa]|aplicad[oa]|hecho\.|sin errores)/i.test(cleanText)
             && cleanText.trim().length < 900;
+          const writtenSoFar = successfulWritePaths(steps);
+          const fakeCreate = userWantsDiskMutation(message) && textClaimsDiskMutation(cleanText) && writtenSoFar.length === 0;
+          const needsTools = (incompleteIntent || fakeCreate) && i < stepsLimit - 1 && !chatOnly && decision?.kind !== "CHAT";
 
-          if (incompleteIntent && i < stepsLimit - 1 && !chatOnly && decision?.kind !== "CHAT") {
+          if (needsTools) {
             incompleteRetries += 1;
             if (incompleteRetries > MAX_INCOMPLETE_RETRIES) {
               this.session.kill();
-              const textOut = formatAgentVisibleText(
-                "El modelo no me dio una acción concreta después de varios intentos. Reformulá la instrucción o probá con otro modelo."
-              );
+              const textOut = groundUngroundedClaims(cleanText, steps, message, decision);
               persistKernelRoadmap(projectRoot, {
                 task: message, steps, kind: decision?.kind, text: textOut, completed: false,
               });
@@ -1393,19 +1450,18 @@ class ChatOrchestrator {
             messages.push({ role: "assistant", content: cleanText || null });
             messages.push({
               role: "user",
-              content: "CONTINUA YA: anunciaste una acción y no la ejecutaste. Usá tools ahora (read_file/replace_in_file/run_command). No repitas el anuncio ni reexplores el proyecto.",
+              content: fakeCreate
+                ? "STOP: anunciaste crear/mover archivos pero NO usaste tools. Ejecutá YA write_file/scaffold_project (ruta relativa o ../Hermano/...). PROHIBIDO inventar HTML o carpetas sin escribirlas en disco."
+                : "CONTINUA YA: anunciaste una acción y no la ejecutaste. Usá tools ahora (read_file/replace_in_file/run_command). No repitas el anuncio ni reexplores el proyecto.",
             });
-            onProgress?.({ phase: "narration", text: "Retomo la acción que había anunciado…" });
+            onProgress?.({ phase: "narration", text: fakeCreate ? "Falta escritura real en disco… uso tools." : "Retomo la acción que había anunciado…" });
             continue;
           }
 
           this.session.kill();
           if (memory) memory.note(`finalizó ${decision?.kind || "task"}`);
 
-          const written = steps
-            .filter((s) => (s.name === "write_file" || s.name === "replace_in_file") && s.ok)
-            .map((s) => s.input?.path)
-            .filter(Boolean);
+          const written = successfulWritePaths(steps);
 
           let textOut = cleanText;
           if (written.length > 0) {
@@ -1419,23 +1475,7 @@ class ChatOrchestrator {
             const sugerencia = nextStepsClosingText(projectRoot, written, steps);
             textOut = `${head}${cierre}\n\n${lista}${sugerencia ? `\n\n${sugerencia}` : ""}`;
           } else {
-            const readFiles = steps.filter((s) => s.name === "read_file" || s.name === "list_files").map((s) => s.input?.path).filter(Boolean);
-            const fileSummary = readFiles.length > 0 ? ` (${readFiles.slice(0, 4).map((f) => `\`${f}\``).join(", ")})` : "";
-            const hasConclusion = /\b(?:he finalizado|he completado|completad[oa]|¿te parece|¿deseas|¿avanzamos|siguiente paso)\b/i.test(textOut);
-            if (!hasConclusion) {
-              const conclusion = readFiles.length > 0
-                ? `He finalizado la revisión técnica de los componentes${fileSummary}. La estructura y los puntos de entrada se encuentran verificados y operativos.`
-                : "He finalizado el análisis y la revisión técnica del proyecto.";
-              const sugerencia = nextStepsClosingText(projectRoot, written, steps);
-              textOut = `${textOut ? textOut + "\n\n" : ""}${conclusion}\n\n${sugerencia}`;
-              try {
-                onProgress?.({
-                  phase: "narration_delta",
-                  text: `\n\n${conclusion}\n\n${sugerencia}`,
-                  stage: "done",
-                });
-              } catch { /* ignore */ }
-            }
+            textOut = groundUngroundedClaims(cleanText, steps, message, decision);
           }
           if (accessFull && /procede|¿procedo|cuando autorices/i.test(textOut)) {
             textOut = `${textOut.replace(/\s*(Cuando autorices procedo[^.]*\.?|Escribe\s+\*{0,2}procede\*{0,2}[^.]*\.?|Si deseas que aplique[^.]*\.?)\s*$/gi, "").trim()}`;
@@ -1679,10 +1719,7 @@ class ChatOrchestrator {
       }
 
       this.session.kill();
-      const written = steps
-        .filter((s) => (s.name === "write_file" || s.name === "replace_in_file") && s.ok)
-        .map((s) => s.input?.path)
-        .filter(Boolean);
+      const written = successfulWritePaths(steps);
 
       let textOut = "";
       if (written.length > 0) {
@@ -1693,12 +1730,16 @@ class ChatOrchestrator {
         const sugerencia = nextStepsClosingText(projectRoot, written, steps);
         textOut = `${cierre}\n\n${lista}${sugerencia ? `\n\n${sugerencia}` : ""}`;
       } else {
-        const readFiles = steps.filter((s) => s.name === "read_file" || s.name === "list_files").map((s) => s.input?.path).filter(Boolean);
-        if (readFiles.length > 0) {
-          const filesStr = readFiles.slice(0, 3).map((f) => `\`${f}\``).join(", ");
-          textOut = `He finalizado la inspección de los archivos relevantes (${filesStr}). He analizado la estructura necesaria.\n\n¿Deseas que procedamos a implementar los cambios correspondientes?`;
-        } else {
-          textOut = "He finalizado el análisis de la solicitud.\n\n¿Te parece si avanzamos con la siguiente mejora en el proyecto?";
+        const lastAssistant = [...messages].reverse().find((m) => m.role === "assistant" && m.content)?.content || "";
+        textOut = groundUngroundedClaims(String(lastAssistant || ""), steps, message, decision);
+        if (!String(textOut || "").trim()) {
+          const readFiles = steps.filter((s) => s.name === "read_file" || s.name === "list_files").map((s) => s.input?.path).filter(Boolean);
+          if (readFiles.length > 0) {
+            const filesStr = readFiles.slice(0, 3).map((f) => `\`${f}\``).join(", ");
+            textOut = `Revisé con tools: ${filesStr}. No apliqué escrituras en este turno.`;
+          } else {
+            textOut = "No pude completar acciones con tools en este turno. Reformulá el pedido o verificá la carpeta conectada.";
+          }
         }
       }
       textOut = formatAgentVisibleText(textOut);

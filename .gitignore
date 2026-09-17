@@ -34,12 +34,19 @@ scratch/
 phase4-results/
 verify-debug.log
 _electron-*.log
+_exe-*.log
 _project-boot.log
 *.bak*
+main.js.bak*
 context.md.js
 INSTALAR-ESTOS-ARCHIVOS.txt
 apply-main-fixes*.js
 editcore-chat-kernel/_VERIFY_REPORT.json
+ABRE-SOLO-DESDE-AQUI.txt
+COMO-INSTALAR.txt
+RECONSTRUCCION-NUCLEO.md
+EDITCORE-MANIFEST.md
+Abrir-EDITCOREAI-PORTABLE.bat
 # Large local blobs
 *.exe
 !EDITCOREAI.exe
@@ -51,3 +58,19 @@ editcore-chat-kernel/_VERIFY_REPORT.json
 .vercel
 .env.local
 .env.*.local
+# Agent / probe litter (never commit)
+**/probe-*.js
+**/probe-*.json
+.editcore/tmp-*/
+.editcore/snapshots/
+.editcore/*-report.*
+.editcore/vercel-deploy-*.json
+.editcore/sync-*.js
+.editcore/deploy-*.js
+.editcore/apply-*.js
+.editcore/e2e-*
+.editcore/boot-*.log
+.editcore/startup-*.log
+.editcore/preview.log
+chat-local.js
+debug.log

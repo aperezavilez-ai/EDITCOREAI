@@ -409,21 +409,10 @@ class EditCoreClaudeAdapter {
     if (/Verificacion completada con evidencia real/i.test(text) || isHollowAnalysisReport(text)) {
       text = collapseDuplicateReportSections(buildGroundedAnalysisReport(grounded.evidence, input.projectRoot || "", { prompt: input.prompt || "", depthProfile: input.analysisDepth || null }));
     }
-    this.analysisFinalizedText = text;
-    const fullAccess = input.permissionMode === "full"
-      || input.runProfile?.permissionFull === true
-      || input.orchestratorPlan?.permissionFull === true
-      || input.analysisDepth?.fullAccess === true
-      || input.analysisDepth?.skipAuthCloser === true;
-    if (fullAccess) {
-      text = String(text || "")
-        .replace(/\s*(Cuando autorices procedo[^.]*\.?)\s*/gi, "\n")
-        .replace(/\s*(Escribe\s+\*{0,2}procede\*{0,2}[^.]*\.?)\s*/gi, "\n")
-        .replace(/\s*(¿Procedo\??)\s*/gi, "\n")
-        .replace(/\n{3,}/g, "\n\n")
-        .trim();
-      this.analysisFinalizedText = text;
+    if (!/(?:c[oó]mo proceder|siguiente paso|avanzamos|cuando autorices|\bprocede\b)/i.test(text)) {
+      text = text.trim() + "\n\nCuando autorices procedo con las correcciones.\n\n---\n\n### 🚀 ¿Cómo proceder?\n¿Deseas que aplique estas correcciones y optimizaciones? Responde **\"procede\"** para comenzar la ejecución o indícame si prefieres ajustar algún detalle.";
     }
+    this.analysisFinalizedText = text;
     return text;
   }
 
@@ -433,8 +422,22 @@ class EditCoreClaudeAdapter {
    */
   analysisHasModelInvestigation(finalText = "") {
     if (this.providerCalls < 1) return false;
-    if (reportLooksComplete(finalText) || isAnalysisReport(finalText)) return true;
-    return this.providerCalls >= 2 && String(finalText || "").trim().length >= 400;
+    const raw = String(finalText || "").trim();
+    if (!raw) return false;
+    // Si solo es una promesa de lectura o razonamiento previo incompleto (ej. "Ahora leo...", "Voy a hacer un análisis...", "Tengo la estructura...")
+    if (/(?:ahora\s+leo|voy\s+a\s+(?:hacer|leer|listar|revisar)|primero\s+listo|tengo\s+la\s+estructura|a\s+continuaci[oó]n\s+reviso)[^.\n]*$/i.test(raw) && !/(?:##\s*(?:Qué|Hallazgos|Problemas|Análisis|Estructura|Evidencia|Arquitectura))/i.test(raw)) {
+      return false;
+    }
+    if (raw.length < 240 && !/(?:##\s*(?:An[aá]lisis|Diagn[oó]stico|Arquitectura|Hallazgos|Estructura|Flujo|Recomendaciones|Qu[eé]\s+s[ií]|Qu[eé]\s+fall[oó]))/i.test(raw)) {
+      return false;
+    }
+    if (reportLooksComplete(raw) || isAnalysisReport(raw)) {
+      if (/^(?:voy a|ahora leo|primero listo)/i.test(raw) && !/(?:##\s*(?:Qué|Hallazgos|Problemas|Análisis|Estructura|Evidencia|Arquitectura))/i.test(raw)) {
+        return false;
+      }
+      return true;
+    }
+    return this.providerCalls >= 2 && raw.length >= 350;
   }
 
   /**
@@ -501,6 +504,19 @@ class EditCoreClaudeAdapter {
         continue;
       }
 
+      // Si no hubo tool calls pero el texto menciona archivos que quiere leer (ej. package.json, main.js, manifest)
+      if (!actions.length && !this.analysisHasModelInvestigation(lastText) && n < maxTurns - 1) {
+        const fileMentions = (lastText.match(/\b([a-zA-Z0-9_\-./]+\.(?:js|json|ts|jsx|tsx|html|css|md|py))\b/gi) || [])
+          .filter(f => !f.endsWith('.md') || f === 'README.md');
+        if (fileMentions.length && !this.reportPromptSent) {
+          for (const f of fileMentions.slice(0, 3)) {
+            await this.executeSeedTool(input, steps, "read_file", { path: f });
+          }
+          this.conversation.appendUser("Archivos leídos. Continúa tu análisis forense y redacta el reporte completo con tus hallazgos de arquitectura y flujo.");
+          continue;
+        }
+      }
+
       if (this.analysisHasModelInvestigation(lastText)) {
         return lastText;
       }
@@ -543,48 +559,18 @@ class EditCoreClaudeAdapter {
       || /^(?:analiza|audita|diagnostica|revisa|explora|investiga|compara|eval[uú]a|explica)\b/i.test(prompt);
   const isExecution = input.planAuthorized === true
     || input.planAuthorizedExecution === true;
-  // FIX: solo PROCEDE/plan autorizado cuenta como ejecución.
-  // "Acceso completo" en modo análisis NO debe saltar el razonamiento.
 
     if (!isAnalysis || isExecution) {
-      // No aplicar a ejecución: la fase de razonamiento retrasa el accionar.
       return "";
     }
 
     return [
       "═══════════════════════════════════════════════════════════════",
-      "FASE 1 — RAZONAMIENTO OBLIGATORIO (antes de cualquier tool call)",
+      "INVESTIGACIÓN Y ANÁLISIS:",
       "═══════════════════════════════════════════════════════════════",
-      "Antes de ejecutar tools, escribí en el chat este bloque EXACTO.",
-      "No ejecutes ninguna herramienta hasta terminar este bloque.",
-      "",
-      "## Hipótesis inicial",
-      "Qué creés que es este proyecto y por qué. Basado en el nombre,",
-      "la tarea, el historial y cualquier evidencia previa. 2-4 líneas.",
-      "",
-      "## Preguntas críticas a responder",
-      "Listá 3-5 preguntas que un experto haría. Ejemplo:",
-      "- ¿Qué stack usa y por qué?",
-      "- ¿Cómo se comunican los módulos entre sí?",
-      "- ¿Dónde está el punto de falla más probable?",
-      "- ¿Qué NO está documentado y debería?",
-      "",
-      "## Plan de evidencia",
-      "Listá QUÉ archivos/directorios leer para responder cada pregunta.",
-      "Cada lectura debe tener un objetivo. Ejemplo:",
-      "- Leer package.json → confirmar stack y dependencias.",
-      "- Leer main.js → entender el bootstrap de la app.",
-      "- Listar runtime/ → descubrir módulos internos.",
-      "",
-      "## Criterio de suficiencia",
-      "Cuándo vas a considerar que tenés evidencia suficiente para",
-      "escribir el reporte final. Ejemplo:",
-      "\"Cuando haya leído: (1) package.json, (2) al menos 3 módulos",
-      "core, (3) listado de runtime/ y (4) un archivo representativo",
-      "de cada capa (UI, lógica, datos).\"",
-      "",
-      "DESPUÉS de escribir este bloque, empezá a ejecutar tools.",
-      "Cada tool call debe mapear a una pregunta del plan.",
+      "1. Ejecuta herramientas (list_files, read_file, search_files) para inspeccionar los archivos reales del proyecto.",
+      "2. Lee el package.json y los entry points o módulos clave.",
+      "3. Explica con claridad la arquitectura, los componentes, el flujo de datos y los hallazgos.",
       "═══════════════════════════════════════════════════════════════",
     ].join("\n");
   }

@@ -36,12 +36,89 @@
 
   const store = loadStore();
 
+  const SVG_ICONS = {
+    folder: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/></svg>`,
+    file: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>`,
+    git: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M6 9v12"/><path d="M18 9a9 9 0 0 1-9 9"/></svg>`,
+    docs: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>`,
+    web: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>`,
+    test: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m14.5 2-8.5 8.5a4.95 4.95 0 0 0 0 7 4.95 4.95 0 0 0 7 0L21.5 9"/><path d="m8.5 8 7 7"/></svg>`,
+    commit: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><line x1="1.05" y1="12" x2="8" y2="12"/><line x1="16" y1="12" x2="22.95" y2="12"/></svg>`,
+    explain: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"/><path d="M9 18h6"/><path d="M10 22h4"/></svg>`,
+    refactor: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>`,
+    fix: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>`,
+    audit: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>`,
+    db: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>`,
+    sparkle: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"/></svg>`,
+  };
+
+  function createSvgIcon(type, size = 14) {
+    const raw = SVG_ICONS[type] || SVG_ICONS.sparkle;
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(raw, "image/svg+xml");
+    const svg = doc.querySelector("svg");
+    if (svg) {
+      if (size) {
+        svg.setAttribute("width", String(size));
+        svg.setAttribute("height", String(size));
+      }
+      svg.setAttribute("aria-hidden", "true");
+      return svg;
+    }
+    const span = document.createElement("span");
+    return span;
+  }
+
   function uid() {
     return `ch_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
   }
 
+  function getThreads() {
+    if (typeof window.getChatThreads === "function") {
+      try {
+        const fromRenderer = window.getChatThreads();
+        if (Array.isArray(fromRenderer) && fromRenderer.length) {
+          return fromRenderer;
+        }
+      } catch { /* ignore */ }
+    }
+    const projects = window.state?.projects || [];
+    const list = [];
+    const currentProjId = window.state?.activeProjectId;
+    for (const p of projects) {
+      const pName = p.title && p.title !== "Nuevo chat" ? p.title : (p.projectRoot ? p.projectRoot.split(/[\\/]/).filter(Boolean).pop() : "");
+      for (const c of (p.chats || [])) {
+        list.push({
+          id: c.id,
+          title: c.title || "Conversación",
+          updatedAt: c.updatedAt || c.createdAt || Date.now(),
+          createdAt: c.createdAt || Date.now(),
+          projectId: p.id,
+          projectRoot: p.projectRoot || "",
+          projectName: pName,
+          messageCount: Array.isArray(c.messages) ? c.messages.length : 0,
+          isActive: c.id === p.activeChatId && p.id === currentProjId,
+        });
+      }
+    }
+    if (list.length) return list.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+    return store.threads;
+  }
+
+  function getActiveThreadId() {
+    if (typeof window.getActiveChatThreadId === "function") {
+      try {
+        const id = window.getActiveChatThreadId();
+        if (id) return id;
+      } catch { /* ignore */ }
+    }
+    const curProj = window.state?.projects?.find?.((p) => p.id === window.state?.activeProjectId);
+    return curProj?.activeChatId || store.activeId || (store.threads[0]?.id) || "";
+  }
+
   function ensureThread() {
-    if (!store.threads.length) {
+    const list = getThreads();
+    if (!list.length) {
       const t = {
         id: uid(),
         title: "Nueva conversación",
@@ -51,12 +128,14 @@
       store.threads.unshift(t);
       store.activeId = t.id;
       saveStore(store);
+      return t;
     }
-    if (!store.activeId || !store.threads.some((t) => t.id === store.activeId)) {
-      store.activeId = store.threads[0].id;
+    const activeId = getActiveThreadId();
+    if (!store.activeId || !list.some((t) => t.id === store.activeId)) {
+      store.activeId = activeId || list[0].id;
       saveStore(store);
     }
-    return store.threads.find((t) => t.id === store.activeId) || store.threads[0];
+    return list.find((t) => t.id === store.activeId) || list[0];
   }
 
   function setMode(mode) {
@@ -214,7 +293,14 @@
     btn?.classList.toggle("is-active", next);
     btn?.setAttribute("aria-selected", next ? "true" : "false");
     if (dock) dock.hidden = next;
+    try { localStorage.setItem("editcore-session-panel-open", next ? "true" : "false"); } catch { /* ignore */ }
     if (next) void refreshContextPanel();
+  }
+
+  function initContextPanelState() {
+    let saved = false;
+    try { saved = localStorage.getItem("editcore-session-panel-open") === "true"; } catch { saved = false; }
+    setContextPanelOpen(saved);
   }
 
   function toggleContextPanel() {
@@ -250,11 +336,44 @@
     const crumb = $("chatHomeCrumb");
     if (!crumb) return;
     const root = String(window.state?.projectRoot || "").trim();
-    const project = root ? (root.split(/[\\/]/).filter(Boolean).pop() || root) : "Chat";
-    const thread = store.threads.find((t) => t.id === store.activeId);
-    const title = String(thread?.title || "Nueva conversación").trim() || "Nueva conversación";
-    crumb.textContent = root ? `${project} / ${title}` : title;
-    crumb.title = root ? `${root} · ${title}` : title;
+    const projectName = curProj?.title && curProj.title !== "Nuevo chat" && curProj.title !== "Proyecto"
+      ? curProj.title 
+      : (root ? (root.split(/[\\/]/).filter(Boolean).pop() || root) : (curProj?.name && curProj.name !== "Proyecto" ? curProj.name : ""));
+    const activeId = getActiveThreadId();
+    const thread = getThreads().find((t) => t.id === activeId) || getThreads().find((t) => t.id === store.activeId);
+    const chatTitle = String(thread?.title || "Nueva conversación").trim() || "Nueva conversación";
+
+    crumb.replaceChildren();
+    if (projectName) {
+      const folderBadge = document.createElement("span");
+      folderBadge.className = "chat-home-crumb-folder";
+      folderBadge.title = root ? `Carpeta: ${root}` : `Proyecto: ${projectName}`;
+      const folderIcon = document.createElement("span");
+      folderIcon.className = "chat-home-crumb-folder-icon";
+      folderIcon.replaceChildren(createSvgIcon("folder", 13));
+      const folderName = document.createElement("span");
+      folderName.textContent = projectName;
+      folderBadge.appendChild(folderIcon);
+      folderBadge.appendChild(folderName);
+      folderBadge.addEventListener("click", () => void connectFolder());
+
+      const slash = document.createElement("span");
+      slash.className = "chat-home-crumb-slash";
+      slash.textContent = "/";
+
+      const titleEl = document.createElement("span");
+      titleEl.className = "chat-home-crumb-title";
+      titleEl.textContent = chatTitle;
+
+      crumb.append(folderBadge, slash, titleEl);
+      crumb.title = root ? `${root} / ${chatTitle}` : `${projectName} / ${chatTitle}`;
+    } else {
+      const titleEl = document.createElement("span");
+      titleEl.className = "chat-home-crumb-title";
+      titleEl.textContent = chatTitle;
+      crumb.appendChild(titleEl);
+      crumb.title = chatTitle;
+    }
   }
 
   function syncFolderChip() {
@@ -263,12 +382,21 @@
     const root = String(window.state?.projectRoot || "").trim();
     if (root) {
       chip.classList.add("is-on");
+      chip.replaceChildren();
+      const icon = document.createElement("span");
+      icon.className = "chat-home-folder-chip-icon";
+      icon.replaceChildren(createSvgIcon("folder", 13));
+      const nameEl = document.createElement("span");
+      nameEl.className = "chat-home-folder-chip-name";
       const name = root.split(/[\\/]/).filter(Boolean).pop() || root;
-      chip.textContent = name;
-      chip.title = root;
+      nameEl.textContent = name;
+      chip.appendChild(icon);
+      chip.appendChild(nameEl);
+      chip.title = `Carpeta: ${root} (Clic para conectar otra)`;
+      chip.onclick = () => void connectFolder();
     } else {
       chip.classList.remove("is-on");
-      chip.textContent = "";
+      chip.replaceChildren();
     }
     syncCrumb();
   }
@@ -621,23 +749,167 @@
   }
 
   function triggerMic() {
-    // Preferir API de dictado (escribe en chatHomePrompt en modo Chat).
-    if (typeof window.EditCoreDictation?.toggle === "function") {
-      window.EditCoreDictation.toggle();
-      return;
+    const run = () => {
+      if (typeof window.EditCoreDictation?.toggle === "function") {
+        try {
+          window.EditCoreDictation.toggle();
+          return true;
+        } catch (err) {
+          console.warn("[chat-home] EditCoreDictation.toggle", err?.message || err);
+        }
+      }
+      return false;
+    };
+    if (run()) return;
+    // El bridge a veces llega un tick después del boot Chat.
+    let tries = 0;
+    const timer = setInterval(() => {
+      tries += 1;
+      if (run() || tries >= 8) {
+        clearInterval(timer);
+        if (tries >= 8 && typeof window.EditCoreDictation?.toggle !== "function") {
+          const overlay = $("voiceOverlay");
+          if (overlay && document.body.dataset.appMode === "chat" && overlay.parentElement !== document.body) {
+            overlay._editcoreOrigParent = overlay.parentElement;
+            document.body.appendChild(overlay);
+          }
+          const voice = $("voiceBtn");
+          if (voice) {
+            voice.style.pointerEvents = "auto";
+            voice.click();
+            return;
+          }
+          try { window.EditCoreVoiceMode?.toggle?.(); } catch { /* ignore */ }
+          console.warn("[chat-home] Dictado no disponible todavía");
+        }
+      }
+    }, 60);
+  }
+
+  const SIDEBAR_W_KEY = "editcore.chatHome.sidebarWidth";
+  function applySidebarWidth(px) {
+    const width = Math.max(180, Math.min(480, Math.round(Number(px) || 260)));
+    const shell = $("chatHomeShell");
+    if (shell) shell.style.setProperty("--ch-sidebar-width", `${width}px`);
+    return width;
+  }
+  function loadSidebarWidth() {
+    try {
+      const raw = localStorage.getItem(SIDEBAR_W_KEY);
+      if (raw) applySidebarWidth(raw);
+    } catch { /* ignore */ }
+  }
+  function bindSidebarResize() {
+    const split = $("chatHomeSidebarSplit");
+    const sidebar = document.querySelector(".chat-home-sidebar");
+    if (!split || !sidebar) return;
+    let dragging = false;
+    let startX = 0;
+    let startW = 260;
+    const onMove = (ev) => {
+      if (!dragging) return;
+      const dx = (ev.clientX || 0) - startX;
+      applySidebarWidth(startW + dx);
+    };
+    const onUp = () => {
+      if (!dragging) return;
+      dragging = false;
+      split.classList.remove("is-dragging");
+      document.body.classList.remove("ch-resizing-sidebar");
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      try {
+        const w = getComputedStyle($("chatHomeShell") || document.documentElement)
+          .getPropertyValue("--ch-sidebar-width")
+          .trim()
+          .replace("px", "");
+        localStorage.setItem(SIDEBAR_W_KEY, String(Math.round(Number(w) || 260)));
+      } catch { /* ignore */ }
+    };
+    split.addEventListener("pointerdown", (ev) => {
+      if (ev.button != null && ev.button !== 0) return;
+      ev.preventDefault();
+      dragging = true;
+      startX = ev.clientX || 0;
+      startW = sidebar.getBoundingClientRect().width || 260;
+      split.classList.add("is-dragging");
+      document.body.classList.add("ch-resizing-sidebar");
+      window.addEventListener("pointermove", onMove);
+      window.addEventListener("pointerup", onUp);
+    });
+    split.addEventListener("keydown", (ev) => {
+      const cur = sidebar.getBoundingClientRect().width || 260;
+      if (ev.key === "ArrowLeft") {
+        ev.preventDefault();
+        const w = applySidebarWidth(cur - 16);
+        try { localStorage.setItem(SIDEBAR_W_KEY, String(w)); } catch { /* ignore */ }
+      } else if (ev.key === "ArrowRight") {
+        ev.preventDefault();
+        const w = applySidebarWidth(cur + 16);
+        try { localStorage.setItem(SIDEBAR_W_KEY, String(w)); } catch { /* ignore */ }
+      }
+    });
+  }
+
+  function formatTimeAgo(ts) {
+    if (!ts) return "";
+    const diffMs = Date.now() - Number(ts);
+    const mins = Math.floor(diffMs / 60000);
+    if (mins < 1) return "ahora";
+    if (mins < 60) return `${mins}m`;
+    const hours = Math.floor(mins / 60);
+    if (hours < 24) return `${hours}h`;
+    const days = Math.floor(hours / 24);
+    if (days < 30) return `${days}d`;
+    const months = Math.floor(days / 30);
+    return `${months}mo`;
+  }
+
+  function getProjectsWithChats() {
+    if (typeof window.getProjectsWithChats === "function") {
+      try {
+        const list = window.getProjectsWithChats();
+        if (Array.isArray(list) && list.length) return list;
+      } catch { /* ignore */ }
     }
-    const overlay = $("voiceOverlay");
-    if (overlay && document.body.dataset.appMode === "chat" && overlay.parentElement !== document.body) {
-      overlay._editcoreOrigParent = overlay.parentElement;
-      document.body.appendChild(overlay);
+    const projects = window.state?.projects || [];
+    const currentProjId = window.state?.activeProjectId;
+    if (projects.length) {
+      return projects.map((p) => {
+        const pName = p.title && p.title !== "Nuevo chat" && p.title !== "Proyecto"
+          ? p.title 
+          : (p.projectRoot ? p.projectRoot.split(/[\\/]/).filter(Boolean).pop() : (p.name && p.name !== "Proyecto" ? p.name : "Proyecto"));
+        return {
+          id: p.id,
+          name: pName,
+          projectRoot: p.projectRoot || "",
+          isActive: p.id === currentProjId,
+          chats: (p.chats || []).map((c) => ({
+            id: c.id,
+            title: c.title || "Conversación",
+            updatedAt: c.updatedAt || c.createdAt || Date.now(),
+            createdAt: c.createdAt || Date.now(),
+            projectId: p.id,
+            projectName: pName,
+            projectRoot: p.projectRoot || "",
+            messageCount: Array.isArray(c.messages) ? c.messages.length : 0,
+            isActive: c.id === p.activeChatId && p.id === currentProjId,
+          })),
+        };
+      });
     }
-    const voice = $("voiceBtn");
-    if (voice) {
-      voice.style.pointerEvents = "auto";
-      voice.click();
-      return;
-    }
-    try { window.EditCoreVoiceMode?.toggle?.(); } catch { /* ignore */ }
+    return [{
+      id: "default",
+      name: "Conversaciones",
+      projectRoot: "",
+      isActive: true,
+      chats: store.threads.map((t) => ({
+        ...t,
+        projectId: "default",
+        projectName: "Conversaciones",
+        isActive: t.id === store.activeId,
+      })),
+    }];
   }
 
   function renderThreadList() {
@@ -645,94 +917,365 @@
     if (!list) return;
     const q = String(store.search || "").trim().toLowerCase();
     list.replaceChildren();
-    const threads = store.threads.filter((t) => !q || String(t.title || "").toLowerCase().includes(q));
-    for (const t of threads) {
-      const li = document.createElement("li");
-      li.className = `chat-home-thread${t.id === store.activeId ? " is-active" : ""}`;
-      const left = document.createElement("div");
-      const title = document.createElement("div");
-      title.className = "chat-home-thread-title";
-      title.textContent = t.title || "Conversación";
-      title.title = "Doble clic para renombrar";
-      const meta = document.createElement("div");
-      meta.className = "chat-home-thread-meta";
-      meta.textContent = new Date(t.updatedAt || t.createdAt || Date.now()).toLocaleString();
-      left.appendChild(title);
-      left.appendChild(meta);
-      const del = document.createElement("button");
-      del.type = "button";
-      del.className = "chat-home-thread-del";
-      del.title = "Eliminar";
-      del.textContent = "×";
-      del.addEventListener("click", (ev) => {
+
+    const projects = getProjectsWithChats();
+    const activeId = getActiveThreadId();
+
+    for (const proj of projects) {
+      const matchingChats = proj.chats.filter((t) => 
+        !q || String(t.title || "").toLowerCase().includes(q) || String(proj.name || "").toLowerCase().includes(q)
+      );
+
+      if (q && !matchingChats.length && !String(proj.name || "").toLowerCase().includes(q)) {
+        continue;
+      }
+
+      const group = document.createElement("div");
+      group.className = `chat-home-project-group${proj.isActive ? " is-active-project" : ""}`;
+
+      const head = document.createElement("div");
+      head.className = "chat-home-project-group-head";
+      head.title = proj.projectRoot ? `Proyecto: ${proj.projectRoot}` : `Proyecto: ${proj.name}`;
+      
+      const icon = document.createElement("span");
+      icon.className = "chat-home-proj-icon";
+      icon.replaceChildren(createSvgIcon("folder", 13));
+      
+      const name = document.createElement("span");
+      name.className = "chat-home-proj-name";
+      name.textContent = proj.name || "Proyecto";
+
+      const projDel = document.createElement("button");
+      projDel.type = "button";
+      projDel.className = "chat-home-proj-del";
+      projDel.title = "Quitar proyecto de la lista";
+      projDel.textContent = "×";
+      projDel.addEventListener("click", (ev) => {
         ev.stopPropagation();
-        deleteThread(t.id);
+        deleteProject(proj.id, proj.name);
       });
-      li.appendChild(left);
-      li.appendChild(del);
-      li.addEventListener("click", () => selectThread(t.id));
-      title.addEventListener("dblclick", (ev) => {
-        ev.stopPropagation();
-        renameThread(t.id);
+
+      head.appendChild(icon);
+      head.appendChild(name);
+      head.appendChild(projDel);
+      head.addEventListener("click", () => {
+        if (proj.id && proj.id !== window.state?.activeProjectId) {
+          if (typeof window.selectProject === "function") {
+            window.selectProject(proj.id);
+          }
+        }
       });
-      list.appendChild(li);
+      group.appendChild(head);
+
+      const ul = document.createElement("ul");
+      ul.className = "chat-home-project-chats";
+
+      if (!matchingChats.length) {
+        const emptyLi = document.createElement("li");
+        emptyLi.className = "chat-home-thread-empty";
+        emptyLi.textContent = "Sin conversaciones";
+        ul.appendChild(emptyLi);
+      } else {
+        for (const t of matchingChats) {
+          const li = document.createElement("li");
+          const isActive = t.id === activeId || (t.id === store.activeId && !activeId);
+          li.className = `chat-home-thread${isActive ? " is-active" : ""}`;
+          
+          const title = document.createElement("div");
+          title.className = "chat-home-thread-title";
+          title.textContent = t.title || "Conversación";
+          title.title = "Doble clic para renombrar";
+
+          const meta = document.createElement("span");
+          meta.className = "chat-home-thread-meta";
+          meta.textContent = formatTimeAgo(t.updatedAt || t.createdAt);
+
+          const del = document.createElement("button");
+          del.type = "button";
+          del.className = "chat-home-thread-del";
+          del.title = "Eliminar";
+          del.textContent = "×";
+          del.addEventListener("click", (ev) => {
+            ev.stopPropagation();
+            deleteThread(t.id, proj.id);
+          });
+
+          li.appendChild(title);
+          li.appendChild(meta);
+          li.appendChild(del);
+
+          li.addEventListener("click", () => selectThread(t.id, proj.id));
+          title.addEventListener("dblclick", (ev) => {
+            ev.stopPropagation();
+            renameThread(t.id, proj.id);
+          });
+
+          ul.appendChild(li);
+        }
+      }
+
+      group.appendChild(ul);
+      list.appendChild(group);
     }
     syncCrumb();
   }
 
-  function selectThread(id) {
+  async function selectThread(id, projectId) {
     store.activeId = id;
     saveStore(store);
+    try {
+      if (typeof window.switchChatThread === "function") {
+        await window.switchChatThread(id, projectId);
+      }
+    } catch (err) {
+      console.warn("[chat-home] selectThread", err);
+    }
     renderThreadList();
+    syncFolderChip();
+    syncCrumb();
     syncEmptyState();
+    try { window.EditCoreChatScroll?.toBottom?.(true); } catch { /* ignore */ }
+    const promptEl = $("chatHomePrompt");
+    promptEl?.focus();
   }
 
   function createThread() {
+    let created = null;
+    try {
+      if (typeof window.createNewChatThread === "function") {
+        created = window.createNewChatThread();
+      }
+    } catch (err) {
+      console.warn("[chat-home] createThread", err);
+    }
     const t = {
-      id: uid(),
+      id: created?.id || uid(),
       title: "Nueva conversación",
       updatedAt: Date.now(),
       createdAt: Date.now(),
     };
-    store.threads.unshift(t);
+    if (!created) {
+      store.threads.unshift(t);
+    }
     store.activeId = t.id;
     saveStore(store);
-    renderThreadList();
-    try {
-      if (typeof window.createNewChatThread === "function") window.createNewChatThread();
-    } catch { /* ignore */ }
     const feed = $("feed");
     if (feed) feed.replaceChildren();
+    renderThreadList();
+    syncFolderChip();
+    syncCrumb();
     syncEmptyState();
     $("chatHomePrompt")?.focus();
   }
 
-  function renameThread(id) {
-    const t = store.threads.find((x) => x.id === id);
-    if (!t) return;
-    const next = window.prompt("Nombre de la conversación", t.title || "");
-    if (next == null) return;
-    t.title = String(next).trim() || t.title;
-    t.updatedAt = Date.now();
-    saveStore(store);
-    renderThreadList();
+  function showModalConfirm({
+    title = "Confirmar",
+    desc = "¿Deseas continuar?",
+    confirmText = "Aceptar",
+    cancelText = "Cancelar",
+    isDanger = false,
+    hasInput = false,
+    inputValue = "",
+    inputPlaceholder = "",
+  } = {}) {
+    return new Promise((resolve) => {
+      const modal = $("chatHomeDialogModal");
+      const titleEl = $("chatHomeModalTitle");
+      const descEl = $("chatHomeModalDesc");
+      const inputWrap = $("chatHomeModalInputWrap");
+      const inputEl = $("chatHomeModalInput");
+      const cancelBtn = $("chatHomeModalCancelBtn");
+      const confirmBtn = $("chatHomeModalConfirmBtn");
+      const closeBtn = $("chatHomeModalCloseBtn");
+
+      if (!modal || !confirmBtn) {
+        if (hasInput) {
+          const res = window.prompt(desc || title, inputValue);
+          resolve(res);
+        } else {
+          const res = window.confirm(desc || title);
+          resolve(res);
+        }
+        return;
+      }
+
+      if (titleEl) titleEl.textContent = title;
+      if (descEl) descEl.textContent = desc;
+      if (cancelBtn) cancelBtn.textContent = cancelText;
+      if (confirmBtn) {
+        confirmBtn.textContent = confirmText;
+        if (isDanger) confirmBtn.className = "chat-home-modal-btn chat-home-modal-btn-primary is-danger";
+        else confirmBtn.className = "chat-home-modal-btn chat-home-modal-btn-primary";
+      }
+
+      if (hasInput && inputWrap && inputEl) {
+        inputWrap.classList.remove("hidden");
+        inputWrap.removeAttribute("hidden");
+        inputEl.value = inputValue || "";
+        inputEl.placeholder = inputPlaceholder || "";
+      } else if (inputWrap) {
+        inputWrap.classList.add("hidden");
+        inputWrap.setAttribute("hidden", "");
+      }
+
+      modal.classList.remove("hidden");
+      modal.removeAttribute("hidden");
+      modal.setAttribute("aria-hidden", "false");
+
+      const cleanup = () => {
+        modal.classList.add("hidden");
+        modal.setAttribute("hidden", "");
+        modal.setAttribute("aria-hidden", "true");
+        confirmBtn.removeEventListener("click", onConfirm);
+        cancelBtn?.removeEventListener("click", onCancel);
+        closeBtn?.removeEventListener("click", onCancel);
+        modal.removeEventListener("click", onOverlayClick);
+        document.removeEventListener("keydown", onKeyDown);
+      };
+
+      const onConfirm = () => {
+        const val = hasInput ? (inputEl?.value?.trim() ?? "") : true;
+        cleanup();
+        resolve(val);
+      };
+
+      const onCancel = () => {
+        cleanup();
+        resolve(hasInput ? null : false);
+      };
+
+      const onOverlayClick = (ev) => {
+        if (ev.target === modal) onCancel();
+      };
+
+      const onKeyDown = (ev) => {
+        if (ev.key === "Escape") {
+          ev.preventDefault();
+          onCancel();
+        } else if (ev.key === "Enter" && hasInput) {
+          ev.preventDefault();
+          onConfirm();
+        }
+      };
+
+      confirmBtn.addEventListener("click", onConfirm);
+      cancelBtn?.addEventListener("click", onCancel);
+      closeBtn?.addEventListener("click", onCancel);
+      modal.addEventListener("click", onOverlayClick);
+      document.addEventListener("keydown", onKeyDown);
+
+      if (hasInput && inputEl) {
+        setTimeout(() => {
+          inputEl.focus();
+          inputEl.select();
+        }, 50);
+      } else {
+        setTimeout(() => confirmBtn.focus(), 50);
+      }
+    });
   }
 
-  function deleteThread(id) {
-    if (!window.confirm("¿Eliminar esta conversación?")) return;
+  async function renameThread(id, projectId) {
+    let currentTitle = "";
+    const projects = getProjectsWithChats();
+    for (const p of projects) {
+      const found = p.chats.find((c) => c.id === id);
+      if (found) {
+        currentTitle = found.title;
+        break;
+      }
+    }
+    if (!currentTitle) {
+      const thread = getThreads().find((x) => x.id === id);
+      currentTitle = thread?.title || "Conversación";
+    }
+
+    const next = await showModalConfirm({
+      title: "Renombrar conversación",
+      desc: "Ingresa el nuevo nombre para este chat:",
+      confirmText: "Guardar",
+      cancelText: "Cancelar",
+      hasInput: true,
+      inputValue: currentTitle,
+      inputPlaceholder: "Nombre del chat...",
+    });
+    if (next == null) return;
+    const clean = String(next).trim() || currentTitle;
+
+    try {
+      if (typeof window.renameChatThread === "function") {
+        window.renameChatThread(id, clean, projectId);
+      }
+    } catch (err) {
+      console.warn("[chat-home] renameThread", err);
+    }
+    const t = store.threads.find((x) => x.id === id);
+    if (t) {
+      t.title = clean;
+      t.updatedAt = Date.now();
+      saveStore(store);
+    }
+    renderThreadList();
+    syncCrumb();
+  }
+
+  async function deleteThread(id, projectId) {
+    const confirmed = await showModalConfirm({
+      title: "Eliminar conversación",
+      desc: "¿Estás seguro de que deseas eliminar este chat? Esta acción no se puede deshacer.",
+      confirmText: "Eliminar",
+      cancelText: "Cancelar",
+      isDanger: true,
+    });
+    if (!confirmed) return;
+
+    try {
+      if (typeof window.closeChatThread === "function") {
+        window.closeChatThread(id, projectId);
+      }
+    } catch (err) {
+      console.warn("[chat-home] deleteThread", err);
+    }
     store.threads = store.threads.filter((t) => t.id !== id);
-    if (!store.threads.length) ensureThread();
-    else if (store.activeId === id) store.activeId = store.threads[0].id;
     saveStore(store);
     renderThreadList();
+    syncCrumb();
+    syncEmptyState();
+  }
+
+  async function deleteProject(projectId, projectName) {
+    const confirmed = await showModalConfirm({
+      title: "Quitar proyecto",
+      desc: `¿Deseas quitar el proyecto "${projectName || "Proyecto"}" de la lista? Tus archivos en disco no se borrarán.`,
+      confirmText: "Quitar",
+      cancelText: "Cancelar",
+      isDanger: true,
+    });
+    if (!confirmed) return;
+
+    try {
+      if (typeof window.removeProject === "function") {
+        window.removeProject(projectId);
+      }
+    } catch (err) {
+      console.warn("[chat-home] deleteProject", err);
+    }
+    renderThreadList();
+    syncFolderChip();
+    syncCrumb();
     syncEmptyState();
   }
 
   function touchActiveFromPrompt(text) {
     const t = ensureThread();
     const clean = String(text || "").replace(/\s+/g, " ").trim();
-    if (clean && (!t.title || t.title === "Nueva conversación")) {
+    if (clean && (!t.title || t.title === "Nueva conversación" || t.title === "Nuevo chat" || /^Chat\s+\d+$/i.test(t.title))) {
       t.title = clean.slice(0, 48);
+      try {
+        if (typeof window.renameChatThread === "function") {
+          window.renameChatThread(t.id, t.title);
+        }
+      } catch { /* ignore */ }
     }
     t.updatedAt = Date.now();
     saveStore(store);
@@ -756,8 +1299,9 @@
     const homePrompt = $("chatHomePrompt");
     const idePrompt = $("prompt");
     const text = String(homePrompt?.value || "").trim();
-    if (!text) return;
-    touchActiveFromPrompt(text);
+    const hasAttachments = Boolean(window.EditCoreAttachments?.list?.()?.length);
+    if (!text && !hasAttachments) return;
+    touchActiveFromPrompt(text || "Adjunto");
     if (idePrompt) {
       idePrompt.value = text;
       idePrompt.dispatchEvent(new Event("input", { bubbles: true }));
@@ -768,16 +1312,286 @@
     else $("sendBtn")?.click();
     setTimeout(syncEmptyState, 80);
     setTimeout(syncEmptyState, 400);
+    // El feed en Chat scrollea en #chatHomeFeedHost; forzar baja tras enviar.
+    const bump = () => {
+      try { window.EditCoreChatScroll?.toBottom?.(true); } catch { /* ignore */ }
+      const host = $("chatHomeFeedHost");
+      const feed = $("feed");
+      if (host) host.scrollTop = host.scrollHeight;
+      if (feed?.lastElementChild) {
+        try { feed.lastElementChild.scrollIntoView({ block: "end", behavior: "auto" }); } catch { /* ignore */ }
+      }
+    };
+    setTimeout(bump, 30);
+    setTimeout(bump, 120);
+    setTimeout(bump, 320);
+  }
+
+  const SLASH_COMMANDS = [
+    { key: "/test", icon: "test", title: "/test", desc: "Generar y ejecutar pruebas automáticas", prompt: "Por favor, analiza el código del proyecto y genera un conjunto completo de pruebas unitarias y de integración. Luego, ejecútalas para verificar su funcionamiento." },
+    { key: "/commit", icon: "commit", title: "/commit", desc: "Generar mensaje de commit convencional", prompt: "Revisa el estado de git (archivos modificados y diffs) y genera un mensaje de commit convencional y descriptivo siguiendo las mejores prácticas." },
+    { key: "/explain", icon: "explain", title: "/explain", desc: "Explicar arquitectura y funcionamiento", prompt: "Por favor, explica en detalle cómo funciona este componente o proyecto, su flujo de datos, arquitectura y puntos clave." },
+    { key: "/refactor", icon: "refactor", title: "/refactor", desc: "Refactorizar y optimizar código", prompt: "Por favor, refactoriza este código mejorando su estructura, legibilidad y rendimiento sin modificar su comportamiento externo." },
+    { key: "/fix", icon: "fix", title: "/fix", desc: "Diagnosticar y reparar un error o bug", prompt: "Tengo un error en el proyecto. Por favor, diagnostica la causa raíz y aplica la solución necesaria para repararlo." },
+    { key: "/audit", icon: "audit", title: "/audit", desc: "Auditar seguridad y dependencias", prompt: "Realiza una auditoría completa de seguridad, dependencias obsoletas y validación de variables de entorno en este proyecto." },
+    { key: "/db", icon: "db", title: "/db", desc: "Diseñar esquemas SQL y migraciones", prompt: "Diseña o actualiza el esquema de la base de datos para este proyecto y genera las migraciones SQL correspondientes." },
+  ];
+
+  const MENTION_TYPES = [
+    { key: "@Git", icon: "git", title: "@Git", desc: "Adjuntar estado y diffs actuales de Git", token: "[Contexto: Git Status y Diff actual]" },
+    { key: "@Docs", icon: "docs", title: "@Docs", desc: "Consultar documentación técnica y guías", token: "[Contexto: Documentación del proyecto]" },
+    { key: "@Web", icon: "web", title: "@Web", desc: "Consultar recursos web o URL", token: "[Contexto: Búsqueda Web]" },
+    { key: "@Archivos", icon: "folder", title: "@Archivos", desc: "Explorar y adjuntar archivos del proyecto", token: "[Contexto: Archivos del proyecto]" },
+  ];
+
+  function getProjectFileList() {
+    const list = [];
+    const projects = window.state?.projects || [];
+    for (const p of projects) {
+      if (Array.isArray(p.files)) {
+        for (const f of p.files) {
+          const path = typeof f === "string" ? f : (f.path || f.name || "");
+          const name = path.split(/[\\/]/).pop() || path;
+          if (name) list.push({ name, path });
+        }
+      }
+    }
+    const tree = window.state?.treeEntries || [];
+    for (const t of tree) {
+      if (t.name && !t.isDirectory) {
+        list.push({ name: t.name, path: t.path || t.name });
+      }
+    }
+    const rootName = window.state?.projectRoot?.split(/[\\/]/).pop();
+    if (rootName) {
+      list.unshift({ name: "package.json", path: "package.json" });
+      list.unshift({ name: "README.md", path: "README.md" });
+    }
+    const seen = new Set();
+    return list.filter((item) => {
+      if (seen.has(item.path)) return false;
+      seen.add(item.path);
+      return true;
+    });
+  }
+
+  function setupAutocomplete(inputEl, parentEl) {
+    if (!inputEl || !parentEl) return;
+    let popup = parentEl.querySelector(".ec-mention-popup");
+    if (!popup) {
+      popup = document.createElement("div");
+      popup.className = "ec-mention-popup hidden";
+      popup.hidden = true;
+      parentEl.appendChild(popup);
+    }
+
+    let activeIndex = 0;
+    let currentItems = [];
+    let currentTrigger = null; // "@" or "/"
+
+    function hide() {
+      popup.classList.add("hidden");
+      popup.hidden = true;
+      popup.replaceChildren();
+      currentItems = [];
+      currentTrigger = null;
+      activeIndex = 0;
+    }
+
+    function renderItems() {
+      popup.replaceChildren();
+      if (!currentItems.length) {
+        hide();
+        return;
+      }
+
+      const head = document.createElement("div");
+      head.className = "ec-mention-header";
+      head.textContent = currentTrigger === "/" ? "Comandos rápidos (Slash)" : "Menciones de Contexto";
+      popup.appendChild(head);
+
+      currentItems.forEach((item, idx) => {
+        const row = document.createElement("div");
+        row.className = `ec-mention-item${idx === activeIndex ? " is-selected" : ""}`;
+
+        const icon = document.createElement("span");
+        icon.className = "ec-mention-icon";
+        if (typeof item.icon === "string" && SVG_ICONS[item.icon]) {
+          icon.replaceChildren(createSvgIcon(item.icon, 14));
+        } else {
+          icon.replaceChildren(createSvgIcon("sparkle", 14));
+        }
+
+        const info = document.createElement("div");
+        info.className = "ec-mention-info";
+
+        const title = document.createElement("span");
+        title.className = "ec-mention-title";
+        title.textContent = item.title;
+
+        const desc = document.createElement("span");
+        desc.className = "ec-mention-desc";
+        desc.textContent = item.desc || "";
+
+        info.appendChild(title);
+        info.appendChild(desc);
+
+        row.appendChild(icon);
+        row.appendChild(info);
+
+        row.addEventListener("mouseenter", () => {
+          activeIndex = idx;
+          updateSelection();
+        });
+
+        row.addEventListener("mousedown", (ev) => {
+          ev.preventDefault();
+          selectItem(item);
+        });
+
+        popup.appendChild(row);
+      });
+
+      popup.classList.remove("hidden");
+      popup.hidden = false;
+      updateSelection();
+    }
+
+    function updateSelection() {
+      const rows = popup.querySelectorAll(".ec-mention-item");
+      rows.forEach((r, idx) => {
+        if (idx === activeIndex) {
+          r.classList.add("is-selected");
+          try { r.scrollIntoView({ block: "nearest" }); } catch {}
+        } else {
+          r.classList.remove("is-selected");
+        }
+      });
+    }
+
+    function selectItem(item) {
+      const val = inputEl.value;
+      const cursor = inputEl.selectionStart || val.length;
+      const before = val.slice(0, cursor);
+      const after = val.slice(cursor);
+
+      if (currentTrigger === "/") {
+        inputEl.value = item.prompt ? item.prompt + (after ? " " + after : "") : item.title + " " + after;
+      } else if (currentTrigger === "@") {
+        const lastAt = before.lastIndexOf("@");
+        const prefix = before.slice(0, lastAt);
+        inputEl.value = prefix + (item.token || item.title) + " " + after;
+      }
+      hide();
+      inputEl.focus();
+      const nextPos = inputEl.value.length;
+      inputEl.setSelectionRange(nextPos, nextPos);
+    }
+
+    inputEl.addEventListener("input", () => {
+      const val = inputEl.value;
+      const cursor = inputEl.selectionStart || val.length;
+      const before = val.slice(0, cursor);
+
+      // Check slash commands (at start or preceded by newline)
+      const slashMatch = before.match(/(?:^|\n)\/([a-zA-Z0-9_-]*)$/);
+      if (slashMatch) {
+        currentTrigger = "/";
+        const q = slashMatch[1].toLowerCase();
+        currentItems = SLASH_COMMANDS.filter((c) => c.key.toLowerCase().includes(q) || c.title.toLowerCase().includes(q) || c.desc.toLowerCase().includes(q));
+        activeIndex = 0;
+        renderItems();
+        return;
+      }
+
+      // Check @ mentions (including files from project)
+      const atMatch = before.match(/@([a-zA-Z0-9_\-\./]*)$/);
+      if (atMatch) {
+        currentTrigger = "@";
+        const q = atMatch[1].toLowerCase();
+        const baseItems = MENTION_TYPES.filter((m) => m.key.toLowerCase().includes(q) || m.title.toLowerCase().includes(q) || m.desc.toLowerCase().includes(q));
+        const fileList = getProjectFileList();
+        const fileMatches = fileList
+          .filter((f) => f.name.toLowerCase().includes(q) || f.path.toLowerCase().includes(q))
+          .slice(0, 15)
+          .map((f) => ({
+            key: `@${f.name}`,
+            icon: "file",
+            title: `@${f.name}`,
+            desc: f.path || f.name,
+            token: `[Archivo: ${f.path || f.name}]`,
+          }));
+        currentItems = [...baseItems, ...fileMatches];
+        activeIndex = 0;
+        renderItems();
+        return;
+      }
+
+      hide();
+    });
+
+    inputEl.addEventListener("keydown", (ev) => {
+      if (!popup.hidden && currentItems.length > 0) {
+        if (ev.key === "ArrowDown") {
+          ev.preventDefault();
+          activeIndex = (activeIndex + 1) % currentItems.length;
+          updateSelection();
+        } else if (ev.key === "ArrowUp") {
+          ev.preventDefault();
+          activeIndex = (activeIndex - 1 + currentItems.length) % currentItems.length;
+          updateSelection();
+        } else if (ev.key === "Enter" || ev.key === "Tab") {
+          if (!ev.shiftKey && currentItems[activeIndex]) {
+            ev.preventDefault();
+            selectItem(currentItems[activeIndex]);
+          }
+        } else if (ev.key === "Escape") {
+          ev.preventDefault();
+          hide();
+        }
+      }
+    });
+
+    document.addEventListener("click", (ev) => {
+      if (!popup.contains(ev.target) && ev.target !== inputEl) {
+        hide();
+      }
+    });
+
+    return { hide };
   }
 
   function bind() {
     ensureThread();
+    loadSidebarWidth();
+    bindSidebarResize();
+    initContextPanelState();
+    const homePromptEl = $("chatHomePrompt");
+    const homeComposerEl = $("chatHomeComposer") || homePromptEl?.parentElement;
+    if (homePromptEl && homeComposerEl) {
+      setupAutocomplete(homePromptEl, homeComposerEl);
+    }
     $("chatHomeIdeBtn")?.addEventListener("click", () => setMode("ide"));
     $("openChatHomeBtn")?.addEventListener("click", () => setMode("chat"));
     $("chatHomeNewBtn")?.addEventListener("click", () => createThread());
+    $("chatHomeNavChats")?.addEventListener("click", () => {
+      const search = $("chatHomeSearch");
+      if (search) search.value = "";
+      store.search = "";
+      renderThreadList();
+      syncEmptyState();
+    });
     $("chatHomeFolderBtn")?.addEventListener("click", () => void connectFolder());
     $("chatHomeNavFolder")?.addEventListener("click", () => void connectFolder());
-    $("chatHomePlusBtn")?.addEventListener("click", () => void connectFolder());
+    $("chatHomePlusBtn")?.addEventListener("click", (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      if (typeof window.EditCoreAttachments?.openPicker === "function") {
+        window.EditCoreAttachments.openPicker();
+        return;
+      }
+      $("fileInput")?.click();
+    });
     $("chatHomeModelPill")?.addEventListener("click", (ev) => {
       ev.preventDefault();
       ev.stopPropagation();
@@ -789,7 +1603,6 @@
       triggerMic();
     });
     $("chatHomeSettingsBtn")?.addEventListener("click", () => openSettings());
-    $("chatHomeSettingsTopBtn")?.addEventListener("click", () => openSettings());
     $("chatHomeContextBtn")?.addEventListener("click", (ev) => {
       ev.preventDefault();
       ev.stopPropagation();
@@ -904,6 +1717,95 @@
       });
       mo2.observe(modelLabel, { childList: true, characterData: true, subtree: true });
     }
+
+    window.addEventListener("editcore:chats-updated", () => {
+      renderThreadList();
+      syncCrumb();
+      syncFolderChip();
+      syncEmptyState();
+    });
+    window.addEventListener("editcore:project-updated", () => {
+      renderThreadList();
+      syncCrumb();
+      syncFolderChip();
+      syncEmptyState();
+    });
+
+    window.addEventListener("keydown", (ev) => {
+      const isMac = navigator.platform.toUpperCase().indexOf("MAC") >= 0;
+      const isMod = isMac ? ev.metaKey : ev.ctrlKey;
+      const code = ev.code || "";
+      const key = (ev.key || "").toLowerCase();
+
+      // Escape -> Cerrar cualquier popup, diálogo o menú
+      if (key === "escape" || code === "Escape") {
+        closeSettings();
+        closeSkillsDialog();
+        const modal = $("chatHomeDialogModal");
+        if (modal && !modal.hidden) {
+          modal.classList.add("hidden");
+          modal.hidden = true;
+          modal.setAttribute("aria-hidden", "true");
+        }
+        document.querySelectorAll(".ec-mention-popup").forEach((p) => {
+          p.classList.add("hidden");
+          p.hidden = true;
+        });
+        return;
+      }
+
+      if (!isMod) return;
+
+      // Ctrl + L -> Cambiar a Chat y enfocar prompt
+      if (code === "KeyL" || key === "l") {
+        ev.preventDefault();
+        ev.stopPropagation();
+        setMode("chat");
+        setTimeout(() => {
+          const promptEl = $("chatHomePrompt") || $("prompt");
+          promptEl?.focus();
+        }, 30);
+        return;
+      }
+
+      // Ctrl + K -> Enfocar y seleccionar cajón de texto
+      if (code === "KeyK" || key === "k") {
+        ev.preventDefault();
+        ev.stopPropagation();
+        const isChat = document.body.dataset.appMode === "chat";
+        const promptEl = isChat ? $("chatHomePrompt") : ($("prompt") || $("chatHomePrompt"));
+        if (promptEl) {
+          promptEl.focus();
+          promptEl.select();
+        }
+        return;
+      }
+
+      // Ctrl + ` o Ctrl + ~ -> Conmutar Terminal en IDE
+      if (code === "Backquote" || key === "`" || key === "~") {
+        ev.preventDefault();
+        ev.stopPropagation();
+        if (document.body.dataset.appMode === "chat") {
+          setMode("ide");
+        }
+        setTimeout(() => {
+          try {
+            if (typeof window.EditCoreTerminal?.show === "function") {
+              window.EditCoreTerminal.show();
+            }
+          } catch {}
+        }, 30);
+        return;
+      }
+
+      // Ctrl + N -> Nuevo Chat
+      if ((code === "KeyN" || key === "n") && !ev.shiftKey) {
+        ev.preventDefault();
+        ev.stopPropagation();
+        createThread();
+        return;
+      }
+    }, { capture: true });
 
     window.EditCoreChatHome = {
       setMode,

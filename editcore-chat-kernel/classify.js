@@ -8,11 +8,11 @@ const APPROVAL_RE = /^\s*(?:procede|continua|continúa|hazlo|autorizado|adelante
 
 const CHAT_INFO_RE = /\b(?:para\s+qu[eé]\s+(?:sirve|funciona|es)|qu[eé]\s+(?:hace|es)|qui[eé]n\s+eres|c[oó]mo\s+te\s+llamas|ayuda|hola|buenos\s+d[ií]as|buenas\s+tardes|buenas\s+noches)\b/i;
 
-const TASK_FIX_RE = /\b(?:corrije|corrige|arregla|implementa|aplica|repara|soluciona|crea|escribe|modifica|refactoriza|actualiza|audita|añade|agrega|cambia|haz|hacer|ejecuta|run_command|run|build|tsc|npx|npm)\b/i;
+const TASK_FIX_RE = /\b(?:corrije|corrige|arregla|implementa(?:r)?|aplica|repara|soluciona|crea(?:r|ción)?|genera(?:r)?|escribe|escrib[ií]|modifica(?:r)?|refactoriza(?:r)?|actualiza(?:r)?|audita(?:r)?|añade|agrega(?:r)?|cambia(?:r)?|muev\w*|copiar?|haz|hacer|arma|armá|scaffold|nuevo\s+proyecto|ejecuta(?:r)?|run_command|run|build|tsc|npx|npm)\b/i;
 const TASK_CLONE_RE = /\b(?:clona|clonar|copia\s+esta\s+p[aá]gina|replica(?:r)?\s+(?:esta\s+)?(?:web|p[aá]gina|sitio)|clone_web_page)\b/i;
 const HTTP_URL_RE = /https?:\/\/[^\s)>"']+/i;
 
-const TASK_ANALYZE_RE = /\b(?:analiza|audita|diagnostica|revisa\s+errores|hallazgos|reporte\s+completo|plan\s+de\s+acci[oó]n)\b/i;
+const TASK_ANALYZE_RE = /(?:^|[^\w])(?:analiz[aáá]|analizar|audita(?:r)?|diagnostica(?:r)?|revisa(?:r)?\s+errores|hallazgos|reporte\s+completo|plan\s+de\s+acci[oó]n)(?=\s|$|[.!,?¿¡:])/i;
 const TASK_LIST_RE = /\b(?:lista|listar|qu[eé]\s+contiene|qu[eé]\s+hay\s+en|contenido\s+de|muestra\s+(?:la\s+)?carpeta|explora|explorar|explorer|directorio|arbol|árbol)\b/i;
 const TASK_READ_RE = /\b(?:explica|explicar|lee|leer|describe|describ[eéa]|resume|resumir|revisa|revisar|qu[eé]\s+hace|c[oó]mo\s+funciona|para\s+qu[eé]\s+sirve)\b/i;
 const PATHISH_RE = /(?:[\\/]|\b[a-z0-9_.-]+\.(?:js|ts|tsx|jsx|mjs|cjs|json|md|css|html|py|rs|go)\b)/i;

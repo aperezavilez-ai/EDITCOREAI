@@ -1586,22 +1586,20 @@ main {
   background: #f4fbfa;
 }
 
-/* Menú de modelos — panel oscuro tipo Cursor; resetea estilos de .composer-bar button */
+/* Menú de modelos — sigue el tema de la ventana (Chat/IDE) */
 .model-picker-menu {
   position: fixed;
   width: min(360px, calc(100vw - 32px));
   max-height: min(480px, 58vh);
   display: flex;
   flex-direction: column;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--ec-border);
   border-radius: 14px;
-  background: #1e1f22;
-  box-shadow:
-    0 0 0 1px rgba(0, 0, 0, 0.35),
-    0 22px 64px rgba(0, 0, 0, 0.48);
+  background: var(--ec-bg-elevated);
+  box-shadow: 0 22px 64px var(--ec-shadow);
   z-index: 10050;
   overflow: hidden;
-  color: #e8eaed;
+  color: var(--ec-text);
   font-family: inherit;
 }
 .model-picker-menu.hidden { display: none; }
@@ -1627,20 +1625,20 @@ main {
 .model-picker-search {
   width: 100%;
   height: 36px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid var(--ec-border);
   border-radius: 10px;
-  background: #2a2b2f;
-  color: #f0f1f3;
+  background: var(--ec-bg);
+  color: var(--ec-text);
   padding: 0 12px;
   font-size: 13px;
   line-height: 1.4;
   outline: none;
   box-sizing: border-box;
 }
-.model-picker-search::placeholder { color: #8b919a; }
+.model-picker-search::placeholder { color: var(--ec-text-muted); }
 .model-picker-search:focus {
-  border-color: rgba(110, 207, 216, 0.55);
-  box-shadow: 0 0 0 3px rgba(27, 111, 121, 0.28);
+  border-color: color-mix(in srgb, var(--ec-accent) 55%, var(--ec-border));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ec-accent) 22%, transparent);
 }
 
 .model-picker-auto-row {
@@ -1649,7 +1647,7 @@ main {
   justify-content: space-between;
   gap: 14px;
   padding: 14px 14px 14px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+  border-bottom: 1px solid var(--ec-border);
   flex: 0 0 auto;
 }
 .model-picker-auto-copy {
@@ -1663,13 +1661,13 @@ main {
   font-size: 13px;
   font-weight: 650;
   line-height: 1.35;
-  color: #f5f6f7;
+  color: var(--ec-text);
 }
 .model-picker-auto-copy span {
   display: block;
   font-size: 12px;
   line-height: 1.4;
-  color: #9aa0a8;
+  color: var(--ec-text-muted);
   font-weight: 450;
 }
 
@@ -1680,14 +1678,14 @@ main {
   min-height: 20px;
   border: 0;
   border-radius: 999px;
-  background: #4a4e57;
+  background: var(--ec-border);
   position: relative;
   cursor: pointer;
   transition: background 160ms ease;
   padding: 0;
   margin-top: 1px;
 }
-.model-toggle[aria-checked="true"] { background: #2a9aa6; }
+.model-toggle[aria-checked="true"] { background: var(--ec-accent); }
 .model-toggle::after {
   content: "";
   position: absolute;
@@ -1696,8 +1694,8 @@ main {
   width: 16px;
   height: 16px;
   border-radius: 50%;
-  background: #fff;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+  background: var(--ec-bg-elevated);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
   transition: transform 160ms ease;
 }
 .model-toggle[aria-checked="true"]::after { transform: translateX(16px); }
@@ -1712,9 +1710,9 @@ main {
   border-radius: 10px;
   box-sizing: border-box;
 }
-.model-picker-row:hover { background: rgba(255, 255, 255, 0.06); }
+.model-picker-row:hover { background: var(--ec-hover); }
 .model-picker-row.active {
-  background: rgba(42, 154, 166, 0.18);
+  background: color-mix(in srgb, var(--ec-accent) 16%, transparent);
 }
 .model-picker-row.is-disabled .model-picker-item {
   opacity: 0.48;
@@ -1741,7 +1739,7 @@ main {
   background: transparent;
   padding: 10px 12px;
   margin: 0;
-  color: #e8eaed;
+  color: var(--ec-text);
   cursor: pointer;
   width: 100%;
   min-height: 40px;
@@ -1761,7 +1759,7 @@ main {
   font-weight: 700;
 }
 .model-picker-row.active .model-picker-check {
-  color: #7edce6;
+  color: var(--ec-accent);
 }
 .model-picker-item .model-picker-name {
   flex: 1 1 auto;
@@ -1771,14 +1769,14 @@ main {
   font-weight: 550;
   line-height: 1.45;
   letter-spacing: 0.01em;
-  color: #f0f1f3;
+  color: var(--ec-text);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   padding: 1px 0;
 }
 .model-picker-row.active .model-picker-name {
-  color: #ffffff;
+  color: var(--ec-text);
   font-weight: 600;
 }
 .model-picker-item span.model-picker-meta {
@@ -1791,13 +1789,13 @@ main {
   flex: 1;
   min-height: 0;
   padding: 6px 0 8px;
-  scrollbar-color: #4a4e57 transparent;
+  scrollbar-color: var(--ec-border) transparent;
 }
 .model-picker-scroll::-webkit-scrollbar { width: 8px; }
 .model-picker-scroll::-webkit-scrollbar-thumb {
-  background: #4a4e57;
+  background: var(--ec-border);
   border-radius: 999px;
-  border: 2px solid #1e1f22;
+  border: 2px solid var(--ec-bg-elevated);
 }
 
 .model-picker-group {
@@ -1806,7 +1804,7 @@ main {
   font-weight: 650;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: #8b919a;
+  color: var(--ec-text-muted);
   line-height: 1.35;
 }
 
@@ -1814,12 +1812,12 @@ main {
   padding: 16px 18px;
   font-size: 13px;
   line-height: 1.4;
-  color: #9aa0a8;
+  color: var(--ec-text-muted);
 }
 
 .model-picker-footer {
   flex: 0 0 auto;
-  border-top: 1px solid rgba(255, 255, 255, 0.07);
+  border-top: 1px solid var(--ec-border);
   padding: 6px 8px;
 }
 .model-picker-manage {
@@ -1829,7 +1827,7 @@ main {
   border: 0;
   border-radius: 8px;
   background: transparent;
-  color: #8ed4dc;
+  color: var(--ec-text);
   font-size: 12px;
   font-weight: 600;
   line-height: 1.35;
@@ -1838,8 +1836,8 @@ main {
   padding: 8px 12px;
 }
 .model-picker-manage:hover {
-  background: rgba(255, 255, 255, 0.06);
-  color: #a8e4ea;
+  background: var(--ec-hover);
+  color: var(--ec-text);
 }
 #sendBtn:hover { background: #165e66; color: #ffffff; }
 #sendBtn:disabled { opacity: .55; cursor: wait; }
@@ -1850,11 +1848,12 @@ main {
   display: grid;
   gap: 4px;
   padding: 8px;
-  border: 1px solid #dde2e8;
+  border: 1px solid var(--ec-border);
   border-radius: 10px;
-  background: #ffffff;
-  box-shadow: 0 14px 40px rgba(23,32,42,.15);
+  background: var(--ec-bg-elevated);
+  box-shadow: 0 14px 40px var(--ec-shadow);
   z-index: 10050;
+  color: var(--ec-text);
 }
 
 .permission-menu button {
@@ -1865,14 +1864,17 @@ main {
   border-radius: 7px;
   background: transparent;
   padding: 8px;
-  color: #17202a;
+  color: var(--ec-text);
   cursor: pointer;
 }
-.permission-menu button.is-active {
-  background: #e8f3ff;
-  border-color: #8ab4e8;
+.permission-menu button:hover {
+  background: var(--ec-hover);
 }
-.permission-menu button.is-active strong { color: #0b57d0; }
+.permission-menu button.is-active {
+  background: color-mix(in srgb, var(--ec-accent) 14%, transparent);
+  border-color: color-mix(in srgb, var(--ec-accent) 40%, var(--ec-border));
+}
+.permission-menu button.is-active strong { color: var(--ec-accent); }
 
 /* ── viewer (browser) ── */
 .viewer {

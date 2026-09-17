@@ -104,9 +104,78 @@
         ? "node-pty activo"
         : "Fallback spawn-pipe (instala node-pty para PTY real)";
     }
+    let errorBuffer = [];
+    let autoFixBar = null;
+
+    function ensureAutoFixBar() {
+      if (autoFixBar) return autoFixBar;
+      const host = hostEl();
+      if (!host || !host.parentElement) return null;
+      autoFixBar = document.getElementById("terminalAutoFixBar");
+      if (!autoFixBar) {
+        autoFixBar = document.createElement("div");
+        autoFixBar.id = "terminalAutoFixBar";
+        autoFixBar.className = "terminal-autofix-bar hidden";
+        autoFixBar.hidden = true;
+        
+        const label = document.createElement("span");
+        label.textContent = "⚠️ Error detectado en la terminal";
+
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "terminal-autofix-btn";
+        btn.textContent = "⚡ Reparar con EditCoreAI";
+        btn.addEventListener("click", () => {
+          triggerAutoFix();
+        });
+
+        autoFixBar.appendChild(label);
+        autoFixBar.appendChild(btn);
+        host.parentElement.insertBefore(autoFixBar, host);
+      }
+      return autoFixBar;
+    }
+
+    function triggerAutoFix() {
+      if (autoFixBar) {
+        autoFixBar.classList.add("hidden");
+        autoFixBar.hidden = true;
+      }
+      const rawError = errorBuffer.slice(-25).join("\n").replace(/\x1b\[[0-9;]*m/g, "").trim();
+      const promptText = `Tengo este error en la terminal de mi proyecto:\n\`\`\`\n${rawError || "Error al ejecutar comando"}\n\`\`\`\nPor favor, diagnostica la causa exacta y aplica la solución necesaria para repararlo.`;
+      
+      const homePrompt = document.getElementById("chatHomePrompt");
+      const idePrompt = document.getElementById("prompt");
+      if (document.body.dataset.appMode === "chat" && homePrompt) {
+        homePrompt.value = promptText;
+        homePrompt.dispatchEvent(new Event("input", { bubbles: true }));
+        const composer = document.getElementById("chatHomeComposer");
+        if (composer && typeof composer.requestSubmit === "function") composer.requestSubmit();
+      } else if (idePrompt) {
+        idePrompt.value = promptText;
+        idePrompt.dispatchEvent(new Event("input", { bubbles: true }));
+        const form = document.getElementById("chatForm");
+        if (form && typeof form.requestSubmit === "function") form.requestSubmit();
+        else document.getElementById("sendBtn")?.click();
+      }
+    }
+
     unsubData = window.editcorePty.onData((payload) => {
       if (!payload || String(payload.id) !== sessionId) return;
-      term.write(String(payload.data || ""));
+      const chunk = String(payload.data || "");
+      term.write(chunk);
+      
+      const clean = chunk.replace(/\x1b\[[0-9;]*m/g, "");
+      errorBuffer.push(clean);
+      if (errorBuffer.length > 50) errorBuffer.shift();
+
+      if (/\b(?:error:|fatal:|npm ERR!|TypeError|SyntaxError|ReferenceError|failed with exit code|panic:)\b/i.test(clean)) {
+        const bar = ensureAutoFixBar();
+        if (bar) {
+          bar.classList.remove("hidden");
+          bar.hidden = false;
+        }
+      }
     });
     term.clear();
     term.writeln(`\x1b[90mEditCoreAI terminal · ${snap?.backend || "unknown"} · ${snap?.cwd || ""}\x1b[0m`);

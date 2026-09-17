@@ -646,11 +646,10 @@ function resolveUnifiedAgentPlan(options = {}) {
   } else if (authorizedContinuation && allowWrite) {
     mode = MODES.EXECUTE;
     reason = "continuacion autorizada";
-  } else if (permissionFull && userAuth && isAgent && allowWrite && !permissionReadonly) {
+  } else if (userAuth && isAgent && !permissionReadonly) {
     // Acceso total + ADELANTE/PROCEDE: ejecutar de verdad (no re-analizar a medias).
-    // Nota: PROCEDE ya no entra en isResumeIncompleteAnalysisRequest (arriba).
     mode = MODES.EXECUTE;
-    reason = "acceso completo + autorizacion del usuario";
+    reason = "autorizacion del usuario (procede/adelante)";
   } else if ((isConversationalFollowUp(effectivePrompt) || isUserDirectiveOrComplaint?.(effectivePrompt)) && !hasAttachments
     && !isListAndExplainRequest(effectivePrompt)
     && !isExplainOrReadFileRequest(effectivePrompt)

@@ -37,21 +37,24 @@
             <button type="button" class="chat-home-nav-item" id="chatHomeNavChats">Chats</button>
             <button type="button" class="chat-home-nav-item" id="chatHomeNavFolder" title="Conectar carpeta">Codebase</button>
           </nav>
-          <div class="chat-home-section-label">Recientes</div>
-          <ul id="chatHomeThreadList" class="chat-home-thread-list" role="list"></ul>
+          <div class="chat-home-section-label">Projects</div>
+          <div id="chatHomeThreadList" class="chat-home-thread-list" role="list"></div>
           <div class="chat-home-sidebar-foot">
             <button type="button" class="chat-home-settings-btn" id="chatHomeSettingsBtn" title="Settings">⚙ Settings</button>
           </div>
         </aside>
+        <div id="chatHomeSidebarSplit" class="chat-home-sidebar-split" role="separator" aria-orientation="vertical" aria-label="Redimensionar panel de chats" tabindex="0"></div>
         <div class="chat-home-main">
           <div class="chat-home-main-head">
-            <div id="chatHomeCrumb" class="chat-home-crumb" title="Conversación activa">Chat</div>
-            <button id="chatHomeContextDock" type="button" class="chat-home-context-dock" title="Abrir panel de sesión" aria-controls="chatHomeContextPanel" hidden>
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                <rect x="7" y="4" width="11" height="14" rx="1.5" stroke="currentColor" stroke-width="1.7"/>
-                <rect x="4" y="7" width="11" height="14" rx="1.5" stroke="currentColor" stroke-width="1.7" fill="var(--ch-bg, #fff)"/>
-              </svg>
-            </button>
+            <div class="chat-home-main-head-inner">
+              <div id="chatHomeCrumb" class="chat-home-crumb" title="Conversación activa">Chat</div>
+              <button id="chatHomeContextDock" type="button" class="chat-home-context-dock" title="Abrir panel de sesión" aria-controls="chatHomeContextPanel" hidden>
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <rect x="7" y="4" width="11" height="14" rx="1.5" stroke="currentColor" stroke-width="1.7"/>
+                  <rect x="4" y="7" width="11" height="14" rx="1.5" stroke="currentColor" stroke-width="1.7" fill="var(--ch-bg, #fff)"/>
+                </svg>
+              </button>
+            </div>
           </div>
           <div id="chatHomeStage" class="chat-home-stage">
             <div class="chat-home-empty" aria-hidden="false">
@@ -63,11 +66,13 @@
           </div>
           <div class="chat-home-composer-wrap">
             <div id="chatHomeFolderChip" class="chat-home-folder-chip" aria-live="polite"></div>
+            <div id="chatHomeAttachmentList" class="chat-home-attachment-list" aria-live="polite"></div>
             <form id="chatHomeComposer" class="chat-home-composer" autocomplete="off">
               <textarea id="chatHomePrompt" rows="2" placeholder="Ask EditCore to build, fix bugs, explore…" spellcheck="false"></textarea>
               <div class="chat-home-composer-row">
-                <button type="button" id="chatHomePlusBtn" class="chat-home-icon-btn" title="Adjuntar / carpeta">+</button>
+                <button type="button" id="chatHomePlusBtn" class="chat-home-icon-btn" title="Adjuntar imagen, PDF, Word, Excel…">+</button>
                 <button type="button" id="chatHomeModelPill" class="chat-home-model-pill" title="Elegir modelo">Auto · ME AI ▾</button>
+                <span class="chat-home-composer-spacer" aria-hidden="true"></span>
                 <button type="button" id="chatHomeMicBtn" class="chat-home-mic-btn" title="Micrófono / dictado" aria-label="Micrófono">
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 14a3 3 0 0 0 3-3V7a3 3 0 1 0-6 0v4a3 3 0 0 0 3 3Z" stroke="currentColor" stroke-width="1.7"/><path d="M19 11a7 7 0 0 1-14 0M12 18v3" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
                 </button>
@@ -77,7 +82,7 @@
             <div class="chat-home-hints"></div>
           </div>
         </div>
-        <aside id="chatHomeContextPanel" class="chat-home-context" aria-hidden="false" aria-label="Contexto de sesión">
+        <aside id="chatHomeContextPanel" class="chat-home-context" hidden aria-hidden="true" aria-label="Contexto de sesión">
           <div class="chat-home-context-head">
             <div class="chat-home-context-tabs" role="tablist" aria-label="Vistas de sesión">
               <button type="button" id="chatHomeContextBtn" class="chat-home-context-tab is-active" data-ctx-tab="session" title="Sesión" aria-selected="true">
@@ -151,6 +156,21 @@
           <button type="button" data-ch-settings-back>← Volver</button>
         </div>
         <button type="button" class="chat-home-settings-close" id="chatHomeSettingsClose">Cerrar</button>
+      </div>
+    </div>
+
+    <!-- Modal nativo y estilizado de confirmación / prompt para EditCoreAI -->
+    <div id="chatHomeDialogModal" class="chat-home-modal-overlay" aria-hidden="true" hidden>
+      <div class="chat-home-modal-card" role="dialog" aria-modal="true" aria-labelledby="chatHomeModalTitle">
+        <h3 id="chatHomeModalTitle">Confirmar acción</h3>
+        <p id="chatHomeModalDesc">¿Deseas realizar esta acción?</p>
+        <div id="chatHomeModalInputWrap" class="chat-home-modal-input-wrap" hidden>
+          <input type="text" id="chatHomeModalInput" class="chat-home-modal-input" placeholder="" />
+        </div>
+        <div class="chat-home-modal-actions">
+          <button type="button" id="chatHomeModalCancelBtn" class="chat-home-modal-btn chat-home-modal-btn-cancel">Cancelar</button>
+          <button type="button" id="chatHomeModalConfirmBtn" class="chat-home-modal-btn chat-home-modal-btn-primary">Aceptar</button>
+        </div>
       </div>
     </div>
 
@@ -293,9 +313,9 @@
           <div id="mentionPopup" class="mention-popup hidden" role="listbox" aria-label="Menciones contextuales"></div>
         </div>
         <div class="composer-bar">
-          <button id="attachBtn" type="button" title="Adjuntar imagen (o archivo)">+</button>
+          <button id="attachBtn" type="button" title="Adjuntar imagen, PDF, Word, Excel…">+</button>
           <input id="fileInput" type="file" multiple class="hidden"
-            accept="image/png,image/jpeg,image/webp,.txt,.md,.json,.js,.ts,.tsx,.jsx,.css,.html" />
+            accept="image/*,.png,.jpg,.jpeg,.webp,.gif,.bmp,.pdf,.doc,.docx,.xls,.xlsx,.xlsm,.csv,.txt,.md,.json,.js,.ts,.tsx,.jsx,.css,.html,.ppt,.pptx" />
           <select id="runMode">
             <option value="chat">Chat</option>
             <option value="agent">Agente</option>
@@ -745,6 +765,24 @@
           </footer>
         </div>
       </dialog>
+
+      <!-- Custom In-App Modal for Chat (No native OS popups) -->
+      <div id="chatHomeDialogModal" class="chat-home-modal-overlay hidden" aria-hidden="true">
+        <div class="chat-home-modal-card" role="dialog" aria-modal="true">
+          <div class="chat-home-modal-head">
+            <h3 id="chatHomeModalTitle" class="chat-home-modal-title">Confirmar</h3>
+            <button type="button" id="chatHomeModalCloseBtn" class="chat-home-modal-close" aria-label="Cerrar">✕</button>
+          </div>
+          <p id="chatHomeModalDesc" class="chat-home-modal-desc"></p>
+          <div id="chatHomeModalInputWrap" class="chat-home-modal-input-wrap hidden">
+            <input type="text" id="chatHomeModalInput" class="chat-home-modal-input" spellcheck="false" autocomplete="off" />
+          </div>
+          <div class="chat-home-modal-actions">
+            <button type="button" id="chatHomeModalCancelBtn" class="btn-outline">Cancelar</button>
+            <button type="button" id="chatHomeModalConfirmBtn" class="btn-primary">Aceptar</button>
+          </div>
+        </div>
+      </div>
     </div><!-- #modals -->
 
     <script src="./ide/live-hunks.js"></script>

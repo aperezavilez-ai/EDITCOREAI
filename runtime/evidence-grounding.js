@@ -1654,8 +1654,8 @@ function buildGroundedAnalysisReport(evidence, projectRoot = "", options = {}) {
     formatEvidenceAppendix(evidence, { mode: "analysis" }),
     "",
     effectiveSkipProceed
-      ? "Sin correcciones comprobables pendientes. No se solicita PROCEDE."
-      : "Cuando autorices procedo con las correcciones.",
+      ? "\n---\n\n### 🚀 Estado del proyecto\nEl proyecto está verificado y no requiere correcciones críticas inmediatas. Si deseas realizar cambios específicos, indícame qué funcionalidad deseas agregar o modificar."
+      : "Cuando autorices procedo con las correcciones.\n\n---\n\n### 🚀 ¿Cómo proceder?\n¿Deseas que aplique estas correcciones y optimizaciones? Responde **\"procede\"** para comenzar la ejecución o indícame si prefieres ajustar algún detalle.",
   ].join("\n");
 }
 

@@ -5,54 +5,40 @@ PROHIBIDO reexplorar el repo entero si este documento cubre la tarea. Solo read_
 EditCore actualiza este archivo tras cambios. No pedirlo al usuario. No pegar codigo largo.
 
 ## Proceso
-- Fase: release 3.0.6 estable
-- Estado: Panel lateral de contexto (2 hojas) + Sistema de voz STT integrado + Bot registry nativo + RulesEngine blindado
-- Actualizado: 2026-09-17 17:45
-- Preview: integrado en IDE con hot reload
+- Versión: 3.0.7
+- Fase: Release / Producción
+- Estado: Estable. 695/695 pruebas superadas (0 fallos).
+- Actualizado: 2026-09-17 21:55
+- Preview: Administrado vía IDE (`editcoreProject.startPreview`)
 
-## Mapa
-- index.html / chat-home.* — Chat Antigravity-like con Session Context Drawer
-- runtime/ — RulesEngine, Bot Registry, Intent Orchestrator, Claude Adapter
-- editcore-chat-kernel/ — Kernel de agentes y memoria
-- resources/ui-overlay/ — Espejo distribuible
+## Mapa de Arquitectura
+- `chat-home.js` / `chat-home.css`: Shell tipo Cursor/Antigravity, gestión de proyectos, hilos de chat, atajos globales y renderizado reactivo.
+- `renderer.js`: Kernel del IDE/Chat, orquestador de agente, gestión de perfiles de IA, puente de modelos y persistencia sincronizada.
+- `main.js`: Proceso principal de Electron, IPC seguro, gestión de ventanas y servicios de fondo.
+- `runtime/intent-orchestrator.js`: Detección y transición unificada de intenciones (`EXECUTE`, `ANALYZE`, `PLAN`).
+- `runtime/voice-stt.js`: Subsistema STT multi-backend (MediaRecorder + Whisper / Gemini multimodal + atajo nativo Windows `Win + H`).
+- `resources/ui-overlay/*`: Copia sincronizada para despliegue y empaquetado optimizado.
 
 ## Archivos clave (no reexplorar)
-- chat-home.css
-- chat-home.js
-- index.html
-- renderer.js
-- preload.js
+- package.json
 - main.js
-- runtime/jarvis-port.js
-- runtime/rules-engine.js
-- runtime/project-connect.js
+- preload.js
+- renderer.js
+- chat-home.js
+- chat-home.css
 - runtime/intent-orchestrator.js
+- runtime/voice-stt.js
+- resources/ui-overlay/*
 
-## Tarea activa
-- Empaquetado dist:win v3.0.6 + Git commit + Push + Deploy + Release
+## Hitos Implementados (v3.0.7)
+- **Persistencia y Restauración Real de Chats**: Conservación íntegra de conversaciones y proyectos a través de recargas (`Ctrl + R`) y reinicios, sin creación de proyectos ficticios ("PROYECTO").
+- **Eliminación Total de Chats y Proyectos**: Capacidad de eliminar conversaciones y proyectos desde la barra lateral con sincronización inmediata a disco e interfaz.
+- **Conexión Inmediata de Proyectos**: Sincronización instantánea de carpetas seleccionadas con actualización del chip superior, ruta y barra lateral.
+- **UI Minimalista del Micrófono**: Eliminación de bordes/círculos en el icono del micrófono para acabado visual nativo tipo Antigravity.
+- **Integración de Dictado Nativo y Multimodal**: Soporte de captura de audio y compatibilidad con atajo `Win + H` en Windows.
+- **Flujo de Agente Profesional**: Respuestas estructuradas, ejecución directa sin rodeos conversacionales y transiciones directas con confirmación ("procede").
 
-## Decisiones
-- Panel de contexto (2 hojas) activo en el Chat con datos reales (subagents, files, artifacts, uploads, tasks, skills)
-- Soporte de voz nativo Windows STT con fallback de grabación PCM
-- Bot Registry autónomo con 5 agentes nativos portados
-- Blindaje de seguridad en ejecución de comandos destructivos
-
-## Cambios recientes
-- Agregado panel de inspección de sesión con toggle #chatHomeContextBtn
-- Resuelto fallback de micrófono tanto en Modo Chat como en Modo IDE
-- Eliminación de referencias DOM huérfanas
-- Integración completa de contratos de no regresión y anonimización de modelos
-- Sincronización bit a bit de resources/ui-overlay
-
-## Verificado
-- 915/915 JS syntax OK
-- 208/208 IPC channels matched
-- 68/68 DOM elements matched
-- 11/11 pre-package gate tests PASS
-- 42/42 parity tools tests PASS
-- Smoke chat circuit OK
-
-## Regla anti-reexploracion
-- Si el pedido del usuario apunta a un archivo ya listado arriba: ve DIRECTO a read_file/replace_in_file de ese path.
-- PROHIBIDO list_files('.') / project_discovery / codebase_map del repo completo en el mismo turno si el Mapa ya tiene >= 5 entradas utiles.
-- Tras mutar: EditCore refresca este ROADMAP; continua desde aqui en el siguiente mensaje.
+## Verificación y Calidad
+- Suite de pruebas completa: 695/695 pasadas con éxito.
+- Chequeo de sintaxis Node.js: OK.
+- Empaquetado Windows: Validado para generación de `EDITCOREAI-Setup.exe`.

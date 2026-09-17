@@ -53,7 +53,11 @@ function safe(root, rel) {
     const parent = pathPolicy.workspaceParentRoot(base);
     if (parent) {
       const normParent = path.resolve(parent).toLowerCase();
-      if (normTarget.startsWith(normParent + path.sep) || normTarget.startsWith(normParent + "/")) {
+      if (
+        normTarget === normParent
+        || normTarget.startsWith(normParent + path.sep)
+        || normTarget.startsWith(normParent + "/")
+      ) {
         return target;
       }
     }
@@ -70,10 +74,13 @@ function truncatePayload(value, max = TOOL_RESULT_CAP) {
   return `${text.slice(0, max)}\n…[truncado ${text.length - max} chars]`;
 }
 
-function listFiles(root, rel = ".", max = 80) {
+function listFiles(root, rel = ".", max = 80, opts = {}) {
   const requested = String(rel || ".").replace(/\\/g, "/").trim() || ".";
-  // ROADMAP-FIRST: no reescanear la raíz si ya hay índice (ahorro de tokens)[cite: 7].
-  if (requested === "." || requested === "/" || requested === "") {
+  const forceReal = opts.forceReal === true || opts.real === true
+    || requested === ".." || requested.startsWith("../") || requested.startsWith("..\\");
+  // ROADMAP-FIRST: no reescanear la raíz si ya hay índice (ahorro de tokens).
+  // Excepción: listar padre/hermanos o forceReal — ahí el disco manda.
+  if (!forceReal && (requested === "." || requested === "/" || requested === "")) {
     try {
       const { readRoadmap, isStubRoadmap, formatRoadmapForPrompt } = require("../runtime/project-roadmap");
       const { formatSessionStateForPrompt, ensureSessionState, loadSessionState } = require("../runtime/session-state");
@@ -88,7 +95,7 @@ function listFiles(root, rel = ".", max = 80) {
           ok: true,
           path: ".",
           roadmapFirst: true,
-          message: "ROADMAP + session-state ya cubren el mapa. NO reescanees el repo. Usa read_file solo en archivos a editar.",
+          message: "ROADMAP + session-state ya cubren el mapa. NO reescanees el repo. Usa read_file solo en archivos a editar. Para hermanos: list_files('..').",
           hint: String(formatRoadmapForPrompt(root) || "").slice(0, 1800),
           session: String(formatSessionStateForPrompt(root, 900) || "").slice(0, 900),
           dirs: dirs.length ? dirs : undefined,
@@ -505,9 +512,9 @@ async function cloneRepo(root, repoUrl, destRel) {
 }
 
 const DEFINITIONS = [
-  { type: "function", function: { name: "list_files", description: "Lista carpetas/archivos relativos.", parameters: { type: "object", properties: { path: { type: "string" } } } } },
+  { type: "function", function: { name: "list_files", description: "Lista carpetas/archivos reales en disco. Usá path='..' para ver proyectos hermanos bajo el padre. forceReal=true fuerza listado real de '.' (ignora cache ROADMAP).", parameters: { type: "object", properties: { path: { type: "string" }, forceReal: { type: "boolean" } } } } },
   { type: "function", function: { name: "read_file", description: "Lee archivo (truncado).", parameters: { type: "object", properties: { path: { type: "string" } }, required: ["path"] } } },
-  { type: "function", function: { name: "write_file", description: "Crea/sobrescribe archivo.", parameters: { type: "object", properties: { path: { type: "string" }, content: { type: "string" } }, required: ["path", "content"] } } },
+  { type: "function", function: { name: "write_file", description: "Crea/sobrescribe archivo REAL en disco. Para proyecto hermano: '../NombreProyecto/archivo.ext'. NUNCA inventes contenido en el chat sin llamar esta tool.", parameters: { type: "object", properties: { path: { type: "string" }, content: { type: "string" } }, required: ["path", "content"] } } },
   { type: "function", function: { name: "replace_in_file", description: "Parche quirúrgico: reemplaza oldText exacto por newText.", parameters: { type: "object", properties: { path: { type: "string" }, oldText: { type: "string" }, newText: { type: "string" } }, required: ["path", "oldText", "newText"] } } },
   { type: "function", function: { name: "search_files", description: "Busca texto en el repo.", parameters: { type: "object", properties: { query: { type: "string" } }, required: ["query"] } } },
   { type: "function", function: { name: "run_command", description: "Comando shell (timeout 25s).", parameters: { type: "object", properties: { command: { type: "string" } }, required: ["command"] } } },
@@ -672,7 +679,9 @@ async function execute(name, args, root, allowWrite, helpers = {}) {
   switch (name) {
     case "list_files": {
       const resolved = resolveListPath(root, a.path || ".");
-      const listed = listFiles(root, resolved.target || ".");
+      const listed = listFiles(root, resolved.target || ".", 80, {
+        forceReal: a.forceReal === true || a.real === true,
+      });
       if (resolved.missing) {
         return {
           ...listed,
