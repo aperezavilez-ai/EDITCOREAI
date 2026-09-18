@@ -184,25 +184,44 @@ const SUB_AGENTS = {
   RESUMER: "task-resumer",
 };
 
-const TOOL_ALLOWLIST = {
-  [MODES.CHAT]: [],
-  [MODES.UNDERSTAND]: [],
-  [MODES.DISCOVER]: [
-    "list_files", "read_file", "search_files",
-    "project_discovery", "codebase_map", "symbol_search",
-    "inspect_preview", "brain_search", "brain_skill", "brain_tools",
-  ],
-  [MODES.EXECUTE]: [
-    "write_file", "replace_in_file", "create_project",
-    "clone_web_page", "web_scrape", "images_to_code",
-    "list_files", "read_file", "search_files", "run_command",
-    "create_pdf", "create_word", "create_excel", "create_csv",
-    "project_discovery", "codebase_map", "symbol_search",
-    "inspect_preview", "brain_search", "brain_skill", "brain_tools",
-    "generate_image", "generate_video", "add_erp_module",
-    "deploy_one_click", "publish_project", "fullstack_deploy",
-  ],
-};
+const ALL_ALLOWED_TOOLS = [
+  "write_file", "replace_in_file", "create_project",
+  "clone_web_page", "web_scrape", "images_to_code",
+  "list_files", "read_file", "search_files", "run_command",
+  "create_pdf", "create_word", "create_excel", "create_csv",
+  "project_discovery", "codebase_map", "symbol_search",
+  "inspect_preview", "brain_search", "brain_skill", "brain_tools",
+  "generate_image", "generate_video", "add_erp_module",
+  "deploy_one_click", "publish_project", "fullstack_deploy",
+  "audit_env", "supabase_migrate", "scaffold_project", "capture_preview",
+  "capture_preview_screenshot", "run_e2e_pipeline", "search_codebase_semantic",
+  "rollback_last_change", "list_snapshots",
+];
+
+const TOOL_ALLOWLIST = Object.assign(
+  function (modeOrTool) {
+    if (TOOL_ALLOWLIST[modeOrTool]) return TOOL_ALLOWLIST[modeOrTool];
+    return ALL_ALLOWED_TOOLS.includes(modeOrTool);
+  },
+  {
+    [MODES.CHAT]: [],
+    [MODES.UNDERSTAND]: [],
+    [MODES.DISCOVER]: [
+      "list_files", "read_file", "search_files",
+      "project_discovery", "codebase_map", "symbol_search",
+      "inspect_preview", "brain_search", "brain_skill", "brain_tools",
+      "audit_env", "list_snapshots", "search_codebase_semantic",
+    ],
+    [MODES.EXECUTE]: ALL_ALLOWED_TOOLS,
+    includes(toolName) {
+      if (!toolName) return false;
+      return ALL_ALLOWED_TOOLS.includes(toolName)
+        || (Array.isArray(this[MODES.EXECUTE]) && this[MODES.EXECUTE].includes(toolName))
+        || (Array.isArray(this[MODES.DISCOVER]) && this[MODES.DISCOVER].includes(toolName));
+    },
+    all: ALL_ALLOWED_TOOLS,
+  }
+);
 
 function resolveExecutionMode(prompt = "", opts = {}) {
   const text = String(prompt || "").trim();

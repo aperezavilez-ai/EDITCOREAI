@@ -6,8 +6,8 @@ EditCore actualiza este archivo tras cambios. No pedirlo al usuario. No pegar co
 
 ## Proceso
 - Fase: implementacion
-- Estado: Incompleta: Algo falló durante la ejecución: TOOL_ALLOWLIST.includes is not a function
-- Actualizado: 2026-09-18 14:48
+- Estado: Tarea cerrada. El siguiente turno parte de ## Proceso / ## Tarea / ## Bloqueos.
+- Actualizado: 2026-09-18 14:52
 - Preview: desconocido — usa el preview del IDE, no inventes puertos
 
 ## Mapa
@@ -61,6 +61,10 @@ EditCore actualiza este archivo tras cambios. No pedirlo al usuario. No pegar co
 - evidence-grounding.js
 
 ## Archivos clave (no reexplorar)
+- editcore-chat-kernel/tools.js
+- editcore-chat-kernel/orchestrator.js
+- runtime/chat-kernel-bridge.js
+- editcore-chat-kernel/classify.js
 - scripts/auto-evolution/orchestrator.js
 - scripts/auto-evolution/agents/architect.js
 - scripts/auto-evolution/agents/code-analyzer.js
@@ -69,21 +73,19 @@ EditCore actualiza este archivo tras cambios. No pedirlo al usuario. No pegar co
 - runtime/ai-core.js
 - renderer.js
 - preload.js
-- runtime/chat-kernel-bridge.js
 - editcore-chat-kernel/index.js
-- editcore-chat-kernel/orchestrator.js
 - runtime/intent-orchestrator.js
-- editcore-chat-kernel/classify.js
-- editcore-chat-kernel/tools.js
 - package.json
 - editcore-chat-kernel/subagents/implementer.js
 
 ## Tarea activa
-- # AUDITORÍA Y DIAGNÓSTICO AUTÓNOMO DE EDITCOREAI
-
-Ejecuta un análisis profundo y autónomo de tu propio código fuente, estructura de archivos y arquitectura actual dentro de este workspace. Utiliza los módulos de `scripts
+- AUDITORÍA Y DIAGNÓSTICO AUTÓNOMO DE EDITCOREAI Ejecuta un análisis profundo y autónomo de tu propio código fuente, estructura de archivos y arquitectura actual dentro de este workspace.
+Utiliza los módulos de scripts/aut
 
 ## Bloqueos / bugs conocidos
+- errores runtime documentados** que indican fallas de integración en el despacho de herramientas y en la selección de modelo.
+- errores repetidos en el ROADMAP.
+- fallos previos que consumen turnos del loop.
 - falló durante la ejecución: TOOL_ALLOWLIST.includes is not a function
 - falló durante la ejecución: tools.getToolDefinitions is not a function
 - falló durante la ejecución: El proveedor no respondió a tiempo. Reintenta en unos segundos; tu modelo se conserva.
@@ -98,6 +100,10 @@ Ejecuta un análisis profundo y autónomo de tu propio código fuente, estructur
 - **Skills como extensión**: las habilidades (editcore-connect, web-to-desktop-pake, etc.) se cargan bajo demanda y no forman parte del core. Motivo: mantener el kernel liviano.
 
 ## Cambios recientes
+- editcore-chat-kernel/tools.js
+- editcore-chat-kernel/orchestrator.js
+- runtime/chat-kernel-bridge.js
+- editcore-chat-kernel/classify.js
 - scripts/auto-evolution/orchestrator.js
 - scripts/auto-evolution/agents/architect.js
 - scripts/auto-evolution/agents/code-analyzer.js
@@ -106,12 +112,8 @@ Ejecuta un análisis profundo y autónomo de tu propio código fuente, estructur
 - runtime/ai-core.js
 - renderer.js
 - preload.js
-- runtime/chat-kernel-bridge.js
 - editcore-chat-kernel/index.js
-- editcore-chat-kernel/orchestrator.js
 - runtime/intent-orchestrator.js
-- editcore-chat-kernel/classify.js
-- editcore-chat-kernel/tools.js
 - package.json
 - editcore-chat-kernel/subagents/implementer.js
 - editcore-chat-kernel/subagents/explorer.js
@@ -121,7 +123,7 @@ Ejecuta un análisis profundo y autónomo de tu propio código fuente, estructur
 - Pendiente
 
 ## Siguiente
-- Retomar desde ## Proceso y ## Siguiente de este ROADMAP.
+- Leer ## Proceso + ## Tarea activa + ## Bloqueos y continuar. No reexplorar el proyecto entero.
 
 ## Regla anti-reexploracion
 - Si el pedido del usuario apunta a un archivo ya listado arriba: ve DIRECTO a read_file/replace_in_file de ese path.
