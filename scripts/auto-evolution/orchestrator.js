@@ -36,12 +36,25 @@ function orchestrateCycle() {
 
   const analysis = runAgent('code-analyzer', { cycle: state.cycle });
   const architecture = runAgent('architect', { analysis, gaps: state.gaps_identified });
+  const patcher = runAgent('patcher', {
+    recommendations: architecture.recommendations || architecture.output?.recommendations || [],
+    analysis,
+  });
+
+  state.status = patcher.status === 'SUCCESS' ? 'EVOLVED' : 'PARTIALLY_EVOLVED';
+  state.patches_applied = patcher.patches_applied || [];
+
+  if (!Array.isArray(state.tools_created)) state.tools_created = [];
+  if (!state.tools_created.includes('scripts/auto-evolution/agents/patcher.js')) {
+    state.tools_created.push('scripts/auto-evolution/agents/patcher.js');
+  }
 
   state.last_cycle = {
     cycle: state.cycle,
     analysis,
     architecture,
-    timestamp: state.timestamp
+    patcher,
+    timestamp: state.timestamp,
   };
 
   saveState(state);

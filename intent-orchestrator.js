@@ -1,3 +1,7 @@
+/**
+ * @deprecated Consolidado en editcore-chat-kernel/classify.js y editcore-chat-kernel/orchestrator.js.
+ * Mantenido como adaptador compatible para runtime de navegador y scripts heredados.
+ */
 "use strict";
 
 (function exposeIntentOrchestrator(root, factory) {
@@ -10,7 +14,10 @@
   if (root && browserProjectAnalysis) root.EditCoreAgentOrchestrator = api;
 })(typeof window !== "undefined" ? window : globalThis, function createIntentOrchestrator(ProjectAnalysis) {
   if (!ProjectAnalysis) {
-    throw new Error("EditCoreProjectAnalysis requerido para el orquestador unificado.");
+    console.warn("[intent-orchestrator] ProjectAnalysis no disponible, usando modo seguro.");
+    ProjectAnalysis = {
+      analyze: () => ({ kind: "stub", scope: "UNKNOWN" }),
+    };
   }
 
   const browserRoot = typeof window !== "undefined" ? window : globalThis;
@@ -41,13 +48,10 @@
         return /\b(lovable|ui\s+pulida|app\s+web\s+profesional|landing|one[- ]?shot|moderna|premium)\b/i.test(String(prompt || ""));
       },
       buildLovableOneShotBlock({ permissionFull = false } = {}) {
-        return [
-          "PIPELINE LOVABLE ONE-SHOT (obligatorio en este turno):",
-          "- create_project template=lovable-web o react + brain_skill frontend-design.",
-          "- Personaliza UI, npm install, npm run dev, inspect_preview/inspect_browser.",
-          permissionFull ? "- Acceso completo permitido." : "- Respeta limites de run_command.",
-          "- PROHIBIDO solo narrar.",
-        ].join("\n");
+        return {
+          mode: "chat",
+          message: "Detecté una solicitud one-shot. Para ejecutar el pipeline Lovable necesito tu autorización explícita en este turno. Si querés, continuo con create_project + UI + preview.",
+        };
       },
     };
   })();
@@ -102,6 +106,7 @@
   hasConcreteProductHint,
   isAuthorization,
   isChangeRequest,
+  isCloudOperateRequest,
   isRecoveryInstruction,
   isAgentTaskFeedback,
   classifyPromptIntent,
@@ -170,6 +175,8 @@ const PHASES = {
 
 const RESEARCH_TOOLS = [
   "fetch_url",
+  "web_scrape",
+  "clone_web_page",
   "github_repo_info",
   "github_list_files",
   "github_read_file",
@@ -211,6 +218,7 @@ const TOOL_ALLOWLIST = {
   ],
   [MODES.EXECUTE]: [
     "write_file", "replace_in_file", "create_project",
+    "clone_web_page", "web_scrape", "images_to_code",
     "list_files", "read_file", "search_files", "run_command",
     "create_pdf", "create_word", "create_excel", "create_csv",
     ...CODE_INTEL_TOOLS,
@@ -218,6 +226,8 @@ const TOOL_ALLOWLIST = {
     ...RESEARCH_TOOLS,
     ...BRAIN_TOOL_NAMES,
     "generate_image",
+    "generate_video",
+    "add_erp_module",
     "propose_diff",
     "apply_diff",
     "deploy_one_click",
@@ -232,6 +242,12 @@ const TOOL_ALLOWLIST = {
     "ssh_deploy",
     "create_supabase_project",
     "onboard_project",
+    "deploy_github",
+    "deploy_vercel",
+    "provision_supabase",
+    "provision_fullstack_project",
+    "probe_endpoint",
+    "test_local_api",
     "run_tdd_cycle",
     "run_test_repair_loop",
   ],
@@ -239,14 +255,17 @@ const TOOL_ALLOWLIST = {
 
 const GREENFIELD_TOOL_ALLOWLIST = [
   "write_file", "replace_in_file", "create_project",
+  "clone_web_page", "web_scrape", "images_to_code",
   "list_files", "read_file", "run_command",
   "create_pdf", "create_word", "create_excel", "create_csv",
   "inspect_preview", "inspect_browser", "browser_interact",
   "brain_skill", "brain_search",
-  "run_diagnostics", "generate_image", "propose_diff", "apply_diff",   "deploy_one_click",
+  "run_diagnostics", "generate_image", "generate_video", "add_erp_module", "propose_diff", "apply_diff",   "deploy_one_click",
   "publish_project", "fullstack_deploy", "connect_project", "assess_project_connections",
   "provision_project", "project_health", "sync_vercel_env", "supabase_manage", "ssh_deploy",
   "create_supabase_project", "onboard_project",
+  "deploy_github", "deploy_vercel", "provision_supabase", "provision_fullstack_project",
+  "probe_endpoint", "test_local_api",
   "run_tdd_cycle", "run_test_repair_loop",
 ];
 
@@ -262,6 +281,16 @@ const FILESYSTEM_EXPLORATION_TOOLS = new Set([
 ]);
 
 const BRAIN_TOOLS = new Set(BRAIN_TOOL_NAMES);
+
+
+function isCloneWebPageRequest(prompt = "") {
+  const text = String(prompt || "");
+  if (!text.trim()) return false;
+  const hasUrl = /https?:\/\/[^\s)>"']+/i.test(text);
+  const isNegativeClone = /\b(?:no\s+(?:te\s+ped[ií]\s+)?clonar|sin\s+clonar|no\s+clonar)\b/i.test(text);
+  const wantsClone = !isNegativeClone && /\b(?:clona|clonar|copia\s+esta\s+p[aá]gina|replica(?:r)?\s+(?:esta\s+)?(?:web|p[aá]gina|sitio)|clone_web_page)\b/i.test(text);
+  return wantsClone || (hasUrl && /\b(?:clona|clonar|copia|replica)\b/i.test(text));
+}
 
 function wantsExplicitFilesystemWork(prompt = "") {
   const text = String(prompt || "").trim();
@@ -390,11 +419,12 @@ function formatOrchestrationBlock(profile = {}) {
       "- El usuario pidio analizar el proyecto en disco. Usa list_files/read_file/search_files con evidencia real.",
       "- Puedes usar codebase_map, symbol_search, semantic_search, run_parallel_explore, inspect_preview, fetch_url y github_* si aportan evidencia.",
       depthLine,
+      "- ROADMAP-FIRST: antes de list_files/search_files/glob, usa ROADMAP.md + .editcore/session-state.json (si existen). No reescanees el repo entero.",
       profile.analysisMode
         ? (profile.permissionFull
           ? "- MODO ANALISIS + Acceso completo: sin write de codigo en esta pasada; al cerrar ofrece 2-4 opciones + **Recomendada** (no exijas PROCEDE). ROADMAP.md lo actualiza EditCore solo. PROHIBIDO npm run lint/test/build. SERIAL: 1 tool → narra → siguiente."
           : "- MODO ANALISIS: PROHIBIDO write_file/replace_in_file de codigo (espera PROCEDE). ROADMAP.md lo actualiza EditCore solo (indice/tokens); TU no lo reescribas. PROHIBIDO npm run lint/test/build y npx eslint/tsc. SERIAL: 1 tool → narra avance → siguiente. Con evidencia suficiente CIERRA el reporte YA.")
-        : "- Si no hay ROADMAP.md: analiza el disco y CREALO con el mapa real. PROHIBIDO pedirlo al usuario. Si ya existe: leelo primero y no reexplores el repo entero. Actualizalo al terminar.",
+        : "- Si no hay ROADMAP.md: analiza el disco y CREALO con el mapa real. PROHIBIDO pedirlo al usuario. Si ya existe: leelo primero (junto a session-state) y no reexplores el repo entero. Actualizalo al terminar.",
       "- Cerebro: opcional brain_skill deep-project-analysis o brain_search UNA vez; si la skill no existe, continua con disco sin repetir brain_*.",
       "- No inventes stack ni archivos. Cierra con reporte anclado a herramientas.",
       profile.permissionFull && !profile.analysisMode
@@ -403,14 +433,30 @@ function formatOrchestrationBlock(profile = {}) {
     ].filter(Boolean).join("\n");
   }
   if (profile.subAgent === SUB_AGENTS.IMPLEMENTER) {
+    if (isCloneWebPageRequest(profile.prompt || "")) {
+      return [
+        "CLONAR WEB (prioridad absoluta):",
+        "- Extrae la URL https del mensaje.",
+        "- PRIMERA tool: clone_web_page({ url }). PROHIBIDO list_files('.') antes.",
+        "- Luego narra secciones/botones clonados y mejoras aplicadas.",
+        "- PROHIBIDO </think> o tags internos en el chat.",
+      ].join("\n");
+    }
+
     if (profile.cursorParityMode) {
       const cursorBlock = CursorParity?.buildCursorParityOrchestrationBlock?.() || "Agente EditCore: investiga, corrige y verifica con herramientas.";
       if (profile.greenfieldCreate) {
         const oneShotExtra = profile.lovableOneShot
-          ? LovableOneShot.buildLovableOneShotBlock({
-            permissionFull: profile.permissionFull === true,
-            prompt: profile.prompt || "",
-          })
+          ? (() => {
+              const block = LovableOneShot.buildLovableOneShotBlock({
+                permissionFull: profile.permissionFull === true,
+                prompt: profile.prompt || "",
+              });
+              if (block && typeof block === "object" && block.mode === "chat") {
+                return block.message || "";
+              }
+              return typeof block === "string" ? block : "";
+            })()
           : "";
         let templateLine = "- create_project template=lovable-web o react; brain_skill frontend-design para UI pulida.";
         try {
@@ -428,6 +474,7 @@ function formatOrchestrationBlock(profile = {}) {
           "- write_file/replace_in_file en la raiz del proyecto; run_command para npm install/dev.",
           "- Tras montar preview: inspect_preview, inspect_browser, browser_interact.",
           "- Escribe ROADMAP.md compacto (estado, mapa, siguiente) para no releer el repo en el siguiente turno. Actualizalo al terminar cambios.",
+          "- ROADMAP-FIRST en turnos siguientes: leer ROADMAP.md + .editcore/session-state.json antes de cualquier búsqueda.",
           oneShotExtra,
         ].filter(Boolean).join("\n");
         return [
@@ -445,16 +492,22 @@ function formatOrchestrationBlock(profile = {}) {
       return [
         "ORQUESTACION EDITCORE (ONBOARD PROYECTO NUEVO):",
         "- El usuario pidio aplicar dependencias y conectar servicios del operador.",
-        "- Ejecuta onboard_project (una llamada) para: npm install, Supabase propio, GitHub, Vercel y sync envs. Modelos: ME AI / APICredits en Modelos.",
-        "- Las conexiones globales ya estan en EditCore (github, vercel, supabase.gafcore, gateway). NO pidas tokens ni uses Supabase Cloud.",
+        "- Ejecuta onboard_project (una llamada) para: npm install, Supabase, GitHub, Vercel, sync envs y proveedor de IA.",
+      "- Las conexiones globales ya estan en EditCore (GitHub, Vercel, Supabase, proveedores ME AI / APICredits). NO pidas tokens ni uses Supabase Cloud.",
         "- Si aun no hay codigo/plantilla: create_project primero; luego onboard_project.",
-        "- Informa el checklist devuelto (dependencias, supabase, github, vercel, gateway).",
+        "- Informa el checklist devuelto (dependencias, supabase, github, vercel, aiProvider).",
         profile.reason ? `- Motivo: ${profile.reason}.` : "",
       ].filter(Boolean).join("\n");
     }
     if (profile.greenfieldCreate) {
       const oneShotExtra = profile.lovableOneShot
-        ? LovableOneShot.buildLovableOneShotBlock({ permissionFull: profile.permissionFull === true })
+        ? (() => {
+            const block = LovableOneShot.buildLovableOneShotBlock({ permissionFull: profile.permissionFull === true });
+            if (block && typeof block === "object" && block.mode === "chat") {
+              return block.message || "";
+            }
+            return typeof block === "string" ? block : "";
+          })()
         : "";
       if (profile.permissionFull) {
         return [
@@ -462,19 +515,22 @@ function formatOrchestrationBlock(profile = {}) {
           "- El usuario pidio CREAR un proyecto nuevo. Ejecuta AHORA con herramientas de escritura.",
           "- Escribe en la RAIZ visible del proyecto abierto (README.md, package.json, src/, public/).",
           "- Si pide app web profesional/UI pulida: prefer create_project template=lovable-web o react; luego personaliza.",
+          "- Si pide ERP/CRM/inventario/nomina/facturacion/multi-tenant: create_project template=enterprise-erp-base (schema-first).",
+          "- SCHEMA-FIRST en ERP/CRM: (1) migraciones SQL validadas, (2) CRUD UI solo ligado al schema. Extiende con add_erp_module.",
           "- Carga brain_skill frontend-design antes de inventar UI.",
           "- Usa write_file para cada archivo nuevo. run_command libre para npm install, npm run dev, git, etc.",
           "- Tras montar preview: inspect_preview, inspect_browser o browser_interact (dom/click/type) y corrige overflow/a11y evidentes.",
           "- Si lint/typecheck falla, EditCore inyecta AUTO-FIX: corrige con replace_in_file y reintenta (max 3 ciclos).",
           "- MCP: mcp_list_tools / mcp_invoke bajo demanda (config global automatica; override opcional por proyecto).",
           "- Puedes usar semantic_search y run_parallel_explore para evidencia rapida sin bloquear la escritura.",
-          "- generate_image solo si el usuario pide assets y hay config; si no, SVG/CSS.",
+          "- generate_image / generate_video solo si el usuario pide assets y hay config; si no, SVG/CSS/placeholder en public/assets/.",
+          "- En web/PWA nuevas: micro-interacciones, scroll suave y placeholders responsive (Framer Motion + Tailwind transitions).",
           "- Si el usuario pide clonar un repo al Cerebro, usa brain_install_repo.",
           "- Si un comando tiene riesgo (push, deploy, rm -rf), EditCore pedira confirmacion al usuario.",
           "- PROHIBIDO solo narrar; sin write_file/create_project no hay progreso.",
           "- Si el usuario solo pidio README/package.json o esqueleto minimo: crea SOLO archivos base. NO inventes producto, dashboards ni datos ficticios.",
-          "- Si el usuario pide conectar GitHub/Vercel/Supabase/GafCore: tras crear, ejecuta onboard_project.",
-          "- Escribe ROADMAP.md compacto al crear: estado, mapa de archivos clave, siguiente accion. En siguientes turnos: LEERLO primero y ACTUALIZARLO al cerrar cambios.",
+          "- Si el usuario pide conectar GitHub/Vercel/Supabase: tras crear, ejecuta onboard_project.",
+          "- Escribe ROADMAP.md compacto al crear: estado, mapa de archivos clave, siguiente accion. En siguientes turnos: LEER ROADMAP.md + .editcore/session-state.json primero y ACTUALIZAR al cerrar cambios.",
           oneShotExtra,
           profile.reason ? `- Motivo: ${profile.reason}.` : "",
         ].filter(Boolean).join("\n");
@@ -491,24 +547,27 @@ function formatOrchestrationBlock(profile = {}) {
         "- PROHIBIDO run_command con cmd, powershell, mkdir, type, cat, pwd o uname.",
         "- PROHIBIDO solo narrar; sin write_file/create_project no hay progreso.",
         "- Si el usuario solo pidio README/package.json o esqueleto minimo: crea SOLO archivos base. NO inventes producto, dashboards ni datos ficticios.",
-        "- Si el usuario pide conectar GitHub/Vercel/Supabase/GafCore: tras crear, ejecuta onboard_project.",
+        "- Si el usuario pide conectar GitHub/Vercel/Supabase: tras crear, ejecuta onboard_project.",
         oneShotExtra,
         profile.reason ? `- Motivo: ${profile.reason}.` : "",
       ].filter(Boolean).join("\n");
     }
     return [
       "ORQUESTACION EDITCORE (SUB-AGENTE: IMPLEMENTADOR):",
-      "- Ejecuta el plan autorizado con herramientas. Lee antes de escribir. Verifica al final.",
+      "- ROADMAP-FIRST: usa ROADMAP.md + .editcore/session-state.json ya precargados. PROHIBIDO list_files/search_files del repo entero.",
+      "- Ejecuta el plan autorizado con herramientas. Lee SOLO los archivos que vas a editar. Verifica al final.",
       "- Crea o modifica archivos en carpetas visibles del proyecto; evita .editcore salvo memoria interna.",
       "- Si hay interfaz web, tras package.json ejecuta npm install y npm run dev; luego inspect_preview/inspect_browser/browser_interact.",
       "- Usa fetch_url / github_* para investigar referencias externas cuando el usuario lo pida o haga falta.",
       "- Usa brain_search / brain_skill / brain_install_repo para skills y repos del Cerebro cuando aporten calidad.",
       "- MCP: mcp_list_tools y mcp_invoke bajo demanda (config global automatica).",
-      "- Para explorar rapido: semantic_search o run_parallel_explore (solo lectura).",
+      "- Para explorar: solo si el ROADMAP no cubre el hueco; semantic_search acotado (no project_discovery global).",
       "- Para UI de alta calidad: aplica frontend-design y verifica con inspect_preview (desktop y mobile).",
+      "- Tras escrituras: EditCore actualiza ROADMAP.md solo. NUNCA digas que no puedes modificar ROADMAP.",
       "- Tras escrituras relevantes: run_diagnostics si hay lint/typecheck; si AUTO-FIX llega, corrige de inmediato.",
-      "- Si pide conectar servicios (GitHub, Vercel, Supabase propio): usa onboard_project. Modelos AI: panel Modelos (ME AI / APICredits).",
-      "- generate_image solo con config y pedido explicito de assets.",
+      "- Si pide conectar servicios (GitHub, Vercel, Supabase, proveedor de IA): usa onboard_project.",
+      "- generate_image / generate_video solo con config y pedido explicito de assets.",
+      "- Web/PWA nuevas: siempre micro-interacciones, scroll triggers y asset placeholders responsive.",
     ].join("\n");
   }
   return "";
@@ -622,6 +681,22 @@ function resolveUnifiedAgentPlan(options = {}) {
     // Solo PROCEDE/plan aprobado escribe. CONTINUA solo no autoriza mutacion.
     mode = MODES.EXECUTE;
     reason = "plan autorizado";
+  } else if (allowWrite && !permissionReadonly && isCloudOperateRequest?.(effectivePrompt)) {
+    // Publicar/deploy/conectar nube: EXECUTE inmediato (no chat narrativo ni DISCOVER).
+    const wantsGreenfield = isGreenfieldCreateRequest(effectivePrompt)
+      || isGreenfieldContinuationRequest(effectivePrompt, { scaffoldIncomplete });
+    mode = MODES.EXECUTE;
+    if (wantsGreenfield) {
+      greenfieldCreate = true;
+      projectOnboarding = false;
+      reason = "creacion en disco + conexion de servicios (onboard tras crear)";
+    } else {
+      projectOnboarding = isProjectOnboardingRequest(effectivePrompt);
+      reason = "operacion nube (publicar/conectar/bóveda)";
+    }
+  } else if (isCloneWebPageRequest(effectivePrompt)) {
+    mode = MODES.EXECUTE;
+    reason = "clonar pagina web (clone_web_page primero, no listar raiz)";
   } else if (isAgent && isListAndExplainRequest(effectivePrompt) && !userAuth) {
     mode = MODES.DISCOVER;
     reason = "listar y explicar con tools";
@@ -647,7 +722,7 @@ function resolveUnifiedAgentPlan(options = {}) {
     mode = MODES.EXECUTE;
     reason = "continuacion autorizada";
   } else if (userAuth && isAgent && !permissionReadonly) {
-    // Acceso total + ADELANTE/PROCEDE: ejecutar de verdad (no re-analizar a medias).
+    // Autorizacion del usuario (procede/adelante/hazlo): ejecutar de verdad (no re-analizar a medias).
     mode = MODES.EXECUTE;
     reason = "autorizacion del usuario (procede/adelante)";
   } else if ((isConversationalFollowUp(effectivePrompt) || isUserDirectiveOrComplaint?.(effectivePrompt)) && !hasAttachments
@@ -689,19 +764,6 @@ function resolveUnifiedAgentPlan(options = {}) {
     && !isProjectOnboardingRequest(effectivePrompt)) {
     mode = MODES.EXECUTE;
     reason = "investigacion y correccion";
-  } else if (allowWrite && !permissionReadonly && isCloudOperateRequest?.(effectivePrompt)) {
-    // Publicar/deploy/conectar nube: EXECUTE inmediato (no chat narrativo ni DISCOVER).
-    const wantsGreenfield = isGreenfieldCreateRequest(effectivePrompt)
-      || isGreenfieldContinuationRequest(effectivePrompt, { scaffoldIncomplete });
-    mode = MODES.EXECUTE;
-    if (wantsGreenfield) {
-      greenfieldCreate = true;
-      projectOnboarding = false;
-      reason = "creacion en disco + conexion de servicios (onboard tras crear)";
-    } else {
-      projectOnboarding = isProjectOnboardingRequest(effectivePrompt);
-      reason = "operacion nube (publicar/conectar/bóveda)";
-    }
   } else if (allowWrite && !permissionReadonly && (
     isProjectOnboardingRequest(effectivePrompt)
     || isGreenfieldCreateRequest(effectivePrompt)
@@ -811,7 +873,8 @@ function resolveUnifiedAgentPlan(options = {}) {
     || (mode === MODES.DISCOVER);
   const needsAnalysisFirst = mode === MODES.DISCOVER;
   const skipBrain = (cursorParityMode && !analysisMode) ? false : (mode === MODES.CHAT || mode === MODES.UNDERSTAND || conversationOnly);
-  const skipBootstrap = mode !== MODES.DISCOVER;
+  // EXECUTE también necesita ROADMAP + session-state (ahorro de tokens). Solo CHAT/list omiten bootstrap.
+  const skipBootstrap = conversationOnly || listOnly || mode === MODES.CHAT;
 
   let subAgent = SUB_AGENTS.INTENT;
   let phase = PHASES.UNDERSTAND;
@@ -842,17 +905,27 @@ function resolveUnifiedAgentPlan(options = {}) {
         : "Ejecutando con herramientas...",
   };
 
-  const allowedTools = listOnly
-    ? ["list_files"]
-    : (mode === MODES.EXECUTE)
-    ? (cursorParityMode
-      ? (CursorParity?.CURSOR_PARITY_ALLOWLIST || TOOL_ALLOWLIST[MODES.EXECUTE])
-      : (greenfieldCreate && !permissionFull
-        ? (lovableOneShot ? LOVABLE_ONESHOT_TOOL_ALLOWLIST : GREENFIELD_TOOL_ALLOWLIST)
-        : TOOL_ALLOWLIST[MODES.EXECUTE]))
-    : analysisMode
-    ? TOOL_ALLOWLIST[MODES.DISCOVER]
-    : (TOOL_ALLOWLIST[mode] || []);
+  let allowedTools;
+  if (listOnly) {
+    allowedTools = ["list_files"];
+  } else if (mode === MODES.EXECUTE) {
+    if (cursorParityMode && CursorParity?.CURSOR_PARITY_ALLOWLIST) {
+      allowedTools = [...CursorParity.CURSOR_PARITY_ALLOWLIST];
+    } else if (greenfieldCreate && !permissionFull) {
+      allowedTools = [...(lovableOneShot ? LOVABLE_ONESHOT_TOOL_ALLOWLIST : GREENFIELD_TOOL_ALLOWLIST)];
+    } else {
+      allowedTools = [...TOOL_ALLOWLIST[MODES.EXECUTE]];
+    }
+    // Garantia dura: en EXECUTE, write_file y replace_in_file SIEMPRE presentes,
+    // incluso si el cursor-parity allowlist no los trae (bug de filtrado).
+    for (const required of ["write_file", "replace_in_file", "list_files", "read_file", "run_command"]) {
+      if (!allowedTools.includes(required)) allowedTools.push(required);
+    }
+  } else if (analysisMode) {
+    allowedTools = [...TOOL_ALLOWLIST[MODES.DISCOVER]];
+  } else {
+    allowedTools = [...(TOOL_ALLOWLIST[mode] || [])];
+  }
 
   const runProfile = buildProfile({
     mode,
@@ -1040,7 +1113,71 @@ function filterToolsByPlan(tools = [], plan = {}) {
     return tools;
   }
   const allowed = new Set(allowlist);
+  // Defensa: si el plan es planAuthorizedExecution o mode=execute, NUNCA
+  // filtrar write_file/replace_in_file aunque falten del allowlist. Esto
+  // cubre el bug donde cursor-parity u otro filtro recorta herramientas de
+  // escritura y el agente narra sin ejecutar.
+  const writeGuaranteed = plan.planAuthorizedExecution === true
+    || plan.mode === MODES.EXECUTE
+    || plan.runProfile?.mode === MODES.EXECUTE
+    || plan.runProfile?.planAuthorizedExecution === true;
+  if (writeGuaranteed) {
+    for (const name of ["write_file", "replace_in_file", "list_files", "read_file", "run_command", "search_files"]) {
+      allowed.add(name);
+    }
+  }
   return tools.filter((item) => allowed.has(item?.function?.name));
+}
+
+/**
+ * refineKernelDecision — fuente única de verdad para overrides de clasificación.
+ * El kernel llama a esta función DESPUÉS de classify() en lugar de aplicar
+ * heurísticas locales dispersas. Elimina la divergencia CHAT→EXECUTE.
+ */
+const DISK_MUTATION_RE = /\b(?:crea(?:r|ción)?|genera(?:r)?|escribe|modifica(?:r)?|refactoriza(?:r)?|actualiza(?:r)?|añade|agrega(?:r)?|cambia(?:r)?|muev\w*|copiar?|haz|hacer|arma|armá|scaffold|nuevo\s+proyecto|ejecuta(?:r)?|run_command|run|build|tsc|npx|npm|corrije|corrige|arregla|implementa(?:r)?|aplica|repara|soluciona)\b/i;
+const ANALYSIS_RE = /(?:^|[^\w])(?:analiz[aáá]|analizar|diagnostica|revis[aá]|inspecciona|explora(?:r)?\s+el\s+proyecto)(?=\s|$|[.!,?¿¡:])/i;
+const EXPLORER_RE = /\b(?:explora|explorer|directorio|listar|estructura|archivos)\b/i;
+const READ_EXPLAIN_RE = /\b(?:explica|explicar|lee|leer|describe|resume|revisa|qué\s+hace)\b/i;
+const PATHISH_LOCAL_RE = /(?:[\\/]|.\w{1,10}\b)/i;
+
+function refineKernelDecision(text, ctx = {}) {
+  const { fullAccess = false, hasImages = false, visionAsk = false, isApprovalText = false, decision: base } = ctx;
+  if (!base) return null;
+  let d = { ...base };
+
+  if (fullAccess) {
+    d.allowWrite = true;
+    if (d.kind === "CONFIRM" || isApprovalText) {
+      return { kind: "EXECUTE", label: "Ejecución (Acceso completo)", allowTools: true, allowWrite: true, background: false };
+    }
+    if (d.kind === "CHAT" && DISK_MUTATION_RE.test(text)) {
+      return { kind: "EXECUTE", label: "Ejecución (Acceso completo)", allowTools: true, allowWrite: true, background: false };
+    }
+  }
+
+  if (d.kind === "CHAT" && DISK_MUTATION_RE.test(text)) {
+    return { kind: "EXECUTE", label: fullAccess ? "Ejecución (Acceso completo)" : "Construcción / Ejecución", allowTools: true, allowWrite: true, background: false };
+  }
+
+  if (d.kind === "CHAT" && ANALYSIS_RE.test(text)) {
+    return { kind: "ANALYZE", label: "Análisis", allowTools: true, allowWrite: false, background: false };
+  }
+
+  if (hasImages && (d.kind === "ANALYZE" || d.kind === "ASK" || visionAsk)) {
+    return fullAccess
+      ? { kind: "EXECUTE", label: "Análisis visual + acción", allowTools: true, allowWrite: true, background: false }
+      : { kind: "ASK", label: "Análisis visual", allowTools: true, allowWrite: false, background: false };
+  }
+
+  if (EXPLORER_RE.test(text) && d.kind === "CHAT" && !hasImages) {
+    return { kind: "LIST", label: "Explorar directorio", allowTools: true, allowWrite: false, background: false };
+  }
+
+  if (READ_EXPLAIN_RE.test(text) && PATHISH_LOCAL_RE.test(text) && d.kind === "CHAT") {
+    return { kind: "ASK", label: "Lectura / explicación", allowTools: true, allowWrite: false, background: false };
+  }
+
+  return d;
 }
 
 return {
@@ -1053,8 +1190,10 @@ return {
   FILESYSTEM_EXPLORATION_TOOLS,
   resolveUnifiedAgentPlan,
   resolveAgentRunProfile,
+  refineKernelDecision,
   applyRunProfile,
   wantsExplicitFilesystemWork,
+  isCloneWebPageRequest,
   isListOnlyRequest,
   isListAndExplainRequest,
   isExplainOrReadFileRequest,

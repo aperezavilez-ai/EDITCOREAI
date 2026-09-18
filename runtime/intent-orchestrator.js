@@ -1,3 +1,7 @@
+/**
+ * @deprecated Consolidado en editcore-chat-kernel/classify.js y editcore-chat-kernel/orchestrator.js.
+ * Mantenido como adaptador compatible para runtime de navegador y scripts heredados.
+ */
 "use strict";
 
 (function exposeIntentOrchestrator(root, factory) {

@@ -170,10 +170,143 @@ function extractListTarget(message, projectRoot = null) {
   }
 }
 
+const MODES = {
+  CHAT: "chat",
+  UNDERSTAND: "understand",
+  DISCOVER: "discover",
+  EXECUTE: "execute",
+};
+
+const SUB_AGENTS = {
+  INTENT: "intent-analyst",
+  EXPLORER: "project-explorer",
+  IMPLEMENTER: "implementer",
+  RESUMER: "task-resumer",
+};
+
+const TOOL_ALLOWLIST = {
+  [MODES.CHAT]: [],
+  [MODES.UNDERSTAND]: [],
+  [MODES.DISCOVER]: [
+    "list_files", "read_file", "search_files",
+    "project_discovery", "codebase_map", "symbol_search",
+    "inspect_preview", "brain_search", "brain_skill", "brain_tools",
+  ],
+  [MODES.EXECUTE]: [
+    "write_file", "replace_in_file", "create_project",
+    "clone_web_page", "web_scrape", "images_to_code",
+    "list_files", "read_file", "search_files", "run_command",
+    "create_pdf", "create_word", "create_excel", "create_csv",
+    "project_discovery", "codebase_map", "symbol_search",
+    "inspect_preview", "brain_search", "brain_skill", "brain_tools",
+    "generate_image", "generate_video", "add_erp_module",
+    "deploy_one_click", "publish_project", "fullstack_deploy",
+  ],
+};
+
+function resolveExecutionMode(prompt = "", opts = {}) {
+  const text = String(prompt || "").trim();
+  const res = classify(text, opts);
+  if (res.kind === "EXECUTE" || (res.allowTools && res.allowWrite)) {
+    return { mode: "EXECUTE", isAgent: true, reason: res.label || "ORCHESTRATOR_EXECUTE" };
+  }
+  if (res.kind === "ANALYZE" || res.kind === "ASK" || res.kind === "LIST") {
+    return { mode: "DISCOVER", isAgent: false, usesProjectTools: true, reason: res.label || "ORCHESTRATOR_DISCOVER" };
+  }
+  return { mode: "CHAT", isAgent: false, usesProjectTools: false, reason: res.label || "ORCHESTRATOR_CHAT" };
+}
+
+function isResumeIncompleteAnalysisRequest(prompt = "", options = {}) {
+  const text = String(prompt || "").trim();
+  if (!text) return false;
+  if (options.planAuthorizedExecution === true) return false;
+  const phase = String(options.workflowPhase || "");
+  if (phase === "awaiting_authorization") return false;
+  if (!options.resumableTask && !["interrupted", "executing"].includes(phase)) return false;
+  if (/^\s*(?:procede|adelante|autorizo)\b/i.test(text)) return false;
+  return /\bcontin[uú]a\b/i.test(text)
+    || /\b(termina|completa|cierra)\b.*\b(reporte|an[aá]lisis|auditor[ií]a)\b/i.test(text);
+}
+
+function isAnalysisOnlyRequest(prompt = "", allowWrite = true) {
+  const text = String(prompt || "").trim();
+  if (!text) return false;
+  if (/\bNO\s+MODIFIQUES?\b|\bNO\s+MODIFICAR\b|\bDIAGN[OÓ]STICO\b.*\bNO\s+MODIFIC/i.test(text)) return true;
+  if (/\b(?:crear?|crees?|corregir?|corrijas?|modifica|modifiques|escribir?|escribas?|arreglar?|arregles?|implementar?|implementes?)\b/i.test(text)) return false;
+  return TASK_ANALYZE_RE.test(text);
+}
+
+function resolveUnifiedAgentPlan(options = {}) {
+  const prompt = String(options.prompt || "").trim();
+  const requestedAgent = options.requestedAgent === true;
+  const projectOpen = options.projectOpen === true;
+  const allowWrite = options.allowWrite !== false && options.permissionMode !== "readonly";
+  const planAuthorizedExecution = options.planAuthorizedExecution === true;
+
+  if (!projectOpen && !options.ephemeralRoot) {
+    return {
+      mode: MODES.CHAT,
+      missingProject: true,
+      usesProjectTools: false,
+      isAgent: false,
+      promptOnlyMode: false,
+      allowedTools: [],
+      reason: "proyecto requerido",
+    };
+  }
+
+  const decision = classify(prompt, { permissionMode: options.permissionMode, fullAccess: options.permissionMode === "full" });
+  if (planAuthorizedExecution || (decision.kind === "EXECUTE" && allowWrite)) {
+    return {
+      mode: MODES.EXECUTE,
+      isAgent: true,
+      usesProjectTools: true,
+      directReadOnly: false,
+      planAuthorizedExecution: true,
+      allowedTools: TOOL_ALLOWLIST[MODES.EXECUTE],
+      reason: decision.label || "ejecucion autorizada",
+    };
+  }
+  if (decision.kind === "ANALYZE" || decision.kind === "ASK" || decision.kind === "LIST") {
+    return {
+      mode: MODES.DISCOVER,
+      isAgent: requestedAgent,
+      usesProjectTools: true,
+      directReadOnly: true,
+      planAuthorizedExecution: false,
+      allowedTools: TOOL_ALLOWLIST[MODES.DISCOVER],
+      reason: decision.label || "lectura y analisis",
+    };
+  }
+  return {
+    mode: MODES.CHAT,
+    isAgent: false,
+    usesProjectTools: false,
+    directReadOnly: true,
+    conversationOnly: true,
+    planAuthorizedExecution: false,
+    allowedTools: [],
+    reason: decision.label || "conversacion",
+  };
+}
+
+function analyze(input = {}) {
+  const prompt = String(input.prompt || input.message || "").trim();
+  return classify(prompt, input);
+}
+
 module.exports = {
   classify,
+  analyze,
+  resolveExecutionMode,
+  resolveUnifiedAgentPlan,
+  isResumeIncompleteAnalysisRequest,
+  isAnalysisOnlyRequest,
   extractListTarget,
   isFullAccess,
+  MODES,
+  SUB_AGENTS,
+  TOOL_ALLOWLIST,
   STOP_RE,
   APPROVAL_RE,
   CHAT_INFO_RE,

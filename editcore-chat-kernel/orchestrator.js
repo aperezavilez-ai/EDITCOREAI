@@ -1,65 +1,16 @@
 "use strict";
 
 const path = require("path");
-const { classify, extractListTarget, isFullAccess } = require("./classify");
-const { ChatSession } = require("./session");
-const { PersistentMemory } = require("./memory");
-const { skillsPrompt, SKILL_IDS } = require("./skills-catalog");
-const { runExplorer } = require("./subagents/explorer");
-const { runAnalyst } = require("./subagents/analyst");
-const { runImplementer } = require("./subagents/implementer");
-const { runVerifier } = require("./subagents/verifier");
-
-// dispatcher.js es opcional. Si falta o está corrupto (encoding roto),
-// el chat arranca igual. Solo pierde la asignación de "rol especialista" al prompt.
-let dispatchSpecialist = () => null;
-try {
-  const _dispatcher = require("./subagents/dispatcher");
-  if (_dispatcher && typeof _dispatcher.dispatchSpecialist === "function") {
-    dispatchSpecialist = _dispatcher.dispatchSpecialist;
-  }
-} catch (_) {
-  dispatchSpecialist = () => null;
-}
-
-const { parseTextToolCalls, stripTextToolMarkup, toRelativePath, visibleNarrationText } = require("./parse-text-tools");
-const tools = require("./tools");
-const { callChat } = require("./provider");
-const { capture_preview_screenshot, DEFAULT_PREVIEW_URL } = require("./vision-inspector");
-const globalMemory = require("./global-memory");
-const taskQueue = require("./task-queue");
-const threadCore = require("./thread-core");
-const { pickModel } = require("./model-router");
-const agentBus = require("./agent-bus");
-
-let intentOrchestrator = null;
-function getIntentOrchestrator() {
-  if (intentOrchestrator !== null) return intentOrchestrator;
-  try {
-    intentOrchestrator = require("../runtime/intent-orchestrator");
-  } catch (e) {
-    intentOrchestrator = null;
-  }
-  return intentOrchestrator;
-}
-
-function resolveExecutionMode(prompt = "") {
-  const orchestrator = getIntentOrchestrator();
-  if (!orchestrator) {
-    throw new Error("[editcore-chat-kernel] runtime/intent-orchestrator no disponible; no se puede resolver el modo de ejecución.");
-  }
-  if (typeof orchestrator.analyze !== "function") {
-    throw new Error("[editcore-chat-kernel] runtime/intent-orchestrator no expone analyze(); no se puede resolver el modo de ejecución.");
-  }
-  const result = orchestrator.analyze({ prompt });
-  if (!result) {
-    throw new Error("[editcore-chat-kernel] runtime/intent-orchestrator.analyze() devolvió vacío; no se puede resolver el modo de ejecución.");
-  }
-  if (result.mode === "EXECUTE" || result.execution === "AUTO" || result.kind === "EXECUTE") {
-    return { mode: "EXECUTE", reason: result.reason || "ORCHESTRATOR_EXECUTE" };
-  }
-  return { mode: "CHAT", reason: result.reason || "ORCHESTRATOR_CHAT" };
-}
+const {
+  classify,
+  extractListTarget,
+  isFullAccess,
+  resolveExecutionMode,
+  resolveUnifiedAgentPlan,
+  MODES,
+  TOOL_ALLOWLIST,
+  SUB_AGENTS,
+} = require("./classify");
 
 let projectMapApi = null;
 try {
@@ -787,17 +738,14 @@ class ChatOrchestrator {
 
     let unifiedPlan = null;
     try {
-      const _orch = getIntentOrchestrator();
-      if (_orch?.resolveUnifiedAgentPlan) {
-        unifiedPlan = _orch.resolveUnifiedAgentPlan({
-          prompt: text,
-          projectOpen: Boolean(projectRoot),
-          allowWrite: fullAccess ? true : (decision.allowWrite ?? true),
-          permissionMode: fullAccess ? "full" : (permissionMode || "step"),
-          planAuthorizedExecution: fullAccess === true,
-          requestedAgent: true,
-        });
-      }
+      unifiedPlan = resolveUnifiedAgentPlan({
+        prompt: text,
+        projectOpen: Boolean(projectRoot),
+        allowWrite: fullAccess ? true : (decision.allowWrite ?? true),
+        permissionMode: fullAccess ? "full" : (permissionMode || "step"),
+        planAuthorizedExecution: fullAccess === true,
+        requestedAgent: true,
+      });
     } catch (_) {
       unifiedPlan = null;
     }
