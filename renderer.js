@@ -663,10 +663,10 @@ function flushSessionSyncNow() {
   }
   if (!window.editcoreSession?.flushSync) return;
   try {
-    const project = activeProject();
+    dedupeProjectsByRoot();
     window.editcoreSession.flushSync({
       activeProjectId: state.activeProjectId,
-      projects: project ? [project] : state.projects,
+      projects: state.projects,
     });
   } catch { /* ignore */ }
 }
@@ -13296,6 +13296,8 @@ async function bootBackground({
         }
       }
       state.projects = Array.from(mergedMap.values());
+      renderProjects();
+      try { window.EditCoreChatHome?.refresh?.(); } catch { /* ignore */ }
     }
     const sourceActiveId = state.activeProjectId || diskActive || storedActiveProjectId;
 
@@ -13395,7 +13397,7 @@ async function bootBackground({
       if (!result || result.ok) return;
       $("status").textContent = `Mantenimiento: ${result.unhealthy} alerta(s)`;
     });
-    if (useDisk || diskProjects.length) {
+    if (diskProjects.length || state.projects.length) {
       try {
         localStorage.setItem(PROJECTS_STORAGE_KEY, JSON.stringify(state.projects));
         if (WINDOW_ID === "main" && sourceActiveId) {

@@ -1406,6 +1406,9 @@
       console.warn("[chat-home] connectFolder", error?.message || error);
     }
     syncFolderChip();
+    renderThreadList();
+    syncCrumb();
+    syncEmptyState();
   }
 
   function submitHomePrompt() {
