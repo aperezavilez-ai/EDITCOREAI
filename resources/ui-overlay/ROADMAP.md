@@ -6,8 +6,8 @@ EditCore actualiza este archivo tras cambios. No pedirlo al usuario. No pegar co
 
 ## Proceso
 - Fase: implementacion
-- Estado: Tarea cerrada. El siguiente turno parte de ## Proceso / ## Tarea / ## Bloqueos.
-- Actualizado: 2026-09-18 14:19
+- Estado: Incompleta: Algo falló durante la ejecución: El proveedor no respondió a tiempo. Reintenta en unos segundos; tu modelo se conserva.
+- Actualizado: 2026-09-18 14:39
 - Preview: desconocido — usa el preview del IDE, no inventes puertos
 
 ## Mapa
@@ -79,10 +79,13 @@ EditCore actualiza este archivo tras cambios. No pedirlo al usuario. No pegar co
 - editcore-chat-kernel/subagents/implementer.js
 
 ## Tarea activa
-- hola
+- # AUDITORÍA Y DIAGNÓSTICO AUTÓNOMO DE EDITCOREAI
+
+Ejecuta un análisis profundo y autónomo de tu propio código fuente, estructura de archivos y arquitectura actual dentro de este workspace. Utiliza los módulos de `scripts
 
 ## Bloqueos / bugs conocidos
-- Actualizado: 2026-09-18 14:07
+- falló durante la ejecución: El proveedor no respondió a tiempo. Reintenta en unos segundos; tu modelo se conserva.
+- Actualizado: 2026-09-18 14:19
 - Preview: desconocido — usa el preview del IDE, no inventes puertos
 
 ## Decisiones
@@ -116,7 +119,7 @@ EditCore actualiza este archivo tras cambios. No pedirlo al usuario. No pegar co
 - Pendiente
 
 ## Siguiente
-- Leer ## Proceso + ## Tarea activa + ## Bloqueos y continuar. No reexplorar el proyecto entero.
+- Retomar desde ## Proceso y ## Siguiente de este ROADMAP.
 
 ## Regla anti-reexploracion
 - Si el pedido del usuario apunta a un archivo ya listado arriba: ve DIRECTO a read_file/replace_in_file de ese path.

@@ -27,7 +27,29 @@ function mergeAbortSignals(primary, secondary) {
   return primary || secondary || undefined;
 }
 
-async function callChat({
+function isTransientError(error) {
+  if (!error) return false;
+  if (error?.code === "AGENT_STEER" || error?.code === "ABORT_ERR") return false;
+  const status = Number(error?.status || 0);
+  if ([408, 425, 429, 500, 502, 503, 504, 524].includes(status)) return true;
+  const msg = String(error?.message || error || "").toLowerCase();
+  return /timeout|time-?out|aborted|cloudflare|524|504|502|503|429|econnreset|etimedout|enotfound|fetch failed|socket|network|overloaded/i.test(msg);
+}
+
+function delay(ms, signal) {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) return reject(signal.reason || new Error("Aborted"));
+    const timer = setTimeout(resolve, ms);
+    if (signal) {
+      signal.addEventListener("abort", () => {
+        clearTimeout(timer);
+        reject(signal.reason || new Error("Aborted"));
+      }, { once: true });
+    }
+  });
+}
+
+async function callChatSingleAttempt({
   apiBaseUrl,
   apiKey,
   model,
@@ -142,8 +164,88 @@ async function callChat({
   }
 }
 
+async function callChat({
+  apiBaseUrl,
+  apiKey,
+  model,
+  messages,
+  tools,
+  signal,
+  toolChoice,
+  timeoutMs = DEFAULT_PROVIDER_TIMEOUT_MS,
+  stream = true,
+  onTextDelta = null,
+  fallbackProfiles = [],
+  onFallback = null,
+}) {
+  const profileList = [
+    { apiBaseUrl, apiKey, model },
+    ...(Array.isArray(fallbackProfiles) ? fallbackProfiles.map((p) => ({
+      apiBaseUrl: p.baseUrl || p.apiBaseUrl,
+      apiKey: p.apiKey,
+      model: p.model || model,
+    })) : []),
+  ].filter((p) => p.apiBaseUrl && p.apiKey && p.model);
+
+  let lastError = null;
+
+  for (let pIdx = 0; pIdx < profileList.length; pIdx++) {
+    const currentProfile = profileList[pIdx];
+    const maxRetries = pIdx === 0 ? 2 : 1; // 2 intentos en primario, 1 en respaldo
+
+    if (pIdx > 0) {
+      try {
+        onFallback?.({
+          index: pIdx,
+          model: currentProfile.model,
+          baseUrl: currentProfile.apiBaseUrl,
+        });
+      } catch { /* ignore */ }
+    }
+
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      if (signal?.aborted) {
+        const abortReason = signal?.reason;
+        if (abortReason?.code === "AGENT_STEER") {
+          throw Object.assign(new Error("Nueva instruccion del usuario."), { code: "AGENT_STEER" });
+        }
+        throw (abortReason || new Error("Operacion cancelada"));
+      }
+
+      try {
+        const result = await callChatSingleAttempt({
+          apiBaseUrl: currentProfile.apiBaseUrl,
+          apiKey: currentProfile.apiKey,
+          model: currentProfile.model,
+          messages,
+          tools,
+          signal,
+          toolChoice,
+          timeoutMs,
+          stream,
+          onTextDelta,
+        });
+        return result;
+      } catch (err) {
+        lastError = err;
+        if (err?.code === "AGENT_STEER" || signal?.aborted) {
+          throw err;
+        }
+        if (isTransientError(err) && attempt < maxRetries - 1) {
+          await delay(800 * (attempt + 1), signal).catch(() => {});
+          continue;
+        }
+        break; // pasar al siguiente perfil si este falló
+      }
+    }
+  }
+
+  throw lastError || createGatewayTimeoutError(524, "No se pudo obtener respuesta del proveedor.");
+}
+
 module.exports = {
   callChat,
+  callChatSingleAttempt,
   normalizeUsage,
   withCacheControl,
   GATEWAY_TIMEOUT_USER_MESSAGE,

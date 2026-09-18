@@ -1775,6 +1775,7 @@ ipcMain.handle("editcore:chat", async (_event, input = {}) => {
       apiKey: chatApiKey,
       model,
       images,
+      fallbackProfiles: fallbackProviderProfiles({ providerKey, baseUrl, model, apiKey: chatApiKey }),
       helpers,
       allowWrite: fullAccess || permissionHint !== "readonly",
       permissionMode: permissionHint || permissionMode || "step",

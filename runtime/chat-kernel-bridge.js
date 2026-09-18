@@ -55,6 +55,7 @@ async function runKernelChat({
   permissionFull,
   fullAccess,
   planAuthorizedExecution,
+  fallbackProfiles,
 }) {
   const mode = String(permissionMode || "").toLowerCase();
 
@@ -97,6 +98,7 @@ async function runKernelChat({
         apiKey,
         model,
         images: Array.isArray(images) ? images : [],
+        fallbackProfiles: Array.isArray(fallbackProfiles) ? fallbackProfiles : [],
         onProgress,
         helpers: helpers || {},
         autoHeal: autoHeal || null,

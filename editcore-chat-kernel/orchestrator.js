@@ -55,7 +55,7 @@ try {
 
 const DEFAULT_MAX_STEPS = 28;
 const AUTHORIZED_MAX_STEPS = 32;
-const DEFAULT_TOTAL_TIMEOUT_MS = 240_000;
+const DEFAULT_TOTAL_TIMEOUT_MS = 600_000;
 const MAX_INCOMPLETE_RETRIES = 3;
 const HEARTBEAT_INTERVAL_MS = 5_000;
 
@@ -1299,6 +1299,8 @@ class ChatOrchestrator {
       } catch { /* persist best-effort */ }
     };
 
+    const fallbackProfiles = Array.isArray(opts.fallbackProfiles) ? opts.fallbackProfiles : [];
+
     try {
       for (let i = 0; i < stepsLimit; i++) {
         if (Date.now() > deadline) {
@@ -1342,11 +1344,17 @@ class ChatOrchestrator {
           }
         }
 
-        const availableTools = allowWrite
-          ? tools.DEFINITIONS
-          : tools.DEFINITIONS.filter((t) => ![
-            "write_file", "replace_in_file", "run_command", "scaffold_project",
-            "supabase_migrate", "ingest_to_brain", "clone_repo",
+        const availableTools = tools.getToolDefinitions({
+          allowWrite: accessFull,
+          isFullAccess: accessFull,
+          isAnalysis: false,
+        }).filter((t) => !chatOnly
+          && TOOL_ALLOWLIST.includes(t.function.name)
+          && ![
+            "preview_browser_interaction",
+            "browser_page_action",
+            "capture_preview_screenshot",
+            "auto_scaffold_project",
             "clone_web_page", "images_to_code",
             "rollback_last_change",
           ].includes(t.function.name));
@@ -1380,6 +1388,15 @@ class ChatOrchestrator {
             tools: (chatOnly || decision?.kind === "CHAT") ? [] : availableTools,
             signal: turnSignal,
             stream: true,
+            fallbackProfiles,
+            onFallback: (fb) => {
+              try {
+                onProgress?.({
+                  phase: "model",
+                  text: `Cambiando a proveedor de respaldo (${fb.model})…`,
+                });
+              } catch { /* ignore */ }
+            },
             onTextDelta: (delta) => {
               const chunk = String(delta || "");
               if (!chunk) return;

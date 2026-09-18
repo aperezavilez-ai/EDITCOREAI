@@ -8,8 +8,8 @@ const GATEWAY_TIMEOUT_USER_MESSAGE =
   "La respuesta tardó demasiado tiempo. Intenta reducir el alcance de la solicitud.";
 
 // Timeout por defecto del proveedor.
-// Se mantiene en 180_000 para no cortar respuestas largas; el orchestrator ya limita pasos.
-const DEFAULT_PROVIDER_TIMEOUT_MS = 180_000;
+// Se mantiene en 300_000 (5 min) para modelos complejos y tareas pesadas.
+const DEFAULT_PROVIDER_TIMEOUT_MS = 300_000;
 
 function isGatewayHtmlBody(value = "") {
   const text = String(value || "").trim();
