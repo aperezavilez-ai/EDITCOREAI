@@ -631,6 +631,14 @@ function registerAgentCapabilityTools(dispatcher, {
       },
     });
     dispatcher.register({
+      name: "provision_gafcore_ai",
+      write: false,
+      description: "Deprecado. Configura ME AI o APICredits en Modelos.",
+      execute: async () => {
+        throw new Error("Esta integración ya no está disponible. Configura ME AI o APICredits en Modelos.");
+      },
+    });
+    dispatcher.register({
       name: "provision_fullstack_project",
       write: true,
       description: "Orquestador 1 clic: GitHub + Vercel + Supabase + project-infra.json (bóveda). Configura ME AI o APICredits en Modelos.",

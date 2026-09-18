@@ -1,7 +1,7 @@
 "use strict";
 
 const path = require("path");
-const { classify, extractListTarget, isFullAccess } = require("./classify");
+const { extractListTarget, isFullAccess } = require("./classify");
 const { ChatSession } = require("./session");
 const { PersistentMemory } = require("./memory");
 const { skillsPrompt, SKILL_IDS } = require("./skills-catalog");
@@ -37,14 +37,28 @@ function getIntentOrchestrator() {
   if (intentOrchestrator !== null) return intentOrchestrator;
   try {
     intentOrchestrator = require("../runtime/intent-orchestrator");
-  } catch (_) {
-    try {
-      intentOrchestrator = require("./intent-orchestrator");
-    } catch (e) {
-      intentOrchestrator = false;
-    }
+  } catch (e) {
+    intentOrchestrator = null;
   }
-  return intentOrchestrator || null;
+  return intentOrchestrator;
+}
+
+function resolveExecutionMode(prompt = "") {
+  const orchestrator = getIntentOrchestrator();
+  if (!orchestrator) {
+    throw new Error("[editcore-chat-kernel] runtime/intent-orchestrator no disponible; no se puede resolver el modo de ejecución.");
+  }
+  if (typeof orchestrator.analyze !== "function") {
+    throw new Error("[editcore-chat-kernel] runtime/intent-orchestrator no expone analyze(); no se puede resolver el modo de ejecución.");
+  }
+  const result = orchestrator.analyze({ prompt });
+  if (!result) {
+    throw new Error("[editcore-chat-kernel] runtime/intent-orchestrator.analyze() devolvió vacío; no se puede resolver el modo de ejecución.");
+  }
+  if (result.mode === "EXECUTE" || result.execution === "AUTO" || result.kind === "EXECUTE") {
+    return { mode: "EXECUTE", reason: result.reason || "ORCHESTRATOR_EXECUTE" };
+  }
+  return { mode: "CHAT", reason: result.reason || "ORCHESTRATOR_CHAT" };
 }
 
 let projectMapApi = null;

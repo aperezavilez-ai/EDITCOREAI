@@ -7,7 +7,7 @@ const {
   steerChat,
   isChatRunning,
   classify,
-} = require("../editcore-chat-kernel");
+} = require("../editcore-chat-kernel/index");
 
 const KERNEL_TIMEOUT_MS = 30 * 60 * 1000; // 30 min — el adapter tiene su propio deadline interno (analysis-depth.js)
 

@@ -7,9 +7,9 @@ const { resolveFactualTemperature } = require("./anti-hallucination-policy");
 const GATEWAY_TIMEOUT_USER_MESSAGE =
   "La respuesta tardó demasiado tiempo. Intenta reducir el alcance de la solicitud.";
 
-// 🔧 PARCHE: 180_000 (3 min) → 60_000 (1 min).
-// Con stepsLimit = 32 en orchestrator.js, el techo teórico baja de 96 min a 32 min.
-const DEFAULT_PROVIDER_TIMEOUT_MS = 60_000;
+// Timeout por defecto del proveedor.
+// Se mantiene en 180_000 para no cortar respuestas largas; el orchestrator ya limita pasos.
+const DEFAULT_PROVIDER_TIMEOUT_MS = 180_000;
 
 function isGatewayHtmlBody(value = "") {
   const text = String(value || "").trim();

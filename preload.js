@@ -184,6 +184,17 @@ contextBridge.exposeInMainWorld("editcoreSkills", {
   toggle: (payload) => ipcRenderer.invoke("skills:toggle", payload),
 });
 
+contextBridge.exposeInMainWorld("editcoreCloud", {
+  vaultStatus: () => ipcRenderer.invoke("cloud:vault-status"),
+  deployGithub: (input) => ipcRenderer.invoke("cloud:deploy-github", input),
+  deployVercel: (input) => ipcRenderer.invoke("cloud:deploy-vercel", input),
+  provisionSupabase: (input) => ipcRenderer.invoke("cloud:provision-supabase", input),
+  provisionGafcoreAi: () => ipcRenderer.invoke("cloud:provision-gafcore-ai"),
+  provisionFullstack: (input) => ipcRenderer.invoke("cloud:provision-fullstack", input),
+  probeEndpoint: (input) => ipcRenderer.invoke("cloud:probe-endpoint", input),
+  testLocalApi: (input) => ipcRenderer.invoke("cloud:test-local-api", input),
+});
+
 contextBridge.exposeInMainWorld("editcoreWindow", {
   open: () => ipcRenderer.invoke("window:new"),
   status: () => ipcRenderer.invoke("window:status"),

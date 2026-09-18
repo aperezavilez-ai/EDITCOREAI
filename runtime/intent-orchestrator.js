@@ -10,11 +10,9 @@
   if (root && browserProjectAnalysis) root.EditCoreAgentOrchestrator = api;
 })(typeof window !== "undefined" ? window : globalThis, function createIntentOrchestrator(ProjectAnalysis) {
   if (!ProjectAnalysis) {
-    console.warn("[intent-orchestrator] ProjectAnalysis no disponible, retornando stub.");
-    return {
-      buildSystemPrompt: () => "",
-      classifyIntent: () => ({ scope: "UNKNOWN", needsExploration: false }),
-      shouldUseSubagent: () => false,
+    console.warn("[intent-orchestrator] ProjectAnalysis no disponible, usando modo seguro.");
+    ProjectAnalysis = {
+      analyze: () => ({ kind: "stub", scope: "UNKNOWN" }),
     };
   }
 
@@ -46,13 +44,10 @@
         return /\b(lovable|ui\s+pulida|app\s+web\s+profesional|landing|one[- ]?shot|moderna|premium)\b/i.test(String(prompt || ""));
       },
       buildLovableOneShotBlock({ permissionFull = false } = {}) {
-        return [
-          "PIPELINE LOVABLE ONE-SHOT (obligatorio en este turno):",
-          "- create_project template=lovable-web o react + brain_skill frontend-design.",
-          "- Personaliza UI, npm install, npm run dev, inspect_preview/inspect_browser.",
-          permissionFull ? "- Acceso completo permitido." : "- Respeta limites de run_command.",
-          "- PROHIBIDO solo narrar.",
-        ].join("\n");
+        return {
+          mode: "chat",
+          message: "Detecté una solicitud one-shot. Para ejecutar el pipeline Lovable necesito tu autorización explícita en este turno. Si querés, continuo con create_project + UI + preview.",
+        };
       },
     };
   })();
@@ -448,10 +443,16 @@ function formatOrchestrationBlock(profile = {}) {
       const cursorBlock = CursorParity?.buildCursorParityOrchestrationBlock?.() || "Agente EditCore: investiga, corrige y verifica con herramientas.";
       if (profile.greenfieldCreate) {
         const oneShotExtra = profile.lovableOneShot
-          ? LovableOneShot.buildLovableOneShotBlock({
-            permissionFull: profile.permissionFull === true,
-            prompt: profile.prompt || "",
-          })
+          ? (() => {
+              const block = LovableOneShot.buildLovableOneShotBlock({
+                permissionFull: profile.permissionFull === true,
+                prompt: profile.prompt || "",
+              });
+              if (block && typeof block === "object" && block.mode === "chat") {
+                return block.message || "";
+              }
+              return typeof block === "string" ? block : "";
+            })()
           : "";
         let templateLine = "- create_project template=lovable-web o react; brain_skill frontend-design para UI pulida.";
         try {
@@ -496,7 +497,13 @@ function formatOrchestrationBlock(profile = {}) {
     }
     if (profile.greenfieldCreate) {
       const oneShotExtra = profile.lovableOneShot
-        ? LovableOneShot.buildLovableOneShotBlock({ permissionFull: profile.permissionFull === true })
+        ? (() => {
+            const block = LovableOneShot.buildLovableOneShotBlock({ permissionFull: profile.permissionFull === true });
+            if (block && typeof block === "object" && block.mode === "chat") {
+              return block.message || "";
+            }
+            return typeof block === "string" ? block : "";
+          })()
         : "";
       if (profile.permissionFull) {
         return [
@@ -1118,6 +1125,57 @@ function filterToolsByPlan(tools = [], plan = {}) {
   return tools.filter((item) => allowed.has(item?.function?.name));
 }
 
+/**
+ * refineKernelDecision — fuente única de verdad para overrides de clasificación.
+ * El kernel llama a esta función DESPUÉS de classify() en lugar de aplicar
+ * heurísticas locales dispersas. Elimina la divergencia CHAT→EXECUTE.
+ */
+const DISK_MUTATION_RE = /\b(?:crea(?:r|ción)?|genera(?:r)?|escribe|modifica(?:r)?|refactoriza(?:r)?|actualiza(?:r)?|añade|agrega(?:r)?|cambia(?:r)?|muev\w*|copiar?|haz|hacer|arma|armá|scaffold|nuevo\s+proyecto|ejecuta(?:r)?|run_command|run|build|tsc|npx|npm|corrije|corrige|arregla|implementa(?:r)?|aplica|repara|soluciona)\b/i;
+const ANALYSIS_RE = /(?:^|[^\w])(?:analiz[aáá]|analizar|diagnostica|revis[aá]|inspecciona|explora(?:r)?\s+el\s+proyecto)(?=\s|$|[.!,?¿¡:])/i;
+const EXPLORER_RE = /\b(?:explora|explorer|directorio|listar|estructura|archivos)\b/i;
+const READ_EXPLAIN_RE = /\b(?:explica|explicar|lee|leer|describe|resume|revisa|qué\s+hace)\b/i;
+const PATHISH_LOCAL_RE = /(?:[\\/]|.\w{1,10}\b)/i;
+
+function refineKernelDecision(text, ctx = {}) {
+  const { fullAccess = false, hasImages = false, visionAsk = false, isApprovalText = false, decision: base } = ctx;
+  if (!base) return null;
+  let d = { ...base };
+
+  if (fullAccess) {
+    d.allowWrite = true;
+    if (d.kind === "CONFIRM" || isApprovalText) {
+      return { kind: "EXECUTE", label: "Ejecución (Acceso completo)", allowTools: true, allowWrite: true, background: false };
+    }
+    if (d.kind === "CHAT" && DISK_MUTATION_RE.test(text)) {
+      return { kind: "EXECUTE", label: "Ejecución (Acceso completo)", allowTools: true, allowWrite: true, background: false };
+    }
+  }
+
+  if (d.kind === "CHAT" && DISK_MUTATION_RE.test(text)) {
+    return { kind: "EXECUTE", label: fullAccess ? "Ejecución (Acceso completo)" : "Construcción / Ejecución", allowTools: true, allowWrite: true, background: false };
+  }
+
+  if (d.kind === "CHAT" && ANALYSIS_RE.test(text)) {
+    return { kind: "ANALYZE", label: "Análisis", allowTools: true, allowWrite: false, background: false };
+  }
+
+  if (hasImages && (d.kind === "ANALYZE" || d.kind === "ASK" || visionAsk)) {
+    return fullAccess
+      ? { kind: "EXECUTE", label: "Análisis visual + acción", allowTools: true, allowWrite: true, background: false }
+      : { kind: "ASK", label: "Análisis visual", allowTools: true, allowWrite: false, background: false };
+  }
+
+  if (EXPLORER_RE.test(text) && d.kind === "CHAT" && !hasImages) {
+    return { kind: "LIST", label: "Explorar directorio", allowTools: true, allowWrite: false, background: false };
+  }
+
+  if (READ_EXPLAIN_RE.test(text) && PATHISH_LOCAL_RE.test(text) && d.kind === "CHAT") {
+    return { kind: "ASK", label: "Lectura / explicación", allowTools: true, allowWrite: false, background: false };
+  }
+
+  return d;
+}
+
 return {
   SUB_AGENTS,
   MODES,
@@ -1128,6 +1186,7 @@ return {
   FILESYSTEM_EXPLORATION_TOOLS,
   resolveUnifiedAgentPlan,
   resolveAgentRunProfile,
+  refineKernelDecision,
   applyRunProfile,
   wantsExplicitFilesystemWork,
   isCloneWebPageRequest,

@@ -1,4 +1,4 @@
-// Security utilities for EditCore
+// Security utilities for EDITCOREAI
 "use strict";
 
 const fs = require('fs');

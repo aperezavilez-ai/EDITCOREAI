@@ -7,10 +7,22 @@ EditCore actualiza este archivo tras cambios. No pedirlo al usuario. No pegar co
 ## Proceso
 - Fase: implementacion
 - Estado: Tarea cerrada. El siguiente turno parte de ## Proceso / ## Tarea / ## Bloqueos.
-- Actualizado: 2026-09-17 23:05
+- Actualizado: 2026-09-18 00:39
 - Preview: desconocido — usa el preview del IDE, no inventes puertos
 
 ## Mapa
+- preload.js
+- runtime/intent-orchestrator.js
+- editcore-chat-kernel/orchestrator.js
+- tasks/todo.md
+- tasks/plan.md
+- runtime/chat-kernel-bridge.js
+- scripts/auto-evolution/run-cycle.js
+- scripts/auto-evolution/agents/architect.js
+- scripts/auto-evolution/agents/code-analyzer.js
+- scripts/auto-evolution/orchestrator.js
+- scripts/auto-evolution/evolution-state.json
+- runtime/ai-core.js
 - package.json — editcoreai · scripts: start, postinstall, brand:electron, sync, test, test:e2e, test:e2e:electron, verify:prepackage, test:runtime, check
 - stack: Electron + TypeScript
 - entry: index.html
@@ -47,33 +59,35 @@ EditCore actualiza este archivo tras cambios. No pedirlo al usuario. No pegar co
 - editor-inline-edit.css
 - editor-inline-edit.js
 - evidence-grounding.js
-- ide/
-- index.html
-- inspector-core-service.js
-- intent-orchestrator.js
-- logs-panel.css
-- logs-panel.js
-- main.js
-- preload.js
-- renderer.js
-- patch-engine.js
-- runtime/chat-kernel-bridge.js
-- runtime/intent-orchestrator.js
 
 ## Archivos clave (no reexplorar)
-- package.json
-- ROADMAP.md
-- Usar el Mapa; no list_files('.') si ya hay rutas aqui
+- preload.js
+- tasks/todo.md
+- renderer.js
+- runtime/intent-orchestrator.js
+- editcore-chat-kernel/classify.js
+- editcore-chat-kernel/orchestrator.js
+- .editcore/renderer-symbols.txt
+- runtime/prompt-job-model.js
+- editcore-chat-kernel/skills/editcore-connect/SKILL.md
+- editcore-chat-kernel/skills/marketing-content-creator/SKILL.md
+- brain-service.js
+- tasks/plan.md
+- runtime/chat-kernel-bridge.js
+- editcore-chat-kernel/index.js
+- scripts/auto-evolution/evolution-state.json
+- scripts/auto-evolution/orchestrator.js
 
 ## Tarea activa
-- CONSERVAR TODO
+- ## Habilidades especializadas activas (Skills)
+
+### Skill: editcore-connect
+Guía para conectar el proyecto del usuario con GitHub, Vercel, Supabase, o configurar las API keys de Claude/OpenAI. Úsala cuando el usuario pid
 
 ## Bloqueos / bugs conocidos
-- Actualizado: 2026-09-17 22:55
-- Stack: Electron + TypeScript + Node.js
-- Entry: index.html (renderer), main.js (main process), preload.js (context bridge)
-- Scripts: start, postinstall, brand:electron, sync, test, test:e2e, test:e2e:electron, verify:prepackage, test:runtime, check
-- Preview: Electron window — no hay servidor HTTP externo; el preview es la propia ventana de la app
+- fallo por truncamiento y aplicar el cambio definitivo.
+- Actualizado: 2026-09-18 00:37
+- Preview: desconocido — usa el preview del IDE, no inventes puertos
 
 ## Decisiones
 - **Electron + contextBridge**: se usa `contextBridge.exposeInMainWorld` en `preload.js` para aislar el renderer del acceso directo a Node. Motivo: seguridad y compatibilidad con sandbox de Electron.
@@ -83,19 +97,24 @@ EditCore actualiza este archivo tras cambios. No pedirlo al usuario. No pegar co
 - **Skills como extensión**: las habilidades (editcore-connect, web-to-desktop-pake, etc.) se cargan bajo demanda y no forman parte del core. Motivo: mantener el kernel liviano.
 
 ## Cambios recientes
-- package.json
-- ROADMAP.md
-- `renderer.js` — parche aplicado (kernel)
-- `preload.js` — parche aplicado (kernel)
-- `resources/ui-overlay/preload.js` — parche aplicado (kernel)
-- `runtime/chat-kernel-bridge.js` — parche aplicado (kernel)
-- `runtime/intent-orchestrator.js` — parche aplicado (kernel)
-- `runtime/evidence-grounding.js` — parche aplicado (kernel)
-- `editcore-chat-kernel/orchestrator.js` — parche aplicado (kernel)
-- `resources/ui-overlay/main.js` — parche aplicado (kernel)
-- `debug.log` — archivo escrito (kernel)
-- `../_editcore_probe_sibling/README.md` — archivo escrito (kernel)
-- `ROADMAP.md` — actualizado con correcciones estructurales (fase, bloqueos, decisiones, criterios de verificado)
+- preload.js
+- preload.js — parche aplicado (kernel) (2026-09-18 00:39)
+- tasks/todo.md
+- preload.js — parche aplicado (kernel) (2026-09-18 00:37)
+- renderer.js
+- runtime/intent-orchestrator.js
+- runtime/intent-orchestrator.js — parche aplicado (kernel) (2026-09-18 00:30)
+- runtime/intent-orchestrator.js — parche aplicado (kernel) (2026-09-18 00:29)
+- editcore-chat-kernel/classify.js
+- runtime/intent-orchestrator.js — parche aplicado (kernel) (2026-09-18 00:25)
+- editcore-chat-kernel/orchestrator.js
+- editcore-chat-kernel/orchestrator.js — parche aplicado (kernel) (2026-09-18 00:19)
+- editcore-chat-kernel/orchestrator.js — parche aplicado (kernel) (2026-09-18 00:16)
+- runtime/intent-orchestrator.js — parche aplicado (kernel) (2026-09-18 00:13)
+- runtime/intent-orchestrator.js — parche aplicado (kernel) (2026-09-18 00:12)
+- runtime/intent-orchestrator.js — parche aplicado (kernel) (2026-09-18 00:11)
+- editcore-chat-kernel/orchestrator.js — parche aplicado (kernel) (2026-09-18 00:07)
+- .editcore/renderer-symbols.txt
 
 ## Verificado
 - Pendiente

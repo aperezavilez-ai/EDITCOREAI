@@ -1459,8 +1459,10 @@ body[data-app-mode="chat"] #voiceOverlay {
   animation: chModalFadeIn 0.15s ease-out;
 }
 
-.chat-home-modal-overlay[hidden] {
+.chat-home-modal-overlay[hidden],
+.chat-home-modal-overlay.hidden {
   display: none !important;
+  pointer-events: none !important;
 }
 
 .chat-home-modal-card {

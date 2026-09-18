@@ -765,23 +765,7 @@
         </div>
       </dialog>
 
-      <!-- Custom In-App Modal for Chat (No native OS popups) -->
-      <div id="chatHomeDialogModal" class="chat-home-modal-overlay hidden" aria-hidden="true">
-        <div class="chat-home-modal-card" role="dialog" aria-modal="true">
-          <div class="chat-home-modal-head">
-            <h3 id="chatHomeModalTitle" class="chat-home-modal-title">Confirmar</h3>
-            <button type="button" id="chatHomeModalCloseBtn" class="chat-home-modal-close" aria-label="Cerrar">✕</button>
-          </div>
-          <p id="chatHomeModalDesc" class="chat-home-modal-desc"></p>
-          <div id="chatHomeModalInputWrap" class="chat-home-modal-input-wrap hidden">
-            <input type="text" id="chatHomeModalInput" class="chat-home-modal-input" spellcheck="false" autocomplete="off" />
-          </div>
-          <div class="chat-home-modal-actions">
-            <button type="button" id="chatHomeModalCancelBtn" class="btn-outline">Cancelar</button>
-            <button type="button" id="chatHomeModalConfirmBtn" class="btn-primary">Aceptar</button>
-          </div>
-        </div>
-      </div>
+      <!-- Custom In-App Modal is declared once near the top of body -->
     </div><!-- #modals -->
 
     <script src="./ide/live-hunks.js"></script>
@@ -822,7 +806,7 @@
         <span class="statusbar-sep" aria-hidden="true"></span>
         <span id="statusBarTheme" class="statusbar-item" title="Tema actual">blanco</span>
         <span class="statusbar-sep" aria-hidden="true"></span>
-        <span id="statusBarVersion" class="statusbar-item statusbar-version" title="Versión EditCore">EditCore v3.0.4</span>
+        <span id="statusBarVersion" class="statusbar-item statusbar-version" title="Versión EditCore">EditCore v3.0.7</span>
       </div>
     </footer>
   </body>

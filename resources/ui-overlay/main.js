@@ -5959,10 +5959,10 @@ ipcMain.handle("app:open-external", async (_event, url = "") => {
 
 ipcMain.handle("app:version", () => {
   try {
-    const pkgVer = app.getVersion() || require("./package.json").version || "3.0.4";
+    const pkgVer = app.getVersion() || require("./package.json").version || "3.0.7";
     return pkgVer.startsWith("v") ? pkgVer : `v${pkgVer}`;
   } catch {
-    return "v3.0.4";
+    return "v3.0.7";
   }
 });
 
