@@ -11594,17 +11594,24 @@ function buildPromptJob(prompt) {
     }
     return hydrated || raw;
   })();
-  const analysisContextExtra = analysisMemory
-    ? [
-      ProjectAnalysis.analysisContext(analysisMemory),
-      "CONTINUIDAD: Si el usuario pide propuesta/por qué/qué sigue, usa la MEMORIA anterior; no digas que no hay análisis si hay resumen o archivos leídos.",
-    ].join("\n")
-    : "";
 
   const projectRequest = Boolean(state.projectRoot) && (
     ["analysis", "task"].includes(intent)
     || /\b(proyecto|carpeta|archivo|c[o\u00f3]digo|workspace|repositorio|repo|aplicaci[o\u00f3]n|app)\b/i.test(prompt)
   );
+  const isConversationalGreeting = plan.conversationOnly === true
+    || intent === "conversation"
+    || (!projectRequest && !plan.isAgent && !["analysis", "task", "followup"].includes(intent) && Boolean(ProjectAnalysis.isCasualChat?.(prompt, { hasAnalysisMemory: Boolean(analysisMemory) })));
+
+  const analysisContextExtra = (analysisMemory && !isConversationalGreeting && (plan.isAgent || projectRequest || ["analysis", "task", "followup"].includes(intent)))
+    ? [
+      ProjectAnalysis.analysisContext(analysisMemory),
+      "CONTINUIDAD: Si el usuario pide propuesta/por qué/qué sigue, usa la MEMORIA anterior; no digas que no hay análisis si hay resumen o archivos leídos.",
+    ].join("\n")
+    : "";
+  const conversationHint = isConversationalGreeting
+    ? "Responde de forma concisa, cordial y natural en español. No generes reportes técnicos ni resúmenes de código o análisis a menos que el usuario lo solicite explícitamente."
+    : (plan.chatConversationHint || "");
   const readOnlyChat = !plan.isAgent && projectRequest;
   const continueAuthorized = plan.isAgent
     && !plan.directReadOnly
@@ -11698,7 +11705,7 @@ function buildPromptJob(prompt) {
     listOnly: plan.listOnly === true,
     orchestratorPlan: plan,
     projectIntentComment: plan.conversationOnly,
-    chatConversationHint: plan.chatConversationHint,
+    chatConversationHint: conversationHint,
     continueAuthorized,
     autoSelectedModel: autoMode,
     mode: inferChatModeFromModel(model),
@@ -13118,6 +13125,10 @@ async function boot() {
     state.history = [...(curChat?.messages || matchedProject.messages || [])];
     hideWelcomeScreen();
     if ($("projectPathLabel")) $("projectPathLabel").textContent = matchedProject.projectRoot || "Sin proyecto";
+    try {
+      localStorage.setItem(ACTIVE_PROJECT_STORAGE_KEY, matchedProject.id);
+      if (matchedProject.projectRoot) localStorage.setItem("editcore-project-root", matchedProject.projectRoot);
+    } catch { /* ignore */ }
   } else {
     hideWelcomeScreen();
     if (!chatFirst) showWelcomeScreen();
@@ -13198,6 +13209,7 @@ async function boot() {
             window.EditCoreEditor.getMonacoEditor = () => window.__monacoEditor || window.EditCoreEditor._editor || null;
           }
           try { window.EditCoreInlineEdit?.bindMonacoShortcut?.(ed, window.monaco); } catch { /* ignore */ }
+          try { window.EditCoreVisualPreviewInspector?.bindMonacoInspectorShortcut?.(ed, window.monaco); } catch { /* ignore */ }
           return ed;
         };
       }
@@ -13259,45 +13271,46 @@ async function bootBackground({
     const diskActive = String(diskSession?.activeProjectId || "").trim();
 
     if (diskProjects.length > 0) {
-      const mergedMap = new Map();
-      for (const p of state.projects) {
-        const key = p.projectRoot ? normalizeProjectRoot(p.projectRoot) : (p.id || "default");
-        mergedMap.set(key, { ...p });
-      }
-      for (const dp of repairPersistedText(diskProjects).map(ensureProjectAgent)) {
-        const key = dp.projectRoot ? normalizeProjectRoot(dp.projectRoot) : (dp.id || "default");
-        if (!mergedMap.has(key)) {
-          mergedMap.set(key, dp);
-        } else {
-          const existing = mergedMap.get(key);
-          const existingChats = Array.isArray(existing.chats) ? existing.chats : [];
-          const diskChats = Array.isArray(dp.chats) ? dp.chats : [];
-          const chatMap = new Map();
-          for (const c of existingChats) chatMap.set(c.id, c);
-          for (const dc of diskChats) {
-            if (!chatMap.has(dc.id)) {
-              chatMap.set(dc.id, dc);
-            } else {
-              const curC = chatMap.get(dc.id);
-              const curMsgs = Array.isArray(curC.messages) ? curC.messages : [];
-              const diskMsgs = Array.isArray(dc.messages) ? dc.messages : [];
-              if (diskMsgs.length >= curMsgs.length) {
-                chatMap.set(dc.id, { ...curC, ...dc, messages: diskMsgs });
+      if (storedProjects.length === 0 && state.projects.length === 0) {
+        state.projects = repairPersistedText(diskProjects).map(ensureProjectAgent);
+        renderProjects();
+        try { window.EditCoreChatHome?.refresh?.(); } catch { /* ignore */ }
+      } else {
+        const currentProjectRoots = new Set(state.projects.map((p) => p.projectRoot ? normalizeProjectRoot(p.projectRoot) : p.id));
+        let changed = false;
+        for (const dp of repairPersistedText(diskProjects).map(ensureProjectAgent)) {
+          const key = dp.projectRoot ? normalizeProjectRoot(dp.projectRoot) : dp.id;
+          if (currentProjectRoots.has(key)) {
+            const existing = state.projects.find((p) => (p.projectRoot ? normalizeProjectRoot(p.projectRoot) : p.id) === key);
+            if (existing) {
+              const existingChats = Array.isArray(existing.chats) ? existing.chats : [];
+              const diskChats = Array.isArray(dp.chats) ? dp.chats : [];
+              const chatMap = new Map();
+              for (const c of existingChats) chatMap.set(c.id, c);
+              for (const dc of diskChats) {
+                if (!chatMap.has(dc.id)) {
+                  chatMap.set(dc.id, dc);
+                  changed = true;
+                } else {
+                  const curC = chatMap.get(dc.id);
+                  const curMsgs = Array.isArray(curC.messages) ? curC.messages : [];
+                  const diskMsgs = Array.isArray(dc.messages) ? dc.messages : [];
+                  if (diskMsgs.length > curMsgs.length) {
+                    chatMap.set(dc.id, { ...curC, ...dc, messages: diskMsgs });
+                    changed = true;
+                  }
+                }
               }
+              existing.chats = Array.from(chatMap.values());
             }
           }
-          existing.chats = Array.from(chatMap.values());
-          if ((!existing.messages || !existing.messages.length) && Array.isArray(dp.messages)) {
-            existing.messages = dp.messages;
-          }
-          if (dp.updatedAt && (!existing.updatedAt || dp.updatedAt > existing.updatedAt)) {
-            existing.updatedAt = dp.updatedAt;
-          }
+        }
+        if (changed) {
+          saveProjects();
+          renderProjects();
+          try { window.EditCoreChatHome?.refresh?.(); } catch { /* ignore */ }
         }
       }
-      state.projects = Array.from(mergedMap.values());
-      renderProjects();
-      try { window.EditCoreChatHome?.refresh?.(); } catch { /* ignore */ }
     }
     const sourceActiveId = state.activeProjectId || diskActive || storedActiveProjectId;
 
