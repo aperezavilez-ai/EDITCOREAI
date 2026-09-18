@@ -7471,6 +7471,9 @@ function hideThinkingIndicator(_thinkingItem) {
 function showThinkingIndicator(thinkingItem) {
   if (!thinkingItem) return;
   if (Date.now() < agentUiHardStopUntil) return;
+  if (thinkingItem._settled || thinkingItem.classList?.contains("agent-execution-done")) return;
+  const runId = String(thinkingItem._runId || thinkingItem.dataset?.runId || "").trim();
+  if (runId && !activeAgentThinkingRuns.has(runId)) return;
   thinkingItem.classList.remove("agent-execution-done");
   thinkingItem.classList.add("thinking-msg", "is-thinking-live");
   let primary = thinkingItem.querySelector?.(".thinking-primary");
@@ -8082,6 +8085,7 @@ function settleAgentTurnChrome(thinking, { failed = false, force = false } = {})
     setAgentLiveActivity(thinking, "Trabajando…");
     return;
   }
+  thinking._settled = true;
   stopThinkingAnimations(thinking);
   thinking.classList.remove("thinking-msg", "is-thinking-live");
   thinking.classList.add("assistant", "agent-execution-done");
@@ -8094,6 +8098,11 @@ function settleAgentTurnChrome(thinking, { failed = false, force = false } = {})
     primary.classList.add("hidden");
     primary.hidden = true;
     primary.style.display = "none";
+  }
+  const dots = thinking.querySelector?.(".thinking-dots");
+  if (dots) {
+    dots.hidden = true;
+    dots.style.display = "none";
   }
   setAgentLiveActivity(thinking, "");
   revealAgentTurnActions(thinking, { failed });
@@ -12730,6 +12739,15 @@ async function executePromptJob(job) {
   } finally {
     if (job.runId) activeAgentThinkingRuns.delete(job.runId);
     job.agentExecuting = false;
+    if (job.thinking) {
+      settleAgentTurnChrome(job.thinking, { force: true });
+    }
+    document.querySelectorAll?.(".thinking-msg, .is-thinking-live")?.forEach?.((el) => {
+      const elRunId = String(el._runId || el.dataset?.runId || "").trim();
+      if (!elRunId || !activeAgentThinkingRuns.has(elRunId)) {
+        settleAgentTurnChrome(el, { force: true });
+      }
+    });
     renderPromptQueue();
     notifyVoiceTurnComplete();
     $("prompt").focus();

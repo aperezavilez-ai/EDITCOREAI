@@ -7,7 +7,7 @@ EditCore actualiza este archivo tras cambios. No pedirlo al usuario. No pegar co
 ## Proceso
 - Fase: implementacion
 - Estado: Tarea cerrada. El siguiente turno parte de ## Proceso / ## Tarea / ## Bloqueos.
-- Actualizado: 2026-09-18 13:57
+- Actualizado: 2026-09-18 14:07
 - Preview: desconocido — usa el preview del IDE, no inventes puertos
 
 ## Mapa
@@ -66,17 +66,17 @@ EditCore actualiza este archivo tras cambios. No pedirlo al usuario. No pegar co
 - scripts/auto-evolution/agents/code-analyzer.js
 - scripts/auto-evolution/run-cycle.js
 - scripts/auto-evolution/evolution-state.json
-- runtime/chat-kernel-bridge.js
-- editcore-chat-kernel/index.js
 - runtime/ai-core.js
 - renderer.js
+- preload.js
+- runtime/chat-kernel-bridge.js
+- editcore-chat-kernel/index.js
+- editcore-chat-kernel/orchestrator.js
 - runtime/intent-orchestrator.js
 - editcore-chat-kernel/classify.js
-- brain-service.js
-- editcore-chat-kernel/orchestrator.js
-- editcore-chat-kernel/skills-catalog.js
-- editcore-chat-kernel/skills/editcore-connect/SKILL.md
-- project-storage.js
+- editcore-chat-kernel/tools.js
+- package.json
+- editcore-chat-kernel/subagents/implementer.js
 
 ## Tarea activa
 - # AUDITORÍA Y DIAGNÓSTICO AUTÓNOMO DE EDITCOREAI
@@ -84,7 +84,8 @@ EditCore actualiza este archivo tras cambios. No pedirlo al usuario. No pegar co
 Ejecuta un análisis profundo y autónomo de tu propio código fuente, estructura de archivos y arquitectura actual dentro de este workspace. Utiliza los módulos de `scripts
 
 ## Bloqueos / bugs conocidos
-- Actualizado: 2026-09-18 00:39
+- ERRORES (PRIORIZADOS)
+- Actualizado: 2026-09-18 14:03
 - Preview: desconocido — usa el preview del IDE, no inventes puertos
 
 ## Decisiones
@@ -100,19 +101,19 @@ Ejecuta un análisis profundo y autónomo de tu propio código fuente, estructur
 - scripts/auto-evolution/agents/code-analyzer.js
 - scripts/auto-evolution/run-cycle.js
 - scripts/auto-evolution/evolution-state.json
-- runtime/chat-kernel-bridge.js
-- editcore-chat-kernel/index.js
 - runtime/ai-core.js
 - renderer.js
+- preload.js
+- runtime/chat-kernel-bridge.js
+- editcore-chat-kernel/index.js
+- editcore-chat-kernel/orchestrator.js
 - runtime/intent-orchestrator.js
 - editcore-chat-kernel/classify.js
-- brain-service.js
-- editcore-chat-kernel/orchestrator.js
-- editcore-chat-kernel/skills-catalog.js
-- editcore-chat-kernel/skills/editcore-connect/SKILL.md
-- project-storage.js
-- project-path-policy.js
-- preload.js
+- editcore-chat-kernel/tools.js
+- package.json
+- editcore-chat-kernel/subagents/implementer.js
+- editcore-chat-kernel/subagents/explorer.js
+- editcore-chat-kernel/subagents/analyst.js
 
 ## Verificado
 - Pendiente
