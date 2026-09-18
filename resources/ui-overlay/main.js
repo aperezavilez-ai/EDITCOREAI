@@ -10228,6 +10228,246 @@ ipcMain.handle("debugger:list-sessions", async () => {
   }
 });
 
+// Deep Indexer handlers
+ipcMain.handle("deepIndexer:index", async (_event, workspace) => {
+  try {
+    const { deepIndexer } = require("./runtime/deep-indexer");
+    return await deepIndexer.indexWorkspace(workspace);
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
+});
+
+ipcMain.handle("deepIndexer:search-symbols", async (_event, query, limit) => {
+  try {
+    const { deepIndexer } = require("./runtime/deep-indexer");
+    return deepIndexer.searchSymbols(query, limit);
+  } catch (error) {
+    return [];
+  }
+});
+
+ipcMain.handle("deepIndexer:find-references", async (_event, symbolName) => {
+  try {
+    const { deepIndexer } = require("./runtime/deep-indexer");
+    return deepIndexer.findReferences(symbolName);
+  } catch (error) {
+    return [];
+  }
+});
+
+ipcMain.handle("deepIndexer:query", async (_event, prompt, topK) => {
+  try {
+    const { deepIndexer } = require("./runtime/deep-indexer");
+    return deepIndexer.queryCodebase(prompt, topK);
+  } catch (error) {
+    return [];
+  }
+});
+
+ipcMain.handle("deepIndexer:get-graph", async () => {
+  try {
+    const { deepIndexer } = require("./runtime/deep-indexer");
+    return deepIndexer.getDependencyGraph();
+  } catch (error) {
+    return {};
+  }
+});
+
+ipcMain.handle("deepIndexer:get-status", async () => {
+  try {
+    const { deepIndexer } = require("./runtime/deep-indexer");
+    return deepIndexer.getGraphStatus();
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
+});
+
+// Multi-File Composer handlers
+ipcMain.handle("multiComposer:create-plan", async (_event, options) => {
+  try {
+    const { multiFileComposer } = require("./runtime/multi-file-composer");
+    return multiFileComposer.createPlan(options);
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
+});
+
+ipcMain.handle("multiComposer:preview", async (_event, planId) => {
+  try {
+    const { multiFileComposer } = require("./runtime/multi-file-composer");
+    return multiFileComposer.previewChanges(planId);
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
+});
+
+ipcMain.handle("multiComposer:apply", async (_event, planId) => {
+  try {
+    const { multiFileComposer } = require("./runtime/multi-file-composer");
+    return await multiFileComposer.applyAtomicChanges(planId);
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
+});
+
+ipcMain.handle("multiComposer:rollback", async (_event, planId) => {
+  try {
+    const { multiFileComposer } = require("./runtime/multi-file-composer");
+    return await multiFileComposer.rollbackAtomicChanges(planId);
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
+});
+
+ipcMain.handle("multiComposer:get-pending", async () => {
+  try {
+    const { multiFileComposer } = require("./runtime/multi-file-composer");
+    return multiFileComposer.getPendingDiffs();
+  } catch (error) {
+    return [];
+  }
+});
+
+// VSIX Loader handlers
+ipcMain.handle("vsix:inspect", async (_event, vsixPath) => {
+  try {
+    const { vsixLoader } = require("./runtime/vsix-loader");
+    return await vsixLoader.inspectVsix(vsixPath);
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
+});
+
+ipcMain.handle("vsix:install", async (_event, vsixPath, targetDir) => {
+  try {
+    const { vsixLoader } = require("./runtime/vsix-loader");
+    return await vsixLoader.installVsix(vsixPath, targetDir);
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
+});
+
+ipcMain.handle("vsix:list", async (_event, targetDir) => {
+  try {
+    const { vsixLoader } = require("./runtime/vsix-loader");
+    return vsixLoader.listInstalledExtensions(targetDir);
+  } catch (error) {
+    return [];
+  }
+});
+
+ipcMain.handle("vsix:uninstall", async (_event, extensionId, targetDir) => {
+  try {
+    const { vsixLoader } = require("./runtime/vsix-loader");
+    return vsixLoader.uninstallExtension(extensionId, targetDir);
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
+});
+
+ipcMain.handle("vsix:get-themes", async (_event, extensionId, targetDir) => {
+  try {
+    const { vsixLoader } = require("./runtime/vsix-loader");
+    return vsixLoader.getContributedThemes(extensionId, targetDir);
+  } catch (error) {
+    return [];
+  }
+});
+
+ipcMain.handle("vsix:get-grammars", async (_event, extensionId, targetDir) => {
+  try {
+    const { vsixLoader } = require("./runtime/vsix-loader");
+    return vsixLoader.getContributedGrammars(extensionId, targetDir);
+  } catch (error) {
+    return [];
+  }
+});
+
+// Terminal Healer handlers
+ipcMain.handle("terminalHealer:analyze", async (_event, output, cwd) => {
+  try {
+    const { terminalHealer } = require("./runtime/terminal-healer");
+    return terminalHealer.analyzeError(output, cwd);
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
+});
+
+ipcMain.handle("terminalHealer:create-plan", async (_event, analysis, cwd) => {
+  try {
+    const { terminalHealer } = require("./runtime/terminal-healer");
+    return terminalHealer.createHealingPlan(analysis, cwd);
+  } catch (error) {
+    return null;
+  }
+});
+
+ipcMain.handle("terminalHealer:auto-heal", async (_event, command, cwd) => {
+  try {
+    const { terminalHealer } = require("./runtime/terminal-healer");
+    return await terminalHealer.executeAutoHeal(command, cwd);
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
+});
+
+// Remote Env handlers
+ipcMain.handle("remoteEnv:test-ssh", async (_event, config) => {
+  try {
+    const { remoteEnv } = require("./runtime/remote-env");
+    return await remoteEnv.testSshConnection(config);
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
+});
+
+ipcMain.handle("remoteEnv:exec-command", async (_event, connectionId, command, options) => {
+  try {
+    const { remoteEnv } = require("./runtime/remote-env");
+    return await remoteEnv.executeRemoteCommand(connectionId, command, options);
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
+});
+
+ipcMain.handle("remoteEnv:list-containers", async () => {
+  try {
+    const { remoteEnv } = require("./runtime/remote-env");
+    return await remoteEnv.listDockerContainers();
+  } catch (error) {
+    return [];
+  }
+});
+
+ipcMain.handle("remoteEnv:start-container", async (_event, options) => {
+  try {
+    const { remoteEnv } = require("./runtime/remote-env");
+    return await remoteEnv.startDevContainer(options);
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
+});
+
+ipcMain.handle("remoteEnv:stop-container", async (_event, containerId) => {
+  try {
+    const { remoteEnv } = require("./runtime/remote-env");
+    return await remoteEnv.stopDevContainer(containerId);
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
+});
+
+ipcMain.handle("remoteEnv:get-status", async (_event, containerId) => {
+  try {
+    const { remoteEnv } = require("./runtime/remote-env");
+    return remoteEnv.getContainerStatus(containerId);
+  } catch (error) {
+    return { status: "error", error: error.message };
+  }
+});
+
+
 
 
 

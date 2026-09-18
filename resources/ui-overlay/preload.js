@@ -604,6 +604,48 @@ contextBridge.exposeInMainWorld("editcoreDebugger", {
   listSessions: () => ipcRenderer.invoke("debugger:list-sessions"),
 });
 
+contextBridge.exposeInMainWorld("editcoreDeepIndexer", {
+  index: (workspace) => ipcRenderer.invoke("deepIndexer:index", workspace),
+  searchSymbols: (query, limit) => ipcRenderer.invoke("deepIndexer:search-symbols", query, limit),
+  findReferences: (symbolName) => ipcRenderer.invoke("deepIndexer:find-references", symbolName),
+  query: (prompt, topK) => ipcRenderer.invoke("deepIndexer:query", prompt, topK),
+  getGraph: () => ipcRenderer.invoke("deepIndexer:get-graph"),
+  getStatus: () => ipcRenderer.invoke("deepIndexer:get-status"),
+});
+
+contextBridge.exposeInMainWorld("editcoreMultiComposer", {
+  createPlan: (options) => ipcRenderer.invoke("multiComposer:create-plan", options),
+  preview: (planId) => ipcRenderer.invoke("multiComposer:preview", planId),
+  apply: (planId) => ipcRenderer.invoke("multiComposer:apply", planId),
+  rollback: (planId) => ipcRenderer.invoke("multiComposer:rollback", planId),
+  getPending: () => ipcRenderer.invoke("multiComposer:get-pending"),
+});
+
+contextBridge.exposeInMainWorld("editcoreVsix", {
+  inspect: (vsixPath) => ipcRenderer.invoke("vsix:inspect", vsixPath),
+  install: (vsixPath, targetDir) => ipcRenderer.invoke("vsix:install", vsixPath, targetDir),
+  list: (targetDir) => ipcRenderer.invoke("vsix:list", targetDir),
+  uninstall: (extensionId, targetDir) => ipcRenderer.invoke("vsix:uninstall", extensionId, targetDir),
+  getThemes: (extensionId, targetDir) => ipcRenderer.invoke("vsix:get-themes", extensionId, targetDir),
+  getGrammars: (extensionId, targetDir) => ipcRenderer.invoke("vsix:get-grammars", extensionId, targetDir),
+});
+
+contextBridge.exposeInMainWorld("editcoreTerminalHealer", {
+  analyze: (output, cwd) => ipcRenderer.invoke("terminalHealer:analyze", output, cwd),
+  createPlan: (analysis, cwd) => ipcRenderer.invoke("terminalHealer:create-plan", analysis, cwd),
+  autoHeal: (command, cwd) => ipcRenderer.invoke("terminalHealer:auto-heal", command, cwd),
+});
+
+contextBridge.exposeInMainWorld("editcoreRemoteEnv", {
+  testSsh: (config) => ipcRenderer.invoke("remoteEnv:test-ssh", config),
+  execCommand: (connectionId, command, options) => ipcRenderer.invoke("remoteEnv:exec-command", connectionId, command, options),
+  listContainers: () => ipcRenderer.invoke("remoteEnv:list-containers"),
+  startContainer: (options) => ipcRenderer.invoke("remoteEnv:start-container", options),
+  stopContainer: (containerId) => ipcRenderer.invoke("remoteEnv:stop-container", containerId),
+  getStatus: (containerId) => ipcRenderer.invoke("remoteEnv:get-status", containerId),
+});
+
+
 
 
 
