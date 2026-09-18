@@ -12633,24 +12633,26 @@ async function executePromptJob(job) {
       let streamBody = null;
       let finalUsage = null;
 
-      window.editcoreStream.offChunk();
-      window.editcoreStream.onChunk((chunk) => {
-        if (chunk && chunk.done) return;
-        const replace = Boolean(chunk && typeof chunk === "object" && chunk.replace);
-        const text = typeof chunk === "string" ? chunk : (chunk?.text || chunk?.delta || "");
-        if (!text) return;
-        if (streamEl === null) {
-          removeThinking(thinking);
-          const s = appendStreaming();
-          streamEl = s.item;
-          streamBody = s.body;
-          stopTimer();
-          job.stopStreamingTimer = () => 0;
-        }
-        accumulated = replace ? text : `${accumulated}${text}`;
-        streamBody.innerHTML = renderMarkdown(accumulated);
-        scrollFeedToBottom();
-      });
+      try { window.editcoreStream?.offChunk?.(); } catch {}
+      try {
+        window.editcoreStream?.onChunk?.((chunk) => {
+          if (chunk && chunk.done) return;
+          const replace = Boolean(chunk && typeof chunk === "object" && chunk.replace);
+          const text = typeof chunk === "string" ? chunk : (chunk?.text || chunk?.delta || "");
+          if (!text) return;
+          if (streamEl === null) {
+            removeThinking(thinking);
+            const s = appendStreaming();
+            streamEl = s.item;
+            streamBody = s.body;
+            stopTimer();
+            job.stopStreamingTimer = () => 0;
+          }
+          accumulated = replace ? text : `${accumulated}${text}`;
+          streamBody.innerHTML = renderMarkdown(accumulated);
+          scrollFeedToBottom();
+        });
+      } catch {}
 
       const result = await window.editcoreChat.chat({
         mode: job.mode, baseUrl: job.baseUrl, apiKey: job.apiKey, model: job.model, prompt,
@@ -12672,7 +12674,7 @@ async function executePromptJob(job) {
         ].filter(Boolean).join("\n\n"),
       });
 
-      window.editcoreStream.offChunk();
+      try { window.editcoreStream?.offChunk?.(); } catch {}
       elapsedSeconds = job.stopStreamingTimer ? job.stopStreamingTimer() : stopTimer();
       removeThinking(thinking);
 
