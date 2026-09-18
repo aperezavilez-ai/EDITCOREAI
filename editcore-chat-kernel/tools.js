@@ -12,6 +12,7 @@ const {
 } = require("./snapshot");
 const { runProcess, isLongRunningCommand } = require("./process-runner");
 const { capture_preview_screenshot, DEFAULT_PREVIEW_URL } = require("./vision-inspector");
+const { detectCircularDependencies } = require("./circular-dependency-detector");
 
 const TOOL_RESULT_CAP = 2000;
 
@@ -661,6 +662,20 @@ const DEFINITIONS = [
       parameters: { type: "object", properties: {} },
     },
   },
+  {
+    type: "function",
+    function: {
+      name: "analyze_circular_dependencies",
+      description: "Analiza el árbol de dependencias e imports/requires en el proyecto o carpeta y detecta ciclos circulares recursivos.",
+      parameters: {
+        type: "object",
+        properties: {
+          path: { type: "string", description: "Subcarpeta o archivo a analizar (por defecto todo el proyecto)" },
+          maxDepth: { type: "number", description: "Profundidad máxima de recursión (default 25)" },
+        },
+      },
+    },
+  },
 ];
 
 function resolveListPath(root, requested) {
@@ -813,6 +828,8 @@ async function execute(name, args, root, allowWrite, helpers = {}) {
       return rollbackLastChange(root, a.snapshotId || null);
     case "list_snapshots":
       return listSnapshots(root);
+    case "analyze_circular_dependencies":
+      return detectCircularDependencies(root, a);
     default:
       return { ok: false, error: `Herramienta desconocida: ${name}` };
   }
@@ -845,6 +862,7 @@ module.exports = {
   rollbackLastChange,
   listSnapshots,
   capture_preview_screenshot,
+  detectCircularDependencies,
   isSoftToolFailure,
   locateOldText,
   execute,

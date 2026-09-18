@@ -195,7 +195,7 @@ const ALL_ALLOWED_TOOLS = [
   "deploy_one_click", "publish_project", "fullstack_deploy",
   "audit_env", "supabase_migrate", "scaffold_project", "capture_preview",
   "capture_preview_screenshot", "run_e2e_pipeline", "search_codebase_semantic",
-  "rollback_last_change", "list_snapshots",
+  "rollback_last_change", "list_snapshots", "analyze_circular_dependencies",
 ];
 
 const TOOL_ALLOWLIST = Object.assign(
@@ -211,6 +211,7 @@ const TOOL_ALLOWLIST = Object.assign(
       "project_discovery", "codebase_map", "symbol_search",
       "inspect_preview", "brain_search", "brain_skill", "brain_tools",
       "audit_env", "list_snapshots", "search_codebase_semantic",
+      "analyze_circular_dependencies",
     ],
     [MODES.EXECUTE]: ALL_ALLOWED_TOOLS,
     includes(toolName) {

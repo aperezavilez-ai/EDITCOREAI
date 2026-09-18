@@ -1,6 +1,6 @@
 {
-  "cycle": 5,
-  "timestamp": "2026-09-18T14:56:46.008Z",
+  "cycle": 6,
+  "timestamp": "2026-09-18T15:03:50.725Z",
   "gaps_identified": [
     "IPC_SYMBOL_MISMATCH: renderer.js usa window.EditCoreProjectAnalysis y otros no expuestos en preload.js",
     "ORCHESTRATOR_DUPLICATION: runtime/intent-orchestrator.js y editcore-chat-kernel/orchestrator.js compiten",
@@ -11,17 +11,18 @@
     "scripts/auto-evolution/orchestrator.js",
     "scripts/auto-evolution/agents/code-analyzer.js",
     "scripts/auto-evolution/agents/architect.js",
-    "scripts/auto-evolution/agents/patcher.js"
+    "scripts/auto-evolution/agents/patcher.js",
+    "editcore-chat-kernel/circular-dependency-detector.js"
   ],
   "status": "EVOLVED",
   "last_cycle": {
-    "cycle": 5,
+    "cycle": 6,
     "analysis": {
       "agent": "CodeAnalyzer",
       "status": "SUCCESS",
       "report": {
-        "cycle": 5,
-        "timestamp": "2026-09-18T14:56:46.009Z",
+        "cycle": 6,
+        "timestamp": "2026-09-18T15:03:50.726Z",
         "scans": [
           {
             "file": "preload.js",
@@ -117,9 +118,9 @@
         }
       ],
       "syntax_verified": true,
-      "timestamp": "2026-09-18T14:56:46.632Z"
+      "timestamp": "2026-09-18T15:03:51.352Z"
     },
-    "timestamp": "2026-09-18T14:56:46.008Z"
+    "timestamp": "2026-09-18T15:03:50.725Z"
   },
   "patches_applied": [
     {
