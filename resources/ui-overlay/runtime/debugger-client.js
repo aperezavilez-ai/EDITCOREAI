@@ -462,6 +462,10 @@ class DebuggerClient extends EventEmitter {
   }
 }
 
+const debuggerClientInstance = new DebuggerClient();
+
 module.exports = {
   DebuggerClient,
+  debuggerClient: debuggerClientInstance,
 };
+

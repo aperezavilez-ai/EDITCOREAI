@@ -10560,6 +10560,357 @@ ipcMain.handle("i18n:get-translations", async (_event, lang) => {
   }
 });
 
+// Phase 1: DAP Debugger handlers
+ipcMain.handle("debugger:start-session", async (_event, config) => {
+  try {
+    const { debuggerClient } = require("./runtime/debugger-client");
+    return debuggerClient.startSession(config?.sessionId, config);
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
+});
+ipcMain.handle("debugger:stop-session", async (_event, payload) => {
+  try {
+    const { debuggerClient } = require("./runtime/debugger-client");
+    return debuggerClient.stopSession(payload?.sessionId || payload);
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
+});
+ipcMain.handle("debugger:set-breakpoints", async (_event, payload) => {
+  try {
+    const { debuggerClient } = require("./runtime/debugger-client");
+    return debuggerClient.setBreakpoints(payload?.sessionId, payload?.file || payload?.sourcePath, payload?.lines || payload?.breakpoints || []);
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
+});
+ipcMain.handle("debugger:continue", async (_event, payload) => {
+  try {
+    const { debuggerClient } = require("./runtime/debugger-client");
+    return debuggerClient.continue(payload?.sessionId, payload?.threadId);
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
+});
+ipcMain.handle("debugger:next", async (_event, payload) => {
+  try {
+    const { debuggerClient } = require("./runtime/debugger-client");
+    return debuggerClient.stepOver(payload?.sessionId, payload?.threadId);
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
+});
+ipcMain.handle("debugger:step-in", async (_event, payload) => {
+  try {
+    const { debuggerClient } = require("./runtime/debugger-client");
+    return debuggerClient.stepInto(payload?.sessionId, payload?.threadId);
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
+});
+ipcMain.handle("debugger:step-out", async (_event, payload) => {
+  try {
+    const { debuggerClient } = require("./runtime/debugger-client");
+    return debuggerClient.stepOut(payload?.sessionId, payload?.threadId);
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
+});
+ipcMain.handle("debugger:pause", async (_event, payload) => {
+  try {
+    const { debuggerClient } = require("./runtime/debugger-client");
+    return debuggerClient.pause(payload?.sessionId, payload?.threadId);
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
+});
+ipcMain.handle("debugger:get-call-stack", async (_event, payload) => {
+  try {
+    const { debuggerClient } = require("./runtime/debugger-client");
+    return debuggerClient.getCallStack(payload?.sessionId, payload?.threadId);
+  } catch (error) {
+    return [];
+  }
+});
+ipcMain.handle("debugger:get-variables", async (_event, payload) => {
+  try {
+    const { debuggerClient } = require("./runtime/debugger-client");
+    return debuggerClient.getVariables(payload?.sessionId, payload?.variablesReference || payload?.frameId);
+  } catch (error) {
+    return [];
+  }
+});
+ipcMain.handle("debugger:evaluate", async (_event, payload) => {
+  try {
+    const { debuggerClient } = require("./runtime/debugger-client");
+    return debuggerClient.evaluate(payload?.sessionId, payload?.expression, payload?.frameId, payload?.context);
+  } catch (error) {
+    return { error: error.message };
+  }
+});
+ipcMain.handle("debugger:list-sessions", async () => {
+  try {
+    const { debuggerClient } = require("./runtime/debugger-client");
+    return debuggerClient.listSessions();
+  } catch (error) {
+    return [];
+  }
+});
+
+// Ciclo 23: Deep Indexer handlers
+ipcMain.handle("deepIndexer:index", async (_event, workspace) => {
+  try {
+    const { deepIndexer } = require("./runtime/deep-indexer");
+    return deepIndexer.indexWorkspace(workspace);
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
+});
+ipcMain.handle("deepIndexer:search-symbols", async (_event, query, limit) => {
+  try {
+    const { deepIndexer } = require("./runtime/deep-indexer");
+    return deepIndexer.searchSymbols(query, limit);
+  } catch (error) {
+    return [];
+  }
+});
+ipcMain.handle("deepIndexer:find-references", async (_event, symbolName) => {
+  try {
+    const { deepIndexer } = require("./runtime/deep-indexer");
+    return deepIndexer.findReferences(symbolName);
+  } catch (error) {
+    return [];
+  }
+});
+ipcMain.handle("deepIndexer:query", async (_event, prompt, topK) => {
+  try {
+    const { deepIndexer } = require("./runtime/deep-indexer");
+    return deepIndexer.queryContext(prompt, topK);
+  } catch (error) {
+    return [];
+  }
+});
+ipcMain.handle("deepIndexer:get-graph", async () => {
+  try {
+    const { deepIndexer } = require("./runtime/deep-indexer");
+    return deepIndexer.getDependencyGraph();
+  } catch (error) {
+    return { nodes: [], edges: [] };
+  }
+});
+ipcMain.handle("deepIndexer:get-status", async () => {
+  try {
+    const { deepIndexer } = require("./runtime/deep-indexer");
+    return deepIndexer.getStatus();
+  } catch (error) {
+    return { isIndexing: false, symbolCount: 0 };
+  }
+});
+
+// Ciclo 24: Multi-File Composer handlers
+ipcMain.handle("multiComposer:create-plan", async (_event, options) => {
+  try {
+    const { multiFileComposer } = require("./runtime/multi-file-composer");
+    return multiFileComposer.createPlan(options);
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
+});
+ipcMain.handle("multiComposer:preview", async (_event, planId) => {
+  try {
+    const { multiFileComposer } = require("./runtime/multi-file-composer");
+    return multiFileComposer.previewPlan(planId);
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
+});
+ipcMain.handle("multiComposer:apply", async (_event, planId) => {
+  try {
+    const { multiFileComposer } = require("./runtime/multi-file-composer");
+    return multiFileComposer.applyPlan(planId);
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
+});
+ipcMain.handle("multiComposer:rollback", async (_event, planId) => {
+  try {
+    const { multiFileComposer } = require("./runtime/multi-file-composer");
+    return multiFileComposer.rollbackPlan(planId);
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
+});
+ipcMain.handle("multiComposer:get-pending", async () => {
+  try {
+    const { multiFileComposer } = require("./runtime/multi-file-composer");
+    return multiFileComposer.getPendingPlans();
+  } catch (error) {
+    return [];
+  }
+});
+
+// Ciclo 25: Terminal Auto-Healing handlers
+ipcMain.handle("terminalHealer:analyze", async (_event, output, cwd) => {
+  try {
+    const { terminalHealer } = require("./runtime/terminal-healer");
+    return terminalHealer.analyzeError(output, cwd);
+  } catch (error) {
+    return { hasError: false, message: error.message };
+  }
+});
+ipcMain.handle("terminalHealer:create-plan", async (_event, analysis, cwd) => {
+  try {
+    const { terminalHealer } = require("./runtime/terminal-healer");
+    return terminalHealer.createHealingPlan(analysis, cwd);
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
+});
+ipcMain.handle("terminalHealer:auto-heal", async (_event, command, cwd) => {
+  try {
+    const { terminalHealer } = require("./runtime/terminal-healer");
+    return terminalHealer.autoHeal(command, cwd);
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
+});
+
+// Ciclo 26: VSIX Compatibility handlers
+ipcMain.handle("vsix:inspect", async (_event, vsixPath) => {
+  try {
+    const { vsixLoader } = require("./runtime/vsix-loader");
+    return vsixLoader.inspect(vsixPath);
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
+});
+ipcMain.handle("vsix:install", async (_event, vsixPath, targetDir) => {
+  try {
+    const { vsixLoader } = require("./runtime/vsix-loader");
+    return vsixLoader.install(vsixPath, targetDir);
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
+});
+ipcMain.handle("vsix:list", async (_event, targetDir) => {
+  try {
+    const { vsixLoader } = require("./runtime/vsix-loader");
+    return vsixLoader.listInstalled(targetDir);
+  } catch (error) {
+    return [];
+  }
+});
+ipcMain.handle("vsix:uninstall", async (_event, extensionId, targetDir) => {
+  try {
+    const { vsixLoader } = require("./runtime/vsix-loader");
+    return vsixLoader.uninstall(extensionId, targetDir);
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
+});
+ipcMain.handle("vsix:get-themes", async (_event, extensionId, targetDir) => {
+  try {
+    const { vsixLoader } = require("./runtime/vsix-loader");
+    return vsixLoader.getThemes(extensionId, targetDir);
+  } catch (error) {
+    return [];
+  }
+});
+ipcMain.handle("vsix:get-grammars", async (_event, extensionId, targetDir) => {
+  try {
+    const { vsixLoader } = require("./runtime/vsix-loader");
+    return vsixLoader.getGrammars(extensionId, targetDir);
+  } catch (error) {
+    return [];
+  }
+});
+
+// Ciclo 27: Remote & Containers handlers
+ipcMain.handle("remoteEnv:test-ssh", async (_event, config) => {
+  try {
+    const { remoteEnv } = require("./runtime/remote-env");
+    return remoteEnv.testSshConnection(config);
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
+});
+ipcMain.handle("remoteEnv:exec-command", async (_event, connectionId, command, options) => {
+  try {
+    const { remoteEnv } = require("./runtime/remote-env");
+    return remoteEnv.execRemoteCommand(connectionId, command, options);
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
+});
+ipcMain.handle("remoteEnv:list-containers", async () => {
+  try {
+    const { remoteEnv } = require("./runtime/remote-env");
+    return remoteEnv.listContainers();
+  } catch (error) {
+    return [];
+  }
+});
+ipcMain.handle("remoteEnv:start-container", async (_event, options) => {
+  try {
+    const { remoteEnv } = require("./runtime/remote-env");
+    return remoteEnv.startDevContainer(options);
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
+});
+ipcMain.handle("remoteEnv:stop-container", async (_event, containerId) => {
+  try {
+    const { remoteEnv } = require("./runtime/remote-env");
+    return remoteEnv.stopDevContainer(containerId);
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
+});
+ipcMain.handle("remoteEnv:get-status", async (_event, containerId) => {
+  try {
+    const { remoteEnv } = require("./runtime/remote-env");
+    return remoteEnv.getContainerStatus(containerId);
+  } catch (error) {
+    return { exists: false, status: "stopped" };
+  }
+});
+
+// Ciclo 28: Security Auditor handlers
+ipcMain.handle("security:scan-file", async (_event, filePath) => {
+  try {
+    const { securityAuditor } = require("./runtime/security-auditor");
+    return securityAuditor.scanFile(filePath);
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
+});
+ipcMain.handle("security:scan-workspace", async (_event, workspaceRoot, options) => {
+  try {
+    const { securityAuditor } = require("./runtime/security-auditor");
+    return securityAuditor.scanWorkspace(workspaceRoot, options);
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
+});
+ipcMain.handle("security:predict-refactor", async (_event, filePath) => {
+  try {
+    const { securityAuditor } = require("./runtime/security-auditor");
+    return securityAuditor.predictRefactor(filePath);
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
+});
+ipcMain.handle("security:apply-refactor", async (_event, filePath) => {
+  try {
+    const { securityAuditor } = require("./runtime/security-auditor");
+    return securityAuditor.applyRefactor(filePath);
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
+});
+
+
 
 
 

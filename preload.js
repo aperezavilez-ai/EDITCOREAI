@@ -663,3 +663,11 @@ contextBridge.exposeInMainWorld("editcoreI18n", {
   setLanguage: (lang) => ipcRenderer.invoke("i18n:set-language", lang),
   getTranslations: (lang) => ipcRenderer.invoke("i18n:get-translations", lang),
 });
+
+contextBridge.exposeInMainWorld("editcoreSecurity", {
+  scanFile: (filePath) => ipcRenderer.invoke("security:scan-file", filePath),
+  scanWorkspace: (workspaceRoot, options) => ipcRenderer.invoke("security:scan-workspace", workspaceRoot, options),
+  predictRefactor: (filePath) => ipcRenderer.invoke("security:predict-refactor", filePath),
+  applyRefactor: (filePath) => ipcRenderer.invoke("security:apply-refactor", filePath),
+});
+
