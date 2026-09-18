@@ -818,6 +818,18 @@ async function execute(name, args, root, allowWrite, helpers = {}) {
   }
 }
 
+function getToolDefinitions({ allowWrite = true, isFullAccess = false, isAnalysis = false } = {}) {
+  const writeTools = new Set([
+    "write_file", "replace_in_file", "run_command", "scaffold_project",
+    "supabase_migrate", "ingest_to_brain", "clone_repo", "rollback_last_change", "images_to_code", "clone_web_page"
+  ]);
+  const canWrite = allowWrite === true || isFullAccess === true;
+  return DEFINITIONS.filter((t) => {
+    if (!canWrite && writeTools.has(t.function?.name)) return false;
+    return true;
+  });
+}
+
 module.exports = {
   TOOL_RESULT_CAP,
   truncatePayload,
@@ -837,4 +849,5 @@ module.exports = {
   locateOldText,
   execute,
   DEFINITIONS,
+  getToolDefinitions,
 };
