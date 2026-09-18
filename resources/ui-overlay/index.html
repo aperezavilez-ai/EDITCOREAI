@@ -30,16 +30,16 @@
         <aside class="chat-home-sidebar" aria-label="Consultas">
           <div class="chat-home-sidebar-head">
             <h2>Consultas</h2>
-            <button id="chatHomeNewBtn" type="button" class="chat-home-new-btn">+ New Chat</button>
+            <button id="chatHomeNewBtn" type="button" class="chat-home-new-btn">+ Nuevo Chat</button>
             <input id="chatHomeSearch" class="chat-home-search" type="search" placeholder="Buscar…" autocomplete="off" />
           </div>
           <nav class="chat-home-nav" aria-label="Navegación">
             <button type="button" class="chat-home-nav-item" id="chatHomeNavChats">Chats</button>
-            <button type="button" class="chat-home-nav-item" id="chatHomeNavFolder" title="Conectar carpeta">Codebase</button>
+            <button type="button" class="chat-home-nav-item" id="chatHomeNavFolder" title="Conectar carpeta">Código base</button>
           </nav>
           <div id="chatHomeThreadList" class="chat-home-thread-list" role="list"></div>
           <div class="chat-home-sidebar-foot">
-            <button type="button" class="chat-home-settings-btn" id="chatHomeSettingsBtn" title="Settings">⚙ Settings</button>
+            <button type="button" class="chat-home-settings-btn" id="chatHomeSettingsBtn" title="Configuración">⚙ Configuración</button>
           </div>
         </aside>
         <div id="chatHomeSidebarSplit" class="chat-home-sidebar-split" role="separator" aria-orientation="vertical" aria-label="Redimensionar panel de chats" tabindex="0"></div>
@@ -67,7 +67,7 @@
             <div id="chatHomeFolderChip" class="chat-home-folder-chip" aria-live="polite"></div>
             <div id="chatHomeAttachmentList" class="chat-home-attachment-list" aria-live="polite"></div>
             <form id="chatHomeComposer" class="chat-home-composer" autocomplete="off">
-              <textarea id="chatHomePrompt" rows="2" placeholder="Ask EditCore to build, fix bugs, explore…" spellcheck="false"></textarea>
+              <textarea id="chatHomePrompt" rows="2" placeholder="Pide a EditCore crear, depurar, explorar…" spellcheck="false"></textarea>
               <div class="chat-home-composer-row">
                 <button type="button" id="chatHomePlusBtn" class="chat-home-icon-btn" title="Adjuntar imagen, PDF, Word, Excel…">+</button>
                 <button type="button" id="chatHomeModelPill" class="chat-home-model-pill" title="Elegir modelo">Auto · ME AI ▾</button>
@@ -90,39 +90,29 @@
                   <rect x="4" y="7" width="11" height="14" rx="1.5" stroke="currentColor" stroke-width="1.7" fill="var(--ch-bg, #fff)"/>
                 </svg>
               </button>
-              <button type="button" class="chat-home-context-tab" data-ctx-tab="files" title="Files Changed" aria-selected="false">
+              <button type="button" class="chat-home-context-tab" data-ctx-tab="files" title="Archivos modificados" aria-selected="false">
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 7.5h16M4 12h16M4 16.5h10" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
               </button>
-              <button type="button" class="chat-home-context-tab" data-ctx-tab="tasks" title="Background Tasks" aria-selected="false">
+              <button type="button" class="chat-home-context-tab" data-ctx-tab="tasks" title="Tareas en segundo plano" aria-selected="false">
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M9 6h11M9 12h11M9 18h11M5 6h.01M5 12h.01M5 18h.01" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
               </button>
             </div>
             <strong id="chatHomeContextTitle">Sesión</strong>
-            <button type="button" id="chatHomeContextClose" class="chat-home-context-close" title="Cerrar">✕</button>
+            <button id="chatHomeContextClose" type="button" class="chat-home-context-close" title="Cerrar panel">✕</button>
           </div>
-          <div class="chat-home-context-scroll">
-            <section class="chat-home-context-section" data-ctx="subagents" id="chatHomeCtxSecSubagents">
-              <h4>Subagents <span id="chatHomeCtxSubagentsCount">0</span></h4>
-              <ul id="chatHomeCtxSubagents" class="chat-home-context-list"></ul>
-            </section>
-            <section class="chat-home-context-section" data-ctx="files" id="chatHomeCtxSecFiles">
-              <h4>Files Changed <span id="chatHomeCtxFilesCount">0</span></h4>
+          <div class="chat-home-context-body">
+            <section class="chat-home-context-section" data-ctx="session" id="chatHomeCtxSecSession">
+              <h4>Directorio activo</h4>
+              <p id="chatHomeCtxFolder" class="chat-home-context-folder">Sin carpeta</p>
+              <h4>Archivos de contexto</h4>
               <ul id="chatHomeCtxFiles" class="chat-home-context-list"></ul>
             </section>
-            <section class="chat-home-context-section" data-ctx="artifacts" id="chatHomeCtxSecArtifacts">
-              <h4>Artifacts <span id="chatHomeCtxArtifactsCount">0</span></h4>
-              <ul id="chatHomeCtxArtifacts" class="chat-home-context-list"></ul>
-            </section>
-            <section class="chat-home-context-section" data-ctx="uploads" id="chatHomeCtxSecUploads">
-              <h4>Uploads <span id="chatHomeCtxUploadsCount">0</span></h4>
-              <ul id="chatHomeCtxUploads" class="chat-home-context-list"></ul>
-            </section>
             <section class="chat-home-context-section" data-ctx="tasks" id="chatHomeCtxSecTasks">
-              <h4>Background Tasks <span id="chatHomeCtxTasksCount">0</span></h4>
+              <h4>Tareas en Segundo Plano <span id="chatHomeCtxTasksCount">0</span></h4>
               <ul id="chatHomeCtxTasks" class="chat-home-context-list"></ul>
             </section>
             <section class="chat-home-context-section" data-ctx="skills" id="chatHomeCtxSecSkills">
-              <h4>Skills Used <span id="chatHomeCtxSkillsCount">0</span></h4>
+              <h4>Habilidades Usadas <span id="chatHomeCtxSkillsCount">0</span></h4>
               <ul id="chatHomeCtxSkills" class="chat-home-context-list"></ul>
             </section>
           </div>
@@ -130,31 +120,323 @@
       </div>
     </section>
 
-    <div id="chatHomeSettingsSheet" aria-hidden="true">
-      <div class="chat-home-settings-card" role="dialog" aria-label="Settings">
-        <h3 id="chatHomeSettingsTitle">Settings</h3>
-        <div class="chat-home-settings-list" id="chatHomeSettingsMain">
-          <button type="button" data-ch-setting="models"><strong>Modelos</strong><span>Elegir modelo / Auto / proveedores</span></button>
-          <button type="button" data-ch-setting="skills"><strong>Habilidades (Skills)</strong><span>Añadir o gestionar habilidades del agente</span></button>
-          <button type="button" data-ch-setting="connections"><strong>Conexiones</strong><span>GitHub, Vercel, Supabase</span></button>
-          <button type="button" data-ch-setting="theme"><strong>Apariencia</strong><span>Cambiar tema</span></button>
-          <button type="button" data-ch-setting="permissions"><strong>Permisos del agente</strong><span>Solo lectura / paso a paso / acceso completo</span></button>
-          <button type="button" data-ch-setting="ide"><strong>Abrir IDE</strong><span>Entorno de desarrollo existente</span></button>
+    <!-- Panel de Configuración Antigravity Style (2 Columnas) -->
+    <div id="chatHomeSettingsSheet" class="ec-settings-sheet-overlay" aria-hidden="true">
+      <div class="ec-settings-modal-card" role="dialog" aria-label="Configuración">
+        <!-- Sidebar Izquierda de Configuración -->
+        <aside class="ec-settings-modal-sidebar">
+          <div class="ec-settings-search-wrap">
+            <input type="search" id="settingsSearchInput" class="ec-settings-search-input" placeholder="Buscar configuración..." autocomplete="off" />
+          </div>
+          
+          <div class="ec-settings-section-heading">CATEGORÍAS</div>
+          <nav class="ec-settings-nav-list" id="settingsNavList">
+            <button type="button" class="ec-settings-nav-item is-active" data-settings-tab="general">
+              <span class="ec-settings-nav-icon">⚙️</span>
+              <span class="ec-settings-nav-label">General</span>
+            </button>
+            <button type="button" class="ec-settings-nav-item" data-settings-tab="application">
+              <span class="ec-settings-nav-icon">📦</span>
+              <span class="ec-settings-nav-label">Aplicación</span>
+            </button>
+            <button type="button" class="ec-settings-nav-item" data-settings-tab="appearance">
+              <span class="ec-settings-nav-icon">🎨</span>
+              <span class="ec-settings-nav-label">Apariencia</span>
+            </button>
+            <button type="button" class="ec-settings-nav-item" data-settings-tab="models">
+              <span class="ec-settings-nav-icon">🤖</span>
+              <span class="ec-settings-nav-label">Modelos</span>
+            </button>
+            <button type="button" class="ec-settings-nav-item" data-settings-tab="credits">
+              <span class="ec-settings-nav-icon">💳</span>
+              <span class="ec-settings-nav-label">Créditos y Facturación</span>
+              <span class="ec-settings-pill-badge" id="settingsCreditsBadge">∞</span>
+            </button>
+            <button type="button" class="ec-settings-nav-item" data-settings-tab="customizations">
+              <span class="ec-settings-nav-icon">🧩</span>
+              <span class="ec-settings-nav-label">Personalizaciones</span>
+            </button>
+            <button type="button" class="ec-settings-nav-item" data-settings-tab="browser">
+              <span class="ec-settings-nav-icon">🌐</span>
+              <span class="ec-settings-nav-label">Navegador</span>
+            </button>
+          </nav>
+
+          <div class="ec-settings-section-heading">PROYECTOS</div>
+          <div class="ec-settings-projects-box" id="settingsProjectsList">
+            <div class="ec-settings-project-row is-active">
+              <span class="ec-proj-icon">📁</span>
+              <span class="ec-proj-name" id="settingsCurrentProjectName">EDITCOREAI</span>
+            </div>
+          </div>
+
+          <div class="ec-settings-user-profile" id="settingsUserProfileCard">
+            <div class="ec-user-avatar-circle" id="settingsUserAvatar">AP</div>
+            <div class="ec-user-meta">
+              <div class="ec-user-display-name" id="settingsUserName">Alfonso Perez Avilez</div>
+              <div class="ec-user-email-addr" id="settingsUserEmail">aperezavilez@gmail.com</div>
+              <div class="ec-user-role-badge" id="settingsUserRole">👑 Administrador Total</div>
+            </div>
+          </div>
+        </aside>
+
+        <!-- Contenido Derecho de Configuración -->
+        <main class="ec-settings-modal-main">
+          <header class="ec-settings-modal-header">
+            <div>
+              <h2 id="chatHomeSettingsTitle">Configuración</h2>
+              <p id="settingsSubTitleText">Preferencias del sistema y entorno EditCoreAI</p>
+            </div>
+            <button type="button" class="chat-home-settings-close ec-settings-top-close" id="chatHomeSettingsClose" aria-label="Cerrar">✕</button>
+          </header>
+
+          <div class="ec-settings-content-viewport">
+            <!-- PANE: General -->
+            <div class="ec-settings-pane" id="settingsPaneGeneral" data-pane="general">
+              <div class="ec-settings-group-card">
+                <div class="ec-group-info">
+                  <h4>Idioma de la Interfaz</h4>
+                  <p>Selecciona el idioma principal de EditCoreAI.</p>
+                </div>
+                <div class="ec-group-action">
+                  <select id="settingsLangSelect" class="ec-styled-select">
+                    <option value="es" selected>Español (ES)</option>
+                    <option value="en">English (US)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div class="ec-settings-group-card">
+                <div class="ec-group-info">
+                  <h4>Indexación Continua del Repositorio</h4>
+                  <p>Mantiene un grafo en tiempo real de funciones, símbolos y referencias.</p>
+                </div>
+                <div class="ec-group-action">
+                  <label class="ec-switch">
+                    <input type="checkbox" id="settingsDeepIndexToggle" checked />
+                    <span class="ec-slider"></span>
+                  </label>
+                </div>
+              </div>
+
+              <div class="ec-settings-group-card" id="chatHomeSettingsPerms">
+                <div class="ec-group-info">
+                  <h4>Permisos del Agente</h4>
+                  <p>Define cómo interactúa el agente con tus archivos y consola.</p>
+                </div>
+                <div class="ec-group-action">
+                  <div class="ec-segmented-btn-group">
+                    <button type="button" data-ch-perm="readonly" class="ec-seg-btn">Solo lectura</button>
+                    <button type="button" data-ch-perm="step" class="ec-seg-btn is-active">Paso a paso</button>
+                    <button type="button" data-ch-perm="full" class="ec-seg-btn">Acceso completo</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- PANE: Aplicación -->
+            <div class="ec-settings-pane is-hidden" id="settingsPaneApplication" data-pane="application" hidden>
+              <div class="ec-settings-group-card">
+                <div class="ec-group-info">
+                  <h4>Control de Acceso por Roles (RBAC)</h4>
+                  <p>Protección contra modificaciones accidentales del núcleo de EditCoreAI.</p>
+                </div>
+                <div class="ec-group-action">
+                  <span class="ec-status-tag ec-tag-success" id="settingsRbacBadge">👑 Super Admin Activo</span>
+                </div>
+              </div>
+
+              <div class="ec-settings-group-card">
+                <div class="ec-group-info">
+                  <h4>Auto-guardado</h4>
+                  <p>Guarda cambios en los archivos automáticamente.</p>
+                </div>
+                <div class="ec-group-action">
+                  <label class="ec-switch">
+                    <input type="checkbox" id="settingsAutoSaveToggle" checked />
+                    <span class="ec-slider"></span>
+                  </label>
+                </div>
+              </div>
+
+              <div class="ec-settings-group-card">
+                <div class="ec-group-info">
+                  <h4>Modo Privacidad Local</h4>
+                  <p>Bloquea envío de telemetría a servidores externos.</p>
+                </div>
+                <div class="ec-group-action">
+                  <label class="ec-switch">
+                    <input type="checkbox" id="settingsPrivacyToggle" checked />
+                    <span class="ec-slider"></span>
+                  </label>
+                </div>
+              </div>
+            </div>
+
+            <!-- PANE: Apariencia -->
+            <div class="ec-settings-pane is-hidden" id="settingsPaneAppearance" data-pane="appearance" hidden>
+              <div class="ec-settings-group-card" id="chatHomeSettingsTheme">
+                <div class="ec-group-info">
+                  <h4>Tema Visual</h4>
+                  <p>Personaliza los tonos y el contraste de la interfaz.</p>
+                </div>
+                <div class="ec-theme-cards-grid">
+                  <button type="button" class="ec-theme-picker-card is-active" data-ch-theme="blanco">
+                    <div class="ec-theme-thumb ec-th-light"></div>
+                    <strong>Blanco</strong>
+                    <small>Tema Claro</small>
+                  </button>
+                  <button type="button" class="ec-theme-picker-card" data-ch-theme="gris">
+                    <div class="ec-theme-thumb ec-th-gray"></div>
+                    <strong>Gris</strong>
+                    <small>Carbón Editor</small>
+                  </button>
+                  <button type="button" class="ec-theme-picker-card" data-ch-theme="negro">
+                    <div class="ec-theme-thumb ec-th-black"></div>
+                    <strong>Negro</strong>
+                    <small>Oscuro Profundo</small>
+                  </button>
+                  <button type="button" class="ec-theme-picker-card" data-ch-theme="azul">
+                    <div class="ec-theme-thumb ec-th-blue"></div>
+                    <strong>Azul</strong>
+                    <small>Azul Noche</small>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <!-- PANE: Modelos -->
+            <div class="ec-settings-pane is-hidden" id="settingsPaneModels" data-pane="models" hidden>
+              <div class="ec-settings-group-card">
+                <div class="ec-group-info">
+                  <h4>Proveedores de Inteligencia Artificial</h4>
+                  <p>Administra OpenAI, Anthropic Claude, Ollama, LM Studio y endpoints compatibles.</p>
+                </div>
+                <div class="ec-group-action">
+                  <button type="button" id="settingsOpenModelsDialogBtn" class="ec-btn-action">Gestionar Proveedores</button>
+                </div>
+              </div>
+              <div class="ec-settings-group-card">
+                <div class="ec-group-info">
+                  <h4>Conexiones de Servicios Cloud</h4>
+                  <p>GitHub, Vercel, Supabase para publicación automática.</p>
+                </div>
+                <div class="ec-group-action">
+                  <button type="button" id="settingsOpenConnectionsDialogBtn" class="ec-btn-action">Gestionar Conexiones</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- PANE: Créditos y Facturación -->
+            <div class="ec-settings-pane is-hidden" id="settingsPaneCredits" data-pane="credits" hidden>
+              <div class="ec-credits-overview-banner">
+                <div class="ec-credits-banner-main">
+                  <span class="ec-credits-caption">Saldo de Créditos Disponible</span>
+                  <div class="ec-credits-big-num" id="settingsCreditsBigNum">∞ Ilimitado</div>
+                  <div class="ec-credits-plan-tag" id="settingsCreditsPlanTag">Plan Administrador Maestro · Acceso Vitalicio</div>
+                </div>
+                <div class="ec-credits-banner-cta">
+                  <button type="button" id="settingsBuyCreditsBtn" class="ec-btn-gold">💳 Comprar Créditos</button>
+                </div>
+              </div>
+
+              <div class="ec-settings-group-card">
+                <div class="ec-group-info">
+                  <h4>Canjear Cupón o Código de Recarga</h4>
+                  <p>Ingresa un código promocional para añadir saldo inmediatamente.</p>
+                </div>
+                <div class="ec-voucher-redeem-row">
+                  <input type="text" id="settingsVoucherInput" class="ec-styled-input" placeholder="Ej: EDITCORE100, PROMO2026, ADMINVIP" />
+                  <button type="button" id="settingsVoucherBtn" class="ec-btn-action">Canjear</button>
+                </div>
+                <div id="settingsVoucherStatus" class="ec-status-msg" hidden></div>
+              </div>
+
+              <div class="ec-settings-group-card">
+                <div class="ec-group-info">
+                  <h4>Cuenta y Titular</h4>
+                  <p>Nombre y correo asociado a los proyectos y facturación.</p>
+                </div>
+                <div class="ec-profile-edit-box">
+                  <div class="ec-input-field">
+                    <label>Nombre Completo:</label>
+                    <input type="text" id="settingsProfileName" class="ec-styled-input" value="Alfonso Perez Avilez" />
+                  </div>
+                  <div class="ec-input-field">
+                    <label>Correo Electrónico:</label>
+                    <input type="email" id="settingsProfileEmail" class="ec-styled-input" value="aperezavilez@gmail.com" />
+                  </div>
+                  <button type="button" id="settingsSaveProfileBtn" class="ec-btn-secondary">Guardar Perfil</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- PANE: Personalizaciones -->
+            <div class="ec-settings-pane is-hidden" id="settingsPaneCustomizations" data-pane="customizations" hidden>
+              <div class="ec-settings-group-card">
+                <div class="ec-group-info">
+                  <h4>Habilidades del Agente (Skills)</h4>
+                  <p>Agrega o edita habilidades para especializar al agente en tus tecnologías.</p>
+                </div>
+                <div class="ec-group-action">
+                  <button type="button" id="settingsOpenSkillsDialogBtn" class="ec-btn-action">Ver Catálogo de Habilidades</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- PANE: Navegador -->
+            <div class="ec-settings-pane is-hidden" id="settingsPaneBrowser" data-pane="browser" hidden>
+              <div class="ec-settings-group-card">
+                <div class="ec-group-info">
+                  <h4>Previsualización Web en Vivo</h4>
+                  <p>Inspecciona y previsualiza aplicaciones locales en tiempo real.</p>
+                </div>
+                <div class="ec-group-action">
+                  <button type="button" id="settingsOpenInspectorPanelBtn" class="ec-btn-secondary">Abrir Inspector</button>
+                </div>
+              </div>
+            </div>
+
+          </div>
+        </main>
+      </div>
+    </div>
+
+    <!-- Modal de Bloqueo por Créditos Agotados -->
+    <div id="outOfCreditsModal" class="ec-credits-lock-overlay" aria-hidden="true" hidden>
+      <div class="ec-credits-lock-card" role="dialog" aria-modal="true" aria-labelledby="outOfCreditsTitle">
+        <button type="button" id="outOfCreditsCloseBtn" class="ec-credits-lock-close" aria-label="Cerrar">×</button>
+        <div class="ec-credits-lock-icon">⚠️</div>
+        <h2 id="outOfCreditsTitle">¡Créditos de IA Agotados!</h2>
+        <p>Tu saldo actual ha llegado a <strong>0 créditos</strong>. Para continuar utilizando los modelos de inteligencia artificial y agentes de EditCoreAI, añade más créditos a tu cuenta.</p>
+        
+        <div class="ec-credits-packs-grid">
+          <div class="ec-credits-pack-card" data-pack-credits="100">
+            <span class="ec-pack-credits">100 Créditos</span>
+            <span class="ec-pack-price">$5 USD</span>
+            <button type="button" class="ec-pack-btn" data-pack="100">Comprar Pack</button>
+          </div>
+          <div class="ec-credits-pack-card is-featured" data-pack-credits="500">
+            <div class="ec-pack-tag">Más Popular</div>
+            <span class="ec-pack-credits">500 Créditos</span>
+            <span class="ec-pack-price">$20 USD</span>
+            <button type="button" class="ec-pack-btn is-featured" data-pack="500">Comprar Pack</button>
+          </div>
+          <div class="ec-credits-pack-card" data-pack-credits="1500">
+            <span class="ec-pack-credits">1500 Créditos</span>
+            <span class="ec-pack-price">$50 USD</span>
+            <button type="button" class="ec-pack-btn" data-pack="1500">Comprar Pack</button>
+          </div>
         </div>
-        <div class="chat-home-settings-list is-hidden" id="chatHomeSettingsTheme" hidden>
-          <button type="button" data-ch-theme="blanco"><strong>Blanco</strong><span>Tema claro</span></button>
-          <button type="button" data-ch-theme="gris"><strong>Gris</strong><span>Carbón tipo editor</span></button>
-          <button type="button" data-ch-theme="negro"><strong>Negro</strong><span>Oscuro profundo</span></button>
-          <button type="button" data-ch-theme="azul"><strong>Azul</strong><span>Azul noche</span></button>
-          <button type="button" data-ch-settings-back>← Volver</button>
+
+        <div class="ec-credits-voucher-section">
+          <h4>¿Tienes un cupón o código de recarga?</h4>
+          <div class="ec-voucher-input-row">
+            <input type="text" id="outOfCreditsVoucherInput" class="ec-styled-input" placeholder="Ej: EDITCORE100, PROMO2026, ADMINVIP" />
+            <button type="button" id="outOfCreditsRedeemBtn" class="ec-btn-action">Canjear y Desbloquear</button>
+          </div>
+          <div id="outOfCreditsMsg" class="ec-status-msg" hidden></div>
         </div>
-        <div class="chat-home-settings-list is-hidden" id="chatHomeSettingsPerms" hidden>
-          <button type="button" data-ch-perm="readonly"><strong>Solo lectura</strong><span>El agente no escribe archivos</span></button>
-          <button type="button" data-ch-perm="step"><strong>Paso a paso</strong><span>Confirmar cada acción</span></button>
-          <button type="button" data-ch-perm="full"><strong>Acceso completo</strong><span>Escribe y ejecuta sin pausas</span></button>
-          <button type="button" data-ch-settings-back>← Volver</button>
-        </div>
-        <button type="button" class="chat-home-settings-close" id="chatHomeSettingsClose">Cerrar</button>
       </div>
     </div>
 

@@ -645,8 +645,21 @@ contextBridge.exposeInMainWorld("editcoreRemoteEnv", {
   getStatus: (containerId) => ipcRenderer.invoke("remoteEnv:get-status", containerId),
 });
 
+contextBridge.exposeInMainWorld("editcoreCredits", {
+  getBalance: (userId) => ipcRenderer.invoke("credits:get-balance", userId),
+  deduct: (userId, amount, description) => ipcRenderer.invoke("credits:deduct", userId, amount, description),
+  add: (userId, amount, description) => ipcRenderer.invoke("credits:add", userId, amount, description),
+  redeem: (userId, code) => ipcRenderer.invoke("credits:redeem", userId, code),
+  updateProfile: (userId, profile) => ipcRenderer.invoke("credits:update-profile", userId, profile),
+  listUsers: () => ipcRenderer.invoke("credits:list-users"),
+});
 
+contextBridge.exposeInMainWorld("editcoreAuth", {
+  checkAccess: (userId, targetPath, operation) => ipcRenderer.invoke("auth:check-access", userId, targetPath, operation),
+});
 
-
-
-
+contextBridge.exposeInMainWorld("editcoreI18n", {
+  getLanguage: () => ipcRenderer.invoke("i18n:get-language"),
+  setLanguage: (lang) => ipcRenderer.invoke("i18n:set-language", lang),
+  getTranslations: (lang) => ipcRenderer.invoke("i18n:get-translations", lang),
+});

@@ -423,12 +423,66 @@
     $("modelPickerBtn")?.click();
   }
 
-  function openSettings(panel = "main") {
+  async function refreshCreditsAndProfileUI() {
+    try {
+      let balance = { balance: Infinity, role: "admin", name: "Alfonso Perez Avilez", email: "aperezavilez@gmail.com", isSuperAdmin: true };
+      if (window.editcoreCredits?.getBalance) {
+        balance = await window.editcoreCredits.getBalance();
+      }
+      const avatar = $("settingsUserAvatar");
+      const nameEl = $("settingsUserName");
+      const emailEl = $("settingsUserEmail");
+      const roleEl = $("settingsUserRole");
+      const creditsBadge = $("settingsCreditsBadge");
+      const creditsBigNum = $("settingsCreditsBigNum");
+      const creditsPlanTag = $("settingsCreditsPlanTag");
+      const profileNameInput = $("settingsProfileName");
+      const profileEmailInput = $("settingsProfileEmail");
+
+      if (avatar) {
+        const initials = (balance.name || "AP").split(" ").map(w => w[0]).slice(0, 2).join("").toUpperCase();
+        avatar.textContent = initials || "AP";
+      }
+      if (nameEl) nameEl.textContent = balance.name || "Alfonso Perez Avilez";
+      if (emailEl) emailEl.textContent = balance.email || "aperezavilez@gmail.com";
+      if (profileNameInput) profileNameInput.value = balance.name || "Alfonso Perez Avilez";
+      if (profileEmailInput) profileEmailInput.value = balance.email || "aperezavilez@gmail.com";
+
+      const isAdm = balance.role === "admin" || balance.isSuperAdmin;
+      if (roleEl) roleEl.textContent = isAdm ? "👑 Administrador Total" : "👤 Usuario Estándar";
+      
+      const balStr = isAdm || balance.balance === Infinity || balance.balance === "unlimited" ? "∞ Ilimitado" : `${balance.balance} créditos`;
+      if (creditsBadge) creditsBadge.textContent = isAdm ? "∞" : `${balance.balance}`;
+      if (creditsBigNum) creditsBigNum.textContent = balStr;
+      if (creditsPlanTag) creditsPlanTag.textContent = isAdm ? "Plan Administrador Maestro · Acceso Vitalicio" : "Plan Estándar Prepago";
+    } catch (err) {
+      console.warn("Failed to refresh credits UI", err);
+    }
+  }
+
+  function showOutOfCreditsModal() {
+    const modal = $("outOfCreditsModal");
+    if (!modal) return;
+    modal.hidden = false;
+    modal.removeAttribute("hidden");
+    modal.setAttribute("aria-hidden", "false");
+  }
+
+  function closeOutOfCreditsModal() {
+    const modal = $("outOfCreditsModal");
+    if (!modal) return;
+    modal.hidden = true;
+    modal.setAttribute("hidden", "");
+    modal.setAttribute("aria-hidden", "true");
+  }
+
+  function openSettings(panel = "general") {
     const sheet = $("chatHomeSettingsSheet");
     if (!sheet) return;
     showSettingsPanel(panel);
     sheet.classList.add("is-open");
     sheet.setAttribute("aria-hidden", "false");
+    refreshCreditsAndProfileUI();
   }
 
   function closeSettings() {
@@ -436,31 +490,43 @@
     if (!sheet) return;
     sheet.classList.remove("is-open");
     sheet.setAttribute("aria-hidden", "true");
-    showSettingsPanel("main");
+    showSettingsPanel("general");
   }
 
-  function showSettingsPanel(panel) {
-    const main = $("chatHomeSettingsMain");
-    const theme = $("chatHomeSettingsTheme");
-    const perms = $("chatHomeSettingsPerms");
-    const title = $("chatHomeSettingsTitle");
-    const show = (el, on) => {
-      if (!el) return;
-      el.classList.toggle("is-hidden", !on);
-      el.hidden = !on;
+  function showSettingsPanel(tabKey = "general") {
+    let normalized = tabKey;
+    if (tabKey === "main") normalized = "general";
+    if (tabKey === "theme") normalized = "appearance";
+    if (tabKey === "permissions") normalized = "general";
+
+    const titleMap = {
+      general: { title: "General", sub: "Configuración general y preferencias de EditCoreAI" },
+      application: { title: "Aplicación", sub: "Control de acceso, auto-guardado y privacidad" },
+      appearance: { title: "Apariencia", sub: "Personalización de temas visuales y contrastes" },
+      models: { title: "Modelos", sub: "Proveedores de IA, enrutador inteligente y endpoints" },
+      credits: { title: "Créditos y Facturación", sub: "Saldo disponible, recargas y canje de cupones" },
+      customizations: { title: "Personalizaciones", sub: "Habilidades y directrices personalizadas" },
+      browser: { title: "Navegador", sub: "Previsualización en vivo e inspector integrado" },
     };
-    show(main, panel === "main");
-    show(theme, panel === "theme");
-    show(perms, panel === "permissions");
-    if (title) {
-      title.textContent = panel === "theme"
-        ? "Apariencia"
-        : panel === "permissions"
-          ? "Permisos del agente"
-          : "Settings";
-    }
-    if (panel === "theme") markActiveThemeButtons();
-    if (panel === "permissions") markActivePermButtons();
+
+    const header = titleMap[normalized] || titleMap.general;
+    const titleEl = $("chatHomeSettingsTitle");
+    const subTitleEl = $("settingsSubTitleText");
+    if (titleEl) titleEl.textContent = header.title;
+    if (subTitleEl) subTitleEl.textContent = header.sub;
+
+    document.querySelectorAll(".ec-settings-nav-item").forEach((btn) => {
+      btn.classList.toggle("is-active", btn.getAttribute("data-settings-tab") === normalized);
+    });
+
+    document.querySelectorAll(".ec-settings-pane").forEach((pane) => {
+      const isCurrent = pane.getAttribute("data-pane") === normalized;
+      pane.classList.toggle("is-hidden", !isCurrent);
+      pane.hidden = !isCurrent;
+    });
+
+    if (normalized === "appearance" || tabKey === "theme") markActiveThemeButtons();
+    if (normalized === "general" || tabKey === "permissions") markActivePermButtons();
   }
 
   function markActiveThemeButtons() {
@@ -481,15 +547,14 @@
 
   function runSetting(action) {
     if (action === "theme") {
-      showSettingsPanel("theme");
+      showSettingsPanel("appearance");
       return;
     }
     if (action === "permissions") {
-      showSettingsPanel("permissions");
+      showSettingsPanel("general");
       return;
     }
     closeSettings();
-    // Diferir: el clic de Settings no debe cerrar el picker/menú en el mismo tick.
     const later = (fn) => {
       requestAnimationFrame(() => setTimeout(fn, 20));
     };
@@ -1411,12 +1476,33 @@
     syncEmptyState();
   }
 
-  function submitHomePrompt() {
+  async function submitHomePrompt() {
     const homePrompt = $("chatHomePrompt");
     const idePrompt = $("prompt");
     const text = String(homePrompt?.value || idePrompt?.value || "").trim();
     const hasAttachments = Boolean(window.EditCoreAttachments?.list?.()?.length);
     if (!text && !hasAttachments) return;
+
+    // Verificar saldo de créditos antes de enviar
+    try {
+      if (window.editcoreCredits?.getBalance) {
+        const bal = await window.editcoreCredits.getBalance();
+        if (bal && bal.balance === 0 && bal.role !== "admin" && !bal.isSuperAdmin) {
+          showOutOfCreditsModal();
+          return;
+        }
+      }
+      if (window.editcoreCredits?.deduct) {
+        const res = await window.editcoreCredits.deduct(null, 1, "Consulta de IA");
+        if (res && res.success === false && res.code === "OUT_OF_CREDITS") {
+          showOutOfCreditsModal();
+          return;
+        }
+      }
+    } catch (e) {
+      console.warn("Credit check error:", e);
+    }
+
     touchActiveFromPrompt(text || "Adjunto");
     if (homePrompt) homePrompt.value = "";
     if (idePrompt) idePrompt.value = "";
@@ -1436,7 +1522,6 @@
     }
     setTimeout(syncEmptyState, 80);
     setTimeout(syncEmptyState, 400);
-    // El feed en Chat scrollea en #chatHomeFeedHost; forzar baja tras enviar.
     const bump = () => {
       try { window.EditCoreChatScroll?.toBottom?.(true); } catch { /* ignore */ }
       const host = $("chatHomeFeedHost");
@@ -1749,6 +1834,141 @@
     $("chatHomeSettingsSheet")?.addEventListener("click", (ev) => {
       if (ev.target === $("chatHomeSettingsSheet")) closeSettings();
     });
+
+    // Navegación por Pestañas del Modal 2-Columnas de Configuración
+    document.querySelectorAll("[data-settings-tab]").forEach((btn) => {
+      btn.addEventListener("click", (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        const tab = btn.getAttribute("data-settings-tab");
+        showSettingsPanel(tab);
+      });
+    });
+
+    // Idioma selector
+    $("settingsLangSelect")?.addEventListener("change", async (ev) => {
+      const lang = ev.target.value;
+      if (window.editcoreI18n?.setLanguage) {
+        await window.editcoreI18n.setLanguage(lang);
+      }
+    });
+
+    // Canje de Cupones en Configuración
+    $("settingsVoucherBtn")?.addEventListener("click", async () => {
+      const code = $("settingsVoucherInput")?.value?.trim();
+      const statusEl = $("settingsVoucherStatus");
+      if (!code) return;
+      try {
+        const res = await window.editcoreCredits?.redeem?.(null, code);
+        if (statusEl) {
+          statusEl.hidden = false;
+          statusEl.removeAttribute("hidden");
+          if (res?.success) {
+            statusEl.className = "ec-status-msg ec-tag-success";
+            statusEl.textContent = `¡Código canjeado con éxito! Saldo actual: ${res.balance === Infinity ? "∞ Ilimitado" : res.balance + " créditos"}`;
+            await refreshCreditsAndProfileUI();
+          } else {
+            statusEl.className = "ec-status-msg ec-tag-danger";
+            statusEl.textContent = res?.error || "Código inválido o ya utilizado";
+          }
+        }
+      } catch (err) {
+        if (statusEl) {
+          statusEl.hidden = false;
+          statusEl.className = "ec-status-msg ec-tag-danger";
+          statusEl.textContent = "Error al canjear cupón: " + err.message;
+        }
+      }
+    });
+
+    // Canje de Cupones en Modal de Bloqueo
+    $("outOfCreditsRedeemBtn")?.addEventListener("click", async () => {
+      const code = $("outOfCreditsVoucherInput")?.value?.trim();
+      const statusEl = $("outOfCreditsMsg");
+      if (!code) return;
+      try {
+        const res = await window.editcoreCredits?.redeem?.(null, code);
+        if (statusEl) {
+          statusEl.hidden = false;
+          statusEl.removeAttribute("hidden");
+          if (res?.success) {
+            statusEl.className = "ec-status-msg ec-tag-success";
+            statusEl.textContent = `¡Desbloqueado! Se agregaron tus créditos.`;
+            await refreshCreditsAndProfileUI();
+            setTimeout(() => closeOutOfCreditsModal(), 1200);
+          } else {
+            statusEl.className = "ec-status-msg ec-tag-danger";
+            statusEl.textContent = res?.error || "Código inválido";
+          }
+        }
+      } catch (err) {
+        if (statusEl) {
+          statusEl.hidden = false;
+          statusEl.textContent = err.message;
+        }
+      }
+    });
+
+    // Compra de Packs de Créditos
+    document.querySelectorAll(".ec-pack-btn").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const credits = parseInt(btn.getAttribute("data-pack") || "100", 10);
+        try {
+          const res = await window.editcoreCredits?.add?.(null, credits, `Compra de pack ${credits} créditos`);
+          if (res?.success) {
+            alert(`¡Pago confirmado con éxito! Se han añadido ${credits} créditos a tu cuenta de EditCoreAI.`);
+            await refreshCreditsAndProfileUI();
+            closeOutOfCreditsModal();
+          }
+        } catch (e) {
+          alert("Error en pasarela de pago: " + e.message);
+        }
+      });
+    });
+
+    $("settingsBuyCreditsBtn")?.addEventListener("click", () => {
+      showOutOfCreditsModal();
+    });
+
+    $("outOfCreditsCloseBtn")?.addEventListener("click", () => {
+      closeOutOfCreditsModal();
+    });
+
+    // Guardar Perfil de Usuario
+    $("settingsSaveProfileBtn")?.addEventListener("click", async () => {
+      const name = $("settingsProfileName")?.value?.trim();
+      const email = $("settingsProfileEmail")?.value?.trim();
+      if (!name || !email) {
+        alert("Por favor completa nombre y correo.");
+        return;
+      }
+      try {
+        await window.editcoreCredits?.updateProfile?.(null, { name, email });
+        await refreshCreditsAndProfileUI();
+        alert("¡Perfil guardado correctamente!");
+      } catch (err) {
+        alert("Error al guardar perfil: " + err.message);
+      }
+    });
+
+    // Accesos directos a sub-diálogos desde Configuración
+    $("settingsOpenModelsDialogBtn")?.addEventListener("click", () => {
+      closeSettings();
+      $("providersBtn")?.click();
+    });
+    $("settingsOpenConnectionsDialogBtn")?.addEventListener("click", () => {
+      closeSettings();
+      $("connectionsBtn")?.click();
+    });
+    $("settingsOpenSkillsDialogBtn")?.addEventListener("click", () => {
+      closeSettings();
+      openSkillsDialog();
+    });
+    $("settingsOpenInspectorPanelBtn")?.addEventListener("click", () => {
+      closeSettings();
+      $("inspectorBtn")?.click();
+    });
+
     document.querySelectorAll("[data-ch-setting]").forEach((btn) => {
       btn.addEventListener("click", (ev) => {
         ev.preventDefault();
@@ -1774,7 +1994,7 @@
       btn.addEventListener("click", (ev) => {
         ev.preventDefault();
         ev.stopPropagation();
-        showSettingsPanel("main");
+        showSettingsPanel("general");
       });
     });
     $("closeSkillsBtn")?.addEventListener("click", () => closeSkillsDialog());

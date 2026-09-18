@@ -10467,6 +10467,100 @@ ipcMain.handle("remoteEnv:get-status", async (_event, containerId) => {
   }
 });
 
+// Credit Ledger handlers
+ipcMain.handle("credits:get-balance", async (_event, userId) => {
+  try {
+    const { creditLedger } = require("./runtime/credit-ledger");
+    return creditLedger.getBalance(userId);
+  } catch (error) {
+    return { balance: Infinity, isUnlimited: true, canExecute: true };
+  }
+});
+
+ipcMain.handle("credits:deduct", async (_event, userId, amount) => {
+  try {
+    const { creditLedger } = require("./runtime/credit-ledger");
+    return creditLedger.deductCredits(userId, amount);
+  } catch (error) {
+    return { ok: true, balance: Infinity };
+  }
+});
+
+ipcMain.handle("credits:add", async (_event, userId, amount, reference) => {
+  try {
+    const { creditLedger } = require("./runtime/credit-ledger");
+    return creditLedger.addCredits(userId, amount, reference);
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
+});
+
+ipcMain.handle("credits:redeem", async (_event, userId, code) => {
+  try {
+    const { creditLedger } = require("./runtime/credit-ledger");
+    return creditLedger.redeemVoucher(userId, code);
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
+});
+
+ipcMain.handle("credits:update-profile", async (_event, userId, data) => {
+  try {
+    const { creditLedger } = require("./runtime/credit-ledger");
+    return creditLedger.updateProfile(userId, data);
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
+});
+
+ipcMain.handle("credits:list-users", async () => {
+  try {
+    const { creditLedger } = require("./runtime/credit-ledger");
+    return creditLedger.listUsers();
+  } catch (error) {
+    return [];
+  }
+});
+
+// Role Policy Guard handlers
+ipcMain.handle("auth:check-access", async (_event, user, targetPath) => {
+  try {
+    const { rolePolicyGuard } = require("./runtime/role-policy-guard");
+    return rolePolicyGuard.canAccessPath(user, targetPath);
+  } catch (error) {
+    return { allowed: true };
+  }
+});
+
+// i18n handlers
+ipcMain.handle("i18n:get-language", async () => {
+  try {
+    const { i18n } = require("./runtime/i18n");
+    return i18n.getLanguage();
+  } catch (error) {
+    return "es";
+  }
+});
+
+ipcMain.handle("i18n:set-language", async (_event, lang) => {
+  try {
+    const { i18n } = require("./runtime/i18n");
+    return i18n.setLanguage(lang);
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
+});
+
+ipcMain.handle("i18n:get-translations", async (_event, lang) => {
+  try {
+    const { i18n } = require("./runtime/i18n");
+    return i18n.getTranslations(lang);
+  } catch (error) {
+    return {};
+  }
+});
+
+
 
 
 
