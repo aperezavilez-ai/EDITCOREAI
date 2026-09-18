@@ -212,14 +212,16 @@ function groundUngroundedClaims(text, steps = [], userMessage = "", decision = {
     decision?.kind === "ANALYZE" ||
     decision?.kind === "ASK" ||
     decision?.kind === "LIST" ||
-    decision?.allowWrite === false
+    decision?.kind === "CHAT" ||
+    decision?.allowWrite === false ||
+    /\b(?:sin\s+modificar|solo\s+(?:analiza|reporte|diagn[oó]stico)|reporte|an[aá]lisis|auditor[ií]a|explica|resumen)\b/i.test(userMessage)
   ) {
     return repairDanglingOutput(text, steps, userMessage, decision);
   }
   const written = successfulWritePaths(steps);
   if (written.length > 0) return repairDanglingOutput(text, steps, userMessage, decision);
   const claims = textClaimsDiskMutation(text);
-  if (claims) {
+  if (claims && userWantsDiskMutation(userMessage)) {
     return formatAgentVisibleText(
       "No pude comprobar creación ni escritura real en disco en este turno (no hubo `write_file` / `replace_in_file` / `scaffold_project` exitoso).\n\n" +
       "Conectá o indicá la carpeta destino y pedime de nuevo que lo cree con tools. No invento proyectos ni HTML sin guardarlos."

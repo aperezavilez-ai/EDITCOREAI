@@ -3184,34 +3184,22 @@ function projectCatalogParent() {
 async function loadProjectCatalogFromDisk() {
   const parent = projectCatalogParent();
   if (!parent || !window.editcoreProject?.catalog) return;
-  const parentKey = normalizeProjectRoot(parent);
-  const separator = parentKey.includes("\\") ? "\\" : "/";
-  state.projects = state.projects.filter((project) => {
-    const rootKey = normalizeProjectRoot(project.projectRoot);
-    if (!rootKey || rootKey === parentKey) return false;
-    const relative = rootKey.startsWith(`${parentKey}${separator}`) ? rootKey.slice(parentKey.length + 1) : "";
-    const directChild = Boolean(relative) && !/[\\/]/.test(relative);
-    return directChild || project.id === state.activeProjectId;
-  });
   const rows = await window.editcoreProject.catalog(parent);
+  let updatedAny = false;
   for (const row of rows || []) {
     const root = String(row?.root || "").trim();
     if (!root) continue;
     const existing = state.projects.find((project) => normalizeProjectRoot(project.projectRoot) === normalizeProjectRoot(root));
-    if (existing) {
-      existing.title = String(row.name || existing.title || "").trim();
-      continue;
+    if (existing && row.name && existing.title !== row.name) {
+      existing.title = String(row.name).trim();
+      updatedAny = true;
     }
-    state.projects.push(ensureProjectAgent({
-      id: uid(), title: String(row.name || "Proyecto").trim(), mode: state.mode,
-      model: PROVIDERS[state.mode]?.model || "", messages: [], projectRoot: root,
-      provider: state.mode, permissionMode: "step", agents: [], agentState: "idle",
-      catalogEntry: true, updatedAt: 0,
-    }));
   }
-  saveProjects();
-  try { window.EditCoreChatHome?.refresh?.(); } catch { /* ignore */ }
-  try { renderProjects(); } catch { /* ignore */ }
+  if (updatedAny) {
+    saveProjects();
+    try { window.EditCoreChatHome?.refresh?.(); } catch { /* ignore */ }
+    try { renderProjects(); } catch { /* ignore */ }
+  }
 }
 
 let projectCatalogRefreshInFlight = null;

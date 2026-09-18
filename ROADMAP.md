@@ -7,7 +7,7 @@ EditCore actualiza este archivo tras cambios. No pedirlo al usuario. No pegar co
 ## Proceso
 - Fase: implementacion
 - Estado: Tarea cerrada. El siguiente turno parte de ## Proceso / ## Tarea / ## Bloqueos.
-- Actualizado: 2026-09-18 00:39
+- Actualizado: 2026-09-18 13:57
 - Preview: desconocido — usa el preview del IDE, no inventes puertos
 
 ## Mapa
@@ -61,32 +61,30 @@ EditCore actualiza este archivo tras cambios. No pedirlo al usuario. No pegar co
 - evidence-grounding.js
 
 ## Archivos clave (no reexplorar)
-- preload.js
-- tasks/todo.md
+- scripts/auto-evolution/orchestrator.js
+- scripts/auto-evolution/agents/architect.js
+- scripts/auto-evolution/agents/code-analyzer.js
+- scripts/auto-evolution/run-cycle.js
+- scripts/auto-evolution/evolution-state.json
+- runtime/chat-kernel-bridge.js
+- editcore-chat-kernel/index.js
+- runtime/ai-core.js
 - renderer.js
 - runtime/intent-orchestrator.js
 - editcore-chat-kernel/classify.js
-- editcore-chat-kernel/orchestrator.js
-- .editcore/renderer-symbols.txt
-- runtime/prompt-job-model.js
-- editcore-chat-kernel/skills/editcore-connect/SKILL.md
-- editcore-chat-kernel/skills/marketing-content-creator/SKILL.md
 - brain-service.js
-- tasks/plan.md
-- runtime/chat-kernel-bridge.js
-- editcore-chat-kernel/index.js
-- scripts/auto-evolution/evolution-state.json
-- scripts/auto-evolution/orchestrator.js
+- editcore-chat-kernel/orchestrator.js
+- editcore-chat-kernel/skills-catalog.js
+- editcore-chat-kernel/skills/editcore-connect/SKILL.md
+- project-storage.js
 
 ## Tarea activa
-- ## Habilidades especializadas activas (Skills)
+- # AUDITORÍA Y DIAGNÓSTICO AUTÓNOMO DE EDITCOREAI
 
-### Skill: editcore-connect
-Guía para conectar el proyecto del usuario con GitHub, Vercel, Supabase, o configurar las API keys de Claude/OpenAI. Úsala cuando el usuario pid
+Ejecuta un análisis profundo y autónomo de tu propio código fuente, estructura de archivos y arquitectura actual dentro de este workspace. Utiliza los módulos de `scripts
 
 ## Bloqueos / bugs conocidos
-- fallo por truncamiento y aplicar el cambio definitivo.
-- Actualizado: 2026-09-18 00:37
+- Actualizado: 2026-09-18 00:39
 - Preview: desconocido — usa el preview del IDE, no inventes puertos
 
 ## Decisiones
@@ -97,24 +95,24 @@ Guía para conectar el proyecto del usuario con GitHub, Vercel, Supabase, o conf
 - **Skills como extensión**: las habilidades (editcore-connect, web-to-desktop-pake, etc.) se cargan bajo demanda y no forman parte del core. Motivo: mantener el kernel liviano.
 
 ## Cambios recientes
-- preload.js
-- preload.js — parche aplicado (kernel) (2026-09-18 00:39)
-- tasks/todo.md
-- preload.js — parche aplicado (kernel) (2026-09-18 00:37)
+- scripts/auto-evolution/orchestrator.js
+- scripts/auto-evolution/agents/architect.js
+- scripts/auto-evolution/agents/code-analyzer.js
+- scripts/auto-evolution/run-cycle.js
+- scripts/auto-evolution/evolution-state.json
+- runtime/chat-kernel-bridge.js
+- editcore-chat-kernel/index.js
+- runtime/ai-core.js
 - renderer.js
 - runtime/intent-orchestrator.js
-- runtime/intent-orchestrator.js — parche aplicado (kernel) (2026-09-18 00:30)
-- runtime/intent-orchestrator.js — parche aplicado (kernel) (2026-09-18 00:29)
 - editcore-chat-kernel/classify.js
-- runtime/intent-orchestrator.js — parche aplicado (kernel) (2026-09-18 00:25)
+- brain-service.js
 - editcore-chat-kernel/orchestrator.js
-- editcore-chat-kernel/orchestrator.js — parche aplicado (kernel) (2026-09-18 00:19)
-- editcore-chat-kernel/orchestrator.js — parche aplicado (kernel) (2026-09-18 00:16)
-- runtime/intent-orchestrator.js — parche aplicado (kernel) (2026-09-18 00:13)
-- runtime/intent-orchestrator.js — parche aplicado (kernel) (2026-09-18 00:12)
-- runtime/intent-orchestrator.js — parche aplicado (kernel) (2026-09-18 00:11)
-- editcore-chat-kernel/orchestrator.js — parche aplicado (kernel) (2026-09-18 00:07)
-- .editcore/renderer-symbols.txt
+- editcore-chat-kernel/skills-catalog.js
+- editcore-chat-kernel/skills/editcore-connect/SKILL.md
+- project-storage.js
+- project-path-policy.js
+- preload.js
 
 ## Verificado
 - Pendiente
