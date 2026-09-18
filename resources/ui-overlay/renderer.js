@@ -1349,7 +1349,82 @@ function closeProviders() {
   $("providersDialog").close();
 }
 
-function loadProviderProfiles() { return loadJson("editcore-provider-profiles", []); }
+function getModelFamilyKey(model = "") {
+  const m = String(model || "").toLowerCase();
+  if (m.startsWith("claude")) return "claude";
+  if (m.startsWith("gpt")) return "gpt";
+  if (m.startsWith("gemini")) return "gemini";
+  if (m.startsWith("grok")) return "grok";
+  if (m.startsWith("deepseek")) return "deepseek";
+  if (m.startsWith("qwen")) return "qwen";
+  if (m.startsWith("glm")) return "glm";
+  if (m.startsWith("kimi")) return "kimi";
+  return "";
+}
+
+function ensureDefaultProviderProfiles(profiles = []) {
+  const current = Array.isArray(profiles) ? [...profiles] : [];
+  const providers = loadJson("editcore-providers", {});
+
+  for (const provKey of PRIMARY_PROVIDER_KEYS) {
+    const catalog = provKey === "apicredits" ? APICREDITS_PROVIDER_MODELS : provKey === "meai" ? MEAI_PROVIDER_MODELS : (PROVIDER_MODELS[provKey] || []);
+    const provConfig = providers[provKey] || {};
+    const existingForProv = current.filter((p) => p && p.providerKey === provKey);
+
+    const existingModelsMap = new Map();
+    for (const p of existingForProv) {
+      if (p?.model) existingModelsMap.set(String(p.model).toLowerCase(), p);
+    }
+
+    const familyKeyMap = new Map();
+    for (const p of existingForProv) {
+      const fam = getModelFamilyKey(p.model);
+      if (fam && p.apiKey && !familyKeyMap.has(fam)) {
+        familyKeyMap.set(fam, { apiKey: p.apiKey, status: p.status || "" });
+      }
+    }
+
+    const defaultProvKey = provConfig.apiKey || existingForProv.find((p) => p.apiKey)?.apiKey || "";
+    const defaultProvStatus = provConfig.status === "active" || existingForProv.some((p) => ["active", "enabled"].includes(p.status)) ? "active" : "";
+
+    for (const m of catalog) {
+      const mLower = m.toLowerCase();
+      const existing = existingModelsMap.get(mLower);
+      if (!existing) {
+        const fam = getModelFamilyKey(m);
+        const famInfo = familyKeyMap.get(fam);
+        const inheritedKey = famInfo?.apiKey || defaultProvKey;
+        const inheritedStatus = famInfo?.status || (inheritedKey ? defaultProvStatus : "");
+        const newProfile = {
+          id: `${provKey}:${m}`,
+          providerKey: provKey,
+          providerName: provKey === "apicredits" ? "APICredits" : provKey === "meai" ? "ME AI Cloud" : provKey,
+          baseUrl: provConfig.baseUrl || PROVIDERS[provKey]?.baseUrl || "",
+          apiKey: inheritedKey,
+          model: m,
+          status: inheritedStatus,
+          models: [],
+        };
+        current.push(newProfile);
+        existingModelsMap.set(mLower, newProfile);
+      } else if (!existing.apiKey && defaultProvKey) {
+        const fam = getModelFamilyKey(m);
+        const famInfo = familyKeyMap.get(fam);
+        existing.apiKey = famInfo?.apiKey || defaultProvKey;
+        if (!existing.status && (famInfo?.status || defaultProvStatus)) {
+          existing.status = famInfo?.status || defaultProvStatus;
+        }
+      }
+    }
+  }
+
+  return current;
+}
+
+function loadProviderProfiles() {
+  const raw = loadJson("editcore-provider-profiles", []);
+  return ensureDefaultProviderProfiles(raw);
+}
 async function saveProviderProfiles(profiles) { await saveSecureJson("editcore-provider-profiles", profiles); }
 
 function providerKeyForEndpoint(url) {
@@ -1383,6 +1458,23 @@ function renderProviderProfiles() {
           seenModels.set(mKey, p);
         }
       }
+    }
+    if (key === "apicredits") {
+      const getFamOrder = (m) => {
+        const s = String(m || "").toLowerCase();
+        if (s.startsWith("claude")) return 1;
+        if (s.startsWith("gpt")) return 2;
+        if (s.startsWith("gemini")) return 3;
+        if (s.startsWith("grok")) return 4;
+        if (s.startsWith("deepseek")) return 5;
+        return 6;
+      };
+      dedupedProviderProfiles.sort((a, b) => {
+        const fa = getFamOrder(a.model);
+        const fb = getFamOrder(b.model);
+        if (fa !== fb) return fa - fb;
+        return String(a.model || "").localeCompare(String(b.model || ""), undefined, { numeric: true });
+      });
     }
     if (key === "custom:gafcore-gateway") {
       const labels = { meai: "ME AI Cloud", apicredits: "APICredits" };
@@ -2015,7 +2107,11 @@ function mapProfileToModelOption(profile, customProvidersByKey) {
 
 function catalogChatModelOptions() {
   const customProvidersByKey = new Map(loadCustomProviders().map((provider) => [`custom:${provider.id}`, provider]));
-  const profiles = loadProviderProfiles().filter((profile) => profile.model && profile.apiKey);
+  const profiles = loadProviderProfiles().filter((profile) => {
+    if (!profile || !profile.model) return false;
+    const effectiveKey = profile.apiKey || resolveProviderApiKey(profile.providerKey, "");
+    return Boolean(effectiveKey) || PRIMARY_PROVIDER_KEYS.includes(profile.providerKey);
+  });
   const uniqueByModel = new Map();
   for (const profile of profiles) {
     const key = `${profile.providerKey || ""}:${profile.model || ""}`.toLowerCase();
@@ -2169,16 +2265,34 @@ async function addProviderProfile(key) {
 }
 
 async function bulkAddProviderProfiles(key) {
-  const models = PROVIDER_MODELS[key] || [];
+  const models = PROVIDER_MODELS[key] || (key === "apicredits" ? APICREDITS_PROVIDER_MODELS : key === "meai" ? MEAI_PROVIDER_MODELS : []);
   if (!models.length) return;
   const profiles = loadProviderProfiles();
-  const existingApiKey = profiles.find((p) => p.providerKey === key && p.apiKey)?.apiKey || "";
-  const existingModels = new Set(profiles.filter((p) => p.providerKey === key).map((p) => p.model));
-  const toAdd = models.filter((m) => m && !existingModels.has(m));
-  if (!toAdd.length) return;
-  toAdd.forEach((m) => profiles.push({ id: uid(), providerKey: key, apiKey: existingApiKey, model: m, status: "", models: [] }));
-  await saveProviderProfiles(profiles);
+  const existingApiKey = profiles.find((p) => p.providerKey === key && p.apiKey)?.apiKey || resolveProviderApiKey(key, "");
+  const existingModels = new Set(profiles.filter((p) => p.providerKey === key).map((p) => String(p.model || "").toLowerCase()));
+  const toAdd = models.filter((m) => m && !existingModels.has(m.toLowerCase()));
+  if (toAdd.length > 0) {
+    toAdd.forEach((m) => {
+      const fam = getModelFamilyKey(m);
+      const famProfile = profiles.find((p) => p.providerKey === key && getModelFamilyKey(p.model) === fam && p.apiKey);
+      const keyToUse = famProfile?.apiKey || existingApiKey;
+      const statusToUse = famProfile?.status || (keyToUse ? "active" : "");
+      profiles.push({
+        id: `${key}:${m}`,
+        providerKey: key,
+        providerName: key === "apicredits" ? "APICredits" : key === "meai" ? "ME AI Cloud" : key,
+        baseUrl: PROVIDERS[key]?.baseUrl || "",
+        apiKey: keyToUse,
+        model: m,
+        status: statusToUse,
+        models: [],
+      });
+    });
+    await saveProviderProfiles(profiles);
+  }
   renderProviderProfiles();
+  syncChatModelFromConfig();
+  if ($("modelPickerMenu") && !$("modelPickerMenu").classList.contains("hidden")) renderModelPickerMenu();
 }
 
 async function activateProvider({ baseUrl, apiKey, model, providerKey, profileId, preserveAuto = false }) {
@@ -2427,12 +2541,28 @@ function renderCustomProviders() {
     profilesDiv.className = "provider-profiles";
     profilesDiv.dataset.providerProfiles = key;
     fields.appendChild(profilesDiv);
+    const modelActionsDiv = document.createElement("div");
+    modelActionsDiv.style.display = "flex";
+    modelActionsDiv.style.gap = "8px";
+    modelActionsDiv.style.marginTop = "4px";
+    modelActionsDiv.style.flexWrap = "wrap";
+
     const addProfile = document.createElement("button");
     addProfile.type = "button";
     addProfile.className = "profile-save";
     addProfile.textContent = "+ Agregar modelo";
     addProfile.onclick = () => addProviderProfile(key);
-    fields.appendChild(addProfile);
+    modelActionsDiv.appendChild(addProfile);
+
+    const restoreCatalog = document.createElement("button");
+    restoreCatalog.type = "button";
+    restoreCatalog.className = "profile-save";
+    restoreCatalog.textContent = "↻ Cargar catálogo completo";
+    restoreCatalog.title = "Cargar todos los modelos oficiales predeterminados del proveedor";
+    restoreCatalog.onclick = () => bulkAddProviderProfiles(key);
+    modelActionsDiv.appendChild(restoreCatalog);
+
+    fields.appendChild(modelActionsDiv);
     item.appendChild(fields);
     container.appendChild(item);
   });
