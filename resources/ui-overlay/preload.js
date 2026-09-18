@@ -494,8 +494,11 @@ contextBridge.exposeInMainWorld("editcoreGit", {
 });
 
 contextBridge.exposeInMainWorld("editcoreMemory", {
-  querySemantic: (query) => ipcRenderer.invoke("memory:query-semantic", query),
+  indexWorkspace: (workspace) => ipcRenderer.invoke("memory:index-workspace", workspace),
+  query: (query, topK, minScore) => ipcRenderer.invoke("memory:query", { query, topK, minScore }),
+  querySemantic: (query, topK, minScore) => ipcRenderer.invoke("memory:query-semantic", query),
   getIndexStatus: () => ipcRenderer.invoke("memory:get-index-status"),
+  getStatus: () => ipcRenderer.invoke("memory:get-status"),
   clearCache: () => ipcRenderer.invoke("memory:clear-cache"),
 });
 
@@ -601,13 +604,6 @@ contextBridge.exposeInMainWorld("editcoreDebugger", {
   listSessions: () => ipcRenderer.invoke("debugger:list-sessions"),
 });
 
-contextBridge.exposeInMainWorld("editcoreMemory", {
-  indexWorkspace: (workspace) => ipcRenderer.invoke("memory:index-workspace", workspace),
-  query: (query, topK, minScore) => ipcRenderer.invoke("memory:query", { query, topK, minScore }),
-  querySemantic: (query, topK, minScore) => ipcRenderer.invoke("memory:query", { query, topK, minScore }),
-  getStatus: () => ipcRenderer.invoke("memory:get-status"),
-  clearCache: () => ipcRenderer.invoke("memory:clear-cache"),
-});
 
 
 

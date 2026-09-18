@@ -9763,6 +9763,25 @@ ipcMain.handle("git:detectLocalChanges", async (_event, cwd) => {
 });
 
 // Semantic Memory handlers
+ipcMain.handle("memory:index-workspace", async (_event, workspace) => {
+  try {
+    const { indexWorkspace } = require("./runtime/rag-memory");
+    return indexWorkspace(workspace);
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
+});
+
+ipcMain.handle("memory:query", async (_event, payload) => {
+  try {
+    const { querySemantic } = require("./runtime/rag-memory");
+    const { query, topK, minScore } = typeof payload === "string" ? { query: payload } : (payload || {});
+    return querySemantic(query, topK, minScore);
+  } catch (error) {
+    return [];
+  }
+});
+
 ipcMain.handle("memory:query-semantic", async (_event, query) => {
   try {
     const { querySemantic } = require("./runtime/rag-memory");
@@ -9773,6 +9792,15 @@ ipcMain.handle("memory:query-semantic", async (_event, query) => {
 });
 
 ipcMain.handle("memory:get-index-status", async () => {
+  try {
+    const { getIndexStatus } = require("./runtime/rag-memory");
+    return getIndexStatus();
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
+});
+
+ipcMain.handle("memory:get-status", async () => {
   try {
     const { getIndexStatus } = require("./runtime/rag-memory");
     return getIndexStatus();
@@ -10200,43 +10228,6 @@ ipcMain.handle("debugger:list-sessions", async () => {
   }
 });
 
-// Memory RAG handlers
-ipcMain.handle("memory:index-workspace", async (_event, workspace) => {
-  try {
-    const rag = require("./runtime/rag-memory");
-    return rag.indexWorkspace(workspace);
-  } catch (error) {
-    return { ok: false, error: error.message };
-  }
-});
-
-ipcMain.handle("memory:query", async (_event, payload) => {
-  try {
-    const rag = require("./runtime/rag-memory");
-    const { query, topK, minScore } = typeof payload === "string" ? { query: payload } : (payload || {});
-    return rag.querySemantic(query, topK, minScore);
-  } catch (error) {
-    return [];
-  }
-});
-
-ipcMain.handle("memory:get-status", async () => {
-  try {
-    const rag = require("./runtime/rag-memory");
-    return rag.getIndexStatus();
-  } catch (error) {
-    return { ok: false, error: error.message };
-  }
-});
-
-ipcMain.handle("memory:clear-cache", async () => {
-  try {
-    const rag = require("./runtime/rag-memory");
-    return rag.clearCache();
-  } catch (error) {
-    return { ok: false, error: error.message };
-  }
-});
 
 
 
