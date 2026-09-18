@@ -528,12 +528,31 @@ async function initializeSecureState() {
   }
   let compactedSecure = false;
   if (Array.isArray(secureState["editcore-provider-profiles"])) {
-    secureState["editcore-provider-profiles"] = secureState["editcore-provider-profiles"].map((profile) => {
-      if (!profile || typeof profile !== "object" || !Object.prototype.hasOwnProperty.call(profile, "models")) return profile;
+    const dedupedProfiles = [];
+    const seenProfileKeys = new Map();
+    for (const profile of secureState["editcore-provider-profiles"]) {
+      if (!profile || typeof profile !== "object") continue;
       const { models: _duplicatedCatalog, ...compactProfile } = profile;
-      compactedSecure = true;
-      return compactProfile;
-    });
+      if (Object.prototype.hasOwnProperty.call(profile, "models")) compactedSecure = true;
+      const pKey = `${compactProfile.providerKey || ""}:${compactProfile.model || ""}`.toLowerCase();
+      if (!seenProfileKeys.has(pKey)) {
+        seenProfileKeys.set(pKey, compactProfile);
+        dedupedProfiles.push(compactProfile);
+      } else {
+        const existing = seenProfileKeys.get(pKey);
+        const existingActive = ["active", "enabled"].includes(existing.status);
+        const currentActive = ["active", "enabled"].includes(compactProfile.status);
+        if (!existingActive && currentActive) {
+          const idx = dedupedProfiles.indexOf(existing);
+          if (idx !== -1) dedupedProfiles[idx] = compactProfile;
+          seenProfileKeys.set(pKey, compactProfile);
+        }
+        compactedSecure = true;
+      }
+    }
+    if (compactedSecure || dedupedProfiles.length !== secureState["editcore-provider-profiles"].length) {
+      secureState["editcore-provider-profiles"] = dedupedProfiles;
+    }
   }
   const repairedSecureState = repairPersistedText(secureState);
   const repairedSecure = JSON.stringify(repairedSecureState) !== JSON.stringify(secureState);
@@ -1347,9 +1366,27 @@ function renderProviderProfiles() {
     const key = host.dataset.providerProfiles;
     host.replaceChildren();
     const providerProfiles = profiles.filter((profile) => profile.providerKey === key);
+    const dedupedProviderProfiles = [];
+    const seenModels = new Map();
+    for (const p of providerProfiles) {
+      const mKey = String(p.model || "").trim().toLowerCase();
+      if (!seenModels.has(mKey)) {
+        seenModels.set(mKey, p);
+        dedupedProviderProfiles.push(p);
+      } else {
+        const existing = seenModels.get(mKey);
+        const existingActive = ["active", "enabled"].includes(existing.status);
+        const currentActive = ["active", "enabled"].includes(p.status);
+        if (!existingActive && currentActive) {
+          const idx = dedupedProviderProfiles.indexOf(existing);
+          if (idx !== -1) dedupedProviderProfiles[idx] = p;
+          seenModels.set(mKey, p);
+        }
+      }
+    }
     if (key === "custom:gafcore-gateway") {
       const labels = { meai: "ME AI Cloud", apicredits: "APICredits" };
-      providerProfiles.sort((a, b) => {
+      dedupedProviderProfiles.sort((a, b) => {
         const [aProvider, ...aModel] = String(a.model || "").split("/");
         const [bProvider, ...bModel] = String(b.model || "").split("/");
         return String(labels[aProvider] || aProvider).localeCompare(String(labels[bProvider] || bProvider), "es", { sensitivity: "base" })
@@ -1357,7 +1394,7 @@ function renderProviderProfiles() {
       });
     }
     let renderedProviderGroup = "";
-    providerProfiles.forEach((profile) => {
+    dedupedProviderProfiles.forEach((profile) => {
       const [modelProvider, ...modelParts] = String(profile.model || "").split("/");
       if (key === "custom:gafcore-gateway" && modelProvider !== renderedProviderGroup) {
         renderedProviderGroup = modelProvider;
@@ -1979,7 +2016,21 @@ function mapProfileToModelOption(profile, customProvidersByKey) {
 function catalogChatModelOptions() {
   const customProvidersByKey = new Map(loadCustomProviders().map((provider) => [`custom:${provider.id}`, provider]));
   const profiles = loadProviderProfiles().filter((profile) => profile.model && profile.apiKey);
-  return profiles
+  const uniqueByModel = new Map();
+  for (const profile of profiles) {
+    const key = `${profile.providerKey || ""}:${profile.model || ""}`.toLowerCase();
+    const existing = uniqueByModel.get(key);
+    if (!existing) {
+      uniqueByModel.set(key, profile);
+    } else {
+      const existingActive = ["active", "enabled"].includes(existing.status);
+      const currentActive = ["active", "enabled"].includes(profile.status);
+      if (!existingActive && currentActive) {
+        uniqueByModel.set(key, profile);
+      }
+    }
+  }
+  return [...uniqueByModel.values()]
     .map((profile) => mapProfileToModelOption(profile, customProvidersByKey))
     .sort((a, b) => {
       const gatewayRank = (entry) => entry.providerKey === "custom:gafcore-gateway" ? 0 : 1;

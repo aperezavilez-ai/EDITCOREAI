@@ -9153,7 +9153,7 @@ function ensureDirectUpstreamProfiles() {
         changed = true;
       }
       const profileId = `${providerKey}:${model}`;
-      const index = profiles.findIndex((item) => item.id === profileId);
+      const index = profiles.findIndex((item) => item.id === profileId || (item.providerKey === providerKey && item.model === model));
       const next = {
         id: profileId,
         providerKey,
@@ -9175,6 +9175,11 @@ function ensureDirectUpstreamProfiles() {
         }
       } else {
         profiles.push(next);
+        changed = true;
+      }
+      const filtered = profiles.filter((p, i) => i === index || !(p.providerKey === providerKey && p.model === model && p.id !== profileId));
+      if (filtered.length !== profiles.length) {
+        profiles = filtered;
         changed = true;
       }
     };

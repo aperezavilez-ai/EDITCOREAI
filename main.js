@@ -9153,7 +9153,7 @@ function ensureDirectUpstreamProfiles() {
         changed = true;
       }
       const profileId = `${providerKey}:${model}`;
-      const index = profiles.findIndex((item) => item.id === profileId);
+      const index = profiles.findIndex((item) => item.id === profileId || (item.providerKey === providerKey && item.model === model));
       const next = {
         id: profileId,
         providerKey,
@@ -9175,6 +9175,11 @@ function ensureDirectUpstreamProfiles() {
         }
       } else {
         profiles.push(next);
+        changed = true;
+      }
+      const filtered = profiles.filter((p, i) => i === index || !(p.providerKey === providerKey && p.model === model && p.id !== profileId));
+      if (filtered.length !== profiles.length) {
+        profiles = filtered;
         changed = true;
       }
     };
@@ -9777,5 +9782,74 @@ ipcMain.handle("evolution:open-dashboard", async () => {
   dashboardWindow.loadFile(path.join(__dirname, "ide", "auto-evolution-panel.html"));
   
   return { success: true };
+});
+
+const lspClients = new Map();
+ipcMain.handle("lsp:start", async (_event, input = {}) => {
+  const { LSPClient } = require("./runtime/lsp-client");
+  const client = new LSPClient(input.rootPath, input.languageId);
+  client.start();
+  const id = `lsp_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
+  lspClients.set(id, client);
+  return { ok: true, id };
+});
+ipcMain.handle("lsp:stop", async (_event, input = {}) => {
+  const client = lspClients.get(String(input.id || ""));
+  if (!client) return { ok: false };
+  client.stop();
+  lspClients.delete(String(input.id || ""));
+  return { ok: true };
+});
+ipcMain.handle("lsp:open-document", async (_event, input = {}) => {
+  const client = lspClients.get(String(input.id || ""));
+  if (!client) return { ok: false };
+  await client.openDocument(String(input.uri || ""), String(input.languageId || ""), String(input.text || ""));
+  return { ok: true };
+});
+ipcMain.handle("lsp:change-document", async (_event, input = {}) => {
+  const client = lspClients.get(String(input.id || ""));
+  if (!client) return { ok: false };
+  await client.changeDocument(String(input.uri || ""), String(input.text || ""));
+  return { ok: true };
+});
+ipcMain.handle("lsp:completion", async (_event, input = {}) => {
+  const client = lspClients.get(String(input.id || ""));
+  if (!client) return { ok: false, items: [] };
+  const result = await client.requestCompletion(String(input.uri || ""), Number(input.line || 0), Number(input.character || 0));
+  return { ok: true, items: result?.items || [] };
+});
+ipcMain.handle("lsp:hover", async (_event, input = {}) => {
+  const client = lspClients.get(String(input.id || ""));
+  if (!client) return { ok: false };
+  const result = await client.hover(String(input.uri || ""), Number(input.line || 0), Number(input.character || 0));
+  return { ok: true, hover: result || null };
+});
+
+const composerSessions = new Map();
+ipcMain.handle("composer:create-session", async (_event, input = {}) => {
+  const { ComposerView } = require("./runtime/composer-view");
+  const view = new ComposerView(input.projectRoot);
+  const session = view.createSession(input || {});
+  composerSessions.set(session.sessionId, view);
+  return session;
+});
+ipcMain.handle("composer:rollback", async (_event, sessionId) => {
+  const view = composerSessions.get(String(sessionId || ""));
+  if (!view) return { ok: false };
+  return view.rollback(String(sessionId || ""));
+});
+
+const cloudChannels = new Map();
+ipcMain.handle("cloud:publish-state", async (_event, payload = {}) => {
+  const { CloudCollabChannel } = require("./runtime/cloud-collab");
+  const channel = new CloudCollabChannel({ peerId: payload.peerId, passphrase: payload.passphrase });
+  const result = await channel.publishState(payload.state || {});
+  cloudChannels.set(String(payload.peerId || result.peerId), channel);
+  return result;
+});
+ipcMain.handle("cloud:sync-inbox", async (_event, payload = {}) => {
+  const channel = cloudChannels.get(String(payload.peerId || ""));
+  if (!channel) return { ok: false, accepted: 0 };
+  return channel.syncInbox();
 });
 
