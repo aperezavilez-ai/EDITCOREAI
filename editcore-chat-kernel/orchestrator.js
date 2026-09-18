@@ -11,6 +11,33 @@ const {
   TOOL_ALLOWLIST,
   SUB_AGENTS,
 } = require("./classify");
+const { ChatSession } = require("./session");
+const { PersistentMemory } = require("./memory");
+const { skillsPrompt, SKILL_IDS } = require("./skills-catalog");
+const { runExplorer } = require("./subagents/explorer");
+const { runAnalyst } = require("./subagents/analyst");
+const { runImplementer } = require("./subagents/implementer");
+const { runVerifier } = require("./subagents/verifier");
+
+let dispatchSpecialist = () => null;
+try {
+  const _dispatcher = require("./subagents/dispatcher");
+  if (_dispatcher && typeof _dispatcher.dispatchSpecialist === "function") {
+    dispatchSpecialist = _dispatcher.dispatchSpecialist;
+  }
+} catch (_) {
+  dispatchSpecialist = () => null;
+}
+
+const { parseTextToolCalls, stripTextToolMarkup, toRelativePath, visibleNarrationText } = require("./parse-text-tools");
+const tools = require("./tools");
+const { callChat } = require("./provider");
+const { capture_preview_screenshot, DEFAULT_PREVIEW_URL } = require("./vision-inspector");
+const globalMemory = require("./global-memory");
+const taskQueue = require("./task-queue");
+const threadCore = require("./thread-core");
+const { pickModel } = require("./model-router");
+const agentBus = require("./agent-bus");
 
 let projectMapApi = null;
 try {
