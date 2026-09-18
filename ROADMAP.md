@@ -7,13 +7,16 @@ EditCore actualiza este archivo tras cambios. No pedirlo al usuario. No pegar co
 ## Proceso
 - Fase: implementacion
 - Estado: Tarea cerrada. El siguiente turno parte de ## Proceso / ## Tarea / ## Bloqueos.
-- Actualizado: 2026-09-18 15:16
+- Actualizado: 2026-09-18 16:31
 - Preview: desconocido — usa el preview del IDE, no inventes puertos
 
 ## Mapa
+- scripts/verify-evolution-dashboard.js
 - scripts/auto-evolution/evolution-state.json
-- scripts/auto-evolution/agents/code-analyzer.js
 - preload.js
+- main.js
+- ide/auto-evolution-panel.html
+- scripts/auto-evolution/agents/code-analyzer.js
 - runtime/intent-orchestrator.js
 - editcore-chat-kernel/orchestrator.js
 - tasks/todo.md
@@ -56,27 +59,24 @@ EditCore actualiza este archivo tras cambios. No pedirlo al usuario. No pegar co
 - editcore-claude-adapter.js
 - EDITCORE-MANIFEST.md
 - EDITCOREAI.exe
-- editor-inline-edit.css
-- editor-inline-edit.js
-- evidence-grounding.js
 
 ## Archivos clave (no reexplorar)
-- scripts/auto-evolution/agents/code-analyzer.js
 - scripts/auto-evolution/evolution-state.json
+- scripts/verify-evolution-dashboard.js
+- ide/auto-evolution-panel.html
+- preload.js
+- main.js
+- scripts/auto-evolution/agents/code-analyzer.js
 - runtime/intent-orchestrator.js
 - scripts/auto-evolution/run-cycle.js
 - scripts/auto-evolution/orchestrator.js
 - scripts/auto-evolution/agents/architect.js
 - scripts/auto-evolution/agents/patcher.js
-- preload.js
 - renderer.js
 - scripts/verify-all-ipc-and-dom.js
 - runtime/chat-kernel-bridge.js
 - runtime/ai-core.js
 - editcore-chat-kernel/tools.js
-- editcore-chat-kernel/orchestrator.js
-- editcore-chat-kernel/classify.js
-- editcore-chat-kernel/index.js
 
 ## Tarea activa
 - ## Habilidades especializadas activas (Skills)
@@ -85,7 +85,8 @@ EditCore actualiza este archivo tras cambios. No pedirlo al usuario. No pegar co
 Guía para conectar el proyecto del usuario con GitHub, Vercel, Supabase, o configurar las API keys de Claude/OpenAI. Úsala cuando el usuario pid
 
 ## Bloqueos / bugs conocidos
-- Actualizado: 2026-09-18 15:13
+- falló durante la ejecución: terminated
+- Actualizado: 2026-09-18 15:16
 - Preview: desconocido — usa el preview del IDE, no inventes puertos
 
 ## Decisiones
@@ -96,24 +97,24 @@ Guía para conectar el proyecto del usuario con GitHub, Vercel, Supabase, o conf
 - **Skills como extensión**: las habilidades (editcore-connect, web-to-desktop-pake, etc.) se cargan bajo demanda y no forman parte del core. Motivo: mantener el kernel liviano.
 
 ## Cambios recientes
-- scripts/auto-evolution/agents/code-analyzer.js
 - scripts/auto-evolution/evolution-state.json
+- scripts/verify-evolution-dashboard.js
+- ide/auto-evolution-panel.html
+- preload.js
+- scripts/verify-evolution-dashboard.js — archivo escrito (kernel) (2026-09-18 16:31)
+- scripts/auto-evolution/evolution-state.json — parche aplicado (kernel) (2026-09-18 16:30)
+- main.js
+- preload.js — parche aplicado (kernel) (2026-09-18 16:23)
+- main.js — parche aplicado (kernel) (2026-09-18 16:23)
+- scripts/auto-evolution/evolution-state.json — archivo escrito (kernel) (2026-09-18 16:22)
+- scripts/auto-evolution/evolution-state.json — parche aplicado (kernel) (2026-09-18 16:21)
+- main.js — parche aplicado (kernel) (2026-09-18 16:20)
+- preload.js — parche aplicado (kernel) (2026-09-18 16:20)
+- ide/auto-evolution-panel.html — archivo escrito (kernel) (2026-09-18 16:19)
+- scripts/auto-evolution/agents/code-analyzer.js
 - runtime/intent-orchestrator.js
 - scripts/auto-evolution/evolution-state.json — parche aplicado (kernel) (2026-09-18 15:16)
 - scripts/auto-evolution/evolution-state.json — parche aplicado (kernel) (2026-09-18 15:15)
-- scripts/auto-evolution/agents/code-analyzer.js — parche aplicado (kernel) (2026-09-18 15:14)
-- scripts/auto-evolution/run-cycle.js
-- scripts/auto-evolution/orchestrator.js
-- scripts/auto-evolution/agents/architect.js
-- scripts/auto-evolution/agents/patcher.js
-- preload.js
-- renderer.js
-- scripts/verify-all-ipc-and-dom.js
-- runtime/chat-kernel-bridge.js
-- runtime/ai-core.js
-- editcore-chat-kernel/tools.js
-- editcore-chat-kernel/orchestrator.js
-- editcore-chat-kernel/classify.js
 
 ## Verificado
 - Pendiente

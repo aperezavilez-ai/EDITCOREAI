@@ -297,6 +297,7 @@ function migrateLegacyUserData() {
     if (!fs.existsSync(sourceRoot) || path.resolve(sourceRoot) === path.resolve(targetRoot)) continue;
     for (const [name, targetName] of [
       ["editcore-secure-config.bin", "editcore-secure-config.bin"],
+      ["editcore-ui-session.json", "editcore-ui-session.json"],
       ["response-cache.json", "response-cache.json"],
       ["tool-cache.json", "tool-cache.json"],
       ["editcore-brain", "editcore-brain"],
@@ -9672,4 +9673,109 @@ ipcMain.handle("inspector:discard-checkpoint", async (_event, target, requestedR
 ipcMain.handle("inspector:list-checkpoints", async (_event, target, requestedRoot) => inspector().listCheckpoints(inspectorTargetRoot(target, requestedRoot)));
 ipcMain.handle("inspector:clean-checkpoints", async (_event, target, requestedRoot, keep) => inspector().cleanCheckpoints(inspectorTargetRoot(target, requestedRoot), keep));
 ipcMain.handle("inspector:validate-repair", async (_event, target, requestedRoot, checkpointId) => inspector().validateRepair(inspectorTargetRoot(target, requestedRoot), checkpointId));
+
+// ============================================================================
+// AUTO-EVOLUCIÓN: Handlers para el dashboard de observabilidad
+// ============================================================================
+
+ipcMain.handle("evolution:get-state", async () => {
+  const fs = require("fs");
+  const path = require("path");
+  const statePath = path.join(__dirname, "scripts", "auto-evolution", "evolution-state.json");
+  
+  try {
+    if (!fs.existsSync(statePath)) {
+      return {
+        cycle: 0,
+        status: "NOT_INITIALIZED",
+        gapsClosed: 0,
+        totalGaps: 0,
+        patches: [],
+        dynamicTools: []
+      };
+    }
+    
+    const content = fs.readFileSync(statePath, "utf8");
+    return JSON.parse(content);
+  } catch (error) {
+    console.error("[evolution:get-state] Error leyendo evolution-state.json:", error);
+    return {
+      cycle: 0,
+      status: "ERROR",
+      error: error.message,
+      gapsClosed: 0,
+      totalGaps: 0,
+      patches: [],
+      dynamicTools: []
+    };
+  }
+});
+
+ipcMain.handle("evolution:run-cycle", async () => {
+  const { spawn } = require("child_process");
+  const path = require("path");
+  
+  return new Promise((resolve) => {
+    const scriptPath = path.join(__dirname, "scripts", "auto-evolution", "run-cycle.js");
+    
+    const child = spawn(process.execPath, [scriptPath], {
+      cwd: __dirname,
+      stdio: "pipe"
+    });
+    
+    let stdout = "";
+    let stderr = "";
+    
+    child.stdout.on("data", (data) => {
+      stdout += data.toString();
+    });
+    
+    child.stderr.on("data", (data) => {
+      stderr += data.toString();
+    });
+    
+    child.on("close", (code) => {
+      if (code === 0) {
+        resolve({
+          success: true,
+          output: stdout
+        });
+      } else {
+        resolve({
+          success: false,
+          error: `El ciclo finalizó con código ${code}`,
+          stderr: stderr
+        });
+      }
+    });
+    
+    child.on("error", (error) => {
+      resolve({
+        success: false,
+        error: error.message
+      });
+    });
+  });
+});
+
+ipcMain.handle("evolution:open-dashboard", async () => {
+  const { BrowserWindow } = require("electron");
+  const path = require("path");
+  
+  const dashboardWindow = new BrowserWindow({
+    width: 1400,
+    height: 900,
+    title: "Auto-Evolución | EditCoreAI",
+    webPreferences: {
+      preload: path.join(__dirname, "preload.js"),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true
+    }
+  });
+  
+  dashboardWindow.loadFile(path.join(__dirname, "ide", "auto-evolution-panel.html"));
+  
+  return { success: true };
+});
 

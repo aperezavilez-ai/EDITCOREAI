@@ -51,6 +51,7 @@ function compactProject(project = {}) {
       id: chat.id,
       title: chat.title || "Chat",
       messages: trimmed,
+      createdAt: chat.createdAt || chat.updatedAt || Date.now(),
       updatedAt: chat.updatedAt || Date.now(),
     };
   });
@@ -104,6 +105,15 @@ function saveUiSession(userDataPath, payload = {}) {
   const projects = Array.isArray(payload.projects)
     ? payload.projects.map(compactProject)
     : [];
+
+  // Proteccion contra sobreescritura accidental con lista vacia si en disco ya existian proyectos
+  if (projects.length === 0 && payload.allowEmpty !== true) {
+    const existing = loadUiSession(userDataPath);
+    if (existing && Array.isArray(existing.projects) && existing.projects.length > 0) {
+      return { ok: true, path: file, projects: existing.projects.length, savedAt: existing.savedAt, skipped: true };
+    }
+  }
+
   const body = {
     version: 1,
     savedAt: Date.now(),

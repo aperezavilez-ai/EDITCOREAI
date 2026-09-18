@@ -471,3 +471,10 @@ contextBridge.exposeInMainWorld("editcorePty", {
   },
 });
 
+// Bridge para el panel de auto-evolución
+contextBridge.exposeInMainWorld("electronAPI", {
+  getEvolutionState: () => ipcRenderer.invoke("evolution:get-state"),
+  runEvolutionCycle: () => ipcRenderer.invoke("evolution:run-cycle"),
+  openDashboard: () => ipcRenderer.invoke("evolution:open-dashboard"),
+});
+

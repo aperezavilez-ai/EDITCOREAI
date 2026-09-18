@@ -597,6 +597,7 @@ function dedupeProjectsByRoot() {
   state.projects = result;
 }
 
+let _isSessionHydrated = false;
 let _saveDiskDebounceTimer = null;
 let _lastSyncedProjectsKey = "";
 
@@ -609,12 +610,17 @@ function saveProjects(options = {}) {
     console.warn("[session] localStorage fill/quota:", error?.message || error);
   }
 
+  // Blindaje: no pisar el almacenamiento en disco si aún no se ha completado la hidratación inicial
+  if (!_isSessionHydrated && !options.forceDisk) {
+    return;
+  }
+
   if (options.immediate) {
     if (_saveDiskDebounceTimer) {
       clearTimeout(_saveDiskDebounceTimer);
       _saveDiskDebounceTimer = null;
     }
-    _flushDiskPersistenceNow();
+    _flushDiskPersistenceNow(options);
     return;
   }
 
@@ -626,11 +632,12 @@ function saveProjects(options = {}) {
   }
 }
 
-function _flushDiskPersistenceNow() {
+function _flushDiskPersistenceNow(options = {}) {
   if (window.editcoreSession?.save) {
     window.editcoreSession.save({
       activeProjectId: state.activeProjectId,
       projects: state.projects,
+      allowEmpty: options.allowEmpty === true,
     }).catch((error) => {
       console.warn("[session] save disk:", error?.message || error);
     });
@@ -657,6 +664,7 @@ function persistActiveProjectChatsToDisk() {
 }
 
 function flushSessionSyncNow() {
+  if (!_isSessionHydrated) return;
   if (_saveDiskDebounceTimer) {
     clearTimeout(_saveDiskDebounceTimer);
     _saveDiskDebounceTimer = null;
@@ -13063,20 +13071,76 @@ async function boot() {
     state.autoModelUsage = {};
   }
 
-  // FAST PATH: pintar UI desde localStorage sin esperar disco/secure/migraciones.
+  // FAST PATH + DISK HYDRATION: Cargar desde disco (userData) inmediatamente para evitar pérdida de proyectos
   const storedProjects = loadJson(PROJECTS_STORAGE_KEY, []);
   const storedActiveProjectId = String(localStorage.getItem(ACTIVE_PROJECT_STORAGE_KEY) || "").trim();
-  state.projects = repairPersistedText(storedProjects).map(ensureProjectAgent);
+  let initialProjects = repairPersistedText(storedProjects).map(ensureProjectAgent);
+
+  let diskSession = null;
+  try {
+    diskSession = window.editcoreSession?.load ? await window.editcoreSession.load() : null;
+  } catch {
+    diskSession = null;
+  }
+  const diskProjects = Array.isArray(diskSession?.projects) ? repairPersistedText(diskSession.projects).map(ensureProjectAgent) : [];
+  const diskActive = String(diskSession?.activeProjectId || "").trim();
+
+  if (diskProjects.length > 0) {
+    if (initialProjects.length === 0) {
+      initialProjects = diskProjects;
+    } else {
+      const mergedMap = new Map();
+      for (const dp of diskProjects) {
+        const key = dp.projectRoot ? normalizeProjectRoot(dp.projectRoot) : dp.id;
+        mergedMap.set(key, dp);
+      }
+      for (const sp of initialProjects) {
+        const key = sp.projectRoot ? normalizeProjectRoot(sp.projectRoot) : sp.id;
+        if (!mergedMap.has(key)) {
+          mergedMap.set(key, sp);
+        } else {
+          const dp = mergedMap.get(key);
+          const dpChats = Array.isArray(dp.chats) ? dp.chats : [];
+          const spChats = Array.isArray(sp.chats) ? sp.chats : [];
+          const chatMap = new Map();
+          for (const c of dpChats) chatMap.set(c.id, c);
+          for (const c of spChats) {
+            if (!chatMap.has(c.id)) {
+              chatMap.set(c.id, c);
+            } else {
+              const curC = chatMap.get(c.id);
+              const curMsgs = Array.isArray(curC.messages) ? curC.messages : [];
+              const newMsgs = Array.isArray(c.messages) ? c.messages : [];
+              if (newMsgs.length >= curMsgs.length) {
+                chatMap.set(c.id, { ...curC, ...c, messages: newMsgs });
+              }
+            }
+          }
+          const mergedChats = Array.from(chatMap.values());
+          const keepSp = (Number(sp.updatedAt) || 0) >= (Number(dp.updatedAt) || 0);
+          mergedMap.set(key, keepSp ? { ...dp, ...sp, chats: mergedChats } : { ...sp, ...dp, chats: mergedChats });
+        }
+      }
+      initialProjects = Array.from(mergedMap.values());
+    }
+  }
+
+  state.projects = initialProjects;
+  _isSessionHydrated = true;
 
   // Limpiar proyectos huérfanos vacíos creados por recargas previas si existen proyectos reales.
   if (state.projects.length > 1) {
     state.projects = state.projects.filter((p) => {
       const hasRoot = Boolean(p.projectRoot);
       const hasMsgs = (Array.isArray(p.messages) && p.messages.length > 0) || (Array.isArray(p.chats) && p.chats.some((c) => Array.isArray(c.messages) && c.messages.length > 0));
-      const isActive = p.id === storedActiveProjectId;
+      const isActive = p.id === storedActiveProjectId || p.id === diskActive;
       return hasRoot || hasMsgs || isActive;
     });
   }
+
+  try {
+    localStorage.setItem(PROJECTS_STORAGE_KEY, JSON.stringify(state.projects));
+  } catch { /* ignore */ }
 
   state.activeProjectId = "";
   state.projectRoot = "";
@@ -13093,8 +13157,9 @@ async function boot() {
   if (explicitOpenRoot) {
     matchedProject = state.projects.find((p) => normalizeProjectRoot(p.projectRoot) === normalizeProjectRoot(explicitOpenRoot));
   }
-  if (!matchedProject && storedActiveProjectId) {
-    matchedProject = state.projects.find((p) => p.id === storedActiveProjectId);
+  const targetActiveId = storedActiveProjectId || diskActive;
+  if (!matchedProject && targetActiveId) {
+    matchedProject = state.projects.find((p) => p.id === targetActiveId);
   }
   if (!matchedProject && state.projects.length) {
     matchedProject = state.projects.find((p) => p.projectRoot) || state.projects[0];
@@ -13104,6 +13169,7 @@ async function boot() {
     if (!chatFirst) showWelcomeScreen();
     else hideWelcomeScreen();
   } else if (matchedProject) {
+    await hydrateProjectChatsFromDisk(matchedProject);
     state.activeProjectId = matchedProject.id;
     state.projectRoot = matchedProject.projectRoot || "";
     ensureProjectChats(matchedProject);
@@ -13155,12 +13221,11 @@ async function boot() {
     window.editcoreSession?.onPleaseFlush?.(flush);
   }
 
-  // SLOW PATH: hidratar en background (no bloquea clics).
+  // SLOW PATH: tareas en background
   const idle = typeof requestIdleCallback === "function"
     ? (fn, ms) => requestIdleCallback(() => { void fn(); }, { timeout: ms })
     : (fn, ms) => setTimeout(() => { void fn(); }, Math.min(ms, 80));
-  // Chat: diferir más. IDE: hidratar antes.
-  const deferMs = chatFirst ? 4500 : 900;
+  const deferMs = chatFirst ? 2000 : 900;
   const startBg = () => idle(() => bootBackground({
     autoPick,
     explicitOpenRoot,
@@ -13169,7 +13234,7 @@ async function boot() {
     bootPermission,
     chatFirst,
   }), deferMs);
-  if (chatFirst) setTimeout(startBg, 700);
+  if (chatFirst) setTimeout(startBg, 400);
   else startBg();
 
   // Inline Edit / Monaco: solo preparar cuando el usuario entra al IDE.

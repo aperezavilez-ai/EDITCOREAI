@@ -297,6 +297,7 @@ function migrateLegacyUserData() {
     if (!fs.existsSync(sourceRoot) || path.resolve(sourceRoot) === path.resolve(targetRoot)) continue;
     for (const [name, targetName] of [
       ["editcore-secure-config.bin", "editcore-secure-config.bin"],
+      ["editcore-ui-session.json", "editcore-ui-session.json"],
       ["response-cache.json", "response-cache.json"],
       ["tool-cache.json", "tool-cache.json"],
       ["editcore-brain", "editcore-brain"],
