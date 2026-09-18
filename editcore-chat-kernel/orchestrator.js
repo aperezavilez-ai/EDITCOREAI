@@ -1344,20 +1344,20 @@ class ChatOrchestrator {
           }
         }
 
-        const availableTools = tools.getToolDefinitions({
-          allowWrite: accessFull,
-          isFullAccess: accessFull,
-          isAnalysis: false,
-        }).filter((t) => !chatOnly
-          && TOOL_ALLOWLIST.includes(t.function.name)
-          && ![
-            "preview_browser_interaction",
-            "browser_page_action",
-            "capture_preview_screenshot",
-            "auto_scaffold_project",
-            "clone_web_page", "images_to_code",
-            "rollback_last_change",
-          ].includes(t.function.name));
+        const availableTools = (chatOnly || decision?.kind === "CHAT")
+          ? []
+          : tools.getToolDefinitions({
+              allowWrite: accessFull,
+              isFullAccess: accessFull,
+              isAnalysis: false,
+            }).filter((t) => ![
+              "preview_browser_interaction",
+              "browser_page_action",
+              "capture_preview_screenshot",
+              "auto_scaffold_project",
+              "clone_web_page", "images_to_code",
+              "rollback_last_change",
+            ].includes(t.function?.name || t.name));
 
         let streamAccum = "";
         let lastVisible = "";

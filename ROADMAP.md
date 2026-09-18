@@ -6,8 +6,8 @@ EditCore actualiza este archivo tras cambios. No pedirlo al usuario. No pegar co
 
 ## Proceso
 - Fase: implementacion
-- Estado: Incompleta: Algo falló durante la ejecución: tools.getToolDefinitions is not a function
-- Actualizado: 2026-09-18 14:46
+- Estado: Incompleta: Algo falló durante la ejecución: TOOL_ALLOWLIST.includes is not a function
+- Actualizado: 2026-09-18 14:48
 - Preview: desconocido — usa el preview del IDE, no inventes puertos
 
 ## Mapa
@@ -84,6 +84,7 @@ EditCore actualiza este archivo tras cambios. No pedirlo al usuario. No pegar co
 Ejecuta un análisis profundo y autónomo de tu propio código fuente, estructura de archivos y arquitectura actual dentro de este workspace. Utiliza los módulos de `scripts
 
 ## Bloqueos / bugs conocidos
+- falló durante la ejecución: TOOL_ALLOWLIST.includes is not a function
 - falló durante la ejecución: tools.getToolDefinitions is not a function
 - falló durante la ejecución: El proveedor no respondió a tiempo. Reintenta en unos segundos; tu modelo se conserva.
 - Actualizado: 2026-09-18 14:19
