@@ -632,13 +632,28 @@ h1 { margin: 0; font-size: 15px; }
 .file-item-label {
   flex: 0 1 auto;
   min-width: 0;
-  max-width: calc(100% - 20px);
+  max-width: calc(100% - 16px);
   margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   text-align: right;
   order: 2;
+}
+.file-item-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: right;
+}
+.file-item-icon {
+  flex: 0 0 auto;
+  font-size: 13px;
+  line-height: 1;
 }
 .file-item-dot {
   flex: 0 0 8px;

@@ -2268,7 +2268,7 @@ async function renderProjectFiles(relativePath = "") {
       const button = document.createElement("button");
       button.type = "button";
       button.className = `file-item ${row.kind}`;
-      button.textContent = `${fileIcon(row.kind)} ${row.name}`;
+      button.textContent = `${row.name} ${fileIcon(row.kind)}`;
       button.onclick = () => {
         if (row.kind === "directory") {
           renderProjectFiles(row.path);

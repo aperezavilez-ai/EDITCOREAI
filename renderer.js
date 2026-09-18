@@ -4406,7 +4406,7 @@ async function renderProjectFiles(relativePath = "") {
       }
       const writingName = state.fileListWritingNames.includes(String(row.name || "").toLowerCase());
       if (writingName && row.kind === "file") button.classList.add("is-writing");
-      // Bolita anclada a la izquierda del panel; nombre/carpeta a la derecha.
+      // Bolita anclada a la izquierda del panel; nombre y carpeta/archivo icono a la derecha.
       const dot = document.createElement("span");
       dot.className = writingName
         ? "file-item-dot is-writing-dot"
@@ -4414,9 +4414,17 @@ async function renderProjectFiles(relativePath = "") {
       dot.title = touched ? (writingName ? "Escribiendo…" : "Modificado por el agente") : "";
       dot.setAttribute("aria-hidden", "true");
       button.appendChild(dot);
+
       const label = document.createElement("span");
       label.className = "file-item-label";
-      label.textContent = `${fileIcon(row.kind)} ${row.name}`;
+      const nameSpan = document.createElement("span");
+      nameSpan.className = "file-item-name";
+      nameSpan.textContent = String(row.name || "");
+      const iconSpan = document.createElement("span");
+      iconSpan.className = "file-item-icon";
+      iconSpan.textContent = fileIcon(row.kind);
+      iconSpan.setAttribute("aria-hidden", "true");
+      label.append(nameSpan, iconSpan);
       button.appendChild(label);
       button.onclick = () => {
         if (row.kind === "directory") {
