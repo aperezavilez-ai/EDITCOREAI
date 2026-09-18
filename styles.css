@@ -2610,6 +2610,8 @@ body:not(.ide-code-mode) .monaco-editor-host {
 #splitChatBrowser { grid-column: 2; grid-row: 2; }
 #splitBrowserProjects { grid-column: 4; grid-row: 2; }
 .splitter:hover::before, .splitter.dragging::before { background: var(--ec-accent); opacity: 1; }
+body.resizing-panels, body.resizing-panels * { user-select: none !important; cursor: col-resize !important; }
+body.resizing-panels webview, body.resizing-panels iframe { pointer-events: none !important; }
 
 /* ── dialogs base ── */
 dialog:not([open]) { display: none !important; }

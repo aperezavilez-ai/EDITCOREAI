@@ -18,15 +18,6 @@ contextBridge.exposeInMainWorld("editcoreChat", {
   cancel: () => ipcRenderer.invoke("editcore:cancel"),
 });
 
-contextBridge.exposeInMainWorld("editcoreWindowsStt", {
-  windowsSttStart: (input = {}) => ipcRenderer.invoke("agent:windows-stt-start", input),
-  onWindowsSttText: (callback) => {
-    const subscription = (_event, text) => callback(text);
-    ipcRenderer.on("editcore:windows-stt-text", subscription);
-    return () => ipcRenderer.removeListener("editcore:windows-stt-text", subscription);
-  },
-});
-
 contextBridge.exposeInMainWorld("editcoreProject", {
   pick: () => ipcRenderer.invoke("project:pick"),
   pickParent: () => ipcRenderer.invoke("project:pick-parent"),
@@ -485,6 +476,73 @@ contextBridge.exposeInMainWorld("electronAPI", {
   getEvolutionState: () => ipcRenderer.invoke("evolution:get-state"),
   runEvolutionCycle: () => ipcRenderer.invoke("evolution:run-cycle"),
   openDashboard: () => ipcRenderer.invoke("evolution:open-dashboard"),
+});
+
+contextBridge.exposeInMainWorld("editcoreGit", {
+  getStatus: (cwd) => ipcRenderer.invoke("git:getStatus", cwd),
+  stageFiles: (files, cwd) => ipcRenderer.invoke("git:stageFiles", files, cwd),
+  unstageFiles: (files, cwd) => ipcRenderer.invoke("git:unstageFiles", files, cwd),
+  commit: (message, cwd) => ipcRenderer.invoke("git:commit", message, cwd),
+  getBranches: (cwd) => ipcRenderer.invoke("git:getBranches", cwd),
+  createBranch: (name, cwd) => ipcRenderer.invoke("git:createBranch", name, cwd),
+  checkoutBranch: (name, cwd) => ipcRenderer.invoke("git:checkoutBranch", name, cwd),
+  getDiff: (files, cwd) => ipcRenderer.invoke("git:getDiff", files, cwd),
+  getCommitHistory: (limit, cwd) => ipcRenderer.invoke("git:getCommitHistory", limit, cwd),
+  push: (remote, branch, cwd) => ipcRenderer.invoke("git:push", remote, branch, cwd),
+  pull: (remote, branch, cwd) => ipcRenderer.invoke("git:pull", remote, branch, cwd),
+  detectLocalChanges: (cwd) => ipcRenderer.invoke("git:detectLocalChanges", cwd),
+});
+
+contextBridge.exposeInMainWorld("editcoreMemory", {
+  querySemantic: (query) => ipcRenderer.invoke("memory:query-semantic", query),
+  getIndexStatus: () => ipcRenderer.invoke("memory:get-index-status"),
+  clearCache: () => ipcRenderer.invoke("memory:clear-cache"),
+});
+
+contextBridge.exposeInMainWorld("editcorePromptCache", {
+  get: (key) => ipcRenderer.invoke("prompt:cache-get", key),
+  set: (key, value) => ipcRenderer.invoke("prompt:cache-set", key, value),
+  getStats: () => ipcRenderer.invoke("prompt:cache-stats"),
+});
+
+contextBridge.exposeInMainWorld("editcoreTerminal", {
+  run: (input) => ipcRenderer.invoke("terminal:run", input),
+});
+
+contextBridge.exposeInMainWorld("editcorePlugins", {
+  discover: (input = {}) => ipcRenderer.invoke("plugin:discover", input),
+  load: (input = {}) => ipcRenderer.invoke("plugin:load", input),
+  unload: (input = {}) => ipcRenderer.invoke("plugin:unload", input),
+  list: (input = {}) => ipcRenderer.invoke("plugin:list", input),
+  registerCommand: (input = {}) => ipcRenderer.invoke("plugin:register-command", input),
+  registerSidebar: (input = {}) => ipcRenderer.invoke("plugin:register-sidebar", input),
+  registerHook: (input = {}) => ipcRenderer.invoke("plugin:register-hook", input),
+});
+
+contextBridge.exposeInMainWorld("editcoreLsp", {
+  initialize: (input = {}) => ipcRenderer.invoke("lsp:initialize", input),
+  didOpen: (input = {}) => ipcRenderer.invoke("lsp:did-open", input),
+  didChange: (input = {}) => ipcRenderer.invoke("lsp:did-change", input),
+  didClose: (input = {}) => ipcRenderer.invoke("lsp:did-close", input),
+  hover: (input = {}) => ipcRenderer.invoke("lsp:hover", input),
+  completion: (input = {}) => ipcRenderer.invoke("lsp:completion", input),
+  diagnostics: () => ipcRenderer.invoke("lsp:diagnostics"),
+});
+
+contextBridge.exposeInMainWorld("editcoreCloud", {
+  connect: (input = {}) => ipcRenderer.invoke("cloud:connect", input),
+  sync: (input = {}) => ipcRenderer.invoke("cloud:sync", input),
+  shareSession: (input = {}) => ipcRenderer.invoke("cloud:share-session", input),
+  listPeers: (input = {}) => ipcRenderer.invoke("cloud:list-peers", input),
+});
+
+contextBridge.exposeInMainWorld("editcoreWindowsStt", {
+  windowsSttStart: (input = {}) => ipcRenderer.invoke("agent:windows-stt-start", input),
+  onWindowsSttText: (callback) => {
+    const subscription = (_event, text) => callback(text);
+    ipcRenderer.on("editcore:windows-stt-text", subscription);
+    return () => ipcRenderer.removeListener("editcore:windows-stt-text", subscription);
+  },
 });
 
 

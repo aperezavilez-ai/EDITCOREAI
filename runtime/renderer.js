@@ -2662,34 +2662,17 @@ function setupSplitter(splitterId) {
   if (!splitter) return;
   let dragging = false;
   let fixedBoundary = 0;
-  splitter.addEventListener("pointerdown", (e) => {
-    if (e.button !== 0) return;
-    e.preventDefault();
-    dragging = true;
-    if (splitterId === "splitChatBrowser") {
-      const rightSplitter = $("splitBrowserProjects");
-      fixedBoundary = document.body.classList.contains("projects-collapsed")
-        ? document.body.getBoundingClientRect().right
-        : rightSplitter.getBoundingClientRect().left;
-    }
-    splitter.classList.add("dragging");
-    try { splitter.setPointerCapture(e.pointerId); } catch {}
-  });
-  splitter.addEventListener("pointerup", (e) => {
-    dragging = false;
-    splitter.classList.remove("dragging");
-    try { splitter.releasePointerCapture(e.pointerId); } catch {}
-  });
-  splitter.addEventListener("pointermove", (e) => {
+
+  const onPointerMove = (e) => {
     if (!dragging) return;
     const bodyRect = document.body.getBoundingClientRect();
     const w = bodyRect.width;
     const x = e.clientX - bodyRect.left;
-    const splitterWidth = splitter.offsetWidth || 3;
+    const splitterWidth = splitter.offsetWidth || 10;
     if (splitterId === "splitChatBrowser") {
       const boundary = fixedBoundary - bodyRect.left;
-      const chat = Math.max(430, Math.min(boundary - splitterWidth - 280, x));
-      const browser = Math.max(280, boundary - chat - splitterWidth);
+      const chat = Math.max(300, Math.min(boundary - splitterWidth - 200, x));
+      const browser = Math.max(200, boundary - chat - splitterWidth);
       document.body.style.setProperty("--chat-width", `${chat}px`);
       document.body.style.setProperty("--browser-width", `${browser}px`);
       localStorage.setItem("--chat-width", `${chat}px`);
@@ -2697,13 +2680,44 @@ function setupSplitter(splitterId) {
     } else {
       const collapsed = document.body.classList.contains("projects-collapsed");
       if (!collapsed) {
-        const browserLeft = document.querySelector(".viewer").getBoundingClientRect().left - bodyRect.left;
-        const divider = Math.max(browserLeft + 280, Math.min(w - splitterWidth - 180, x));
-        const browser = divider - browserLeft;
+        const viewerEl = document.querySelector(".viewer");
+        const browserLeft = viewerEl ? (viewerEl.getBoundingClientRect().left - bodyRect.left) : 0;
+        const divider = Math.max(browserLeft + 200, Math.min(w - splitterWidth - 180, x));
+        const browser = Math.max(200, divider - browserLeft);
         document.body.style.setProperty("--browser-width", `${browser}px`);
         localStorage.setItem("--browser-width", `${browser}px`);
       }
     }
+  };
+
+  const onPointerUp = (e) => {
+    if (!dragging) return;
+    dragging = false;
+    splitter.classList.remove("dragging");
+    document.body.classList.remove("resizing-panels");
+    try { splitter.releasePointerCapture(e.pointerId); } catch {}
+    window.removeEventListener("pointermove", onPointerMove);
+    window.removeEventListener("pointerup", onPointerUp);
+    window.removeEventListener("pointercancel", onPointerUp);
+    try { schedulePreviewFit(); } catch {}
+  };
+
+  splitter.addEventListener("pointerdown", (e) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    dragging = true;
+    if (splitterId === "splitChatBrowser") {
+      const rightSplitter = $("splitBrowserProjects");
+      fixedBoundary = (document.body.classList.contains("projects-collapsed") || !rightSplitter)
+        ? document.body.getBoundingClientRect().right
+        : rightSplitter.getBoundingClientRect().left;
+    }
+    splitter.classList.add("dragging");
+    document.body.classList.add("resizing-panels");
+    try { splitter.setPointerCapture(e.pointerId); } catch {}
+    window.addEventListener("pointermove", onPointerMove);
+    window.addEventListener("pointerup", onPointerUp);
+    window.addEventListener("pointercancel", onPointerUp);
   });
 }
 

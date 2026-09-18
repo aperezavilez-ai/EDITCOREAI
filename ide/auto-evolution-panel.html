@@ -1,0 +1,526 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Auto-Evolución | EditCoreAI</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: linear-gradient(135deg, #0f0f23 0%, #1a1a2e 100%);
+      color: #e0e0e0;
+      padding: 20px;
+      min-height: 100vh;
+    }
+
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+
+    header {
+      text-align: center;
+      margin-bottom: 40px;
+      padding-bottom: 20px;
+      border-bottom: 2px solid #2d2d44;
+    }
+
+    h1 {
+      font-size: 2.5rem;
+      font-weight: 700;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      margin-bottom: 10px;
+    }
+
+    .subtitle {
+      color: #a0a0a0;
+      font-size: 1rem;
+    }
+
+    .dashboard-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 20px;
+      margin-bottom: 30px;
+    }
+
+    .card {
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 12px;
+      padding: 24px;
+      backdrop-filter: blur(10px);
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+
+    .card:hover {
+      transform: translateY(-4px);
+      box-shadow: 0 8px 24px rgba(102, 126, 234, 0.2);
+    }
+
+    .card-header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+
+    .card-icon {
+      font-size: 1.5rem;
+    }
+
+    .card-title {
+      font-size: 1.1rem;
+      font-weight: 600;
+      color: #ffffff;
+    }
+
+    .metric-value {
+      font-size: 2.5rem;
+      font-weight: 700;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      margin-bottom: 8px;
+    }
+
+    .metric-label {
+      color: #a0a0a0;
+      font-size: 0.9rem;
+    }
+
+    .status-badge {
+      display: inline-block;
+      padding: 6px 16px;
+      border-radius: 20px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .status-badge.success {
+      background: rgba(16, 185, 129, 0.2);
+      color: #10b981;
+      border: 1px solid rgba(16, 185, 129, 0.3);
+    }
+
+    .status-badge.warning {
+      background: rgba(245, 158, 11, 0.2);
+      color: #f59e0b;
+      border: 1px solid rgba(245, 158, 11, 0.3);
+    }
+
+    .history-section {
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 12px;
+      padding: 24px;
+      margin-bottom: 30px;
+    }
+
+    .history-title {
+      font-size: 1.3rem;
+      font-weight: 600;
+      margin-bottom: 20px;
+      color: #ffffff;
+    }
+
+    .history-list {
+      list-style: none;
+      max-height: 400px;
+      overflow-y: auto;
+    }
+
+    .history-item {
+      padding: 16px;
+      margin-bottom: 12px;
+      background: rgba(255, 255, 255, 0.03);
+      border-left: 3px solid #667eea;
+      border-radius: 8px;
+      transition: background 0.2s;
+    }
+
+    .history-item:hover {
+      background: rgba(255, 255, 255, 0.08);
+    }
+
+    .history-item-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+
+    .history-item-file {
+      font-weight: 600;
+      color: #667eea;
+      font-family: 'Courier New', monospace;
+      font-size: 0.9rem;
+    }
+
+    .history-item-time {
+      color: #a0a0a0;
+      font-size: 0.8rem;
+    }
+
+    .history-item-desc {
+      color: #d0d0d0;
+      font-size: 0.9rem;
+      line-height: 1.4;
+    }
+
+    .tools-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+      gap: 16px;
+      margin-top: 20px;
+    }
+
+    .tool-card {
+      background: rgba(255, 255, 255, 0.03);
+      padding: 16px;
+      border-radius: 8px;
+      border: 1px solid rgba(102, 126, 234, 0.2);
+      transition: all 0.2s;
+    }
+
+    .tool-card:hover {
+      background: rgba(102, 126, 234, 0.1);
+      border-color: rgba(102, 126, 234, 0.5);
+    }
+
+    .tool-name {
+      font-weight: 600;
+      color: #667eea;
+      font-family: 'Courier New', monospace;
+      font-size: 0.95rem;
+      margin-bottom: 8px;
+    }
+
+    .tool-desc {
+      color: #b0b0b0;
+      font-size: 0.85rem;
+      line-height: 1.4;
+    }
+
+    .control-panel {
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 12px;
+      padding: 24px;
+      text-align: center;
+    }
+
+    .run-cycle-btn {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: #ffffff;
+      border: none;
+      padding: 16px 48px;
+      font-size: 1.1rem;
+      font-weight: 600;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all 0.3s;
+      box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+    }
+
+    .run-cycle-btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px rgba(102, 126, 234, 0.5);
+    }
+
+    .run-cycle-btn:active {
+      transform: translateY(0);
+    }
+
+    .run-cycle-btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    .loading {
+      display: inline-block;
+      width: 16px;
+      height: 16px;
+      border: 2px solid rgba(255, 255, 255, 0.3);
+      border-top-color: #ffffff;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin-left: 8px;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    .empty-state {
+      text-align: center;
+      padding: 40px;
+      color: #a0a0a0;
+      font-style: italic;
+    }
+
+    /* Scrollbar personalizado */
+    ::-webkit-scrollbar {
+      width: 8px;
+    }
+
+    ::-webkit-scrollbar-track {
+      background: rgba(255, 255, 255, 0.05);
+      border-radius: 4px;
+    }
+
+    ::-webkit-scrollbar-thumb {
+      background: rgba(102, 126, 234, 0.5);
+      border-radius: 4px;
+    }
+
+    ::-webkit-scrollbar-thumb:hover {
+      background: rgba(102, 126, 234, 0.7);
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>🧬 Auto-Evolución</h1>
+      <p class="subtitle">Sistema Autónomo de Mejora Continua | EditCoreAI v3.0.7</p>
+    </header>
+
+    <!-- Métricas principales -->
+    <div class="dashboard-grid">
+      <div class="card">
+        <div class="card-header">
+          <span class="card-icon">🔄</span>
+          <span class="card-title">Ciclo Actual</span>
+        </div>
+        <div class="metric-value" id="current-cycle">--</div>
+        <div class="metric-label">Ciclos completados</div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <span class="card-icon">💚</span>
+          <span class="card-title">Estado de Salud</span>
+        </div>
+        <div id="health-status">
+          <span class="status-badge success">Cargando...</span>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <span class="card-icon">🔧</span>
+          <span class="card-title">Parches Aplicados</span>
+        </div>
+        <div class="metric-value" id="patches-count">--</div>
+        <div class="metric-label">En caliente</div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <span class="card-icon">🛠️</span>
+          <span class="card-title">Herramientas Dinámicas</span>
+        </div>
+        <div class="metric-value" id="tools-count">--</div>
+        <div class="metric-label">Creadas por el enjambre</div>
+      </div>
+    </div>
+
+    <!-- Historial de parches -->
+    <div class="history-section">
+      <h2 class="history-title">📜 Historial de Parches</h2>
+      <ul class="history-list" id="patches-history">
+        <li class="empty-state">Cargando historial...</li>
+      </ul>
+    </div>
+
+    <!-- Catálogo de herramientas -->
+    <div class="history-section">
+      <h2 class="history-title">🧰 Catálogo de Herramientas Dinámicas</h2>
+      <div class="tools-grid" id="tools-catalog">
+        <div class="empty-state">Cargando catálogo...</div>
+      </div>
+    </div>
+
+    <!-- Panel de control -->
+    <div class="control-panel">
+      <button class="run-cycle-btn" id="run-cycle-btn">
+        ▶️ Ejecutar Ciclo de Enjambre
+      </button>
+      <p style="margin-top: 16px; color: #a0a0a0; font-size: 0.9rem;">
+        Inicia un nuevo ciclo de análisis, arquitectura y aplicación de parches
+      </p>
+    </div>
+  </div>
+
+  <script>
+    // Estado global
+    let evolutionState = null;
+    let isRunning = false;
+
+    // Referencias DOM
+    const cycleEl = document.getElementById('current-cycle');
+    const healthEl = document.getElementById('health-status');
+    const patchesCountEl = document.getElementById('patches-count');
+    const toolsCountEl = document.getElementById('tools-count');
+    const patchesHistoryEl = document.getElementById('patches-history');
+    const toolsCatalogEl = document.getElementById('tools-catalog');
+    const runCycleBtn = document.getElementById('run-cycle-btn');
+
+    // Función para cargar el estado de evolución
+    async function loadEvolutionState() {
+      try {
+        const state = await window.electronAPI.getEvolutionState();
+        evolutionState = state;
+        renderDashboard();
+      } catch (error) {
+        console.error('Error cargando evolution-state:', error);
+        showError('Error al cargar el estado del sistema');
+      }
+    }
+
+    // Renderizar el dashboard completo
+    function renderDashboard() {
+      if (!evolutionState) return;
+
+      // Ciclo actual
+      cycleEl.textContent = evolutionState.cycle || 0;
+
+      // Estado de salud
+      const status = evolutionState.status || 'UNKNOWN';
+      const gapsClosed = evolutionState.gapsClosed || 0;
+      const totalGaps = evolutionState.totalGaps || 0;
+      
+      let badgeClass = 'warning';
+      let statusText = status;
+      
+      if (status === 'PRODUCTION_READY' || gapsClosed === totalGaps) {
+        badgeClass = 'success';
+        statusText = `✅ ${status}`;
+      }
+      
+      healthEl.innerHTML = `
+        <span class="status-badge ${badgeClass}">${statusText}</span>
+        <p style="margin-top: 12px; color: #a0a0a0; font-size: 0.9rem;">
+          ${gapsClosed} / ${totalGaps} gaps cerrados
+        </p>
+      `;
+
+      // Contar parches
+      const patches = evolutionState.patches || [];
+      patchesCountEl.textContent = patches.length;
+
+      // Contar herramientas dinámicas
+      const dynamicTools = evolutionState.dynamicTools || [];
+      toolsCountEl.textContent = dynamicTools.length;
+
+      // Renderizar historial de parches
+      renderPatchesHistory(patches);
+
+      // Renderizar catálogo de herramientas
+      renderToolsCatalog(dynamicTools);
+    }
+
+    // Renderizar historial de parches
+    function renderPatchesHistory(patches) {
+      if (!patches || patches.length === 0) {
+        patchesHistoryEl.innerHTML = '<li class="empty-state">No hay parches aplicados aún</li>';
+        return;
+      }
+
+      // Mostrar los últimos 10 parches
+      const recentPatches = patches.slice(-10).reverse();
+      
+      patchesHistoryEl.innerHTML = recentPatches.map(patch => {
+        const timestamp = patch.timestamp ? new Date(patch.timestamp).toLocaleString('es-ES') : 'Fecha desconocida';
+        return `
+          <li class="history-item">
+            <div class="history-item-header">
+              <span class="history-item-file">${patch.file || 'Archivo desconocido'}</span>
+              <span class="history-item-time">${timestamp}</span>
+            </div>
+            <div class="history-item-desc">${patch.description || 'Sin descripción'}</div>
+          </li>
+        `;
+      }).join('');
+    }
+
+    // Renderizar catálogo de herramientas
+    function renderToolsCatalog(tools) {
+      if (!tools || tools.length === 0) {
+        toolsCatalogEl.innerHTML = '<div class="empty-state">No hay herramientas dinámicas creadas aún</div>';
+        return;
+      }
+
+      toolsCatalogEl.innerHTML = tools.map(tool => `
+        <div class="tool-card">
+          <div class="tool-name">${tool.name || 'Herramienta sin nombre'}</div>
+          <div class="tool-desc">${tool.description || 'Sin descripción disponible'}</div>
+        </div>
+      `).join('');
+    }
+
+    // Ejecutar ciclo de enjambre
+    async function runEvolutionCycle() {
+      if (isRunning) return;
+
+      isRunning = true;
+      runCycleBtn.disabled = true;
+      runCycleBtn.innerHTML = '⏳ Ejecutando ciclo... <span class="loading"></span>';
+
+      try {
+        const result = await window.electronAPI.runEvolutionCycle();
+        
+        if (result.success) {
+          showSuccess('Ciclo completado exitosamente');
+          // Recargar estado después de 1 segundo
+          setTimeout(loadEvolutionState, 1000);
+        } else {
+          showError(result.error || 'Error desconocido al ejecutar el ciclo');
+        }
+      } catch (error) {
+        console.error('Error ejecutando ciclo:', error);
+        showError('Error al ejecutar el ciclo de evolución');
+      } finally {
+        isRunning = false;
+        runCycleBtn.disabled = false;
+        runCycleBtn.innerHTML = '▶️ Ejecutar Ciclo de Enjambre';
+      }
+    }
+
+    // Mostrar mensaje de éxito
+    function showSuccess(message) {
+      // TODO: implementar toast/notification system
+      alert('✅ ' + message);
+    }
+
+    // Mostrar mensaje de error
+    function showError(message) {
+      // TODO: implementar toast/notification system
+      alert('❌ ' + message);
+    }
+
+    // Event listeners
+    runCycleBtn.addEventListener('click', runEvolutionCycle);
+
+    // Cargar estado inicial
+    loadEvolutionState();
+
+    // Auto-refresh cada 30 segundos
+    setInterval(loadEvolutionState, 30000);
+  </script>
+</body>
+</html>

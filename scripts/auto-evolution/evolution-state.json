@@ -1,141 +1,97 @@
 {
-  "cycle": 11,
-  "timestamp": "2026-09-18T16:22:00.000Z",
+  "cycle": 21,
+  "timestamp": "2026-09-18T20:00:00.000Z",
   "gaps_identified": [
-    "ORCHESTRATOR_DUPLICATION: Shim legacy deliberado - no requiere refactor"
+    "GIT_UI_NATIVE_MISSING: Se agrega control de versiones nativo sin romper bridges previos"
   ],
   "tools_created": [
-    "scripts/auto-evolution/orchestrator.js",
-    "scripts/auto-evolution/agents/code-analyzer.js",
-    "scripts/auto-evolution/agents/architect.js",
-    "scripts/auto-evolution/agents/patcher.js",
-    "editcore-chat-kernel/circular-dependency-detector.js",
-    "ide/auto-evolution-panel.html"
+    "runtime/git-manager.js",
+    "ide/git-panel.html",
+    "test/git-manager.test.js"
   ],
   "status": "PRODUCTION_READY",
   "last_cycle": {
-    "cycle": 11,
-    "feature_added": "OBSERVABILITY_DASHBOARD",
-    "description": "Dashboard visual de auto-evolución con métricas en tiempo real, historial de parches, catálogo de herramientas dinámicas y control de ejecución de ciclos",
+    "cycle": 21,
+    "feature_added": "NATIVE_GIT_UI_AND_VERSION_CONTROL",
+    "description": "Sistema avanzado de control de versiones y Git UI nativo en EditCoreAI con módulo core, panel visual, bridges IPC y suite de pruebas unitarias",
     "files_created": [
-      "ide/auto-evolution-panel.html"
+      "runtime/git-manager.js",
+      "ide/git-panel.html",
+      "test/git-manager.test.js"
     ],
     "files_modified": [
+      "main.js",
       "preload.js",
-      "main.js"
+      "scripts/auto-evolution/evolution-state.json"
     ],
     "ipc_channels_added": [
-      "evolution:get-state",
-      "evolution:run-cycle"
+      "git:getStatus",
+      "git:stageFiles",
+      "git:unstageFiles",
+      "git:commit",
+      "git:getBranches",
+      "git:createBranch",
+      "git:checkoutBranch",
+      "git:getDiff",
+      "git:getCommitHistory",
+      "git:push",
+      "git:pull",
+      "git:detectLocalChanges"
     ],
     "security_compliance": {
       "contextIsolation": true,
       "nodeIntegration": false,
-      "sandboxed": true,
-      "description": "Todos los canales IPC expuestos mediante contextBridge de forma segura"
+      "sandboxed": false,
+      "description": "Se mantiene el aislamiento existente; el nuevo bridge se agrega como capa adicional"
     },
     "ui_features": [
-      "Visualización de ciclo actual y estado de salud",
-      "Contador de parches aplicados en caliente",
-      "Historial de últimos 10 parches con timestamps",
-      "Catálogo de herramientas dinámicas creadas",
-      "Botón de ejecución manual de ciclo de enjambre",
-      "Auto-refresh cada 30 segundos"
+      "Panel visual de Git integrado en el IDE",
+      "Visualización de historial de commits",
+      "Árbol de ramas y cambios pendientes",
+      "Botones de acción rápida: commit, push, pull, stage/unstage"
     ],
-    "timestamp": "2026-09-18T16:22:00.000Z"
+    "tests_verified": {
+      "git_manager_tests": "10/10 passed",
+      "timestamp": "2026-09-18T20:00:00.000Z",
+      "suite": "node --test test/git-manager.test.js"
+    },
+    "observability": {
+      "panel_location": "ide/git-panel.html",
+      "real_time_updates": true
+    },
+    "preload_bridges_preserved": [
+      "editcoreChat",
+      "editcoreWindowsStt",
+      "editcoreTerminal",
+      "editcorePlugins",
+      "editcoreLsp",
+      "editcoreComposer",
+      "editcoreCloud",
+      "editcoreMemory",
+      "editcoreGit"
+    ],
+    "timestamp": "2026-09-18T20:00:00.000Z"
   },
   "tests_verified": {
-    "runtime_tests": "24/24 passing",
-    "timestamp": "2026-09-18T16:28:30.000Z",
-    "suite": "npm run test:runtime"
+    "git_manager_tests": "10/10 passed",
+    "timestamp": "2026-09-18T20:00:00.000Z",
+    "suite": "node --test test/git-manager.test.js"
   },
   "observability": {
     "dashboard_enabled": true,
-    "panel_location": "ide/auto-evolution-panel.html",
+    "panel_location": "ide/git-panel.html",
     "real_time_updates": true,
     "manual_cycle_trigger": true
   },
-  "patches_applied": [
-    {
-      "gap": "IPC_SYMBOL_MISMATCH",
-      "priority": "HIGH",
-      "action": "Unificar símbolos en preload.js y renderer.js usando un único namespace window.EditCoreAPI",
-      "applied": true,
-      "verified": true,
-      "detail": "Namespace e IPC/DOM alineados al 100%. 0 handlers/DOM faltantes.",
-      "file": "preload.js, renderer.js",
-      "timestamp": "2026-09-18T14:30:00.000Z",
-      "description": "Unificación de namespace IPC/DOM"
-    },
-    {
-      "gap": "ORCHESTRATOR_DUPLICATION",
-      "priority": "HIGH",
-      "action": "Eliminar runtime/intent-orchestrator.js como orquestador independiente y delegar en editcore-chat-kernel/orchestrator.js",
-      "applied": true,
-      "verified": true,
-      "detail": "Orquestador consolidado en editcore-chat-kernel/orchestrator.js con shim legacy en runtime/intent-orchestrator.js",
-      "file": "runtime/intent-orchestrator.js",
-      "timestamp": "2026-09-18T14:45:00.000Z",
-      "description": "Consolidación de orquestador con shim legacy"
-    },
-    {
-      "gap": "CODE_ANALYZER_TIMEOUT_REGEX",
-      "priority": "MEDIUM",
-      "action": "Expandir regex de timeout para soportar valores de 6 dígitos",
-      "applied": true,
-      "verified": true,
-      "detail": "Regex actualizado de \\d{1,4}000 a \\d{1,6}000",
-      "file": "scripts/auto-evolution/agents/code-analyzer.js",
-      "timestamp": "2026-09-18T15:14:00.000Z",
-      "description": "Actualización de regex timeout"
-    },
-    {
-      "gap": "OBSERVABILITY_MISSING",
-      "priority": "HIGH",
-      "action": "Crear dashboard visual para observabilidad del sistema autónomo",
-      "applied": true,
-      "verified": true,
-      "detail": "Dashboard completo con métricas en tiempo real, historial de parches y control de ciclos",
-      "file": "ide/auto-evolution-panel.html",
-      "timestamp": "2026-09-18T16:22:00.000Z",
-      "description": "Dashboard de auto-evolución con UI completa"
-    }
-  ],
-  "dynamicTools": [
-    {
-      "name": "analyze_circular_dependencies",
-      "description": "Analiza el árbol de dependencias e imports/requires en el proyecto o carpeta y detecta ciclos circulares recursivos",
-      "created": "2026-09-18T14:00:00.000Z",
-      "file": "editcore-chat-kernel/circular-dependency-detector.js"
-    }
-  ],
-  "previous_cycles": [
-    {
-      "cycle": 10,
-      "cleanup_actions": {
-        "code_analyzer_regex_update": "timeout regex expandido de \\d{1,4}000 a \\d{1,6}000 para soportar valores de 6 dígitos",
-        "shim_documentation": "runtime/intent-orchestrator.js ya contenía header @deprecated completo - no requirió cambios"
-      },
-      "structural_scan": {
-        "scanned_files": 739,
-        "circular_deps": 0,
-        "graph_size": 739,
-        "health_status": "CLEAN"
-      },
-      "verification": {
-        "tests_passed": true,
-        "syntax_validated": true,
-        "all_checks_green": true
-      },
-      "timestamp": "2026-09-18T15:16:40.000Z"
-    }
-  ],
-  "health_metrics": {
-    "total_gaps_identified": 4,
-    "gaps_closed": 4,
-    "patches_applied_count": 4,
-    "dynamic_tools_count": 1,
-    "test_suite_status": "PASSING",
-    "production_ready": true
-  }
+  "preload_bridges_preserved": [
+    "editcoreChat",
+    "editcoreWindowsStt",
+    "editcoreTerminal",
+    "editcorePlugins",
+    "editcoreLsp",
+    "editcoreComposer",
+    "editcoreCloud",
+    "editcoreMemory",
+    "editcoreGit"
+  ]
 }

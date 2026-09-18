@@ -7,86 +7,85 @@ EditCore actualiza este archivo tras cambios. No pedirlo al usuario. No pegar co
 ## Proceso
 - Fase: implementacion
 - Estado: Tarea cerrada. El siguiente turno parte de ## Proceso / ## Tarea / ## Bloqueos.
-- Actualizado: 2026-09-18 16:31
+- Actualizado: 2026-09-18 21:00
 - Preview: desconocido — usa el preview del IDE, no inventes puertos
 
 ## Mapa
-- scripts/verify-evolution-dashboard.js
 - scripts/auto-evolution/evolution-state.json
+- test/git-manager.test.js
 - preload.js
 - main.js
-- ide/auto-evolution-panel.html
-- scripts/auto-evolution/agents/code-analyzer.js
-- runtime/intent-orchestrator.js
-- editcore-chat-kernel/orchestrator.js
-- tasks/todo.md
-- tasks/plan.md
-- runtime/chat-kernel-bridge.js
-- scripts/auto-evolution/run-cycle.js
-- scripts/auto-evolution/agents/architect.js
-- scripts/auto-evolution/orchestrator.js
-- runtime/ai-core.js
-- package.json — editcoreai · scripts: start, postinstall, brand:electron, sync, test, test:e2e, test:e2e:electron, verify:prepackage, test:runtime, check
-- stack: Electron + TypeScript
-- entry: index.html
-- entry: main.js
-- .cursorrules
-- .editcore-mcp.example.json
-- .editcorerules
-- .env.local
-- .gitignore
-- ABRE-SOLO-DESDE-AQUI.txt
-- Abrir-EDITCOREAI-PORTABLE.bat
-- Abrir-EDITCOREAI.bat
-- agent-core/
-- agent-parser.js
-- agent-runtime.js
-- assets/
-- auto-model-selection.js
-- brain-memory-store.js
-- brain-seed/
-- brain-service.js
-- catalog.json
-- chat-home.css
-- chat-home.js
-- command-policy.js
-- COMO-INSTALAR.txt
-- docs/
-- docs/CHAT_AGENT_AUDIT.md
-- docs/CHAT_AGENT_FINAL_REPORT.md
-- document-attachments.js
-- editcore-chat-kernel/
-- editcore-claude-adapter.js
-- EDITCORE-MANIFEST.md
-- EDITCOREAI.exe
+- ide/git-panel.html
+- runtime/git-manager.js
+- runtime/prompt-cache-manager.js
+- runtime/rag-memory.js
+- test/pre-package-gate.test.js
+- test/mcp-client.test.js
+- runtime/multi-agent-orchestrator.js
+- runtime/mcp-client.js
+- test/memory-stress.test.js
+- runtime/heap-snapshot-analyzer.js
+- test/db-manager.test.js
+- ide/db-explorer.js
+- ide/db-explorer.html
+- runtime/db-manager.js
+- runtime/n8n-manager.js
+- test/telemetry.test.js
+- ide/telemetry-panel.html
+- runtime/telemetry-monitor.js
+- runtime/ast-ipc-bridge.js
+- runtime/code-actions-provider.js
+- runtime/ast-refactorer.js
+- runtime/debug-session.js
+- runtime/debug-adapter-client.js
+- runtime/plugin-api.js
+- test/plugin-system.test.js
+- runtime/plugin-manager.js
+- test/multi-agent.test.js
+- runtime/git-integration.js
+- runtime/smart-diff.js
+- test/terminal-agent.test.js
+- runtime/terminal-agent.js
+- runtime/ghost-text-bridge.js
+- runtime/ghost-text-provider.js
+- runtime/rag-bridge.js
+- test/vector-indexer.test.js
+- runtime/vector-indexer.js
+- resources/ui-overlay/main.js
+- test/cloud-collab.test.js
+- runtime/composer-view.js
+- test/composer-view.test.js
+- test/lsp-client.test.js
+- runtime/cloud-collab.js
+- runtime/lsp-ghost-text.js
+- runtime/lsp-client.js
 
 ## Archivos clave (no reexplorar)
-- scripts/auto-evolution/evolution-state.json
-- scripts/verify-evolution-dashboard.js
-- ide/auto-evolution-panel.html
-- preload.js
+- runtime/git-manager.js
+- ide/git-panel.html
 - main.js
-- scripts/auto-evolution/agents/code-analyzer.js
-- runtime/intent-orchestrator.js
-- scripts/auto-evolution/run-cycle.js
-- scripts/auto-evolution/orchestrator.js
-- scripts/auto-evolution/agents/architect.js
-- scripts/auto-evolution/agents/patcher.js
-- renderer.js
-- scripts/verify-all-ipc-and-dom.js
-- runtime/chat-kernel-bridge.js
-- runtime/ai-core.js
-- editcore-chat-kernel/tools.js
+- preload.js
+- test/git-manager.test.js
+- scripts/auto-evolution/evolution-state.json
+- test/pre-package-gate.test.js
+- package.json
+- test/unexpected-token-sanitize.test.js
+- runtime/rag-memory.js
+- runtime/prompt-cache-manager.js
+- scripts/phase2b-electron-seed.js
+- resources/ui-overlay/main.js
+- test/ui-boot-speed.test.js
+- test/windows-stt.test.js
+- runtime/mcp-client.js
 
 ## Tarea activa
-- ## Habilidades especializadas activas (Skills)
+- # INICIO DE LA TAREA: SISTEMA AVANZADO DE GIT UI Y CONTROL DE VERSIONES NATIVO
 
-### Skill: editcore-connect
-Guía para conectar el proyecto del usuario con GitHub, Vercel, Supabase, o configurar las API keys de Claude/OpenAI. Úsala cuando el usuario pid
+Arranca de manera completamente autónoma la implementación del sistema avanzado de control de versiones y Git UI en EditCoreAI, permitiendo
 
 ## Bloqueos / bugs conocidos
-- falló durante la ejecución: terminated
-- Actualizado: 2026-09-18 15:16
+- errores y escape seguro de argumentos. |
+- Actualizado: 2026-09-18 20:53
 - Preview: desconocido — usa el preview del IDE, no inventes puertos
 
 ## Decisiones
@@ -97,24 +96,24 @@ Guía para conectar el proyecto del usuario con GitHub, Vercel, Supabase, o conf
 - **Skills como extensión**: las habilidades (editcore-connect, web-to-desktop-pake, etc.) se cargan bajo demanda y no forman parte del core. Motivo: mantener el kernel liviano.
 
 ## Cambios recientes
-- scripts/auto-evolution/evolution-state.json
-- scripts/verify-evolution-dashboard.js
-- ide/auto-evolution-panel.html
-- preload.js
-- scripts/verify-evolution-dashboard.js — archivo escrito (kernel) (2026-09-18 16:31)
-- scripts/auto-evolution/evolution-state.json — parche aplicado (kernel) (2026-09-18 16:30)
+- runtime/git-manager.js
+- ide/git-panel.html
 - main.js
-- preload.js — parche aplicado (kernel) (2026-09-18 16:23)
-- main.js — parche aplicado (kernel) (2026-09-18 16:23)
-- scripts/auto-evolution/evolution-state.json — archivo escrito (kernel) (2026-09-18 16:22)
-- scripts/auto-evolution/evolution-state.json — parche aplicado (kernel) (2026-09-18 16:21)
-- main.js — parche aplicado (kernel) (2026-09-18 16:20)
-- preload.js — parche aplicado (kernel) (2026-09-18 16:20)
-- ide/auto-evolution-panel.html — archivo escrito (kernel) (2026-09-18 16:19)
-- scripts/auto-evolution/agents/code-analyzer.js
-- runtime/intent-orchestrator.js
-- scripts/auto-evolution/evolution-state.json — parche aplicado (kernel) (2026-09-18 15:16)
-- scripts/auto-evolution/evolution-state.json — parche aplicado (kernel) (2026-09-18 15:15)
+- preload.js
+- test/git-manager.test.js
+- scripts/auto-evolution/evolution-state.json
+- test/pre-package-gate.test.js
+- package.json
+- test/unexpected-token-sanitize.test.js
+- scripts/auto-evolution/evolution-state.json — archivo escrito (kernel) (2026-09-18 21:00)
+- test/git-manager.test.js — archivo escrito (kernel) (2026-09-18 20:55)
+- preload.js — parche aplicado (kernel) (2026-09-18 20:55)
+- main.js — parche aplicado (kernel) (2026-09-18 20:54)
+- ide/git-panel.html — archivo escrito (kernel) (2026-09-18 20:54)
+- runtime/git-manager.js — archivo escrito (kernel) (2026-09-18 20:53)
+- runtime/rag-memory.js
+- runtime/prompt-cache-manager.js
+- scripts/phase2b-electron-seed.js
 
 ## Verificado
 - Pendiente

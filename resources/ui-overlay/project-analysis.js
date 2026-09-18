@@ -264,6 +264,7 @@
     if (isProjectBrainstormRequest(prompt)) return false;
     if (/\b(solo\s+analiza|no\s+implementes|sin\s+implementar|analiza\s+y\s+documenta)\b/i.test(prompt)) return false;
     if (/\b(ahora|ya|inmediatamente|solo\s+crea|crea\s+el\s+proyecto|genera\s+el\s+proyecto|procede|adelante|hazlo)\b/i.test(prompt)) return false;
+    if (/\b(?:crea|escribe|genera)\s+(?:un\s+|el\s+)?archivo\b/i.test(prompt)) return false;
     if (/\b(vac[ií]o|en\s+blanco|minimal|m[ií]nimo|esqueleto|solo\s+estructura|placeholder|sin\s+contenido)\b/i.test(prompt)) return false;
     if (hasConcreteProductHint(prompt)) return false;
     const createIntent = /^\s*(?:crea|crear|genera|implementa|construye|desarrolla|monta)\b/i.test(prompt)

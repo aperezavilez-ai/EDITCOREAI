@@ -1,0 +1,440 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>EditCoreAI — Git Panel</title>
+  <style>
+    :root {
+      color-bg: #0f1115;
+      color-surface: #161a21;
+      color-border: #232a36;
+      color-text: #e6e8ee;
+      color-muted: #8a93a6;
+      color-accent: #4f8cff;
+      color-success: #2dd4a8;
+      color-warning: #f5c542;
+      color-danger: #ff5f6d;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html, body {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      background: color-bg;
+      color: color-text;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Helvetica Neue, Arial;
+      font-size: 14px;
+    }
+
+    .layout {
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      height: 100vh;
+      gap: 12px;
+      padding: 12px;
+    }
+
+    .panel {
+      background: color-surface;
+      border: 1px solid color-border;
+      border-radius: 12px;
+      padding: 12px;
+    }
+
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .title {
+      font-weight: 700;
+      letter-spacing: 0.2px;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 10px;
+      border-radius: 999px;
+      background: #1f2533;
+      border: 1px solid color-border;
+      color: color-muted;
+    }
+
+    .badge strong {
+      color: color-text;
+    }
+
+    .toolbar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    button, .button {
+      border: 0;
+      background: #1f2533;
+      color: color-text;
+      padding: 8px 10px;
+      border-radius: 10px;
+      cursor: pointer;
+      border: 1px solid color-border;
+    }
+
+    button.primary, .button.primary {
+      background: color-accent;
+      border-color: color-accent;
+      color: white;
+    }
+
+    button.success, .button.success {
+      background: color-success;
+      border-color: color-success;
+      color: #0b1a16;
+    }
+
+    button.danger, .button.danger {
+      background: color-danger;
+      border-color: color-danger;
+      color: white;
+    }
+
+    input, select {
+      background: #0f1115;
+      color: color-text;
+      border: 1px solid color-border;
+      border-radius: 10px;
+      padding: 8px 10px;
+      outline: none;
+    }
+
+    .columns {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      min-height: 0;
+    }
+
+    .column {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      min-height: 0;
+      overflow: hidden;
+    }
+
+    .list {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      overflow: auto;
+      max-height: 100%;
+    }
+
+    .item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 10px;
+      background: #0f1115;
+      border: 1px solid color-border;
+      border-radius: 10px;
+    }
+
+    .item .meta {
+      color: color-muted;
+      font-size: 12px;
+    }
+
+    .status {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 8px;
+      border-radius: 999px;
+      background: #1f2533;
+      border: 1px solid color-border;
+      font-size: 12px;
+    }
+
+    .status.modified { color: color-warning; }
+    .status.added { color: color-success; }
+    .status.deleted { color: color-danger; }
+    .status.renamed { color: color-accent; }
+
+    .commit {
+      display: grid;
+      grid-template-columns: auto 1fr;
+      gap: 10px;
+      padding: 10px;
+      background: #0f1115;
+      border: 1px solid color-border;
+      border-radius: 10px;
+    }
+
+    .commit .hash {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+      color: color-accent;
+      font-size: 12px;
+    }
+
+    .commit .message {
+      color: color-text;
+    }
+
+    .footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+
+    .log {
+      max-height: 220px;
+      overflow: auto;
+      background: #0b0e13;
+      border: 1px solid color-border;
+      border-radius: 10px;
+      padding: 10px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 12px;
+      color: color-muted;
+      white-space: pre-wrap;
+    }
+
+    .empty {
+      color: color-muted;
+      padding: 10px;
+    }
+  </style>
+</head>
+<body>
+  <div class="layout">
+    <div class="panel header">
+      <div class="title">Git</div>
+      <div class="badge" id="repoBadge">Repo: <strong id="repoName">—</strong></div>
+      <div class="badge">Rama: <strong id="branchName">—</strong></div>
+      <div class="badge">Cambios: <strong id="changeCount">0</strong></div>
+    </div>
+
+    <div class="columns">
+      <div class="column panel">
+        <div class="toolbar">
+          <input id="commitMessage" placeholder="Mensaje de commit..." />
+          <button class="primary" id="commitBtn">Commit</button>
+          <button id="stageAllBtn">Stage all</button>
+          <button id="unstageAllBtn">Unstage all</button>
+        </div>
+        <div class="list" id="changesList">
+          <div class="empty">Sin cambios pendientes.</div>
+        </div>
+      </div>
+
+      <div class="column panel">
+        <div class="toolbar">
+          <input id="branchInput" placeholder="Nombre de rama..." />
+          <button id="createBranchBtn">Crear rama</button>
+          <button id="checkoutBtn">Checkout</button>
+          <button id="refreshBtn">Refrescar</button>
+        </div>
+        <div class="list" id="branchesList">
+          <div class="empty">Sin ramas.</div>
+        </div>
+        <div class="toolbar" style="margin-top:8px">
+          <input id="remoteInput" placeholder="Remote (opcional)" />
+          <input id="pushBranchInput" placeholder="Rama push (opcional)" />
+          <button class="success" id="pushBtn">Push</button>
+          <button id="pullBtn">Pull</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="toolbar">
+        <div class="title">Historial</div>
+        <input id="historyLimit" type="number" value="20" style="width:80px" />
+        <button id="historyBtn">Actualizar historial</button>
+      </div>
+      <div class="list" id="historyList">
+        <div class="empty">Sin historial.</div>
+      </div>
+      <div class="log" id="gitLog">Listo.</div>
+    </div>
+  </div>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const logEl = $("gitLog");
+    const repoNameEl = $("repoName");
+    const branchNameEl = $("branchName");
+    const changeCountEl = $("changeCount");
+    const changesList = $("changesList");
+    const branchesList = $("branchesList");
+    const historyList = $("historyList");
+
+    function setLog(text) {
+      logEl.textContent = text || "Listo.";
+    }
+
+    function statusSymbol(status) {
+      if (status.startsWith("M")) return "modificado";
+      if (status.startsWith("A")) return "añadido";
+      if (status.startsWith("D")) return "borrado";
+      if (status.startsWith("R")) return "renombrado";
+      return status;
+    }
+
+    async function refresh() {
+      const status = await window.editcoreGit.getStatus();
+      setLog(JSON.stringify(status, null, 2));
+      if (!status.ok) {
+        repoNameEl.textContent = "—";
+        branchNameEl.textContent = "—";
+        changeCountEl.textContent = "0";
+        changesList.innerHTML = `<div class="empty">${status.message || "Error"}</div>`;
+        branchesList.innerHTML = `<div class="empty">Sin ramas.</div>`;
+        historyList.innerHTML = `<div class="empty">Sin historial.</div>`;
+        return;
+      }
+
+      repoNameEl.textContent = status.repo ? status.repo.split(/[\\/\\]+/).pop() : "—";
+      branchNameEl.textContent = status.branch || "—";
+      changeCountEl.textContent = String(status.changes.length);
+
+      if (status.changes.length === 0) {
+        changesList.innerHTML = `<div class="empty">Sin cambios pendientes.</div>`;
+      } else {
+        changesList.innerHTML = status.changes
+          .map(
+            (change) => `
+              <div class="item">
+                <div>
+                  <div>${change.file}</div>
+                  <div class="meta">${change.status}</div>
+                </div>
+                <div class="status ${statusSymbol(change.status)}">${change.status}</div>
+              </div>
+            `
+          )
+          .join("");
+      }
+
+      const branches = await window.editcoreGit.getBranches();
+      if (!branches.ok || branches.branches.length === 0) {
+        branchesList.innerHTML = `<div class="empty">Sin ramas.</div>`;
+      } else {
+        branchesList.innerHTML = branches.branches
+          .map(
+            (branch) => `
+              <div class="item">
+                <div>
+                  <div>${branch}</div>
+                  <div class="meta">rama local</div>
+                </div>
+                <div class="status">${branch === status.branch ? "activa" : ""}</div>
+              </div>
+            `
+          )
+          .join("");
+      }
+
+      const history = await window.editcoreGit.getCommitHistory(parseInt($("historyLimit").value || "20", 10));
+      if (!history.ok || history.commits.length === 0) {
+        historyList.innerHTML = `<div class="empty">Sin historial.</div>`;
+      } else {
+        historyList.innerHTML = history.commits
+          .map(
+            (commit) => `
+              <div class="commit">
+                <div class="hash">${commit.hash}</div>
+                <div class="message">${commit.message}</div>
+              </div>
+            `
+          )
+          .join("");
+      }
+    }
+
+    $("stageAllBtn").addEventListener("click", async () => {
+      const status = await window.editcoreGit.getStatus();
+      const files = (status.changes || []).map((change) => change.file);
+      const result = await window.editcoreGit.stageFiles(files);
+      setLog(JSON.stringify(result, null, 2));
+      refresh();
+    });
+
+    $("unstageAllBtn").addEventListener("click", async () => {
+      const status = await window.editcoreGit.getStatus();
+      const files = (status.changes || []).map((change) => change.file);
+      const result = await window.editcoreGit.unstageFiles(files);
+      setLog(JSON.stringify(result, null, 2));
+      refresh();
+    });
+
+    $("commitBtn").addEventListener("click", async () => {
+      const message = $("commitMessage").value.trim();
+      if (!message) {
+        setLog("Escribí un mensaje de commit.");
+        return;
+      }
+      const result = await window.editcoreGit.commit(message);
+      setLog(JSON.stringify(result, null, 2));
+      $("commitMessage").value = "";
+      refresh();
+    });
+
+    $("createBranchBtn").addEventListener("click", async () => {
+      const name = $("branchInput").value.trim();
+      if (!name) {
+        setLog("Indicá un nombre de rama.");
+        return;
+      }
+      const result = await window.editcoreGit.createBranch(name);
+      setLog(JSON.stringify(result, null, 2));
+      $("branchInput").value = "";
+      refresh();
+    });
+
+    $("checkoutBtn").addEventListener("click", async () => {
+      const name = $("branchInput").value.trim();
+      if (!name) {
+        setLog("Indicá una rama para checkout.");
+        return;
+      }
+      const result = await window.editcoreGit.checkoutBranch(name);
+      setLog(JSON.stringify(result, null, 2));
+      refresh();
+    });
+
+    $("pushBtn").addEventListener("click", async () => {
+      const remote = $("remoteInput").value.trim() || "origin";
+      const branch = $("pushBranchInput").value.trim();
+      const result = await window.editcoreGit.push(remote, branch);
+      setLog(JSON.stringify(result, null, 2));
+    });
+
+    $("pullBtn").addEventListener("click", async () => {
+      const remote = $("remoteInput").value.trim() || "origin";
+      const branch = $("pushBranchInput").value.trim();
+      const result = await window.editcoreGit.pull(remote, branch);
+      setLog(JSON.stringify(result, null, 2));
+      refresh();
+    });
+
+    $("refreshBtn").addEventListener("click", refresh);
+    $("historyBtn").addEventListener("click", refresh);
+
+    refresh();
+  </script>
+</body>
+</html>

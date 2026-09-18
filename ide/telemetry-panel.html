@@ -1,0 +1,340 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>EditCoreAI — Telemetría en vivo</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0b0f14;
+      --panel: #11161d;
+      --panel-2: #161c24;
+      --border: #1f2733;
+      --text: #e6e9ee;
+      --muted: #8a93a6;
+      --accent: #3b82f6;
+      --accent-2: #22c55e;
+      --danger: #ef4444;
+      --warn: #f59e0b;
+    }
+
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+      margin: 0;
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+      background:
+        radial-gradient(1200px 800px at 10% -10%, rgba(59,130,246,0.18), transparent),
+        radial-gradient(1000px 600px at 110% 20%, rgba(34,197,94,0.12), transparent),
+        var(--bg);
+      color: var(--text);
+    }
+
+    .layout {
+      display: grid;
+      grid-template-rows: auto 1fr;
+      min-height: 100vh;
+      padding: 18px;
+      gap: 14px;
+    }
+
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 14px 16px;
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      background: linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.01));
+      backdrop-filter: blur(10px);
+    }
+
+    .title {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: 700;
+      letter-spacing: 0.2px;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 10px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: var(--panel);
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--accent-2);
+      box-shadow: 0 0 0 0 rgba(34,197,94,0.6);
+      animation: pulse 1.6s infinite;
+    }
+
+    @keyframes pulse {
+      0% { box-shadow: 0 0 0 0 rgba(34,197,94,0.55); }
+      70% { box-shadow: 0 0 0 10px rgba(34,197,94,0); }
+      100% { box-shadow: 0 0 0 0 rgba(34,197,94,0); }
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(12, 1fr);
+      gap: 14px;
+    }
+
+    .card {
+      grid-column: span 4;
+      padding: 14px;
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      background: linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.01));
+    }
+
+    .card.wide { grid-column: span 8; }
+    .card.full { grid-column: span 12; }
+
+    .card h3 {
+      margin: 0 0 10px;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: var(--muted);
+    }
+
+    .metric {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 10px;
+    }
+
+    .metric .value {
+      font-size: 28px;
+      font-weight: 800;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .metric .unit {
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .bar {
+      height: 8px;
+      margin-top: 10px;
+      border-radius: 999px;
+      background: var(--panel-2);
+      overflow: hidden;
+    }
+
+    .bar > i {
+      display: block;
+      height: 100%;
+      border-radius: inherit;
+      background: linear-gradient(90deg, var(--accent), var(--accent-2));
+      width: 0%;
+      transition: width 220ms ease;
+    }
+
+    .row {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .pill {
+      padding: 6px 10px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: var(--panel);
+      color: var(--text);
+      font-size: 12px;
+    }
+
+    .log {
+      max-height: 220px;
+      overflow: auto;
+      padding: 10px;
+      border-radius: 10px;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+      font-size: 12px;
+      line-height: 1.45;
+      color: #cbd5e1;
+    }
+
+    .log .line { display: flex; gap: 10px; }
+    .log .ts { color: var(--muted); }
+    .log .ok { color: #86efac; }
+    .log .warn { color: #fcd34d; }
+    .log .err { color: #fca5a5; }
+
+    @media (max-width: 980px) {
+      .card { grid-column: span 6; }
+      .card.wide { grid-column: span 12; }
+    }
+
+    @media (max-width: 640px) {
+      .card { grid-column: span 12; }
+    }
+  </style>
+</head>
+<body>
+  <div class="layout">
+    <header>
+      <div class="title">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:#3b82f6">
+          <path d="M3 3v18h18"/>
+          <path d="M7 16l4-8 4 5 4-9"/>
+        </svg>
+        Telemetría en vivo
+      </div>
+      <div class="badge">
+        <span class="dot"></span>
+        <span id="status">Conectando…</span>
+      </div>
+      <div class="badge" id="uptimeBadge">Uptime: --</div>
+    </header>
+
+    <section class="grid">
+      <article class="card">
+        <h3>CPU</h3>
+        <div class="metric">
+          <div class="value" id="cpuValue">--</div>
+          <div class="unit">%</div>
+        </div>
+        <div class="bar><i id="cpuBar"></i></div>
+      </article>
+
+      <article class="card">
+        <h3>Memoria</h3>
+        <div class="metric">
+          <div class="value" id="memValue">--</div>
+          <div class="unit">%</div>
+        </div>
+        <div class="bar><i id="memBar"></i></div>
+        <div class="metric" style="margin-top:8px">
+          <div class="unit" id="memFree">Libre: -- MB</div>
+          <div class="unit" id="memTotal">Total: -- MB</div>
+        </div>
+      </article>
+
+      <article class="card">
+        <h3>Agente IA</h3>
+        <div class="metric">
+          <div class="value" id="agentValue">--</div>
+          <div class="unit">ms</div>
+        </div>
+        <div class="bar><i id="agentBar"></i></div>
+      </article>
+
+      <article class="card wide">
+        <h3>Eventos recientes</h3>
+        <div class="log" id="eventLog">
+          <div class="line"><span class="ts">--:--:--</span><span>Esperando métricas…</span></div>
+        </div>
+      </article>
+
+      <article class="card full">
+        <h3>Resumen del sistema</h3>
+        <div class="row">
+          <div class="pill" id="loadPill">Load avg: --</div>
+          <div class="pill" id="lspPill">LSP p95: -- ms</div>
+          <div class="pill" id="cyclePill">Ciclo actual: --</div>
+          <div class="pill" id="tsPill">Actualizado: --</div>
+        </div>
+      </article>
+    </section>
+  </div>
+
+  <script>
+    const statusEl = document.getElementById('status');
+    const uptimeBadge = document.getElementById('uptimeBadge');
+    const cpuValue = document.getElementById('cpuValue');
+    const cpuBar = document.getElementById('cpuBar');
+    const memValue = document.getElementById('memValue');
+    const memBar = document.getElementById('memBar');
+    const memFree = document.getElementById('memFree');
+    const memTotal = document.getElementById('memTotal');
+    const agentValue = document.getElementById('agentValue');
+    const agentBar = document.getElementById('agentBar');
+    const eventLog = document.getElementById('eventLog');
+    const loadPill = document.getElementById('loadPill');
+    const lspPill = document.getElementById('lspPill');
+    const cyclePill = document.getElementById('cyclePill');
+    const tsPill = document.getElementById('tsPill');
+
+    const MAX_LOG = 80;
+    let logCount = 0;
+
+    function formatUptime(seconds) {
+      const h = Math.floor(seconds / 3600);
+      const m = Math.floor((seconds % 3600) / 60);
+      const s = Math.floor(seconds % 60);
+      return `${h.toString().padStart(2,'0')}:${m.toString().padStart(2,'0')}:${s.toString().padStart(2,'0')}`;
+    }
+
+    function appendLog(text, kind = '') {
+      const row = document.createElement('div');
+      row.className = 'line';
+      const d = new Date();
+      const ts = [d.getHours(), d.getMinutes(), d.getSeconds()].map(n => n.toString().padStart(2,'0')).join(':');
+      row.innerHTML = `<span class="ts">${ts}</span><span class="${kind}">${text}</span>`;
+      eventLog.appendChild(row);
+      while (eventLog.children.length > MAX_LOG) eventLog.removeChild(eventLog.firstChild);
+      eventLog.scrollTop = eventLog.scrollHeight;
+      logCount++;
+    }
+
+    function setMetric(valueEl, barEl, value, max, suffix = '') {
+      const clamped = Math.max(0, Math.min(value, max));
+      valueEl.textContent = `${Number(clamped.toFixed(2))}${suffix}`;
+      barEl.style.width = `${(clamped / max) * 100}%`;
+    }
+
+    function connect() {
+      const api = window.editcoreTelemetry;
+      if (!api) {
+        statusEl.textContent = 'API no expuesta';
+        appendLog('window.editcoreTelemetry no disponible', 'err');
+        return;
+      }
+
+      statusEl.textContent = 'En vivo';
+      appendLog('Conexión establecida con editcoreTelemetry', 'ok');
+
+      const unsubscribe = api.onMetrics((m) => {
+        setMetric(cpuValue, cpuBar, m.cpuUsage, 100, '%');
+        setMetric(memValue, memBar, m.memoryUsage, 100, '%');
+        setMetric(agentValue, agentBar, m.agentResponseMs, 2000, '');
+        memFree.textContent = `Libre: ${m.freeMemMb} MB`;
+        memTotal.textContent = `Total: ${m.totalMemMb} MB`;
+        uptimeBadge.textContent = `Uptime: ${formatUptime(m.uptime)}`;
+        loadPill.textContent = `Load avg: ${m.loadAverage ? m.loadAverage.map(n => n.toFixed(2)).join(' / ') : '--'}`;
+        lspPill.textContent = `LSP p95: ${Number(m.lspLatency).toFixed(2)} ms`;
+        tsPill.textContent = `Actualizado: ${new Date(m.timestamp).toLocaleTimeString()}`;
+
+        if (logCount === 0) appendLog('Primera muestra recibida', 'ok');
+        if (m.cpuUsage > 85) appendLog(`CPU alta: ${Number(m.cpuUsage.toFixed(2))}%`, 'warn');
+        if (m.memoryUsage > 85) appendLog(`Memoria alta: ${Number(m.memoryUsage.toFixed(2))}%`, 'warn');
+      });
+
+      if (typeof api.start === 'function') api.start();
+      if (typeof api.stop === 'function') api.stop();
+    }
+
+    connect();
+  </script>
+</body>
+</html>

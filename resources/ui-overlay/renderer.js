@@ -5247,34 +5247,17 @@ function setupSplitter(splitterId) {
   if (!splitter) return;
   let dragging = false;
   let fixedBoundary = 0;
-  splitter.addEventListener("pointerdown", (e) => {
-    if (e.button !== 0) return;
-    e.preventDefault();
-    dragging = true;
-    if (splitterId === "splitChatBrowser") {
-      const rightSplitter = $("splitBrowserProjects");
-      fixedBoundary = document.body.classList.contains("projects-collapsed")
-        ? document.body.getBoundingClientRect().right
-        : rightSplitter.getBoundingClientRect().left;
-    }
-    splitter.classList.add("dragging");
-    try { splitter.setPointerCapture(e.pointerId); } catch {}
-  });
-  splitter.addEventListener("pointerup", (e) => {
-    dragging = false;
-    splitter.classList.remove("dragging");
-    try { splitter.releasePointerCapture(e.pointerId); } catch {}
-  });
-  splitter.addEventListener("pointermove", (e) => {
+
+  const onPointerMove = (e) => {
     if (!dragging) return;
     const bodyRect = document.body.getBoundingClientRect();
     const w = bodyRect.width;
     const x = e.clientX - bodyRect.left;
-    const splitterWidth = splitter.offsetWidth || 3;
+    const splitterWidth = splitter.offsetWidth || 10;
     if (splitterId === "splitChatBrowser") {
       const boundary = fixedBoundary - bodyRect.left;
-      const chat = Math.max(430, Math.min(boundary - splitterWidth - 280, x));
-      const browser = Math.max(280, boundary - chat - splitterWidth);
+      const chat = Math.max(300, Math.min(boundary - splitterWidth - 200, x));
+      const browser = Math.max(200, boundary - chat - splitterWidth);
       document.body.style.setProperty("--chat-width", `${chat}px`);
       document.body.style.setProperty("--browser-width", `${browser}px`);
       localStorage.setItem("--chat-width", `${chat}px`);
@@ -5282,13 +5265,44 @@ function setupSplitter(splitterId) {
     } else {
       const collapsed = document.body.classList.contains("projects-collapsed");
       if (!collapsed) {
-        const browserLeft = document.querySelector(".viewer").getBoundingClientRect().left - bodyRect.left;
-        const divider = Math.max(browserLeft + 280, Math.min(w - splitterWidth - 260, x));
-        const browser = divider - browserLeft;
+        const viewerEl = document.querySelector(".viewer");
+        const browserLeft = viewerEl ? (viewerEl.getBoundingClientRect().left - bodyRect.left) : 0;
+        const divider = Math.max(browserLeft + 200, Math.min(w - splitterWidth - 180, x));
+        const browser = Math.max(200, divider - browserLeft);
         document.body.style.setProperty("--browser-width", `${browser}px`);
         localStorage.setItem("--browser-width", `${browser}px`);
       }
     }
+  };
+
+  const onPointerUp = (e) => {
+    if (!dragging) return;
+    dragging = false;
+    splitter.classList.remove("dragging");
+    document.body.classList.remove("resizing-panels");
+    try { splitter.releasePointerCapture(e.pointerId); } catch {}
+    window.removeEventListener("pointermove", onPointerMove);
+    window.removeEventListener("pointerup", onPointerUp);
+    window.removeEventListener("pointercancel", onPointerUp);
+    try { schedulePreviewFit(); } catch {}
+  };
+
+  splitter.addEventListener("pointerdown", (e) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    dragging = true;
+    if (splitterId === "splitChatBrowser") {
+      const rightSplitter = $("splitBrowserProjects");
+      fixedBoundary = (document.body.classList.contains("projects-collapsed") || !rightSplitter)
+        ? document.body.getBoundingClientRect().right
+        : rightSplitter.getBoundingClientRect().left;
+    }
+    splitter.classList.add("dragging");
+    document.body.classList.add("resizing-panels");
+    try { splitter.setPointerCapture(e.pointerId); } catch {}
+    window.addEventListener("pointermove", onPointerMove);
+    window.addEventListener("pointerup", onPointerUp);
+    window.addEventListener("pointercancel", onPointerUp);
   });
 }
 
@@ -6671,7 +6685,8 @@ function append(role, text, usage, scroll = true, elapsedSeconds = null, images 
     item.appendChild(attachment);
   }
 
-  $("feed").appendChild(item);
+  const chatMessages = $("feed");
+  chatMessages.appendChild(item);
   if (scroll) scrollFeedToBottom(role === "user");
   if (role === "assistant" && window.EditCoreVoiceMode?.isActive?.()) {
     window.EditCoreVoiceMode.onAssistantMessage(text);
@@ -8037,7 +8052,7 @@ function agentProgressText(progress) {
       }
       const codeMatch = error.match(/\(code\s*(\d+)\)|exit\s+(\d+)/i);
       const code = codeMatch?.[1] || codeMatch?.[2] || "?";
-      return `○ ${cmd} → exit ${code} (evidencia de verificacion; no es fallo de la herramienta)`;
+      return `○ ${cmd} → exit ${code} (Esto NO es un fallo de la herramienta run_command: evidencia de verificacion; no es fallo de la herramienta: la salida sirve para diagnosticar y corregir)`;
     }
     if (name === "read_file" && /No es archivo|carpeta|isDirectory/i.test(error)) {
       return `○ ${target || "Ruta"} es una carpeta; el agente listara archivos y continuara`;
@@ -11978,6 +11993,7 @@ async function directQueuedPrompt(job, targetAgent) {
 
 function updateSendButtonState() {
   const button = $("sendBtn");
+  const sendButton = button;
   const stop = $("stopBtn");
   if (stop) {
     stop.hidden = true;
@@ -11996,19 +12012,19 @@ function updateSendButtonState() {
   if (showStop) {
     button.title = `Detener ${Math.max(activePromptRequests.size, 1)} tarea(s)`;
     button.innerHTML = "&#9632;";
-    button.disabled = false;
+    sendButton.disabled = false;
   } else if (agentNeedsProject) {
     button.title = hasDraft ? "Indica una ruta absoluta o abre un proyecto" : "Enviar";
     button.innerHTML = "&#10148;";
-    button.disabled = !hasDraft;
+    sendButton.disabled = !hasDraft;
   } else if (running) {
     button.title = "Enviar otra instrucción al agente";
     button.innerHTML = "&#10148;";
-    button.disabled = !hasDraft;
+    sendButton.disabled = !hasDraft;
   } else {
     button.title = "Enviar";
     button.innerHTML = "&#10148;";
-    button.disabled = !hasDraft;
+    sendButton.disabled = !hasDraft;
   }
   button.setAttribute("aria-label", button.title);
 }
@@ -13504,11 +13520,12 @@ async function bootBackground({
     }
 
     ensureDefaultModelSelectionMode().catch(() => undefined);
-    // Capacidades de modelos / conexiones: en Chat diferir hasta idle largo o IDE.
+    try { syncChatModelFromConfig(); } catch { /* ignore */ }
+    // Capacidades de modelos / conexiones: en Chat diferir hasta idle o IDE.
     if (chatFirst) {
       const later = typeof requestIdleCallback === "function"
-        ? (fn) => requestIdleCallback(() => { void fn(); }, { timeout: 12000 })
-        : (fn) => setTimeout(() => { void fn(); }, 5000);
+        ? (fn) => requestIdleCallback(() => { void fn(); }, { timeout: 1000 })
+        : (fn) => setTimeout(() => { void fn(); }, 300);
       later(() => {
         refreshModelCapabilities(false).catch(() => undefined);
         syncChatModelFromConfig();
@@ -14460,10 +14477,15 @@ $("connectionsForm").addEventListener("submit", async (e) => {
   }
 });
 
-$("providersForm").addEventListener("submit", (e) => {
-  e.preventDefault();
-  saveProviders().then(() => closeProviders()).catch(() => undefined);
-});
+const onDoneProviders = (e) => {
+  if (e) {
+    e.preventDefault();
+    e.stopPropagation();
+  }
+  saveProviders().finally(() => closeProviders());
+};
+$("providersForm")?.addEventListener("submit", onDoneProviders);
+$("saveProvidersBtn")?.addEventListener("click", onDoneProviders);
 
 document.querySelectorAll("[data-add-provider-profile]").forEach((button) => {
   button.addEventListener("click", () => addProviderProfile(button.dataset.addProviderProfile));

@@ -6,12 +6,16 @@
 
 (function exposeIntentOrchestrator(root, factory) {
   const nodeProjectAnalysis = typeof require !== "undefined"
-    ? (() => { try { return require("../project-analysis"); } catch { return null; } })()
+    ? (() => {
+        try { return require("./project-analysis"); } catch {
+          try { return require("../project-analysis"); } catch { return null; }
+        }
+      })()
     : null;
   const browserProjectAnalysis = root?.EditCoreProjectAnalysis || null;
-  const api = factory(browserProjectAnalysis || nodeProjectAnalysis);
+  const api = factory(nodeProjectAnalysis || browserProjectAnalysis);
   if (typeof module !== "undefined" && module.exports) module.exports = api;
-  if (root && browserProjectAnalysis) root.EditCoreAgentOrchestrator = api;
+  if (root && (browserProjectAnalysis || nodeProjectAnalysis)) root.EditCoreAgentOrchestrator = api;
 })(typeof window !== "undefined" ? window : globalThis, function createIntentOrchestrator(ProjectAnalysis) {
   if (!ProjectAnalysis) {
     console.warn("[intent-orchestrator] ProjectAnalysis no disponible, usando modo seguro.");
@@ -23,7 +27,9 @@
   const browserRoot = typeof window !== "undefined" ? window : globalThis;
   const EliteComm = (() => {
     if (typeof require !== "undefined") {
-      try { return require("./elite-communication-policy"); } catch { /* fallthrough */ }
+      try { return require("./elite-communication-policy"); } catch {
+        try { return require("../elite-communication-policy"); } catch { /* fallthrough */ }
+      }
     }
     return browserRoot?.EditCoreEliteCommunication || null;
   })();
@@ -33,14 +39,18 @@
 
   const CursorParity = (() => {
     if (typeof require !== "undefined") {
-      try { return require("./cursor-parity"); } catch { /* fallthrough */ }
+      try { return require("./cursor-parity"); } catch {
+        try { return require("../cursor-parity"); } catch { /* fallthrough */ }
+      }
     }
     return browserRoot?.EditCoreCursorParity || null;
   })();
 
   const LovableOneShot = (() => {
     if (typeof require !== "undefined") {
-      try { return require("./lovable-oneshot"); } catch { /* fallthrough */ }
+      try { return require("./lovable-oneshot"); } catch {
+        try { return require("../lovable-oneshot"); } catch { /* fallthrough */ }
+      }
     }
     return {
       isLovableOneShotRequest(prompt = "", { greenfieldCreate = false } = {}) {
@@ -83,7 +93,9 @@
 
   const AgentRuntime = (() => {
     if (typeof require !== "undefined") {
-      try { return require("../agent-runtime"); } catch { /* fallthrough */ }
+      try { return require("./agent-runtime"); } catch {
+        try { return require("../agent-runtime"); } catch { /* fallthrough */ }
+      }
     }
     return browserRoot?.EditCoreAgentRuntime || null;
   })();
@@ -168,6 +180,7 @@ const MODES = {
 };
 
 const PHASES = {
+  CHAT: "understand",
   UNDERSTAND: "understand",
   DISCOVER: "discover",
   EXECUTE: "execute",
