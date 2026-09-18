@@ -59,7 +59,22 @@
   }
 
   function filesChangedPayload(progress = {}, projectRoot = "") {
-    const writtenPath = String(progress.input?.path || progress.result?.path || progress.changedFiles?.[0] || "").trim();
+    const rawPath = String(
+      progress.input?.path
+      || progress.input?.filePath
+      || progress.input?.targetPath
+      || progress.input?.TargetFile
+      || progress.input?.AbsolutePath
+      || progress.input?.file
+      || progress.input?.target
+      || progress.input?.query
+      || progress.result?.path
+      || progress.changedFiles?.[0]
+      || progress.path
+      || progress.filePath
+      || ""
+    ).trim();
+    const writtenPath = rawPath;
     const fileName = resolveWrittenFileName(writtenPath);
     const viewDir = resolveWrittenFileViewDir(projectRoot, writtenPath);
     return {
@@ -79,8 +94,8 @@
   /** Recorta contenido grande en progreso de mutacion para no saturar IPC/UI. */
   function clipMutationProgressForUi(progress = {}) {
     if (!progress || typeof progress !== "object") return progress || {};
-    const name = String(progress.name || "");
-    if (!["write_file", "replace_in_file", "apply_diff"].includes(name)) return progress;
+    const name = String(progress.name || "").toLowerCase();
+    if (!/write|replace|diff|patch|mutate|edit/i.test(name)) return progress;
     const input = progress.input && typeof progress.input === "object" ? progress.input : null;
     if (!input) return progress;
     const nextInput = { ...input };

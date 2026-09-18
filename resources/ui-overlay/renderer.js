@@ -3803,21 +3803,25 @@ function addAgentCodeFragment(thinkingItem, progress) {
 }
 
 function notifyAgentFileMutationProgress(thinkingEl, progress) {
-  const tool = String(progress?.name || "");
-  if (!["write_file", "replace_in_file", "apply_diff", "create_project", "delete_file"].includes(tool)) return;
+  if (!progress || typeof progress !== "object") return;
+  const tool = String(progress?.name || "").toLowerCase();
   const payload = ProjectFilesUi?.filesChangedPayload
     ? ProjectFilesUi.filesChangedPayload(progress, state.projectRoot)
     : {
-      writtenPath: String(progress?.input?.path || ""),
+      writtenPath: String(progress?.input?.path || progress?.input?.filePath || progress?.input?.TargetFile || progress?.input?.targetPath || progress?.input?.AbsolutePath || progress?.path || ""),
       highlightNames: [],
       fileName: "",
     };
-  const writing = progress?.stage === "running" || (progress?.ok === undefined && progress?.stage !== "done");
+  const isWriteTool = /write|replace|diff|patch|mutate|edit|create|delete|append|save|touch/i.test(tool);
+  const writing = isWriteTool && (progress?.stage === "running" || (progress?.ok === undefined && progress?.stage !== "done"));
   const done = progress?.stage === "done" || progress?.ok === true;
+  const hasTarget = Boolean(payload.writtenPath || payload.fileName || (payload.highlightNames && payload.highlightNames.length > 0));
+  if (!isWriteTool && !hasTarget) return;
+
   const nav = markAgentTouchedFromPayload(payload, { writing });
   // Refrescar siempre: en "running" el árbol puede anticipar; en "done" confirma lo ya escrito en disco.
   // Si el usuario está en la raíz, quedarse ahí para que aparezcan carpetas nuevas (src/, etc.).
-  if (writing || done) {
+  if (writing || done || hasTarget) {
     const currentView = String(state.fileListRelativePath || "");
     const refreshView = (!currentView || writing)
       ? currentView
@@ -3826,7 +3830,9 @@ function notifyAgentFileMutationProgress(thinkingEl, progress) {
   }
   // Si hay tarjeta Cursor con diffs inline, no duplicar el fragmento legacy oscuro.
   if (thinkingEl?._inlineDiffs) return;
-  addAgentCodeFragment(thinkingEl, { ...progress, fragment: payload.fragment });
+  if (isWriteTool || payload.fragment) {
+    addAgentCodeFragment(thinkingEl, { ...progress, fragment: payload.fragment });
+  }
 }
 
 async function softHotReloadPreview() {
@@ -4351,7 +4357,9 @@ async function renderProjectFiles(relativePath = "") {
       if (writingName && row.kind === "file") button.classList.add("is-writing");
       // Bolita anclada a la izquierda del panel; nombre/carpeta a la derecha.
       const dot = document.createElement("span");
-      dot.className = touched ? "file-item-dot" : "file-item-dot is-idle";
+      dot.className = writingName
+        ? "file-item-dot is-writing-dot"
+        : (touched ? "file-item-dot" : "file-item-dot is-idle");
       dot.title = touched ? (writingName ? "Escribiendo…" : "Modificado por el agente") : "";
       dot.setAttribute("aria-hidden", "true");
       button.appendChild(dot);
@@ -14706,7 +14714,7 @@ window.editcoreAgent.onProgress((progress) => {
             });
           }
         }
-        if (/^(?:write_file|replace_in_file|apply_diff)$/i.test(toolName)) {
+        if (/^(?:write_file|replace_in_file|apply_diff|write_to_file|replace_file_content|patch|edit_file|modify_file)$/i.test(toolName)) {
           const fragment = ProjectFilesUi?.buildMutationFragment?.(progress, state.projectRoot) || progress.fragment;
           let unifiedDiff = String(progress.diff || progress.unifiedDiff || "").trim();
           if (!unifiedDiff && fragment) {
