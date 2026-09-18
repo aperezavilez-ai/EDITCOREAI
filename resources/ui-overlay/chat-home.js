@@ -1345,9 +1345,14 @@
       console.warn("[chat-home] deleteThread", err);
     }
     store.threads = store.threads.filter((t) => t.id !== id);
+    if (store.activeId === id) {
+      const activeFromWindow = getActiveThreadId();
+      store.activeId = activeFromWindow && activeFromWindow !== id ? activeFromWindow : (store.threads[0]?.id || "");
+    }
     saveStore(store);
     renderThreadList();
     syncCrumb();
+    syncFolderChip();
     syncEmptyState();
   }
 

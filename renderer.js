@@ -2772,7 +2772,8 @@ function closeChatThread(chatId, targetProjectId) {
       refreshUndoAgentRunButton();
     }
     targetProj.updatedAt = Date.now();
-    saveProjects();
+    saveProjects({ immediate: true });
+    persistProjectChatsToDisk(targetProj);
     renderProjects();
     renderChatTabs();
     $("status").textContent = "Chat cerrado";
