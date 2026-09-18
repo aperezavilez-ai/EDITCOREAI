@@ -10031,15 +10031,21 @@ ipcMain.handle("telemetry:get-metrics", async () => {
 });
 
 // Debugger handlers
+let globalDebuggerClient = null;
+function getDebuggerClient() {
+  if (!globalDebuggerClient) {
+    const { DebuggerClient } = require("./runtime/debugger-client");
+    globalDebuggerClient = new DebuggerClient();
+  }
+  return globalDebuggerClient;
+}
+
 const activeDebugSessions = new Map();
 ipcMain.handle("debug:start-session", async (_event, options) => {
   try {
-    const { DebugSession } = require("./runtime/debug-session");
-    const session = new DebugSession(options || {});
-    await session.start();
-    const id = session.id || String(Date.now());
-    activeDebugSessions.set(id, session);
-    return { ok: true, id };
+    const client = getDebuggerClient();
+    const session = await client.startSession(options?.id || null, options || {});
+    return { ok: true, id: session.id, session };
   } catch (error) {
     return { ok: false, error: error.message };
   }
@@ -10047,15 +10053,190 @@ ipcMain.handle("debug:start-session", async (_event, options) => {
 
 ipcMain.handle("debug:stop-session", async (_event, id) => {
   try {
-    const session = activeDebugSessions.get(id);
-    if (session) {
-      await session.stop();
-      activeDebugSessions.delete(id);
-    }
-    return { ok: true };
+    const client = getDebuggerClient();
+    const res = await client.stopSession(id);
+    return res;
   } catch (error) {
     return { ok: false, error: error.message };
   }
 });
+
+ipcMain.handle("debugger:create-session", async (_event, options) => {
+  try {
+    const client = getDebuggerClient();
+    const session = client.createSession(options?.id || null, options || {});
+    return { ok: true, id: session.id, session: client.getSession(session.id) };
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
+});
+
+ipcMain.handle("debugger:start-session", async (_event, options) => {
+  try {
+    const client = getDebuggerClient();
+    const session = await client.startSession(options?.id || options?.sessionId || null, options || {});
+    return { ok: true, id: session.id, session };
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
+});
+
+ipcMain.handle("debugger:stop-session", async (_event, id) => {
+  try {
+    const client = getDebuggerClient();
+    const sid = typeof id === "object" ? (id.sessionId || id.id) : id;
+    return await client.stopSession(sid);
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
+});
+
+ipcMain.handle("debugger:set-breakpoints", async (_event, payload) => {
+  try {
+    const client = getDebuggerClient();
+    const { sessionId, sourcePath, breakpoints } = payload || {};
+    const res = await client.setBreakpoints(sessionId, sourcePath, breakpoints || []);
+    return { ok: true, breakpoints: res };
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
+});
+
+ipcMain.handle("debugger:continue", async (_event, payload) => {
+  try {
+    const client = getDebuggerClient();
+    const sid = typeof payload === "object" ? payload.sessionId : payload;
+    const tid = typeof payload === "object" ? payload.threadId : 1;
+    return await client.continue(sid, tid);
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
+});
+
+ipcMain.handle("debugger:step-over", async (_event, payload) => {
+  try {
+    const client = getDebuggerClient();
+    const sid = typeof payload === "object" ? payload.sessionId : payload;
+    const tid = typeof payload === "object" ? payload.threadId : 1;
+    return await client.stepOver(sid, tid);
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
+});
+
+ipcMain.handle("debugger:step-into", async (_event, payload) => {
+  try {
+    const client = getDebuggerClient();
+    const sid = typeof payload === "object" ? payload.sessionId : payload;
+    const tid = typeof payload === "object" ? payload.threadId : 1;
+    return await client.stepInto(sid, tid);
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
+});
+
+ipcMain.handle("debugger:step-out", async (_event, payload) => {
+  try {
+    const client = getDebuggerClient();
+    const sid = typeof payload === "object" ? payload.sessionId : payload;
+    const tid = typeof payload === "object" ? payload.threadId : 1;
+    return await client.stepOut(sid, tid);
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
+});
+
+ipcMain.handle("debugger:pause", async (_event, payload) => {
+  try {
+    const client = getDebuggerClient();
+    const sid = typeof payload === "object" ? payload.sessionId : payload;
+    const tid = typeof payload === "object" ? payload.threadId : 1;
+    return await client.pause(sid, tid);
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
+});
+
+ipcMain.handle("debugger:get-call-stack", async (_event, payload) => {
+  try {
+    const client = getDebuggerClient();
+    const sid = typeof payload === "object" ? payload.sessionId : payload;
+    const tid = typeof payload === "object" ? payload.threadId : 1;
+    const frames = await client.getCallStack(sid, tid);
+    return frames;
+  } catch (error) {
+    return [];
+  }
+});
+
+ipcMain.handle("debugger:get-variables", async (_event, payload) => {
+  try {
+    const client = getDebuggerClient();
+    const sid = typeof payload === "object" ? payload.sessionId : payload;
+    const ref = typeof payload === "object" ? (payload.variablesReference || 1) : 1;
+    const vars = await client.getVariables(sid, ref);
+    return vars;
+  } catch (error) {
+    return [];
+  }
+});
+
+ipcMain.handle("debugger:evaluate", async (_event, payload) => {
+  try {
+    const client = getDebuggerClient();
+    const { sessionId, expression, frameId, context } = payload || {};
+    return await client.evaluate(sessionId, expression, frameId, context);
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
+});
+
+ipcMain.handle("debugger:list-sessions", async () => {
+  try {
+    const client = getDebuggerClient();
+    return client.listSessions();
+  } catch (error) {
+    return [];
+  }
+});
+
+// Memory RAG handlers
+ipcMain.handle("memory:index-workspace", async (_event, workspace) => {
+  try {
+    const rag = require("./runtime/rag-memory");
+    return rag.indexWorkspace(workspace);
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
+});
+
+ipcMain.handle("memory:query", async (_event, payload) => {
+  try {
+    const rag = require("./runtime/rag-memory");
+    const { query, topK, minScore } = typeof payload === "string" ? { query: payload } : (payload || {});
+    return rag.querySemantic(query, topK, minScore);
+  } catch (error) {
+    return [];
+  }
+});
+
+ipcMain.handle("memory:get-status", async () => {
+  try {
+    const rag = require("./runtime/rag-memory");
+    return rag.getIndexStatus();
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
+});
+
+ipcMain.handle("memory:clear-cache", async () => {
+  try {
+    const rag = require("./runtime/rag-memory");
+    return rag.clearCache();
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
+});
+
 
 

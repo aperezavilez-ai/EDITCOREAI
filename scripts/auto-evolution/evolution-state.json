@@ -1,62 +1,72 @@
 {
-  "cycle": 21,
-  "timestamp": "2026-09-18T20:00:00.000Z",
+  "cycle": 22,
+  "timestamp": "2026-09-18T22:00:00.000Z",
   "gaps_identified": [
-    "GIT_UI_NATIVE_MISSING: Se agrega control de versiones nativo sin romper bridges previos"
+    "DAP_DEBUGGER_AND_RAG_MEMORY_INTEGRATION: Integración de DAP Core, panel visual de depuración, prompt cache y vectorización RAG sin afectar bridges previos"
   ],
   "tools_created": [
-    "runtime/git-manager.js",
-    "ide/git-panel.html",
-    "test/git-manager.test.js"
+    "runtime/debugger-client.js",
+    "ide/debugger-panel.html",
+    "test/debugger-client.test.js",
+    "test/rag-memory.test.js"
   ],
   "status": "PRODUCTION_READY",
   "last_cycle": {
-    "cycle": 21,
-    "feature_added": "NATIVE_GIT_UI_AND_VERSION_CONTROL",
-    "description": "Sistema avanzado de control de versiones y Git UI nativo en EditCoreAI con módulo core, panel visual, bridges IPC y suite de pruebas unitarias",
+    "cycle": 22,
+    "feature_added": "DEBUGGER_DAP_PROMPT_CACHE_RAG_MEMORY",
+    "description": "Sistema unificado de depuración Debug Adapter Protocol (DAP), panel lateral en IDE, gestor de caché de prompts y memoria RAG con puentes IPC no destructivos",
     "files_created": [
-      "runtime/git-manager.js",
-      "ide/git-panel.html",
-      "test/git-manager.test.js"
+      "runtime/debugger-client.js",
+      "ide/debugger-panel.html",
+      "test/debugger-client.test.js",
+      "test/rag-memory.test.js"
     ],
     "files_modified": [
+      "runtime/prompt-cache-manager.js",
+      "runtime/rag-memory.js",
       "main.js",
       "preload.js",
       "scripts/auto-evolution/evolution-state.json"
     ],
     "ipc_channels_added": [
-      "git:getStatus",
-      "git:stageFiles",
-      "git:unstageFiles",
-      "git:commit",
-      "git:getBranches",
-      "git:createBranch",
-      "git:checkoutBranch",
-      "git:getDiff",
-      "git:getCommitHistory",
-      "git:push",
-      "git:pull",
-      "git:detectLocalChanges"
+      "debugger:create-session",
+      "debugger:start-session",
+      "debugger:stop-session",
+      "debugger:set-breakpoints",
+      "debugger:continue",
+      "debugger:step-over",
+      "debugger:step-into",
+      "debugger:step-out",
+      "debugger:pause",
+      "debugger:get-call-stack",
+      "debugger:get-variables",
+      "debugger:evaluate",
+      "debugger:list-sessions",
+      "memory:index-workspace",
+      "memory:query",
+      "memory:get-status",
+      "memory:clear-cache"
     ],
     "security_compliance": {
       "contextIsolation": true,
       "nodeIntegration": false,
       "sandboxed": false,
-      "description": "Se mantiene el aislamiento existente; el nuevo bridge se agrega como capa adicional"
+      "description": "Se mantiene el aislamiento de contexto; los nuevos bridges se agregan como capas adicionales seguras"
     },
     "ui_features": [
-      "Panel visual de Git integrado en el IDE",
-      "Visualización de historial de commits",
-      "Árbol de ramas y cambios pendientes",
-      "Botones de acción rápida: commit, push, pull, stage/unstage"
+      "Panel lateral visual de depuración DAP integrado en el IDE",
+      "Pila de llamadas interactiva (Call Stack)",
+      "Inspección de variables locales y ámbitos en tiempo real",
+      "Gestión visual de puntos de interrupción (Breakpoints)",
+      "Evaluador de expresiones en vivo (Watch) y consola de depuración"
     ],
     "tests_verified": {
-      "git_manager_tests": "10/10 passed",
-      "timestamp": "2026-09-18T20:00:00.000Z",
-      "suite": "node --test test/git-manager.test.js"
+      "debugger_and_rag_tests": "10/10 passed",
+      "timestamp": "2026-09-18T22:00:00.000Z",
+      "suite": "node --test test/debugger-client.test.js test/rag-memory.test.js"
     },
     "observability": {
-      "panel_location": "ide/git-panel.html",
+      "panel_location": "ide/debugger-panel.html",
       "real_time_updates": true
     },
     "preload_bridges_preserved": [
@@ -68,18 +78,24 @@
       "editcoreComposer",
       "editcoreCloud",
       "editcoreMemory",
-      "editcoreGit"
+      "editcoreGit",
+      "editcoreDb",
+      "editcoreN8n",
+      "editcoreMcp",
+      "editcoreAst",
+      "editcoreTelemetry",
+      "editcoreDebugger"
     ],
-    "timestamp": "2026-09-18T20:00:00.000Z"
+    "timestamp": "2026-09-18T22:00:00.000Z"
   },
   "tests_verified": {
-    "git_manager_tests": "10/10 passed",
-    "timestamp": "2026-09-18T20:00:00.000Z",
-    "suite": "node --test test/git-manager.test.js"
+    "debugger_and_rag_tests": "10/10 passed",
+    "timestamp": "2026-09-18T22:00:00.000Z",
+    "suite": "node --test test/debugger-client.test.js test/rag-memory.test.js"
   },
   "observability": {
     "dashboard_enabled": true,
-    "panel_location": "ide/git-panel.html",
+    "panel_location": "ide/debugger-panel.html",
     "real_time_updates": true,
     "manual_cycle_trigger": true
   },
@@ -92,6 +108,12 @@
     "editcoreComposer",
     "editcoreCloud",
     "editcoreMemory",
-    "editcoreGit"
+    "editcoreGit",
+    "editcoreDb",
+    "editcoreN8n",
+    "editcoreMcp",
+    "editcoreAst",
+    "editcoreTelemetry",
+    "editcoreDebugger"
   ]
 }

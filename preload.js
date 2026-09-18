@@ -586,9 +586,29 @@ contextBridge.exposeInMainWorld("editcoreTelemetry", {
 });
 
 contextBridge.exposeInMainWorld("editcoreDebugger", {
-  startSession: (options) => ipcRenderer.invoke("debug:start-session", options),
-  stopSession: (id) => ipcRenderer.invoke("debug:stop-session", id),
+  createSession: (options) => ipcRenderer.invoke("debugger:create-session", options),
+  startSession: (options) => ipcRenderer.invoke("debugger:start-session", options),
+  stopSession: (id) => ipcRenderer.invoke("debugger:stop-session", id),
+  setBreakpoints: (payload) => ipcRenderer.invoke("debugger:set-breakpoints", payload),
+  continue: (sessionId, threadId) => ipcRenderer.invoke("debugger:continue", { sessionId, threadId }),
+  stepOver: (sessionId, threadId) => ipcRenderer.invoke("debugger:step-over", { sessionId, threadId }),
+  stepInto: (sessionId, threadId) => ipcRenderer.invoke("debugger:step-into", { sessionId, threadId }),
+  stepOut: (sessionId, threadId) => ipcRenderer.invoke("debugger:step-out", { sessionId, threadId }),
+  pause: (sessionId, threadId) => ipcRenderer.invoke("debugger:pause", { sessionId, threadId }),
+  getCallStack: (payload) => ipcRenderer.invoke("debugger:get-call-stack", payload),
+  getVariables: (payload) => ipcRenderer.invoke("debugger:get-variables", payload),
+  evaluate: (payload) => ipcRenderer.invoke("debugger:evaluate", payload),
+  listSessions: () => ipcRenderer.invoke("debugger:list-sessions"),
 });
+
+contextBridge.exposeInMainWorld("editcoreMemory", {
+  indexWorkspace: (workspace) => ipcRenderer.invoke("memory:index-workspace", workspace),
+  query: (query, topK, minScore) => ipcRenderer.invoke("memory:query", { query, topK, minScore }),
+  querySemantic: (query, topK, minScore) => ipcRenderer.invoke("memory:query", { query, topK, minScore }),
+  getStatus: () => ipcRenderer.invoke("memory:get-status"),
+  clearCache: () => ipcRenderer.invoke("memory:clear-cache"),
+});
+
 
 
 
