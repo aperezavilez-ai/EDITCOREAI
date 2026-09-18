@@ -10594,6 +10594,134 @@ ipcMain.handle("security:apply-refactor", async (_event, filePath) => {
   }
 });
 
+// Ciclo 29: Memory Ledger, Peer Review Swarm & Ghost Completion
+ipcMain.handle("memory-ledger:get", async (_event, projectRoot, branch) => {
+  try {
+    const { memoryLedger } = require("./runtime/memory-ledger");
+    return memoryLedger.getLedger(projectRoot, branch);
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
+});
+
+ipcMain.handle("memory-ledger:set-goal", async (_event, projectRoot, goal, meta) => {
+  try {
+    const { memoryLedger } = require("./runtime/memory-ledger");
+    return memoryLedger.setSessionGoal(projectRoot, goal, meta);
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
+});
+
+ipcMain.handle("memory-ledger:add-step", async (_event, projectRoot, step) => {
+  try {
+    const { memoryLedger } = require("./runtime/memory-ledger");
+    return memoryLedger.addCompletedStep(projectRoot, step);
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
+});
+
+ipcMain.handle("memory-ledger:record-decision", async (_event, projectRoot, title, rationale, alternatives, meta) => {
+  try {
+    const { memoryLedger } = require("./runtime/memory-ledger");
+    return memoryLedger.recordDecision(projectRoot, title, rationale, alternatives, meta);
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
+});
+
+ipcMain.handle("memory-ledger:add-pending-file", async (_event, projectRoot, filePath, reason, priority) => {
+  try {
+    const { memoryLedger } = require("./runtime/memory-ledger");
+    return memoryLedger.addPendingFile(projectRoot, filePath, reason, priority);
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
+});
+
+ipcMain.handle("memory-ledger:remove-pending-file", async (_event, projectRoot, filePath) => {
+  try {
+    const { memoryLedger } = require("./runtime/memory-ledger");
+    return memoryLedger.removePendingFile(projectRoot, filePath);
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
+});
+
+ipcMain.handle("memory-ledger:push-focus", async (_event, projectRoot, filePath, cursorInfo) => {
+  try {
+    const { memoryLedger } = require("./runtime/memory-ledger");
+    return memoryLedger.pushActiveFocus(projectRoot, filePath, cursorInfo);
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
+});
+
+ipcMain.handle("memory-ledger:get-focus", async (_event, projectRoot) => {
+  try {
+    const { memoryLedger } = require("./runtime/memory-ledger");
+    return memoryLedger.getActiveFocus(projectRoot);
+  } catch (error) {
+    return [];
+  }
+});
+
+ipcMain.handle("memory-ledger:get-context", async (_event, projectRoot) => {
+  try {
+    const { memoryLedger } = require("./runtime/memory-ledger");
+    return memoryLedger.getPromptContext(projectRoot);
+  } catch (error) {
+    return "";
+  }
+});
+
+ipcMain.handle("memory-ledger:sync-branch", async (_event, projectRoot, branchName) => {
+  try {
+    const { memoryLedger } = require("./runtime/memory-ledger");
+    return memoryLedger.syncGitBranch(projectRoot, branchName);
+  } catch (error) {
+    return "main";
+  }
+});
+
+ipcMain.handle("peer-review:audit", async (_event, patches, options) => {
+  try {
+    const { peerReviewSwarm } = require("./runtime/peer-review-swarm");
+    return peerReviewSwarm.auditPatches(patches, options);
+  } catch (error) {
+    return { approved: false, error: error.message };
+  }
+});
+
+ipcMain.handle("peer-review:review-file", async (_event, filePath, originalCode, modifiedCode, options) => {
+  try {
+    const { peerReviewSwarm } = require("./runtime/peer-review-swarm");
+    return peerReviewSwarm.reviewFileChange(filePath, originalCode, modifiedCode, options);
+  } catch (error) {
+    return { approved: false, error: error.message };
+  }
+});
+
+ipcMain.handle("ghost-completion:suggest", async (_event, documentContext, position, options) => {
+  try {
+    const { ghostCompletion } = require("./runtime/ghost-completion");
+    return ghostCompletion.provideInlineCompletion(documentContext, position, options);
+  } catch (error) {
+    return null;
+  }
+});
+
+ipcMain.handle("ghost-completion:cache", async (_event, prefix, completion, ttlMs) => {
+  try {
+    const { ghostCompletion } = require("./runtime/ghost-completion");
+    ghostCompletion.cacheCompletion(prefix, completion, ttlMs);
+    return true;
+  } catch (error) {
+    return false;
+  }
+});
+
 
 
 

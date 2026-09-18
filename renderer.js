@@ -15570,6 +15570,16 @@ $("updatesBtn")?.addEventListener("click", () => {
     $("status").textContent = err?.message || String(err);
   });
 });
+$("chatReloadAppBtn")?.addEventListener("click", () => {
+  reloadEditCoreApp().catch((err) => {
+    $("status").textContent = err?.message || String(err);
+  });
+});
+$("composerReloadAppBtn")?.addEventListener("click", () => {
+  reloadEditCoreApp().catch((err) => {
+    $("status").textContent = err?.message || String(err);
+  });
+});
 $("checkUpdatesMenuBtn")?.addEventListener("click", () => {
   closeAllToolbarMenus();
   checkAppUpdates().catch((err) => {

@@ -550,6 +550,9 @@
         <button id="closeActiveChatBtn" class="chat-tab-trash" type="button" title="Cerrar chat actual" aria-label="Cerrar chat actual">
           <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M6 2h4l1 1h3v1H2V3h3l1-1zm-2 4h8l-.7 8.1A1 1 0 0 1 10.3 15H5.7a1 1 0 0 1-1-.9L4 6z"/></svg>
         </button>
+        <button id="chatReloadAppBtn" class="chat-tab-reload" type="button" title="Recargar app (actualizar EditCoreAI con el código actual)" aria-label="Recargar app">
+          <svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M8 3a5 5 0 1 0 4.546 2.914.5.5 0 0 1 .908-.417A6 6 0 1 1 8 2v1z"/><path d="M8 4.466V.534a.25.25 0 0 1 .41-.192l2.36 1.966c.12.1.12.284 0 .384L8.41 4.658A.25.25 0 0 1 8 4.466z"/></svg>
+        </button>
       </div>
 
       <section id="promptQueue" class="prompt-queue hidden"></section>
@@ -620,6 +623,9 @@
               <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
               <line x1="12" x2="12" y1="19" y2="22"/>
             </svg>
+          </button>
+          <button id="composerReloadAppBtn" type="button" class="composer-reload-btn" title="Recargar app (actualizar EditCoreAI)" aria-label="Recargar app">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M8 3a5 5 0 1 0 4.546 2.914.5.5 0 0 1 .908-.417A6 6 0 1 1 8 2v1z"/><path d="M8 4.466V.534a.25.25 0 0 1 .41-.192l2.36 1.966c.12.1.12.284 0 .384L8.41 4.658A.25.25 0 0 1 8 4.466z"/></svg>
           </button>
           <button id="stopBtn" type="button" class="hidden" hidden style="display:none!important;" title="Pausar / detener agente" aria-label="Pausar">&#9632;</button>
           <button id="sendBtn" type="button" title="Enviar" aria-label="Enviar">&#10148;</button>

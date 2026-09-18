@@ -362,7 +362,8 @@ body.welcome-open {
 }
 .chat-tab-close,
 .chat-tab-new,
-.chat-tab-trash {
+.chat-tab-trash,
+.chat-tab-reload {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -379,7 +380,8 @@ body.welcome-open {
 }
 .chat-tab-close:hover,
 .chat-tab-new:hover,
-.chat-tab-trash:hover {
+.chat-tab-trash:hover,
+.chat-tab-reload:hover {
   background: #e8eef2;
   color: #17202a;
 }
@@ -390,6 +392,35 @@ body.welcome-open {
 .chat-tab-trash {
   font-size: 13px;
   font-weight: 700;
+}
+.chat-tab-reload {
+  font-size: 13px;
+}
+.chat-tab-reload:hover svg {
+  transform: rotate(180deg);
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.composer-reload-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--ec-border, #dbe2e6);
+  border-radius: 6px;
+  background: var(--ec-bg, #ffffff);
+  color: var(--ec-text-muted, #6a7785);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.composer-reload-btn:hover {
+  background: var(--ec-bg-soft, #f0f4f8);
+  color: var(--ec-text, #17202a);
+  border-color: var(--ec-border-strong, #b8c4ce);
+}
+.composer-reload-btn:hover svg {
+  transform: rotate(180deg);
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 .toolbar-more-wrap {
   position: relative;
@@ -4624,12 +4655,15 @@ html[data-theme="azul"] .attachment-list {
 html[data-theme="gris"] .chat-tab-close:hover,
 html[data-theme="gris"] .chat-tab-new:hover,
 html[data-theme="gris"] .chat-tab-trash:hover,
+html[data-theme="gris"] .chat-tab-reload:hover,
 html[data-theme="negro"] .chat-tab-close:hover,
 html[data-theme="negro"] .chat-tab-new:hover,
 html[data-theme="negro"] .chat-tab-trash:hover,
+html[data-theme="negro"] .chat-tab-reload:hover,
 html[data-theme="azul"] .chat-tab-close:hover,
 html[data-theme="azul"] .chat-tab-new:hover,
-html[data-theme="azul"] .chat-tab-trash:hover {
+html[data-theme="azul"] .chat-tab-trash:hover,
+html[data-theme="azul"] .chat-tab-reload:hover {
   background: var(--ec-bg-soft);
   color: var(--ec-text);
 }

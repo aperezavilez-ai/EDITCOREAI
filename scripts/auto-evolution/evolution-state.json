@@ -1,8 +1,8 @@
-{
-  "cycle": 28,
-  "timestamp": "2026-09-18T22:45:00.000Z",
+﻿{
+  "cycle": 29,
+  "timestamp": "2026-09-18T23:30:00.000Z",
   "gaps_identified": [
-    "CYCLES_23_TO_28_ESTANDAR_SUPREMO: Indexación profunda en tiempo real, composer multi-archivo atómico, compatibilidad VSIX, terminal auto-healer, dev containers remotos, auditoría de seguridad estática y refactorización predictiva, RBAC granular con Ledger de créditos y soporte multi-idioma i18n"
+    "CYCLE_29_PERSISTENT_MEMORY_AND_PEER_REVIEW_SWARM: Ledger de tareas IDE-nativo en .editcore/task-state.json con Decision Log, sincronización con ramas Git, buffer de foco activo para Monaco, agente de validación secundaria Peer Review Swarm y Ghost Text predictivo"
   ],
   "tools_created": [
     "runtime/debugger-client.js",
@@ -15,6 +15,9 @@
     "runtime/credit-ledger.js",
     "runtime/role-policy-guard.js",
     "runtime/i18n.js",
+    "runtime/memory-ledger.js",
+    "runtime/peer-review-swarm.js",
+    "runtime/ghost-completion.js",
     "test/debugger-client.test.js",
     "test/deep-indexer.test.js",
     "test/multi-file-composer.test.js",
@@ -24,37 +27,43 @@
     "test/security-auditor.test.js",
     "test/credit-ledger.test.js",
     "test/role-policy-guard.test.js",
-    "test/i18n.test.js"
+    "test/i18n.test.js",
+    "test/memory-ledger.test.js"
   ],
   "status": "PRODUCTION_READY",
   "last_cycle": {
-    "cycle": 28,
-    "feature_added": "SECURITY_AUDITOR_AND_PREDICTIVE_REFACTORER",
-    "description": "Suite integral de inteligencia profunda, seguridad estática, refactorización AST predictiva, RBAC, Ledger de créditos y i18n",
+    "cycle": 29,
+    "feature_added": "IDE_NATIVE_MEMORY_LEDGER_AND_PEER_REVIEW_SWARM",
+    "description": "Sistema de memoria persistente por rama Git (.editcore/task-state.json), buffer de foco activo para Monaco, agente Peer Review de parches antes de disco y Ghost Completion predictivo",
     "files_created": [
-      "runtime/security-auditor.js",
-      "test/security-auditor.test.js"
+      "runtime/memory-ledger.js",
+      "runtime/peer-review-swarm.js",
+      "runtime/ghost-completion.js",
+      "test/memory-ledger.test.js"
     ],
     "files_modified": [
       "main.js",
       "preload.js",
+      "index.html",
+      "styles.css",
+      "renderer.js",
       "scripts/auto-evolution/evolution-state.json"
     ],
     "ipc_channels_added": [
-      "security:scan-file",
-      "security:scan-workspace",
-      "security:predict-refactor",
-      "security:apply-refactor",
-      "credits:get-balance",
-      "credits:deduct",
-      "credits:add",
-      "credits:redeem",
-      "credits:update-profile",
-      "credits:list-users",
-      "auth:check-access",
-      "i18n:get-language",
-      "i18n:set-language",
-      "i18n:get-translations"
+      "memory-ledger:get",
+      "memory-ledger:set-goal",
+      "memory-ledger:add-step",
+      "memory-ledger:record-decision",
+      "memory-ledger:add-pending-file",
+      "memory-ledger:remove-pending-file",
+      "memory-ledger:push-focus",
+      "memory-ledger:get-focus",
+      "memory-ledger:get-context",
+      "memory-ledger:sync-branch",
+      "peer-review:audit",
+      "peer-review:review-file",
+      "ghost-completion:suggest",
+      "ghost-completion:cache"
     ],
     "security_compliance": {
       "contextIsolation": true,
@@ -63,19 +72,16 @@
       "description": "Aislamiento estricto de contexto preservado; canales IPC modulares sin colisión"
     },
     "ui_features": [
-      "Grafo global de símbolos y dependencias del workspace",
-      "Composer multi-archivo atómico con previsualización diff y rollback automático",
-      "Instalador de extensiones y temas VSIX",
-      "Bucle autónomo de auto-corrección de terminal y tests",
-      "Gestor de conexiones SSH remotas y Dev Containers Docker",
-      "Auditor de seguridad y refactorizador predictivo",
-      "Panel de Configuración estilo Antigravity con perfil de usuario y avatar",
-      "Sistema de créditos y RBAC para protección de la raíz del sistema"
+      "Botón de recarga y actualización de la app en la barra de pestañas del chat y composer",
+      "Memoria persistente de objetivos, decisiones técnicas y archivos pendientes",
+      "Buffer de foco activo Monaco para optimización de tokens en prompts",
+      "Peer review automático antes de aplicar parches multi-archivo",
+      "Ghost completion predictivo para autocompletado inline de código"
     ],
     "tests_verified": {
-      "cycle_23_28_tests": "25/25 passed",
-      "timestamp": "2026-09-18T22:45:00.000Z",
-      "suite": "node --test test/debugger-client.test.js test/deep-indexer.test.js test/multi-file-composer.test.js test/terminal-healer.test.js test/vsix-loader.test.js test/remote-env.test.js test/security-auditor.test.js test/credit-ledger.test.js test/role-policy-guard.test.js test/i18n.test.js"
+      "cycle_29_tests": "17/17 passed",
+      "timestamp": "2026-09-18T23:30:00.000Z",
+      "suite": "node --test test/memory-ledger.test.js"
     },
     "preload_bridges_preserved": [
       "editcoreChat",
@@ -101,14 +107,17 @@
       "editcoreCredits",
       "editcoreAuth",
       "editcoreI18n",
-      "editcoreSecurity"
+      "editcoreSecurity",
+      "editcoreMemoryLedger",
+      "editcorePeerReview",
+      "editcoreGhostCompletion"
     ],
-    "timestamp": "2026-09-18T22:45:00.000Z"
+    "timestamp": "2026-09-18T23:30:00.000Z"
   },
   "tests_verified": {
-    "cycle_23_28_tests": "25/25 passed",
-    "timestamp": "2026-09-18T22:45:00.000Z",
-    "suite": "node --test test/debugger-client.test.js test/deep-indexer.test.js test/multi-file-composer.test.js test/terminal-healer.test.js test/vsix-loader.test.js test/remote-env.test.js test/security-auditor.test.js test/credit-ledger.test.js test/role-policy-guard.test.js test/i18n.test.js"
+    "cycle_23_29_tests": "42/42 passed",
+    "timestamp": "2026-09-18T23:30:00.000Z",
+    "suite": "node --test test/debugger-client.test.js test/deep-indexer.test.js test/multi-file-composer.test.js test/terminal-healer.test.js test/vsix-loader.test.js test/remote-env.test.js test/security-auditor.test.js test/credit-ledger.test.js test/role-policy-guard.test.js test/i18n.test.js test/memory-ledger.test.js"
   },
   "observability": {
     "dashboard_enabled": true,
@@ -140,7 +149,9 @@
     "editcoreCredits",
     "editcoreAuth",
     "editcoreI18n",
-    "editcoreSecurity"
+    "editcoreSecurity",
+    "editcoreMemoryLedger",
+    "editcorePeerReview",
+    "editcoreGhostCompletion"
   ]
 }
-

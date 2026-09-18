@@ -671,3 +671,27 @@ contextBridge.exposeInMainWorld("editcoreSecurity", {
   applyRefactor: (filePath) => ipcRenderer.invoke("security:apply-refactor", filePath),
 });
 
+contextBridge.exposeInMainWorld("editcoreMemoryLedger", {
+  get: (projectRoot, branch) => ipcRenderer.invoke("memory-ledger:get", projectRoot, branch),
+  setGoal: (projectRoot, goal, meta) => ipcRenderer.invoke("memory-ledger:set-goal", projectRoot, goal, meta),
+  addStep: (projectRoot, step) => ipcRenderer.invoke("memory-ledger:add-step", projectRoot, step),
+  recordDecision: (projectRoot, title, rationale, alternatives, meta) => ipcRenderer.invoke("memory-ledger:record-decision", projectRoot, title, rationale, alternatives, meta),
+  addPendingFile: (projectRoot, filePath, reason, priority) => ipcRenderer.invoke("memory-ledger:add-pending-file", projectRoot, filePath, reason, priority),
+  removePendingFile: (projectRoot, filePath) => ipcRenderer.invoke("memory-ledger:remove-pending-file", projectRoot, filePath),
+  pushFocus: (projectRoot, filePath, cursorInfo) => ipcRenderer.invoke("memory-ledger:push-focus", projectRoot, filePath, cursorInfo),
+  getFocus: (projectRoot) => ipcRenderer.invoke("memory-ledger:get-focus", projectRoot),
+  getContext: (projectRoot) => ipcRenderer.invoke("memory-ledger:get-context", projectRoot),
+  syncBranch: (projectRoot, branchName) => ipcRenderer.invoke("memory-ledger:sync-branch", projectRoot, branchName),
+});
+
+contextBridge.exposeInMainWorld("editcorePeerReview", {
+  auditPatches: (patches, options) => ipcRenderer.invoke("peer-review:audit", patches, options),
+  reviewFile: (filePath, originalCode, modifiedCode, options) => ipcRenderer.invoke("peer-review:review-file", filePath, originalCode, modifiedCode, options),
+});
+
+contextBridge.exposeInMainWorld("editcoreGhostCompletion", {
+  suggest: (documentContext, position, options) => ipcRenderer.invoke("ghost-completion:suggest", documentContext, position, options),
+  cache: (prefix, completion, ttlMs) => ipcRenderer.invoke("ghost-completion:cache", prefix, completion, ttlMs),
+});
+
+
