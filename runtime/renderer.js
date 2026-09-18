@@ -1,4 +1,4 @@
-﻿/**
+/**
  * DEPRECATED — NO USAR.
  * EditCoreAI carga ./renderer.js desde index.html (raiz del proyecto).
  * Esta copia es antigua (sin modo Codigo/Monaco/IDE). Edita solo ../renderer.js.
@@ -5148,20 +5148,6 @@ async function send(event) {
     notifyVoiceTurnComplete();
     $("prompt").value = "";
     $("status").textContent = "Pregunta respondida · escribe procede/autorizo/continua para ejecutar";
-    updateSendButtonState();
-    return;
-  }
-  if (!hasAttachments && ProjectAnalysis.isPercentageQuestion(effectivePrompt)) {
-    appendUserWithImages(effectivePrompt, []);
-    rememberMessage("user", effectivePrompt);
-    const response = project?.analysisMemory
-      ? ProjectAnalysis.percentageResponse(project.analysisMemory)
-      : "## Porcentaje de terminacion: no determinable todavia\n\nNo existe un analisis verificable guardado para el proyecto activo. Ejecuta primero un analisis de solo lectura; EDITCOREAI debe revisar requisitos, archivos y comprobaciones reales antes de calcular cualquier porcentaje.";
-    const usage = { local_response: true, confirmed_input_tokens: 0, confirmed_output_tokens: 0, estimated_input_tokens: 0, estimated_output_tokens: 0 };
-    append("assistant", response, usage, true, 0);
-    rememberMessage("assistant", response, usage);
-    $("prompt").value = "";
-    $("status").textContent = "Porcentaje respondido desde evidencia local · 0 tokens de API";
     updateSendButtonState();
     return;
   }

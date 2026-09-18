@@ -32,7 +32,7 @@ function run(input) {
 
   // Scan for timeout rigidity
   report.scans.push(scanFile('runtime/ai-core.js', [
-    { name: 'short_timeouts', regex: /timeout:\s*\d{1,4}000/g }
+    { name: 'provider_timeouts', regex: /timeout:\s*\d{1,6}000/g }
   ]));
 
   return { agent: 'CodeAnalyzer', status: 'SUCCESS', report };

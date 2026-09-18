@@ -1,5 +1,8 @@
 /**
- * @deprecated Consolidado en editcore-chat-kernel/classify.js y editcore-chat-kernel/orchestrator.js.
+ * @deprecated Compatibility shim for renderer.js and legacy scripts.
+ * All orchestration logic delegated to editcore-chat-kernel/orchestrator.js.
+ * DO NOT add business logic here — this is a thin adapter only.
+ * Consolidado en editcore-chat-kernel/classify.js y editcore-chat-kernel/orchestrator.js.
  * Mantenido como adaptador compatible para runtime de navegador y scripts heredados.
  */
 "use strict";
@@ -598,10 +601,6 @@ function buildProfile(fields = {}) {
   };
 }
 
-/**
- * UNICO orquestador: decide modo, herramientas, flags de UI y perfil de corrida.
- * Renderer, main y adapter deben usar SOLO esta funcion (no competir con flags sueltos).
- */
 function resolveUnifiedAgentPlan(options = {}) {
   const prompt = String(options.prompt || "").trim();
   const steeringInstruction = String(options.steeringInstruction || "").trim();
@@ -1129,11 +1128,6 @@ function filterToolsByPlan(tools = [], plan = {}) {
   return tools.filter((item) => allowed.has(item?.function?.name));
 }
 
-/**
- * refineKernelDecision — fuente única de verdad para overrides de clasificación.
- * El kernel llama a esta función DESPUÉS de classify() en lugar de aplicar
- * heurísticas locales dispersas. Elimina la divergencia CHAT→EXECUTE.
- */
 const DISK_MUTATION_RE = /\b(?:crea(?:r|ción)?|genera(?:r)?|escribe|modifica(?:r)?|refactoriza(?:r)?|actualiza(?:r)?|añade|agrega(?:r)?|cambia(?:r)?|muev\w*|copiar?|haz|hacer|arma|armá|scaffold|nuevo\s+proyecto|ejecuta(?:r)?|run_command|run|build|tsc|npx|npm|corrije|corrige|arregla|implementa(?:r)?|aplica|repara|soluciona)\b/i;
 const ANALYSIS_RE = /(?:^|[^\w])(?:analiz[aáá]|analizar|diagnostica|revis[aá]|inspecciona|explora(?:r)?\s+el\s+proyecto)(?=\s|$|[.!,?¿¡:])/i;
 const EXPLORER_RE = /\b(?:explora|explorer|directorio|listar|estructura|archivos)\b/i;
