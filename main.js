@@ -9848,3 +9848,214 @@ ipcMain.handle("evolution:open-dashboard", async () => {
   }
 });
 
+// Database Manager handlers
+ipcMain.handle("db:get-status", async () => {
+  try {
+    const { DbManager } = require("./runtime/db-manager");
+    return new DbManager().getStatus();
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
+});
+
+ipcMain.handle("db:list-databases", async () => {
+  try {
+    const { DbManager } = require("./runtime/db-manager");
+    return new DbManager().listLocalDatabases();
+  } catch (error) {
+    return [];
+  }
+});
+
+ipcMain.handle("db:query", async (_event, database, sql) => {
+  try {
+    const { DbManager } = require("./runtime/db-manager");
+    return await new DbManager().querySqlite(database, sql);
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
+});
+
+ipcMain.handle("db:get-schema", async (_event, database) => {
+  try {
+    const { DbManager } = require("./runtime/db-manager");
+    return await new DbManager().getSchema(database);
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
+});
+
+ipcMain.handle("db:register-connection", async (_event, connection) => {
+  try {
+    const { DbManager } = require("./runtime/db-manager");
+    return new DbManager().registerConnection(connection);
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
+});
+
+ipcMain.handle("db:remove-connection", async (_event, connectionId) => {
+  try {
+    const { DbManager } = require("./runtime/db-manager");
+    return new DbManager().removeConnection(connectionId);
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
+});
+
+// n8n Manager handlers
+ipcMain.handle("n8n:generate", async (_event, payload) => {
+  try {
+    const { N8nManager } = require("./runtime/n8n-manager");
+    const manager = new N8nManager(payload?.options || {});
+    return manager.generateProject(payload?.config || {});
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
+});
+
+ipcMain.handle("n8n:start", async (_event, options) => {
+  try {
+    const { N8nManager } = require("./runtime/n8n-manager");
+    return await new N8nManager(options || {}).start();
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
+});
+
+ipcMain.handle("n8n:stop", async (_event, options) => {
+  try {
+    const { N8nManager } = require("./runtime/n8n-manager");
+    return await new N8nManager(options || {}).stop();
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
+});
+
+ipcMain.handle("n8n:status", async (_event, options) => {
+  try {
+    const { N8nManager } = require("./runtime/n8n-manager");
+    return await new N8nManager(options || {}).status();
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
+});
+
+ipcMain.handle("n8n:logs", async (_event, payload) => {
+  try {
+    const { N8nManager } = require("./runtime/n8n-manager");
+    return await new N8nManager(payload?.options || {}).logs(payload?.service, payload?.tail);
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
+});
+
+ipcMain.handle("n8n:verify", async (_event, options) => {
+  try {
+    const { N8nManager } = require("./runtime/n8n-manager");
+    return await new N8nManager(options || {}).verify();
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
+});
+
+// MCP handlers
+const activeMcpClients = new Map();
+ipcMain.handle("mcp:connect", async (_event, config) => {
+  try {
+    const { McpClient } = require("./runtime/mcp-client");
+    const client = new McpClient(config);
+    await client.connect();
+    const id = config.id || String(Date.now());
+    activeMcpClients.set(id, client);
+    return { ok: true, id };
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
+});
+
+ipcMain.handle("mcp:list-tools", async (_event, id) => {
+  try {
+    const client = activeMcpClients.get(id);
+    if (!client) throw new Error("MCP client no encontrado");
+    return await client.listTools();
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
+});
+
+ipcMain.handle("mcp:call-tool", async (_event, payload) => {
+  try {
+    const client = activeMcpClients.get(payload?.id);
+    if (!client) throw new Error("MCP client no encontrado");
+    return await client.callTool(payload?.name, payload?.args);
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
+});
+
+ipcMain.handle("mcp:disconnect", async (_event, id) => {
+  try {
+    const client = activeMcpClients.get(id);
+    if (client) {
+      await client.disconnect();
+      activeMcpClients.delete(id);
+    }
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
+});
+
+// AST Refactorer Bridge
+try {
+  const { AstIpcBridge } = require("./runtime/ast-ipc-bridge");
+  new AstIpcBridge().register(ipcMain);
+} catch {
+  // ignore
+}
+
+// Telemetry handlers
+let globalTelemetryMonitor = null;
+ipcMain.handle("telemetry:get-metrics", async () => {
+  try {
+    const { TelemetryMonitor } = require("./runtime/telemetry-monitor");
+    if (!globalTelemetryMonitor) {
+      globalTelemetryMonitor = new TelemetryMonitor();
+      globalTelemetryMonitor.start();
+    }
+    return globalTelemetryMonitor.getMetrics();
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
+});
+
+// Debugger handlers
+const activeDebugSessions = new Map();
+ipcMain.handle("debug:start-session", async (_event, options) => {
+  try {
+    const { DebugSession } = require("./runtime/debug-session");
+    const session = new DebugSession(options || {});
+    await session.start();
+    const id = session.id || String(Date.now());
+    activeDebugSessions.set(id, session);
+    return { ok: true, id };
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
+});
+
+ipcMain.handle("debug:stop-session", async (_event, id) => {
+  try {
+    const session = activeDebugSessions.get(id);
+    if (session) {
+      await session.stop();
+      activeDebugSessions.delete(id);
+    }
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
+});
+
+

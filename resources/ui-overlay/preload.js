@@ -545,4 +545,50 @@ contextBridge.exposeInMainWorld("editcoreWindowsStt", {
   },
 });
 
+contextBridge.exposeInMainWorld("editcoreDb", {
+  getStatus: () => ipcRenderer.invoke("db:get-status"),
+  listDatabases: () => ipcRenderer.invoke("db:list-databases"),
+  query: (database, sql) => ipcRenderer.invoke("db:query", database, sql),
+  getSchema: (database) => ipcRenderer.invoke("db:get-schema", database),
+  registerConnection: (conn) => ipcRenderer.invoke("db:register-connection", conn),
+  removeConnection: (id) => ipcRenderer.invoke("db:remove-connection", id),
+});
+
+contextBridge.exposeInMainWorld("editcoreN8n", {
+  generate: (payload) => ipcRenderer.invoke("n8n:generate", payload),
+  start: (options) => ipcRenderer.invoke("n8n:start", options),
+  stop: (options) => ipcRenderer.invoke("n8n:stop", options),
+  status: (options) => ipcRenderer.invoke("n8n:status", options),
+  logs: (payload) => ipcRenderer.invoke("n8n:logs", payload),
+  verify: (options) => ipcRenderer.invoke("n8n:verify", options),
+});
+
+contextBridge.exposeInMainWorld("editcoreMcp", {
+  connect: (config) => ipcRenderer.invoke("mcp:connect", config),
+  listTools: (id) => ipcRenderer.invoke("mcp:list-tools", id),
+  callTool: (id, name, args) => ipcRenderer.invoke("mcp:call-tool", { id, name, args }),
+  disconnect: (id) => ipcRenderer.invoke("mcp:disconnect", id),
+});
+
+contextBridge.exposeInMainWorld("editcoreAst", {
+  parse: (filePath) => ipcRenderer.invoke("ast:parse", filePath),
+  analyze: (filePath) => ipcRenderer.invoke("ast:analyze", filePath),
+  renameSymbol: (payload) => ipcRenderer.invoke("ast:renameSymbol", payload),
+  extractFunction: (payload) => ipcRenderer.invoke("ast:extractFunction", payload),
+  restructureClass: (payload) => ipcRenderer.invoke("ast:restructureClass", payload),
+  provideCodeActions: (payload) => ipcRenderer.invoke("ast:provideCodeActions", payload),
+  executeCodeAction: (payload) => ipcRenderer.invoke("ast:executeCodeAction", payload),
+  listActions: () => ipcRenderer.invoke("ast:listActions"),
+});
+
+contextBridge.exposeInMainWorld("editcoreTelemetry", {
+  getMetrics: () => ipcRenderer.invoke("telemetry:get-metrics"),
+});
+
+contextBridge.exposeInMainWorld("editcoreDebugger", {
+  startSession: (options) => ipcRenderer.invoke("debug:start-session", options),
+  stopSession: (id) => ipcRenderer.invoke("debug:stop-session", id),
+});
+
+
 
