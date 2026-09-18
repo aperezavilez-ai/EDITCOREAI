@@ -388,7 +388,7 @@ async function runEditcoreE2ePipeline(projectRoot = "", options = {}) {
   {
     try {
       const { ToolDispatcher, TOOL_ALIASES } = require("./tool-dispatcher");
-      const { registerAgentCapabilityTools } = require("./register-agent-capability-tools");
+      const { registerAgentCapabilityTools } = require(path.join(__dirname, "register-agent-capability-tools"));
       const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "editcore-e2e-tools-"));
       fs.writeFileSync(path.join(tmp, "package.json"), JSON.stringify({ name: "e2e" }), "utf8");
       const d = new ToolDispatcher({ authorize: async () => true });

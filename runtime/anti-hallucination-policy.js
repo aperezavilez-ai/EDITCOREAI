@@ -71,10 +71,7 @@
    */
   function withImmutableAgentPolicies(systemPrompt = "") {
     const root = typeof window !== "undefined" ? window : globalThis;
-    let Elite = root?.EditCoreEliteCommunication || null;
-    if (!Elite && typeof require !== "undefined") {
-      try { Elite = require("./elite-communication-policy"); } catch { Elite = null; }
-    }
+    const Elite = root?.EditCoreEliteCommunication || null;
     if (Elite?.withEliteCommunicationPolicy) {
       return Elite.withEliteCommunicationPolicy(String(systemPrompt || ""));
     }
