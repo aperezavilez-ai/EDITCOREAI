@@ -1183,8 +1183,23 @@ body[data-app-mode="chat"] #chatHomeFeedHost .msg-body {
   font-weight: 600;
 }
 
-#openChatHomeBtn { display: none; }
-body[data-app-mode="ide"] #openChatHomeBtn { display: inline-flex; }
+#openChatHomeBtn {
+  display: none;
+}
+body[data-app-mode="ide"] #openChatHomeBtn {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  height: 28px !important;
+  line-height: 1 !important;
+  padding: 0 8px !important;
+  margin: 0 !important;
+  font-size: 12px !important;
+  font-weight: 500 !important;
+  letter-spacing: 0 !important;
+  box-sizing: border-box !important;
+  vertical-align: middle !important;
+}
 
 /* Model picker / voz por encima del shell */
 body[data-app-mode="chat"] #modelPickerMenu {

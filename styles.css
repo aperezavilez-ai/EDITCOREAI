@@ -250,6 +250,11 @@ body.welcome-open {
 }
 .app-toolbar button {
   height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  margin: 0;
   border: 0 !important;
   border-radius: 0 !important;
   background: transparent !important;
@@ -258,9 +263,11 @@ body.welcome-open {
   font-size: 12px;
   font-weight: 500;
   letter-spacing: 0;
+  line-height: 1;
   white-space: nowrap;
   cursor: pointer;
   box-shadow: none !important;
+  vertical-align: middle;
   transition: color 100ms ease, background 100ms ease;
 }
 .app-toolbar button:hover {

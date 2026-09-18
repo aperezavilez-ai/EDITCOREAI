@@ -18,6 +18,15 @@ contextBridge.exposeInMainWorld("editcoreChat", {
   cancel: () => ipcRenderer.invoke("editcore:cancel"),
 });
 
+contextBridge.exposeInMainWorld("editcoreWindowsStt", {
+  windowsSttStart: (input = {}) => ipcRenderer.invoke("agent:windows-stt-start", input),
+  onWindowsSttText: (callback) => {
+    const subscription = (_event, text) => callback(text);
+    ipcRenderer.on("editcore:windows-stt-text", subscription);
+    return () => ipcRenderer.removeListener("editcore:windows-stt-text", subscription);
+  },
+});
+
 contextBridge.exposeInMainWorld("editcoreProject", {
   pick: () => ipcRenderer.invoke("project:pick"),
   pickParent: () => ipcRenderer.invoke("project:pick-parent"),
@@ -477,4 +486,5 @@ contextBridge.exposeInMainWorld("electronAPI", {
   runEvolutionCycle: () => ipcRenderer.invoke("evolution:run-cycle"),
   openDashboard: () => ipcRenderer.invoke("evolution:open-dashboard"),
 });
+
 
