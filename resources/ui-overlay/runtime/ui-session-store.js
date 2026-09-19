@@ -68,7 +68,8 @@ function compactProject(project = {}) {
     activeChatId: project.activeChatId || compactChats[0]?.id || "",
     chats: compactChats,
     messages,
-    analysisMemory: project.analysisMemory || null,
+    analysisMemory: project.analysisMemory || project.lastAnalysis || null,
+    lastAnalysis: project.lastAnalysis || project.analysisMemory || null,
     agentWorkflow: project.agentWorkflow
       ? {
         taskId: project.agentWorkflow.taskId || "",

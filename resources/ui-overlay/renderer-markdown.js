@@ -114,8 +114,10 @@
     // 1) Extraer bloques de codigo e inline code ANTES de cualquier transformacion
     const protectedChunks = [];
     const protect = (chunk) => `GAFCHUNK${protectedChunks.push(chunk) - 1}GAFCHUNK`;
-    html = html.replace(/```([a-z]*)\n?([\s\S]*?)```/g, (_, lang, code) => {
-      return protect(`<pre><code class="language-${escapeHtml(lang)}">${code.replace(/\s+$/, '')}</code></pre>`);
+    html = html.replace(/```([a-zA-Z0-9_\-\+\#]*)\n?([\s\S]*?)```/g, (_, lang, code) => {
+      const cleanLang = (lang || '').trim();
+      const langClass = cleanLang ? ` class="language-${escapeHtml(cleanLang)}"` : '';
+      return protect(`<pre><code${langClass}>${code.replace(/\s+$/, '')}</code></pre>`);
     });
     html = html.replace(/`([^`\n]+)`/g, (_, code) => protect(`<code>${code}</code>`));
 
@@ -181,7 +183,7 @@
         out.push(line);
         continue;
       }
-      const bullet = line.match(/^[*-]\s+(.+)$/);
+      const bullet = line.match(/^[*\-+]\s+(.+)$/);
       if (bullet) {
         flushParagraph(); openList('ul');
         out.push(`<li>${bullet[1]}</li>`);
@@ -214,6 +216,9 @@
 
   // Parse HTML string and sanitize tags/attributes
   function sanitizeHtml(htmlString) {
+    if (typeof DOMParser === 'undefined') {
+      return htmlString;
+    }
     const parser = new DOMParser();
     const doc = parser.parseFromString(htmlString, 'text/html');
 
@@ -284,7 +289,14 @@
     return sanitized;
   }
 
-  // Export to global window object
-  window.renderMarkdownSecure = renderMarkdownSecure;
+  // Export to global window object and CommonJS
+  if (typeof window !== 'undefined') {
+    window.renderMarkdownSecure = renderMarkdownSecure;
+    window.parseMarkdown = parseMarkdown;
+  }
+  if (typeof module !== 'undefined' && module.exports) {
+    module.exports = { renderMarkdownSecure, parseMarkdown, sanitizeHtml };
+  }
 
 })();
+

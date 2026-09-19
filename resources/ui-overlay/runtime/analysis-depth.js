@@ -1,7 +1,7 @@
 "use strict";
 
 /**
- * Profundidad de analisis/accion EditCore.
+ * Profundidad de analisis/accion EDITCOREAI.
  * El pedido del usuario decide umbral de evidencia, iteraciones y tono del reporte.
  */
 
@@ -110,7 +110,7 @@ function buildDepthProfile(depth) {
       requireLineEvidence: true,
       requireRootCause: false,
       folderByFolder: true,
-      orchestrationHint: "Analisis PROFUNDO: carpeta por carpeta (src/api/app/android/ios). Archivo por archivo en codigo critico. Hallazgos desde codigo; EditCore actualiza ROADMAP.md como indice.",
+      orchestrationHint: "Analisis PROFUNDO: carpeta por carpeta (src/api/app/android/ios). Archivo por archivo en codigo critico. Hallazgos desde codigo; EDITCOREAI actualiza ROADMAP.md como indice.",
     },
     [DEPTHS.SURGICAL]: {
       minimumEvidence: 10,
@@ -191,6 +191,18 @@ function buildDepthReportGuide(depthProfile = {}) {
       "## Evidencia",
       "## Cómo lo corregiré",
     ];
+  const nextOptionsCloser = depthProfile.skipAuthCloser === true
+    || depthProfile.fullAccess === true
+    || depthProfile.nextOptionsCloser === true;
+  const closer = nextOptionsCloser
+    ? [
+      "CIERRE (Acceso completo / sin puerta PROCEDE):",
+      "1) Resume hallazgos en 3-6 lineas claras.",
+      "2) Aplica YA las correcciones comprobables con write_file/replace_in_file (Acceso completo ya autoriza).",
+      "3) Si no hay correcciones comprobables, dilo y cierra.",
+      "PROHIBIDO: 'Cuando autorices procedo', 'Escribe procede', '¿Procedo?', 'elige una opcion'.",
+    ].join("\n")
+    : "Si HAY correcciones comprobables: ultima linea exacta `Cuando autorices procedo con las correcciones.` Si NO hay: `Sin correcciones comprobables pendientes. No se solicita PROCEDE.`";
   return [
     `PROFUNDIDAD DETECTADA: ${label} (${depthProfile.depth || "standard"}).`,
     depthProfile.orchestrationHint || "",
@@ -201,7 +213,7 @@ function buildDepthReportGuide(depthProfile = {}) {
     "4) Hallazgos SOLO desde codigo fuente del producto, 100% comprobable con read_file/list_files/search_files.",
     "4b) PROHIBIDO inventar bugs. PROHIBIDO proponer correcciones sobre workbox/sw.minificado/vendor/bundles generados.",
     "4c) Si no hay defecto comprobable: dilo claro y NO pidas PROCEDE inventado.",
-    "5) ROADMAP.md: EditCore lo actualiza solo (indice compacto / tokens). TU no lo reescribas con write_file en analisis.",
+    "5) ROADMAP.md: EDITCOREAI lo actualiza solo (indice compacto / tokens). TU no lo reescribas con write_file en analisis.",
     "6) Orden: list raiz → package.json → carpeta clave → archivo critico → siguiente.",
     depthProfile.folderByFolder
       ? "7) Cobertura minima antes del reporte FINAL."
@@ -210,9 +222,7 @@ function buildDepthReportGuide(depthProfile = {}) {
     ...sections.map((s) => `- ${s}`),
     "- En \"Qué falta para que funcione\": SOLO gaps leidos del disco (package.json, .env.example). Sin inventar Docker/workers si no hay evidencia.",
     "- Tras las secciones: recomienda SOLO correcciones con path+evidencia real; si no hay, no inventes.",
-    depthProfile.skipAuthCloser === true
-      ? "No pidas PROCEDE si el usuario indico que no lo haga; cierra con la recomendacion concreta."
-      : "Si HAY correcciones comprobables: ultima linea exacta `Cuando autorices procedo con las correcciones.` Si NO hay: `Sin correcciones comprobables pendientes. No se solicita PROCEDE.`",
+    closer,
   ].filter(Boolean).join("\n");
 }
 

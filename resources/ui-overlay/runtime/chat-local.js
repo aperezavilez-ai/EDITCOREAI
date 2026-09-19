@@ -1,24 +1,50 @@
 "use strict";
 
+/**
+ * Respuestas locales cortas (sin proveedor).
+ * Solo saludos / confirmaciones triviales. Cualquier intención de trabajo → "".
+ */
+
+function text(value) {
+  return String(value || "").trim();
+}
+
+function isCasualPrompt(value) {
+  const prompt = text(value);
+  if (!prompt || prompt.length > 80) return false;
+  if (/[\\/]|\b(?:analiza|audita|corrige|crea|implementa|list_|read_|proyecto|archivo|reporte|commit|deploy)\b/i.test(prompt)) {
+    return false;
+  }
+  return /^(?:hola|hi|hello|hey|buenas|buen(?:os|as)\s+(?:d[ií]as|tardes|noches)|gracias(?:\s+mucho)?|ok|vale|perfecto|entendido|de\s+acuerdo|c[oó]mo\s+est[aá]s|qui[eé]n\s+eres)[.!?¿¡\s]*$/i.test(prompt);
+}
+
 function localConversationResponse(value) {
-  const prompt = String(value || "").trim();
-  if (/^(hola|hi|hello|hey|buenas|buenos dias|buenas tardes|buenas noches)[.!? ]*$/i.test(prompt)) {
-    return "¡Hola! ¿En qué te ayudo?";
+  const prompt = text(value);
+  if (!prompt) return "";
+  // Tests / brainstorm: comentarios de intención NO se responden localmente.
+  if (/vamos\s+a\s+crear|quiero\s+crear|nuevo\s+proyecto/i.test(prompt)) return "";
+  if (!isCasualPrompt(prompt)) return "";
+
+  const lower = prompt.toLowerCase();
+  if (/^(?:hola|hi|hello|hey|buenas|buen)/i.test(lower)) {
+    return "Hola. ¿En qué te ayudo?";
   }
-  if (/^(gracias|muchas gracias)[.!? ]*$/i.test(prompt)) return "De nada.";
-  if (/^(qu[eé] pas[oó](?:.*no contestas)?|por ?qu[eé] no contestas|sigues ah[ií])[.!? ]*$/i.test(prompt)) {
-    return "Aquí estoy. Si la respuesta anterior terminó por timeout, no se ejecutó ninguna acción ni se sustituyó por un resultado inventado.";
+  if (/gracias/i.test(lower)) {
+    return "De nada.";
   }
-  if (/^(ya est[aá]s (?:operativo|operativamente funcional)|est[aá]s (?:operativo|funcionando))[.!? ]*$/i.test(prompt)) {
-    return "El chat está respondiendo. La operación completa del agente se confirma por separado con herramientas reales.";
+  if (/c[oó]mo\s+est[aá]s/i.test(lower)) {
+    return "Bien, listo para trabajar en tu proyecto.";
+  }
+  if (/qui[eé]n\s+eres/i.test(lower)) {
+    return "Soy el asistente de este IDE. Puedo analizar código, corregir y crear con tus proveedores.";
+  }
+  if (/^(?:ok|vale|perfecto|entendido|de\s+acuerdo)\b/i.test(lower)) {
+    return "Perfecto.";
   }
   return "";
 }
-function isCasualPrompt(value) {
-  return Boolean(localConversationResponse(value));
-}
 
 module.exports = {
-  localConversationResponse,
   isCasualPrompt,
+  localConversationResponse,
 };

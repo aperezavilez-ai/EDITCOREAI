@@ -1,4 +1,56 @@
 const { app, BrowserWindow, ipcMain, dialog, Menu, shell, safeStorage, session, clipboard, nativeImage, nativeTheme } = require("electron");
+
+// ============================================================================
+// BLINDAJE DE ARRANQUE: SAFE IPC WRAPPER & BOOT GUARD
+// ============================================================================
+if (ipcMain && typeof ipcMain.handle === "function") {
+  const _origIpcHandle = ipcMain.handle.bind(ipcMain);
+  ipcMain.handle = function safeIpcHandle(channel, handler) {
+    try {
+      ipcMain.removeHandler(channel);
+    } catch {}
+    try {
+      return _origIpcHandle(channel, handler);
+    } catch (err) {
+      console.warn(`[SafeIPC] Error al registrar canal ${channel}:`, err.message);
+    }
+  };
+}
+
+let __editcoreBooting = true;
+let __editcoreBootErrorHandled = false;
+
+process.on("uncaughtException", (error) => {
+  console.error("[CRITICAL BOOT GUARD] Uncaught Exception:", error);
+  if (__editcoreBooting && !__editcoreBootErrorHandled) {
+    __editcoreBootErrorHandled = true;
+    try {
+      const errText = error?.stack || error?.message || String(error);
+      const { runRecovery } = require("./scripts/failsafe-recovery");
+      const choice = dialog.showMessageBoxSync({
+        type: "error",
+        title: "EditCoreAI - Auto-Recuperación de Arranque",
+        message: "EditCoreAI detectó un error crítico durante el inicio:\n\n" + errText.slice(0, 400) + "\n\n¿Deseas auto-restaurar inmediatamente el último estado funcional verificado?",
+        buttons: ["Restaurar y Reabrir", "Cerrar"],
+        defaultId: 0,
+        cancelId: 1,
+      });
+      if (choice === 0) {
+        runRecovery();
+        app.relaunch();
+        app.exit(0);
+        return;
+      }
+    } catch (recoveryErr) {
+      console.error("[CRITICAL BOOT GUARD] Fallback recovery error:", recoveryErr);
+    }
+  }
+});
+
+process.on("unhandledRejection", (reason) => {
+  console.warn("[CRITICAL BOOT GUARD] Unhandled Promise Rejection:", reason);
+});
+
 // No forzar --disable-gpu: genera ruido ContextResult::kFatalFailure y degrada estabilidad.
 try {
   app.setName("EditCoreAI");
@@ -152,6 +204,9 @@ const {
 } = require("./runtime/maintenance-scheduler");
 const { createSupabaseProject } = require("./runtime/supabase-provision");
 const { checkForUpdates } = require("./runtime/update-check");
+const { authManager } = require("./runtime/auth-manager");
+const { createSnapshot, rollbackLastChange, listSnapshots } = require("./editcore-chat-kernel/snapshot");
+const { syncMirrors } = require("./scripts/failsafe-recovery");
 const { Phase1Audit } = require("./runtime/phase1-audit");
 const { ContextEngine, evidenceLedger } = require("./runtime/context-engine");
 const { TokenLedger } = require("./runtime/token-ledger");
@@ -1200,7 +1255,15 @@ function loadUiIntoWindow(win, hash = "") {
       return win.loadFile(filePath, opts);
     });
   };
-  return loadOne(indexHtml).catch((error) => {
+  return loadOne(indexHtml).then((res) => {
+    setTimeout(() => {
+      __editcoreBooting = false;
+      try {
+        createSnapshot(__dirname, ["main.js", "preload.js", "chat-home.js", "renderer.js", "index.html"], "Last-Known-Good Verified Boot");
+      } catch {}
+    }, 3000);
+    return res;
+  }).catch((error) => {
     logStartup("No se pudo cargar index.html.", error);
     const fallbacks = [
       path.join(__dirname, "index.html"),
@@ -1328,7 +1391,7 @@ function createWindow(options = {}) {
       minWidth: 880,
       minHeight: 620,
       title: "EditCore",
-      backgroundColor: "#1e1e1e",
+      backgroundColor: "#ffffff",
       // true: ventana visible de inmediato (welcome / shell, no pantalla en blanco).
       show: true,
       center: true,
@@ -1336,8 +1399,8 @@ function createWindow(options = {}) {
       // Una sola barra: sin title bar nativa duplicada (marca solo en status bar).
       titleBarStyle: "hidden",
       titleBarOverlay: {
-        color: "#181818",
-        symbolColor: "#cccccc",
+        color: "#ffffff",
+        symbolColor: "#1f1f1f",
         height: 36,
       },
       webPreferences: prefs,
@@ -4991,6 +5054,39 @@ ipcMain.handle("permissions:set", async (event, mode) => {
   return next;
 });
 
+ipcMain.handle("auth:get-session", async () => {
+  return authManager.getCurrentSession();
+});
+
+ipcMain.handle("auth:login", async (_event, payload = {}) => {
+  try {
+    return authManager.login(payload);
+  } catch (error) {
+    return { success: false, error: error?.message || String(error) };
+  }
+});
+
+ipcMain.handle("auth:register", async (_event, payload = {}) => {
+  try {
+    return authManager.register(payload);
+  } catch (error) {
+    return { success: false, error: error?.message || String(error) };
+  }
+});
+
+ipcMain.handle("auth:logout", async () => {
+  return authManager.logout();
+});
+
+ipcMain.handle("auth:update-profile", async (_event, payload = {}) => {
+  try {
+    return authManager.updateProfile(payload);
+  } catch (error) {
+    return { success: false, error: error?.message || String(error) };
+  }
+});
+
+
 ipcMain.handle("window:status", () => windowStatus());
 ipcMain.handle("window:new", () => {
   if (!canOpenWindow(windows.size)) {
@@ -5947,9 +6043,66 @@ ipcMain.handle("app:check-updates", async () => {
     packageJson = require("./package.json");
   } catch {}
   return checkForUpdates({
-    currentVersion: RUNTIME_VERSION || packageJson.version || "2.7.0",
+    currentVersion: RUNTIME_VERSION || packageJson.version || "4.0.0",
     packageJson,
   });
+});
+
+ipcMain.handle("app:apply-update", async (_event, downloadUrl) => {
+  try {
+    if (downloadUrl) {
+      await shell.openExternal(downloadUrl);
+      return { success: true, opened: true };
+    }
+    let pkg = {};
+    try { pkg = require("./package.json"); } catch {}
+    const check = await checkForUpdates({
+      currentVersion: RUNTIME_VERSION || pkg.version || "4.0.0",
+      packageJson: pkg,
+      env: process.env,
+    });
+    if (check.downloadUrl || check.htmlUrl) {
+      await shell.openExternal(check.downloadUrl || check.htmlUrl);
+      return { success: true, opened: true };
+    }
+    return { success: false, message: "No hay URL de descarga disponible." };
+  } catch (error) {
+    return { success: false, error: error?.message || String(error) };
+  }
+});
+
+ipcMain.handle("recovery:create-checkpoint", async (_event, input = {}) => {
+  try {
+    const root = String(input?.projectRoot || globalActiveWorkspacePath || app.getAppPath()).trim();
+    const files = Array.isArray(input?.files) ? input.files : ["main.js", "preload.js", "index.html", "chat-home.js", "renderer.js"];
+    const reason = String(input?.reason || "Punto de restauración manual").trim();
+    const snap = createSnapshot(root, files, reason);
+    return { success: true, snapshot: snap };
+  } catch (error) {
+    return { success: false, error: error?.message || String(error) };
+  }
+});
+
+ipcMain.handle("recovery:rollback-latest", async (_event, input = {}) => {
+  try {
+    const root = String(input?.projectRoot || globalActiveWorkspacePath || app.getAppPath()).trim();
+    const res = rollbackLastChange(root, input?.snapshotId || null);
+    if (res.ok) {
+      try { syncMirrors(); } catch {}
+    }
+    return { success: res.ok, result: res };
+  } catch (error) {
+    return { success: false, error: error?.message || String(error) };
+  }
+});
+
+ipcMain.handle("recovery:list-checkpoints", async (_event, input = {}) => {
+  try {
+    const root = String(input?.projectRoot || globalActiveWorkspacePath || app.getAppPath()).trim();
+    return listSnapshots(root, 20);
+  } catch (error) {
+    return { ok: false, error: error?.message || String(error), snapshots: [] };
+  }
 });
 
 ipcMain.handle("app:open-external", async (_event, url = "") => {
@@ -5961,10 +6114,10 @@ ipcMain.handle("app:open-external", async (_event, url = "") => {
 
 ipcMain.handle("app:version", () => {
   try {
-    const pkgVer = app.getVersion() || require("./package.json").version || "3.0.7";
+    const pkgVer = app.getVersion() || require("./package.json").version || "4.0.0";
     return pkgVer.startsWith("v") ? pkgVer : `v${pkgVer}`;
   } catch {
-    return "v3.0.7";
+    return "v4.0.0";
   }
 });
 
@@ -10513,6 +10666,33 @@ ipcMain.handle("credits:update-profile", async (_event, userId, data) => {
   }
 });
 
+ipcMain.handle("credits:get-packs", async () => {
+  try {
+    const { creditLedger } = require("./runtime/credit-ledger");
+    return creditLedger.getPacks();
+  } catch (error) {
+    return [];
+  }
+});
+
+ipcMain.handle("credits:create-order", async (_event, userId, packCredits, gateway) => {
+  try {
+    const { creditLedger } = require("./runtime/credit-ledger");
+    return creditLedger.createPaymentOrder(userId, packCredits, gateway);
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
+});
+
+ipcMain.handle("credits:calculate-usage", async (_event, model, inputTokens, outputTokens) => {
+  try {
+    const { creditLedger } = require("./runtime/credit-ledger");
+    return creditLedger.calculateUsageCredits(model, inputTokens, outputTokens);
+  } catch (error) {
+    return { credits: 1 };
+  }
+});
+
 ipcMain.handle("credits:list-users", async () => {
   try {
     const { creditLedger } = require("./runtime/credit-ledger");
@@ -10722,7 +10902,1271 @@ ipcMain.handle("ghost-completion:cache", async (_event, prefix, completion, ttlM
   }
 });
 
+// Ciclo 29+: Smart Router, Async Agent Runner, Marketplace & Zero-Config LSP Bundler
+ipcMain.handle("smart-router:resolve-candidate", async (_event, taskType, options) => {
+  try {
+    const { smartRouter } = require("./runtime/smart-router");
+    return smartRouter.resolveCandidate(taskType, options);
+  } catch (error) {
+    return { error: error.message };
+  }
+});
 
+ipcMain.handle("smart-router:record-execution", async (_event, provider, data) => {
+  try {
+    const { smartRouter } = require("./runtime/smart-router");
+    return smartRouter.recordExecution(provider, data);
+  } catch (error) {
+    return { error: error.message };
+  }
+});
+
+ipcMain.handle("smart-router:get-stats", async () => {
+  try {
+    const { smartRouter } = require("./runtime/smart-router");
+    return smartRouter.getStats();
+  } catch (error) {
+    return { error: error.message };
+  }
+});
+
+ipcMain.handle("smart-router:get-fallback", async (_event, failedProvider, taskType) => {
+  try {
+    const { smartRouter } = require("./runtime/smart-router");
+    return smartRouter.getFallbackFor(failedProvider, taskType);
+  } catch (error) {
+    return { error: error.message };
+  }
+});
+
+ipcMain.handle("async-agent:enqueue", async (_event, taskConfig) => {
+  try {
+    const { asyncAgentRunner } = require("./runtime/async-agent-runner");
+    return asyncAgentRunner.enqueueTask(taskConfig);
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
+});
+
+ipcMain.handle("async-agent:cancel", async (_event, taskId) => {
+  try {
+    const { asyncAgentRunner } = require("./runtime/async-agent-runner");
+    return asyncAgentRunner.cancelTask(taskId);
+  } catch (error) {
+    return false;
+  }
+});
+
+ipcMain.handle("async-agent:get-task", async (_event, taskId) => {
+  try {
+    const { asyncAgentRunner } = require("./runtime/async-agent-runner");
+    return asyncAgentRunner.getTask(taskId);
+  } catch (error) {
+    return null;
+  }
+});
+
+ipcMain.handle("async-agent:list-tasks", async (_event, projectRoot) => {
+  try {
+    const { asyncAgentRunner } = require("./runtime/async-agent-runner");
+    return asyncAgentRunner.listTasks(projectRoot);
+  } catch (error) {
+    return [];
+  }
+});
+
+ipcMain.handle("marketplace:get-catalog", async (_event, category) => {
+  try {
+    const { marketplaceManager } = require("./runtime/marketplace-manager");
+    return marketplaceManager.getCatalog(category);
+  } catch (error) {
+    return [];
+  }
+});
+
+ipcMain.handle("marketplace:list-installed", async () => {
+  try {
+    const { marketplaceManager } = require("./runtime/marketplace-manager");
+    return marketplaceManager.listInstalled();
+  } catch (error) {
+    return [];
+  }
+});
+
+ipcMain.handle("marketplace:install", async (_event, extensionIdOrPath) => {
+  try {
+    const { marketplaceManager } = require("./runtime/marketplace-manager");
+    return marketplaceManager.install(extensionIdOrPath);
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle("marketplace:uninstall", async (_event, extensionId) => {
+  try {
+    const { marketplaceManager } = require("./runtime/marketplace-manager");
+    return marketplaceManager.uninstall(extensionId);
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle("marketplace:toggle", async (_event, extensionId, enabled) => {
+  try {
+    const { marketplaceManager } = require("./runtime/marketplace-manager");
+    return marketplaceManager.toggleExtension(extensionId, enabled);
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle("lsp-bundler:supported-languages", async () => {
+  try {
+    const { lspBundler } = require("./runtime/lsp-bundler");
+    return lspBundler.getSupportedLanguages();
+  } catch (error) {
+    return {};
+  }
+});
+
+ipcMain.handle("lsp-bundler:get-server", async (_event, projectRoot, languageId) => {
+  try {
+    const { lspBundler } = require("./runtime/lsp-bundler");
+    return lspBundler.getOrCreateServer(projectRoot, languageId);
+  } catch (error) {
+    return { error: error.message };
+  }
+});
+
+ipcMain.handle("lsp-bundler:analyze-document", async (_event, filePath, content) => {
+  try {
+    const { lspBundler } = require("./runtime/lsp-bundler");
+    return lspBundler.analyzeDocument(filePath, content);
+  } catch (error) {
+    return [];
+  }
+});
+
+ipcMain.handle("lsp-bundler:get-completions", async (_event, filePath, line, column, prefix) => {
+  try {
+    const { lspBundler } = require("./runtime/lsp-bundler");
+    return lspBundler.getCompletions(filePath, line, column, prefix);
+  } catch (error) {
+    return [];
+  }
+});
+
+ipcMain.handle("lsp-bundler:get-hover", async (_event, filePath, symbol) => {
+  try {
+    const { lspBundler } = require("./runtime/lsp-bundler");
+    return lspBundler.getHover(filePath, symbol);
+  } catch (error) {
+    return null;
+  }
+});
+
+// ==========================================
+// CICLO 30: AGENTES PARALELOS, REGLAS Y HOOKS
+// ==========================================
+
+ipcMain.handle("parallel-agent:spawn", async (_event, spec) => {
+  try {
+    const { parallelAgentRunner } = require("./runtime/parallel-agent-runner");
+    return parallelAgentRunner.spawnAgent(spec);
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
+});
+
+ipcMain.handle("parallel-agent:status", async (_event, agentId) => {
+  try {
+    const { parallelAgentRunner } = require("./runtime/parallel-agent-runner");
+    return parallelAgentRunner.getAgent(agentId);
+  } catch (error) {
+    return null;
+  }
+});
+
+ipcMain.handle("parallel-agent:cancel", async (_event, agentId, reason) => {
+  try {
+    const { parallelAgentRunner } = require("./runtime/parallel-agent-runner");
+    return parallelAgentRunner.cancelAgent(agentId, reason);
+  } catch (error) {
+    return false;
+  }
+});
+
+ipcMain.handle("parallel-agent:list", async (_event, filters) => {
+  try {
+    const { parallelAgentRunner } = require("./runtime/parallel-agent-runner");
+    return parallelAgentRunner.listAgents(filters);
+  } catch (error) {
+    return [];
+  }
+});
+
+ipcMain.handle("parallel-agent:cleanup", async (_event, agentId) => {
+  try {
+    const { parallelAgentRunner } = require("./runtime/parallel-agent-runner");
+    return parallelAgentRunner.cleanupAgent(agentId);
+  } catch (error) {
+    return false;
+  }
+});
+
+ipcMain.handle("rules-engine:load", async (_event, projectRoot) => {
+  try {
+    const { rulesEngine } = require("./runtime/rules-engine");
+    return rulesEngine.loadRules(projectRoot);
+  } catch (error) {
+    return [];
+  }
+});
+
+ipcMain.handle("rules-engine:get-rules-for-file", async (_event, projectRoot, filePath) => {
+  try {
+    const { rulesEngine } = require("./runtime/rules-engine");
+    return rulesEngine.getRulesForFile(projectRoot, filePath);
+  } catch (error) {
+    return [];
+  }
+});
+
+ipcMain.handle("rules-engine:format-prompt", async (_event, rules) => {
+  try {
+    const { rulesEngine } = require("./runtime/rules-engine");
+    return rulesEngine.formatRulesForPrompt(rules);
+  } catch (error) {
+    return "";
+  }
+});
+
+ipcMain.handle("rules-engine:save-rule", async (_event, projectRoot, ruleName, ruleData) => {
+  try {
+    const { rulesEngine } = require("./runtime/rules-engine");
+    return rulesEngine.saveRule(projectRoot, ruleName, ruleData);
+  } catch (error) {
+    return { saved: false, error: error.message };
+  }
+});
+
+ipcMain.handle("editor-hooks:trigger-pre-edit", async (_event, context) => {
+  try {
+    const { editorHooks } = require("./runtime/editor-hooks");
+    return editorHooks.triggerPreEdit(context);
+  } catch (error) {
+    return { allowed: true, context };
+  }
+});
+
+ipcMain.handle("editor-hooks:trigger-post-edit", async (_event, context) => {
+  try {
+    const { editorHooks } = require("./runtime/editor-hooks");
+    await editorHooks.triggerPostEdit(context);
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle("editor-hooks:trigger-pre-commit", async (_event, context) => {
+  try {
+    const { editorHooks } = require("./runtime/editor-hooks");
+    return editorHooks.triggerPreCommit(context);
+  } catch (error) {
+    return { allowed: true, context };
+  }
+});
+
+ipcMain.handle("editor-hooks:get-registered", async () => {
+  try {
+    const { editorHooks } = require("./runtime/editor-hooks");
+    return editorHooks.getRegisteredHooks();
+  } catch (error) {
+    return {};
+  }
+});
+
+// ====================================================
+// CICLO 31: REAL-TIME COLLAB, GIT PR AGENT & TELEMETRY
+// ====================================================
+
+ipcMain.handle("collab:create-session", async (_event, options) => {
+  try {
+    const { collabSync } = require("./runtime/collab-sync");
+    return collabSync.createSession(options);
+  } catch (error) {
+    return { error: error.message };
+  }
+});
+
+ipcMain.handle("collab:join-session", async (_event, sessionId, siteId, peerInfo) => {
+  try {
+    const { collabSync } = require("./runtime/collab-sync");
+    return collabSync.joinSession(sessionId, siteId, peerInfo);
+  } catch (error) {
+    return { error: error.message };
+  }
+});
+
+ipcMain.handle("collab:leave-session", async (_event, sessionId, siteId) => {
+  try {
+    const { collabSync } = require("./runtime/collab-sync");
+    return collabSync.leaveSession(sessionId, siteId);
+  } catch (error) {
+    return false;
+  }
+});
+
+ipcMain.handle("collab:apply-op", async (_event, sessionId, op) => {
+  try {
+    const { collabSync } = require("./runtime/collab-sync");
+    return collabSync.applyOperation(sessionId, op);
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle("collab:get-text", async (_event, sessionId) => {
+  try {
+    const { collabSync } = require("./runtime/collab-sync");
+    return collabSync.getDocumentText(sessionId);
+  } catch (error) {
+    return "";
+  }
+});
+
+ipcMain.handle("collab:get-peers", async (_event, sessionId) => {
+  try {
+    const { collabSync } = require("./runtime/collab-sync");
+    return collabSync.getPeers(sessionId);
+  } catch (error) {
+    return [];
+  }
+});
+
+ipcMain.handle("collab:update-cursor", async (_event, sessionId, siteId, pos) => {
+  try {
+    const { collabSync } = require("./runtime/collab-sync");
+    return collabSync.updateCursor(sessionId, siteId, pos);
+  } catch (error) {
+    return false;
+  }
+});
+
+ipcMain.handle("git-pr:create-branch", async (_event, projectRoot, issueTitle, branchPrefix) => {
+  try {
+    const { gitPrAgent } = require("./runtime/git-pr-agent");
+    return gitPrAgent.createFeatureBranch(projectRoot, issueTitle, branchPrefix);
+  } catch (error) {
+    return { error: error.message };
+  }
+});
+
+ipcMain.handle("git-pr:generate-proposal", async (_event, params) => {
+  try {
+    const { gitPrAgent } = require("./runtime/git-pr-agent");
+    return await gitPrAgent.generatePrProposal(params);
+  } catch (error) {
+    return { error: error.message };
+  }
+});
+
+ipcMain.handle("git-pr:validate-rules", async (_event, params) => {
+  try {
+    const { gitPrAgent } = require("./runtime/git-pr-agent");
+    return await gitPrAgent.validatePrRules(params);
+  } catch (error) {
+    return { valid: false, reason: error.message };
+  }
+});
+
+ipcMain.handle("git-pr:format-markdown", async (_event, proposal) => {
+  try {
+    const { gitPrAgent } = require("./runtime/git-pr-agent");
+    return gitPrAgent.formatPrMarkdown(proposal);
+  } catch (error) {
+    return "";
+  }
+});
+
+ipcMain.handle("telemetry:get-snapshot", async () => {
+  try {
+    const { telemetryMonitor } = require("./runtime/telemetry-monitor");
+    return telemetryMonitor.getSnapshot();
+  } catch (error) {
+    return null;
+  }
+});
+
+ipcMain.handle("telemetry:record-token-usage", async (_event, promptTokens, completionTokens, cost) => {
+  try {
+    const { telemetryMonitor } = require("./runtime/telemetry-monitor");
+    telemetryMonitor.recordTokenUsage(promptTokens, completionTokens, cost);
+    return true;
+  } catch (error) {
+    return false;
+  }
+});
+
+ipcMain.handle("telemetry:record-rag-hit", async (_event, isHit) => {
+  try {
+    const { telemetryMonitor } = require("./runtime/telemetry-monitor");
+    telemetryMonitor.recordRagCacheHit(isHit);
+    return true;
+  } catch (error) {
+    return false;
+  }
+});
+
+ipcMain.handle("telemetry:record-metric", async (_event, category, name, value, meta) => {
+  try {
+    const { telemetryMonitor } = require("./runtime/telemetry-monitor");
+    telemetryMonitor.recordMetric(category, name, value, meta);
+    return true;
+  } catch (error) {
+    return false;
+  }
+});
+
+ipcMain.handle("telemetry:get-history", async (_event, category, limit) => {
+  try {
+    const { telemetryMonitor } = require("./runtime/telemetry-monitor");
+    return telemetryMonitor.getHistory(category, limit);
+  } catch (error) {
+    return [];
+  }
+});
+
+// ====================================================
+// CICLO 32: WORKBENCH VISUAL & TEST-DRIVEN AGENT (TDD)
+// ====================================================
+
+ipcMain.handle("test-generator:analyze", async (_event, filePath, codeContent) => {
+  try {
+    const { testGeneratorAgent } = require("./runtime/test-generator-agent");
+    return testGeneratorAgent.analyzeFileForTests(filePath, codeContent);
+  } catch (error) {
+    return { error: error.message };
+  }
+});
+
+ipcMain.handle("test-generator:generate", async (_event, params) => {
+  try {
+    const { testGeneratorAgent } = require("./runtime/test-generator-agent");
+    return testGeneratorAgent.generateTestSuite(params);
+  } catch (error) {
+    return { error: error.message };
+  }
+});
+
+ipcMain.handle("test-generator:save-and-run", async (_event, params) => {
+  try {
+    const { testGeneratorAgent } = require("./runtime/test-generator-agent");
+    return testGeneratorAgent.saveAndRunTest(params);
+  } catch (error) {
+    return { passed: false, output: error.message };
+  }
+});
+
+ipcMain.handle("test-generator:for-patches", async (_event, patches) => {
+  try {
+    const { testGeneratorAgent } = require("./runtime/test-generator-agent");
+    return testGeneratorAgent.generateTestsForPatches(patches);
+  } catch (error) {
+    return [];
+  }
+});
+// ====================================================
+// CICLO 33: INLINE EDIT, @ MENTIONS & LOCAL VECTOR RAG
+// ====================================================
+
+// 1. Inline Edit
+ipcMain.handle("inline-edit:create-request", async (_event, params) => {
+  try {
+    const { inlineEditProvider } = require("./runtime/inline-edit-provider");
+    return inlineEditProvider.createInlineEditRequest(params);
+  } catch (error) {
+    return { error: error.message };
+  }
+});
+
+ipcMain.handle("inline-edit:compute-diff", async (_event, originalText, modifiedText) => {
+  try {
+    const { inlineEditProvider } = require("./runtime/inline-edit-provider");
+    return inlineEditProvider.computeInlineDiff(originalText, modifiedText);
+  } catch (error) {
+    return { error: error.message, hasChanges: false, lines: [] };
+  }
+});
+
+ipcMain.handle("inline-edit:apply-patch", async (_event, originalText, diffOrModified) => {
+  try {
+    const { inlineEditProvider } = require("./runtime/inline-edit-provider");
+    return inlineEditProvider.applyPatch(originalText, diffOrModified);
+  } catch (error) {
+    return originalText;
+  }
+});
+
+ipcMain.handle("inline-edit:mock-proposal", async (_event, prompt, originalText) => {
+  try {
+    const { inlineEditProvider } = require("./runtime/inline-edit-provider");
+    return inlineEditProvider.generateMockProposal(prompt, originalText);
+  } catch (error) {
+    return originalText;
+  }
+});
+
+// 2. Mentions Parser
+ipcMain.handle("mentions:extract", async (_event, text) => {
+  try {
+    const { mentionParser } = require("./runtime/mention-parser");
+    return mentionParser.extractMentions(text);
+  } catch (error) {
+    return [];
+  }
+});
+
+ipcMain.handle("mentions:suggest", async (_event, query, workspaceFiles) => {
+  try {
+    const { mentionParser } = require("./runtime/mention-parser");
+    return mentionParser.suggestCompletions(query, workspaceFiles);
+  } catch (error) {
+    return [];
+  }
+});
+
+ipcMain.handle("mentions:resolve", async (_event, text, projectRoot) => {
+  try {
+    const { mentionParser } = require("./runtime/mention-parser");
+    return mentionParser.resolveMentions(text, projectRoot);
+  } catch (error) {
+    return [];
+  }
+});
+
+ipcMain.handle("mentions:build-prompt", async (_event, text, projectRoot) => {
+  try {
+    const { mentionParser } = require("./runtime/mention-parser");
+    return mentionParser.buildPromptWithMentions(text, projectRoot);
+  } catch (error) {
+    return text;
+  }
+});
+
+// 3. Local Vector Store (RAG)
+ipcMain.handle("vector-store:index", async (_event, projectRoot, fileList) => {
+  try {
+    const { vectorStore } = require("./runtime/vector-store");
+    return vectorStore.indexProject(projectRoot, fileList);
+  } catch (error) {
+    return { error: error.message, indexedCount: 0, totalChunks: 0 };
+  }
+});
+
+ipcMain.handle("vector-store:search", async (_event, projectRoot, query, options) => {
+  try {
+    const { vectorStore } = require("./runtime/vector-store");
+    return vectorStore.searchSimilar(projectRoot, query, options);
+  } catch (error) {
+    return [];
+  }
+});
+
+ipcMain.handle("vector-store:stats", async (_event, projectRoot) => {
+  try {
+    const { vectorStore } = require("./runtime/vector-store");
+    return vectorStore.getStats(projectRoot);
+  } catch (error) {
+    return { indexed: false, totalChunks: 0, fileCount: 0 };
+  }
+});
+
+// ====================================================
+// CICLO 34: AUTOPILOT PROACTIVE ARCHITECT AGENT
+// ====================================================
+
+ipcMain.handle("proactive:scan", async (_event, projectRoot) => {
+  try {
+    const { proactiveArchitect } = require("./runtime/proactive-architect");
+    return proactiveArchitect.scanWorkspace(projectRoot);
+  } catch (error) {
+    return { error: error.message, healthScore: 100, findingsCount: 0, cards: [] };
+  }
+});
+
+ipcMain.handle("proactive:get-pulse", async (_event, projectRoot) => {
+  try {
+    const { proactiveArchitect } = require("./runtime/proactive-architect");
+    return proactiveArchitect.getProjectPulse(projectRoot);
+  } catch (error) {
+    return { error: error.message, healthScore: 100, findingsCount: 0, cards: [] };
+  }
+});
+
+ipcMain.handle("proactive:get-cards", async (_event, projectRoot) => {
+  try {
+    const { proactiveArchitect } = require("./runtime/proactive-architect");
+    const pulse = proactiveArchitect.getProjectPulse(projectRoot);
+    return pulse?.cards || [];
+  } catch (error) {
+    return [];
+  }
+});
+
+ipcMain.handle("proactive:dismiss-card", async (_event, cardId, projectRoot) => {
+  try {
+    const { proactiveArchitect } = require("./runtime/proactive-architect");
+    return proactiveArchitect.dismissActionCard(projectRoot, cardId);
+  } catch (error) {
+    return false;
+  }
+});
+
+// ====================================================
+// CICLO 35: PLAN-FIRST & HUMAN-IN-THE-LOOP EXECUTION GATE
+// ====================================================
+
+ipcMain.handle("approval-gate:create-plan", async (_event, params) => {
+  try {
+    const { agentPlanner } = require("./runtime/agent-planner");
+    return agentPlanner.createPlan(params);
+  } catch (error) {
+    return { error: error.message };
+  }
+});
+
+ipcMain.handle("approval-gate:get-plan", async (_event, planId) => {
+  try {
+    const { agentPlanner } = require("./runtime/agent-planner");
+    return agentPlanner.getPlan(planId);
+  } catch (error) {
+    return null;
+  }
+});
+
+ipcMain.handle("approval-gate:list-pending", async () => {
+  try {
+    const { agentPlanner } = require("./runtime/agent-planner");
+    return agentPlanner.listPendingPlans();
+  } catch (error) {
+    return [];
+  }
+});
+
+ipcMain.handle("approval-gate:approve", async (_event, planId, options) => {
+  try {
+    const { agentPlanner } = require("./runtime/agent-planner");
+    return agentPlanner.approvePlan(planId, options);
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle("approval-gate:reject", async (_event, planId, reason) => {
+  try {
+    const { agentPlanner } = require("./runtime/agent-planner");
+    return agentPlanner.rejectPlan(planId, reason);
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle("approval-gate:is-tool-allowed", async (_event, planId, toolName) => {
+  try {
+    const { agentPlanner } = require("./runtime/agent-planner");
+    return agentPlanner.isToolAllowed(planId, toolName);
+  } catch (error) {
+    return { allowed: false, reason: error.message };
+  }
+});
+
+// ====================================================
+// CICLO 36: SELF-HEALING & TERMINAL DIAGNOSTICIAN AGENT
+// ====================================================
+
+ipcMain.handle("self-healing:diagnose", async (_event, errorOutput, projectRoot) => {
+  try {
+    const { selfHealingAgent } = require("./runtime/self-healing-agent");
+    return selfHealingAgent.diagnoseError(errorOutput, projectRoot);
+  } catch (error) {
+    return { error: error.message };
+  }
+});
+
+ipcMain.handle("self-healing:recent", async (_event, projectRoot) => {
+  try {
+    const { selfHealingAgent } = require("./runtime/self-healing-agent");
+    return selfHealingAgent.getRecentDiagnoses(projectRoot);
+  } catch (error) {
+    return [];
+  }
+});
+
+ipcMain.handle("self-healing:clear", async (_event, projectRoot) => {
+  try {
+    const { selfHealingAgent } = require("./runtime/self-healing-agent");
+    return selfHealingAgent.clearDiagnoses(projectRoot);
+  } catch (error) {
+    return false;
+  }
+});
+
+ipcMain.handle("self-healing:generate-patch", async (_event, parsedError, fileContent) => {
+  try {
+    const { selfHealingAgent } = require("./runtime/self-healing-agent");
+    return selfHealingAgent.generateHeuristicPatch(parsedError, fileContent);
+  } catch (error) {
+    return { suggestedPatch: "", explanation: error.message };
+  }
+});
+
+// ====================================================
+// CICLOS 37-39: ULTIMATE AUTONOMOUS ECOSYSTEM
+// ====================================================
+
+ipcMain.handle("ecosystem:spawn-swarm", async (_event, params) => {
+  try {
+    const { swarmOrchestrator } = require("./runtime/swarm-orchestrator");
+    return swarmOrchestrator.spawnSwarm(params || {});
+  } catch (error) {
+    return { error: error.message };
+  }
+});
+
+ipcMain.handle("ecosystem:swarm-status", async (_event, swarmId) => {
+  try {
+    const { swarmOrchestrator } = require("./runtime/swarm-orchestrator");
+    return swarmOrchestrator.getSwarmStatus(swarmId);
+  } catch (error) {
+    return null;
+  }
+});
+
+ipcMain.handle("ecosystem:list-swarms", async () => {
+  try {
+    const { swarmOrchestrator } = require("./runtime/swarm-orchestrator");
+    return swarmOrchestrator.listSwarms();
+  } catch (error) {
+    return [];
+  }
+});
+
+ipcMain.handle("ecosystem:crdt-merge", async (_event, docA, docB) => {
+  try {
+    const { crdtEngine } = require("./runtime/crdt-sync");
+    return crdtEngine.merge(docA, docB);
+  } catch (error) {
+    return { error: error.message };
+  }
+});
+
+ipcMain.handle("ecosystem:run-tdd", async (_event, params) => {
+  try {
+    const { autoTddLoop } = require("./runtime/auto-tdd-loop");
+    return await autoTddLoop.runCycle(params || {});
+  } catch (error) {
+    return { error: error.message };
+  }
+});
+
+ipcMain.handle("ecosystem:scan-refactor", async (_event, projectRoot) => {
+  try {
+    const { autoTddLoop } = require("./runtime/auto-tdd-loop");
+    return await autoTddLoop.scanAndSuggestRefactors(projectRoot);
+  } catch (error) {
+    return { totalScanned: 0, suggestions: [], error: error.message };
+  }
+});
+
+ipcMain.handle("ecosystem:record-adr", async (_event, projectRoot, adrData) => {
+  try {
+    const { enterpriseMemory } = require("./runtime/enterprise-memory");
+    return enterpriseMemory.recordAdr(projectRoot, adrData);
+  } catch (error) {
+    return { error: error.message };
+  }
+});
+
+ipcMain.handle("ecosystem:list-adrs", async (_event, projectRoot) => {
+  try {
+    const { enterpriseMemory } = require("./runtime/enterprise-memory");
+    return enterpriseMemory.listAdrs(projectRoot);
+  } catch (error) {
+    return [];
+  }
+});
+
+ipcMain.handle("ecosystem:sync-memory", async (_event, projectRoot, branchName, data) => {
+  try {
+    const { enterpriseMemory } = require("./runtime/enterprise-memory");
+    return enterpriseMemory.syncBranch(projectRoot, branchName, data);
+  } catch (error) {
+    return { error: error.message };
+  }
+});
+
+ipcMain.handle("ecosystem:get-memory-snapshot", async (_event, projectRoot, branchName) => {
+  try {
+    const { enterpriseMemory } = require("./runtime/enterprise-memory");
+    return enterpriseMemory.getBranchSnapshot(projectRoot, branchName);
+  } catch (error) {
+    return null;
+  }
+});
+
+// ====================================================
+// CICLOS 40-44: HYPER-AUTONOMOUS ECOSYSTEM & BEYOND
+// ====================================================
+
+ipcMain.handle("hyper:run-cicd", async (_event, params) => {
+  try {
+    const { ciCdPipeline } = require("./runtime/ci-cd-pipeline");
+    return await ciCdPipeline.runPipeline(params || {});
+  } catch (error) {
+    return { error: error.message };
+  }
+});
+
+ipcMain.handle("hyper:cicd-history", async (_event, projectRoot) => {
+  try {
+    const { ciCdPipeline } = require("./runtime/ci-cd-pipeline");
+    return ciCdPipeline.getPipelineHistory(projectRoot);
+  } catch (error) {
+    return [];
+  }
+});
+
+ipcMain.handle("hyper:active-previews", async () => {
+  try {
+    const { ciCdPipeline } = require("./runtime/ci-cd-pipeline");
+    return ciCdPipeline.getActivePreviews();
+  } catch (error) {
+    return [];
+  }
+});
+
+ipcMain.handle("hyper:teardown-preview", async (_event, previewId) => {
+  try {
+    const { ciCdPipeline } = require("./runtime/ci-cd-pipeline");
+    return ciCdPipeline.teardownPreview(previewId);
+  } catch (error) {
+    return false;
+  }
+});
+
+ipcMain.handle("hyper:build-ast-graph", async (_event, projectRoot, specificFiles) => {
+  try {
+    const { astGraphEngine } = require("./runtime/ast-graph");
+    return astGraphEngine.buildGraph(projectRoot, specificFiles);
+  } catch (error) {
+    return { error: error.message };
+  }
+});
+
+ipcMain.handle("hyper:query-ast-symbol", async (_event, symbolName) => {
+  try {
+    const { astGraphEngine } = require("./runtime/ast-graph");
+    return astGraphEngine.querySymbol(symbolName);
+  } catch (error) {
+    return [];
+  }
+});
+
+ipcMain.handle("hyper:ast-references", async (_event, symbolIdOrName) => {
+  try {
+    const { astGraphEngine } = require("./runtime/ast-graph");
+    return astGraphEngine.findReferences(symbolIdOrName);
+  } catch (error) {
+    return [];
+  }
+});
+
+ipcMain.handle("hyper:ast-subgraph", async (_event, filePath) => {
+  try {
+    const { astGraphEngine } = require("./runtime/ast-graph");
+    return astGraphEngine.getDependencySubgraph(filePath);
+  } catch (error) {
+    return { file: filePath, nodeCount: 0, edgeCount: 0, nodes: [], edges: [] };
+  }
+});
+
+ipcMain.handle("hyper:record-intent-action", async (_event, action) => {
+  try {
+    const { intentAnticipator } = require("./runtime/intent-anticipation");
+    return intentAnticipator.recordUserAction(action || {});
+  } catch (error) {
+    return null;
+  }
+});
+
+ipcMain.handle("hyper:predict-context", async (_event, projectRoot) => {
+  try {
+    const { intentAnticipator } = require("./runtime/intent-anticipation");
+    return intentAnticipator.predictNextActions(projectRoot);
+  } catch (error) {
+    return { confidence: 0, predictedFiles: [], predictedSymbols: [], recommendations: [] };
+  }
+});
+
+ipcMain.handle("hyper:prewarm-context", async (_event, projectRoot) => {
+  try {
+    const { intentAnticipator } = require("./runtime/intent-anticipation");
+    return await intentAnticipator.preWarmContext(projectRoot);
+  } catch (error) {
+    return { prewarmedCount: 0, error: error.message };
+  }
+});
+
+ipcMain.handle("hyper:intent-state", async () => {
+  try {
+    const { intentAnticipator } = require("./runtime/intent-anticipation");
+    return intentAnticipator.getAnticipationState();
+  } catch (error) {
+    return { historyLength: 0, prewarmedFiles: [], stats: {} };
+  }
+});
+
+ipcMain.handle("hyper:scan-security", async (_event, projectRoot) => {
+  try {
+    const { securitySentinel } = require("./runtime/security-sentinel");
+    return await securitySentinel.scanWorkspace(projectRoot);
+  } catch (error) {
+    return { totalVulnerabilities: 0, vulnerabilities: [], error: error.message };
+  }
+});
+
+ipcMain.handle("hyper:isolate-threat", async (_event, vulnId) => {
+  try {
+    const { securitySentinel } = require("./runtime/security-sentinel");
+    return securitySentinel.isolateThreat(vulnId);
+  } catch (error) {
+    return { error: error.message };
+  }
+});
+
+ipcMain.handle("hyper:generate-security-patch", async (_event, vuln, projectRoot) => {
+  try {
+    const { securitySentinel } = require("./runtime/security-sentinel");
+    return securitySentinel.generateSecurityPatch(vuln, projectRoot);
+  } catch (error) {
+    return { error: error.message };
+  }
+});
+
+ipcMain.handle("hyper:analyze-lora", async (_event, projectRoot) => {
+  try {
+    const { loraStyleAdapter } = require("./runtime/lora-adapter");
+    return loraStyleAdapter.analyzeStyleDna(projectRoot);
+  } catch (error) {
+    return { error: error.message };
+  }
+});
+
+ipcMain.handle("hyper:apply-lora-style", async (_event, basePrompt, projectRoot) => {
+  try {
+    const { loraStyleAdapter } = require("./runtime/lora-adapter");
+    return loraStyleAdapter.applyStyleToPrompt(basePrompt, projectRoot);
+  } catch (error) {
+    return basePrompt;
+  }
+});
+
+ipcMain.handle("hyper:get-lora-profile", async (_event, projectRoot) => {
+  try {
+    const { loraStyleAdapter } = require("./runtime/lora-adapter");
+    return loraStyleAdapter.getStyleProfile(projectRoot);
+  } catch (error) {
+    return null;
+  }
+});
+
+ipcMain.handle("hyper:save-custom-rules", async (_event, projectRoot, rules) => {
+  try {
+    const { loraStyleAdapter } = require("./runtime/lora-adapter");
+    return loraStyleAdapter.saveCustomRules(projectRoot, rules);
+  } catch (error) {
+    return null;
+  }
+});
+
+// ====================================================
+// CICLO 45: CLOUD-NATIVE SWARM MESH
+// ====================================================
+
+ipcMain.handle("mesh:start", async (_event, port, networkId) => {
+  try {
+    const { swarmMesh } = require("./runtime/swarm-mesh");
+    return swarmMesh.startMesh(port, networkId);
+  } catch (error) {
+    return { error: error.message };
+  }
+});
+
+ipcMain.handle("mesh:connect-peer", async (_event, peerParams) => {
+  try {
+    const { swarmMesh } = require("./runtime/swarm-mesh");
+    return swarmMesh.connectPeer(peerParams || {});
+  } catch (error) {
+    return { error: error.message };
+  }
+});
+
+ipcMain.handle("mesh:propose-consensus", async (_event, proposalData) => {
+  try {
+    const { swarmMesh } = require("./runtime/swarm-mesh");
+    return swarmMesh.proposeConsensusBlock(proposalData || {});
+  } catch (error) {
+    return { error: error.message };
+  }
+});
+
+ipcMain.handle("mesh:topology", async () => {
+  try {
+    const { swarmMesh } = require("./runtime/swarm-mesh");
+    return swarmMesh.getMeshTopology();
+  } catch (error) {
+    return { status: "OFFLINE", peers: [] };
+  }
+});
+
+ipcMain.handle("mesh:stop", async () => {
+  try {
+    const { swarmMesh } = require("./runtime/swarm-mesh");
+    return swarmMesh.stopMesh();
+  } catch (error) {
+    return { status: "ERROR", error: error.message };
+  }
+});
+
+// ====================================================
+// CICLO 46: SINGULARITY ENGINE & SELF-EVOLVING RUNTIME
+// ====================================================
+
+ipcMain.handle("singularity:analyze", async (_event, projectRoot) => {
+  try {
+    const { singularityCompiler } = require("./runtime/singularity-compiler");
+    return await singularityCompiler.analyzeSelfEngine(projectRoot);
+  } catch (error) {
+    return { error: error.message };
+  }
+});
+
+ipcMain.handle("singularity:apply-optimization", async (_event, finding) => {
+  try {
+    const { singularityCompiler } = require("./runtime/singularity-compiler");
+    return singularityCompiler.applySelfOptimization(finding || {});
+  } catch (error) {
+    return { error: error.message };
+  }
+});
+
+ipcMain.handle("singularity:scale-worker", async (_event, params) => {
+  try {
+    const { singularityCompiler } = require("./runtime/singularity-compiler");
+    return singularityCompiler.scaleReplicationWorker(params || {});
+  } catch (error) {
+    return { error: error.message };
+  }
+});
+
+ipcMain.handle("singularity:status", async () => {
+  try {
+    const { singularityCompiler } = require("./runtime/singularity-compiler");
+    return singularityCompiler.getSingularityStatus();
+  } catch (error) {
+    return { status: "ERROR", error: error.message };
+  }
+});
+
+ipcMain.handle("singularity:terminate-worker", async (_event, workerId) => {
+  try {
+    const { singularityCompiler } = require("./runtime/singularity-compiler");
+    return singularityCompiler.terminateWorker(workerId);
+  } catch (error) {
+    return false;
+  }
+});
+
+// ====================================================
+// CICLO 47: AUTONOMOUS COMPUTE ECONOMY
+// ====================================================
+
+ipcMain.handle("economy:record-usage", async (_event, usageData) => {
+  try {
+    const { computeEconomy } = require("./runtime/compute-economy");
+    return computeEconomy.recordUsage(usageData || {});
+  } catch (error) {
+    return { error: error.message };
+  }
+});
+
+ipcMain.handle("economy:resolve-route", async (_event, complexity) => {
+  try {
+    const { computeEconomy } = require("./runtime/compute-economy");
+    return computeEconomy.resolveRoutingStrategy(complexity);
+  } catch (error) {
+    return { strategy: "LOCAL_FAST_MODEL", reason: "Fallback" };
+  }
+});
+
+ipcMain.handle("economy:provision-cluster", async (_event, clusterParams) => {
+  try {
+    const { computeEconomy } = require("./runtime/compute-economy");
+    return computeEconomy.provisionEphemeralCluster(clusterParams || {});
+  } catch (error) {
+    return { error: error.message };
+  }
+});
+
+ipcMain.handle("economy:teardown-cluster", async (_event, clusterId) => {
+  try {
+    const { computeEconomy } = require("./runtime/compute-economy");
+    return computeEconomy.teardownCluster(clusterId);
+  } catch (error) {
+    return false;
+  }
+});
+
+ipcMain.handle("economy:report", async () => {
+  try {
+    const { computeEconomy } = require("./runtime/compute-economy");
+    return computeEconomy.getEconomyReport();
+  } catch (error) {
+    return null;
+  }
+});
+
+ipcMain.handle("economy:set-budget", async (_event, limitUsd) => {
+  try {
+    const { computeEconomy } = require("./runtime/compute-economy");
+    return computeEconomy.setBudgetLimit(limitUsd);
+  } catch (error) {
+    return null;
+  }
+});
+
+// ====================================================
+// CICLOS 48-52: THE OMEGA HORIZON & BEYOND
+// ====================================================
+
+ipcMain.handle("omega:quantum-encrypt", async (_event, plainText) => {
+  try {
+    const { quantumCrypto } = require("./runtime/quantum-crypto");
+    return quantumCrypto.encryptPayload(plainText);
+  } catch (error) {
+    return { error: error.message };
+  }
+});
+
+ipcMain.handle("omega:quantum-decrypt", async (_event, encryptedPacket) => {
+  try {
+    const { quantumCrypto } = require("./runtime/quantum-crypto");
+    return quantumCrypto.decryptPayload(encryptedPacket);
+  } catch (error) {
+    return null;
+  }
+});
+
+ipcMain.handle("omega:quantum-sign", async (_event, embeddingArray) => {
+  try {
+    const { quantumCrypto } = require("./runtime/quantum-crypto");
+    return quantumCrypto.signVectorEmbedding(embeddingArray);
+  } catch (error) {
+    return { error: error.message };
+  }
+});
+
+ipcMain.handle("omega:quantum-status", async () => {
+  try {
+    const { quantumCrypto } = require("./runtime/quantum-crypto");
+    return quantumCrypto.getQuantumStatus();
+  } catch (error) {
+    return { status: "ERROR" };
+  }
+});
+
+ipcMain.handle("omega:synthesize-ui", async (_event, params) => {
+  try {
+    const { neuralUiBuilder } = require("./runtime/neural-ui-builder");
+    return neuralUiBuilder.synthesizeComponent(params || {});
+  } catch (error) {
+    return { error: error.message };
+  }
+});
+
+ipcMain.handle("omega:get-ui-components", async () => {
+  try {
+    const { neuralUiBuilder } = require("./runtime/neural-ui-builder");
+    return neuralUiBuilder.getComponents();
+  } catch (error) {
+    return [];
+  }
+});
+
+ipcMain.handle("omega:generate-3d-layout", async (_event, nodes, edges) => {
+  try {
+    const { ast3dVisualizer } = require("./runtime/ast-3d-visualizer");
+    return ast3dVisualizer.generate3dLayout(nodes, edges);
+  } catch (error) {
+    return { totalNodes: 0, totalEdges: 0, nodes: [], edges: [] };
+  }
+});
+
+ipcMain.handle("omega:get-3d-graph", async () => {
+  try {
+    const { ast3dVisualizer } = require("./runtime/ast-3d-visualizer");
+    return ast3dVisualizer.get3dGraph();
+  } catch (error) {
+    return null;
+  }
+});
+
+ipcMain.handle("omega:generate-build-manifest", async (_event, params) => {
+  try {
+    const { ecosystemReplication } = require("./runtime/ecosystem-replication");
+    return ecosystemReplication.generateBuildManifest(params || {});
+  } catch (error) {
+    return { error: error.message };
+  }
+});
+
+ipcMain.handle("omega:replication-matrix", async () => {
+  try {
+    const { ecosystemReplication } = require("./runtime/ecosystem-replication");
+    return ecosystemReplication.getReplicationMatrix();
+  } catch (error) {
+    return { supportedTargets: [], manifests: [] };
+  }
+});
+
+ipcMain.handle("omega:set-autonomy", async (_event, level) => {
+  try {
+    const { omegaCore } = require("./runtime/omega-core");
+    return omegaCore.setAutonomyLevel(level);
+  } catch (error) {
+    return { error: error.message };
+  }
+});
+
+ipcMain.handle("omega:evaluate-action", async (_event, actionType, criticality) => {
+  try {
+    const { omegaCore } = require("./runtime/omega-core");
+    return omegaCore.evaluateActionSafety(actionType, criticality);
+  } catch (error) {
+    return { allowedImmediately: false, requiresHumanApproval: true };
+  }
+});
+
+ipcMain.handle("omega:status", async () => {
+  try {
+    const { omegaCore } = require("./runtime/omega-core");
+    return omegaCore.getOmegaStatus();
+  } catch (error) {
+    return { status: "ERROR" };
+  }
+});
 
 
 

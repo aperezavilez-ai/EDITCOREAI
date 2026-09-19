@@ -1,7 +1,7 @@
 "use strict";
 
 /**
- * Puente EditCore IDE ↔ editcore-agent-core.
+ * Puente EDITCOREAI IDE ↔ editcore-agent-core.
  *
  * POR DEFECTO: Agent Core OFF. El camino fiable es el adaptador legado.
  * Solo se activa con EDITCORE_USE_AGENT_CORE=1 (opt-in explicito).
@@ -77,7 +77,7 @@ function loadAgentCore() {
   if (!root) {
     throw new Error(
       "Agent Core no encontrado en disco (resources/editcore-agent-core). "
-      + "Reaplica hotfix o reinstala EditCore. No se carga desde app.asar.",
+      + "Reaplica hotfix o reinstala EDITCOREAI. No se carga desde app.asar.",
     );
   }
   // eslint-disable-next-line import/no-dynamic-require, global-require

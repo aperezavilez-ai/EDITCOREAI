@@ -7,7 +7,7 @@ const { getSession, closeSessionsForProject, isSafeCommand } = require("./mcp-st
 /**
  * Resolucion automatica de MCP:
  * 1) Override opcional del proyecto: <project>/.editcore/mcp.json
- * 2) Config global de EditCore: <userData>/mcp.json  (se crea sola)
+ * 2) Config global de EDITCOREAI: <userData>/mcp.json  (se crea sola)
  * 3) Sin servidores: available=false pero bridge listo (no pide copiar ejemplos)
  *
  * Los procesos MCP solo arrancan al llamar mcp_list_tools / mcp_invoke (lazy).
@@ -18,7 +18,7 @@ function defaultGlobalConfig() {
     enabled: true,
     auto: true,
     servers: [],
-    note: "EditCore gestiona MCP en esta config global. Anade servers aqui o en Conexiones. Los procesos solo arrancan cuando el agente necesita una tool MCP.",
+    note: "EDITCOREAI gestiona MCP en esta config global. Anade servers aqui o en Conexiones. Los procesos solo arrancan cuando el agente necesita una tool MCP.",
   };
 }
 
@@ -104,7 +104,7 @@ function listConfiguredServers(projectRoot, options = {}) {
   if (!config || config.enabled === false) {
     return {
       available: false,
-      message: "MCP desactivado. Activalo en la config global de EditCore (userData/mcp.json) o en .editcore/mcp.json del proyecto.",
+      message: "MCP desactivado. Activalo en la config global de EDITCOREAI (userData/mcp.json) o en .editcore/mcp.json del proyecto.",
       configPath: file,
       scope: scope || "global",
       auto: Boolean(auto),
@@ -128,7 +128,7 @@ function listConfiguredServers(projectRoot, options = {}) {
     available: true,
     message: scope === "project"
       ? "Servidores MCP del proyecto."
-      : "Servidores MCP globales de EditCore.",
+      : "Servidores MCP globales de EDITCOREAI.",
     configPath: file,
     scope: scope || "global",
     auto: Boolean(auto),

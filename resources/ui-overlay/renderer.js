@@ -1800,18 +1800,37 @@ function syncPermissionMenuSelection(mode) {
   });
 }
 
+const PERMISSION_ICONS = {
+  full: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M13 9.5V6.5l-4.5 6h3.5v4.5l4.5-6h-3.5z" fill="currentColor"/></svg>',
+  step: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg>',
+  readonly: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="14" height="10" x="5" y="11" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>',
+};
+
+const PERMISSION_TITLES = {
+  full: "Acceso completo (Modifica y ejecuta sin preguntar)",
+  step: "Permisos paso a paso (Pregunta antes de escribir o ejecutar)",
+  readonly: "Solo lectura (Solo lee archivos, sin modificar)",
+};
+
+function renderPermissionButton(mode = "step") {
+  const btn = $("permissionsBtn");
+  if (!btn) return;
+  const next = ["readonly", "step", "full"].includes(mode) ? mode : "step";
+  btn.innerHTML = PERMISSION_ICONS[next] || PERMISSION_ICONS.step;
+  btn.title = PERMISSION_TITLES[next] || "Permisos";
+  btn.setAttribute("aria-label", PERMISSION_TITLES[next] || "Permisos");
+  btn.classList.toggle("danger", next === "full");
+  btn.classList.toggle("readonly", next === "readonly");
+  btn.dataset.permissionMode = next;
+}
+
 function applyPermissionMode(mode) {
   const next = ["readonly", "step", "full"].includes(mode) ? mode : "step";
   state.permissionMode = next;
   // Solo lectura bloquea escrituras; Paso a paso y Acceso completo permiten escribir
   // (Paso a paso pide confirmacion por accion en main.js).
   state.allowWrite = next !== "readonly";
-  const labels = { readonly: "Solo lectura", step: "Permisos", full: "Acceso completo" };
-  if ($("permissionsBtn")) {
-    $("permissionsBtn").textContent = labels[next] || "Permisos";
-    $("permissionsBtn").classList.toggle("danger", next === "full");
-    $("permissionsBtn").dataset.permissionMode = next;
-  }
+  renderPermissionButton(next);
   syncPermissionMenuSelection(next);
   window.editcoreAgent?.setPermission?.(next).catch(() => undefined);
   const project = activeProject();
@@ -2011,18 +2030,20 @@ function renderModelPickerMenu() {
     }
 
     menu.appendChild(scroll);
-    const footer = document.createElement("div");
-    footer.className = "model-picker-footer";
-    const manageBtn = document.createElement("button");
-    manageBtn.type = "button";
-    manageBtn.className = "model-picker-manage";
-    manageBtn.textContent = "Administrar modelos…";
-    manageBtn.addEventListener("click", () => {
-      setModelPickerOpen(false);
-      openProviders();
-    });
-    footer.appendChild(manageBtn);
-    menu.appendChild(footer);
+    if (isCurrentUserAdmin()) {
+      const footer = document.createElement("div");
+      footer.className = "model-picker-footer";
+      const manageBtn = document.createElement("button");
+      manageBtn.type = "button";
+      manageBtn.className = "model-picker-manage";
+      manageBtn.textContent = "Administrar modelos…";
+      manageBtn.addEventListener("click", () => {
+        setModelPickerOpen(false);
+        openProviders();
+      });
+      footer.appendChild(manageBtn);
+      menu.appendChild(footer);
+    }
     positionFloatingMenu(menu, $("modelPickerBtn"), { align: "right", gap: 8 });
   };
 
@@ -2105,10 +2126,27 @@ function mapProfileToModelOption(profile, customProvidersByKey) {
   };
 }
 
+function isCurrentUserAdmin() {
+  try {
+    const auth = loadJson("editcore-auth-session", null);
+    if (auth?.user) {
+      return Boolean(auth.user.isSuperAdmin || auth.user.role === "admin" || auth.user.email === "aperezavilez@gmail.com");
+    }
+    return true;
+  } catch {
+    return true;
+  }
+}
+
 function catalogChatModelOptions() {
+  const isAdmin = isCurrentUserAdmin();
   const customProvidersByKey = new Map(loadCustomProviders().map((provider) => [`custom:${provider.id}`, provider]));
   const profiles = loadProviderProfiles().filter((profile) => {
     if (!profile || !profile.model) return false;
+    // Si el usuario no es admin, solo permitir modelos oficiales de ME AI
+    if (!isAdmin && profile.providerKey !== "meai" && profile.providerKey !== "custom:gafcore-gateway") {
+      return false;
+    }
     const effectiveKey = profile.apiKey || resolveProviderApiKey(profile.providerKey, "");
     return Boolean(effectiveKey) || PRIMARY_PROVIDER_KEYS.includes(profile.providerKey);
   });
@@ -2399,6 +2437,152 @@ function recommendedProviderModels(provider) {
     .slice(0, 16);
 }
 
+async function autoDetectAndVerifyCustomProvider(providerId, { nameInp, urlInp, keyInp, stateSpan, statusMsg, btn } = {}) {
+  const provKey = `custom:${providerId}`;
+  const providers = loadCustomProviders();
+  const provider = providers.find((p) => p.id === providerId);
+  if (!provider) return;
+
+  const rawUrl = urlInp ? urlInp.value.trim() : (provider.baseUrl || "");
+  const rawKey = keyInp ? keyInp.value.trim() : (provider.apiKey || "");
+  const rawName = nameInp ? nameInp.value.trim() : (provider.name || "Endpoint personalizado");
+
+  if (!rawUrl) {
+    if (statusMsg) {
+      statusMsg.style.color = "#ef4444";
+      statusMsg.textContent = "Ingresa la URL del endpoint (ej. https://api.groq.com/openai/v1 o http://localhost:11434/v1)";
+    }
+    return;
+  }
+
+  let baseUrl = rawUrl.replace(/\/+$/, "");
+  if (!/^https?:\/\//i.test(baseUrl)) {
+    baseUrl = `https://${baseUrl}`;
+  }
+
+  provider.name = rawName || "Endpoint personalizado";
+  provider.baseUrl = baseUrl;
+  provider.apiKey = rawKey;
+
+  if (btn) btn.disabled = true;
+  if (statusMsg) {
+    statusMsg.style.color = "var(--ec-text-muted)";
+    statusMsg.textContent = "🔍 Conectando con endpoint y listando modelos...";
+  }
+  if (stateSpan) {
+    stateSpan.className = "provider-state checking";
+    stateSpan.textContent = "Detectando…";
+  }
+
+  try {
+    let testResult = null;
+    try {
+      testResult = await window.editcoreProviders.test({
+        providerKey: provKey,
+        baseUrl,
+        apiKey: rawKey,
+        model: provider.model || "",
+      });
+    } catch (testErr) {
+      if (window.editcoreModels?.list) {
+        const rawModels = await window.editcoreModels.list({
+          apiKey: rawKey,
+          baseUrl,
+          providerKey: provKey,
+        });
+        if (Array.isArray(rawModels) && rawModels.length > 0) {
+          testResult = {
+            ok: true,
+            chatOK: true,
+            models: rawModels,
+            model: rawModels[0],
+            modelCount: rawModels.length,
+          };
+        }
+      }
+      if (!testResult) throw testErr;
+    }
+
+    const detectedModels = Array.isArray(testResult?.models) && testResult.models.length
+      ? testResult.models
+      : (testResult?.model ? [testResult.model] : []);
+
+    if (!detectedModels.length) {
+      throw new Error("El endpoint respondió pero no devolvió modelos disponibles.");
+    }
+
+    const profiles = loadProviderProfiles();
+    const otherProfiles = profiles.filter((p) => p.providerKey !== provKey);
+    const newProfiles = [];
+
+    for (const m of detectedModels) {
+      newProfiles.push({
+        id: `${provider.id}:${m}`,
+        providerKey: provKey,
+        providerName: provider.name,
+        baseUrl,
+        apiKey: rawKey,
+        model: m,
+        modelCount: detectedModels.length,
+        status: "active",
+        catalogConfirmed: true,
+        chatVerified: true,
+        checkedAt: Date.now(),
+        error: "",
+      });
+    }
+
+    const mergedProfiles = [...otherProfiles, ...newProfiles];
+    await saveProviderProfiles(mergedProfiles);
+
+    provider.status = "active";
+    provider.model = testResult.model || detectedModels[0];
+    provider.models = detectedModels;
+    provider.enabledModels = detectedModels;
+    provider.modelCount = detectedModels.length;
+    provider.checkedAt = Date.now();
+    provider.error = "";
+
+    await saveCustomProviders(providers);
+
+    renderProviderProfiles();
+    if (stateSpan) {
+      stateSpan.className = "provider-state active";
+      stateSpan.textContent = `Funcional (${detectedModels.length} modelos)`;
+    }
+    if (statusMsg) {
+      statusMsg.style.color = "#10b981";
+      statusMsg.textContent = `✅ ¡${detectedModels.length} modelo(s) detectados y activados con éxito!`;
+    }
+
+    setChatModelOptions([], provider.model, provKey, `${provider.id}:${provider.model}`);
+    syncChatModelFromConfig();
+    updateModelPickerLabel();
+    updateStatus();
+
+    try {
+      window.dispatchEvent(new CustomEvent("editcore:models-updated", { detail: { providerKey: provKey, models: detectedModels } }));
+    } catch {}
+
+  } catch (err) {
+    const errorMsg = sanitizeProviderIpcError(err);
+    provider.status = "inactive";
+    provider.error = errorMsg;
+    await saveCustomProviders(providers);
+
+    if (stateSpan) {
+      stateSpan.className = "provider-state inactive";
+      stateSpan.textContent = "Error de conexión";
+    }
+    if (statusMsg) {
+      statusMsg.style.color = "#ef4444";
+      statusMsg.textContent = `❌ ${errorMsg}`;
+    }
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
 function renderCustomProviderBlock(prov, container, { readOnlyEndpoint = false } = {}) {
   const provKey = `custom:${prov.id}`;
   const item = document.createElement("details");
@@ -2415,22 +2599,23 @@ function renderCustomProviderBlock(prov, container, { readOnlyEndpoint = false }
   const stateSpan = document.createElement("span");
   stateSpan.className = `provider-state${prov.status === "active" ? " active" : ""}`;
   stateSpan.dataset.providerState = provKey;
-  stateSpan.textContent = prov.status === "active" ? "Funcional" : "Sin verificar";
+  stateSpan.textContent = prov.status === "active" ? (prov.modelCount ? `Funcional (${prov.modelCount} modelos)` : "Funcional") : "Sin verificar";
   summary.append(dot, " ", nameSpan, " ", stateSpan);
   item.appendChild(summary);
 
   const fields = document.createElement("div");
   fields.className = "prov-fields";
 
+  let nameInp = null;
   if (prov.id !== "gafcore-gateway") {
     const nameLbl = document.createElement("label");
     nameLbl.className = "field";
     const nameCap = document.createElement("span");
-    nameCap.textContent = "Nombre";
-    const nameInp = document.createElement("input");
+    nameCap.textContent = "Nombre del Proveedor";
+    nameInp = document.createElement("input");
     nameInp.type = "text";
     nameInp.value = prov.name || "";
-    nameInp.placeholder = "Mi API OpenAI-compatible";
+    nameInp.placeholder = "Ej: Groq Cloud / OpenRouter / Ollama / DeepSeek";
     nameInp.dataset.provName = provKey;
     nameLbl.append(nameCap, nameInp);
     fields.appendChild(nameLbl);
@@ -2439,15 +2624,58 @@ function renderCustomProviderBlock(prov, container, { readOnlyEndpoint = false }
   const urlLbl = document.createElement("label");
   urlLbl.className = "field";
   const urlCap = document.createElement("span");
-  urlCap.textContent = "Endpoint";
+  urlCap.textContent = "Endpoint / URL";
   const urlInp = document.createElement("input");
   urlInp.type = "text";
   urlInp.value = prov.baseUrl || "";
-  urlInp.placeholder = "https://api.example.com/v1";
+  urlInp.placeholder = "https://api.groq.com/openai/v1 o http://localhost:11434/v1";
   urlInp.dataset.provUrl = provKey;
   urlInp.readOnly = readOnlyEndpoint;
   urlLbl.append(urlCap, urlInp);
   fields.appendChild(urlLbl);
+
+  const keyLbl = document.createElement("label");
+  keyLbl.className = "field";
+  const keyCap = document.createElement("span");
+  keyCap.textContent = "API Key";
+  const keyInp = document.createElement("input");
+  keyInp.type = "password";
+  keyInp.value = prov.apiKey || "";
+  keyInp.placeholder = "Clave API (sk-..., gsk-..., o vacía si es Ollama local)";
+  keyInp.dataset.provKey = provKey;
+  keyLbl.append(keyCap, keyInp);
+  fields.appendChild(keyLbl);
+
+  const liveActionBox = document.createElement("div");
+  liveActionBox.style.display = "flex";
+  liveActionBox.style.alignItems = "center";
+  liveActionBox.style.gap = "8px";
+  liveActionBox.style.margin = "8px 0";
+  liveActionBox.style.flexWrap = "wrap";
+
+  const autoDetectBtn = document.createElement("button");
+  autoDetectBtn.type = "button";
+  autoDetectBtn.className = "profile-verify";
+  autoDetectBtn.style.cssText = "background: linear-gradient(135deg, #0e639c, #0ea5a4); color: white; border: none; font-weight: 700; padding: 6px 14px; border-radius: 6px; cursor: pointer;";
+  autoDetectBtn.textContent = "⚡ Auto-Detectar y Probar Modelos en Vivo";
+
+  const statusMsg = document.createElement("span");
+  statusMsg.style.fontSize = "12px";
+  statusMsg.style.color = "var(--ec-text-muted)";
+
+  autoDetectBtn.onclick = async () => {
+    await autoDetectAndVerifyCustomProvider(prov.id, {
+      nameInp,
+      urlInp,
+      keyInp,
+      stateSpan,
+      statusMsg,
+      btn: autoDetectBtn,
+    });
+  };
+
+  liveActionBox.append(autoDetectBtn, statusMsg);
+  fields.appendChild(liveActionBox);
 
   const profilesDiv = document.createElement("div");
   profilesDiv.className = "provider-profiles";
@@ -2459,7 +2687,7 @@ function renderCustomProviderBlock(prov, container, { readOnlyEndpoint = false }
   const addProfile = document.createElement("button");
   addProfile.type = "button";
   addProfile.className = "profile-save";
-  addProfile.textContent = "+ Agregar modelo";
+  addProfile.textContent = "+ Agregar modelo manual";
   addProfile.onclick = () => addProviderProfile(provKey);
   actions.appendChild(addProfile);
   if (prov.id !== "gafcore-gateway") {
@@ -2468,7 +2696,7 @@ function renderCustomProviderBlock(prov, container, { readOnlyEndpoint = false }
     removeProvider.className = "profile-delete";
     removeProvider.textContent = "Eliminar endpoint";
     removeProvider.onclick = async () => {
-      if (!confirm(`Eliminar el endpoint "${prov.name || "personalizado"}" y sus modelos?`)) return;
+      if (!confirm(`¿Eliminar el endpoint "${prov.name || "personalizado"}" y sus modelos?`)) return;
       await removeCustomProvider(prov.id);
     };
     actions.appendChild(removeProvider);
@@ -2939,25 +3167,13 @@ function closeChatThread(chatId, targetProjectId) {
   targetProj.chats.splice(index, 1);
 
   if (!targetProj.chats.length) {
-    const fresh = {
-      id: uid(),
-      title: "Chat 1",
-      messages: [],
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-    };
-    targetProj.chats = [fresh];
-    targetProj.activeChatId = fresh.id;
+    targetProj.activeChatId = "";
+    targetProj.messages = [];
     if (isCurrentProject) {
-      targetProj.messages = fresh.messages;
       state.history = [];
       state.attachments = [];
-      $("feed").replaceChildren();
-      if (document.body.dataset.appMode !== "chat") {
-        append("assistant", "Bienvenido a EditCoreAI. ¿Qué haremos hoy?", null, false);
-      }
+      $("feed")?.replaceChildren();
       renderAttachments();
-      scrollFeedToBottom();
       refreshUndoAgentRunButton();
     }
     targetProj.updatedAt = Date.now();
@@ -2965,8 +3181,8 @@ function closeChatThread(chatId, targetProjectId) {
     persistProjectChatsToDisk(targetProj);
     renderProjects();
     renderChatTabs();
-    $("status").textContent = "Chat cerrado";
-    try { window.dispatchEvent(new CustomEvent("editcore:chats-updated", { detail: { activeChatId: fresh.id, projectId: targetProj.id } })); } catch {}
+    $("status").textContent = "Chat eliminado";
+    try { window.dispatchEvent(new CustomEvent("editcore:chats-updated", { detail: { activeChatId: "", projectId: targetProj.id } })); } catch {}
     return;
   }
 
@@ -3440,13 +3656,26 @@ function projectForRoot(rootPath, fallbackName = "") {
 function removeProject(projectId) {
   const id = String(projectId || "").trim();
   if (!id) return;
-  const project = (state.projects || []).find((item) => item.id === id);
+  const project = (state.projects || []).find((item) => item.id === id || item.name === id || (item.projectRoot && item.projectRoot === id));
   if (!project) return;
+  const rootToRemove = normalizeProjectRoot(project.projectRoot);
   const isCurrent = project.id === state.activeProjectId;
-  state.projects = state.projects.filter((item) => item.id !== id);
+  state.projects = state.projects.filter((item) => item.id !== id && item.id !== project.id);
+
+  if (rootToRemove) {
+    try {
+      const raw = loadJson(RECENT_PROJECT_ROOTS_KEY, []);
+      const updated = (Array.isArray(raw) ? raw : []).filter((r) => normalizeProjectRoot(r) !== rootToRemove);
+      localStorage.setItem(RECENT_PROJECT_ROOTS_KEY, JSON.stringify(updated));
+    } catch {}
+    try {
+      localStorage.removeItem("editcore-chat-tabs-" + project.id);
+      localStorage.removeItem("editcore-chat-tabs-" + rootToRemove);
+    } catch {}
+  }
 
   if (isCurrent) {
-    const next = state.projects.find((p) => p.projectRoot) || state.projects[0];
+    const next = state.projects.find((p) => p.projectRoot);
     if (next) {
       state.activeProjectId = next.id;
       state.projectRoot = next.projectRoot || "";
@@ -3457,8 +3686,13 @@ function removeProject(projectId) {
       state.activeProjectId = "";
       state.projectRoot = "";
       state.history = [];
-      const fresh = ensureProject();
-      state.activeProjectId = fresh.id;
+      state.activeFilePath = "";
+      state.activeTab = "";
+      state.openFiles = [];
+      $("feed")?.replaceChildren();
+      if (editor) {
+        editor.setValue("");
+      }
     }
     renderFeed({ force: true });
   }
@@ -3676,10 +3910,7 @@ function renderFeed(options = {}) {
   updateAgentCount();
   updateStatus();
   renderChatThreadSelect();
-  $("permissionsBtn").textContent = { readonly: "Solo lectura", step: "Permisos", full: "Acceso completo" }[state.permissionMode] || "Permisos";
-  $("permissionsBtn").classList.toggle("danger", state.permissionMode === "full");
-  $("permissionsBtn").dataset.permissionMode = state.permissionMode;
-  syncPermissionMenuSelection(state.permissionMode);
+  renderPermissionButton(state.permissionMode);
   $("projectPathLabel").textContent = state.projectRoot || "Sin proyecto";
   refreshAppStatusBar();
   renderProjectFiles().catch(() => undefined);
@@ -6746,7 +6977,7 @@ function prepareChatProseForRender(text) {
         /([?&](?:key|api_key|apikey|token|access_token)=)[^&\s]+/gi,
         "$1[REDACTED]",
       )
-      .replace(/\s{2,}/g, " ")
+      .replace(/[ \t]{2,}/g, " ")
       .trim();
   }
   const Elite = window.EditCoreEliteCommunication;
@@ -13341,6 +13572,40 @@ async function boot() {
   state.projects = initialProjects;
   _isSessionHydrated = true;
 
+  // Si no hay proyectos cargados, auto-restaurar desde raíces recientes para no perder proyectos de trabajo
+  if (state.projects.length === 0) {
+    const recentRoots = loadJson(RECENT_PROJECT_ROOTS_KEY, []);
+    const lastRoot = localStorage.getItem("editcore-project-root");
+    const rootsToRestore = [];
+    if (lastRoot && !rootsToRestore.includes(lastRoot)) rootsToRestore.push(lastRoot);
+    if (Array.isArray(recentRoots)) {
+      for (const r of recentRoots) {
+        if (r && !rootsToRestore.includes(r)) rootsToRestore.push(r);
+      }
+    }
+    for (const root of rootsToRestore) {
+      const name = root.split(/[\\/]/).filter(Boolean).pop() || "Proyecto";
+      const newProj = ensureProjectAgent({
+        id: `proj_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`,
+        title: name,
+        name: name,
+        projectRoot: root,
+        chats: [{
+          id: `chat_${Date.now().toString(36)}_1`,
+          title: "Conversación general",
+          messages: [],
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        }],
+        activeChatId: `chat_${Date.now().toString(36)}_1`,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        lastOpenedAt: Date.now(),
+      });
+      state.projects.push(newProj);
+    }
+  }
+
   // Limpiar proyectos huérfanos vacíos creados por recargas previas si existen proyectos reales.
   if (state.projects.length > 1) {
     state.projects = state.projects.filter((p) => {
@@ -13804,6 +14069,7 @@ function addFallbackProvider() {
 }
 
 function wireComposerControls() {
+  renderPermissionButton(state.permissionMode || "step");
   $("runMode")?.addEventListener("change", () => {
     if ($("runMode").value === "agent" && state.permissionMode !== "full") {
       applyPermissionMode("full");
@@ -13978,7 +14244,56 @@ function wireComposerControls() {
     recorder.ondataavailable = (ev) => {
       if (ev.data && ev.data.size > 0) _dictationMediaChunks.push(ev.data);
     };
+
+    // VAD: Detección inteligente de silencio para enviar automáticamente
+    let audioCtx = null;
+    let silenceTimer = null;
+    let hasSpoken = false;
+    let vadInterval = null;
+
+    try {
+      const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+      if (AudioContextClass) {
+        audioCtx = new AudioContextClass();
+        const source = audioCtx.createMediaStreamSource(stream);
+        const analyser = audioCtx.createAnalyser();
+        analyser.fftSize = 512;
+        source.connect(analyser);
+        const bufferLength = analyser.frequencyBinCount;
+        const dataArray = new Uint8Array(bufferLength);
+
+        vadInterval = setInterval(() => {
+          if (!_isVoiceRecording || recorder.state !== "recording") {
+            clearInterval(vadInterval);
+            return;
+          }
+          analyser.getByteFrequencyData(dataArray);
+          let sum = 0;
+          for (let i = 0; i < bufferLength; i++) sum += dataArray[i];
+          const average = sum / bufferLength;
+
+          if (average > 12) {
+            hasSpoken = true;
+            if (silenceTimer) {
+              clearTimeout(silenceTimer);
+              silenceTimer = null;
+            }
+          } else if (hasSpoken && !silenceTimer) {
+            silenceTimer = setTimeout(() => {
+              if (_isVoiceRecording && recorder.state === "recording") {
+                try { recorder.stop(); } catch { /* ignore */ }
+              }
+            }, 1800);
+          }
+        }, 100);
+      }
+    } catch (_) { /* Fallback a control manual */ }
+
     recorder.onstop = () => {
+      clearInterval(vadInterval);
+      if (silenceTimer) clearTimeout(silenceTimer);
+      try { audioCtx?.close?.(); } catch { /* ignore */ }
+
       void (async () => {
         try {
           const blob = new Blob(_dictationMediaChunks, { type: recorder.mimeType || "audio/webm" });
@@ -13987,7 +14302,7 @@ function wireComposerControls() {
             toast("No se capturó audio. Intenta de nuevo.");
             return;
           }
-          toast("Transcribiendo…");
+          toast("⏳ Transcribiendo voz…");
           const buffer = await blob.arrayBuffer();
           const result = await window.editcoreApp.transcribeAudio(buffer, blob.type || "audio/webm");
           const text = String(result?.text || result?.transcript || "").trim();
@@ -13998,7 +14313,7 @@ function wireComposerControls() {
           const base = String(initialPrompt || "");
           const next = base && !base.endsWith(" ") ? `${base} ${text}` : `${base}${text}`;
           writeDictationToPrompts(next.trimStart());
-          toast("Dictado listo");
+          toast("✅ Dictado añadido al chat");
         } catch (err) {
           toast(err?.message || "Error al transcribir");
         } finally {
@@ -14017,7 +14332,7 @@ function wireComposerControls() {
     _dictationMode = "media";
     _isVoiceRecording = true;
     setDictationUiActive(true);
-    toast("Grabando… pulsa el mic otra vez para transcribir");
+    toast("🎤 Escuchando… habla ahora (se transcribirá al pausar o volver a pulsar)");
     return { ok: true };
   }
 
@@ -15566,7 +15881,7 @@ $("createSupabaseProjectBtn")?.addEventListener("click", () => createSupabasePro
 }));
 $("updatesBtn")?.addEventListener("click", () => {
   closeAllToolbarMenus();
-  reloadEditCoreApp().catch((err) => {
+  checkAppUpdates({ reloadIfUpToDate: true }).catch((err) => {
     $("status").textContent = err?.message || String(err);
   });
 });
@@ -15582,9 +15897,23 @@ $("composerReloadAppBtn")?.addEventListener("click", () => {
 });
 $("checkUpdatesMenuBtn")?.addEventListener("click", () => {
   closeAllToolbarMenus();
-  checkAppUpdates().catch((err) => {
+  checkAppUpdates({ reloadIfUpToDate: false }).catch((err) => {
     $("status").textContent = err?.message || String(err);
   });
+});
+$("logsBtn")?.addEventListener("click", () => {
+  closeAllToolbarMenus();
+  if (typeof window.EditCoreLogs?.toggle === "function") {
+    window.EditCoreLogs.toggle();
+  } else {
+    const tabLogs = document.querySelector(".viewer-logs-tab[data-tab='logs']");
+    if (tabLogs) tabLogs.click();
+  }
+});
+$("voiceHangupBtn")?.addEventListener("click", (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  stopLiveVoiceDictation();
 });
 function setToolbarMenuOpen(btnId, menuId, open) {
   const btn = $(btnId);
@@ -15674,31 +16003,40 @@ async function deployProjectOneClick() {
   $("status").textContent = "Deploy fallido";
 }
 
-async function checkAppUpdates() {
-  if (!window.editcoreApp?.checkUpdates) {
+async function checkAppUpdates({ reloadIfUpToDate = false } = {}) {
+  if (!window.editcoreApp?.checkUpdates && !window.editcoreUpdates?.checkForUpdates) {
+    if (reloadIfUpToDate) return reloadEditCoreApp();
     appendMessage("assistant", "Comprobacion de actualizaciones no disponible en esta build.");
     $("status").textContent = "Updates no disponible";
     return;
   }
-  $("status").textContent = "Buscando actualizaciones de EditCore...";
+  $("status").textContent = "Buscando actualizaciones de EditCoreAI...";
   let result;
   try {
-    result = await window.editcoreApp.checkUpdates();
+    result = window.editcoreUpdates?.checkForUpdates
+      ? await window.editcoreUpdates.checkForUpdates()
+      : await window.editcoreApp.checkUpdates();
   } catch (error) {
+    if (reloadIfUpToDate) return reloadEditCoreApp();
     const msg = `No pude comprobar actualizaciones: ${error?.message || error}`;
     appendMessage("assistant", msg);
     $("status").textContent = "Error al buscar updates";
     return;
   }
   if (result?.idle || result?.configured === false) {
+    if (reloadIfUpToDate) {
+      $("status").textContent = "EditCoreAI al día · Recargando núcleo...";
+      await new Promise((r) => setTimeout(r, 400));
+      return reloadEditCoreApp();
+    }
     appendMessage("assistant", [
       "## Actualizar EditCore",
       "",
-      "Este boton busca **versiones nuevas de EditCoreAI** en GitHub Releases (no actualiza tu proyecto).",
+      "Este boton busca **versiones nuevas de EditCoreAI** en GitHub Releases.",
       "",
-      result?.message || "Todavia no hay canal de releases configurado.",
+      result?.message || "EditCoreAI v4.0.0 al día.",
     ].join("\n"));
-    $("status").textContent = "Sin canal de updates";
+    $("status").textContent = "EditCore al día";
     return;
   }
   if (result?.available) {
@@ -15710,18 +16048,26 @@ async function checkAppUpdates() {
     ].filter(Boolean).join("\n"));
     $("status").textContent = `Update ${result.latestVersion}`;
     const url = result.downloadUrl || result.htmlUrl;
-    if (url && window.editcoreApp.openExternal) {
-      const ok = await window.editcoreWindow?.confirmDialog?.(
+    if (url) {
+      const ok = await (window.editcoreWindow?.confirmDialog?.(
         "Actualizacion disponible",
-        `Hay EditCore ${result.latestVersion} (tienes ${result.currentVersion || "?"}). ¿Abrir descarga?`,
+        `Hay EditCore ${result.latestVersion} (tienes ${result.currentVersion || "4.0.0"}). ¿Abrir descarga?`,
         "Abrir",
         "Luego"
-      );
-      if (ok) await window.editcoreApp.openExternal(url);
+      ) || (typeof window.confirm === "function" ? window.confirm(`Hay EditCore ${result.latestVersion}. ¿Abrir descarga?`) : false));
+      if (ok) {
+        if (window.editcoreUpdates?.applyUpdate) await window.editcoreUpdates.applyUpdate(url);
+        else if (window.editcoreApp?.openExternal) await window.editcoreApp.openExternal(url);
+        else window.open(url, "_blank");
+      }
     }
     return;
   }
   if (result?.checkFailed || result?.status === "checkFailed") {
+    if (reloadIfUpToDate) {
+      $("status").textContent = "Recargando EditCore...";
+      return reloadEditCoreApp();
+    }
     appendMessage("assistant", [
       "## No se pudo comprobar actualizaciones",
       "",
@@ -15732,28 +16078,25 @@ async function checkAppUpdates() {
     $("status").textContent = "Error al buscar updates";
     return;
   }
-  if (result?.status === "noReleases") {
+  if (result?.status === "noReleases" || result?.status === "upToDate" || !result?.available) {
+    if (reloadIfUpToDate) {
+      $("status").textContent = "EditCoreAI v4.0.0 al día · Recargando núcleo...";
+      await new Promise((r) => setTimeout(r, 400));
+      return reloadEditCoreApp();
+    }
     appendMessage("assistant", [
-      "## Sin releases publicos",
+      "## EditCore al dia",
       "",
-      result?.message || "El canal de GitHub no tiene releases publicos todavia.",
-      result?.repo ? `Canal: GitHub \`${result.repo}\`.` : "",
+      result?.message || `Estas al dia (${result?.currentVersion || "v4.0.0"}).`,
     ].filter(Boolean).join("\n"));
-    $("status").textContent = "Sin releases publicos";
-    return;
+    $("status").textContent = "EditCore al dia";
   }
-  appendMessage("assistant", [
-    "## EditCore al dia",
-    "",
-    result?.message || `Estas al dia (${result?.currentVersion || "version actual"}).`,
-    result?.repo ? `Canal: GitHub \`${result.repo}\`.` : "",
-  ].filter(Boolean).join("\n"));
-  $("status").textContent = "EditCore al dia";
 }
 $("inspectorPublishBtn")?.addEventListener("click", () => publishChanges("editcore"));
 $("inspectorSaveBtn")?.addEventListener("click", () => saveEditCoreChanges());
 
 // Bridge Chat Home ↔ IDE (sin duplicar Agent Core).
+window.reloadEditCoreApp = reloadEditCoreApp;
 window.createNewChatThread = createNewChatThread;
 window.switchChatThread = switchChatThread;
 window.closeChatThread = closeChatThread;
@@ -15834,6 +16177,7 @@ window.EditCoreModels = {
   closePicker: () => setModelPickerOpen(false),
   isOpen: () => !$("modelPickerMenu")?.classList.contains("hidden"),
   openProviders: () => openProviders(),
+  autoDetectAndVerify: (providerId, opts) => autoDetectAndVerifyCustomProvider(providerId, opts),
 };
 window.EditCoreTheme = {
   apply: (theme) => applyEditCoreTheme(theme),

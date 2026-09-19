@@ -17,7 +17,7 @@ function normalizeMessages(messages = []) {
     .filter((m) => m.content);
 }
 
-function formatSessionMarkdown({ title = "EditCore session", projectRoot = "", messages = [], steps = [] } = {}) {
+function formatSessionMarkdown({ title = "EDITCOREAI session", projectRoot = "", messages = [], steps = [] } = {}) {
   const lines = [
     `# ${title}`,
     "",
@@ -46,7 +46,7 @@ function formatSessionMarkdown({ title = "EditCore session", projectRoot = "", m
 function exportSession(projectRoot, input = {}) {
   const root = path.resolve(String(projectRoot || ""));
   const md = formatSessionMarkdown({
-    title: input.title || "EditCore session",
+    title: input.title || "EDITCOREAI session",
     projectRoot: root,
     messages: input.messages,
     steps: input.steps,

@@ -1,6 +1,6 @@
 /**
  * audit-integrity-check.js
- * Verificador de integridad para el sistema de auditoría de EditCore
+ * Verificador de integridad para el sistema de auditoría de EDITCOREAI
  * Creado desde análisis forense de componentes runtime
  */
 

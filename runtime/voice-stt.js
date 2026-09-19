@@ -198,6 +198,30 @@ function collectWhisperCandidates(secure = {}, userDataPath = "") {
   const meaiKey = providers?.meai?.apiKey || secure?.keys?.meai || "";
   if (meaiKey) push({ providerKey: "meai", label: "meai", apiKey: meaiKey, baseUrl: "https://api.meai.cloud/v1" });
 
+  const groqKey = providers?.groq?.apiKey || secure?.keys?.groq || "";
+  if (groqKey) {
+    push({
+      providerKey: "groq",
+      label: "groq-whisper",
+      apiKey: groqKey,
+      baseUrl: "https://api.groq.com/openai/v1",
+      model: "whisper-large-v3-turbo",
+      preferred: true,
+    });
+  }
+
+  const openaiKey = providers?.openai?.apiKey || secure?.keys?.openai || "";
+  if (openaiKey) {
+    push({
+      providerKey: "openai",
+      label: "openai-whisper",
+      apiKey: openaiKey,
+      baseUrl: "https://api.openai.com/v1",
+      model: "whisper-1",
+      preferred: true,
+    });
+  }
+
   void userDataPath;
   out.sort((a, b) => Number(b.preferred) - Number(a.preferred));
   return out;
@@ -220,6 +244,10 @@ function collectGeminiKeys(secure = {}) {
       push(profile.apiKey);
     }
   }
+  const providers = secure?.["editcore-providers"] && typeof secure["editcore-providers"] === "object"
+    ? secure["editcore-providers"]
+    : {};
+  if (providers?.gemini?.apiKey) push(providers.gemini.apiKey);
   push(secure?.keys?.gemini);
   push(secure?.keys?.google);
   push(process.env.GEMINI_API_KEY);
@@ -232,7 +260,7 @@ async function tryWhisper(candidate, rawBuffer, mimeType = "audio/webm") {
   const blob = new Blob([bytes], { type: mimeType || "audio/webm" });
   const ext = String(mimeType || "").includes("ogg") ? "ogg" : "webm";
   formData.append("file", blob, `speech.${ext}`);
-  formData.append("model", "whisper-1");
+  formData.append("model", candidate.model || "whisper-1");
   formData.append("language", "es");
   const res = await fetch(candidate.url, {
     method: "POST",

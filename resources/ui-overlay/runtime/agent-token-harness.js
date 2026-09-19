@@ -1,48 +1,26 @@
 "use strict";
 
 /**
- * Harness de tokens del agente: cache-first, recorte de resultados,
- * compactacion agresiva y cierre temprano cuando el presupuesto se agota.
+ * Harness de tokens + cache local de lecturas (por corrida).
+ * Reduce reenvío de archivos al modelo y recorta tool results.
  */
 
 function resolveHarnessProfile(depthProfile = {}, budget = null, options = {}) {
-  const strategy = typeof budget?.getStrategy === "function" ? budget.getStrategy() : "full";
-  const depth = String(depthProfile.depth || "standard");
-  const deep = ["deep", "surgical", "forensic", "exhaustive"].includes(depth);
   const analysisMode = options.analysisMode === true;
-
-  const conversation = {
-    full: { maxChars: deep ? 96_000 : 80_000, keepLastTurns: deep ? 6 : 8 },
-    moderate: { maxChars: 64_000, keepLastTurns: 5 },
-    minimal: { maxChars: 40_000, keepLastTurns: 4 },
-    emergency: { maxChars: 24_000, keepLastTurns: 3 },
-  }[strategy] || { maxChars: 80_000, keepLastTurns: 6 };
-
-  // Analisis serial: compactar antes para no quemar tokens con tool dumps.
-  if (analysisMode) {
-    conversation.maxChars = Math.min(conversation.maxChars, deep ? 56_000 : 48_000);
-    conversation.keepLastTurns = Math.min(conversation.keepLastTurns, 4);
-  }
-
-  const toolResultChars = {
-    full: deep ? 8_000 : 10_000,
-    moderate: 5_000,
-    minimal: 2_500,
-    emergency: 1_200,
-  }[strategy] || 8_000;
+  const remaining = budget && typeof budget.remainingRatio === "function"
+    ? budget.remainingRatio()
+    : 1;
+  let strategy = "full";
+  if (remaining < 0.18) strategy = "minimal";
+  else if (remaining < 0.4) strategy = "moderate";
+  else if (analysisMode) strategy = "moderate";
 
   return {
     strategy,
-    depth,
-    deep,
-    analysisMode,
-    conversation,
-    toolResultChars: analysisMode ? Math.min(toolResultChars, 4_000) : toolResultChars,
-    forceReport: strategy === "emergency" || (strategy === "minimal" && deep),
-    allowNewSearch: strategy === "full" || strategy === "moderate",
-    allowBrain: strategy === "full",
-    preferCache: true,
+    forceReport: remaining < 0.12,
+    maxToolResultChars: strategy === "minimal" ? 2500 : strategy === "moderate" ? 6000 : 12000,
     maxParallelReads: analysisMode ? 1 : (strategy === "full" ? 6 : strategy === "moderate" ? 4 : 2),
+    preferCache: strategy !== "full",
   };
 }
 
@@ -98,8 +76,54 @@ function buildHarnessSystemNudge(harness = {}) {
   return "";
 }
 
+/**
+ * Cache de lecturas por path dentro de una corrida de agente.
+ * Key: path normalizado + mtime si se conoce.
+ */
+class RunReadCache {
+  constructor() {
+    this.map = new Map();
+    this.hits = 0;
+    this.misses = 0;
+  }
+
+  normalize(pathValue) {
+    return String(pathValue || "").replace(/\\/g, "/").replace(/^\.\//, "").toLowerCase();
+  }
+
+  get(pathValue, mtimeMs = null) {
+    const key = this.normalize(pathValue);
+    const entry = this.map.get(key);
+    if (!entry) {
+      this.misses += 1;
+      return null;
+    }
+    if (mtimeMs != null && entry.mtimeMs != null && Number(mtimeMs) !== Number(entry.mtimeMs)) {
+      this.misses += 1;
+      this.map.delete(key);
+      return null;
+    }
+    this.hits += 1;
+    return entry.result;
+  }
+
+  set(pathValue, result, mtimeMs = null) {
+    const key = this.normalize(pathValue);
+    this.map.set(key, {
+      result,
+      mtimeMs: mtimeMs == null ? null : Number(mtimeMs),
+      at: Date.now(),
+    });
+  }
+
+  stats() {
+    return { hits: this.hits, misses: this.misses, size: this.map.size };
+  }
+}
+
 module.exports = {
   resolveHarnessProfile,
   clipToolResultForHarness,
   buildHarnessSystemNudge,
+  RunReadCache,
 };

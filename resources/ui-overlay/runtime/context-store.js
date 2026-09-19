@@ -244,7 +244,7 @@ class ReversibleContextStore {
     const stored = this.store(content, metadata);
     const headChars = Math.max(400, Math.floor(maxChars * 0.64));
     const tailChars = Math.max(240, maxChars - headChars - 240);
-    return `${content.slice(0, headChars)}\n[EditCore: ${content.length - headChars - tailChars} caracteres archivados. Usa retrieve_context con id ${stored.id}]\n${content.slice(-tailChars)}`;
+    return `${content.slice(0, headChars)}\n[EDITCOREAI: ${content.length - headChars - tailChars} caracteres archivados. Usa retrieve_context con id ${stored.id}]\n${content.slice(-tailChars)}`;
   }
 
   prune() {

@@ -99,6 +99,29 @@ html[data-theme="azul"] #chatHomeShell {
   border-radius: 4px;
 }
 
+.chat-home-top-action-btn {
+  height: 24px;
+  padding: 0 8px;
+  margin-left: 6px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid var(--ec-border-strong, #d7dee6);
+  background: var(--ec-bg-elevated, #ffffff) !important;
+  color: var(--ec-text, #1f1f1f) !important;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+  -webkit-app-region: no-drag;
+}
+.chat-home-top-action-btn:hover {
+  background: var(--ec-hover, #edf7f6) !important;
+  border-color: var(--ec-accent, #1b6f79);
+  color: var(--ec-accent, #1b6f79) !important;
+}
+
 .chat-home-top-actions {
   display: inline-flex;
   align-items: center;
@@ -107,6 +130,8 @@ html[data-theme="azul"] #chatHomeShell {
 }
 
 .chat-home-folder-btn,
+.chat-home-reload-btn,
+#chatHomeReloadAppBtn,
 .chat-home-ide-btn,
 #chatHomeIdeBtn {
   height: 28px;
@@ -115,16 +140,24 @@ html[data-theme="azul"] #chatHomeShell {
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
-  border: 0;
+  border: 0 !important;
+  outline: 0 !important;
   background: transparent !important;
   color: var(--ch-text) !important;
   box-shadow: none !important;
   filter: none !important;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+  transition: background 0.12s, color 0.12s;
 }
 
 .chat-home-folder-btn:hover,
 .chat-home-ide-btn:hover,
-#chatHomeIdeBtn:hover {
+#chatHomeIdeBtn:hover,
+.chat-home-reload-btn:hover,
+#chatHomeReloadAppBtn:hover {
   background: var(--ch-hover) !important;
   color: var(--ch-text) !important;
 }
@@ -133,6 +166,7 @@ html[data-theme="azul"] #chatHomeShell {
 #chatHomeIdeBtn {
   min-width: 52px;
 }
+
 
 .chat-home-body {
   flex: 1;
@@ -521,16 +555,16 @@ html[data-theme="azul"] .chat-home-new-btn {
   box-sizing: border-box;
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: space-between;
   border-bottom: 1px solid var(--ch-line);
   background: var(--ch-bg-main);
-  padding: 0 16px;
+  padding: 0 20px;
 }
 
 .chat-home-main-head-inner {
-  width: min(720px, 100%);
+  width: 100%;
   max-width: 100%;
-  margin: 0 auto;
+  margin: 0;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -603,11 +637,14 @@ html[data-theme="azul"] .chat-home-crumb-folder {
   align-items: center;
   justify-content: center;
   cursor: pointer;
+  margin-left: auto;
+  transition: all 0.12s ease;
 }
 
-.chat-home-context-dock:hover {
+.chat-home-context-dock:hover,
+.chat-home-context-dock.is-active {
   background: var(--ch-hover);
-  color: var(--ch-text);
+  color: var(--ec-accent, #1b6f79);
 }
 
 .chat-home-context {
@@ -1171,17 +1208,39 @@ body[data-app-mode="chat"] #chatHomeFeedHost .msg-body {
 .chat-home-settings-list button strong { display: block; font-size: 13px; }
 .chat-home-settings-list button span { color: var(--ec-text-muted); font-size: 12px; }
 
-.chat-home-settings-close {
-  margin-top: 10px;
-  width: 100%;
-  height: 36px;
-  border: 0;
-  border-radius: 10px;
-  background: var(--ec-bg-soft);
-  color: var(--ec-text);
-  cursor: pointer;
-  font-weight: 600;
+.chat-home-settings-close,
+.ec-settings-top-close,
+#chatHomeSettingsClose {
+  position: absolute !important;
+  top: 16px !important;
+  right: 18px !important;
+  width: 32px !important;
+  height: 32px !important;
+  min-width: 32px !important;
+  max-width: 32px !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 8px !important;
+  background: transparent !important;
+  color: var(--ec-text-muted, #71717a) !important;
+  font-size: 16px !important;
+  font-weight: 700 !important;
+  cursor: pointer !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  z-index: 100 !important;
+  transition: background 0.15s ease, color 0.15s ease;
 }
+
+.chat-home-settings-close:hover,
+.ec-settings-top-close:hover,
+#chatHomeSettingsClose:hover {
+  background: var(--ec-hover, rgba(0, 0, 0, 0.06)) !important;
+  color: var(--ec-text, #18181b) !important;
+}
+
 
 #openChatHomeBtn {
   display: none;
@@ -1974,5 +2033,161 @@ html[data-theme="azul"] .diff-decision-card {
   color: #10b981;
   font-weight: 600;
 }
+
+/* ====================================================
+   AUTH PORTAL & LOGOUT STYLES
+   ==================================================== */
+
+.ec-auth-portal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(10, 15, 25, 0.75);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+.ec-auth-portal-overlay[hidden],
+.ec-auth-portal-overlay.is-hidden {
+  display: none !important;
+}
+
+.ec-auth-card {
+  width: min(440px, calc(100vw - 32px));
+  background: var(--ec-bg-elevated, #ffffff);
+  color: var(--ec-text, #18181b);
+  border: 1px solid var(--ec-border, #e4e4e7);
+  border-radius: 18px;
+  box-shadow: 0 30px 70px rgba(0, 0, 0, 0.28);
+  padding: 32px 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  animation: ecSettingsFadeIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.ec-auth-brand {
+  text-align: center;
+}
+
+.ec-auth-logo {
+  font-size: 32px;
+  margin-bottom: 4px;
+}
+
+.ec-auth-brand h2 {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.ec-auth-brand p {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: var(--ec-text-muted, #71717a);
+  line-height: 1.4;
+}
+
+.ec-auth-tabs {
+  display: flex;
+  background: var(--ec-bg-soft, #f4f4f5);
+  border-radius: 10px;
+  padding: 4px;
+  gap: 4px;
+}
+
+.ec-auth-tab {
+  flex: 1;
+  padding: 8px 12px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ec-text-muted, #71717a);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.ec-auth-tab.is-active {
+  background: var(--ec-bg-elevated, #ffffff);
+  color: var(--ec-text, #18181b);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+}
+
+.ec-auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.ec-auth-form.is-hidden,
+.ec-auth-form[hidden] {
+  display: none !important;
+}
+
+.ec-auth-options-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12px;
+  color: var(--ec-text-muted, #71717a);
+}
+
+.ec-auth-remember {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.ec-auth-submit-btn {
+  width: 100%;
+  height: 40px;
+  font-size: 14px;
+  font-weight: 600;
+  border-radius: 10px;
+  margin-top: 6px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ec-settings-logout-wrap {
+  margin-top: auto;
+  margin-bottom: 8px;
+  width: 100%;
+}
+
+.ec-user-logout-btn {
+  margin-top: 0;
+  width: 100%;
+  height: 32px;
+  border: 1px solid var(--ec-border, #e4e4e7);
+  border-radius: 8px;
+  background: var(--ec-bg-elevated, #fafafa);
+  color: var(--ec-text-muted, #71717a);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.ec-user-logout-btn:hover {
+  background: rgba(239, 68, 68, 0.1) !important;
+  color: #ef4444 !important;
+  border-color: rgba(239, 68, 68, 0.3) !important;
+}
+
 
 

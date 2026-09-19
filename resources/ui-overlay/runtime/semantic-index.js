@@ -110,7 +110,13 @@ function getLocalIndex(projectRoot, { refresh = false } = {}) {
   const key = path.resolve(String(projectRoot || "")).toLowerCase();
   const existing = cache.get(key);
   if (!refresh && existing && Date.now() - existing.builtAt < 5 * 60_000) return existing;
-  const index = buildLocalIndex(projectRoot);
+  let index;
+  try {
+    const { buildIncrementalIndex } = require("./semantic-index-incremental");
+    index = buildIncrementalIndex(projectRoot, { force: refresh === true });
+  } catch {
+    index = buildLocalIndex(projectRoot);
+  }
   cache.set(key, index);
   return index;
 }

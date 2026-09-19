@@ -1,6 +1,6 @@
 /**
  * audit-validator.js
- * Validador de integridad para el sistema de auditoría EditCore
+ * Validador de integridad para el sistema de auditoría EDITCOREAI
  * Verifica coherencia entre ActionRegistry, EvidenceGrounding y el Adapter
  */
 

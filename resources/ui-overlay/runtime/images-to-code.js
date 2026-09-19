@@ -29,7 +29,7 @@ function buildScaffold({ title = "UI from image", description = "", imageName = 
 </head>
 <body>
   <main class="hero">
-    <p class="eyebrow">EditCore · images→code</p>
+    <p class="eyebrow">EDITCOREAI · images→code</p>
     <h1>${safeTitle}</h1>
     <p class="lede">${desc}</p>
     <p class="meta">${imgNote}</p>

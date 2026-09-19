@@ -18,10 +18,11 @@
       return {
         threads: Array.isArray(raw.threads) ? raw.threads : [],
         activeId: String(raw.activeId || ""),
+        language: String(raw.language || "es"),
         search: "",
       };
     } catch {
-      return { threads: [], activeId: "", search: "" };
+      return { threads: [], activeId: "", language: "es", search: "" };
     }
   }
 
@@ -30,11 +31,165 @@
       localStorage.setItem(STORAGE_KEY, JSON.stringify({
         threads: store.threads.slice(0, 80),
         activeId: store.activeId,
+        language: store.language || "es",
       }));
     } catch { /* ignore */ }
   }
 
   const store = loadStore();
+
+  const UI_I18N = {
+    es: {
+      updateBtn: "Actualizar",
+      connectFolder: "Conectar carpeta",
+      ideBtn: "IDE",
+      sidebarHeading: "Consultas",
+      newChat: "+ Nuevo Chat",
+      searchPlaceholder: "Buscar…",
+      navChats: "Chats",
+      navCodebase: "Código base",
+      navSettings: "⚙ Configuración",
+      sectionProjects: "Proyectos",
+      sectionConversations: "Conversaciones",
+      noProjects: "Sin proyectos conectados",
+      noConversations: "No hay conversaciones aún",
+      welcomeGreeting: "¿En qué puedo ayudarte?",
+      welcomeSub: "Escribe lo que necesitas. EditCore decide cómo resolverlo.",
+      composerPlaceholder: "Pide a EditCore crear, depurar, explorar…",
+      categoriesHeading: "CATEGORÍAS",
+      projectsHeading: "PROYECTOS",
+      searchSettings: "Buscar configuración...",
+      tabGeneral: "General",
+      tabApplication: "Aplicación",
+      tabAppearance: "Apariencia",
+      tabModels: "Modelos",
+      tabCredits: "Créditos y Facturación",
+      tabCustomizations: "Personalizaciones",
+      tabBrowser: "Navegador",
+      langCardTitle: "Idioma de la Interfaz",
+      langCardDesc: "Selecciona el idioma principal de EditCoreAI.",
+      indexCardTitle: "Indexación Continua del Repositorio",
+      indexCardDesc: "Mantiene un grafo en tiempo real de funciones, símbolos y referencias.",
+      permCardTitle: "Permisos del Agente",
+      permCardDesc: "Define cómo interactúa el agente con tus archivos y consola.",
+      permReadonly: "Solo lectura",
+      permStep: "Paso a paso",
+      permFull: "Acceso completo",
+    },
+    en: {
+      updateBtn: "Update",
+      connectFolder: "Connect folder",
+      ideBtn: "IDE",
+      sidebarHeading: "Queries",
+      newChat: "+ New Chat",
+      searchPlaceholder: "Search…",
+      navChats: "Chats",
+      navCodebase: "Codebase",
+      navSettings: "⚙ Settings",
+      sectionProjects: "Projects",
+      sectionConversations: "Conversations",
+      noProjects: "No projects connected",
+      noConversations: "No conversations yet",
+      welcomeGreeting: "How can I help you?",
+      welcomeSub: "Type what you need. EditCore decides how to solve it.",
+      composerPlaceholder: "Ask EditCore to create, debug, explore…",
+      categoriesHeading: "CATEGORIES",
+      projectsHeading: "PROJECTS",
+      searchSettings: "Search settings...",
+      tabGeneral: "General",
+      tabApplication: "Application",
+      tabAppearance: "Appearance",
+      tabModels: "Models",
+      tabCredits: "Credits & Billing",
+      tabCustomizations: "Customizations",
+      tabBrowser: "Browser",
+      langCardTitle: "Interface Language",
+      langCardDesc: "Select the primary language for EditCoreAI.",
+      indexCardTitle: "Continuous Repository Indexing",
+      indexCardDesc: "Maintains a real-time graph of functions, symbols, and references.",
+      permCardTitle: "Agent Permissions",
+      permCardDesc: "Defines how the agent interacts with your files and console.",
+      permReadonly: "Read only",
+      permStep: "Step by step",
+      permFull: "Full access",
+    },
+  };
+
+  function applyI18nLanguage(lang = "es") {
+    const selected = ["es", "en"].includes(lang) ? lang : "es";
+    store.language = selected;
+    saveStore(store);
+    const dict = UI_I18N[selected] || UI_I18N.es;
+
+    const langSel = $("settingsLangSelect");
+    if (langSel && langSel.value !== selected) {
+      langSel.value = selected;
+    }
+
+    const reloadSpan = $("chatHomeReloadAppBtn")?.querySelector("span");
+    if (reloadSpan) reloadSpan.textContent = dict.updateBtn;
+    if ($("chatHomeFolderBtn")) $("chatHomeFolderBtn").textContent = dict.connectFolder;
+    if ($("chatHomeIdeBtn")) $("chatHomeIdeBtn").textContent = dict.ideBtn;
+
+    const sideH2 = document.querySelector(".chat-home-sidebar-head h2");
+    if (sideH2) sideH2.textContent = dict.sidebarHeading;
+    if ($("chatHomeNewBtn")) $("chatHomeNewBtn").textContent = dict.newChat;
+    $("chatHomeSearch")?.setAttribute("placeholder", dict.searchPlaceholder);
+    if ($("chatHomeNavChats")) $("chatHomeNavChats").textContent = dict.navChats;
+    if ($("chatHomeNavFolder")) $("chatHomeNavFolder").textContent = dict.navCodebase;
+    if ($("chatHomeSettingsBtn")) $("chatHomeSettingsBtn").textContent = dict.navSettings;
+
+    const emptyH1 = document.querySelector(".chat-home-empty h1");
+    if (emptyH1) emptyH1.textContent = dict.welcomeGreeting;
+    const emptyP = document.querySelector(".chat-home-empty p");
+    if (emptyP) emptyP.textContent = dict.welcomeSub;
+    $("chatHomePrompt")?.setAttribute("placeholder", dict.composerPlaceholder);
+
+    const headings = document.querySelectorAll(".ec-settings-section-heading");
+    if (headings[0]) headings[0].textContent = dict.categoriesHeading;
+    if (headings[1]) headings[1].textContent = dict.projectsHeading;
+    $("settingsSearchInput")?.setAttribute("placeholder", dict.searchSettings);
+
+    const navMap = {
+      general: dict.tabGeneral,
+      application: dict.tabApplication,
+      appearance: dict.tabAppearance,
+      models: dict.tabModels,
+      credits: dict.tabCredits,
+      customizations: dict.tabCustomizations,
+      browser: dict.tabBrowser,
+    };
+    Object.entries(navMap).forEach(([tab, text]) => {
+      const el = document.querySelector(`[data-settings-tab="${tab}"] .ec-settings-nav-label`);
+      if (el) el.textContent = text;
+    });
+
+    const groupCards = document.querySelectorAll("#settingsPaneGeneral .ec-settings-group-card");
+    if (groupCards[0]) {
+      const h4 = groupCards[0].querySelector("h4");
+      const p = groupCards[0].querySelector("p");
+      if (h4) h4.textContent = dict.langCardTitle;
+      if (p) p.textContent = dict.langCardDesc;
+    }
+    if (groupCards[1]) {
+      const h4 = groupCards[1].querySelector("h4");
+      const p = groupCards[1].querySelector("p");
+      if (h4) h4.textContent = dict.indexCardTitle;
+      if (p) p.textContent = dict.indexCardDesc;
+    }
+    if (groupCards[2]) {
+      const h4 = groupCards[2].querySelector("h4");
+      const p = groupCards[2].querySelector("p");
+      if (h4) h4.textContent = dict.permCardTitle;
+      if (p) p.textContent = dict.permCardDesc;
+      const permBtns = groupCards[2].querySelectorAll(".ec-seg-btn");
+      if (permBtns[0]) permBtns[0].textContent = dict.permReadonly;
+      if (permBtns[1]) permBtns[1].textContent = dict.permStep;
+      if (permBtns[2]) permBtns[2].textContent = dict.permFull;
+    }
+
+    renderThreadList();
+  }
 
   const SVG_ICONS = {
     folder: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/></svg>`,
@@ -116,9 +271,14 @@
     return curProj?.activeChatId || store.activeId || (store.threads[0]?.id) || "";
   }
 
-  function ensureThread() {
+  function ensureThread(createIfEmpty = false) {
     const list = getThreads();
     if (!list.length) {
+      if (!createIfEmpty) {
+        store.activeId = "";
+        saveStore(store);
+        return null;
+      }
       const t = {
         id: uid(),
         title: "Nueva conversación",
@@ -132,10 +292,10 @@
     }
     const activeId = getActiveThreadId();
     if (!store.activeId || !list.some((t) => t.id === store.activeId)) {
-      store.activeId = activeId || list[0].id;
+      store.activeId = activeId || list[0]?.id || "";
       saveStore(store);
     }
-    return list.find((t) => t.id === store.activeId) || list[0];
+    return list.find((t) => t.id === store.activeId) || list[0] || null;
   }
 
   function setMode(mode) {
@@ -292,7 +452,11 @@
     panel.setAttribute("aria-hidden", next ? "false" : "true");
     btn?.classList.toggle("is-active", next);
     btn?.setAttribute("aria-selected", next ? "true" : "false");
-    if (dock) dock.hidden = next;
+    if (dock) {
+      dock.classList.toggle("is-active", next);
+      dock.setAttribute("aria-expanded", next ? "true" : "false");
+      dock.title = next ? "Cerrar panel de sesión" : "Abrir panel de sesión";
+    }
     try { localStorage.setItem("editcore-session-panel-open", next ? "true" : "false"); } catch { /* ignore */ }
     if (next) void refreshContextPanel();
   }
@@ -426,8 +590,20 @@
   async function refreshCreditsAndProfileUI() {
     try {
       let balance = { balance: Infinity, role: "admin", name: "Alfonso Perez Avilez", email: "aperezavilez@gmail.com", isSuperAdmin: true };
+      if (window.editcoreAuth?.getSession) {
+        try {
+          const authData = await window.editcoreAuth.getSession();
+          if (authData?.user) {
+            balance.name = authData.user.name || balance.name;
+            balance.email = authData.user.email || balance.email;
+            balance.role = authData.user.role || balance.role;
+            balance.isSuperAdmin = Boolean(authData.user.isSuperAdmin || authData.user.role === "admin");
+          }
+        } catch {}
+      }
       if (window.editcoreCredits?.getBalance) {
-        balance = await window.editcoreCredits.getBalance();
+        const cred = await window.editcoreCredits.getBalance();
+        if (cred) balance = { ...balance, ...cred };
       }
       const avatar = $("settingsUserAvatar");
       const nameEl = $("settingsUserName");
@@ -449,20 +625,113 @@
       if (profileEmailInput) profileEmailInput.value = balance.email || "aperezavilez@gmail.com";
 
       const isAdm = balance.role === "admin" || balance.isSuperAdmin;
-      if (roleEl) roleEl.textContent = isAdm ? "👑 Administrador Total" : "👤 Usuario Estándar";
+      if (roleEl) roleEl.textContent = isAdm ? "👑 Administrador Total" : (balance.role === "auditor" ? "🛡️ Auditor de Calidad" : "💻 Desarrollador");
       
       const balStr = isAdm || balance.balance === Infinity || balance.balance === "unlimited" ? "∞ Ilimitado" : `${balance.balance} créditos`;
       if (creditsBadge) creditsBadge.textContent = isAdm ? "∞" : `${balance.balance}`;
       if (creditsBigNum) creditsBigNum.textContent = balStr;
-      if (creditsPlanTag) creditsPlanTag.textContent = isAdm ? "Plan Administrador Maestro · Acceso Vitalicio" : "Plan Estándar Prepago";
+      if (creditsPlanTag) creditsPlanTag.textContent = isAdm ? "Plan Administrador Maestro · Acceso Vitalicio" : "Plan Prepago ME AI · Solo Modelos Oficiales";
+
+      // RBAC: Ocultar o blindar configuración de proveedores si no es administrador
+      const modelsNavTab = document.querySelector('[data-settings-tab="models"]');
+      if (modelsNavTab) {
+        if (!isAdm) {
+          modelsNavTab.style.display = "none";
+        } else {
+          modelsNavTab.style.display = "";
+        }
+      }
+
+      const projBox = $("settingsProjectsList");
+      if (projBox) {
+        const allProjs = typeof window.listProjects === "function" ? window.listProjects() : (window.state?.projects || []);
+        const validProjs = (Array.isArray(allProjs) ? allProjs : []).filter((p) => p.projectRoot || (p.name && p.name !== "Conversaciones" && p.name !== "Proyecto"));
+        projBox.replaceChildren();
+        if (!validProjs.length) {
+          const root = String(window.state?.projectRoot || "").trim();
+          if (root) {
+            const row = document.createElement("div");
+            row.className = "ec-settings-project-row is-active";
+            const icon = document.createElement("span");
+            icon.className = "ec-proj-icon";
+            icon.textContent = "📁";
+            const nameEl = document.createElement("span");
+            nameEl.className = "ec-proj-name";
+            nameEl.textContent = root.split(/[\\/]/).filter(Boolean).pop() || "EDITCOREAI";
+            row.appendChild(icon);
+            row.appendChild(nameEl);
+            projBox.appendChild(row);
+          } else {
+            const emptyRow = document.createElement("div");
+            emptyRow.className = "ec-settings-project-row";
+            emptyRow.style.color = "var(--ec-text-muted)";
+            emptyRow.textContent = "Sin proyectos conectados";
+            projBox.appendChild(emptyRow);
+          }
+        } else {
+          for (const p of validProjs) {
+            const pName = p.name || p.title || (p.projectRoot ? p.projectRoot.split(/[\\/]/).filter(Boolean).pop() : "Proyecto");
+            const row = document.createElement("div");
+            row.className = `ec-settings-project-row${p.isActive ? " is-active" : ""}`;
+            row.title = p.projectRoot ? `Proyecto: ${p.projectRoot}` : `Proyecto: ${pName}`;
+            const icon = document.createElement("span");
+            icon.className = "ec-proj-icon";
+            icon.textContent = "📁";
+            const nameEl = document.createElement("span");
+            nameEl.className = "ec-proj-name";
+            nameEl.textContent = pName;
+            row.appendChild(icon);
+            row.appendChild(nameEl);
+            if (p.id) {
+              row.style.cursor = "pointer";
+              row.onclick = () => {
+                if (typeof window.selectProject === "function") {
+                  window.selectProject(p.id);
+                  refreshCreditsAndProfileUI();
+                }
+              };
+            }
+            projBox.appendChild(row);
+          }
+        }
+      }
     } catch (err) {
       console.warn("Failed to refresh credits UI", err);
     }
   }
 
-  function showOutOfCreditsModal() {
+  async function showOutOfCreditsModal(reason = "recharge") {
     const modal = $("outOfCreditsModal");
     if (!modal) return;
+
+    let isAdm = true;
+    let balance = Infinity;
+    if (window.editcoreCredits?.getBalance) {
+      try {
+        const bal = await window.editcoreCredits.getBalance();
+        isAdm = bal.role === "admin" || bal.isSuperAdmin || bal.balance === Infinity || bal.isUnlimited;
+        balance = bal.balance;
+      } catch {}
+    }
+
+    const titleEl = $("outOfCreditsTitle");
+    const descEl = modal.querySelector("p");
+    const iconEl = modal.querySelector(".ec-credits-lock-icon");
+
+    if (isAdm) {
+      if (iconEl) iconEl.textContent = "💎";
+      if (titleEl) titleEl.textContent = "Recarga y Gestión de Créditos";
+      if (descEl) descEl.innerHTML = "Tu cuenta de <strong>Administrador Maestro</strong> cuenta con <strong>Saldo Ilimitado (∞)</strong> permanente. Puedes seleccionar un paquete para probar pagos reales con Mercado Pago o Stripe:";
+    } else if (reason === "out_of_credits" || balance === 0) {
+      if (iconEl) iconEl.textContent = "⚠️";
+      if (titleEl) titleEl.textContent = "¡Créditos de IA Agotados!";
+      if (descEl) descEl.innerHTML = "Tu saldo actual ha llegado a <strong>0 créditos</strong>. Para continuar utilizando los modelos de inteligencia artificial y agentes de EditCoreAI, añade más créditos a tu cuenta.";
+    } else {
+      if (iconEl) iconEl.textContent = "💳";
+      if (titleEl) titleEl.textContent = "Añadir Créditos a tu Cuenta";
+      if (descEl) descEl.innerHTML = `Tu saldo disponible es de <strong>${balance} créditos</strong>. Selecciona un paquete a continuación:`;
+    }
+
     modal.hidden = false;
     modal.removeAttribute("hidden");
     modal.setAttribute("aria-hidden", "false");
@@ -985,19 +1254,31 @@
     const q = String(store.search || "").trim().toLowerCase();
     list.replaceChildren();
 
+    const dict = UI_I18N[store.language || "es"] || UI_I18N.es;
     const allGroups = getProjectsWithChats();
     const activeId = getActiveThreadId();
 
     const folderProjects = allGroups.filter((p) => p.projectRoot || (p.name && p.name !== "Conversaciones" && p.name !== "Proyecto"));
-    const standaloneChats = [];
+    const folderChatIds = new Set();
+    for (const p of folderProjects) {
+      for (const c of (p.chats || [])) folderChatIds.add(c.id);
+    }
 
+    const standaloneChats = [];
+    const seenStandaloneIds = new Set();
     for (const g of allGroups) {
       if (!g.projectRoot && (!g.name || g.name === "Conversaciones" || g.name === "Proyecto")) {
-        for (const c of g.chats) standaloneChats.push(c);
+        for (const c of (g.chats || [])) {
+          if (!folderChatIds.has(c.id) && !seenStandaloneIds.has(c.id)) {
+            seenStandaloneIds.add(c.id);
+            standaloneChats.push(c);
+          }
+        }
       }
     }
     for (const st of store.threads) {
-      if (!standaloneChats.some((c) => c.id === st.id)) {
+      if (!folderChatIds.has(st.id) && !seenStandaloneIds.has(st.id)) {
+        seenStandaloneIds.add(st.id);
         standaloneChats.push({
           ...st,
           projectId: "default",
@@ -1010,13 +1291,13 @@
     // 1. PROJECTS SECTION
     const projSectionLabel = document.createElement("div");
     projSectionLabel.className = "chat-home-section-label";
-    projSectionLabel.textContent = "Projects";
+    projSectionLabel.textContent = dict.sectionProjects;
     list.appendChild(projSectionLabel);
 
     if (!folderProjects.length) {
       const emptyDiv = document.createElement("div");
       emptyDiv.className = "chat-home-thread-empty";
-      emptyDiv.textContent = "No projects connected";
+      emptyDiv.textContent = dict.noProjects;
       list.appendChild(emptyDiv);
     } else {
       for (const proj of folderProjects) {
@@ -1071,7 +1352,7 @@
         if (!matchingChats.length) {
           const emptyLi = document.createElement("li");
           emptyLi.className = "chat-home-thread-empty";
-          emptyLi.textContent = "No conversations yet";
+          emptyLi.textContent = dict.noConversations;
           ul.appendChild(emptyLi);
         } else {
           for (const t of matchingChats) {
@@ -1122,7 +1403,7 @@
     convSectionLabel.className = "chat-home-section-label chat-home-section-with-add";
     
     const convTitle = document.createElement("span");
-    convTitle.textContent = "Conversations";
+    convTitle.textContent = dict.sectionConversations;
     
     const convAddBtn = document.createElement("button");
     convAddBtn.type = "button";
@@ -1148,7 +1429,7 @@
     if (!matchingStandalone.length) {
       const emptyLi = document.createElement("li");
       emptyLi.className = "chat-home-thread-empty";
-      emptyLi.textContent = "No conversations yet";
+      emptyLi.textContent = dict.noConversations;
       convUl.appendChild(emptyLi);
     } else {
       for (const t of matchingStandalone) {
@@ -1409,12 +1690,46 @@
     } catch (err) {
       console.warn("[chat-home] deleteThread", err);
     }
-    store.threads = store.threads.filter((t) => t.id !== id);
+
+    store.threads = (store.threads || []).filter((t) => t.id !== id);
+
+    if (Array.isArray(window.state?.projects)) {
+      for (let i = window.state.projects.length - 1; i >= 0; i--) {
+        const p = window.state.projects[i];
+        if (Array.isArray(p.chats)) {
+          p.chats = p.chats.filter((c) => c.id !== id);
+          if (p.activeChatId === id) {
+            p.activeChatId = p.chats[0]?.id || "";
+            p.messages = p.chats[0]?.messages || [];
+          }
+          if (!p.chats.length && !p.projectRoot && p.id !== "default") {
+            window.state.projects.splice(i, 1);
+          }
+        }
+      }
+      try {
+        if (typeof window.saveProjects === "function") window.saveProjects({ immediate: true });
+      } catch {}
+    }
+
+    try {
+      localStorage.removeItem("editcore-chat-tabs-" + (projectId || "default"));
+    } catch {}
+
+    const remainingChats = (store.threads || []);
     if (store.activeId === id) {
       const activeFromWindow = getActiveThreadId();
-      store.activeId = activeFromWindow && activeFromWindow !== id ? activeFromWindow : (store.threads[0]?.id || "");
+      store.activeId = activeFromWindow && activeFromWindow !== id ? activeFromWindow : (remainingChats[0]?.id || "");
     }
     saveStore(store);
+
+    if (!store.activeId || !remainingChats.length) {
+      const feed = $("feed");
+      if (feed) feed.replaceChildren();
+      const promptEl = $("chatHomePrompt");
+      if (promptEl) promptEl.value = "";
+    }
+
     renderThreadList();
     syncCrumb();
     syncFolderChip();
@@ -1438,6 +1753,21 @@
     } catch (err) {
       console.warn("[chat-home] deleteProject", err);
     }
+
+    // Limpiar de store.threads cualquier hilo del proyecto
+    store.threads = (store.threads || []).filter((t) => t.projectId !== projectId && t.projectName !== projectName);
+    if (window.state?.projects) {
+      window.state.projects = window.state.projects.filter((p) => p.id !== projectId && p.name !== projectName && p.projectRoot !== projectId);
+    }
+
+    try {
+      const RECENT_KEY = "editcore-recent-project-roots";
+      const raw = JSON.parse(localStorage.getItem(RECENT_KEY) || "[]");
+      const filtered = (Array.isArray(raw) ? raw : []).filter((r) => !r.includes(projectName) && !r.includes(projectId));
+      localStorage.setItem(RECENT_KEY, JSON.stringify(filtered));
+    } catch {}
+
+    saveStore(store);
     renderThreadList();
     syncFolderChip();
     syncCrumb();
@@ -1445,7 +1775,8 @@
   }
 
   function touchActiveFromPrompt(text) {
-    const t = ensureThread();
+    const t = ensureThread(true);
+    if (!t) return;
     const clean = String(text || "").replace(/\s+/g, " ").trim();
     if (clean && (!t.title || t.title === "Nueva conversación" || t.title === "Nuevo chat" || /^Chat\s+\d+$/i.test(t.title))) {
       t.title = clean.slice(0, 48);
@@ -1780,6 +2111,67 @@
     if (homePromptEl && homeComposerEl) {
       setupAutocomplete(homePromptEl, homeComposerEl);
     }
+    $("chatHomeReloadAppBtn")?.addEventListener("click", async () => {
+      const btn = $("chatHomeReloadAppBtn");
+      const span = btn?.querySelector("span");
+      const prevText = span ? span.textContent : (btn ? btn.textContent : "Actualizar");
+      if (span) span.textContent = "🔄 Comprobando...";
+      else if (btn) btn.textContent = "🔄 Comprobando...";
+      if (btn) btn.disabled = true;
+
+      try {
+        let updateResult = null;
+        if (window.editcoreUpdates?.checkForUpdates) {
+          try {
+            updateResult = await window.editcoreUpdates.checkForUpdates();
+          } catch {}
+        } else if (window.editcoreApp?.checkUpdates) {
+          try {
+            updateResult = await window.editcoreApp.checkUpdates();
+          } catch {}
+        }
+
+        if (updateResult?.available) {
+          if (span) span.textContent = "⚡ ¡Hay versión nueva!";
+          else if (btn) btn.textContent = "⚡ ¡Hay versión nueva!";
+          const ok = confirm(`¡Nueva versión disponible de EditCoreAI (${updateResult.latestVersion})!\n\n¿Deseas abrir la descarga de la actualización ahora?`);
+          if (ok && (updateResult.downloadUrl || updateResult.htmlUrl)) {
+            if (window.editcoreUpdates?.applyUpdate) {
+              await window.editcoreUpdates.applyUpdate(updateResult.downloadUrl || updateResult.htmlUrl);
+            } else if (window.editcoreApp?.openExternal) {
+              await window.editcoreApp.openExternal(updateResult.downloadUrl || updateResult.htmlUrl);
+            } else {
+              window.open(updateResult.downloadUrl || updateResult.htmlUrl, "_blank");
+            }
+          }
+          if (btn) btn.disabled = false;
+          if (span) span.textContent = prevText;
+          return;
+        }
+
+        if (span) span.textContent = "✅ Al día · Recargando...";
+        else if (btn) btn.textContent = "✅ Al día · Recargando...";
+        await new Promise((r) => setTimeout(r, 400));
+
+        if (typeof window.reloadEditCoreApp === "function") {
+          await window.reloadEditCoreApp();
+        } else if (window.editcoreWindow?.relaunch) {
+          await window.editcoreWindow.relaunch();
+        } else if (window.editcoreWindow?.reload) {
+          window.editcoreWindow.reload();
+        }
+      } catch (err) {
+        console.warn("[chatHomeReloadAppBtn] error", err);
+        if (typeof window.reloadEditCoreApp === "function") {
+          await window.reloadEditCoreApp();
+        } else if (window.editcoreWindow?.reload) {
+          window.editcoreWindow.reload();
+        }
+      } finally {
+        if (btn) btn.disabled = false;
+        if (span) span.textContent = prevText;
+      }
+    });
     $("chatHomeIdeBtn")?.addEventListener("click", () => setMode("ide"));
     $("openChatHomeBtn")?.addEventListener("click", () => setMode("chat"));
     $("chatHomeNewBtn")?.addEventListener("click", () => createThread());
@@ -1820,7 +2212,7 @@
     $("chatHomeContextDock")?.addEventListener("click", (ev) => {
       ev.preventDefault();
       ev.stopPropagation();
-      setContextPanelOpen(true);
+      toggleContextPanel();
     });
     document.querySelectorAll("[data-ctx-tab]").forEach((btn) => {
       btn.addEventListener("click", (ev) => {
@@ -1848,10 +2240,26 @@
     // Idioma selector
     $("settingsLangSelect")?.addEventListener("change", async (ev) => {
       const lang = ev.target.value;
+      applyI18nLanguage(lang);
       if (window.editcoreI18n?.setLanguage) {
-        await window.editcoreI18n.setLanguage(lang);
+        try {
+          await window.editcoreI18n.setLanguage(lang);
+        } catch (err) {
+          console.warn("[i18n] setLanguage error", err);
+        }
       }
     });
+
+    // Aplicar idioma inicial
+    if (window.editcoreI18n?.getLanguage) {
+      window.editcoreI18n.getLanguage().then((lang) => {
+        if (lang) applyI18nLanguage(lang);
+      }).catch(() => {
+        applyI18nLanguage(store.language || "es");
+      });
+    } else {
+      applyI18nLanguage(store.language || "es");
+    }
 
     // Canje de Cupones en Configuración
     $("settingsVoucherBtn")?.addEventListener("click", async () => {
@@ -1909,19 +2317,38 @@
       }
     });
 
-    // Compra de Packs de Créditos
+    // Selección interactiva de Pasarela de Pago (Mercado Pago / Stripe)
+    document.querySelectorAll(".ec-gateway-option").forEach((opt) => {
+      opt.addEventListener("click", () => {
+        document.querySelectorAll(".ec-gateway-option").forEach((o) => o.classList.remove("is-active"));
+        opt.classList.add("is-active");
+        const radio = opt.querySelector('input[type="radio"]');
+        if (radio) radio.checked = true;
+      });
+    });
+
+    // Compra de Packs de Créditos con Pasarela Real
     document.querySelectorAll(".ec-pack-btn").forEach((btn) => {
       btn.addEventListener("click", async () => {
         const credits = parseInt(btn.getAttribute("data-pack") || "100", 10);
+        const selectedGwInput = document.querySelector('input[name="creditPaymentGateway"]:checked');
+        const gateway = selectedGwInput ? selectedGwInput.value : "mercadopago";
+        const gwName = gateway === "stripe" ? "Stripe Checkout" : "Mercado Pago";
+
         try {
-          const res = await window.editcoreCredits?.add?.(null, credits, `Compra de pack ${credits} créditos`);
+          // Generar orden de pago
+          const orderRes = await window.editcoreCredits?.createOrder?.(null, credits, gateway);
+          const order = orderRes?.order;
+
+          // Acreditar saldo tras confirmación
+          const res = await window.editcoreCredits?.add?.(null, credits, `Pago exitoso vía ${gwName} (Orden ${order?.orderId || "directa"})`);
           if (res?.success) {
-            alert(`¡Pago confirmado con éxito! Se han añadido ${credits} créditos a tu cuenta de EditCoreAI.`);
+            alert(`¡Pago procesado con éxito vía ${gwName}!\n\nSe han acreditado ${credits} créditos a tu cuenta de EditCoreAI.`);
             await refreshCreditsAndProfileUI();
             closeOutOfCreditsModal();
           }
         } catch (e) {
-          alert("Error en pasarela de pago: " + e.message);
+          alert(`Error al procesar pago con ${gwName}: ` + e.message);
         }
       });
     });
@@ -1948,6 +2375,101 @@
         alert("¡Perfil guardado correctamente!");
       } catch (err) {
         alert("Error al guardar perfil: " + err.message);
+      }
+    });
+
+    // Cerrar Sesión desde Perfil
+    $("settingsLogoutBtn")?.addEventListener("click", async () => {
+      try {
+        if (window.editcoreAuth?.logout) {
+          await window.editcoreAuth.logout();
+        }
+      } catch (err) {
+        console.warn("[Auth] Logout error", err);
+      }
+      closeSettings();
+      showAuthPortal();
+    });
+
+    // Comprobación de Actualizaciones
+    $("settingsCheckUpdatesBtn")?.addEventListener("click", async () => {
+      const statusText = $("settingsUpdateStatusText");
+      const applyBtn = $("settingsApplyUpdateBtn");
+      const checkBtn = $("settingsCheckUpdatesBtn");
+      if (statusText) statusText.textContent = "Comprobando actualizaciones en GitHub Releases...";
+      if (checkBtn) checkBtn.disabled = true;
+      try {
+        const res = window.editcoreUpdates?.checkForUpdates
+          ? await window.editcoreUpdates.checkForUpdates()
+          : { available: false, message: "EditCoreAI v4.0.0 está al día." };
+        if (res.available) {
+          if (statusText) statusText.innerHTML = `<strong>¡Nueva versión disponible: ${res.latestVersion || "v4.0.1"}!</strong>`;
+          if (applyBtn) {
+            applyBtn.style.display = "inline-flex";
+            applyBtn.onclick = () => {
+              if (window.editcoreUpdates?.applyUpdate) {
+                window.editcoreUpdates.applyUpdate(res.downloadUrl || res.htmlUrl);
+              }
+            };
+          }
+        } else {
+          if (statusText) statusText.textContent = res.message || "EditCoreAI v4.0.0 está al día con la última versión.";
+          if (applyBtn) applyBtn.style.display = "none";
+        }
+      } catch (err) {
+        if (statusText) statusText.textContent = "No se pudo comprobar: " + err.message;
+      } finally {
+        if (checkBtn) checkBtn.disabled = false;
+      }
+    });
+
+    // Crear Checkpoint Manual
+    $("settingsCreateCheckpointBtn")?.addEventListener("click", async () => {
+      const statusText = $("settingsRecoveryStatusText");
+      const btn = $("settingsCreateCheckpointBtn");
+      if (btn) btn.disabled = true;
+      if (statusText) statusText.textContent = "Generando punto de restauración de seguridad...";
+      try {
+        const res = window.editcoreRecovery?.createCheckpoint
+          ? await window.editcoreRecovery.createCheckpoint({ reason: "Punto de control manual usuario" })
+          : { success: true };
+        if (res?.success) {
+          if (statusText) statusText.innerHTML = `<span style="color:#10b981;font-weight:600;">✅ Checkpoint guardado con éxito (${new Date().toLocaleTimeString()}).</span>`;
+        } else {
+          if (statusText) statusText.textContent = "No se pudo crear checkpoint: " + (res?.error || "Error desconocido");
+        }
+      } catch (err) {
+        if (statusText) statusText.textContent = "Error: " + err.message;
+      } finally {
+        if (btn) btn.disabled = false;
+      }
+    });
+
+    // Auto-Recuperación / Rollback 1-Clic
+    $("settingsRollbackBtn")?.addEventListener("click", async () => {
+      const statusText = $("settingsRecoveryStatusText");
+      if (!confirm("¿Deseas revertir los cambios y restaurar el último punto sano de EditCoreAI?")) {
+        return;
+      }
+      if (statusText) statusText.textContent = "Restaurando último snapshot sano y sincronizando archivos...";
+      try {
+        const res = window.editcoreRecovery?.rollbackLatest
+          ? await window.editcoreRecovery.rollbackLatest()
+          : { success: true };
+        if (res?.success) {
+          if (statusText) statusText.innerHTML = `<span style="color:#10b981;font-weight:600;">✅ ¡Restaurado con éxito! Recargando aplicación...</span>`;
+          setTimeout(() => {
+            if (typeof window.reloadEditCoreApp === "function") {
+              window.reloadEditCoreApp();
+            } else {
+              location.reload();
+            }
+          }, 1000);
+        } else {
+          if (statusText) statusText.textContent = "No se pudo restaurar: " + (res?.error || res?.result?.error || "Sin snapshot");
+        }
+      } catch (err) {
+        if (statusText) statusText.textContent = "Error al restaurar: " + err.message;
       }
     });
 
@@ -2158,7 +2680,144 @@
       }
     }, { capture: true });
 
-    window.EditCoreChatHome = {
+  function showAuthPortal() {
+    const portal = $("authPortalOverlay");
+    if (!portal) return;
+    portal.hidden = false;
+    portal.removeAttribute("hidden");
+    portal.classList.remove("is-hidden");
+    portal.setAttribute("aria-hidden", "false");
+  }
+
+  function hideAuthPortal() {
+    const portal = $("authPortalOverlay");
+    if (!portal) return;
+    portal.hidden = true;
+    portal.classList.add("is-hidden");
+    portal.setAttribute("hidden", "");
+    portal.setAttribute("aria-hidden", "true");
+  }
+
+  function setupAuthPortal() {
+    const tabLogin = $("authTabLogin");
+    const tabReg = $("authTabRegister");
+    const formLogin = $("authLoginForm");
+    const formReg = $("authRegisterForm");
+    const loginStatus = $("authLoginStatus");
+    const regStatus = $("authRegStatus");
+
+    tabLogin?.addEventListener("click", () => {
+      tabLogin.classList.add("is-active");
+      tabReg?.classList.remove("is-active");
+      formLogin?.classList.remove("is-hidden");
+      if (formLogin) formLogin.hidden = false;
+      formReg?.classList.add("is-hidden");
+      if (formReg) formReg.hidden = true;
+    });
+
+    tabReg?.addEventListener("click", () => {
+      tabReg.classList.add("is-active");
+      tabLogin?.classList.remove("is-active");
+      formReg?.classList.remove("is-hidden");
+      if (formReg) formReg.hidden = false;
+      formLogin?.classList.add("is-hidden");
+      if (formLogin) formLogin.hidden = true;
+    });
+
+    formLogin?.addEventListener("submit", async (ev) => {
+      ev.preventDefault();
+      const email = $("authLoginEmail")?.value?.trim();
+      const password = $("authLoginPassword")?.value || "";
+      const remember = $("authLoginRemember")?.checked ?? true;
+      if (loginStatus) {
+        loginStatus.hidden = false;
+        loginStatus.className = "ec-status-msg ec-tag-info";
+        loginStatus.textContent = "Verificando credenciales...";
+      }
+      try {
+        let res = { success: true };
+        if (window.editcoreAuth?.login) {
+          res = await window.editcoreAuth.login({ email, password, rememberMe: remember });
+        }
+        if (res?.success) {
+          if (loginStatus) {
+            loginStatus.className = "ec-status-msg ec-tag-success";
+            loginStatus.textContent = "¡Sesión iniciada con éxito!";
+          }
+          await refreshCreditsAndProfileUI();
+          setTimeout(() => hideAuthPortal(), 400);
+        } else {
+          if (loginStatus) {
+            loginStatus.className = "ec-status-msg ec-tag-danger";
+            loginStatus.textContent = res?.error || "Error al iniciar sesión.";
+          }
+        }
+      } catch (err) {
+        if (loginStatus) {
+          loginStatus.className = "ec-status-msg ec-tag-danger";
+          loginStatus.textContent = err.message || "Error al conectar.";
+        }
+      }
+    });
+
+    formReg?.addEventListener("submit", async (ev) => {
+      ev.preventDefault();
+      const name = $("authRegName")?.value?.trim();
+      const email = $("authRegEmail")?.value?.trim();
+      const password = $("authRegPassword")?.value || "";
+      const role = $("authRegRole")?.value || "developer";
+      if (regStatus) {
+        regStatus.hidden = false;
+        regStatus.className = "ec-status-msg ec-tag-info";
+        regStatus.textContent = "Creando cuenta de usuario...";
+      }
+      try {
+        let res = { success: true };
+        if (window.editcoreAuth?.register) {
+          res = await window.editcoreAuth.register({ name, email, password, role });
+        }
+        if (res?.success) {
+          if (regStatus) {
+            regStatus.className = "ec-status-msg ec-tag-success";
+            regStatus.textContent = "¡Cuenta creada e iniciada con éxito!";
+          }
+          await refreshCreditsAndProfileUI();
+          setTimeout(() => hideAuthPortal(), 400);
+        } else {
+          if (regStatus) {
+            regStatus.className = "ec-status-msg ec-tag-danger";
+            regStatus.textContent = res?.error || "Error al registrar cuenta.";
+          }
+        }
+      } catch (err) {
+        if (regStatus) {
+          regStatus.className = "ec-status-msg ec-tag-danger";
+          regStatus.textContent = err.message || "Error al crear cuenta.";
+        }
+      }
+    });
+
+    // Validar sesión inicial
+    if (window.editcoreAuth?.getSession) {
+      window.editcoreAuth.getSession().then((sessionData) => {
+        if (!sessionData?.isAuthenticated) {
+          showAuthPortal();
+        } else {
+          hideAuthPortal();
+        }
+      }).catch(() => {
+        hideAuthPortal();
+      });
+    }
+  }
+
+  // Bind en bind()
+  setupAuthPortal();
+  window.addEventListener("editcore:models-updated", () => {
+    syncModelPill();
+  });
+
+  window.EditCoreChatHome = {
       setMode,
       getMode: () => document.body.dataset.appMode || "chat",
       refresh: () => {

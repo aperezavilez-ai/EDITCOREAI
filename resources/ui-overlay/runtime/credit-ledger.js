@@ -202,11 +202,115 @@ class CreditLedger extends EventEmitter {
     this.emit("credits:added", { userId: user.userId, amount: addedAmount, transaction });
     return {
       ok: true,
+      success: true,
       userId: user.userId,
       added: addedAmount,
+      balance: this.getUser(userId).balance,
       newBalance: this.getUser(userId).balance,
       transaction,
     };
+  }
+
+  /**
+   * Obtiene la lista de paquetes de créditos oficiales con precios en USD y bonificaciones.
+   */
+  getPacks() {
+    return [
+      { id: "pack_100", credits: 100, priceUsd: 5, priceLabel: "$5 USD", title: "100 Créditos", tag: "Básico", bonus: "" },
+      { id: "pack_500", credits: 500, priceUsd: 20, priceLabel: "$20 USD", title: "500 Créditos", tag: "Más Popular", bonus: "+25% extra" },
+      { id: "pack_1500", credits: 1500, priceUsd: 50, priceLabel: "$50 USD", title: "1500 Créditos", tag: "Élite", bonus: "+50% extra" },
+    ];
+  }
+
+  /**
+   * Calcula el costo en créditos exacto según tokens consumidos y tarifa del modelo de MEAI.
+   * Valor nominal base: 1 crédito = $0.05 USD.
+   */
+  calculateUsageCredits(model = "claude-sonnet-4-6", inputTokens = 0, outputTokens = 0) {
+    const m = String(model || "").toLowerCase();
+    let inRatePer1M = 3.0;
+    let outRatePer1M = 15.0;
+
+    if (m.includes("claude-haiku-4-5") || m.includes("gemini-2.5-flash") || m.includes("haiku") || m.includes("flash")) {
+      // Modelos Rápidos / Económicos MEAI
+      inRatePer1M = 0.80;
+      outRatePer1M = 4.00;
+    } else if (m.includes("deepseek-v4-pro") || m.includes("deepseek")) {
+      // Modelos DeepSeek MEAI
+      inRatePer1M = 0.30;
+      outRatePer1M = 1.20;
+    } else if (m.includes("claude-sonnet-4-6") || m.includes("claude-sonnet-5") || m.includes("claude-fable-5") || m.includes("gpt-5.6-luna") || m.includes("gpt-5.6-sol") || m.includes("grok-4.5")) {
+      // Modelos Principales Pro MEAI (Sonnet 4.6 / Sonnet 5 / Luna)
+      inRatePer1M = 3.00;
+      outRatePer1M = 15.00;
+    } else if (m.includes("claude-opus-4-8") || m.includes("claude-opus-4-7") || m.includes("opus")) {
+      // Modelos Máxima Potencia MEAI (Opus 4.8 / Opus 4.7)
+      inRatePer1M = 15.00;
+      outRatePer1M = 75.00;
+    }
+
+    const inCostUsd = (Number(inputTokens || 0) / 1_000_000) * inRatePer1M;
+    const outCostUsd = (Number(outputTokens || 0) / 1_000_000) * outRatePer1M;
+    const totalCostUsd = inCostUsd + outCostUsd;
+
+    // Convertir USD a créditos con margen operativo estándar (1 crédito = $0.05 USD)
+    const rawCredits = (totalCostUsd * 1.5) / 0.05;
+    const creditsToDeduct = Math.max(0.1, Number(rawCredits.toFixed(2)));
+
+    return {
+      model,
+      inputTokens,
+      outputTokens,
+      inRatePer1M,
+      outRatePer1M,
+      totalCostUsd: Number(totalCostUsd.toFixed(6)),
+      credits: creditsToDeduct,
+    };
+  }
+
+  /**
+   * Genera una orden de pago para Stripe o Mercado Pago.
+   */
+  createPaymentOrder(userId, packCredits, gateway = "mercadopago") {
+    const user = this.getUser(userId);
+    const credits = parseInt(packCredits, 10) || 100;
+    const pack = this.getPacks().find((p) => p.credits === credits) || {
+      id: `pack_${credits}`,
+      credits,
+      priceUsd: Math.round(credits * 0.05),
+      priceLabel: `$${Math.round(credits * 0.05)} USD`,
+    };
+
+    const orderId = `ord_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+    const gw = String(gateway || "mercadopago").toLowerCase();
+
+    const order = {
+      orderId,
+      userId: user.userId,
+      userEmail: user.email,
+      credits: pack.credits,
+      amountUsd: pack.priceUsd,
+      gateway: gw,
+      status: "pending",
+      createdAt: new Date().toISOString(),
+      checkoutUrl: gw === "stripe"
+        ? `https://checkout.stripe.com/pay/${orderId}?client_reference_id=${encodeURIComponent(user.userId)}&credits=${pack.credits}`
+        : `https://www.mercadopago.com.mx/checkout/v1/redirect?pref_id=${orderId}&credits=${pack.credits}`,
+    };
+
+    this.emit("payment:order-created", order);
+    return { ok: true, success: true, order };
+  }
+
+  /**
+   * Procesa la confirmación de pago (Webhook de Stripe o Mercado Pago).
+   */
+  processWebhookPayment({ gateway, orderId, userId, credits, amountPaid, status } = {}) {
+    if (status !== "approved" && status !== "succeeded" && status !== "completed") {
+      return { ok: false, error: "PAYMENT_NOT_APPROVED" };
+    }
+    const creds = parseInt(credits, 10) || 100;
+    return this.addCredits(userId, creds, `payment_${gateway || "gateway"}_${orderId || Date.now()}`);
   }
 
   /**

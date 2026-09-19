@@ -62,14 +62,14 @@ test("hereda variables publicas sin exponer secretos del proyecto", (t) => {
   fs.mkdirSync(app);
   fs.writeFileSync(path.join(root, ".env.local"), [
     "VITE_API_URL=https://api.example.test",
-    "NEXT_PUBLIC_SITE_NAME=EditCore",
+    "NEXT_PUBLIC_SITE_NAME=EDITCOREAI",
     "SUPABASE_SERVICE_ROLE_KEY=private-value",
     "DATABASE_URL=postgres://private",
   ].join("\n"));
   fs.writeFileSync(path.join(app, ".env.local"), "VITE_THEME=dark\n");
   assert.deepEqual(readProjectPreviewEnv(root, app), {
     VITE_API_URL: "https://api.example.test",
-    NEXT_PUBLIC_SITE_NAME: "EditCore",
+    NEXT_PUBLIC_SITE_NAME: "EDITCOREAI",
     VITE_THEME: "dark",
   });
 });

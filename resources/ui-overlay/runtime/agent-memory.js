@@ -249,6 +249,10 @@ class AgentMemory {
       context += "\n";
     }
 
+    // Tope de tokens: no inyectar bloques enormes al system prompt
+    if (context.length > 3500) {
+      context = context.slice(0, 3500) + "\n…[memoria truncada para ahorrar tokens]\n";
+    }
     return context;
   }
 

@@ -31,9 +31,9 @@ function stableSystemPrompt({ analysisMode = false, callerSystemPrompt = "", fin
   const maxTaskChars = 80_000;
   const taskContent = fullTask.length <= maxTaskChars
     ? fullTask
-    : `${fullTask.slice(0, maxTaskChars)}\n[EditCore: solicitud completa archivada en ${taskRef}; usa retrieve_context para leer el resto.]`;
+    : `${fullTask.slice(0, maxTaskChars)}\n[EDITCOREAI: solicitud completa archivada en ${taskRef}; usa retrieve_context para leer el resto.]`;
   return withEliteCommunicationPolicy([
-    "Eres EditCore Agent. Responde siempre en espanol y ejecuta la tarea con herramientas reales.",
+    "Eres EDITCOREAI Agent. Responde siempre en espanol y ejecuta la tarea con herramientas reales.",
     'Responde con un solo JSON: {"type":"tool","name":"...","input":{...}} o {"type":"final","text":"..."}.',
     "Las rutas locales son relativas al proyecto activo. No inventes archivos, conexiones, cambios ni verificaciones.",
     "Opera como un agente de ingenieria continuo: comprende todos los requisitos, inspecciona lo necesario, actua, verifica y entrega un reporte sustentado.",
@@ -54,7 +54,7 @@ function historySummary(history = []) {
   for (const item of history.slice(-12)) {
     const value = summarize(item?.content, 500);
     if (!value) continue;
-    decisions.push(`${item?.role === "assistant" ? "EditCore" : "Usuario"}: ${value}`);
+    decisions.push(`${item?.role === "assistant" ? "EDITCOREAI" : "Usuario"}: ${value}`);
   }
   return decisions.join("\n");
 }

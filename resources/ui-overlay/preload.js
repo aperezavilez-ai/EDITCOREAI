@@ -652,6 +652,9 @@ contextBridge.exposeInMainWorld("editcoreCredits", {
   redeem: (userId, code) => ipcRenderer.invoke("credits:redeem", userId, code),
   updateProfile: (userId, profile) => ipcRenderer.invoke("credits:update-profile", userId, profile),
   listUsers: () => ipcRenderer.invoke("credits:list-users"),
+  getPacks: () => ipcRenderer.invoke("credits:get-packs"),
+  createOrder: (userId, packCredits, gateway) => ipcRenderer.invoke("credits:create-order", userId, packCredits, gateway),
+  calculateUsage: (model, inputTokens, outputTokens) => ipcRenderer.invoke("credits:calculate-usage", model, inputTokens, outputTokens),
 });
 
 contextBridge.exposeInMainWorld("editcoreAuth", {
@@ -693,5 +696,275 @@ contextBridge.exposeInMainWorld("editcoreGhostCompletion", {
   suggest: (documentContext, position, options) => ipcRenderer.invoke("ghost-completion:suggest", documentContext, position, options),
   cache: (prefix, completion, ttlMs) => ipcRenderer.invoke("ghost-completion:cache", prefix, completion, ttlMs),
 });
+
+contextBridge.exposeInMainWorld("editcoreSmartRouter", {
+  resolveCandidate: (taskType, options) => ipcRenderer.invoke("smart-router:resolve-candidate", taskType, options),
+  recordExecution: (provider, data) => ipcRenderer.invoke("smart-router:record-execution", provider, data),
+  getStats: () => ipcRenderer.invoke("smart-router:get-stats"),
+  getFallback: (failedProvider, taskType) => ipcRenderer.invoke("smart-router:get-fallback", failedProvider, taskType),
+});
+
+contextBridge.exposeInMainWorld("editcoreAsyncAgent", {
+  enqueue: (taskConfig) => ipcRenderer.invoke("async-agent:enqueue", taskConfig),
+  cancel: (taskId) => ipcRenderer.invoke("async-agent:cancel", taskId),
+  getTask: (taskId) => ipcRenderer.invoke("async-agent:get-task", taskId),
+  listTasks: (projectRoot) => ipcRenderer.invoke("async-agent:list-tasks", projectRoot),
+});
+
+contextBridge.exposeInMainWorld("editcoreMarketplace", {
+  getCatalog: (category) => ipcRenderer.invoke("marketplace:get-catalog", category),
+  listInstalled: () => ipcRenderer.invoke("marketplace:list-installed"),
+  install: (extensionIdOrPath) => ipcRenderer.invoke("marketplace:install", extensionIdOrPath),
+  uninstall: (extensionId) => ipcRenderer.invoke("marketplace:uninstall", extensionId),
+  toggle: (extensionId, enabled) => ipcRenderer.invoke("marketplace:toggle", extensionId, enabled),
+});
+
+contextBridge.exposeInMainWorld("editcoreLspBundler", {
+  getSupportedLanguages: () => ipcRenderer.invoke("lsp-bundler:supported-languages"),
+  getServer: (projectRoot, languageId) => ipcRenderer.invoke("lsp-bundler:get-server", projectRoot, languageId),
+  analyzeDocument: (filePath, content) => ipcRenderer.invoke("lsp-bundler:analyze-document", filePath, content),
+  getCompletions: (filePath, line, column, prefix) => ipcRenderer.invoke("lsp-bundler:get-completions", filePath, line, column, prefix),
+  getHover: (filePath, symbol) => ipcRenderer.invoke("lsp-bundler:get-hover", filePath, symbol),
+});
+
+contextBridge.exposeInMainWorld("editcoreParallelAgents", {
+  spawn: (spec) => ipcRenderer.invoke("parallel-agent:spawn", spec),
+  status: (agentId) => ipcRenderer.invoke("parallel-agent:status", agentId),
+  cancel: (agentId, reason) => ipcRenderer.invoke("parallel-agent:cancel", agentId, reason),
+  list: (filters) => ipcRenderer.invoke("parallel-agent:list", filters),
+  cleanup: (agentId) => ipcRenderer.invoke("parallel-agent:cleanup", agentId),
+});
+
+contextBridge.exposeInMainWorld("editcoreRulesEngine", {
+  load: (projectRoot) => ipcRenderer.invoke("rules-engine:load", projectRoot),
+  getRulesForFile: (projectRoot, filePath) => ipcRenderer.invoke("rules-engine:get-rules-for-file", projectRoot, filePath),
+  formatPrompt: (rules) => ipcRenderer.invoke("rules-engine:format-prompt", rules),
+  saveRule: (projectRoot, ruleName, ruleData) => ipcRenderer.invoke("rules-engine:save-rule", projectRoot, ruleName, ruleData),
+});
+
+contextBridge.exposeInMainWorld("editcoreEditorHooks", {
+  triggerPreEdit: (context) => ipcRenderer.invoke("editor-hooks:trigger-pre-edit", context),
+  triggerPostEdit: (context) => ipcRenderer.invoke("editor-hooks:trigger-post-edit", context),
+  triggerPreCommit: (context) => ipcRenderer.invoke("editor-hooks:trigger-pre-commit", context),
+  getRegistered: () => ipcRenderer.invoke("editor-hooks:get-registered"),
+});
+
+contextBridge.exposeInMainWorld("editcoreCollab", {
+  createSession: (options) => ipcRenderer.invoke("collab:create-session", options),
+  joinSession: (sessionId, siteId, peerInfo) => ipcRenderer.invoke("collab:join-session", sessionId, siteId, peerInfo),
+  leaveSession: (sessionId, siteId) => ipcRenderer.invoke("collab:leave-session", sessionId, siteId),
+  applyOperation: (sessionId, op) => ipcRenderer.invoke("collab:apply-op", sessionId, op),
+  getDocumentText: (sessionId) => ipcRenderer.invoke("collab:get-text", sessionId),
+  getPeers: (sessionId) => ipcRenderer.invoke("collab:get-peers", sessionId),
+  updateCursor: (sessionId, siteId, pos) => ipcRenderer.invoke("collab:update-cursor", sessionId, siteId, pos),
+});
+
+contextBridge.exposeInMainWorld("editcorePrAgent", {
+  createFeatureBranch: (projectRoot, issueTitle, branchPrefix) => ipcRenderer.invoke("git-pr:create-branch", projectRoot, issueTitle, branchPrefix),
+  generateProposal: (params) => ipcRenderer.invoke("git-pr:generate-proposal", params),
+  validateRules: (params) => ipcRenderer.invoke("git-pr:validate-rules", params),
+  formatMarkdown: (proposal) => ipcRenderer.invoke("git-pr:format-markdown", proposal),
+});
+
+contextBridge.exposeInMainWorld("editcoreTelemetry", {
+  getSnapshot: () => ipcRenderer.invoke("telemetry:get-snapshot"),
+  recordTokenUsage: (promptTokens, completionTokens, cost) => ipcRenderer.invoke("telemetry:record-token-usage", promptTokens, completionTokens, cost),
+  recordRagHit: (isHit) => ipcRenderer.invoke("telemetry:record-rag-hit", isHit),
+  recordMetric: (category, name, value, meta) => ipcRenderer.invoke("telemetry:record-metric", category, name, value, meta),
+  getHistory: (category, limit) => ipcRenderer.invoke("telemetry:get-history", category, limit),
+});
+
+contextBridge.exposeInMainWorld("editcoreTestGenerator", {
+  analyze: (filePath, codeContent) => ipcRenderer.invoke("test-generator:analyze", filePath, codeContent),
+  generate: (params) => ipcRenderer.invoke("test-generator:generate", params),
+  saveAndRun: (params) => ipcRenderer.invoke("test-generator:save-and-run", params),
+  forPatches: (patches) => ipcRenderer.invoke("test-generator:for-patches", patches),
+});
+// ====================================================
+// CICLO 33: INLINE EDIT, @ MENTIONS & LOCAL VECTOR RAG
+// ====================================================
+
+contextBridge.exposeInMainWorld("editcoreInlineEdit", {
+  createRequest: (params) => ipcRenderer.invoke("inline-edit:create-request", params),
+  computeDiff: (originalText, modifiedText) => ipcRenderer.invoke("inline-edit:compute-diff", originalText, modifiedText),
+  applyPatch: (originalText, diffOrModified) => ipcRenderer.invoke("inline-edit:apply-patch", originalText, diffOrModified),
+  mockProposal: (prompt, originalText) => ipcRenderer.invoke("inline-edit:mock-proposal", prompt, originalText),
+});
+
+contextBridge.exposeInMainWorld("editcoreMentions", {
+  extract: (text) => ipcRenderer.invoke("mentions:extract", text),
+  suggest: (query, workspaceFiles) => ipcRenderer.invoke("mentions:suggest", query, workspaceFiles),
+  resolve: (text, projectRoot) => ipcRenderer.invoke("mentions:resolve", text, projectRoot),
+  buildPrompt: (text, projectRoot) => ipcRenderer.invoke("mentions:build-prompt", text, projectRoot),
+});
+
+contextBridge.exposeInMainWorld("editcoreVectorStore", {
+  index: (projectRoot, fileList) => ipcRenderer.invoke("vector-store:index", projectRoot, fileList),
+  search: (projectRoot, query, options) => ipcRenderer.invoke("vector-store:search", projectRoot, query, options),
+  getStats: (projectRoot) => ipcRenderer.invoke("vector-store:stats", projectRoot),
+});
+
+// ====================================================
+// CICLO 34: AUTOPILOT PROACTIVE ARCHITECT AGENT
+// ====================================================
+
+contextBridge.exposeInMainWorld("editcoreProactive", {
+  scan: (projectRoot) => ipcRenderer.invoke("proactive:scan", projectRoot),
+  getPulse: (projectRoot) => ipcRenderer.invoke("proactive:get-pulse", projectRoot),
+  getCards: (projectRoot) => ipcRenderer.invoke("proactive:get-cards", projectRoot),
+  dismissCard: (cardId, projectRoot) => ipcRenderer.invoke("proactive:dismiss-card", cardId, projectRoot),
+});
+
+// ====================================================
+// CICLO 35: PLAN-FIRST & HUMAN-IN-THE-LOOP EXECUTION GATE
+// ====================================================
+
+contextBridge.exposeInMainWorld("editcoreApprovalGate", {
+  createPlan: (params) => ipcRenderer.invoke("approval-gate:create-plan", params),
+  getPlan: (planId) => ipcRenderer.invoke("approval-gate:get-plan", planId),
+  listPending: () => ipcRenderer.invoke("approval-gate:list-pending"),
+  approve: (planId, options) => ipcRenderer.invoke("approval-gate:approve", planId, options),
+  reject: (planId, reason) => ipcRenderer.invoke("approval-gate:reject", planId, reason),
+  isToolAllowed: (planId, toolName) => ipcRenderer.invoke("approval-gate:is-tool-allowed", planId, toolName),
+});
+
+// ====================================================
+// CICLO 36: SELF-HEALING & TERMINAL DIAGNOSTICIAN AGENT
+// ====================================================
+
+contextBridge.exposeInMainWorld("editcoreSelfHealing", {
+  diagnose: (errorOutput, projectRoot) => ipcRenderer.invoke("self-healing:diagnose", errorOutput, projectRoot),
+  getRecent: (projectRoot) => ipcRenderer.invoke("self-healing:recent", projectRoot),
+  clear: (projectRoot) => ipcRenderer.invoke("self-healing:clear", projectRoot),
+  generatePatch: (parsedError, fileContent) => ipcRenderer.invoke("self-healing:generate-patch", parsedError, fileContent),
+});
+
+// ====================================================
+// CICLOS 37-39: ULTIMATE AUTONOMOUS ECOSYSTEM
+// ====================================================
+
+contextBridge.exposeInMainWorld("editcoreEcosystem", {
+  spawnSwarm: (params) => ipcRenderer.invoke("ecosystem:spawn-swarm", params),
+  getSwarmStatus: (swarmId) => ipcRenderer.invoke("ecosystem:swarm-status", swarmId),
+  listSwarms: () => ipcRenderer.invoke("ecosystem:list-swarms"),
+  crdtMerge: (docA, docB) => ipcRenderer.invoke("ecosystem:crdt-merge", docA, docB),
+  runTdd: (params) => ipcRenderer.invoke("ecosystem:run-tdd", params),
+  scanRefactor: (projectRoot) => ipcRenderer.invoke("ecosystem:scan-refactor", projectRoot),
+  recordAdr: (projectRoot, adrData) => ipcRenderer.invoke("ecosystem:record-adr", projectRoot, adrData),
+  listAdrs: (projectRoot) => ipcRenderer.invoke("ecosystem:list-adrs", projectRoot),
+  syncMemory: (projectRoot, branchName, data) => ipcRenderer.invoke("ecosystem:sync-memory", projectRoot, branchName, data),
+  getMemorySnapshot: (projectRoot, branchName) => ipcRenderer.invoke("ecosystem:get-memory-snapshot", projectRoot, branchName),
+});
+
+// ====================================================
+// CICLOS 40-44: HYPER-AUTONOMOUS ECOSYSTEM & BEYOND
+// ====================================================
+
+contextBridge.exposeInMainWorld("editcoreHyper", {
+  runCiCd: (params) => ipcRenderer.invoke("hyper:run-cicd", params),
+  getCiCdHistory: (projectRoot) => ipcRenderer.invoke("hyper:cicd-history", projectRoot),
+  getActivePreviews: () => ipcRenderer.invoke("hyper:active-previews"),
+  teardownPreview: (previewId) => ipcRenderer.invoke("hyper:teardown-preview", previewId),
+  buildAstGraph: (projectRoot, specificFiles) => ipcRenderer.invoke("hyper:build-ast-graph", projectRoot, specificFiles),
+  queryAstSymbol: (symbolName) => ipcRenderer.invoke("hyper:query-ast-symbol", symbolName),
+  findAstReferences: (symbolIdOrName) => ipcRenderer.invoke("hyper:ast-references", symbolIdOrName),
+  getAstSubgraph: (filePath) => ipcRenderer.invoke("hyper:ast-subgraph", filePath),
+  recordIntentAction: (action) => ipcRenderer.invoke("hyper:record-intent-action", action),
+  predictContext: (projectRoot) => ipcRenderer.invoke("hyper:predict-context", projectRoot),
+  preWarmContext: (projectRoot) => ipcRenderer.invoke("hyper:prewarm-context", projectRoot),
+  getIntentState: () => ipcRenderer.invoke("hyper:intent-state"),
+  scanSecurity: (projectRoot) => ipcRenderer.invoke("hyper:scan-security", projectRoot),
+  isolateThreat: (vulnId) => ipcRenderer.invoke("hyper:isolate-threat", vulnId),
+  generateSecurityPatch: (vuln, projectRoot) => ipcRenderer.invoke("hyper:generate-security-patch", vuln, projectRoot),
+  analyzeLora: (projectRoot) => ipcRenderer.invoke("hyper:analyze-lora", projectRoot),
+  applyLoraStyle: (basePrompt, projectRoot) => ipcRenderer.invoke("hyper:apply-lora-style", basePrompt, projectRoot),
+  getLoraProfile: (projectRoot) => ipcRenderer.invoke("hyper:get-lora-profile", projectRoot),
+  saveCustomRules: (projectRoot, rules) => ipcRenderer.invoke("hyper:save-custom-rules", projectRoot, rules),
+});
+
+// ====================================================
+// CICLO 45: CLOUD-NATIVE SWARM MESH
+// ====================================================
+
+contextBridge.exposeInMainWorld("editcoreMesh", {
+  startMesh: (port, networkId) => ipcRenderer.invoke("mesh:start", port, networkId),
+  connectPeer: (peerParams) => ipcRenderer.invoke("mesh:connect-peer", peerParams),
+  proposeConsensus: (proposalData) => ipcRenderer.invoke("mesh:propose-consensus", proposalData),
+  getTopology: () => ipcRenderer.invoke("mesh:topology"),
+  stopMesh: () => ipcRenderer.invoke("mesh:stop"),
+});
+
+// ====================================================
+// CICLO 46: SINGULARITY ENGINE & SELF-EVOLVING RUNTIME
+// ====================================================
+
+contextBridge.exposeInMainWorld("editcoreSingularity", {
+  analyzeSelfEngine: (projectRoot) => ipcRenderer.invoke("singularity:analyze", projectRoot),
+  applySelfOptimization: (finding) => ipcRenderer.invoke("singularity:apply-optimization", finding),
+  scaleWorker: (params) => ipcRenderer.invoke("singularity:scale-worker", params),
+  getSingularityStatus: () => ipcRenderer.invoke("singularity:status"),
+  terminateWorker: (workerId) => ipcRenderer.invoke("singularity:terminate-worker", workerId),
+});
+
+// ====================================================
+// CICLO 47: AUTONOMOUS COMPUTE ECONOMY
+// ====================================================
+
+contextBridge.exposeInMainWorld("editcoreEconomy", {
+  recordUsage: (usageData) => ipcRenderer.invoke("economy:record-usage", usageData),
+  resolveRoute: (complexity) => ipcRenderer.invoke("economy:resolve-route", complexity),
+  provisionCluster: (clusterParams) => ipcRenderer.invoke("economy:provision-cluster", clusterParams),
+  teardownCluster: (clusterId) => ipcRenderer.invoke("economy:teardown-cluster", clusterId),
+  getReport: () => ipcRenderer.invoke("economy:report"),
+  setBudgetLimit: (limitUsd) => ipcRenderer.invoke("economy:set-budget", limitUsd),
+});
+
+// ====================================================
+// CICLOS 48-52: THE OMEGA HORIZON & BEYOND
+// ====================================================
+
+contextBridge.exposeInMainWorld("editcoreOmega", {
+  encryptPayload: (plainText) => ipcRenderer.invoke("omega:quantum-encrypt", plainText),
+  decryptPayload: (encryptedPacket) => ipcRenderer.invoke("omega:quantum-decrypt", encryptedPacket),
+  signEmbedding: (embeddingArray) => ipcRenderer.invoke("omega:quantum-sign", embeddingArray),
+  getQuantumStatus: () => ipcRenderer.invoke("omega:quantum-status"),
+  synthesizeUi: (params) => ipcRenderer.invoke("omega:synthesize-ui", params),
+  getUiComponents: () => ipcRenderer.invoke("omega:get-ui-components"),
+  generate3dLayout: (nodes, edges) => ipcRenderer.invoke("omega:generate-3d-layout", nodes, edges),
+  get3dGraph: () => ipcRenderer.invoke("omega:get-3d-graph"),
+  generateBuildManifest: (params) => ipcRenderer.invoke("omega:generate-build-manifest", params),
+  getReplicationMatrix: () => ipcRenderer.invoke("omega:replication-matrix"),
+  setAutonomyLevel: (level) => ipcRenderer.invoke("omega:set-autonomy", level),
+  evaluateAction: (actionType, criticality) => ipcRenderer.invoke("omega:evaluate-action", actionType, criticality),
+  getOmegaStatus: () => ipcRenderer.invoke("omega:status"),
+});
+
+// ====================================================
+// AUTHENTICATION & APP UPDATES
+// ====================================================
+
+contextBridge.exposeInMainWorld("editcoreAuth", {
+  getSession: () => ipcRenderer.invoke("auth:get-session"),
+  login: (credentials) => ipcRenderer.invoke("auth:login", credentials),
+  register: (data) => ipcRenderer.invoke("auth:register", data),
+  logout: () => ipcRenderer.invoke("auth:logout"),
+  updateProfile: (data) => ipcRenderer.invoke("auth:update-profile", data),
+});
+
+contextBridge.exposeInMainWorld("editcoreUpdates", {
+  checkForUpdates: (opts) => ipcRenderer.invoke("app:check-updates", opts),
+  applyUpdate: (downloadUrl) => ipcRenderer.invoke("app:apply-update", downloadUrl),
+});
+
+contextBridge.exposeInMainWorld("editcoreRecovery", {
+  createCheckpoint: (params) => ipcRenderer.invoke("recovery:create-checkpoint", params),
+  rollbackLatest: (params) => ipcRenderer.invoke("recovery:rollback-latest", params),
+  listCheckpoints: (params) => ipcRenderer.invoke("recovery:list-checkpoints", params),
+});
+
+
+
+
+
 
 

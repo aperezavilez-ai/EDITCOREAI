@@ -1,15 +1,15 @@
 "use strict";
 
 const BRAIN_TOOL_DEFINITIONS = [
-  ["brain_search", "Busca memoria, conocimiento y codigo indexado por el Cerebro de EditCore.", {
+  ["brain_search", "Busca memoria, conocimiento y codigo indexado por el Cerebro de EDITCOREAI.", {
     query: { type: "string" },
     scope: { type: "string", enum: ["all", "memory", "code", "catalog"] },
     limit: { type: "integer", minimum: 1, maximum: 20 },
   }, ["query"]],
-  ["brain_skill", "Abre una skill instalada en el Cerebro de EditCore por su nombre exacto.", {
+  ["brain_skill", "Abre una skill instalada en el Cerebro de EDITCOREAI por su nombre exacto.", {
     name: { type: "string" },
   }, ["name"]],
-  ["brain_tools", "Muestra las herramientas del agente, skills y capacidades instaladas en EditCore.", {
+  ["brain_tools", "Muestra las herramientas del agente, skills y capacidades instaladas en EDITCOREAI.", {
     query: { type: "string" },
     limit: { type: "integer", minimum: 1, maximum: 100 },
   }, []],
@@ -47,7 +47,7 @@ function registerBrainTools(dispatcher, { brain, rootPath, hostTools = () => [],
 
   dispatcher.register({
     name: "brain_search",
-    description: "Busca memoria, conocimiento y codigo indexado por el Cerebro de EditCore.",
+    description: "Busca memoria, conocimiento y codigo indexado por el Cerebro de EDITCOREAI.",
     schema: schema("brain_search"),
     execute: async (input = {}) => {
       const query = String(input.query || "").trim();
@@ -60,7 +60,7 @@ function registerBrainTools(dispatcher, { brain, rootPath, hostTools = () => [],
 
   dispatcher.register({
     name: "brain_skill",
-    description: "Abre una skill instalada en el Cerebro de EditCore por su nombre exacto.",
+    description: "Abre una skill instalada en el Cerebro de EDITCOREAI por su nombre exacto.",
     schema: schema("brain_skill"),
     execute: async (input = {}) => {
       const name = String(input.name || "").trim();
@@ -71,7 +71,7 @@ function registerBrainTools(dispatcher, { brain, rootPath, hostTools = () => [],
 
   dispatcher.register({
     name: "brain_tools",
-    description: "Muestra las herramientas del agente, skills y capacidades instaladas en EditCore.",
+    description: "Muestra las herramientas del agente, skills y capacidades instaladas en EDITCOREAI.",
     schema: schema("brain_tools"),
     execute: async (input = {}) => {
       const query = String(input.query || "").trim();

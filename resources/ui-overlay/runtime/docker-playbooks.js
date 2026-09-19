@@ -80,7 +80,7 @@ function applyDockerPlaybook(projectRoot, playbookId = "node", { write = true } 
 ${pb.checklist.map((c) => `- \`${c}\``).join("\n")}
 
 ## Notas
-- Plantilla EditCore. Ajusta puertos y CMD a tu app.
+- Plantilla EDITCOREAI. Ajusta puertos y CMD a tu app.
 - No se ejecuta docker automaticamente (seguridad / entorno).
 `;
 

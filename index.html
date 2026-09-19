@@ -24,6 +24,7 @@
         <div class="chat-home-top-actions">
           <button id="chatHomeFolderBtn" type="button" class="chat-home-folder-btn" title="Conectar carpeta local">Conectar carpeta</button>
           <button id="chatHomeIdeBtn" type="button" class="chat-home-ide-btn" title="Abrir el IDE existente de EditCore">IDE</button>
+          <button id="chatHomeReloadAppBtn" type="button" class="chat-home-reload-btn" title="Actualizar EditCoreAI con el código actual" aria-label="Actualizar app"><span>Actualizar</span></button>
         </div>
       </header>
       <div class="chat-home-body">
@@ -47,7 +48,7 @@
           <div class="chat-home-main-head">
             <div class="chat-home-main-head-inner">
               <div id="chatHomeCrumb" class="chat-home-crumb" title="Conversación activa">Chat</div>
-              <button id="chatHomeContextDock" type="button" class="chat-home-context-dock" title="Abrir panel de sesión" aria-controls="chatHomeContextPanel" hidden>
+              <button id="chatHomeContextDock" type="button" class="chat-home-context-dock" title="Abrir panel de sesión" aria-controls="chatHomeContextPanel" aria-expanded="false">
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                   <rect x="7" y="4" width="11" height="14" rx="1.5" stroke="currentColor" stroke-width="1.7"/>
                   <rect x="4" y="7" width="11" height="14" rx="1.5" stroke="currentColor" stroke-width="1.7" fill="var(--ch-bg, #fff)"/>
@@ -170,6 +171,10 @@
             </div>
           </div>
 
+          <div class="ec-settings-logout-wrap">
+            <button type="button" id="settingsLogoutBtn" class="ec-user-logout-btn" title="Cerrar sesión en EditCoreAI">🚪 Cerrar Sesión</button>
+          </div>
+
           <div class="ec-settings-user-profile" id="settingsUserProfileCard">
             <div class="ec-user-avatar-circle" id="settingsUserAvatar">AP</div>
             <div class="ec-user-meta">
@@ -269,6 +274,41 @@
                     <input type="checkbox" id="settingsPrivacyToggle" checked />
                     <span class="ec-slider"></span>
                   </label>
+                </div>
+              </div>
+
+              <!-- Actualizaciones de EditCoreAI -->
+              <div class="ec-settings-group-card" id="settingsUpdatesCard">
+                <div class="ec-group-info">
+                  <h4>Actualizaciones del Sistema <span class="ec-status-tag ec-tag-info" id="settingsAppVersionBadge">v4.0.0</span></h4>
+                  <p id="settingsUpdateStatusText">Comprueba si existen nuevas versiones o mejoras para EditCoreAI.</p>
+                </div>
+                <div class="ec-group-action" style="display:flex;gap:8px;align-items:center;">
+                  <button type="button" id="settingsCheckUpdatesBtn" class="ec-btn-action">🔄 Buscar Actualizaciones</button>
+                  <button type="button" id="settingsApplyUpdateBtn" class="ec-btn-gold" style="display:none;">⚡ Aplicar Actualización</button>
+                </div>
+              </div>
+
+              <!-- Auto-Recuperación y Checkpoints 1-Clic -->
+              <div class="ec-settings-group-card" id="settingsRecoveryCard">
+                <div class="ec-group-info">
+                  <h4>Escudo de Auto-Recuperación y Checkpoints 1-Clic</h4>
+                  <p id="settingsRecoveryStatusText">Crea puntos de restauración del estado actual y revierte cualquier fallo al instante con 1 clic.</p>
+                </div>
+                <div class="ec-group-action" style="display:flex;gap:8px;align-items:center;">
+                  <button type="button" id="settingsCreateCheckpointBtn" class="ec-btn-action" title="Crear un nuevo punto de restauración del estado actual">🛡️ Crear Checkpoint</button>
+                  <button type="button" id="settingsRollbackBtn" class="ec-btn-danger" style="background:#ef4444;color:#fff;border:none;border-radius:8px;padding:6px 12px;cursor:pointer;font-weight:600;" title="Revertir inmediatamente al último punto de restauración sano">⏪ Restaurar Último Checkpoint</button>
+                </div>
+              </div>
+
+              <!-- Subsistemas Autónomos Instalados -->
+              <div class="ec-settings-group-card">
+                <div class="ec-group-info">
+                  <h4>Subsistemas Autónomos y Agentes (Ciclos 34–52)</h4>
+                  <p>Estado de los motores: Autopilot Architect, Plan-First Gate, Self-Healing, Swarm Mesh, CI/CD Pipeline y AST Graph.</p>
+                </div>
+                <div class="ec-group-action">
+                  <span class="ec-status-tag ec-tag-success">⚡ 100% Operativos</span>
                 </div>
               </div>
             </div>
@@ -402,6 +442,68 @@
       </div>
     </div>
 
+    <!-- Portal de Autenticación / Inicio de Sesión / Registro -->
+    <div id="authPortalOverlay" class="ec-auth-portal-overlay" aria-hidden="true" hidden>
+      <div class="ec-auth-card" role="dialog" aria-label="Autenticación EditCoreAI">
+        <div class="ec-auth-brand">
+          <div class="ec-auth-logo">⚡</div>
+          <h2>EditCoreAI</h2>
+          <p>Plataforma Autónoma de Desarrollo, Arquitectura e Inteligencia Artificial</p>
+        </div>
+
+        <div class="ec-auth-tabs">
+          <button type="button" class="ec-auth-tab is-active" id="authTabLogin" data-auth-tab="login">Iniciar Sesión</button>
+          <button type="button" class="ec-auth-tab" id="authTabRegister" data-auth-tab="register">Crear Cuenta</button>
+        </div>
+
+        <!-- Formulario de Login -->
+        <form id="authLoginForm" class="ec-auth-form">
+          <div class="ec-input-field">
+            <label for="authLoginEmail">Correo Electrónico:</label>
+            <input type="email" id="authLoginEmail" class="ec-styled-input" placeholder="aperezavilez@gmail.com" value="aperezavilez@gmail.com" required />
+          </div>
+          <div class="ec-input-field">
+            <label for="authLoginPassword">Contraseña / Token Maestro:</label>
+            <input type="password" id="authLoginPassword" class="ec-styled-input" placeholder="Ingresa tu contraseña o deja vacío para acceso local" />
+          </div>
+          <div class="ec-auth-options-row">
+            <label class="ec-auth-remember">
+              <input type="checkbox" id="authLoginRemember" checked />
+              <span>Mantener sesión iniciada en este equipo</span>
+            </label>
+          </div>
+          <div id="authLoginStatus" class="ec-status-msg" hidden></div>
+          <button type="submit" id="authLoginSubmitBtn" class="ec-btn-primary ec-auth-submit-btn">🚀 Iniciar Sesión</button>
+        </form>
+
+        <!-- Formulario de Registro -->
+        <form id="authRegisterForm" class="ec-auth-form is-hidden" hidden>
+          <div class="ec-input-field">
+            <label for="authRegName">Nombre Completo:</label>
+            <input type="text" id="authRegName" class="ec-styled-input" placeholder="Tu Nombre" required />
+          </div>
+          <div class="ec-input-field">
+            <label for="authRegEmail">Correo Electrónico:</label>
+            <input type="email" id="authRegEmail" class="ec-styled-input" placeholder="tu@correo.com" required />
+          </div>
+          <div class="ec-input-field">
+            <label for="authRegPassword">Contraseña:</label>
+            <input type="password" id="authRegPassword" class="ec-styled-input" placeholder="Mínimo 6 caracteres" />
+          </div>
+          <div class="ec-input-field">
+            <label for="authRegRole">Rol en la Plataforma:</label>
+            <select id="authRegRole" class="ec-styled-select">
+              <option value="developer" selected>Desarrollador (Developer)</option>
+              <option value="auditor">Auditor de Calidad (Auditor)</option>
+              <option value="admin">Administrador (Admin)</option>
+            </select>
+          </div>
+          <div id="authRegStatus" class="ec-status-msg" hidden></div>
+          <button type="submit" id="authRegisterSubmitBtn" class="ec-btn-primary ec-auth-submit-btn">✨ Registrar y Acceder</button>
+        </form>
+      </div>
+    </div>
+
     <!-- Modal de Bloqueo por Créditos Agotados -->
     <div id="outOfCreditsModal" class="ec-credits-lock-overlay" aria-hidden="true" hidden>
       <div class="ec-credits-lock-card" role="dialog" aria-modal="true" aria-labelledby="outOfCreditsTitle">
@@ -410,6 +512,19 @@
         <h2 id="outOfCreditsTitle">¡Créditos de IA Agotados!</h2>
         <p>Tu saldo actual ha llegado a <strong>0 créditos</strong>. Para continuar utilizando los modelos de inteligencia artificial y agentes de EditCoreAI, añade más créditos a tu cuenta.</p>
         
+        <div class="ec-payment-gateways-selector" role="radiogroup" aria-label="Método de Pago">
+          <label class="ec-gateway-option is-active">
+            <input type="radio" name="creditPaymentGateway" value="mercadopago" checked />
+            <span class="ec-gw-badge">🔷 Mercado Pago</span>
+            <span class="ec-gw-desc">OXXO, SPEI, Tarjetas México y LatAm</span>
+          </label>
+          <label class="ec-gateway-option">
+            <input type="radio" name="creditPaymentGateway" value="stripe" />
+            <span class="ec-gw-badge">💳 Stripe Checkout</span>
+            <span class="ec-gw-desc">Tarjetas Internacionales, Apple Pay, Google Pay</span>
+          </label>
+        </div>
+
         <div class="ec-credits-packs-grid">
           <div class="ec-credits-pack-card" data-pack-credits="100">
             <span class="ec-pack-credits">100 Créditos</span>
@@ -417,12 +532,13 @@
             <button type="button" class="ec-pack-btn" data-pack="100">Comprar Pack</button>
           </div>
           <div class="ec-credits-pack-card is-featured" data-pack-credits="500">
-            <div class="ec-pack-tag">Más Popular</div>
+            <div class="ec-pack-tag">Más Popular · +25% Bonus</div>
             <span class="ec-pack-credits">500 Créditos</span>
             <span class="ec-pack-price">$20 USD</span>
             <button type="button" class="ec-pack-btn is-featured" data-pack="500">Comprar Pack</button>
           </div>
           <div class="ec-credits-pack-card" data-pack-credits="1500">
+            <div class="ec-pack-tag" style="background:#10b981;color:#fff;">Élite · +50% Bonus</div>
             <span class="ec-pack-credits">1500 Créditos</span>
             <span class="ec-pack-price">$50 USD</span>
             <button type="button" class="ec-pack-btn" data-pack="1500">Comprar Pack</button>
@@ -529,7 +645,7 @@
               <hr class="toolbar-menu-sep" />
               <div class="toolbar-menu-label" role="presentation">App</div>
               <button id="checkUpdatesMenuBtn" type="button" role="menuitem" data-tool="check-updates" title="Buscar versión nueva en GitHub Releases">Buscar versión</button>
-              <button id="updatesBtn" type="button" role="menuitem" data-tool="reload-app" title="Recargar EditCoreAI con el código actual">Recargar app</button>
+              <button id="updatesBtn" type="button" role="menuitem" data-tool="reload-app" title="Actualizar EditCoreAI con el código actual">Actualizar</button>
             </div>
           </div>
           <button id="connectProjectBtn" type="button" class="toolbar-connect-btn" title="Conectar: npm install + GitHub + Vercel + Supabase">Conectar</button>
@@ -605,7 +721,9 @@
             <option value="chat">Chat</option>
             <option value="agent">Agente</option>
           </select>
-  <button id="permissionsBtn" type="button" aria-haspopup="menu" aria-expanded="false">Permisos</button>
+          <button id="permissionsBtn" type="button" aria-haspopup="menu" aria-expanded="false" title="Permisos paso a paso (Pregunta antes de escribir o ejecutar)" aria-label="Permisos">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg>
+          </button>
           <span class="composer-spacer"></span>
           <div class="model-picker-wrap">
             <button id="modelPickerBtn" type="button" class="model-picker-btn" aria-haspopup="listbox" aria-expanded="false" title="Seleccionar modelo">
@@ -1095,7 +1213,7 @@
         <span class="statusbar-sep" aria-hidden="true"></span>
         <span id="statusBarTheme" class="statusbar-item" title="Tema actual">blanco</span>
         <span class="statusbar-sep" aria-hidden="true"></span>
-        <span id="statusBarVersion" class="statusbar-item statusbar-version" title="Versión EditCore">EditCore v3.0.7</span>
+        <span id="statusBarVersion" class="statusbar-item statusbar-version" title="Versión EditCore">EditCore v4.0.0</span>
       </div>
     </footer>
   </body>

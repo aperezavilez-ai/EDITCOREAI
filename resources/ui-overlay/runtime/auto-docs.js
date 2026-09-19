@@ -43,7 +43,7 @@ function generateAutoDocs(projectRoot, { write = true } = {}) {
 
   const readme = `# ${name}
 
-Documento generado automaticamente por EditCore (AUTO DOCS).
+Documento generado automaticamente por EDITCOREAI (AUTO DOCS).
 
 ## Resumen
 
@@ -75,7 +75,7 @@ Generado: ${new Date().toISOString()}
 
   const apiDoc = `# API / superficies
 
-Auto-docs EditCore — inventariar endpoints cuando existan.
+Auto-docs EDITCOREAI — inventariar endpoints cuando existan.
 
 ## Detectado
 

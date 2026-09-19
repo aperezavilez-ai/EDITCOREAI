@@ -1,7 +1,7 @@
 "use strict";
 
 /**
- * Evita que el chat de EditCore "comprima" o borre un informe largo
+ * Evita que el chat de EDITCOREAI "comprima" o borre un informe largo
  * al llegar un fragmento corto (permiso, stop, grounded hueco, etc.).
  *
  * Regla de raíz: los "### Avance" son progreso de herramientas, NUNCA el

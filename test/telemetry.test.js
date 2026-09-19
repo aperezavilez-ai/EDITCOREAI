@@ -50,3 +50,32 @@ test('limita el buffer de muestras', () => {
   assert.ok(typeof payload.lspLatency === 'number');
   monitor.stop();
 });
+
+test('Cycle 31: tracks tokens, cost, RAG cache hits and router latency', () => {
+  const monitor = new TelemetryMonitor();
+
+  monitor.recordTokenUsage(1200, 300, 0.0045);
+  monitor.recordTokenUsage(800, 200, 0.0030);
+  monitor.recordRagCacheHit(true);
+  monitor.recordRagCacheHit(false);
+  monitor.recordRouterLatency(120);
+  monitor.recordRouterLatency(80);
+
+  const snapshot = monitor.getSnapshot();
+
+  assert.strictEqual(snapshot.tokens.totalPromptTokens, 2000);
+  assert.strictEqual(snapshot.tokens.totalCompletionTokens, 500);
+  assert.strictEqual(snapshot.tokens.totalTokens, 2500);
+  assert.strictEqual(snapshot.tokens.totalEstimatedCostUsd, 0.0075);
+
+  assert.strictEqual(snapshot.rag.hits, 1);
+  assert.strictEqual(snapshot.rag.total, 2);
+  assert.strictEqual(snapshot.rag.hitRatePercent, 50);
+
+  assert.strictEqual(snapshot.routerLatencyMs, 100);
+  assert.ok(typeof snapshot.heapUsedMb === 'number');
+
+  const history = monitor.getHistory('tokens', 10);
+  assert.strictEqual(history.length, 2);
+});
+

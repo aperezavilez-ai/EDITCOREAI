@@ -34,7 +34,7 @@ function resolveUpdateRepo({ packageJson = {}, env = process.env } = {}) {
     if (m) return m[1];
   }
   // Fallback estable del producto publicado.
-  return "aperezavilez-ai/EditCore-AI";
+  return "aperezavilez-ai/EDITCOREAI";
 }
 
 function fetchJson(url, { timeoutMs = 12_000, headers = {} } = {}) {
@@ -51,7 +51,7 @@ function fetchJson(url, { timeoutMs = 12_000, headers = {} } = {}) {
       method: "GET",
       headers: {
         accept: "application/vnd.github+json",
-        "user-agent": "EditCore-AI-UpdateCheck",
+        "user-agent": "EDITCOREAI-UpdateCheck",
         ...headers,
       },
       timeout: timeoutMs,

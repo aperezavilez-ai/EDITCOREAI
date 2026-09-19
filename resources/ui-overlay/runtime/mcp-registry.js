@@ -37,7 +37,7 @@ function writeProjectMcp(projectRoot, config) {
   const next = {
     enabled: config.enabled !== false,
     updatedAt: new Date().toISOString(),
-    note: config.note || "MCP del proyecto (EditCore). Multi-servidor stdio/http.",
+    note: config.note || "MCP del proyecto (EDITCOREAI). Multi-servidor stdio/http.",
     servers: Array.isArray(config.servers) ? config.servers : [],
   };
   fs.writeFileSync(file, `${JSON.stringify(next, null, 2)}\n`, "utf8");
@@ -93,7 +93,7 @@ function registerMcpServer(projectRoot, input = {}) {
   const written = writeProjectMcp(root, {
     enabled: true,
     servers: servers.slice(0, 12),
-    note: "Registrado desde EditCore (multi-servidor).",
+    note: "Registrado desde EDITCOREAI (multi-servidor).",
   });
   return { ...entry, configPath: written.file, serverCount: servers.length };
 }

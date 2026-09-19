@@ -1,7 +1,7 @@
 "use strict";
 
 /**
- * Motor de Assets e Identidad Visual para Proyectos de EditCore AI.
+ * Motor de Assets e Identidad Visual para Proyectos de EDITCOREAI.
  * Provee imágenes temáticas HD curadas por categoría, avatares realistas,
  * banners de alta resolución y generadores de logotipos SVG vectoriales.
  */

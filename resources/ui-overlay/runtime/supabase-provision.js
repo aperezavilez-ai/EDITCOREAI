@@ -6,6 +6,13 @@ const { spawn } = require("node:child_process");
 const { executeServiceRequest } = require("../service-harness");
 const { writeLocalEnv, writeProjectLinkManifest } = require("./project-connect");
 const { ensureStorageBucket, supabaseHealth } = require("./supabase-manager");
+const {
+  projectOwnedSupabaseUrl,
+  projectOwnedSupabaseSchema,
+  gafcoreProjectSlug,
+  gafcorePlatformOrigin,
+  connectionsForProject,
+} = require("./operator-connections-context");
 
 function slugify(value = "") {
   return String(value || "")
@@ -68,7 +75,7 @@ function bootstrapSupabaseFolder(projectRoot, { projectName = "app", projectId =
   const migrationPath = path.join(migrationsDir, "00000000000000_editcore_init.sql");
   if (!fs.existsSync(migrationPath)) {
     fs.writeFileSync(migrationPath, [
-      "-- EditCore bootstrap",
+      "-- EDITCOREAI bootstrap",
       "create table if not exists public.profiles (",
       "  id uuid primary key,",
       "  email text,",
@@ -162,9 +169,16 @@ async function createSupabaseProject(projectRoot, connections = {}, {
   }
   try {
     const { assertProjectConnectionTarget } = require("./project-connection-isolation");
+    const intendedUrl = projectOwnedSupabaseUrl(
+      root,
+      gafcorePlatformOrigin(connections.selfSupabaseUrl || connections.supabaseUrl || "")
+        || connections.selfSupabaseUrl
+        || connections.supabaseUrl
+        || "https://supabase.gafcore.com",
+    );
     assertProjectConnectionTarget(root, {
-      supabaseUrl: connections.selfSupabaseUrl || connections.supabaseUrl || "",
-      supabaseProjectId: connections.supabaseProjectId || connections.gafcoreProjectId || "",
+      supabaseUrl: intendedUrl,
+      supabaseProjectId: connections.supabaseProjectId || connections.gafcoreProjectId || gafcoreProjectSlug(root),
       gatewayUrl: connections.gafcoreGateway || connections.gatewayUrl || "",
     });
   } catch (error) {
@@ -172,7 +186,7 @@ async function createSupabaseProject(projectRoot, connections = {}, {
   }
 
   let cloud = { ok: true, skipped: true };
-  let activeConnections = { ...connections };
+  let activeConnections = connectionsForProject(connections, root);
   if (useCloud) {
     cloud = await trySupabaseCloudCreate(connections, { name });
     steps.push({ step: "supabase_cloud_create", ...cloud });
@@ -187,8 +201,19 @@ async function createSupabaseProject(projectRoot, connections = {}, {
     }
   }
 
-  if (!activeConnections.selfSupabaseUrl || !activeConnections.selfSupabaseKey) {
+  if (!activeConnections.selfSupabaseKey) {
     return { ok: false, message: "Configura Supabase propio en Conexiones o usa Cloud con token/org.", steps };
+  }
+
+  // GafCore: URL = plataforma + slug de ESTE proyecto (nunca heredar /otro-proyecto).
+  if (!cloud.created) {
+    activeConnections = {
+      ...activeConnections,
+      selfSupabaseUrl: projectOwnedSupabaseUrl(
+        root,
+        gafcorePlatformOrigin(activeConnections.selfSupabaseUrl) || activeConnections.selfSupabaseUrl || "https://supabase.gafcore.com",
+      ),
+    };
   }
 
   const health = await supabaseHealth(activeConnections);
@@ -197,9 +222,12 @@ async function createSupabaseProject(projectRoot, connections = {}, {
     return { ok: false, message: health.message || "Supabase no responde.", steps };
   }
 
+  const projectId = cloud.projectId || gafcoreProjectSlug(name || root);
+  const schema = projectOwnedSupabaseSchema(activeConnections.selfSupabaseUrl);
+
   const bootstrap = bootstrapSupabaseFolder(root, {
     projectName: name,
-    projectId: cloud.projectId || slugify(name),
+    projectId,
   });
   steps.push({ step: "supabase_bootstrap", ...bootstrap });
 
@@ -211,6 +239,7 @@ async function createSupabaseProject(projectRoot, connections = {}, {
     NEXT_PUBLIC_SUPABASE_ANON_KEY: String(activeConnections.selfSupabaseKey),
     VITE_SUPABASE_ANON_KEY: String(activeConnections.selfSupabaseKey),
     SUPABASE_SERVICE_ROLE_KEY: String(activeConnections.selfSupabaseKey),
+    NEXT_PUBLIC_SUPABASE_SCHEMA: schema,
   });
   steps.push({ step: "env_local", ok: true, path: env.path, keys: env.keys });
 
@@ -225,12 +254,14 @@ async function createSupabaseProject(projectRoot, connections = {}, {
   const manifest = writeProjectLinkManifest(root, {
     supabase: {
       url: String(activeConnections.selfSupabaseUrl).replace(/\/+$/, ""),
-      projectId: cloud.projectId || slugify(name),
+      projectId,
+      schema,
       createdAt: new Date().toISOString(),
     },
     notes: [
-      "Proyecto Supabase creado/enlazado desde panel EditCore.",
+      "Proyecto Supabase creado/enlazado desde panel EDITCOREAI.",
       cloud.created ? "Origen: Supabase Cloud API." : "Origen: Supabase propio (GafCore/self-hosted).",
+      "URL exclusiva de este proyecto; no se hereda de otros.",
     ],
   });
   steps.push({ step: "manifest", ok: true, path: manifest.path });
@@ -241,13 +272,9 @@ async function createSupabaseProject(projectRoot, connections = {}, {
     completed: ok,
     projectRoot: root,
     steps,
-    connectionsPatch: cloud.ok && cloud.url ? {
-      selfSupabaseUrl: activeConnections.selfSupabaseUrl,
-      selfSupabaseKey: activeConnections.selfSupabaseKey,
-      supabaseProjectId: cloud.projectId || "",
-    } : null,
+    connectionsPatch: null, // No ensuciar la bóveda global con URL de un proyecto concreto
     message: ok
-      ? (cloud.created ? "Proyecto Supabase Cloud creado y enlazado." : "Proyecto Supabase enlazado en esta carpeta.")
+      ? (cloud.created ? "Proyecto Supabase Cloud creado y enlazado." : `Proyecto Supabase propio enlazado: ${activeConnections.selfSupabaseUrl}`)
       : "Creacion Supabase incompleta; revisa pasos.",
   };
 }

@@ -1,7 +1,7 @@
 {
   "name": "editcoreai",
-  "version": "3.0.5",
-  "description": "EditCoreAI â€” IDE con agente (MEAI/APICREDITS)",
+  "version": "4.0.0",
+  "description": "EditCoreAI — IDE con agente (MEAI/APICREDITS)",
   "author": "EditCoreAI",
   "private": true,
   "main": "main.js",
@@ -53,7 +53,7 @@
     "appId": "com.editcoreai.app",
     "productName": "EditCoreAI",
     "executableName": "EDITCOREAI",
-    "buildVersion": "3.0.5.0",
+    "buildVersion": "4.0.0.0",
     "artifactName": "EDITCOREAI-Setup.${ext}",
     "win": {
       "icon": "assets/logo.ico",
@@ -83,7 +83,11 @@
       "!node_modules/.cache/**",
       "!node_modules/monaco-editor/dev/**",
       "!node_modules/monaco-editor/esm/**",
-      "!node_modules/monaco-editor/min-maps/**"
+      "!node_modules/monaco-editor/min-maps/**",
+      "!node_modules/vercel/**",
+      "!node_modules/@vercel/**",
+      "!node_modules/puppeteer/**",
+      "!node_modules/puppeteer-core/**"
     ],
     "asarUnpack": [
       "node_modules/monaco-editor/min/**",

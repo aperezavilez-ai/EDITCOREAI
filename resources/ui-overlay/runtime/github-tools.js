@@ -20,7 +20,7 @@ async function githubApi(endpoint, token, options = {}) {
       path: parsedUrl.pathname + parsedUrl.search,
       method: options.method || "GET",
       headers: {
-        "User-Agent": "EditCore-AI/2.0",
+        "User-Agent": "EDITCOREAI/2.0",
         "Accept": "application/vnd.github.v3+json",
         ...(token && { "Authorization": `token ${token}` }),
         ...(options.headers || {}),

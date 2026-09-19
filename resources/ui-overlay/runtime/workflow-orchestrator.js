@@ -134,7 +134,7 @@ class WorkflowOrchestrator {
       } else if (resolvedPlanId) {
         this.manager.updateTask(taskId, { planId: "", planReference: "" });
         throw Object.assign(
-          new Error("El plan anterior ya no está en memoria (se reinició EditCore). Escribe CONTINUA para retomar el análisis, o un análisis nuevo; cuando haya reporte escribe PROCEDE."),
+          new Error("El plan anterior ya no está en memoria (se reinició EDITCOREAI). Escribe CONTINUA para retomar el análisis, o un análisis nuevo; cuando haya reporte escribe PROCEDE."),
           { code: "WORKFLOW_PLAN_MISSING", recoverable: true },
         );
       }

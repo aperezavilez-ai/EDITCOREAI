@@ -1,12 +1,12 @@
 "use strict";
 
 /**
- * EditCore Voice Orb - Visualizador interactivo fluido en Canvas.
+ * EDITCOREAI Voice Orb - Visualizador interactivo fluido en Canvas.
  * Renderiza un orbe de partículas y gradiente con 4 estados:
  * - idle: respiración suave
  * - listening: ondas reactivas al volumen del micrófono
  * - thinking: pulso rotatorio de energía de razonamiento
- * - speaking: ondas armónicas de voz mientras EditCore habla
+ * - speaking: ondas armónicas de voz mientras EDITCOREAI habla
  */
 
 (function exposeVoiceOrb(root, factory) {

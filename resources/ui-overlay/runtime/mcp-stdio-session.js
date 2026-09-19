@@ -14,7 +14,7 @@ function isSafeCommand(command, projectRoot) {
   if (!raw) return false;
   const base = path.basename(raw).toLowerCase();
   if (ALLOWED_COMMANDS.has(base)) return true;
-  // Permitir el node actual del proceso EditCore (tests y servidores locales).
+  // Permitir el node actual del proceso EDITCOREAI (tests y servidores locales).
   try {
     if (path.resolve(raw) === path.resolve(process.execPath)) return true;
   } catch {}
@@ -156,7 +156,7 @@ class McpStdioSession {
     await this.request("initialize", {
       protocolVersion: "2024-11-05",
       capabilities: {},
-      clientInfo: { name: "editcore-ai", version: "2.2.9" },
+      clientInfo: { name: "editcoreai", version: "2.2.9" },
     });
     this.notify("notifications/initialized", {});
     this.initialized = true;

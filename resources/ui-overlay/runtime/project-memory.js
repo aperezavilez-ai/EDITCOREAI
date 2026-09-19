@@ -14,13 +14,16 @@ function memoryPath(projectRoot) {
 
 function emptyMemory() {
   return {
-    version: 1,
+    version: 2,
     updatedAt: "",
     summary: "",
     stack: [],
     decisions: [],
     recentFiles: [],
     recentTasks: [],
+    architectureRules: [],
+    styleGuides: [],
+    profiles: {},
   };
 }
 
@@ -36,6 +39,9 @@ function loadProjectMemory(projectRoot) {
       decisions: Array.isArray(raw.decisions) ? raw.decisions.slice(0, 20) : [],
       recentFiles: Array.isArray(raw.recentFiles) ? raw.recentFiles.slice(0, 30) : [],
       recentTasks: Array.isArray(raw.recentTasks) ? raw.recentTasks.slice(0, 12) : [],
+      architectureRules: Array.isArray(raw.architectureRules) ? raw.architectureRules.slice(0, 40) : [],
+      styleGuides: Array.isArray(raw.styleGuides) ? raw.styleGuides.slice(0, 20) : [],
+      profiles: raw.profiles && typeof raw.profiles === "object" ? raw.profiles : {},
     };
   } catch {
     return emptyMemory();
@@ -86,7 +92,44 @@ function rememberProjectEvent(projectRoot, event = {}) {
   if (decision) {
     memory.decisions = [{ at: new Date().toISOString(), text: decision }, ...memory.decisions].slice(0, 20);
   }
+  const rule = String(event.architectureRule || event.rule || "").trim().slice(0, 400);
+  if (rule) {
+    memory.architectureRules = [
+      { at: new Date().toISOString(), text: rule },
+      ...memory.architectureRules.filter((row) => row.text !== rule),
+    ].slice(0, 40);
+  }
+  const style = String(event.styleGuide || event.style || "").trim().slice(0, 400);
+  if (style) {
+    memory.styleGuides = [
+      { at: new Date().toISOString(), text: style },
+      ...memory.styleGuides.filter((row) => row.text !== style),
+    ].slice(0, 20);
+  }
+  if (event.profile && typeof event.profile === "object") {
+    const name = String(event.profile.name || event.profileId || "default").trim() || "default";
+    memory.profiles[name] = {
+      ...(memory.profiles[name] || {}),
+      ...event.profile,
+      updatedAt: new Date().toISOString(),
+    };
+  }
   return saveProjectMemory(projectRoot, memory);
+}
+
+function upsertArchitectureRule(projectRoot, ruleText) {
+  return rememberProjectEvent(projectRoot, { architectureRule: ruleText });
+}
+
+function formatArchitectureBlock(memory = {}) {
+  const rules = memory?.architectureRules || [];
+  const styles = memory?.styleGuides || [];
+  if (!rules.length && !styles.length) return "";
+  return [
+    "REGLAS DE ARQUITECTURA / ESTILO (.editcore/memory.json):",
+    ...rules.slice(0, 12).map((row) => `- ${row.text}`),
+    ...styles.slice(0, 8).map((row) => `- Estilo: ${row.text}`),
+  ].join("\n");
 }
 
 function formatMemoryForPrompt(memory = {}) {
@@ -105,6 +148,7 @@ function formatMemoryForPrompt(memory = {}) {
     data.decisions?.length
       ? `- Decisiones:\n${data.decisions.slice(0, 5).map((row) => `  · ${row.text}`).join("\n")}`
       : "",
+    formatArchitectureBlock(data),
     "- Usa esta memoria para continuar sin redescubrir el proyecto; verifica en disco si dudas.",
   ].filter(Boolean).join("\n");
 }
@@ -114,6 +158,8 @@ module.exports = {
   loadProjectMemory,
   saveProjectMemory,
   rememberProjectEvent,
+  upsertArchitectureRule,
+  formatArchitectureBlock,
   formatMemoryForPrompt,
   emptyMemory,
 };

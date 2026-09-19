@@ -410,7 +410,7 @@ function readGitContext(projectRoot) {
  */
 function enrichPromptWithMentions(projectRoot, prompt = "", {
   index = null,
-  maxFiles = 6,
+  maxFiles = 4,
   allowAutoIndex = false,
 } = {}) {
   const root = path.resolve(String(projectRoot || ""));

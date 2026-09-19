@@ -53,7 +53,7 @@ function loadTransformers() {
 }
 
 function getCacheDir(userDataPath) {
-  const root = userDataPath || path.join(process.env.APPDATA || process.cwd(), "EditCore AI");
+  const root = userDataPath || path.join(process.env.APPDATA || process.cwd(), "EDITCOREAI");
   const dir = path.join(root, "whisper-cache");
   fs.mkdirSync(dir, { recursive: true });
   return dir;

@@ -11,6 +11,7 @@ const TOOL_METADATA = {
   create_project: { category: "project", stages: ["modification"], capabilities: ["create"] },
   generate_image: { category: "assets", stages: ["modification"], capabilities: ["image-gen"] },
   generate_video: { category: "assets", stages: ["modification"], capabilities: ["video-gen"] },
+  add_erp_module: { category: "project", stages: ["modification"], capabilities: ["erp-module"] },
   open_project: { category: "project", stages: ["discovery", "modification"], capabilities: ["open"] },
   close_project: { category: "project", stages: ["discovery", "modification"], capabilities: ["close"] },
   switch_project: { category: "project", stages: ["discovery", "modification"], capabilities: ["open", "close", "switch"] },
@@ -52,7 +53,7 @@ const COMPACT_REQUIRED = {
   open_project: ["path"], close_project: [], switch_project: ["path"],
 };
 
-const MUTATION_TOOLS = new Set(["write_file", "replace_in_file", "create_project", "service_write", "apply_diff", "generate_image", "generate_video", "publish_project", "connect_project", "provision_project", "onboard_project", "create_supabase_project", "sync_vercel_env", "supabase_manage", "ssh_deploy"]);
+const MUTATION_TOOLS = new Set(["write_file", "replace_in_file", "create_project", "service_write", "apply_diff", "generate_image", "generate_video", "add_erp_module", "publish_project", "connect_project", "provision_project", "onboard_project", "create_supabase_project", "sync_vercel_env", "supabase_manage", "ssh_deploy"]);
 const VERIFICATION_TOOLS = new Set(["select_verification", "inspect_preview", "review_diff"]);
 const VERIFICATION_COMMAND = /(^|\s|:)(test|build|lint|check|typecheck)(\s|$)/i;
 

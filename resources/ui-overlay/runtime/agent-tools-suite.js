@@ -125,6 +125,7 @@ function scaffoldNextjsApp(root, { name = "next-app", prompt = "" } = {}) {
         "lucide-react": "^0.323.0",
         clsx: "^2.1.0",
         "tailwind-merge": "^2.2.1",
+        "framer-motion": "^11.15.0",
       },
       devDependencies: {
         "@types/node": "^20",
@@ -171,19 +172,25 @@ const config: Config = {
       colors: {
         primary: "#0284c7",
       },
+      transitionTimingFunction: {
+        soft: "cubic-bezier(0.22, 1, 0.36, 1)",
+      },
+      transitionDuration: {
+        soft: "280ms",
+      },
     },
   },
   plugins: [],
 };
 export default config;
 `,
-    "src/app/globals.css": `@tailwind base;\n@tailwind components;\n@tailwind utilities;\n`,
+    "src/app/globals.css": `@tailwind base;\n@tailwind components;\n@tailwind utilities;\n\n@layer utilities {\n  .transition-soft { @apply transition-all duration-soft ease-soft; }\n  .hover-lift { @apply transition-soft hover:-translate-y-0.5 hover:shadow-lg; }\n  .asset-placeholder { @apply relative overflow-hidden rounded-2xl bg-slate-800/60 animate-pulse; }\n}\n`,
     "src/app/layout.tsx": `import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
   title: "${name}",
-  description: "Creado con EditCore AI Next.js Scaffold",
+  description: "Creado con EDITCOREAI Next.js Scaffold",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
@@ -206,13 +213,13 @@ export default function Home() {
         <span className="text-cyan-400 text-sm font-medium">Aplicacion Next.js 14 Activa</span>
       </div>
       <h1 className="text-4xl font-bold text-white mb-4">${name}</h1>
-      <p className="text-slate-400 max-w-md mb-8">${prompt || "Proyecto Next.js generado por EditCore AI."}</p>
+      <p className="text-slate-400 max-w-md mb-8">${prompt || "Proyecto Next.js generado por EDITCOREAI."}</p>
     </main>
   );
 }
 `,
     ".gitignore": `node_modules\n.next\nout\nbuild\n.env\n.env.local\n`,
-    "README.md": `# ${name}\n\nProyecto Next.js Full-Stack creado con EditCore AI.\n\n## Ejecución\n\`\`\`bash\nnpm install\nnpm run dev\n\`\`\`\n`,
+    "README.md": `# ${name}\n\nProyecto Next.js Full-Stack creado con EDITCOREAI.\n\n## Ejecución\n\`\`\`bash\nnpm install\nnpm run dev\n\`\`\`\n`,
   };
 
   const written = [];
@@ -261,7 +268,7 @@ def test_read_root():
     assert response.json()["status"] == "online"
 `,
     ".gitignore": `__pycache__/\n*.py[cod]\nvenv/\n.env\n.pytest_cache/\n`,
-    "README.md": `# ${name}\n\nBackend FastAPI creado con EditCore AI.\n\n## Ejecucion\n\`\`\`bash\npip install -r requirements.txt\nuvicorn main:app --reload --port 8000\n\`\`\`\n`,
+    "README.md": `# ${name}\n\nBackend FastAPI creado con EDITCOREAI.\n\n## Ejecucion\n\`\`\`bash\npip install -r requirements.txt\nuvicorn main:app --reload --port 8000\n\`\`\`\n`,
   };
 
   const written = [];
@@ -338,7 +345,7 @@ app.listen(port, () => {
 });
 `,
     ".gitignore": `node_modules\ndist\n.env\n`,
-    "README.md": `# ${name}\n\nBackend Express TypeScript creado con EditCore AI.\n`,
+    "README.md": `# ${name}\n\nBackend Express TypeScript creado con EDITCOREAI.\n`,
   };
 
   const written = [];

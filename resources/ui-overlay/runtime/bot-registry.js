@@ -11,7 +11,7 @@ function defaultRun(bot, context = {}) {
     name: bot.name,
     subAgent: bot.subAgent,
     mode: "advisory",
-    summary: `${bot.name} registrado en EditCore. Usa el sub-agente ${bot.subAgent} cuando el orquestador active ${bot.agentType}.`,
+    summary: `${bot.name} registrado en EDITCOREAI. Usa el sub-agente ${bot.subAgent} cuando el orquestador active ${bot.agentType}.`,
     skills: bot.skills || [],
     wakeConditions: bot.wakeConditions || [],
     projectRoot: context.projectRoot || "",

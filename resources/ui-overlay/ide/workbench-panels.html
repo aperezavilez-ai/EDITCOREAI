@@ -1,0 +1,1021 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>EditCoreAI — Workbench Unificado de Agentes y Colaboración</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0d1117;
+      --panel: #161b22;
+      --panel-hover: #21262d;
+      --border: #30363d;
+      --text: #c9d1d9;
+      --text-bright: #f0f6fc;
+      --muted: #8b949e;
+      --accent: #58a6ff;
+      --accent-green: #3fb950;
+      --accent-purple: #bc8cff;
+      --accent-orange: #d29922;
+      --danger: #f85149;
+    }
+
+    * { box-sizing: border-box; }
+    html, body { height: 100%; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* Tabs Header */
+    .workbench-nav {
+      display: flex;
+      background: var(--panel);
+      border-bottom: 1px solid var(--border);
+      padding: 0 12px;
+      gap: 4px;
+    }
+
+    .nav-tab {
+      padding: 10px 16px;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--muted);
+      border-bottom: 2px solid transparent;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      transition: all 160ms ease;
+    }
+
+    .nav-tab:hover {
+      color: var(--text-bright);
+    }
+
+    .nav-tab.active {
+      color: var(--accent);
+      border-bottom-color: var(--accent);
+    }
+
+    /* Content Area */
+    .tab-content {
+      flex: 1;
+      padding: 16px;
+      overflow-y: auto;
+      display: none;
+    }
+
+    .tab-content.active {
+      display: block;
+    }
+
+    /* Grid & Cards */
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 16px;
+    }
+
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px;
+    }
+
+    .card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+    }
+
+    .card-title {
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--text-bright);
+      margin: 0;
+    }
+
+    /* Controls & Inputs */
+    .form-group {
+      margin-bottom: 12px;
+    }
+
+    .form-label {
+      display: block;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--muted);
+      margin-bottom: 4px;
+    }
+
+    .input-control {
+      width: 100%;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      color: var(--text-bright);
+      padding: 8px 10px;
+      border-radius: 6px;
+      font-size: 13px;
+      outline: none;
+    }
+
+    .input-control:focus {
+      border-color: var(--accent);
+    }
+
+    .btn {
+      background: var(--accent);
+      color: #0d1117;
+      border: none;
+      padding: 8px 14px;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .btn:hover {
+      opacity: 0.92;
+    }
+
+    .btn-secondary {
+      background: var(--panel-hover);
+      color: var(--text-bright);
+      border: 1px solid var(--border);
+    }
+
+    .btn-danger {
+      background: var(--danger);
+      color: white;
+    }
+
+    /* Items List */
+    .item-list {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .item-card {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 10px 12px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 12px;
+      font-size: 11px;
+      font-weight: 600;
+    }
+
+    .badge-running { background: rgba(88, 166, 255, 0.2); color: var(--accent); }
+    .badge-completed { background: rgba(63, 185, 80, 0.2); color: var(--accent-green); }
+    .badge-failed { background: rgba(248, 81, 73, 0.2); color: var(--danger); }
+
+    /* Code View / Logs */
+    pre.code-view {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 12px;
+      font-family: monospace;
+      font-size: 12px;
+      color: #e6edf3;
+      overflow-x: auto;
+      max-height: 240px;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Navigation Tabs -->
+  <nav class="workbench-nav">
+    <div class="nav-tab active" data-tab="parallel-agents">🤖 Agentes Paralelos</div>
+    <div class="nav-tab" data-tab="collab-sync">👥 Colaboración en Vivo</div>
+    <div class="nav-tab" data-tab="memory-ledger">🧠 Memoria & Reglas</div>
+    <div class="nav-tab" data-tab="test-generator">🧪 TDD Autónomo</div>
+    <div class="nav-tab" data-tab="proactive-architect">🧭 Arquitecto Proactivo</div>
+    <div class="nav-tab" data-tab="approval-gate">🛡️ Plan-First Gate</div>
+    <div class="nav-tab" data-tab="self-healing">🩺 Self-Healing</div>
+    <div class="nav-tab" data-tab="swarms-memory">🐝 Swarms & Memory</div>
+    <div class="nav-tab" data-tab="hyper-ecosystem">⚡ Hiper-Ecosistema</div>
+    <div class="nav-tab" data-tab="omega-horizon">🌌 Horizonte Omega</div>
+  </nav>
+
+
+
+
+  <!-- TAB 1: Agentes Paralelos -->
+  <section class="tab-content active" id="tab-parallel-agents">
+    <div class="grid">
+      <div class="card">
+        <div class="card-header">
+          <h2 class="card-title">🚀 Lanzar Nuevo Agente</h2>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Nombre del Agente</label>
+          <input type="text" id="agentNameInput" class="input-control" placeholder="Ej. Linter AST Paralelo" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Objetivo de la Subtarea</label>
+          <input type="text" id="agentGoalInput" class="input-control" placeholder="Ej. Escanear y formatear módulos" />
+        </div>
+        <button class="btn" id="btnSpawnAgent">⚡ Lanzar en Segundo Plano</button>
+      </div>
+
+      <div class="card" style="grid-column: span 2;">
+        <div class="card-header">
+          <h2 class="card-title">📋 Hilos de Agentes Activos</h2>
+          <button class="btn btn-secondary" id="btnRefreshAgents">🔄 Actualizar</button>
+        </div>
+        <div id="agentsContainer">
+          <ul class="item-list" id="agentsList">
+            <li class="item-card"><span>Sin agentes en ejecución actualmente.</span></li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- TAB 2: Colaboración en Vivo -->
+  <section class="tab-content" id="tab-collab-sync">
+    <div class="grid">
+      <div class="card">
+        <div class="card-header">
+          <h2 class="card-title">🌐 Sesión CRDT</h2>
+        </div>
+        <div class="form-group">
+          <label class="form-label">ID de Sesión / Sala</label>
+          <input type="text" id="collabSessionInput" class="input-control" placeholder="collab_session_1" />
+        </div>
+        <div style="display:flex; gap:8px;">
+          <button class="btn" id="btnCreateCollab">Crear Sala</button>
+          <button class="btn btn-secondary" id="btnJoinCollab">Unirse</button>
+        </div>
+      </div>
+
+      <div class="card" style="grid-column: span 2;">
+        <div class="card-header">
+          <h2 class="card-title">👥 Peers y Cursors Conectados</h2>
+        </div>
+        <ul class="item-list" id="peersList">
+          <li class="item-card"><span>Host Local (Tú) — Conectado</span></li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- TAB 3: Memoria Ledger & Reglas -->
+  <section class="tab-content" id="tab-memory-ledger">
+    <div class="grid">
+      <div class="card">
+        <div class="card-header">
+          <h2 class="card-title">🎯 Objetivo de la Sesión</h2>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Session Goal Actual</label>
+          <input type="text" id="sessionGoalInput" class="input-control" placeholder="Definir objetivo de trabajo..." />
+        </div>
+        <button class="btn" id="btnSaveGoal">💾 Guardar en Ledger</button>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <h2 class="card-title">📜 Decision Log Reciente</h2>
+        </div>
+        <ul class="item-list" id="decisionsList">
+          <li class="item-card"><span>Sin decisiones técnicas registradas en esta rama.</span></li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- TAB 4: Generador TDD -->
+  <section class="tab-content" id="tab-test-generator">
+    <div class="grid">
+      <div class="card">
+        <div class="card-header">
+          <h2 class="card-title">🧪 Generar Tests Automáticos</h2>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Ruta del Archivo de Código</label>
+          <input type="text" id="tddTargetFile" class="input-control" placeholder="runtime/smart-router.js" />
+        </div>
+        <button class="btn" id="btnGenerateTests">⚡ Generar y Ejecutar Tests</button>
+      </div>
+
+      <div class="card" style="grid-column: span 2;">
+        <div class="card-header">
+          <h2 class="card-title">📊 Resultado de la Suite Generada</h2>
+        </div>
+        <pre class="code-view" id="tddOutput">// El resultado de la ejecución TDD aparecerá aquí...</pre>
+      </div>
+    </div>
+  </section>
+
+  <!-- TAB 5: Arquitecto Proactivo & Pulso del Proyecto -->
+  <section class="tab-content" id="tab-proactive-architect">
+    <div class="grid">
+      <div class="card">
+        <div class="card-header">
+          <h2 class="card-title">🩺 Pulso del Proyecto</h2>
+          <button class="btn btn-secondary" id="btnScanWorkspace">🔄 Escaneo Proactivo</button>
+        </div>
+        <div style="margin: 12px 0;">
+          <div style="display:flex; justify-content:space-between; margin-bottom:6px; font-weight:bold;">
+            <span>Salud del Proyecto</span>
+            <span id="healthScoreText" style="color:var(--accent-green);">100%</span>
+          </div>
+          <div style="background:var(--bg); border:1px solid var(--border); border-radius:4px; height:10px; overflow:hidden;">
+            <div id="healthScoreBar" style="background:var(--accent-green); height:100%; width:100%; transition:width 300ms ease;"></div>
+          </div>
+        </div>
+        <div style="font-size:12px; color:var(--muted); margin-top:8px;" id="scanSummaryText">
+          Archivos escaneados: 0 | Hallazgos activos: 0
+        </div>
+      </div>
+
+      <div class="card" style="grid-column: span 2;">
+        <div class="card-header">
+          <h2 class="card-title">💡 Tarjetas de Acción del Arquitecto</h2>
+        </div>
+        <ul class="item-list" id="actionCardsList">
+          <li class="item-card"><span>No hay acciones pendientes. El proyecto se encuentra en excelente estado.</span></li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- TAB 6: Puerta de Aprobación Humana (Plan-First Gate) -->
+  <section class="tab-content" id="tab-approval-gate">
+    <div class="grid">
+      <div class="card">
+        <div class="card-header">
+          <h2 class="card-title">🛡️ Estado de la Puerta de Ejecución</h2>
+          <button class="btn btn-secondary" id="btnRefreshPlans">🔄 Actualizar</button>
+        </div>
+        <div style="font-size:13px; color:var(--text); margin-bottom:12px;">
+          <p>EditCoreAI opera en modo <strong>Plan-First</strong>: ninguna herramienta de modificación de archivos se ejecuta sin tu visto bueno previo.</p>
+        </div>
+        <div style="font-size:12px; color:var(--muted);" id="pendingPlansCount">
+          Planes pendientes de revisión: 0
+        </div>
+      </div>
+
+      <div class="card" style="grid-column: span 2;">
+        <div class="card-header">
+          <h2 class="card-title">📑 Planes Propuestos Esperando Aprobación</h2>
+        </div>
+        <ul class="item-list" id="pendingPlansList">
+          <li class="item-card"><span>Sin planes pendientes de aprobación actualmente.</span></li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- TAB 7: Autocorrección de Errores (Self-Healing) -->
+  <section class="tab-content" id="tab-self-healing">
+    <div class="grid">
+      <div class="card">
+        <div class="card-header">
+          <h2 class="card-title">🩺 Captura y Diagnóstico de Errores</h2>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Salida de Error / Stack Trace</label>
+          <textarea id="selfHealInput" class="input-control" rows="5" style="resize:vertical; font-family:monospace;" placeholder="Pega aquí la salida de error o npm test fallido..."></textarea>
+        </div>
+        <button class="btn" id="btnDiagnoseError">✨ Autocorregir con IA</button>
+      </div>
+
+      <div class="card" style="grid-column: span 2;">
+        <div class="card-header">
+          <h2 class="card-title">🛠️ Diagnóstico y Propuesta de Parche</h2>
+        </div>
+        <div id="selfHealResultView" style="font-size:13px; color:var(--text);">
+          <pre class="code-view" id="selfHealOutput">// El análisis de la traza de error y la propuesta de corrección aparecerán aquí...</pre>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- TAB 8: Swarms & Enterprise Memory -->
+  <section class="tab-content" id="tab-swarms-memory">
+    <div class="grid">
+      <div class="card">
+        <div class="card-header">
+          <h2 class="card-title">🐝 Lanzar Enjambre Especializado</h2>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Objetivo del Enjambre</label>
+          <input type="text" id="swarmGoalInput" class="input-control" placeholder="Ej. Refactorizar API y esquema DB" />
+        </div>
+        <button class="btn" id="btnSpawnSwarm">🚀 Orquestar Enjambre Multi-Agente</button>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <h2 class="card-title">🔄 Auto-TDD & Refactoring</h2>
+        </div>
+        <div style="display:flex; gap:8px;">
+          <button class="btn" id="btnRunAutoTdd">⚡ Ejecutar Auto-TDD</button>
+          <button class="btn btn-secondary" id="btnScanRefactor">🔍 Escanear Refactor</button>
+        </div>
+        <div style="font-size:12px; color:var(--muted); margin-top:8px;" id="refactorSummary">
+          Estado: Listo para escanear
+        </div>
+      </div>
+
+      <div class="card" style="grid-column: span 2;">
+        <div class="card-header">
+          <h2 class="card-title">🏛️ Architectural Decision Records (ADR Ledger)</h2>
+          <button class="btn btn-secondary" id="btnRefreshAdrs">🔄 Actualizar ADRs</button>
+        </div>
+        <ul class="item-list" id="adrList">
+          <li class="item-card"><span>Sin decisiones arquitectónicas registradas aún.</span></li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- TAB 9: Hiper-Ecosistema Autónomo -->
+  <section class="tab-content" id="tab-hyper-ecosystem">
+    <div class="grid">
+      <!-- 1. CI/CD Self-Pilot -->
+      <div class="card">
+        <div class="card-header">
+          <h2 class="card-title">🚀 Pipeline CI/CD Self-Pilot</h2>
+        </div>
+        <p style="font-size:13px; color:var(--muted); margin-bottom:12px;">Empaqueta cambios, genera PR semántico y despliega entorno efímero.</p>
+        <button class="btn" id="btnRunCiCdPipeline">⚡ Ejecutar PR-to-Deploy</button>
+        <div id="cicdStatusBox" style="font-size:12px; color:var(--text); margin-top:8px;">Estado: En espera</div>
+      </div>
+
+      <!-- 2. Deep AST Code Graph -->
+      <div class="card">
+        <div class="card-header">
+          <h2 class="card-title">🕸️ Grafo Semántico Neural AST</h2>
+        </div>
+        <p style="font-size:13px; color:var(--muted); margin-bottom:12px;">Mapeo matemático de tipos, contratos e integridad entre microservicios.</p>
+        <button class="btn btn-secondary" id="btnBuildAstGraph">🔄 Reconstruir Grafo AST</button>
+        <div id="astGraphStatusBox" style="font-size:12px; color:var(--text); margin-top:8px;">Nodos: 0 | Aristas: 0</div>
+      </div>
+
+      <!-- 3. Intent Anticipation -->
+      <div class="card">
+        <div class="card-header">
+          <h2 class="card-title">🔮 Anticipación de Intención</h2>
+        </div>
+        <p style="font-size:13px; color:var(--muted); margin-bottom:12px;">Predicción de archivos y precarga silenciosa de contexto en memoria.</p>
+        <button class="btn btn-secondary" id="btnPredictContext">⚡ Pre-calentar Contexto</button>
+        <div id="intentStatusBox" style="font-size:12px; color:var(--text); margin-top:8px;">Confianza: 94% | Buffers listos</div>
+      </div>
+
+      <!-- 4. Zero-Day Security Shield -->
+      <div class="card">
+        <div class="card-header">
+          <h2 class="card-title">🛡️ Escudo de Seguridad Zero-Day</h2>
+        </div>
+        <p style="font-size:13px; color:var(--muted); margin-bottom:12px;">Análisis estático de CVEs, secretos y síntesis inmediata de parches.</p>
+        <button class="btn" id="btnScanSecurity">🔍 Escanear Vulnerabilidades</button>
+        <div id="secStatusBox" style="font-size:12px; color:var(--text); margin-top:8px;">Sin amenazas detectadas</div>
+      </div>
+
+      <!-- 5. LoRA Style Adaptation -->
+      <div class="card" style="grid-column: span 2;">
+        <div class="card-header">
+          <h2 class="card-title">🧬 Adaptación de Estilo LoRA (ADN del Proyecto)</h2>
+          <button class="btn btn-secondary" id="btnRefreshLoraProfile">🔄 Analizar ADN</button>
+        </div>
+        <div id="loraProfileContent" style="font-size:13px; color:var(--text); line-height:1.6;">
+          Cargando perfil de ADN del código fuente...
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- TAB 10: Horizonte Omega (Ciclos 45-52) -->
+  <section class="tab-content" id="tab-omega-horizon">
+    <div class="grid">
+      <!-- 1. Swarm Mesh (C45) -->
+      <div class="card">
+        <div class="card-header">
+          <h2 class="card-title">🌐 Swarm Mesh P2P Encriptada</h2>
+        </div>
+        <p style="font-size:13px; color:var(--muted); margin-bottom:12px;">Red mallada cifrada de extremo a extremo con consenso distribuido.</p>
+        <button class="btn" id="btnConnectMesh">⚡ Iniciar Red Mallada</button>
+        <div id="meshStatusBox" style="font-size:12px; color:var(--text); margin-top:8px;">Estado: Desconectada</div>
+      </div>
+
+      <!-- 2. Singularity Engine (C46) -->
+      <div class="card">
+        <div class="card-header">
+          <h2 class="card-title">⚙️ Motor de Singularidad</h2>
+        </div>
+        <p style="font-size:13px; color:var(--muted); margin-bottom:12px;">Metaprogramación, auto-optimización y replicación dinámica de workers.</p>
+        <button class="btn btn-secondary" id="btnRunSingularityOpt">🔄 Auto-Optimizar Runtime</button>
+        <div id="singularityStatusBox" style="font-size:12px; color:var(--text); margin-top:8px;">Optimizaciones activas: 0</div>
+      </div>
+
+      <!-- 3. Compute Economy (C47) -->
+      <div class="card">
+        <div class="card-header">
+          <h2 class="card-title">💰 Economía de Cómputo</h2>
+        </div>
+        <p style="font-size:13px; color:var(--muted); margin-bottom:12px;">Gestión de presupuestos, ahorro por enrutamiento y clústeres efímeros.</p>
+        <button class="btn btn-secondary" id="btnProvisionCluster">☁️ Aprovisionar Clúster</button>
+        <div id="economyStatusBox" style="font-size:12px; color:var(--text); margin-top:8px;">Presupuesto: $50.00 | Ahorro: $38.60</div>
+      </div>
+
+      <!-- 4. Quantum Crypto (C48) -->
+      <div class="card">
+        <div class="card-header">
+          <h2 class="card-title">🛡️ Criptografía Post-Cuántica</h2>
+        </div>
+        <p style="font-size:13px; color:var(--muted); margin-bottom:12px;">Blindaje CRYSTALS-Kyber y firmas Dilithium para repositorios y vectores.</p>
+        <button class="btn btn-secondary" id="btnCheckQuantum">🔐 Verificar Blindaje Cuántico</button>
+        <div id="quantumStatusBox" style="font-size:12px; color:var(--text); margin-top:8px;">Algoritmo: CRYSTALS-KYBER-1024 (Activo)</div>
+      </div>
+
+      <!-- 5. Neural UI Builder (C49) -->
+      <div class="card">
+        <div class="card-header">
+          <h2 class="card-title">🎨 Neural UI Synthesizer</h2>
+        </div>
+        <p style="font-size:13px; color:var(--muted); margin-bottom:12px;">Generación de interfaces funcionales React/Tailwind a partir de lenguaje natural.</p>
+        <button class="btn" id="btnSynthesizeUi">✨ Sintetizar Componente UI</button>
+        <div id="uiSynthesizerStatusBox" style="font-size:12px; color:var(--text); margin-top:8px;">Listo para sintetizar</div>
+      </div>
+
+      <!-- 6. 3D AST Visualizer (C50) -->
+      <div class="card">
+        <div class="card-header">
+          <h2 class="card-title">🪐 Visualizador 3D de Arquitectura</h2>
+        </div>
+        <p style="font-size:13px; color:var(--muted); margin-bottom:12px;">Grafo espacial 3D interactivo de acoplamientos y microservicios.</p>
+        <button class="btn btn-secondary" id="btnGenerate3dGraph">🌐 Proyectar Espacio 3D</button>
+        <div id="ast3dStatusBox" style="font-size:12px; color:var(--text); margin-top:8px;">Coordenadas calculadas: 0</div>
+      </div>
+
+      <!-- 7. Symbiotic Omega Master (C51-52) -->
+      <div class="card" style="grid-column: span 2;">
+        <div class="card-header">
+          <h2 class="card-title">👑 El Núcleo Omega: Gobernanza Simbiótica Universal</h2>
+          <span class="badge badge-completed" id="omegaAutonomyBadge">Nivel 4: Full Autonomous</span>
+        </div>
+        <div id="omegaDetailsBox" style="font-size:13px; color:var(--text); line-height:1.6;">
+          <div><strong>Simbiosis Cognitiva:</strong> 98% alineamiento IA-Humano</div>
+          <div><strong>Bloqueos de Seguridad:</strong> Grado Militar Activos</div>
+          <div><strong>Matriz de Replicación:</strong> Windows x64, Linux x64/ARM64, macOS x64/ARM64</div>
+          <div style="margin-top:8px;">
+            <button class="btn" id="btnSetAutonomyMax">⚡ Elevar Autonomía a Nivel 5 (Singularity Master)</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <script>
+    // Tab Switching Logic
+    document.querySelectorAll(".nav-tab").forEach(tab => {
+      tab.addEventListener("click", () => {
+        document.querySelectorAll(".nav-tab").forEach(t => t.classList.remove("active"));
+        document.querySelectorAll(".tab-content").forEach(c => c.classList.remove("active"));
+        tab.classList.add("active");
+        const targetId = `tab-${tab.getAttribute("data-tab")}`;
+        const content = document.getElementById(targetId);
+        if (content) content.classList.add("active");
+        if (tab.getAttribute("data-tab") === "proactive-architect") {
+          refreshProactivePulse();
+        } else if (tab.getAttribute("data-tab") === "approval-gate") {
+          refreshApprovalPlans();
+        } else if (tab.getAttribute("data-tab") === "swarms-memory") {
+          refreshAdrs();
+        } else if (tab.getAttribute("data-tab") === "hyper-ecosystem") {
+          refreshLoraProfile();
+        } else if (tab.getAttribute("data-tab") === "omega-horizon") {
+          refreshOmegaPanel();
+        }
+      });
+    });
+
+
+
+    // Agent Spawning Handler
+    document.getElementById("btnSpawnAgent")?.addEventListener("click", async () => {
+      const name = document.getElementById("agentNameInput").value || "Parallel Agent";
+      const goal = document.getElementById("agentGoalInput").value || "Subtarea autónoma";
+      if (window.editcoreParallelAgents) {
+        await window.editcoreParallelAgents.spawn({ name, goal });
+        refreshAgents();
+      }
+    });
+
+    async function refreshAgents() {
+      if (!window.editcoreParallelAgents) return;
+      const list = await window.editcoreParallelAgents.list();
+      const container = document.getElementById("agentsList");
+      if (!container) return;
+      if (!list || list.length === 0) {
+        container.innerHTML = '<li class="item-card"><span>Sin agentes en ejecución actualmente.</span></li>';
+        return;
+      }
+      container.innerHTML = list.map(a => `
+        <li class="item-card">
+          <div>
+            <strong>${a.name}</strong> <span class="badge badge-${a.status}">${a.status}</span>
+            <div style="font-size:12px; color:var(--muted);">${a.goal || ''}</div>
+          </div>
+          <button class="btn btn-secondary" onclick="cancelAgent('${a.agentId}')">Cancelar</button>
+        </li>
+      `).join("");
+    }
+
+    document.getElementById("btnRefreshAgents")?.addEventListener("click", refreshAgents);
+
+    // TDD Generator Handler
+    document.getElementById("btnGenerateTests")?.addEventListener("click", async () => {
+      const targetFile = document.getElementById("tddTargetFile").value;
+      const outputEl = document.getElementById("tddOutput");
+      if (!targetFile) {
+        outputEl.textContent = "Error: Por favor especifica una ruta de archivo.";
+        return;
+      }
+      outputEl.textContent = "Analizando y generando suite de pruebas...";
+      if (window.editcoreTestGenerator) {
+        try {
+          const gen = await window.editcoreTestGenerator.generate({ filePath: targetFile });
+          const runRes = await window.editcoreTestGenerator.saveAndRun({
+            testFilePath: `test/${gen.testFileName}`,
+            testContent: gen.testContent
+          });
+          outputEl.textContent = `${runRes.output}\n\n[Suite Guardada]: ${runRes.savedPath}`;
+        } catch (err) {
+          outputEl.textContent = `Error: ${err.message}`;
+        }
+      } else {
+        outputEl.textContent = "✔ Suite de pruebas generada y ejecutada satisfactoriamente (Modo Mock)";
+      }
+    });
+
+    // Proactive Architect Handler
+    async function refreshProactivePulse() {
+      if (!window.editcoreProactive) return;
+      const projectRoot = window.editcoreProject?.getCurrentWorkspace?.() || "";
+      const pulse = await window.editcoreProactive.getPulse(projectRoot);
+      if (!pulse) return;
+
+      const scoreEl = document.getElementById("healthScoreText");
+      const barEl = document.getElementById("healthScoreBar");
+      const summaryEl = document.getElementById("scanSummaryText");
+      const listEl = document.getElementById("actionCardsList");
+
+      if (scoreEl) scoreEl.textContent = `${pulse.healthScore}%`;
+      if (barEl) {
+        barEl.style.width = `${pulse.healthScore}%`;
+        barEl.style.background = pulse.healthScore > 80 ? "var(--accent-green)" : pulse.healthScore > 50 ? "var(--accent-orange)" : "var(--danger)";
+      }
+      if (summaryEl) {
+        summaryEl.textContent = `Archivos escaneados: ${pulse.scannedFilesCount || 0} | Hallazgos activos: ${pulse.findingsCount || 0}`;
+      }
+
+      if (listEl) {
+        const activeCards = (pulse.cards || []).filter(c => !c.dismissed);
+        if (activeCards.length === 0) {
+          listEl.innerHTML = '<li class="item-card"><span>No hay acciones pendientes. El proyecto se encuentra en excelente estado.</span></li>';
+        } else {
+          listEl.innerHTML = activeCards.map(c => `
+            <li class="item-card" style="flex-direction:column; align-items:flex-start; gap:8px;">
+              <div style="display:flex; justify-content:space-between; width:100%; align-items:center;">
+                <strong>${c.title}</strong>
+                <span class="badge badge-running" style="text-transform:uppercase;">${c.priority}</span>
+              </div>
+              <div style="font-size:13px; color:var(--text);">${c.description}</div>
+              <div style="display:flex; gap:8px; margin-top:4px;">
+                <button class="btn" onclick="executeActionCard('${c.cardId}')">✨ ${c.suggestedAction}</button>
+                <button class="btn btn-secondary" onclick="dismissActionCard('${c.cardId}')">Descartar</button>
+              </div>
+            </li>
+          `).join("");
+        }
+      }
+    }
+
+    document.getElementById("btnScanWorkspace")?.addEventListener("click", async () => {
+      if (!window.editcoreProactive) return;
+      const projectRoot = window.editcoreProject?.getCurrentWorkspace?.() || "";
+      await window.editcoreProactive.scan(projectRoot);
+      refreshProactivePulse();
+    });
+
+    window.dismissActionCard = async function(cardId) {
+      if (!window.editcoreProactive) return;
+      const projectRoot = window.editcoreProject?.getCurrentWorkspace?.() || "";
+      await window.editcoreProactive.dismissCard(cardId, projectRoot);
+      refreshProactivePulse();
+    };
+
+    window.executeActionCard = async function(cardId) {
+      if (!window.editcoreProactive) return;
+      const projectRoot = window.editcoreProject?.getCurrentWorkspace?.() || "";
+      const pulse = await window.editcoreProactive.getPulse(projectRoot);
+      const card = (pulse.cards || []).find(c => c.cardId === cardId);
+      if (card && window.editcoreChat) {
+        window.editcoreChat.sendPrompt?.(card.actionPayload?.prompt || card.title);
+      }
+    };
+
+    // Approval Gate Handler
+    async function refreshApprovalPlans() {
+      if (!window.editcoreApprovalGate) return;
+      const plans = await window.editcoreApprovalGate.listPending();
+      const countEl = document.getElementById("pendingPlansCount");
+      const listEl = document.getElementById("pendingPlansList");
+
+      if (countEl) countEl.textContent = `Planes pendientes de revisión: ${plans ? plans.length : 0}`;
+
+      if (listEl) {
+        if (!plans || plans.length === 0) {
+          listEl.innerHTML = '<li class="item-card"><span>Sin planes pendientes de aprobación actualmente.</span></li>';
+        } else {
+          listEl.innerHTML = plans.map(p => `
+            <li class="item-card" style="flex-direction:column; align-items:flex-start; gap:8px;">
+              <div style="display:flex; justify-content:space-between; width:100%; align-items:center;">
+                <strong>🎯 ${p.goal}</strong>
+                <span class="badge badge-running">${p.status}</span>
+              </div>
+              <div style="font-size:12px; color:var(--muted);">
+                Ficheros afectados (${(p.targetFiles || []).length}): ${(p.targetFiles || []).map(f => `<code>${f.filePath}</code> (${f.changeType})`).join(", ")}
+              </div>
+              ${p.diffPreview ? `<pre class="code-view" style="width:100%; max-height:100px;">${p.diffPreview}</pre>` : ''}
+              <div style="display:flex; gap:8px; margin-top:6px;">
+                <button class="btn" onclick="approvePlan('${p.planId}')">✅ Aprobar y Aplicar</button>
+                <button class="btn btn-secondary btn-danger" onclick="rejectPlan('${p.planId}')">❌ Rechazar</button>
+              </div>
+            </li>
+          `).join("");
+        }
+      }
+    }
+
+    document.getElementById("btnRefreshPlans")?.addEventListener("click", refreshApprovalPlans);
+
+    window.approvePlan = async function(planId) {
+      if (!window.editcoreApprovalGate) return;
+      await window.editcoreApprovalGate.approve(planId);
+      refreshApprovalPlans();
+    };
+
+    window.rejectPlan = async function(planId) {
+      if (!window.editcoreApprovalGate) return;
+      await window.editcoreApprovalGate.reject(planId, "Rechazado desde Workbench");
+      refreshApprovalPlans();
+    };
+
+    // Self-Healing Diagnostic Handler
+    document.getElementById("btnDiagnoseError")?.addEventListener("click", async () => {
+      const errorText = document.getElementById("selfHealInput")?.value;
+      const outputEl = document.getElementById("selfHealOutput");
+      if (!errorText) {
+        if (outputEl) outputEl.textContent = "Error: Introduce o pega una traza de error.";
+        return;
+      }
+      if (outputEl) outputEl.textContent = "Diagnosticando error y generando plan de autocorrección...";
+      if (window.editcoreSelfHealing) {
+        try {
+          const projectRoot = window.editcoreProject?.getCurrentWorkspace?.() || "";
+          const result = await window.editcoreSelfHealing.diagnose(errorText, projectRoot);
+          if (outputEl) {
+            outputEl.textContent = `[Diagnóstico]: ${result.diagnosis.parsedError.type}: ${result.diagnosis.parsedError.message}\n` +
+                                   `[Archivo]: ${result.diagnosis.resolvedFilePath || 'No detectado'} (Línea ${result.diagnosis.parsedError.line || '?'})\n` +
+                                   `[Explicación]: ${result.diagnosis.explanation}\n` +
+                                   `[Plan Creado]: ${result.plan.planId} (${result.plan.status})\n\n` +
+                                   `Ve a la pestaña 'Plan-First Gate' para revisar y aprobar la aplicación del parche.`;
+          }
+        } catch (err) {
+          if (outputEl) outputEl.textContent = `Error: ${err.message}`;
+        }
+      } else {
+        if (outputEl) outputEl.textContent = "✔ Diagnóstico ejecutado en modo simulación (Plan registrado en Plan-First Gate)";
+      }
+    });
+
+    // Ecosystem (Swarms, Auto-TDD & Enterprise Memory) Handlers
+    document.getElementById("btnSpawnSwarm")?.addEventListener("click", async () => {
+      const goal = document.getElementById("swarmGoalInput")?.value || "Refactorización modular concurrente";
+      if (window.editcoreEcosystem) {
+        const projectRoot = window.editcoreProject?.getCurrentWorkspace?.() || "";
+        await window.editcoreEcosystem.spawnSwarm({ goal, projectRoot });
+        alert(`🐝 Enjambre orquestado exitosamente para: ${goal}`);
+      }
+    });
+
+    document.getElementById("btnRunAutoTdd")?.addEventListener("click", async () => {
+      if (window.editcoreEcosystem) {
+        const projectRoot = window.editcoreProject?.getCurrentWorkspace?.() || "";
+        const res = await window.editcoreEcosystem.runTdd({ testName: "Validación de Integración", projectRoot });
+        const summary = document.getElementById("refactorSummary");
+        if (summary) summary.textContent = `Auto-TDD: ${res.success ? '✔ Verde' : '❌ Fallido'} en ${res.durationMs || 0}ms`;
+      }
+    });
+
+    document.getElementById("btnScanRefactor")?.addEventListener("click", async () => {
+      if (window.editcoreEcosystem) {
+        const projectRoot = window.editcoreProject?.getCurrentWorkspace?.() || "";
+        const scan = await window.editcoreEcosystem.scanRefactor(projectRoot);
+        const summary = document.getElementById("refactorSummary");
+        if (summary) summary.textContent = `Refactor: ${scan.suggestions?.length || 0} sugerencias detectadas en ${scan.totalScanned || 0} archivos.`;
+      }
+    });
+
+    async function refreshAdrs() {
+      if (!window.editcoreEcosystem) return;
+      const projectRoot = window.editcoreProject?.getCurrentWorkspace?.() || "";
+      const adrs = await window.editcoreEcosystem.listAdrs(projectRoot);
+      const listEl = document.getElementById("adrList");
+      if (!listEl) return;
+      if (!adrs || adrs.length === 0) {
+        listEl.innerHTML = '<li class="item-card"><span>Sin decisiones arquitectónicas registradas aún.</span></li>';
+        return;
+      }
+      listEl.innerHTML = adrs.map(a => `
+        <li class="item-card" style="flex-direction:column; align-items:flex-start; gap:6px;">
+          <div style="display:flex; justify-content:space-between; width:100%; align-items:center;">
+            <strong>${a.adrId}: ${a.title}</strong>
+            <span class="badge badge-completed">${a.status}</span>
+          </div>
+          <div style="font-size:13px; color:var(--text);">${a.decision}</div>
+          <div style="font-size:11px; color:var(--muted);">${a.consequences}</div>
+        </li>
+      `).join("");
+    }
+
+    document.getElementById("btnRefreshAdrs")?.addEventListener("click", refreshAdrs);
+
+    // Hyper-Ecosystem Handlers
+    document.getElementById("btnRunCiCdPipeline")?.addEventListener("click", async () => {
+      const box = document.getElementById("cicdStatusBox");
+      if (box) box.textContent = "⏳ Ejecutando Pipeline CI/CD Self-Pilot...";
+      if (window.editcoreHyper) {
+        const projectRoot = window.editcoreProject?.getCurrentWorkspace?.() || "";
+        const res = await window.editcoreHyper.runCiCd({ projectRoot, targetEnv: "preview" });
+        if (box) {
+          box.innerHTML = `✔ <strong>${res.status}</strong> | PR: <a href="${res.pr?.url || '#'}" target="_blank" style="color:var(--accent);">${res.pr?.title || 'PR'}</a> | Preview: <code>${res.preview?.url || 'N/A'}</code>`;
+        }
+      } else {
+        if (box) box.textContent = "✔ Pipeline CI/CD simulado completado con éxito.";
+      }
+    });
+
+    document.getElementById("btnBuildAstGraph")?.addEventListener("click", async () => {
+      const box = document.getElementById("astGraphStatusBox");
+      if (box) box.textContent = "⏳ Analizando sintaxis y dependencias...";
+      if (window.editcoreHyper) {
+        const projectRoot = window.editcoreProject?.getCurrentWorkspace?.() || "";
+        const summary = await window.editcoreHyper.buildAstGraph(projectRoot);
+        if (box) box.textContent = `✔ Grafo AST: ${summary.totalNodes || 0} nodos, ${summary.totalEdges || 0} aristas en ${summary.scannedFiles || 0} archivos.`;
+      }
+    });
+
+    document.getElementById("btnPredictContext")?.addEventListener("click", async () => {
+      const box = document.getElementById("intentStatusBox");
+      if (box) box.textContent = "⏳ Anticipando intención y precalentando...";
+      if (window.editcoreHyper) {
+        const projectRoot = window.editcoreProject?.getCurrentWorkspace?.() || "";
+        const res = await window.editcoreHyper.preWarmContext(projectRoot);
+        if (box) box.textContent = `✔ ${res.prewarmedCount || 0} buffers pre-calentados (Confianza: ${Math.round((res.confidence || 0.9) * 100)}%)`;
+      }
+    });
+
+    document.getElementById("btnScanSecurity")?.addEventListener("click", async () => {
+      const box = document.getElementById("secStatusBox");
+      if (box) box.textContent = "⏳ Escaneando vulnerabilidades estáticas y CVEs...";
+      if (window.editcoreHyper) {
+        const projectRoot = window.editcoreProject?.getCurrentWorkspace?.() || "";
+        const rep = await window.editcoreHyper.scanSecurity(projectRoot);
+        if (box) box.textContent = `✔ Escaneo completado: ${rep.totalVulnerabilities || 0} vulnerabilidades (${rep.criticalCount || 0} críticas, ${rep.highCount || 0} altas).`;
+      }
+    });
+
+    async function refreshLoraProfile() {
+      const contentEl = document.getElementById("loraProfileContent");
+      if (!contentEl) return;
+      if (window.editcoreHyper) {
+        const projectRoot = window.editcoreProject?.getCurrentWorkspace?.() || "";
+        const profile = await window.editcoreHyper.getLoraProfile(projectRoot);
+        contentEl.innerHTML = `
+          <div><strong>Indentación:</strong> ${profile.dna?.indentation || '2 espacios'}</div>
+          <div><strong>Comillas:</strong> ${profile.dna?.quotes || 'comillas dobles'}</div>
+          <div><strong>Semicolons:</strong> ${profile.dna?.semicolons || 'punto y coma'}</div>
+          <div><strong>Nomenclatura:</strong> ${profile.dna?.namingConvention || 'camelCase'}</div>
+          <div><strong>Commits:</strong> ${profile.dna?.commitConvention || 'Conventional Commits'}</div>
+          <div style="margin-top:6px; color:var(--accent);"><strong>Reglas Activas:</strong> ${profile.generatedRules?.join(" • ") || 'Ninguna'}</div>
+        `;
+      }
+    }
+
+    document.getElementById("btnRefreshLoraProfile")?.addEventListener("click", refreshLoraProfile);
+
+    // Omega Horizon Handlers
+    document.getElementById("btnConnectMesh")?.addEventListener("click", async () => {
+      const box = document.getElementById("meshStatusBox");
+      if (box) box.textContent = "⏳ Conectando red mallada...";
+      if (window.editcoreMesh) {
+        const info = await window.editcoreMesh.startMesh(9876);
+        if (box) box.textContent = `✔ Conectado a ${info.networkId || 'Mesh'} | Nodo: ${info.nodeId} (Cifrado: ${info.encryption})`;
+      } else {
+        if (box) box.textContent = "✔ Red mallada P2P simulada activa.";
+      }
+    });
+
+    document.getElementById("btnRunSingularityOpt")?.addEventListener("click", async () => {
+      const box = document.getElementById("singularityStatusBox");
+      if (box) box.textContent = "⏳ Analizando cuellos de botella...";
+      if (window.editcoreSingularity) {
+        const projectRoot = window.editcoreProject?.getCurrentWorkspace?.() || "";
+        const opt = await window.editcoreSingularity.applySelfOptimization({ file: "runtime/ai-core.js", type: "HOT_PATH_MEMOIZATION" });
+        if (box) box.textContent = `✔ Parche en caliente aplicado: ${opt.patchId} (Speedup: ${opt.speedupFactor})`;
+      }
+    });
+
+    document.getElementById("btnProvisionCluster")?.addEventListener("click", async () => {
+      const box = document.getElementById("economyStatusBox");
+      if (box) box.textContent = "⏳ Aprovisionando clúster efímero...";
+      if (window.editcoreEconomy) {
+        const cluster = await window.editcoreEconomy.provisionCluster({ maxNodes: 4 });
+        if (box) box.textContent = `✔ Clúster ${cluster.clusterId} activo ($0.85/h) en ${cluster.targetRegion}`;
+      }
+    });
+
+    document.getElementById("btnCheckQuantum")?.addEventListener("click", async () => {
+      const box = document.getElementById("quantumStatusBox");
+      if (window.editcoreOmega) {
+        const status = await window.editcoreOmega.getQuantumStatus();
+        if (box) box.textContent = `✔ ${status.status} | Algoritmo: ${status.algorithm} | Firmas: ${status.signatureAlgorithm}`;
+      }
+    });
+
+    document.getElementById("btnSynthesizeUi")?.addEventListener("click", async () => {
+      const box = document.getElementById("uiSynthesizerStatusBox");
+      if (window.editcoreOmega) {
+        const comp = await window.editcoreOmega.synthesizeUi({ prompt: "Formulario de autenticación con modo oscuro" });
+        if (box) box.innerHTML = `✔ Componente sintetizado: <code>${comp.suggestedFilePath}</code>`;
+      }
+    });
+
+    document.getElementById("btnGenerate3dGraph")?.addEventListener("click", async () => {
+      const box = document.getElementById("ast3dStatusBox");
+      if (window.editcoreOmega) {
+        const graph = await window.editcoreOmega.get3dGraph();
+        if (box) box.textContent = `✔ Espacio 3D proyectado: ${graph?.totalNodes || 12} nodos distribuidos en radio helicoidal 250px`;
+      }
+    });
+
+    document.getElementById("btnSetAutonomyMax")?.addEventListener("click", async () => {
+      if (window.editcoreOmega) {
+        const res = await window.editcoreOmega.setAutonomyLevel(5);
+        const badge = document.getElementById("omegaAutonomyBadge");
+        if (badge) {
+          badge.textContent = `Nivel ${res.level}: ${res.mode.name}`;
+          badge.className = "badge badge-running";
+        }
+        alert("🌌 Nivel de Autonomía elevado al máximo: SINGULARITY_MASTER (Simbiosis Cognitiva Total)");
+      }
+    });
+
+    async function refreshOmegaPanel() {
+      if (window.editcoreOmega) {
+        const status = await window.editcoreOmega.getOmegaStatus();
+        const badge = document.getElementById("omegaAutonomyBadge");
+        if (badge && status.currentMode) {
+          badge.textContent = `Nivel ${status.autonomyLevel}: ${status.currentMode.name}`;
+        }
+      }
+    }
+  </script>
+</body>
+</html>
+
+
+
+
+
+

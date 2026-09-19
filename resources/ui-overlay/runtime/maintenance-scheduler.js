@@ -101,7 +101,7 @@ async function runMaintenanceCheck({
   if (notify && config.notifyOnIssues && unhealthy.length > 0 && Notification.isSupported()) {
     const names = unhealthy.slice(0, 3).map((item) => item.name).join(", ");
     new Notification({
-      title: "EditCore — alertas de mantenimiento",
+      title: "EDITCOREAI — alertas de mantenimiento",
       body: `${unhealthy.length} proyecto(s) con problemas: ${names}${unhealthy.length > 3 ? "…" : ""}`,
     }).show();
   }

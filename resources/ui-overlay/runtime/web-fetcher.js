@@ -15,7 +15,7 @@ const { URL } = require("url");
 async function fetchUrl(url, options = {}) {
   const maxRedirects = options.maxRedirects || 5;
   const timeout = options.timeout || 30000;
-  const userAgent = options.userAgent || "EditCore-AI/2.0";
+  const userAgent = options.userAgent || "EDITCOREAI/2.0";
 
   return new Promise((resolve, reject) => {
     let redirectCount = 0;
