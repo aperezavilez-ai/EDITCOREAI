@@ -22,20 +22,6 @@
           <span>EditCoreAI</span>
         </div>
         <div class="chat-home-top-actions">
-          <div id="topMasterLedgerBar" class="top-master-ledger-bar" title="Fondo Maestro EditCoreAI" hidden>
-            <div class="top-stat-pill" title="Fondo Maestro en Dólares">
-              <span class="stat-lbl">💵 USD</span>
-              <span class="stat-val text-emerald" id="topStatUsd">$8,000.00</span>
-            </div>
-            <div class="top-stat-pill" title="Equivalente en Créditos">
-              <span class="stat-lbl">⚡ Créditos</span>
-              <span class="stat-val text-indigo" id="topStatCredits">160,000</span>
-            </div>
-            <div class="top-stat-pill" title="Tokens Disponibles">
-              <span class="stat-lbl">🔢 Tokens</span>
-              <span class="stat-val text-cyan" id="topStatTokens">1.60B</span>
-            </div>
-          </div>
           <button id="chatHomeFolderBtn" type="button" class="chat-home-folder-btn" title="Conectar carpeta local">Conectar carpeta</button>
           <button id="chatHomeIdeBtn" type="button" class="chat-home-ide-btn" title="Abrir el IDE existente de EditCore">IDE</button>
           <button id="chatHomeReloadAppBtn" type="button" class="chat-home-reload-btn" title="Actualizar EditCoreAI con el código actual" aria-label="Actualizar app"><span>Actualizar</span></button>
@@ -418,15 +404,18 @@
                 </div>
               </div>
 
-              <!-- Banner de Saldo Personal (para Usuarios Normales o resumen de sesión) -->
+              <!-- Banner de Saldo Personal (para Usuarios Normales) -->
               <div class="ec-credits-overview-banner" id="settingsCreditsOverviewBanner">
                 <div class="ec-credits-banner-main">
-                  <span class="ec-credits-caption">Saldo de Créditos Disponible</span>
-                  <div class="ec-credits-big-num" id="settingsCreditsBigNum">∞ Ilimitado</div>
+                  <span class="ec-credits-caption">Saldo Disponible</span>
+                  <div style="display:flex;align-items:baseline;gap:12px;margin:4px 0;">
+                    <div class="ec-credits-big-num" id="settingsCreditsBigNum">∞ Ilimitado</div>
+                    <div class="ec-credits-usd-num" id="settingsCreditsUsdNum" style="font-size:18px;font-weight:700;color:#059669;" hidden>($0.00 USD)</div>
+                  </div>
                   <div class="ec-credits-plan-tag" id="settingsCreditsPlanTag">Plan Administrador Maestro · Acceso Vitalicio</div>
                 </div>
                 <div class="ec-credits-banner-cta" id="settingsCreditsBannerCta">
-                  <button type="button" id="settingsBuyCreditsBtn" class="ec-btn-gold">💳 Comprar Créditos</button>
+                  <button type="button" id="settingsBuyCreditsBtn" class="ec-btn-gold">💳 Recargar Crédito</button>
                 </div>
               </div>
 

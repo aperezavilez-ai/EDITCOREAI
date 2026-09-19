@@ -636,20 +636,15 @@
       const buyCreditsBtn = $("settingsBuyCreditsBtn");
       const creditsBannerCta = $("settingsCreditsBannerCta");
       const adminMasterDashboard = $("settingsAdminMasterDashboard");
-      const topMasterLedgerBar = $("topMasterLedgerBar");
+      const creditsUsdNum = $("settingsCreditsUsdNum");
 
       if (isAdm) {
         // Ocultar botón de compra para el Administrador Maestro
         if (buyCreditsBtn) buyCreditsBtn.style.display = "none";
         if (creditsBannerCta) creditsBannerCta.style.display = "none";
+        if (creditsUsdNum) creditsUsdNum.hidden = true;
 
-        // Mostrar barra superior de fondo maestro
-        if (topMasterLedgerBar) {
-          topMasterLedgerBar.hidden = false;
-          topMasterLedgerBar.removeAttribute("hidden");
-        }
-
-        // Mostrar y actualizar Dashboard Maestro
+        // Mostrar y actualizar Dashboard Maestro exclusivamente DENTRO de Configuración
         if (adminMasterDashboard) {
           adminMasterDashboard.hidden = false;
           adminMasterDashboard.removeAttribute("hidden");
@@ -662,17 +657,8 @@
               const remUsd = Number(master.remainingUsd ?? 8000).toLocaleString("en-US", { style: "currency", currency: "USD" });
               const remCredits = Number(master.remainingCredits ?? 160000).toLocaleString("en-US", { maximumFractionDigits: 1 });
               const remTokens = Number(master.remainingTokens ?? 1600000000);
-              const remTokensFmt = remTokens >= 1e9 ? (remTokens / 1e9).toFixed(2) + "B" : (remTokens >= 1e6 ? (remTokens / 1e6).toFixed(1) + "M" : remTokens.toLocaleString());
 
-              // Barra superior
-              const topUsd = $("topStatUsd");
-              const topCred = $("topStatCredits");
-              const topTok = $("topStatTokens");
-              if (topUsd) topUsd.textContent = remUsd;
-              if (topCred) topCred.textContent = remCredits;
-              if (topTok) topTok.textContent = remTokensFmt;
-
-              // Modal de Configuración
+              // Modal de Configuración (Marcadores del Administrador dentro de Configuración)
               const modalUsd = $("adminMasterUsd");
               const modalCred = $("adminMasterCredits");
               const modalTok = $("adminMasterTokens");
@@ -703,11 +689,18 @@
         }
 
       } else {
-        // Usuario Normal: mostrar compra de créditos y ocultar datos maestros
+        // Usuario Normal: mostrar compra de créditos y marcador personal en dólares y créditos
         if (buyCreditsBtn) buyCreditsBtn.style.display = "";
         if (creditsBannerCta) creditsBannerCta.style.display = "";
-        if (topMasterLedgerBar) topMasterLedgerBar.hidden = true;
         if (adminMasterDashboard) adminMasterDashboard.hidden = true;
+
+        if (creditsUsdNum) {
+          creditsUsdNum.hidden = false;
+          creditsUsdNum.removeAttribute("hidden");
+          const bal = Number(balance.balance || 0);
+          const usdEq = (bal * 0.05).toFixed(2);
+          creditsUsdNum.textContent = `($${usdEq} USD)`;
+        }
       }
 
       // RBAC: Ocultar o blindar configuración de proveedores si no es administrador
