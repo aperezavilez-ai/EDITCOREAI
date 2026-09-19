@@ -5,26 +5,64 @@
     {
       "source": "/assets/(.*)",
       "headers": [
-        { "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=31536000, immutable"
+        }
       ]
     },
     {
       "source": "/(.*)",
       "headers": [
-        { "key": "X-Content-Type-Options", "value": "nosniff" },
-        { "key": "X-Frame-Options", "value": "DENY" },
-        { "key": "X-XSS-Protection", "value": "1; mode=block" },
-        { "key": "Cache-Control", "value": "public, max-age=120, s-maxage=86400, stale-while-revalidate=604800" }
+        {
+          "key": "X-Content-Type-Options",
+          "value": "nosniff"
+        },
+        {
+          "key": "X-Frame-Options",
+          "value": "DENY"
+        },
+        {
+          "key": "X-XSS-Protection",
+          "value": "1; mode=block"
+        },
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=120, s-maxage=86400, stale-while-revalidate=604800"
+        }
       ]
     }
   ],
   "routes": [
-    { "src": "/api/chat", "dest": "/api/chat.js" },
-    { "src": "/api/create-checkout", "dest": "/api/create-checkout.js" },
-    { "src": "/api/webhook-stripe", "dest": "/api/webhook-stripe.js" },
-    { "src": "/api/webhook-mercadopago", "dest": "/api/webhook-mercadopago.js" },
-    { "src": "/download", "dest": "https://github.com/aperezavilez-ai/EDITCOREAI/releases/latest/download/EDITCOREAI.exe" },
-    { "handle": "filesystem" },
-    { "src": "/(.*)", "dest": "/index.html" }
-  ]
+    {
+      "src": "/api/chat",
+      "dest": "/api/chat.js"
+    },
+    {
+      "src": "/api/create-checkout",
+      "dest": "/api/create-checkout.js"
+    },
+    {
+      "src": "/api/webhook-stripe",
+      "dest": "/api/webhook-stripe.js"
+    },
+    {
+      "src": "/api/webhook-mercadopago",
+      "dest": "/api/webhook-mercadopago.js"
+    },
+    {
+      "src": "/download",
+      "dest": "https://github.com/aperezavilez-ai/EDITCOREAI/releases/latest/download/EDITCOREAI.exe"
+    },
+    {
+      "handle": "filesystem"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/index.html"
+    }
+  ],
+  "framework": null,
+  "buildCommand": null,
+  "outputDirectory": "."
 }

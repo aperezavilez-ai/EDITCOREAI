@@ -4,7 +4,8 @@
   "description": "EditCoreAI Web Platform & Cloud Gateway",
   "main": "index.html",
   "scripts": {
-    "start": "serve ."
+    "start": "serve .",
+    "build": "echo ok"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.4",
