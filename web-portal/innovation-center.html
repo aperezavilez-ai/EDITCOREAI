@@ -1,0 +1,571 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>EditCore — Innovation Center</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Segoe UI', system-ui, sans-serif; background: #0a0f1e; color: #e2e8f0; min-height: 100vh; }
+    header { background: linear-gradient(135deg, #0d1b2a 0%, #1a0a2e 100%); border-bottom: 1px solid #7c3aed40; padding: 16px 24px; display: flex; align-items: center; gap: 16px; }
+    .logo { font-size: 22px; font-weight: 800; background: linear-gradient(135deg, #7c3aed, #a855f7, #c084fc); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+    .subtitle { font-size: 13px; color: #94a3b8; }
+    nav { display: flex; gap: 4px; padding: 16px 24px 0; flex-wrap: wrap; border-bottom: 1px solid #1e293b; }
+    nav button { padding: 8px 16px; border: none; background: transparent; color: #64748b; cursor: pointer; border-bottom: 2px solid transparent; font-size: 13px; font-weight: 500; transition: all .2s; border-radius: 6px 6px 0 0; }
+    nav button.active { color: #a855f7; border-bottom-color: #a855f7; background: #1e0a3c30; }
+    nav button:hover:not(.active) { color: #94a3b8; background: #1e293b30; }
+    .content { padding: 24px; max-width: 1400px; }
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+    .stats-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin-bottom: 24px; }
+    .stat-card { background: #1e0a3c40; border: 1px solid #7c3aed30; border-radius: 10px; padding: 16px; text-align: center; }
+    .stat-card .val { font-size: 28px; font-weight: 800; color: #a855f7; }
+    .stat-card .lbl { font-size: 11px; color: #64748b; margin-top: 4px; text-transform: uppercase; letter-spacing: .5px; }
+    .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+    @media(max-width: 768px) { .grid2 { grid-template-columns: 1fr; } }
+    .card { background: #0f172a; border: 1px solid #1e293b; border-radius: 12px; padding: 20px; }
+    .card h3 { font-size: 14px; font-weight: 600; color: #a855f7; margin-bottom: 16px; display: flex; align-items: center; gap: 8px; }
+    .form-group { margin-bottom: 12px; }
+    .form-group label { display: block; font-size: 12px; color: #64748b; margin-bottom: 4px; }
+    input, textarea, select { width: 100%; padding: 8px 12px; background: #1e293b; border: 1px solid #334155; border-radius: 6px; color: #e2e8f0; font-size: 13px; outline: none; transition: border .2s; font-family: inherit; }
+    input:focus, textarea:focus, select:focus { border-color: #7c3aed; }
+    textarea { resize: vertical; min-height: 80px; }
+    .btn { padding: 9px 18px; border: none; border-radius: 7px; font-size: 13px; font-weight: 600; cursor: pointer; transition: all .2s; }
+    .btn-primary { background: linear-gradient(135deg, #7c3aed, #a855f7); color: #fff; }
+    .btn-primary:hover { opacity: .9; }
+    .btn-sm { padding: 5px 10px; font-size: 11px; }
+    .btn-outline { background: transparent; border: 1px solid #7c3aed; color: #a855f7; }
+    .list-area { margin-top: 16px; max-height: 400px; overflow-y: auto; }
+    .item-card { background: #1e293b; border-radius: 8px; padding: 12px; margin-bottom: 8px; border-left: 3px solid #7c3aed; }
+    .item-card .item-title { font-size: 13px; font-weight: 600; color: #e2e8f0; }
+    .item-card .item-meta { font-size: 11px; color: #64748b; margin-top: 4px; }
+    .badge { display: inline-block; padding: 2px 8px; border-radius: 99px; font-size: 10px; font-weight: 700; text-transform: uppercase; margin-left: 6px; }
+    .badge-purple { background: #7c3aed20; color: #a855f7; border: 1px solid #7c3aed40; }
+    .badge-green { background: #10b98120; color: #10b981; border: 1px solid #10b98140; }
+    .badge-yellow { background: #f59e0b20; color: #f59e0b; border: 1px solid #f59e0b40; }
+    .badge-red { background: #ef444420; color: #ef4444; border: 1px solid #ef444440; }
+    .badge-gray { background: #64748b20; color: #94a3b8; border: 1px solid #64748b40; }
+    .msg { padding: 10px 14px; border-radius: 7px; font-size: 13px; margin-top: 10px; }
+    .msg-ok { background: #10b98120; border: 1px solid #10b98140; color: #10b981; }
+    .msg-err { background: #ef444420; border: 1px solid #ef444440; color: #ef4444; }
+    .score-bar { height: 6px; background: #1e293b; border-radius: 3px; overflow: hidden; margin-top: 6px; }
+    .score-fill { height: 100%; border-radius: 3px; background: linear-gradient(90deg, #7c3aed, #a855f7); transition: width .5s; }
+    .full-card { background: #0f172a; border: 1px solid #1e293b; border-radius: 12px; padding: 20px; margin-bottom: 16px; }
+    .full-card h3 { font-size: 14px; font-weight: 600; color: #a855f7; margin-bottom: 14px; }
+    .row-flex { display: flex; gap: 10px; flex-wrap: wrap; }
+    .col3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
+    @media(max-width: 768px) { .col3 { grid-template-columns: 1fr; } }
+    .trend-bar { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+    .trend-name { font-size: 13px; color: #e2e8f0; min-width: 180px; }
+    .trend-score { font-size: 13px; font-weight: 700; color: #a855f7; min-width: 36px; text-align: right; }
+  </style>
+</head>
+<body>
+<header>
+  <div>
+    <div class="logo">⚗️ EditCore Innovation Center</div>
+    <div class="subtitle">Laboratorio autonomo de innovacion, investigacion y creacion de productos</div>
+  </div>
+</header>
+<nav>
+  <button class="active" onclick="showTab('overview')">Vista General</button>
+  <button onclick="showTab('ideas')">💡 Ideas</button>
+  <button onclick="showTab('experiments')">🧪 Experimentos</button>
+  <button onclick="showTab('prototypes')">🔧 Prototipos</button>
+  <button onclick="showTab('research')">📚 Investigacion</button>
+  <button onclick="showTab('trends')">📈 Tendencias</button>
+  <button onclick="showTab('startups')">🚀 Startups</button>
+  <button onclick="showTab('competitive')">🎯 Competencia</button>
+  <button onclick="showTab('memory')">🧠 Memoria</button>
+</nav>
+<div class="content">
+
+<!-- OVERVIEW -->
+<div id="tab-overview" class="tab-panel active">
+  <div class="stats-row" id="stats-row">
+    <div class="stat-card"><div class="val" id="st-ideas">—</div><div class="lbl">Ideas Total</div></div>
+    <div class="stat-card"><div class="val" id="st-validated">—</div><div class="lbl">Validadas</div></div>
+    <div class="stat-card"><div class="val" id="st-exps">—</div><div class="lbl">Experimentos</div></div>
+    <div class="stat-card"><div class="val" id="st-protos">—</div><div class="lbl">Prototipos</div></div>
+    <div class="stat-card"><div class="val" id="st-research">—</div><div class="lbl">Reportes</div></div>
+    <div class="stat-card"><div class="val" id="st-trends">—</div><div class="lbl">Tendencias</div></div>
+    <div class="stat-card"><div class="val" id="st-startups">—</div><div class="lbl">Startups</div></div>
+    <div class="stat-card"><div class="val" id="st-memory">—</div><div class="lbl">Memorias</div></div>
+  </div>
+  <div class="card">
+    <h3>🔬 Estado del Laboratorio de Innovacion</h3>
+    <p style="font-size:13px;color:#94a3b8;line-height:1.6">El Innovation Center de EditCore permite investigar tecnologias, analizar mercados, validar ideas, construir prototipos y generar nuevos productos digitales de forma continua mediante agentes IA especializados.</p>
+    <div style="margin-top:16px;display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px">
+      <div style="background:#1e0a3c40;border:1px solid #7c3aed30;border-radius:8px;padding:12px">
+        <div style="font-size:12px;color:#a855f7;font-weight:700">Innovation Engine</div>
+        <div style="font-size:11px;color:#64748b;margin-top:4px">Investigacion de tendencias, analisis de oportunidades, creacion de hipotesis</div>
+      </div>
+      <div style="background:#1e0a3c40;border:1px solid #7c3aed30;border-radius:8px;padding:12px">
+        <div style="font-size:12px;color:#a855f7;font-weight:700">Idea Generation Engine</div>
+        <div style="font-size:11px;color:#64748b;margin-top:4px">Nuevos productos, funciones, herramientas y servicios con scores de validacion</div>
+      </div>
+      <div style="background:#1e0a3c40;border:1px solid #7c3aed30;border-radius:8px;padding:12px">
+        <div style="font-size:12px;color:#a855f7;font-weight:700">Prototype Lab</div>
+        <div style="font-size:11px;color:#64748b;margin-top:4px">MVP, POC, demos y experimentos sin afectar produccion</div>
+      </div>
+      <div style="background:#1e0a3c40;border:1px solid #7c3aed30;border-radius:8px;padding:12px">
+        <div style="font-size:12px;color:#a855f7;font-weight:700">Startup Builder Agent</div>
+        <div style="font-size:11px;color:#64748b;margin-top:4px">Concepto, arquitectura, modelo de negocio, MVP y simulacion financiera automatica</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- IDEAS -->
+<div id="tab-ideas" class="tab-panel">
+  <div class="grid2">
+    <div class="card">
+      <h3>💡 Nueva Idea</h3>
+      <div class="form-group"><label>Titulo</label><input id="idea-title" placeholder="Nombre de la idea" /></div>
+      <div class="form-group"><label>Problema que resuelve</label><textarea id="idea-problem" placeholder="Describe el problema..."></textarea></div>
+      <div class="form-group"><label>Solucion propuesta</label><textarea id="idea-solution" placeholder="Como lo resolvemos..."></textarea></div>
+      <div class="form-group"><label>Mercado objetivo</label><input id="idea-market" placeholder="A quien va dirigido..." /></div>
+      <div class="col3">
+        <div class="form-group"><label>Complejidad</label>
+          <select id="idea-complexity"><option value="low">Baja</option><option value="medium" selected>Media</option><option value="high">Alta</option><option value="very_high">Muy alta</option></select>
+        </div>
+        <div class="form-group"><label>Potencial</label>
+          <select id="idea-potential"><option value="low">Bajo</option><option value="medium" selected>Medio</option><option value="high">Alto</option><option value="very_high">Muy alto</option></select>
+        </div>
+        <div class="form-group"><label>Categoria</label>
+          <select id="idea-category"><option value="product">Producto</option><option value="feature" selected>Feature</option><option value="tool">Herramienta</option><option value="service">Servicio</option><option value="startup">Startup</option><option value="experiment">Experimento</option></select>
+        </div>
+      </div>
+      <button class="btn btn-primary" onclick="createIdea()">Registrar Idea</button>
+      <div id="idea-msg"></div>
+    </div>
+    <div class="card">
+      <h3>📋 Ideas Registradas</h3>
+      <div style="display:flex;gap:8px;margin-bottom:12px">
+        <select id="idea-filter-status" onchange="loadIdeas()" style="width:auto;font-size:12px">
+          <option value="">Todos los estados</option>
+          <option value="draft">Draft</option>
+          <option value="validating">Validando</option>
+          <option value="validated">Validadas</option>
+          <option value="building">Construyendo</option>
+          <option value="rejected">Rechazadas</option>
+        </select>
+      </div>
+      <div class="list-area" id="ideas-list"><div style="color:#64748b;font-size:13px">Cargando...</div></div>
+    </div>
+  </div>
+
+  <div class="full-card" style="margin-top:20px">
+    <h3>✅ Validar Idea</h3>
+    <div class="col3">
+      <div class="form-group"><label>ID de la idea</label><input id="val-id" placeholder="UUID de la idea" /></div>
+      <div class="form-group"><label>Demanda (0-100)</label><input id="val-demand" type="number" min="0" max="100" placeholder="50" /></div>
+      <div class="form-group"><label>Competencia (0-100)</label><input id="val-competition" type="number" min="0" max="100" placeholder="50" /></div>
+      <div class="form-group"><label>Costo (0-100)</label><input id="val-cost" type="number" min="0" max="100" placeholder="50" /></div>
+      <div class="form-group"><label>Viabilidad tecnica (0-100)</label><input id="val-tech" type="number" min="0" max="100" placeholder="50" /></div>
+      <div class="form-group"><label>Potencial comercial (0-100)</label><input id="val-commercial" type="number" min="0" max="100" placeholder="50" /></div>
+    </div>
+    <button class="btn btn-primary" onclick="validateIdea()">Calcular Validacion</button>
+    <div id="val-msg"></div>
+  </div>
+</div>
+
+<!-- EXPERIMENTS -->
+<div id="tab-experiments" class="tab-panel">
+  <div class="grid2">
+    <div class="card">
+      <h3>🧪 Nuevo Experimento</h3>
+      <div class="form-group"><label>Titulo</label><input id="exp-title" placeholder="Nombre del experimento" /></div>
+      <div class="form-group"><label>Hipotesis</label><textarea id="exp-hypothesis" placeholder="Si hacemos X, esperamos Y porque Z..."></textarea></div>
+      <div class="form-group"><label>Metodo</label><textarea id="exp-method" placeholder="Como vamos a probar esto..."></textarea></div>
+      <div class="form-group"><label>Criterio de exito</label><input id="exp-success" placeholder="La prueba es exitosa si..." /></div>
+      <div class="form-group"><label>ID de idea (opcional)</label><input id="exp-idea-id" placeholder="UUID de idea relacionada" /></div>
+      <button class="btn btn-primary" onclick="createExperiment()">Registrar Experimento</button>
+      <div id="exp-msg"></div>
+    </div>
+    <div class="card">
+      <h3>📋 Experimentos</h3>
+      <div class="list-area" id="experiments-list"><div style="color:#64748b;font-size:13px">Cargando...</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- PROTOTYPES -->
+<div id="tab-prototypes" class="tab-panel">
+  <div class="grid2">
+    <div class="card">
+      <h3>🔧 Nuevo Prototipo</h3>
+      <div class="form-group"><label>Nombre</label><input id="proto-name" placeholder="Nombre del prototipo" /></div>
+      <div class="form-group"><label>Descripcion</label><textarea id="proto-desc" placeholder="Que construimos y para que..."></textarea></div>
+      <div class="form-group"><label>Tipo</label>
+        <select id="proto-type"><option value="mvp">MVP</option><option value="poc">POC</option><option value="demo">Demo</option><option value="experiment">Experimento</option><option value="wireframe">Wireframe</option></select>
+      </div>
+      <div class="form-group"><label>Stack (JSON array)</label><input id="proto-stack" placeholder='["React","Supabase","Vercel"]' /></div>
+      <div class="form-group"><label>ID de idea (opcional)</label><input id="proto-idea-id" placeholder="UUID de idea relacionada" /></div>
+      <button class="btn btn-primary" onclick="createPrototype()">Registrar Prototipo</button>
+      <div id="proto-msg"></div>
+    </div>
+    <div class="card">
+      <h3>📋 Prototipos</h3>
+      <div class="list-area" id="prototypes-list"><div style="color:#64748b;font-size:13px">Cargando...</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- RESEARCH -->
+<div id="tab-research" class="tab-panel">
+  <div class="grid2">
+    <div class="card">
+      <h3>📚 Nuevo Reporte de Investigacion</h3>
+      <div class="form-group"><label>Titulo</label><input id="res-title" placeholder="Titulo del reporte" /></div>
+      <div class="form-group"><label>Tipo</label>
+        <select id="res-type"><option value="technology">Tecnologia</option><option value="market">Mercado</option><option value="competitor">Competidor</option><option value="trend">Tendencia</option><option value="opportunity">Oportunidad</option><option value="ai_models">Modelos IA</option></select>
+      </div>
+      <div class="form-group"><label>Resumen ejecutivo</label><textarea id="res-summary" placeholder="Principales hallazgos..."></textarea></div>
+      <div class="form-group"><label>Contenido completo</label><textarea id="res-content" placeholder="Contenido detallado del reporte..." style="min-height:120px"></textarea></div>
+      <button class="btn btn-primary" onclick="createResearch()">Guardar Reporte</button>
+      <div id="res-msg"></div>
+    </div>
+    <div class="card">
+      <h3>📋 Reportes de Investigacion</h3>
+      <div class="list-area" id="research-list"><div style="color:#64748b;font-size:13px">Cargando...</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- TRENDS -->
+<div id="tab-trends" class="tab-panel">
+  <div class="grid2">
+    <div class="card">
+      <h3>📈 Registrar Tendencia</h3>
+      <div class="form-group"><label>Nombre de la senal</label><input id="trend-name" placeholder="Ej: Agentes IA autonomos" /></div>
+      <div class="form-group"><label>Descripcion</label><textarea id="trend-desc" placeholder="Que esta pasando y por que importa..."></textarea></div>
+      <div class="col3">
+        <div class="form-group"><label>Categoria</label>
+          <select id="trend-category"><option value="technology">Tecnologia</option><option value="market">Mercado</option><option value="business_model">Modelo negocio</option><option value="ai">IA</option><option value="consumer">Consumidor</option></select>
+        </div>
+        <div class="form-group"><label>Intensidad</label>
+          <select id="trend-strength"><option value="emerging">Emergente</option><option value="growing">Creciendo</option><option value="mainstream">Mainstream</option></select>
+        </div>
+        <div class="form-group"><label>Score oportunidad (0-100)</label><input id="trend-score" type="number" min="0" max="100" placeholder="75" /></div>
+      </div>
+      <button class="btn btn-primary" onclick="createTrend()">Registrar Tendencia</button>
+      <div id="trend-msg"></div>
+    </div>
+    <div class="card">
+      <h3>📊 Tendencias por Score</h3>
+      <div id="trends-list"><div style="color:#64748b;font-size:13px">Cargando...</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- STARTUPS -->
+<div id="tab-startups" class="tab-panel">
+  <div class="grid2">
+    <div class="card">
+      <h3>🚀 Startup Builder</h3>
+      <div class="form-group"><label>Nombre de la startup</label><input id="startup-name" placeholder="Nombre del producto/empresa" /></div>
+      <div class="form-group"><label>Tagline</label><input id="startup-tagline" placeholder="Frase corta que describe el valor" /></div>
+      <div class="form-group"><label>Concepto</label><textarea id="startup-concept" placeholder="Que es y que hace..."></textarea></div>
+      <div class="form-group"><label>Mercado objetivo</label><input id="startup-market" placeholder="A quien va dirigido" /></div>
+      <div class="form-group"><label>Modelo de negocio</label><textarea id="startup-bmodel" placeholder="SaaS, marketplace, freemium, transaccional..."></textarea></div>
+      <button class="btn btn-primary" onclick="createStartup()">Generar Startup (con simulacion)</button>
+      <div id="startup-msg"></div>
+    </div>
+    <div class="card">
+      <h3>📋 Startups Internas</h3>
+      <div class="list-area" id="startups-list"><div style="color:#64748b;font-size:13px">Cargando...</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- COMPETITIVE -->
+<div id="tab-competitive" class="tab-panel">
+  <div class="grid2">
+    <div class="card">
+      <h3>🎯 Analizar Competidor</h3>
+      <div class="form-group"><label>Nombre del competidor</label><input id="comp-name" placeholder="Ej: GitHub Copilot" /></div>
+      <div class="form-group"><label>Categoria</label>
+        <select id="comp-category"><option value="direct">Directo</option><option value="indirect">Indirecto</option><option value="emerging">Emergente</option><option value="adjacent">Adyacente</option></select>
+      </div>
+      <div class="form-group"><label>Nivel de amenaza</label>
+        <select id="comp-threat"><option value="low">Bajo</option><option value="medium" selected>Medio</option><option value="high">Alto</option><option value="critical">Critico</option></select>
+      </div>
+      <div class="form-group"><label>Diferenciadores EditCore vs competidor</label><textarea id="comp-diff" placeholder="En que nos diferenciamos..."></textarea></div>
+      <button class="btn btn-primary" onclick="createCompetitor()">Registrar Analisis</button>
+      <div id="comp-msg"></div>
+    </div>
+    <div class="card">
+      <h3>📋 Inteligencia Competitiva</h3>
+      <div class="list-area" id="competitive-list"><div style="color:#64748b;font-size:13px">Cargando...</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- MEMORY -->
+<div id="tab-memory" class="tab-panel">
+  <div class="grid2">
+    <div class="card">
+      <h3>🧠 Guardar en Memoria de Innovacion</h3>
+      <div class="form-group"><label>Tipo</label>
+        <select id="mem-type"><option value="learning">Aprendizaje</option><option value="pattern">Patron</option><option value="decision">Decision</option><option value="success">Exito</option><option value="failure">Fracaso</option><option value="insight">Insight</option></select>
+      </div>
+      <div class="form-group"><label>Titulo</label><input id="mem-title" placeholder="Que aprendimos / que paso" /></div>
+      <div class="form-group"><label>Contenido</label><textarea id="mem-content" placeholder="Descripcion detallada del aprendizaje..."></textarea></div>
+      <div class="form-group"><label>Impacto</label>
+        <select id="mem-impact"><option value="low">Bajo</option><option value="medium" selected>Medio</option><option value="high">Alto</option><option value="critical">Critico</option></select>
+      </div>
+      <button class="btn btn-primary" onclick="createMemory()">Guardar Memoria</button>
+      <div id="mem-msg"></div>
+    </div>
+    <div class="card">
+      <h3>📋 Memoria de Innovacion</h3>
+      <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
+        <button class="btn btn-sm btn-outline" onclick="loadMemory()">Todo</button>
+        <button class="btn btn-sm btn-outline" onclick="loadMemory('success')">Exitos</button>
+        <button class="btn btn-sm btn-outline" onclick="loadMemory('failure')">Fracasos</button>
+        <button class="btn btn-sm btn-outline" onclick="loadMemory('insight')">Insights</button>
+        <button class="btn btn-sm btn-outline" onclick="loadMemory('pattern')">Patrones</button>
+      </div>
+      <div class="list-area" id="memory-list"><div style="color:#64748b;font-size:13px">Cargando...</div></div>
+    </div>
+  </div>
+</div>
+
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script src="/assets/supabase-config.js"></script>
+<script>
+const supabase = window.supabase.createClient(window.EDITCORE_SUPABASE_URL, window.EDITCORE_SUPABASE_ANON_KEY);
+let token = '';
+
+const api = async (path, opts = {}) => {
+  const r = await fetch(path, { headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }, ...opts });
+  return r.json();
+};
+
+function showTab(name) {
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'));
+  document.getElementById('tab-' + name).classList.add('active');
+  event.target.classList.add('active');
+  if (name === 'overview') loadMetrics();
+  if (name === 'ideas') loadIdeas();
+  if (name === 'experiments') loadExperiments();
+  if (name === 'prototypes') loadPrototypes();
+  if (name === 'research') loadResearch();
+  if (name === 'trends') loadTrends();
+  if (name === 'startups') loadStartups();
+  if (name === 'competitive') loadCompetitive();
+  if (name === 'memory') loadMemory();
+}
+
+function badge(val, map) {
+  const cls = map[val] || 'badge-gray';
+  return `<span class="badge ${cls}">${val}</span>`;
+}
+
+const statusColors = { draft:'badge-gray', validating:'badge-yellow', validated:'badge-green', rejected:'badge-red', building:'badge-purple', planned:'badge-gray', running:'badge-yellow', completed:'badge-green', failed:'badge-red', concept:'badge-gray', launched:'badge-green' };
+
+async function loadMetrics() {
+  const d = await api('/api/v1/lab/metrics');
+  if (d.ideas) {
+    document.getElementById('st-ideas').textContent = d.ideas.total;
+    document.getElementById('st-validated').textContent = d.ideas.validated;
+    document.getElementById('st-exps').textContent = d.experiments.total;
+    document.getElementById('st-protos').textContent = d.prototypes.total;
+    document.getElementById('st-research').textContent = d.research.total;
+    document.getElementById('st-trends').textContent = d.trends.total;
+    document.getElementById('st-startups').textContent = d.startups.total;
+    document.getElementById('st-memory').textContent = d.memory.total;
+  }
+}
+
+async function loadIdeas() {
+  const status = document.getElementById('idea-filter-status')?.value || '';
+  const url = '/api/v1/lab/ideas' + (status ? '?status=' + status : '');
+  const d = await api(url);
+  const el = document.getElementById('ideas-list');
+  if (!d.ideas?.length) { el.innerHTML = '<div style="color:#64748b;font-size:13px">Sin ideas registradas.</div>'; return; }
+  el.innerHTML = d.ideas.map(i => `
+    <div class="item-card">
+      <div class="item-title">${i.title}${badge(i.status, statusColors)}${badge(i.potential + ' potencial', {'high potencial':'badge-green','very_high potencial':'badge-purple','medium potencial':'badge-yellow','low potencial':'badge-gray'})}</div>
+      <div class="item-meta">${i.category} · ${i.complexity} complejidad · ${new Date(i.created_at).toLocaleDateString()}</div>
+      ${i.validation_scores?.overall !== undefined ? `<div class="score-bar"><div class="score-fill" style="width:${i.validation_scores.overall}%"></div></div><div style="font-size:10px;color:#64748b;margin-top:2px">Score validacion: ${i.validation_scores.overall}/100</div>` : ''}
+    </div>`).join('');
+}
+
+async function createIdea() {
+  const body = { title: document.getElementById('idea-title').value, problem: document.getElementById('idea-problem').value, solution: document.getElementById('idea-solution').value, market: document.getElementById('idea-market').value, complexity: document.getElementById('idea-complexity').value, potential: document.getElementById('idea-potential').value, category: document.getElementById('idea-category').value };
+  const d = await api('/api/v1/lab/ideas', { method: 'POST', body: JSON.stringify(body) });
+  const el = document.getElementById('idea-msg');
+  if (d.idea) { el.className = 'msg msg-ok'; el.textContent = 'Idea creada: ' + d.idea.title; loadIdeas(); }
+  else { el.className = 'msg msg-err'; el.textContent = d.error || 'Error'; }
+}
+
+async function validateIdea() {
+  const id = document.getElementById('val-id').value;
+  const scores = { demand: +document.getElementById('val-demand').value, competition: +document.getElementById('val-competition').value, cost: +document.getElementById('val-cost').value, technical_feasibility: +document.getElementById('val-tech').value, commercial_potential: +document.getElementById('val-commercial').value };
+  const d = await api('/api/v1/lab/ideas', { method: 'PATCH', body: JSON.stringify({ id, validation_scores: scores }) });
+  const el = document.getElementById('val-msg');
+  if (d.idea) { el.className = 'msg msg-ok'; el.textContent = `Validacion completada. Status: ${d.idea.status}. Score: ${d.idea.validation_scores?.overall}/100`; loadIdeas(); }
+  else { el.className = 'msg msg-err'; el.textContent = d.error || 'Error'; }
+}
+
+async function loadExperiments() {
+  const d = await api('/api/v1/lab/experiments');
+  const el = document.getElementById('experiments-list');
+  if (!d.experiments?.length) { el.innerHTML = '<div style="color:#64748b;font-size:13px">Sin experimentos.</div>'; return; }
+  el.innerHTML = d.experiments.map(e => `
+    <div class="item-card">
+      <div class="item-title">${e.title}${badge(e.status, statusColors)}</div>
+      <div class="item-meta" style="margin-top:4px">${e.hypothesis?.slice(0,80)}...</div>
+      ${e.results ? `<div class="item-meta" style="margin-top:4px;color:#10b981">Resultado: ${e.results.slice(0,60)}...</div>` : ''}
+    </div>`).join('');
+}
+
+async function createExperiment() {
+  const body = { title: document.getElementById('exp-title').value, hypothesis: document.getElementById('exp-hypothesis').value, method: document.getElementById('exp-method').value, success_criteria: document.getElementById('exp-success').value, idea_id: document.getElementById('exp-idea-id').value || undefined };
+  const d = await api('/api/v1/lab/experiments', { method: 'POST', body: JSON.stringify(body) });
+  const el = document.getElementById('exp-msg');
+  if (d.experiment) { el.className = 'msg msg-ok'; el.textContent = 'Experimento creado: ' + d.experiment.title; loadExperiments(); }
+  else { el.className = 'msg msg-err'; el.textContent = d.error || 'Error'; }
+}
+
+async function loadPrototypes() {
+  const d = await api('/api/v1/lab/prototypes');
+  const el = document.getElementById('prototypes-list');
+  if (!d.prototypes?.length) { el.innerHTML = '<div style="color:#64748b;font-size:13px">Sin prototipos.</div>'; return; }
+  el.innerHTML = d.prototypes.map(p => `
+    <div class="item-card">
+      <div class="item-title">${p.name}${badge(p.proto_type, {'mvp':'badge-purple','poc':'badge-yellow','demo':'badge-green'})}</div>
+      <div class="item-meta">${p.description?.slice(0,80)} · ${badge(p.status, statusColors)}</div>
+      ${p.demo_url ? `<a href="${p.demo_url}" target="_blank" style="font-size:11px;color:#a855f7">Ver demo →</a>` : ''}
+    </div>`).join('');
+}
+
+async function createPrototype() {
+  let stack = [];
+  try { stack = JSON.parse(document.getElementById('proto-stack').value || '[]'); } catch(e) {}
+  const body = { name: document.getElementById('proto-name').value, description: document.getElementById('proto-desc').value, proto_type: document.getElementById('proto-type').value, stack, idea_id: document.getElementById('proto-idea-id').value || undefined };
+  const d = await api('/api/v1/lab/prototypes', { method: 'POST', body: JSON.stringify(body) });
+  const el = document.getElementById('proto-msg');
+  if (d.prototype) { el.className = 'msg msg-ok'; el.textContent = 'Prototipo creado: ' + d.prototype.name; loadPrototypes(); }
+  else { el.className = 'msg msg-err'; el.textContent = d.error || 'Error'; }
+}
+
+async function loadResearch() {
+  const d = await api('/api/v1/lab/research');
+  const el = document.getElementById('research-list');
+  if (!d.reports?.length) { el.innerHTML = '<div style="color:#64748b;font-size:13px">Sin reportes.</div>'; return; }
+  el.innerHTML = d.reports.map(r => `
+    <div class="item-card">
+      <div class="item-title">${r.title}${badge(r.report_type, {technology:'badge-purple',market:'badge-green',competitor:'badge-red',trend:'badge-yellow'})}</div>
+      <div class="item-meta">${r.summary?.slice(0,100)} · ${new Date(r.created_at).toLocaleDateString()}</div>
+    </div>`).join('');
+}
+
+async function createResearch() {
+  const body = { title: document.getElementById('res-title').value, report_type: document.getElementById('res-type').value, summary: document.getElementById('res-summary').value, content: document.getElementById('res-content').value };
+  const d = await api('/api/v1/lab/research', { method: 'POST', body: JSON.stringify(body) });
+  const el = document.getElementById('res-msg');
+  if (d.report) { el.className = 'msg msg-ok'; el.textContent = 'Reporte guardado: ' + d.report.title; loadResearch(); }
+  else { el.className = 'msg msg-err'; el.textContent = d.error || 'Error'; }
+}
+
+async function loadTrends() {
+  const d = await api('/api/v1/lab/trends');
+  const el = document.getElementById('trends-list');
+  if (!d.trends?.length) { el.innerHTML = '<div style="color:#64748b;font-size:13px">Sin tendencias.</div>'; return; }
+  el.innerHTML = d.trends.map(t => `
+    <div class="trend-bar">
+      <div class="trend-name">${t.signal_name}${badge(t.strength, {emerging:'badge-gray',growing:'badge-yellow',mainstream:'badge-green'})}</div>
+      <div style="flex:1"><div class="score-bar"><div class="score-fill" style="width:${t.opportunity_score}%"></div></div></div>
+      <div class="trend-score">${t.opportunity_score}</div>
+    </div>`).join('');
+}
+
+async function createTrend() {
+  const body = { signal_name: document.getElementById('trend-name').value, description: document.getElementById('trend-desc').value, category: document.getElementById('trend-category').value, strength: document.getElementById('trend-strength').value, opportunity_score: +document.getElementById('trend-score').value };
+  const d = await api('/api/v1/lab/trends', { method: 'POST', body: JSON.stringify(body) });
+  const el = document.getElementById('trend-msg');
+  if (d.trend) { el.className = 'msg msg-ok'; el.textContent = 'Tendencia registrada: ' + d.trend.signal_name; loadTrends(); }
+  else { el.className = 'msg msg-err'; el.textContent = d.error || 'Error'; }
+}
+
+async function loadStartups() {
+  const d = await api('/api/v1/lab/startups');
+  const el = document.getElementById('startups-list');
+  if (!d.startups?.length) { el.innerHTML = '<div style="color:#64748b;font-size:13px">Sin startups.</div>'; return; }
+  el.innerHTML = d.startups.map(s => `
+    <div class="item-card">
+      <div class="item-title">${s.name}${badge(s.status, statusColors)}</div>
+      <div class="item-meta">${s.tagline}</div>
+      ${s.simulation?.year1 ? `<div class="item-meta" style="margin-top:4px">Sim Y1: $${s.simulation.year1.mrr_low_usd}–$${s.simulation.year1.mrr_high_usd} MRR · ${s.simulation.year1.users_low}–${s.simulation.year1.users_high} usuarios</div>` : ''}
+    </div>`).join('');
+}
+
+async function createStartup() {
+  const body = { name: document.getElementById('startup-name').value, tagline: document.getElementById('startup-tagline').value, concept: document.getElementById('startup-concept').value, target_market: document.getElementById('startup-market').value, business_model: document.getElementById('startup-bmodel').value };
+  const d = await api('/api/v1/lab/startups', { method: 'POST', body: JSON.stringify(body) });
+  const el = document.getElementById('startup-msg');
+  if (d.startup) { el.className = 'msg msg-ok'; el.textContent = `Startup creada: ${d.startup.name}. Sim Y1 MRR: $${d.startup.simulation.year1.mrr_low_usd}–$${d.startup.simulation.year1.mrr_high_usd}`; loadStartups(); }
+  else { el.className = 'msg msg-err'; el.textContent = d.error || 'Error'; }
+}
+
+async function loadCompetitive() {
+  const d = await api('/api/v1/lab/competitive');
+  const el = document.getElementById('competitive-list');
+  if (!d.competitors?.length) { el.innerHTML = '<div style="color:#64748b;font-size:13px">Sin analisis competitivos.</div>'; return; }
+  el.innerHTML = d.competitors.map(c => `
+    <div class="item-card">
+      <div class="item-title">${c.competitor_name}${badge(c.threat_level, {low:'badge-green',medium:'badge-yellow',high:'badge-red',critical:'badge-red'})}</div>
+      <div class="item-meta">${c.category} · Analizado: ${new Date(c.last_analyzed_at).toLocaleDateString()}</div>
+      ${c.differentiators ? `<div class="item-meta" style="margin-top:4px;color:#a855f7">${c.differentiators.slice(0,80)}</div>` : ''}
+    </div>`).join('');
+}
+
+async function createCompetitor() {
+  const body = { competitor_name: document.getElementById('comp-name').value, category: document.getElementById('comp-category').value, threat_level: document.getElementById('comp-threat').value, differentiators: document.getElementById('comp-diff').value };
+  const d = await api('/api/v1/lab/competitive', { method: 'POST', body: JSON.stringify(body) });
+  const el = document.getElementById('comp-msg');
+  if (d.competitor) { el.className = 'msg msg-ok'; el.textContent = 'Analisis guardado: ' + d.competitor.competitor_name; loadCompetitive(); }
+  else { el.className = 'msg msg-err'; el.textContent = d.error || 'Error'; }
+}
+
+async function loadMemory(type) {
+  const url = '/api/v1/lab/memory' + (type ? '?type=' + type : '');
+  const d = await api(url);
+  const el = document.getElementById('memory-list');
+  if (!d.memories?.length) { el.innerHTML = '<div style="color:#64748b;font-size:13px">Sin memorias.</div>'; return; }
+  el.innerHTML = d.memories.map(m => `
+    <div class="item-card">
+      <div class="item-title">${m.title}${badge(m.memory_type, {success:'badge-green',failure:'badge-red',insight:'badge-purple',learning:'badge-yellow',pattern:'badge-gray'})}</div>
+      <div class="item-meta">${m.content?.slice(0,100)} · impacto: ${m.impact}</div>
+    </div>`).join('');
+}
+
+async function createMemory() {
+  const body = { memory_type: document.getElementById('mem-type').value, title: document.getElementById('mem-title').value, content: document.getElementById('mem-content').value, impact: document.getElementById('mem-impact').value };
+  const d = await api('/api/v1/lab/memory', { method: 'POST', body: JSON.stringify(body) });
+  const el = document.getElementById('mem-msg');
+  if (d.memory) { el.className = 'msg msg-ok'; el.textContent = 'Memoria guardada: ' + d.memory.title; loadMemory(); }
+  else { el.className = 'msg msg-err'; el.textContent = d.error || 'Error'; }
+}
+
+async function init() {
+  const { data } = await supabase.auth.getSession();
+  if (!data.session) {
+    document.querySelector('.content')?.insertAdjacentHTML('afterbegin', '<div class="card">No has iniciado sesión. <a href="/login.html">Ir a iniciar sesión</a></div>');
+    return;
+  }
+  token = data.session.access_token;
+  loadMetrics();
+}
+init();
+</script>
+  <script defer src="/_vercel/insights/script.js"></script>
+  <script defer src="/_vercel/speed-insights/script.js"></script>
+</body>
+</html>

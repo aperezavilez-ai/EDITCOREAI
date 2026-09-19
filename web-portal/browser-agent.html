@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>EditCore — Browser Agent</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Segoe UI', system-ui, sans-serif; background: #0a0f1e; color: #e2e8f0; min-height: 100vh; }
+    header { background: linear-gradient(135deg, #0d1b2a, #0a1628); border-bottom: 1px solid #0ea5e940; padding: 16px 24px; display: flex; align-items: center; gap: 16px; }
+    .logo { font-size: 22px; font-weight: 800; background: linear-gradient(135deg, #0ea5e9, #38bdf8); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+    .subtitle { font-size: 13px; color: #94a3b8; }
+    nav { display: flex; gap: 4px; padding: 16px 24px 0; border-bottom: 1px solid #1e293b; }
+    nav button { padding: 8px 16px; border: none; background: transparent; color: #64748b; cursor: pointer; border-bottom: 2px solid transparent; font-size: 13px; font-weight: 500; transition: all .2s; border-radius: 6px 6px 0 0; }
+    nav button.active { color: #38bdf8; border-bottom-color: #38bdf8; background: #0ea5e910; }
+    nav button:hover:not(.active) { color: #94a3b8; background: #1e293b30; }
+    .content { padding: 24px; max-width: 1200px; }
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+    .card { background: #0f172a; border: 1px solid #1e293b; border-radius: 12px; padding: 20px; margin-bottom: 20px; }
+    .card h3 { font-size: 14px; font-weight: 600; color: #38bdf8; margin-bottom: 16px; }
+    .form-group { margin-bottom: 12px; }
+    .form-group label { display: block; font-size: 12px; color: #64748b; margin-bottom: 4px; }
+    input, textarea { width: 100%; padding: 10px 14px; background: #1e293b; border: 1px solid #334155; border-radius: 7px; color: #e2e8f0; font-size: 14px; outline: none; transition: border .2s; font-family: inherit; }
+    input:focus, textarea:focus { border-color: #0ea5e9; }
+    textarea { min-height: 120px; resize: vertical; }
+    .btn { padding: 10px 20px; border: none; border-radius: 7px; font-size: 13px; font-weight: 600; cursor: pointer; transition: all .2s; }
+    .btn-primary { background: linear-gradient(135deg, #0ea5e9, #38bdf8); color: #fff; }
+    .btn-primary:hover { opacity: .9; }
+    .btn:disabled { opacity: .5; cursor: not-allowed; }
+    .url-bar { display: flex; gap: 10px; }
+    .url-bar input { flex: 1; }
+    .result-box { background: #0a0f1e; border: 1px solid #1e293b; border-radius: 8px; padding: 16px; margin-top: 16px; }
+    .result-title { font-size: 16px; font-weight: 700; color: #38bdf8; margin-bottom: 8px; }
+    .result-url { font-size: 11px; color: #64748b; margin-bottom: 12px; }
+    .result-text { font-size: 13px; color: #cbd5e1; line-height: 1.7; white-space: pre-wrap; max-height: 400px; overflow-y: auto; }
+    .links-section { margin-top: 16px; }
+    .links-section h4 { font-size: 12px; color: #64748b; margin-bottom: 8px; text-transform: uppercase; }
+    .link-item { display: flex; gap: 8px; align-items: baseline; margin-bottom: 6px; }
+    .link-item a { font-size: 13px; color: #38bdf8; text-decoration: none; }
+    .link-item a:hover { text-decoration: underline; }
+    .search-result { background: #1e293b; border-radius: 8px; padding: 14px; margin-bottom: 10px; border-left: 3px solid #0ea5e9; }
+    .sr-title { font-size: 14px; font-weight: 600; color: #38bdf8; margin-bottom: 4px; }
+    .sr-url { font-size: 11px; color: #64748b; margin-bottom: 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .sr-snippet { font-size: 13px; color: #94a3b8; line-height: 1.5; }
+    .spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid #38bdf840; border-top-color: #38bdf8; border-radius: 50%; animation: spin .8s linear infinite; margin-right: 8px; vertical-align: middle; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .msg { padding: 10px 14px; border-radius: 7px; font-size: 13px; margin-top: 10px; }
+    .msg-err { background: #ef444420; border: 1px solid #ef444440; color: #ef4444; }
+    .deep-content { margin-top: 16px; }
+    .deep-item { background: #1e293b; border-radius: 8px; padding: 14px; margin-bottom: 12px; }
+    .deep-item-title { font-size: 13px; font-weight: 600; color: #38bdf8; margin-bottom: 8px; }
+    .deep-item-text { font-size: 12px; color: #94a3b8; line-height: 1.6; max-height: 200px; overflow-y: auto; white-space: pre-wrap; }
+    .screenshot-img { max-width: 100%; border-radius: 8px; margin-top: 12px; border: 1px solid #334155; }
+    .toggle { display: flex; align-items: center; gap: 8px; font-size: 13px; color: #94a3b8; cursor: pointer; margin-bottom: 12px; }
+    .toggle input[type=checkbox] { width: auto; }
+  </style>
+</head>
+<body>
+<header>
+  <div>
+    <div class="logo">🌐 EditCore Browser Agent</div>
+    <div class="subtitle">Navega internet, busca informacion y extrae contenido con IA</div>
+  </div>
+</header>
+<nav>
+  <button class="active" onclick="showTab('search', this)">🔍 Buscar en Internet</button>
+  <button onclick="showTab('navigate', this)">🌐 Navegar URL</button>
+  <button onclick="showTab('extract', this)">📄 Extraer Multiples URLs</button>
+</nav>
+<div class="content">
+
+<!-- BUSCAR -->
+<div id="tab-search" class="tab-panel active">
+  <div class="card">
+    <h3>🔍 Buscar en Internet</h3>
+    <div class="form-group">
+      <label>Que quieres buscar?</label>
+      <div class="url-bar">
+        <input id="search-query" placeholder="Ej: mejores frameworks de agentes IA 2026" onkeydown="if(event.key==='Enter')doSearch()" />
+        <button class="btn btn-primary" id="search-btn" onclick="doSearch()">Buscar</button>
+      </div>
+    </div>
+    <label class="toggle"><input type="checkbox" id="search-deep" /> Modo profundo (visita las primeras 3 paginas y extrae su contenido completo)</label>
+    <div id="search-results"></div>
+  </div>
+</div>
+
+<!-- NAVEGAR URL -->
+<div id="tab-navigate" class="tab-panel">
+  <div class="card">
+    <h3>🌐 Navegar a una URL</h3>
+    <div class="form-group">
+      <label>URL</label>
+      <div class="url-bar">
+        <input id="nav-url" placeholder="https://ejemplo.com" onkeydown="if(event.key==='Enter')doNavigate()" />
+        <button class="btn btn-primary" id="nav-btn" onclick="doNavigate()">Navegar</button>
+      </div>
+    </div>
+    <label class="toggle"><input type="checkbox" id="nav-screenshot" /> Capturar screenshot de la pagina</label>
+    <div id="nav-results"></div>
+  </div>
+</div>
+
+<!-- EXTRAER MULTIPLES -->
+<div id="tab-extract" class="tab-panel">
+  <div class="card">
+    <h3>📄 Extraer contenido de multiples URLs</h3>
+    <div class="form-group">
+      <label>URLs (una por linea, maximo 5)</label>
+      <textarea id="extract-urls" placeholder="https://sitio1.com&#10;https://sitio2.com&#10;https://sitio3.com"></textarea>
+    </div>
+    <button class="btn btn-primary" id="extract-btn" onclick="doExtract()">Extraer todo</button>
+    <div id="extract-results"></div>
+  </div>
+</div>
+
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script src="/assets/supabase-config.js"></script>
+<script>
+const supabase = window.supabase.createClient(window.EDITCORE_SUPABASE_URL, window.EDITCORE_SUPABASE_ANON_KEY);
+let token = '';
+
+async function init() {
+  const { data } = await supabase.auth.getSession();
+  if (!data.session) {
+    document.querySelector('.content').innerHTML = '<div class="card">No has iniciado sesión. <a href="/login.html" style="color:#38bdf8">Ir a iniciar sesión</a></div>';
+    return;
+  }
+  token = data.session.access_token;
+}
+init();
+
+function showTab(name, btn) {
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'));
+  document.getElementById('tab-' + name).classList.add('active');
+  btn.classList.add('active');
+}
+
+function setLoading(btnId, loading, label) {
+  const btn = document.getElementById(btnId);
+  btn.disabled = loading;
+  btn.innerHTML = loading ? `<span class="spinner"></span>${label}` : label;
+}
+
+async function doSearch() {
+  const query = document.getElementById('search-query').value.trim();
+  if (!query) return;
+  const deep = document.getElementById('search-deep').checked;
+  const el = document.getElementById('search-results');
+  setLoading('search-btn', true, deep ? 'Buscando profundo...' : 'Buscando...');
+  el.innerHTML = `<div style="color:#64748b;font-size:13px;margin-top:12px"><span class="spinner"></span>${deep ? 'Buscando y visitando paginas...' : 'Buscando en DuckDuckGo...'}</div>`;
+
+  try {
+    const r = await fetch('/api/v1/browser/search', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query, deep, max_results: 8 }),
+    });
+    const d = await r.json();
+    if (d.error) { el.innerHTML = `<div class="msg msg-err">${d.error}</div>`; return; }
+
+    let html = `<div style="font-size:12px;color:#64748b;margin:12px 0">${d.total} resultados para: <strong style="color:#38bdf8">${query}</strong></div>`;
+    html += d.results.map(res => `
+      <div class="search-result">
+        <div class="sr-title"><a href="${res.url}" target="_blank" style="color:#38bdf8;text-decoration:none">${res.title || 'Sin titulo'}</a></div>
+        <div class="sr-url">${res.url}</div>
+        <div class="sr-snippet">${res.snippet || ''}</div>
+      </div>`).join('');
+
+    if (d.deep_content?.length) {
+      html += `<div style="margin-top:20px"><h4 style="font-size:12px;color:#64748b;text-transform:uppercase;margin-bottom:12px">Contenido extraido de las primeras paginas</h4>`;
+      html += d.deep_content.filter(p => !p.error).map(p => `
+        <div class="deep-item">
+          <div class="deep-item-title">${p.title}</div>
+          <div style="font-size:11px;color:#475569;margin-bottom:8px">${p.url}</div>
+          <div class="deep-item-text">${p.text}</div>
+        </div>`).join('');
+      html += '</div>';
+    }
+
+    el.innerHTML = html;
+  } catch (e) {
+    el.innerHTML = `<div class="msg msg-err">Error de red: ${e.message}</div>`;
+  } finally {
+    setLoading('search-btn', false, 'Buscar');
+  }
+}
+
+async function doNavigate() {
+  const url = document.getElementById('nav-url').value.trim();
+  if (!url) return;
+  const screenshot = document.getElementById('nav-screenshot').checked;
+  const el = document.getElementById('nav-results');
+  setLoading('nav-btn', true, 'Navegando...');
+  el.innerHTML = `<div style="color:#64748b;font-size:13px;margin-top:12px"><span class="spinner"></span>Cargando ${url}...</div>`;
+
+  try {
+    const r = await fetch('/api/v1/browser/navigate', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url, screenshot }),
+    });
+    const d = await r.json();
+    if (d.error) { el.innerHTML = `<div class="msg msg-err">${d.error} ${d.detail || ''}</div>`; return; }
+
+    el.innerHTML = `
+      <div class="result-box">
+        <div class="result-title">${d.title}</div>
+        <div class="result-url"><a href="${d.url}" target="_blank" style="color:#38bdf8">${d.url}</a></div>
+        <div class="result-text">${d.text}</div>
+        ${d.screenshot_base64 ? `<img class="screenshot-img" src="data:image/png;base64,${d.screenshot_base64}" alt="Screenshot" />` : ''}
+        ${d.links?.length ? `<div class="links-section"><h4>Links encontrados</h4>${d.links.map(l => `<div class="link-item"><a href="${l.href}" target="_blank">${l.text || l.href}</a></div>`).join('')}</div>` : ''}
+      </div>`;
+  } catch (e) {
+    el.innerHTML = `<div class="msg msg-err">Error de red: ${e.message}</div>`;
+  } finally {
+    setLoading('nav-btn', false, 'Navegar');
+  }
+}
+
+async function doExtract() {
+  const raw = document.getElementById('extract-urls').value.trim();
+  const urls = raw.split('\n').map(u => u.trim()).filter(u => u.startsWith('http'));
+  if (!urls.length) { document.getElementById('extract-results').innerHTML = `<div class="msg msg-err">Ingresa al menos una URL valida.</div>`; return; }
+  const el = document.getElementById('extract-results');
+  setLoading('extract-btn', true, 'Extrayendo...');
+  el.innerHTML = `<div style="color:#64748b;font-size:13px;margin-top:12px"><span class="spinner"></span>Extrayendo ${urls.length} URLs en paralelo...</div>`;
+
+  try {
+    const r = await fetch('/api/v1/browser/extract', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ urls }),
+    });
+    const d = await r.json();
+    if (d.error) { el.innerHTML = `<div class="msg msg-err">${d.error}</div>`; return; }
+
+    el.innerHTML = `<div style="font-size:12px;color:#64748b;margin:12px 0">${d.total} paginas extraidas</div>` +
+      d.results.map(p => p.error
+        ? `<div class="deep-item"><div class="deep-item-title" style="color:#ef4444">${p.url}</div><div class="deep-item-text">Error: ${p.error}</div></div>`
+        : `<div class="deep-item">
+            <div class="deep-item-title">${p.title}</div>
+            <div style="font-size:11px;color:#475569;margin-bottom:8px"><a href="${p.url}" target="_blank" style="color:#38bdf8">${p.url}</a></div>
+            <div class="deep-item-text">${p.text}</div>
+          </div>`).join('');
+  } catch (e) {
+    el.innerHTML = `<div class="msg msg-err">Error de red: ${e.message}</div>`;
+  } finally {
+    setLoading('extract-btn', false, 'Extraer todo');
+  }
+}
+</script>
+  <script defer src="/_vercel/insights/script.js"></script>
+  <script defer src="/_vercel/speed-insights/script.js"></script>
+</body>
+</html>

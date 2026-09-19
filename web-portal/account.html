@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>EditCore - Mi cuenta</title>
+<link rel="icon" href="/assets/favicon-32.png" />
+<style>
+  body { font-family:-apple-system,system-ui,sans-serif; background:#0b0d12; color:#e8eaf0; display:flex; min-height:100vh; align-items:center; justify-content:center; margin:0; padding:24px; box-sizing:border-box; }
+  .card { background:#14171f; border:1px solid #232733; border-radius:14px; padding:32px; width:460px; max-width:100%; box-shadow:0 8px 32px rgba(0,0,0,0.35); }
+  .back-link { display:inline-block; color:#8b909e; font-size:13px; text-decoration:none; margin-bottom:18px; }
+  .back-link:hover { color:#e8eaf0; }
+  .brand { display:flex; align-items:center; gap:10px; margin-bottom:20px; }
+  .brand img { width:32px; height:32px; }
+  h1 { font-size:18px; margin:0; font-weight:700; }
+  .row { display:flex; justify-content:space-between; align-items:center; gap:16px; padding:10px 0; border-bottom:1px solid #232733; font-size:14px; }
+  .row span:first-child { color:#8b909e; }
+  .row span:last-child { text-align:right; overflow:hidden; text-overflow:ellipsis; }
+  .plan-badge { display:inline-block; padding:2px 10px; border-radius:20px; font-size:12px; font-weight:600; }
+  .plan-badge.free { background:#2b3040; color:#c4c8d4; }
+  .plan-badge.pro { background:rgba(88,101,242,0.18); color:#8b95ff; border:1px solid rgba(88,101,242,0.35); }
+  .btn { display:block; width:100%; margin-top:12px; padding:12px; border-radius:8px; border:none; background:#2b3040; color:#e8eaf0; text-align:center; font-weight:650; text-decoration:none; cursor:pointer; box-sizing:border-box; }
+  .btn.primary { background:#10c8df; color:#001318; }
+  .btn.pro { background:#5865f2; color:white; }
+  .two { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:10px; }
+  button { font:inherit; }
+  .msg { font-size:13px; margin-top:14px; color:#f87171; }
+  .hint { font-size:12px; color:#8b909e; margin-top:6px; text-align:center; }
+  .links a { display:block; margin-top:8px; color:#5865f2; font-size:14px; }
+  @media (max-width:520px) { .two { grid-template-columns:1fr; } }
+</style>
+</head>
+<body>
+  <div class="card">
+    <a href="/index.html" class="back-link">Volver a EditCore</a>
+    <div class="brand">
+      <img src="/assets/editcore-logo-web.png" alt="" />
+      <h1>Mi cuenta EditCore</h1>
+    </div>
+    <div id="content">Cargando...</div>
+    <div id="msg" class="msg"></div>
+    <button id="logoutBtn" class="btn" style="display:none">Cerrar sesion</button>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+  <script src="/assets/supabase-config.js"></script>
+  <script>
+    const content = document.getElementById("content");
+    const msg = document.getElementById("msg");
+    const logoutBtn = document.getElementById("logoutBtn");
+    const downloadUrl = "/releases/EditCore-AI-Setup.exe";
+    const downloadVersion = "2.0.0";
+
+    if (!window.supabase || typeof window.supabase.createClient !== "function") {
+      content.textContent = "No se pudo cargar Supabase. Revisa tu conexion o bloqueador.";
+      throw new Error("supabase-js no cargo");
+    }
+    const supabase = window.supabase.createClient(window.EDITCORE_SUPABASE_URL, window.EDITCORE_SUPABASE_ANON_KEY);
+
+    async function load() {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        content.innerHTML = 'No has iniciado sesion.<br><a href="/login.html" style="color:#5865f2">Ir a iniciar sesion</a>';
+        return;
+      }
+
+      try {
+        const res = await fetch("/api/auth/me", {
+          headers: { Authorization: "Bearer " + session.access_token },
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          msg.textContent = data.error || "No se pudo cargar la cuenta.";
+          return;
+        }
+
+        const plan = data.organization?.plan || "free";
+        const planLabel = plan === "free" ? "Community (gratis)" : plan;
+        const isPro = plan === "pro";
+        content.innerHTML = `
+          <div class="row"><span>Correo</span><span>${data.user.email || "-"}</span></div>
+          <div class="row"><span>Organizacion</span><span>${data.organization?.name || "Sin organizacion asignada"}</span></div>
+          <div class="row"><span>Plan</span><span class="plan-badge ${isPro ? "pro" : "free"}">${planLabel}</span></div>
+          <div class="row"><span>Rol</span><span>${data.profile?.role || "-"}</span></div>
+          <a class="btn primary" href="/app.html">EditCore</a>
+          <div class="hint">Abrir el espacio de trabajo web para crear proyectos y trabajar con IA.</div>
+          <a class="btn" href="${downloadUrl}">Descargar EditCore AI (Windows)</a>
+          <div class="hint">Version ${downloadVersion} - Windows 10/11 - 64 bits</div>
+          ${
+            isPro
+              ? ""
+              : `<div style="margin-top:18px">
+                  <div class="hint" style="text-align:left">Mejora tu plan a Pro:</div>
+                  <div class="two">
+                    <button id="upgradeMonthlyBtn" class="btn pro" style="margin-top:0">Pro mensual - $19/mes</button>
+                    <button id="upgradeAnnualBtn" class="btn pro" style="margin-top:0">Pro anual - $182.40/ano</button>
+                  </div>
+                  <div id="upgradeMsg" class="msg"></div>
+                </div>`
+          }
+          <div class="links" style="margin-top:18px">
+            <a href="/developers.html">Panel de desarrolladores (API keys)</a>
+            <a href="/community.html">Comunidad EditCore</a>
+            <a href="/factory.html">Software Factory</a>
+          </div>
+        `;
+        logoutBtn.style.display = "block";
+
+        if (!isPro) {
+          const upgradeMsg = document.getElementById("upgradeMsg");
+          async function startCheckout(interval) {
+            upgradeMsg.style.color = "#8b909e";
+            upgradeMsg.textContent = "Redirigiendo a Stripe...";
+            try {
+              const checkoutRes = await fetch("/api/billing/checkout", {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                  Authorization: "Bearer " + session.access_token,
+                },
+                body: JSON.stringify({
+                  interval,
+                  successUrl: window.location.origin + "/account.html?upgraded=true",
+                  cancelUrl: window.location.origin + "/account.html",
+                }),
+              });
+              const checkoutData = await checkoutRes.json();
+              if (!checkoutRes.ok || !checkoutData.url) {
+                upgradeMsg.style.color = "#f87171";
+                upgradeMsg.textContent = checkoutData.error || "No se pudo iniciar el pago.";
+                return;
+              }
+              window.location.href = checkoutData.url;
+            } catch (err) {
+              upgradeMsg.style.color = "#f87171";
+              upgradeMsg.textContent = "Error de red al iniciar el pago.";
+            }
+          }
+          document.getElementById("upgradeMonthlyBtn").addEventListener("click", () => startCheckout("monthly"));
+          document.getElementById("upgradeAnnualBtn").addEventListener("click", () => startCheckout("annual"));
+        }
+
+        if (new URLSearchParams(window.location.search).get("upgraded") === "true") {
+          msg.style.color = "#34d399";
+          msg.textContent = "Pago recibido. Tu plan se actualizara en unos segundos.";
+        }
+      } catch (err) {
+        msg.textContent = "Error de red al consultar /api/auth/me.";
+      }
+    }
+
+    logoutBtn.addEventListener("click", async () => {
+      await supabase.auth.signOut();
+      window.location.href = "/login.html";
+    });
+
+    load();
+  </script>
+  <script defer src="/_vercel/insights/script.js"></script>
+  <script defer src="/_vercel/speed-insights/script.js"></script>
+</body>
+</html>

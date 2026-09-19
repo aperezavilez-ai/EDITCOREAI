@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>EditCore — Comunidad</title>
+<link rel="icon" href="/assets/favicon-32.png" />
+<style>
+  :root {
+    --bg: #050608; --bg-card: #0a0c10; --text: #f0f4f8; --muted: #8b909e;
+    --cyan: #00e5ff; --cyan-dim: #00b8d4; --blue: #0288d1;
+    --border-soft: rgba(0, 229, 255, 0.12); --border-neon: rgba(0, 229, 255, 0.35);
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: "Inter", "Segoe UI", system-ui, sans-serif;
+    background: var(--bg); color: var(--text); margin: 0; min-height: 100vh; padding: 56px 20px; position: relative;
+  }
+  body::before {
+    content: ""; position: fixed; inset: 0;
+    background: radial-gradient(ellipse 90% 60% at 50% 0%, rgba(0, 180, 220, 0.14), transparent 55%),
+      radial-gradient(ellipse 50% 40% at 50% 35%, rgba(0, 229, 255, 0.06), transparent 70%),
+      linear-gradient(180deg, #050608 0%, #080a0e 50%, #050608 100%);
+    z-index: -2;
+  }
+  body::after {
+    content: ""; position: fixed; inset: 0;
+    background-image: linear-gradient(rgba(0, 229, 255, 0.07) 1px, transparent 1px), linear-gradient(90deg, rgba(0, 229, 255, 0.07) 1px, transparent 1px);
+    background-size: 48px 48px;
+    mask-image: radial-gradient(ellipse 90% 80% at 50% 30%, black 15%, transparent 78%);
+    -webkit-mask-image: radial-gradient(ellipse 90% 80% at 50% 30%, black 15%, transparent 78%);
+    z-index: -1;
+  }
+  .wrap { max-width: 720px; margin: 0 auto; }
+  .topbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 28px; }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; color: var(--text); text-decoration: none; }
+  .brand-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--cyan); box-shadow: 0 0 10px var(--cyan), 0 0 18px rgba(0,229,255,0.6); }
+  .back-link { color: var(--muted); text-decoration: none; font-size: 13px; }
+  .back-link:hover { color: var(--cyan); }
+  .card { background: var(--bg-card); border: 1px solid var(--border-soft); border-radius: 14px; padding: 28px 30px; margin-bottom: 18px; }
+  h1 { font-size: 21px; margin: 0 0 6px; }
+  p.sub { color: var(--muted); font-size: 13.5px; margin: 0 0 20px; }
+  input, textarea {
+    width: 100%; padding: 11px 14px; border-radius: 9px; border: 1px solid rgba(255,255,255,0.1);
+    background: #05060a; color: var(--text); font-size: 14px; font-family: inherit; outline: none; margin-bottom: 10px;
+  }
+  input:focus, textarea:focus { border-color: var(--border-neon); }
+  textarea { resize: vertical; min-height: 70px; }
+  button {
+    padding: 10px 16px; border-radius: 9px; border: none;
+    background: linear-gradient(135deg, var(--cyan) 0%, var(--cyan-dim) 45%, var(--blue) 100%);
+    color: #03161a; font-weight: 700; cursor: pointer; font-size: 13.5px;
+  }
+  .post { border-bottom: 1px solid var(--border-soft); padding: 16px 0; }
+  .post:last-child { border-bottom: none; }
+  .post h3 { margin: 0 0 6px; font-size: 15px; }
+  .post p { margin: 0 0 8px; font-size: 13.5px; color: var(--text); line-height: 1.5; }
+  .post .meta { font-size: 12px; color: var(--muted); }
+  .comments { margin-top: 10px; padding-left: 12px; border-left: 2px solid var(--border-soft); }
+  .comment { font-size: 13px; color: var(--muted); margin-bottom: 6px; }
+  .comment-form { display: flex; gap: 8px; margin-top: 10px; }
+  .comment-form input { margin-bottom: 0; }
+  .toggle-comments { background: none; border: none; color: var(--cyan-dim); font-size: 12.5px; padding: 0; cursor: pointer; }
+  .msg { font-size: 13px; color: var(--muted); margin-top: 10px; }
+  .msg.err { color: #f87171; }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="topbar">
+      <a href="/index.html" class="brand"><span class="brand-dot"></span>EditCore</a>
+      <a href="/account.html" class="back-link">← Mi cuenta</a>
+    </div>
+
+    <div class="card">
+      <h1>Comunidad EditCore</h1>
+      <p class="sub">Publica preguntas, ideas o lo que estés construyendo. Cualquiera puede leer; necesitas sesión para publicar o comentar.</p>
+      <div id="composeGate"></div>
+      <div id="compose" style="display:none">
+        <input id="postTitle" type="text" placeholder="Título" />
+        <textarea id="postBody" placeholder="¿Qué quieres compartir?"></textarea>
+        <button id="postBtn">Publicar</button>
+      </div>
+      <div id="msg" class="msg"></div>
+    </div>
+
+    <div class="card">
+      <div id="posts">Cargando publicaciones...</div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+  <script src="/assets/supabase-config.js"></script>
+  <script>
+    const supabase = window.supabase.createClient(window.EDITCORE_SUPABASE_URL, window.EDITCORE_SUPABASE_ANON_KEY);
+    const composeGate = document.getElementById("composeGate");
+    const compose = document.getElementById("compose");
+    const postsEl = document.getElementById("posts");
+    const msg = document.getElementById("msg");
+    let accessToken = null;
+
+    function fmtDate(s) { return new Date(s).toLocaleString(); }
+    function esc(s) { return s.replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+
+    async function loadComments(postId, container) {
+      const res = await fetch(`/api/community/${postId}/comments`);
+      const data = await res.json();
+      container.innerHTML = (data.comments || []).map(c => `<div class="comment">${esc(c.body)} — ${fmtDate(c.created_at)}</div>`).join("") || `<div class="comment">Sin comentarios.</div>`;
+    }
+
+    async function loadPosts() {
+      const res = await fetch("/api/community/posts");
+      const data = await res.json();
+      if (!res.ok) { postsEl.textContent = data.error || "No se pudieron cargar las publicaciones."; return; }
+      postsEl.innerHTML = (data.posts || []).map(p => `
+        <div class="post" data-id="${p.id}">
+          <h3>${esc(p.title)}</h3>
+          <p>${esc(p.body)}</p>
+          <div class="meta">${fmtDate(p.created_at)}</div>
+          <button class="toggle-comments" data-id="${p.id}">Ver comentarios</button>
+          <div class="comments" data-comments-for="${p.id}" style="display:none"></div>
+          ${accessToken ? `<div class="comment-form" data-form-for="${p.id}" style="display:none">
+            <input type="text" placeholder="Escribe un comentario..." data-input-for="${p.id}" />
+            <button data-send-for="${p.id}">Enviar</button>
+          </div>` : ""}
+        </div>
+      `).join("") || `<p style="color:var(--muted)">Aún no hay publicaciones. Sé el primero.</p>`;
+
+      postsEl.querySelectorAll(".toggle-comments").forEach(btn => {
+        btn.addEventListener("click", async () => {
+          const id = btn.dataset.id;
+          const box = postsEl.querySelector(`[data-comments-for="${id}"]`);
+          const form = postsEl.querySelector(`[data-form-for="${id}"]`);
+          const showing = box.style.display !== "none";
+          box.style.display = showing ? "none" : "block";
+          if (form) form.style.display = showing ? "none" : "flex";
+          if (!showing) await loadComments(id, box);
+        });
+      });
+
+      postsEl.querySelectorAll("[data-send-for]").forEach(btn => {
+        btn.addEventListener("click", async () => {
+          const id = btn.dataset.sendFor;
+          const input = postsEl.querySelector(`[data-input-for="${id}"]`);
+          const body = input.value.trim();
+          if (!body) return;
+          await fetch(`/api/community/${id}/comments`, {
+            method: "POST",
+            headers: { "content-type": "application/json", Authorization: "Bearer " + accessToken },
+            body: JSON.stringify({ body }),
+          });
+          input.value = "";
+          await loadComments(id, postsEl.querySelector(`[data-comments-for="${id}"]`));
+        });
+      });
+    }
+
+    document.getElementById("postBtn").addEventListener("click", async () => {
+      const title = document.getElementById("postTitle").value.trim();
+      const body = document.getElementById("postBody").value.trim();
+      if (!title || !body) { msg.textContent = "Escribe título y contenido."; msg.className = "msg err"; return; }
+      const res = await fetch("/api/community/posts", {
+        method: "POST",
+        headers: { "content-type": "application/json", Authorization: "Bearer " + accessToken },
+        body: JSON.stringify({ title, body }),
+      });
+      const data = await res.json();
+      if (!res.ok) { msg.textContent = data.error || "No se pudo publicar."; msg.className = "msg err"; return; }
+      document.getElementById("postTitle").value = "";
+      document.getElementById("postBody").value = "";
+      msg.textContent = ""; msg.className = "msg";
+      await loadPosts();
+    });
+
+    (async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session) {
+        accessToken = session.access_token;
+        compose.style.display = "block";
+      } else {
+        composeGate.innerHTML = '<p class="sub">Inicia sesión para publicar o comentar: <a href="/login.html" style="color:var(--cyan)">Iniciar sesión</a></p>';
+      }
+      await loadPosts();
+    })();
+  </script>
+  <script defer src="/_vercel/insights/script.js"></script>
+  <script defer src="/_vercel/speed-insights/script.js"></script>
+</body>
+</html>

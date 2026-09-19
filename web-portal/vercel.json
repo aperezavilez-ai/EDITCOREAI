@@ -64,5 +64,23 @@
   ],
   "framework": null,
   "buildCommand": null,
-  "outputDirectory": "."
+  "outputDirectory": ".",
+  "rewrites": [
+    {
+      "source": "/login",
+      "destination": "/login.html"
+    },
+    {
+      "source": "/app",
+      "destination": "/app.html"
+    },
+    {
+      "source": "/account",
+      "destination": "/account.html"
+    },
+    {
+      "source": "/download",
+      "destination": "https://github.com/aperezavilez-ai/EDITCOREAI/releases/download/v3.0.2/EDITCOREAI-Setup.exe"
+    }
+  ]
 }

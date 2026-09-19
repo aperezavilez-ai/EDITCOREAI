@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>EditCore — Software Factory</title>
+<link rel="icon" href="/assets/favicon-32.png" />
+<style>
+  :root {
+    --bg:#050608;--bg-card:#0a0c10;--text:#f0f4f8;--muted:#8b909e;
+    --cyan:#00e5ff;--cyan-dim:#00b8d4;--blue:#0288d1;
+    --border-soft:rgba(0,229,255,0.12);--border-neon:rgba(0,229,255,0.35);
+  }
+  *{box-sizing:border-box;}
+  body{font-family:"Inter","Segoe UI",system-ui,sans-serif;background:var(--bg);color:var(--text);margin:0;min-height:100vh;padding:56px 20px;position:relative;}
+  body::before{content:"";position:fixed;inset:0;background:radial-gradient(ellipse 90% 60% at 50% 0%,rgba(0,180,220,.14),transparent 55%),radial-gradient(ellipse 50% 40% at 50% 35%,rgba(0,229,255,.06),transparent 70%),linear-gradient(180deg,#050608 0%,#080a0e 50%,#050608 100%);z-index:-2;}
+  body::after{content:"";position:fixed;inset:0;background-image:linear-gradient(rgba(0,229,255,.07) 1px,transparent 1px),linear-gradient(90deg,rgba(0,229,255,.07) 1px,transparent 1px);background-size:48px 48px;mask-image:radial-gradient(ellipse 90% 80% at 50% 30%,black 15%,transparent 78%);-webkit-mask-image:radial-gradient(ellipse 90% 80% at 50% 30%,black 15%,transparent 78%);z-index:-1;}
+  .wrap{max-width:860px;margin:0 auto;}
+  .topbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:28px;}
+  .brand{display:flex;align-items:center;gap:10px;font-weight:700;color:var(--text);text-decoration:none;}
+  .brand-dot{width:9px;height:9px;border-radius:50%;background:var(--cyan);box-shadow:0 0 10px var(--cyan),0 0 18px rgba(0,229,255,.6);}
+  .back-link{color:var(--muted);text-decoration:none;font-size:13px;}
+  .back-link:hover{color:var(--cyan);}
+  .card{background:var(--bg-card);border:1px solid var(--border-soft);border-radius:14px;padding:26px 28px;margin-bottom:18px;}
+  h1{font-size:21px;margin:0 0 6px;}
+  h2{font-size:15px;margin:0 0 14px;}
+  p.sub{color:var(--muted);font-size:13.5px;margin:0 0 18px;}
+  input,select,textarea{padding:10px 13px;border-radius:9px;border:1px solid rgba(255,255,255,.1);background:#05060a;color:var(--text);font-size:13.5px;font-family:inherit;outline:none;width:100%;margin-bottom:10px;}
+  input:focus,select:focus,textarea:focus{border-color:var(--border-neon);}
+  button{padding:10px 16px;border-radius:9px;border:none;background:linear-gradient(135deg,var(--cyan) 0%,var(--cyan-dim) 45%,var(--blue) 100%);color:#03161a;font-weight:700;cursor:pointer;font-size:13.5px;}
+  button.sm{padding:5px 11px;font-size:12px;}
+  button.ghost{background:rgba(255,255,255,.06);color:var(--muted);font-weight:500;}
+  button.ghost:hover{background:rgba(255,255,255,.1);color:var(--text);}
+  .row{display:flex;gap:10px;align-items:flex-start;}
+  .row input,.row select{margin-bottom:0;}
+  table{width:100%;border-collapse:collapse;font-size:13px;}
+  th,td{text-align:left;padding:8px;border-bottom:1px solid var(--border-soft);}
+  th{color:var(--muted);font-size:11.5px;text-transform:uppercase;letter-spacing:.4px;}
+  .badge{display:inline-block;padding:2px 8px;border-radius:6px;font-size:11px;font-weight:600;}
+  .badge.planning,.badge.pending{background:rgba(0,229,255,.1);color:var(--cyan-dim);}
+  .badge.in_progress{background:rgba(250,204,21,.1);color:#facc15;}
+  .badge.done,.badge.live{background:rgba(74,222,128,.1);color:#4ade80;}
+  .badge.blocked,.badge.paused{background:rgba(248,113,113,.1);color:#f87171;}
+  .badge.testing,.badge.review{background:rgba(168,85,247,.1);color:#c084fc;}
+  .empty{color:var(--muted);font-size:13px;text-align:center;padding:20px 0;}
+  .msg{font-size:13px;margin-top:10px;color:var(--muted);}
+  .msg.err{color:#f87171;}
+  .tabs{display:flex;gap:8px;margin-bottom:18px;}
+  .tab{padding:7px 14px;border-radius:8px;border:1px solid var(--border-soft);background:none;color:var(--muted);font-size:13px;cursor:pointer;}
+  .tab.active{background:rgba(0,229,255,.1);color:var(--cyan);border-color:var(--border-neon);}
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="topbar">
+      <a href="/index.html" class="brand"><span class="brand-dot"></span>EditCore</a>
+      <a href="/account.html" class="back-link">← Mi cuenta</a>
+    </div>
+
+    <div class="card" id="loginGate" style="display:none">
+      <p class="sub">Inicia sesión para acceder a la Software Factory: <a href="/login.html" style="color:var(--cyan)">Iniciar sesión</a></p>
+    </div>
+
+    <div id="main" style="display:none">
+      <div class="card">
+        <h1>Software Factory</h1>
+        <p class="sub">Centro de producción: proyectos activos, tareas y releases.</p>
+        <div class="tabs">
+          <button class="tab active" data-tab="projects">Proyectos</button>
+          <button class="tab" data-tab="tasks">Tareas</button>
+          <button class="tab" data-tab="releases">Releases</button>
+        </div>
+
+        <!-- PROYECTOS -->
+        <div id="tab-projects">
+          <div class="row" style="margin-bottom:14px;">
+            <input id="projName" placeholder="Nombre del proyecto" />
+            <input id="projDesc" placeholder="Descripción breve" />
+            <button id="btnCreateProj" class="sm">+ Proyecto</button>
+          </div>
+          <div id="projList">Cargando...</div>
+          <div id="msgProj" class="msg"></div>
+        </div>
+
+        <!-- TAREAS -->
+        <div id="tab-tasks" style="display:none">
+          <div class="row" style="margin-bottom:10px;">
+            <select id="taskProjSelect"><option value="">— Proyecto —</option></select>
+          </div>
+          <div class="row" style="margin-bottom:14px;">
+            <input id="taskTitle" placeholder="Título de tarea" />
+            <select id="taskAgent">
+              <option value="fullstack">Fullstack</option>
+              <option value="devops">DevOps</option>
+              <option value="qa">QA</option>
+              <option value="security">Security</option>
+              <option value="product-manager">Product Manager</option>
+              <option value="saas-builder">SaaS Builder</option>
+              <option value="test-factory">Test Factory</option>
+              <option value="release-manager">Release Manager</option>
+              <option value="maintenance-agent">Maintenance</option>
+            </select>
+            <button id="btnCreateTask" class="sm">+ Tarea</button>
+          </div>
+          <div id="taskList">Selecciona un proyecto.</div>
+          <div id="msgTask" class="msg"></div>
+        </div>
+
+        <!-- RELEASES -->
+        <div id="tab-releases" style="display:none">
+          <div class="row" style="margin-bottom:10px;">
+            <select id="relProjSelect"><option value="">— Proyecto —</option></select>
+          </div>
+          <div class="row" style="margin-bottom:14px;">
+            <input id="relVersion" placeholder="v1.0.0" style="max-width:120px;" />
+            <select id="relChannel"><option value="alpha">Alpha</option><option value="beta">Beta</option><option value="production" selected>Production</option></select>
+            <input id="relNotes" placeholder="Notas del release" />
+            <input id="relCommit" placeholder="Commit SHA (opcional)" />
+            <button id="btnCreateRel" class="sm">Publicar</button>
+          </div>
+          <div id="relList">Selecciona un proyecto.</div>
+          <div id="msgRel" class="msg"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+  <script src="/assets/supabase-config.js"></script>
+  <script>
+    const supabase = window.supabase.createClient(window.EDITCORE_SUPABASE_URL, window.EDITCORE_SUPABASE_ANON_KEY);
+    let token = null, projects = [];
+    const esc = s => String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+    const fmt = s => new Date(s).toLocaleDateString();
+    const auth = () => ({ Authorization: "Bearer " + token });
+    const json = body => ({ "content-type": "application/json", ...auth() });
+    const statusBadge = s => `<span class="badge ${s}">${s}</span>`;
+
+    document.querySelectorAll(".tab").forEach(t => t.addEventListener("click", () => {
+      document.querySelectorAll(".tab").forEach(x => x.classList.remove("active"));
+      document.querySelectorAll("[id^=tab-]").forEach(x => x.style.display = "none");
+      t.classList.add("active");
+      document.getElementById("tab-" + t.dataset.tab).style.display = "block";
+    }));
+
+    async function loadProjects() {
+      const r = await fetch("/api/v1/factory/projects", { headers: auth() });
+      const d = await r.json();
+      projects = d.projects || [];
+      ["taskProjSelect","relProjSelect"].forEach(id => {
+        const sel = document.getElementById(id);
+        const prev = sel.value;
+        sel.innerHTML = `<option value="">— Proyecto —</option>` + projects.map(p => `<option value="${p.id}" ${p.id===prev?"selected":""}>${esc(p.name)}</option>`).join("");
+      });
+      document.getElementById("projList").innerHTML = projects.length
+        ? `<table><thead><tr><th>Nombre</th><th>Estado</th><th>Versión</th><th>IA</th><th>Actualizado</th></tr></thead><tbody>${projects.map(p =>`<tr><td>${esc(p.name)}</td><td>${statusBadge(p.status)}</td><td>${esc(p.current_version)}</td><td>${p.gafcore_project_key ? `<span class="badge done" title="${esc(p.gafcore_project_key)}">✓ Activa</span>` : `<button class="sm ghost" onclick="addAI('${p.id}','${esc(p.name)}')">+ IA</button>`}</td><td>${fmt(p.updated_at)}</td></tr>`).join("")}</tbody></table>`
+        : `<div class="empty">Sin proyectos todavía.</div>`;
+    }
+
+    async function addAI(projectId, projectName) {
+      const msg = document.getElementById("msgProj");
+      msg.className = "msg";
+      msg.textContent = `Configurando IA para "${projectName}"…`;
+      try {
+        const r = await fetch(`/api/v1/factory/projects/add-ai?id=${projectId}`, { method: "POST", headers: auth() });
+        const d = await r.json();
+        if (!r.ok) {
+          msg.className = "msg err";
+          msg.textContent = d.error || "Error al configurar IA.";
+          return;
+        }
+        msg.className = "msg";
+        if (d.already_existed) {
+          msg.textContent = `IA ya estaba activa. Key: ${d.gafcore_project_key}`;
+        } else {
+          msg.innerHTML = `✓ IA activada. Variables para Vercel:<br><pre style="background:#05060a;border:1px solid rgba(0,229,255,.15);border-radius:8px;padding:10px 12px;font-size:12px;color:#4ade80;margin:8px 0 0;white-space:pre-wrap;">${esc(d.env_snippet)}</pre>`;
+        }
+        await loadProjects();
+      } catch {
+        msg.className = "msg err";
+        msg.textContent = "Error de red al contactar el servidor.";
+      }
+    }
+
+    document.getElementById("btnCreateProj").addEventListener("click", async () => {
+      const name = document.getElementById("projName").value.trim();
+      if (!name) return;
+      const r = await fetch("/api/v1/factory/projects", { method:"POST", headers:json(), body: JSON.stringify({ name, description: document.getElementById("projDesc").value.trim() }) });
+      const d = await r.json();
+      if (!r.ok) { document.getElementById("msgProj").textContent = d.error; return; }
+      document.getElementById("projName").value = ""; document.getElementById("projDesc").value = "";
+      await loadProjects();
+    });
+
+    async function loadTasks() {
+      const pid = document.getElementById("taskProjSelect").value;
+      if (!pid) return;
+      const r = await fetch(`/api/v1/factory/tasks?project_id=${pid}`, { headers: auth() });
+      const d = await r.json();
+      const tasks = d.tasks || [];
+      document.getElementById("taskList").innerHTML = tasks.length
+        ? `<table><thead><tr><th>Tarea</th><th>Agente</th><th>Estado</th><th>Prioridad</th></tr></thead><tbody>${tasks.map(t=>`<tr><td>${esc(t.title)}</td><td>${esc(t.agent)}</td><td>${statusBadge(t.status)}</td><td>P${t.priority}</td></tr>`).join("")}</tbody></table>`
+        : `<div class="empty">Sin tareas en este proyecto.</div>`;
+    }
+
+    document.getElementById("taskProjSelect").addEventListener("change", loadTasks);
+    document.getElementById("btnCreateTask").addEventListener("click", async () => {
+      const pid = document.getElementById("taskProjSelect").value;
+      const title = document.getElementById("taskTitle").value.trim();
+      if (!pid || !title) return;
+      const agent = document.getElementById("taskAgent").value;
+      const r = await fetch("/api/v1/factory/tasks", { method:"POST", headers:json(), body: JSON.stringify({ project_id:pid, title, agent }) });
+      const d = await r.json();
+      if (!r.ok) { document.getElementById("msgTask").textContent = d.error; return; }
+      document.getElementById("taskTitle").value = "";
+      await loadTasks();
+    });
+
+    async function loadReleases() {
+      const pid = document.getElementById("relProjSelect").value;
+      if (!pid) return;
+      const r = await fetch(`/api/v1/factory/releases?project_id=${pid}`, { headers: auth() });
+      const d = await r.json();
+      const rels = d.releases || [];
+      document.getElementById("relList").innerHTML = rels.length
+        ? `<table><thead><tr><th>Versión</th><th>Canal</th><th>Activo</th><th>Fecha</th></tr></thead><tbody>${rels.map(rel=>`<tr><td>${esc(rel.version)}</td><td>${esc(rel.channel)}</td><td>${rel.is_active?"✓":"—"}</td><td>${fmt(rel.created_at)}</td></tr>`).join("")}</tbody></table>`
+        : `<div class="empty">Sin releases todavía.</div>`;
+    }
+
+    document.getElementById("relProjSelect").addEventListener("change", loadReleases);
+    document.getElementById("btnCreateRel").addEventListener("click", async () => {
+      const pid = document.getElementById("relProjSelect").value;
+      const version = document.getElementById("relVersion").value.trim();
+      if (!pid || !version) return;
+      const r = await fetch("/api/v1/factory/releases", { method:"POST", headers:json(), body: JSON.stringify({ project_id:pid, version, channel:document.getElementById("relChannel").value, release_notes:document.getElementById("relNotes").value, commit_sha:document.getElementById("relCommit").value||null }) });
+      const d = await r.json();
+      if (!r.ok) { document.getElementById("msgRel").textContent = d.error; return; }
+      document.getElementById("relVersion").value=""; document.getElementById("relNotes").value=""; document.getElementById("relCommit").value="";
+      await loadReleases();
+    });
+
+    (async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) { document.getElementById("loginGate").style.display="block"; return; }
+      token = session.access_token;
+      document.getElementById("main").style.display = "block";
+      await loadProjects();
+    })();
+  </script>
+  <script defer src="/_vercel/insights/script.js"></script>
+  <script defer src="/_vercel/speed-insights/script.js"></script>
+</body>
+</html>

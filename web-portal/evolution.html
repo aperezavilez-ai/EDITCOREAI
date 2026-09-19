@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>EditCore — Centro de Evolución</title>
+<link rel="icon" href="/assets/favicon-32.png" />
+<style>
+  :root {
+    --bg: #050608; --bg-card: #0a0c10; --text: #f0f4f8; --muted: #8b909e;
+    --cyan: #00e5ff; --cyan-dim: #00b8d4; --blue: #0288d1;
+    --border-soft: rgba(0, 229, 255, 0.12); --border-neon: rgba(0, 229, 255, 0.35);
+  }
+  * { box-sizing: border-box; }
+  body { font-family: "Inter", "Segoe UI", system-ui, sans-serif; background: var(--bg); color: var(--text); margin: 0; min-height: 100vh; padding: 56px 20px; position: relative; }
+  body::before { content: ""; position: fixed; inset: 0;
+    background: radial-gradient(ellipse 90% 60% at 50% 0%, rgba(0, 180, 220, 0.14), transparent 55%),
+      radial-gradient(ellipse 50% 40% at 50% 35%, rgba(0, 229, 255, 0.06), transparent 70%),
+      linear-gradient(180deg, #050608 0%, #080a0e 50%, #050608 100%); z-index: -2; }
+  body::after { content: ""; position: fixed; inset: 0;
+    background-image: linear-gradient(rgba(0, 229, 255, 0.07) 1px, transparent 1px), linear-gradient(90deg, rgba(0, 229, 255, 0.07) 1px, transparent 1px);
+    background-size: 48px 48px; mask-image: radial-gradient(ellipse 90% 80% at 50% 30%, black 15%, transparent 78%);
+    -webkit-mask-image: radial-gradient(ellipse 90% 80% at 50% 30%, black 15%, transparent 78%); z-index: -1; }
+  .wrap { max-width: 860px; margin: 0 auto; }
+  .topbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 28px; }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; color: var(--text); text-decoration: none; }
+  .brand-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--cyan); box-shadow: 0 0 10px var(--cyan), 0 0 18px rgba(0,229,255,0.6); }
+  .back-link { color: var(--muted); text-decoration: none; font-size: 13px; }
+  .back-link:hover { color: var(--cyan); }
+  .card { background: var(--bg-card); border: 1px solid var(--border-soft); border-radius: 14px; padding: 28px 30px; margin-bottom: 18px; }
+  h1 { font-size: 21px; margin: 0 0 6px; }
+  h2 { font-size: 15px; margin: 0 0 16px; }
+  p.sub { color: var(--muted); font-size: 13.5px; margin: 0 0 20px; }
+  .metrics-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; }
+  .metric { background: #05060a; border: 1px solid var(--border-soft); border-radius: 10px; padding: 14px; }
+  .metric .num { font-size: 22px; font-weight: 700; color: var(--cyan); }
+  .metric .label { font-size: 11.5px; color: var(--muted); margin-top: 4px; text-transform: uppercase; letter-spacing: 0.4px; }
+  .meta { font-size: 12px; color: var(--muted); margin-top: 14px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 9px 8px; border-bottom: 1px solid var(--border-soft); vertical-align: top; }
+  th { color: var(--muted); font-weight: 500; font-size: 11.5px; text-transform: uppercase; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 6px; font-size: 11px; font-weight: 600; }
+  .badge.proposed { background: rgba(0,229,255,0.12); color: var(--cyan-dim); }
+  .badge.approved { background: rgba(74,222,128,0.12); color: #4ade80; }
+  .badge.rejected { background: rgba(248,113,113,0.12); color: #f87171; }
+  .badge.implemented { background: rgba(250,204,21,0.12); color: #facc15; }
+  .badge.in_review { background: rgba(168,85,247,0.12); color: #c084fc; }
+  .level { font-size: 11px; color: var(--muted); }
+  .empty { color: var(--muted); font-size: 13px; }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="topbar">
+      <a href="/index.html" class="brand"><span class="brand-dot"></span>EditCore</a>
+      <a href="/account.html" class="back-link">← Mi cuenta</a>
+    </div>
+
+    <div class="card">
+      <h1>Centro de Evolución</h1>
+      <p class="sub">Estado real de la plataforma, medido por auditorías automáticas (ver <code>EDITCORE_EVOLUTION_ENGINE.md</code>). Sin datos simulados.</p>
+      <div id="metrics"><span class="empty">Cargando última auditoría...</span></div>
+      <div id="auditMeta" class="meta"></div>
+    </div>
+
+    <div class="card">
+      <h2>Propuestas de mejora</h2>
+      <div id="proposals"><span class="empty">Cargando...</span></div>
+    </div>
+  </div>
+
+  <script>
+    function fmtDate(s) { return new Date(s).toLocaleString(); }
+    function esc(s) { return String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+    const labels = {
+      organizations: "Organizaciones", users: "Usuarios", active_developer_keys: "Claves API activas",
+      public_and_private_agents: "Agentes", community_posts: "Publicaciones", community_comments: "Comentarios",
+      open_proposals: "Propuestas abiertas",
+    };
+
+    async function loadAudits() {
+      const res = await fetch("/api/evolution/audits");
+      const data = await res.json();
+      const latest = (data.audits || [])[0];
+      const metricsEl = document.getElementById("metrics");
+      const metaEl = document.getElementById("auditMeta");
+      if (!latest) {
+        metricsEl.innerHTML = '<span class="empty">Aún no hay auditorías guardadas (corren automáticamente por Vercel Cron, o se pueden disparar manualmente).</span>';
+        return;
+      }
+      metricsEl.innerHTML = `<div class="metrics-grid">${Object.entries(latest.metrics)
+        .filter(([k]) => k !== "measured_at")
+        .map(([k, v]) => `<div class="metric"><div class="num">${v}</div><div class="label">${labels[k] || k}</div></div>`)
+        .join("")}</div>`;
+      metaEl.textContent = `Última auditoría (${latest.kind}): ${fmtDate(latest.created_at)}`;
+    }
+
+    async function loadProposals() {
+      const res = await fetch("/api/evolution/proposals");
+      const data = await res.json();
+      const el = document.getElementById("proposals");
+      if (!data.proposals || !data.proposals.length) {
+        el.innerHTML = '<span class="empty">Sin propuestas registradas todavía.</span>';
+        return;
+      }
+      el.innerHTML = `<table>
+        <thead><tr><th>Propuesta</th><th>Nivel</th><th>Estado</th><th>Fecha</th></tr></thead>
+        <tbody>${data.proposals.map(p => `
+          <tr>
+            <td><strong>${esc(p.title)}</strong><br><span class="level">${esc(p.description)}</span></td>
+            <td class="level">N${p.level}</td>
+            <td><span class="badge ${p.status}">${p.status}</span></td>
+            <td class="level">${fmtDate(p.created_at)}</td>
+          </tr>
+        `).join("")}</tbody>
+      </table>`;
+    }
+
+    loadAudits();
+    loadProposals();
+  </script>
+  <script defer src="/_vercel/insights/script.js"></script>
+  <script defer src="/_vercel/speed-insights/script.js"></script>
+</body>
+</html>

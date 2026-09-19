@@ -1,0 +1,468 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>EditCore — Digital Enterprise Command Center</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Segoe UI', system-ui, sans-serif; background: #060d18; color: #e2e8f0; min-height: 100vh; }
+    header { background: linear-gradient(135deg, #060d18, #0d1f3c, #1a0a2e); border-bottom: 1px solid #3b82f640; padding: 16px 24px; display: flex; align-items: center; justify-content: space-between; }
+    .logo { font-size: 20px; font-weight: 800; background: linear-gradient(135deg, #3b82f6, #8b5cf6, #06b6d4); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+    .subtitle { font-size: 12px; color: #64748b; margin-top: 2px; }
+    .header-actions { display: flex; gap: 10px; align-items: center; }
+    nav { display: flex; gap: 2px; padding: 12px 24px 0; border-bottom: 1px solid #1e293b; overflow-x: auto; }
+    nav button { padding: 8px 14px; border: none; background: transparent; color: #64748b; cursor: pointer; border-bottom: 2px solid transparent; font-size: 12px; font-weight: 500; transition: all .2s; white-space: nowrap; border-radius: 6px 6px 0 0; }
+    nav button.active { color: #60a5fa; border-bottom-color: #3b82f6; background: #1e3a5f20; }
+    nav button:hover:not(.active) { color: #94a3b8; }
+    .content { padding: 20px 24px; max-width: 1600px; }
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+    .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 24px; }
+    .kpi { background: linear-gradient(135deg, #0f172a, #1e293b); border: 1px solid #1e3a5f; border-radius: 10px; padding: 16px; position: relative; overflow: hidden; }
+    .kpi::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px; background: linear-gradient(90deg, #3b82f6, #8b5cf6); }
+    .kpi .val { font-size: 26px; font-weight: 800; color: #60a5fa; }
+    .kpi .lbl { font-size: 10px; color: #64748b; margin-top: 4px; text-transform: uppercase; letter-spacing: .5px; }
+    .kpi .sub { font-size: 11px; color: #94a3b8; margin-top: 2px; }
+    .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    @media(max-width: 900px) { .grid2 { grid-template-columns: 1fr; } }
+    .card { background: #0f172a; border: 1px solid #1e293b; border-radius: 12px; padding: 18px; }
+    .card h3 { font-size: 13px; font-weight: 600; color: #60a5fa; margin-bottom: 14px; display: flex; align-items: center; gap: 8px; }
+    .form-group { margin-bottom: 10px; }
+    .form-group label { display: block; font-size: 11px; color: #64748b; margin-bottom: 3px; }
+    input, textarea, select { width: 100%; padding: 8px 11px; background: #1e293b; border: 1px solid #334155; border-radius: 6px; color: #e2e8f0; font-size: 13px; outline: none; transition: border .2s; font-family: inherit; }
+    input:focus, textarea:focus, select:focus { border-color: #3b82f6; }
+    textarea { resize: vertical; min-height: 70px; }
+    .btn { padding: 8px 16px; border: none; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; transition: all .2s; }
+    .btn-primary { background: linear-gradient(135deg, #3b82f6, #8b5cf6); color: #fff; }
+    .btn-primary:hover { opacity: .9; }
+    .btn-danger { background: #ef444420; border: 1px solid #ef444440; color: #ef4444; }
+    .btn-success { background: #10b98120; border: 1px solid #10b98140; color: #10b981; }
+    .list-area { max-height: 380px; overflow-y: auto; margin-top: 12px; }
+    .item { background: #1e293b; border-radius: 8px; padding: 12px; margin-bottom: 8px; border-left: 3px solid #3b82f6; }
+    .item-title { font-size: 13px; font-weight: 600; color: #e2e8f0; }
+    .item-meta { font-size: 11px; color: #64748b; margin-top: 3px; }
+    .badge { display: inline-block; padding: 2px 7px; border-radius: 99px; font-size: 10px; font-weight: 700; text-transform: uppercase; margin-left: 5px; }
+    .bg { background: #1e293b20; color: #94a3b8; border: 1px solid #334155; }
+    .bblue { background: #3b82f620; color: #60a5fa; border: 1px solid #3b82f640; }
+    .bgreen { background: #10b98120; color: #10b981; border: 1px solid #10b98140; }
+    .byellow { background: #f59e0b20; color: #f59e0b; border: 1px solid #f59e0b40; }
+    .bred { background: #ef444420; color: #ef4444; border: 1px solid #ef444440; }
+    .bpurple { background: #8b5cf620; color: #a78bfa; border: 1px solid #8b5cf640; }
+    .msg { padding: 9px 13px; border-radius: 6px; font-size: 12px; margin-top: 8px; }
+    .mok { background: #10b98120; border: 1px solid #10b98140; color: #10b981; }
+    .merr { background: #ef444420; border: 1px solid #ef444440; color: #ef4444; }
+    .exec-box { background: linear-gradient(135deg, #0f1f3d, #1a0a2e); border: 1px solid #3b82f640; border-radius: 12px; padding: 20px; margin-bottom: 16px; }
+    .exec-box h2 { font-size: 15px; font-weight: 700; color: #60a5fa; margin-bottom: 12px; }
+    .exec-summary { font-size: 14px; color: #cbd5e1; line-height: 1.7; margin-bottom: 16px; }
+    .exec-section { margin-bottom: 14px; }
+    .exec-section h4 { font-size: 11px; text-transform: uppercase; letter-spacing: .5px; color: #64748b; margin-bottom: 8px; }
+    .exec-item { font-size: 13px; color: #94a3b8; padding: 6px 0; border-bottom: 1px solid #1e293b30; display: flex; gap: 8px; align-items: flex-start; }
+    .exec-item::before { content: '•'; color: #3b82f6; flex-shrink: 0; }
+    .col3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
+    @media(max-width: 768px) { .col3 { grid-template-columns: 1fr; } }
+    .pipeline-item { display: flex; align-items: center; gap: 12px; padding: 8px 0; border-bottom: 1px solid #1e293b; }
+    .pipeline-name { flex: 1; font-size: 13px; color: #e2e8f0; }
+    .pipeline-val { font-size: 13px; font-weight: 700; color: #10b981; }
+  </style>
+</head>
+<body>
+<header>
+  <div>
+    <div class="logo">🏢 EditCore Digital Enterprise Command Center</div>
+    <div class="subtitle">Empresa digital inteligente — productos, ventas, marketing, soporte, crecimiento y gobernanza</div>
+  </div>
+  <div class="header-actions">
+    <button class="btn btn-primary" onclick="generateExecutiveSnapshot()">⚡ Generar Snapshot CEO</button>
+  </div>
+</header>
+<nav>
+  <button class="active" onclick="showTab('overview', this)">🏠 Vista CEO</button>
+  <button onclick="showTab('products', this)">📦 Productos</button>
+  <button onclick="showTab('sales', this)">💰 Ventas</button>
+  <button onclick="showTab('marketing', this)">📣 Marketing</button>
+  <button onclick="showTab('support', this)">🎧 Soporte</button>
+  <button onclick="showTab('growth', this)">🚀 Crecimiento</button>
+  <button onclick="showTab('governance', this)">⚖️ Gobernanza</button>
+</nav>
+<div class="content">
+
+<!-- OVERVIEW CEO -->
+<div id="tab-overview" class="tab-panel active">
+  <div class="kpi-grid" id="kpi-grid">
+    <div class="kpi"><div class="val" id="kpi-mrr">—</div><div class="lbl">MRR Total</div><div class="sub">USD mensual</div></div>
+    <div class="kpi"><div class="val" id="kpi-users">—</div><div class="lbl">Usuarios Activos</div></div>
+    <div class="kpi"><div class="val" id="kpi-pipeline">—</div><div class="lbl">Pipeline Ventas</div><div class="sub">valor ponderado</div></div>
+    <div class="kpi"><div class="val" id="kpi-products">—</div><div class="lbl">Productos Activos</div></div>
+    <div class="kpi"><div class="val" id="kpi-tickets">—</div><div class="lbl">Tickets Abiertos</div><div class="sub" id="kpi-critical" style="color:#ef4444"></div></div>
+    <div class="kpi"><div class="val" id="kpi-campaigns">—</div><div class="lbl">Campanas Activas</div></div>
+    <div class="kpi"><div class="val" id="kpi-growth">—</div><div class="lbl">Iniciativas Crecimiento</div></div>
+    <div class="kpi"><div class="val" id="kpi-governance">—</div><div class="lbl">Decisiones Pendientes</div></div>
+  </div>
+
+  <div id="exec-snapshot-area">
+    <div style="color:#64748b;font-size:13px">Cargando ultimo snapshot ejecutivo...</div>
+  </div>
+</div>
+
+<!-- PRODUCTOS -->
+<div id="tab-products" class="tab-panel">
+  <div class="grid2">
+    <div class="card">
+      <h3>📦 Nuevo Producto</h3>
+      <div class="form-group"><label>Nombre</label><input id="p-name" placeholder="Nombre del producto" /></div>
+      <div class="form-group"><label>Descripcion</label><textarea id="p-desc" placeholder="Que hace y para quien..."></textarea></div>
+      <div class="col3">
+        <div class="form-group"><label>Categoria</label>
+          <select id="p-cat"><option value="saas">SaaS</option><option value="tool">Herramienta</option><option value="api">API</option><option value="marketplace">Marketplace</option><option value="service">Servicio</option><option value="mvp">MVP</option></select>
+        </div>
+        <div class="form-group"><label>MRR (centavos USD)</label><input id="p-mrr" type="number" placeholder="0" /></div>
+        <div class="form-group"><label>Usuarios activos</label><input id="p-users" type="number" placeholder="0" /></div>
+      </div>
+      <button class="btn btn-primary" onclick="createProduct()">Registrar Producto</button>
+      <div id="p-msg"></div>
+    </div>
+    <div class="card">
+      <h3>📊 Portafolio de Productos</h3>
+      <div class="list-area" id="products-list"><div style="color:#64748b;font-size:13px">Cargando...</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- VENTAS -->
+<div id="tab-sales" class="tab-panel">
+  <div class="grid2">
+    <div class="card">
+      <h3>💰 Nuevo Lead</h3>
+      <div class="col3">
+        <div class="form-group"><label>Nombre</label><input id="l-name" placeholder="Nombre del contacto" /></div>
+        <div class="form-group"><label>Empresa</label><input id="l-company" placeholder="Empresa" /></div>
+        <div class="form-group"><label>Email</label><input id="l-email" type="email" placeholder="email@empresa.com" /></div>
+      </div>
+      <div class="col3">
+        <div class="form-group"><label>Fuente</label>
+          <select id="l-source"><option value="organic">Organico</option><option value="referral">Referido</option><option value="inbound">Inbound</option><option value="cold">Cold outreach</option><option value="paid">Pagado</option></select>
+        </div>
+        <div class="form-group"><label>Valor est. (centavos USD)</label><input id="l-value" type="number" placeholder="100000" /></div>
+        <div class="form-group"><label>Probabilidad %</label><input id="l-prob" type="number" min="0" max="100" placeholder="50" /></div>
+      </div>
+      <div class="form-group"><label>Proxima accion</label><input id="l-action" placeholder="Enviar propuesta, llamar, demo..." /></div>
+      <button class="btn btn-primary" onclick="createLead()">Agregar Lead</button>
+      <div id="l-msg"></div>
+    </div>
+    <div class="card">
+      <h3>📈 Pipeline de Ventas</h3>
+      <div id="pipeline-summary" style="margin-bottom:12px"></div>
+      <div class="list-area" id="leads-list"><div style="color:#64748b;font-size:13px">Cargando...</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- MARKETING -->
+<div id="tab-marketing" class="tab-panel">
+  <div class="grid2">
+    <div class="card">
+      <h3>📣 Nueva Campana</h3>
+      <div class="form-group"><label>Nombre</label><input id="cam-name" placeholder="Nombre de la campana" /></div>
+      <div class="form-group"><label>Tipo</label>
+        <select id="cam-type"><option value="content">Contenido</option><option value="email">Email</option><option value="social">Social media</option><option value="paid">Pagado</option><option value="seo">SEO</option><option value="product_launch">Lanzamiento</option></select>
+      </div>
+      <div class="form-group"><label>Objetivo</label><input id="cam-obj" placeholder="Que queremos lograr..." /></div>
+      <div class="form-group"><label>Audiencia objetivo</label><input id="cam-aud" placeholder="A quien va dirigido..." /></div>
+      <div class="form-group"><label>Presupuesto (centavos USD)</label><input id="cam-budget" type="number" placeholder="0" /></div>
+      <button class="btn btn-primary" onclick="createCampaign()">Crear Campana</button>
+      <div id="cam-msg"></div>
+    </div>
+    <div class="card">
+      <h3>📊 Campanas Activas</h3>
+      <div class="list-area" id="campaigns-list"><div style="color:#64748b;font-size:13px">Cargando...</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- SOPORTE -->
+<div id="tab-support" class="tab-panel">
+  <div class="grid2">
+    <div class="card">
+      <h3>🎧 Nuevo Ticket de Soporte</h3>
+      <div class="col3">
+        <div class="form-group"><label>Cliente</label><input id="t-name" placeholder="Nombre del cliente" /></div>
+        <div class="form-group"><label>Email</label><input id="t-email" type="email" placeholder="cliente@email.com" /></div>
+        <div class="form-group"><label>Categoria</label>
+          <select id="t-cat"><option value="question">Pregunta</option><option value="bug">Bug</option><option value="feature_request">Feature</option><option value="billing">Facturacion</option><option value="account">Cuenta</option></select>
+        </div>
+      </div>
+      <div class="form-group"><label>Titulo</label><input id="t-title" placeholder="Resumen del problema" /></div>
+      <div class="form-group"><label>Descripcion</label><textarea id="t-desc" placeholder="Detalle del problema..."></textarea></div>
+      <div class="form-group"><label>Prioridad</label>
+        <select id="t-priority"><option value="low">Baja</option><option value="medium" selected>Media</option><option value="high">Alta</option><option value="critical">Critica</option></select>
+      </div>
+      <button class="btn btn-primary" onclick="createTicket()">Crear Ticket</button>
+      <div id="t-msg"></div>
+    </div>
+    <div class="card">
+      <h3>📋 Tickets de Soporte</h3>
+      <div style="display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap">
+        <button class="btn" style="font-size:11px;padding:4px 10px;background:#1e293b;color:#94a3b8" onclick="loadTickets()">Todos</button>
+        <button class="btn" style="font-size:11px;padding:4px 10px;background:#1e293b;color:#94a3b8" onclick="loadTickets('open')">Abiertos</button>
+        <button class="btn" style="font-size:11px;padding:4px 10px;background:#ef444420;color:#ef4444" onclick="loadTickets('critical')">Criticos</button>
+      </div>
+      <div class="list-area" id="tickets-list"><div style="color:#64748b;font-size:13px">Cargando...</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- CRECIMIENTO -->
+<div id="tab-growth" class="tab-panel">
+  <div class="grid2">
+    <div class="card">
+      <h3>🚀 Nueva Iniciativa de Crecimiento</h3>
+      <div class="form-group"><label>Titulo</label><input id="g-title" placeholder="Nombre de la iniciativa" /></div>
+      <div class="form-group"><label>Tipo</label>
+        <select id="g-type"><option value="acquisition">Adquisicion</option><option value="retention">Retencion</option><option value="expansion">Expansion</option><option value="monetization">Monetizacion</option><option value="market_entry">Entrada mercado</option><option value="partnership">Partnership</option></select>
+      </div>
+      <div class="form-group"><label>Descripcion</label><textarea id="g-desc" placeholder="Que hacemos y como..."></textarea></div>
+      <div class="col3">
+        <div class="form-group"><label>Metrica objetivo</label><input id="g-metric" placeholder="MRR, usuarios, NPS..." /></div>
+        <div class="form-group"><label>Valor objetivo</label><input id="g-target" placeholder="$10K, 1000 usuarios..." /></div>
+        <div class="form-group"><label>Impacto estimado</label>
+          <select id="g-impact"><option value="low">Bajo</option><option value="medium" selected>Medio</option><option value="high">Alto</option><option value="transformational">Transformacional</option></select>
+        </div>
+      </div>
+      <div class="form-group"><label>Estrategia</label><textarea id="g-strategy" placeholder="Como vamos a ejecutar esto..."></textarea></div>
+      <button class="btn btn-primary" onclick="createGrowth()">Registrar Iniciativa</button>
+      <div id="g-msg"></div>
+    </div>
+    <div class="card">
+      <h3>📊 Iniciativas de Crecimiento</h3>
+      <div class="list-area" id="growth-list"><div style="color:#64748b;font-size:13px">Cargando...</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- GOBERNANZA -->
+<div id="tab-governance" class="tab-panel">
+  <div class="grid2">
+    <div class="card">
+      <h3>⚖️ Nueva Decision de Gobernanza</h3>
+      <div class="form-group"><label>Titulo</label><input id="gov-title" placeholder="Que decision se requiere" /></div>
+      <div class="form-group"><label>Tipo</label>
+        <select id="gov-type"><option value="strategic">Estrategica</option><option value="security">Seguridad</option><option value="ethics">Etica</option><option value="risk">Riesgo</option><option value="investment">Inversion</option><option value="product">Producto</option><option value="audit">Auditoria</option></select>
+      </div>
+      <div class="form-group"><label>Descripcion</label><textarea id="gov-desc" placeholder="Contexto y detalles de la decision..."></textarea></div>
+      <div class="form-group"><label>Recomendacion IA</label><textarea id="gov-rec" placeholder="Que recomienda el agente..."></textarea></div>
+      <div class="form-group"><label>Nivel de riesgo</label>
+        <select id="gov-risk"><option value="low">Bajo</option><option value="medium" selected>Medio</option><option value="high">Alto</option><option value="critical">Critico</option></select>
+      </div>
+      <button class="btn btn-primary" onclick="createGovernance()">Registrar para Revision</button>
+      <div id="gov-msg"></div>
+    </div>
+    <div class="card">
+      <h3>📋 Decisiones Pendientes</h3>
+      <div class="list-area" id="governance-list"><div style="color:#64748b;font-size:13px">Cargando...</div></div>
+    </div>
+  </div>
+</div>
+
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script src="/assets/supabase-config.js"></script>
+<script>
+const supabase = window.supabase.createClient(window.EDITCORE_SUPABASE_URL, window.EDITCORE_SUPABASE_ANON_KEY);
+let token = '';
+
+const api = async (path, opts = {}) => {
+  const r = await fetch(path, { headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }, ...opts });
+  return r.json();
+};
+
+const stColors = { active:'bgreen', idea:'bg', beta:'byellow', scaling:'bpurple', mvp:'byellow', new:'bg', qualified:'bblue', won:'bgreen', lost:'bred', open:'byellow', resolved:'bgreen', critical:'bred', high:'bred', medium:'byellow', low:'bg', pending:'byellow', decided:'bgreen', proposed:'bg', transformational:'bpurple' };
+
+function badge(v) { return `<span class="badge ${stColors[v]||'bg'}">${v}</span>`; }
+function usd(cents) { return '$' + (cents/100).toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g,','); }
+
+function showTab(name, btn) {
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'));
+  document.getElementById('tab-' + name).classList.add('active');
+  btn.classList.add('active');
+  const loaders = { overview: () => { loadMetrics(); loadLatestSnapshot(); }, products: loadProducts, sales: loadLeads, marketing: loadCampaigns, support: loadTickets, growth: loadGrowth, governance: loadGovernance };
+  loaders[name]?.();
+}
+
+async function loadMetrics() {
+  const d = await api('/api/v1/dco/metrics');
+  if (!d.products) return;
+  document.getElementById('kpi-mrr').textContent = usd(d.products.total_mrr);
+  document.getElementById('kpi-users').textContent = d.products.total_users.toLocaleString();
+  document.getElementById('kpi-pipeline').textContent = usd(d.leads.pipeline);
+  document.getElementById('kpi-products').textContent = d.products.active;
+  document.getElementById('kpi-tickets').textContent = d.support.open;
+  if (d.support.critical > 0) document.getElementById('kpi-critical').textContent = d.support.critical + ' criticos';
+  document.getElementById('kpi-campaigns').textContent = d.campaigns.active;
+  document.getElementById('kpi-growth').textContent = d.growth.active;
+  document.getElementById('kpi-governance').textContent = d.governance.pending;
+}
+
+async function loadLatestSnapshot() {
+  const d = await api('/api/v1/dco/executive');
+  const el = document.getElementById('exec-snapshot-area');
+  if (!d.snapshots?.length) {
+    el.innerHTML = `<div class="exec-box"><div class="exec-summary" style="color:#64748b">No hay snapshot ejecutivo aun. Haz clic en "Generar Snapshot CEO" para crear el primero.</div></div>`;
+    return;
+  }
+  const s = d.snapshots[0];
+  el.innerHTML = `
+    <div class="exec-box">
+      <h2>🧠 Snapshot Ejecutivo — ${s.snapshot_date}</h2>
+      <div class="exec-summary">${s.summary}</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-bottom:16px">
+        <div class="exec-section"><h4>✅ Oportunidades</h4>${(s.opportunities||[]).map(o=>`<div class="exec-item">${o}</div>`).join('')||'<div class="exec-item" style="color:#64748b">Ninguna detectada</div>'}</div>
+        <div class="exec-section"><h4>⚠️ Riesgos</h4>${(s.risks||[]).map(r=>`<div class="exec-item" style="color:#fbbf24">${r}</div>`).join('')||'<div class="exec-item" style="color:#64748b">Sin riesgos criticos</div>'}</div>
+        <div class="exec-section"><h4>💡 Recomendaciones</h4>${(s.recommendations||[]).map(r=>`<div class="exec-item" style="color:#60a5fa">${r}</div>`).join('')}</div>
+      </div>
+      ${s.kpis ? `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px">${Object.entries(s.kpis).map(([k,v])=>`<div style="background:#1e293b;border-radius:6px;padding:10px"><div style="font-size:18px;font-weight:800;color:#60a5fa">${typeof v==='number'&&k.includes('cents')?usd(v):v}</div><div style="font-size:10px;color:#64748b;margin-top:2px">${k.replace(/_/g,' ')}</div></div>`).join('')}</div>` : ''}
+    </div>`;
+}
+
+async function generateExecutiveSnapshot() {
+  const d = await api('/api/v1/dco/executive', { method: 'POST' });
+  if (d.snapshot) { loadLatestSnapshot(); loadMetrics(); }
+  else alert(d.error || 'Error generando snapshot');
+}
+
+async function loadProducts() {
+  const d = await api('/api/v1/dco/products');
+  const el = document.getElementById('products-list');
+  if (!d.products?.length) { el.innerHTML = '<div style="color:#64748b;font-size:13px">Sin productos.</div>'; return; }
+  el.innerHTML = d.products.map(p => `
+    <div class="item">
+      <div class="item-title">${p.name}${badge(p.status)}${badge(p.category)}</div>
+      <div class="item-meta">MRR: <strong style="color:#10b981">${usd(p.mrr_usd_cents)}</strong> · Usuarios: ${p.active_users.toLocaleString()} · ${p.profitability}</div>
+    </div>`).join('');
+}
+
+async function createProduct() {
+  const body = { name: document.getElementById('p-name').value, description: document.getElementById('p-desc').value, category: document.getElementById('p-cat').value, mrr_usd_cents: +document.getElementById('p-mrr').value||0, active_users: +document.getElementById('p-users').value||0 };
+  const d = await api('/api/v1/dco/products', { method: 'POST', body: JSON.stringify(body) });
+  const el = document.getElementById('p-msg');
+  if (d.product) { el.className = 'msg mok'; el.textContent = 'Producto creado: ' + d.product.name; loadProducts(); }
+  else { el.className = 'msg merr'; el.textContent = d.error || 'Error'; }
+}
+
+async function loadLeads() {
+  const d = await api('/api/v1/dco/leads');
+  const el = document.getElementById('leads-list');
+  const sp = document.getElementById('pipeline-summary');
+  if (d.summary) sp.innerHTML = `<div style="display:flex;gap:16px;font-size:13px"><span>Pipeline: <strong style="color:#10b981">${usd(d.summary.pipeline_value_usd_cents)}</strong></span><span>Cerrado: <strong style="color:#60a5fa">${usd(d.summary.won_usd_cents)}</strong></span><span>Total: ${d.summary.total}</span></div>`;
+  if (!d.leads?.length) { el.innerHTML = '<div style="color:#64748b;font-size:13px">Sin leads.</div>'; return; }
+  el.innerHTML = d.leads.map(l => `
+    <div class="item">
+      <div class="item-title">${l.name}${l.company?` — ${l.company}`:''}${badge(l.status)}</div>
+      <div class="item-meta">Valor: <strong style="color:#10b981">${usd(l.estimated_value_usd_cents)}</strong> · Prob: ${l.probability}% · ${l.source}${l.next_action?` · ${l.next_action}`:''}</div>
+    </div>`).join('');
+}
+
+async function createLead() {
+  const body = { name: document.getElementById('l-name').value, company: document.getElementById('l-company').value, email: document.getElementById('l-email').value, source: document.getElementById('l-source').value, estimated_value_usd_cents: +document.getElementById('l-value').value||0, probability: +document.getElementById('l-prob').value||50, next_action: document.getElementById('l-action').value };
+  const d = await api('/api/v1/dco/leads', { method: 'POST', body: JSON.stringify(body) });
+  const el = document.getElementById('l-msg');
+  if (d.lead) { el.className = 'msg mok'; el.textContent = 'Lead agregado: ' + d.lead.name; loadLeads(); }
+  else { el.className = 'msg merr'; el.textContent = d.error || 'Error'; }
+}
+
+async function loadCampaigns() {
+  const d = await api('/api/v1/dco/campaigns');
+  const el = document.getElementById('campaigns-list');
+  if (!d.campaigns?.length) { el.innerHTML = '<div style="color:#64748b;font-size:13px">Sin campanas.</div>'; return; }
+  el.innerHTML = d.campaigns.map(c => `
+    <div class="item">
+      <div class="item-title">${c.name}${badge(c.status)}${badge(c.campaign_type)}</div>
+      <div class="item-meta">${c.objective} · Presupuesto: ${usd(c.budget_usd_cents)} · Gastado: ${usd(c.spent_usd_cents)}</div>
+    </div>`).join('');
+}
+
+async function createCampaign() {
+  const body = { name: document.getElementById('cam-name').value, campaign_type: document.getElementById('cam-type').value, objective: document.getElementById('cam-obj').value, target_audience: document.getElementById('cam-aud').value, budget_usd_cents: +document.getElementById('cam-budget').value||0 };
+  const d = await api('/api/v1/dco/campaigns', { method: 'POST', body: JSON.stringify(body) });
+  const el = document.getElementById('cam-msg');
+  if (d.campaign) { el.className = 'msg mok'; el.textContent = 'Campana creada: ' + d.campaign.name; loadCampaigns(); }
+  else { el.className = 'msg merr'; el.textContent = d.error || 'Error'; }
+}
+
+async function loadTickets(filter) {
+  const url = filter === 'critical' ? '/api/v1/dco/support?priority=critical' : filter ? '/api/v1/dco/support?status=' + filter : '/api/v1/dco/support';
+  const d = await api(url);
+  const el = document.getElementById('tickets-list');
+  if (!d.tickets?.length) { el.innerHTML = '<div style="color:#64748b;font-size:13px">Sin tickets.</div>'; return; }
+  el.innerHTML = d.tickets.map(t => `
+    <div class="item" style="border-left-color:${t.priority==='critical'?'#ef4444':t.priority==='high'?'#f59e0b':'#3b82f6'}">
+      <div class="item-title">${t.title}${badge(t.priority)}${badge(t.status)}</div>
+      <div class="item-meta">${t.customer_name} · ${t.category} · Agente: ${t.assigned_agent||'—'}</div>
+    </div>`).join('');
+}
+
+async function createTicket() {
+  const body = { customer_name: document.getElementById('t-name').value, customer_email: document.getElementById('t-email').value, title: document.getElementById('t-title').value, description: document.getElementById('t-desc').value, category: document.getElementById('t-cat').value, priority: document.getElementById('t-priority').value };
+  const d = await api('/api/v1/dco/support', { method: 'POST', body: JSON.stringify(body) });
+  const el = document.getElementById('t-msg');
+  if (d.ticket) { el.className = 'msg mok'; el.textContent = 'Ticket creado → Agente: ' + d.ticket.assigned_agent; loadTickets(); }
+  else { el.className = 'msg merr'; el.textContent = d.error || 'Error'; }
+}
+
+async function loadGrowth() {
+  const d = await api('/api/v1/dco/growth');
+  const el = document.getElementById('growth-list');
+  if (!d.initiatives?.length) { el.innerHTML = '<div style="color:#64748b;font-size:13px">Sin iniciativas.</div>'; return; }
+  el.innerHTML = d.initiatives.map(g => `
+    <div class="item">
+      <div class="item-title">${g.title}${badge(g.estimated_impact)}${badge(g.status)}</div>
+      <div class="item-meta">${g.initiative_type} · Metrica: ${g.target_metric} → ${g.target_value}${g.current_value?` (actual: ${g.current_value})`:''}</div>
+    </div>`).join('');
+}
+
+async function createGrowth() {
+  const body = { title: document.getElementById('g-title').value, initiative_type: document.getElementById('g-type').value, description: document.getElementById('g-desc').value, target_metric: document.getElementById('g-metric').value, target_value: document.getElementById('g-target').value, estimated_impact: document.getElementById('g-impact').value, strategy: document.getElementById('g-strategy').value };
+  const d = await api('/api/v1/dco/growth', { method: 'POST', body: JSON.stringify(body) });
+  const el = document.getElementById('g-msg');
+  if (d.initiative) { el.className = 'msg mok'; el.textContent = 'Iniciativa creada: ' + d.initiative.title; loadGrowth(); }
+  else { el.className = 'msg merr'; el.textContent = d.error || 'Error'; }
+}
+
+async function loadGovernance() {
+  const d = await api('/api/v1/dco/governance');
+  const el = document.getElementById('governance-list');
+  if (!d.decisions?.length) { el.innerHTML = '<div style="color:#64748b;font-size:13px">Sin decisiones pendientes.</div>'; return; }
+  el.innerHTML = d.decisions.map(g => `
+    <div class="item" style="border-left-color:${g.risk_level==='critical'?'#ef4444':g.risk_level==='high'?'#f59e0b':'#3b82f6'}">
+      <div class="item-title">${g.title}${badge(g.risk_level)}${badge(g.status)}</div>
+      <div class="item-meta">${g.decision_type} · ${g.requires_human?'Requiere aprobacion humana':''}</div>
+      ${g.recommendation?`<div class="item-meta" style="color:#60a5fa;margin-top:4px">IA recomienda: ${g.recommendation.slice(0,80)}</div>`:''}
+    </div>`).join('');
+}
+
+async function createGovernance() {
+  const body = { title: document.getElementById('gov-title').value, decision_type: document.getElementById('gov-type').value, description: document.getElementById('gov-desc').value, recommendation: document.getElementById('gov-rec').value, risk_level: document.getElementById('gov-risk').value };
+  const d = await api('/api/v1/dco/governance', { method: 'POST', body: JSON.stringify(body) });
+  const el = document.getElementById('gov-msg');
+  if (d.decision) { el.className = 'msg mok'; el.textContent = 'Decision registrada para revision humana.'; loadGovernance(); }
+  else { el.className = 'msg merr'; el.textContent = d.error || 'Error'; }
+}
+
+async function init() {
+  const { data } = await supabase.auth.getSession();
+  if (!data.session) {
+    document.querySelector('.content').innerHTML = '<div class="card">No has iniciado sesión. <a href="/login.html" style="color:#60a5fa">Ir a iniciar sesión</a></div>';
+    return;
+  }
+  token = data.session.access_token;
+  loadMetrics();
+  loadLatestSnapshot();
+}
+init();
+</script>
+  <script defer src="/_vercel/insights/script.js"></script>
+  <script defer src="/_vercel/speed-insights/script.js"></script>
+</body>
+</html>

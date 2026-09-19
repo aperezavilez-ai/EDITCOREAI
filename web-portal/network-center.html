@@ -1,0 +1,541 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>EditCore — AI Network Center</title>
+  <style>
+    :root {
+      --cyan: #00e5ff; --blue: #2979ff; --green: #00e676;
+      --orange: #ff9100; --red: #ff1744; --purple: #d500f9;
+      --teal: #1de9b6;
+      --bg: #060b14; --surface: #0d1625; --border: rgba(0,229,255,0.15);
+      --text: #e8f4f8; --muted: #7a9ab0;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'SF Mono','Fira Code',monospace;
+      background: var(--bg); color: var(--text); min-height: 100vh;
+    }
+    body::before {
+      content: ''; position: fixed; inset: 0; z-index: 0; pointer-events: none;
+      background:
+        radial-gradient(ellipse 70% 50% at 15% 25%, rgba(0,229,255,0.06) 0%, transparent 60%),
+        radial-gradient(ellipse 60% 40% at 85% 75%, rgba(29,233,182,0.06) 0%, transparent 60%),
+        repeating-linear-gradient(0deg, transparent, transparent 39px, rgba(0,229,255,0.03) 40px),
+        repeating-linear-gradient(90deg, transparent, transparent 39px, rgba(0,229,255,0.03) 40px);
+    }
+    header {
+      position: relative; z-index: 1; border-bottom: 1px solid var(--border);
+      padding: 1rem 2rem; display: flex; align-items: center; justify-content: space-between;
+      background: rgba(6,11,20,0.9); backdrop-filter: blur(8px);
+    }
+    .logo { display: flex; align-items: center; gap: 0.75rem; }
+    .logo-icon { width: 32px; height: 32px; background: linear-gradient(135deg, var(--teal), var(--blue)); border-radius: 8px; display: flex; align-items: center; justify-content: center; font-weight: 900; font-size: 16px; }
+    .logo-text { font-size: 1.1rem; font-weight: 700; color: var(--teal); letter-spacing: 0.05em; }
+    .logo-sub { font-size: 0.65rem; color: var(--muted); letter-spacing: 0.15em; text-transform: uppercase; }
+    .pulse { width: 8px; height: 8px; border-radius: 50%; background: var(--teal); animation: pulse 2s infinite; display: inline-block; margin-right: 6px; }
+    @keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:0.5;transform:scale(1.3)} }
+
+    main { position: relative; z-index: 1; padding: 2rem; max-width: 1400px; margin: 0 auto; }
+    h1 { font-size: 1.6rem; color: var(--teal); margin-bottom: 0.25rem; }
+    .subtitle { color: var(--muted); font-size: 0.8rem; margin-bottom: 2rem; }
+
+    .metrics-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px,1fr)); gap: 1rem; margin-bottom: 2rem; }
+    .metric-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 1.25rem; position: relative; overflow: hidden; }
+    .metric-card::before { content:''; position:absolute; top:0; left:0; right:0; height:2px; }
+    .metric-card.teal::before  { background: linear-gradient(90deg, var(--teal), transparent); }
+    .metric-card.cyan::before  { background: linear-gradient(90deg, var(--cyan), transparent); }
+    .metric-card.green::before { background: linear-gradient(90deg, var(--green), transparent); }
+    .metric-card.blue::before  { background: linear-gradient(90deg, var(--blue), transparent); }
+    .metric-card.purple::before{ background: linear-gradient(90deg, var(--purple), transparent); }
+    .metric-card.orange::before{ background: linear-gradient(90deg, var(--orange), transparent); }
+    .metric-label { font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.12em; color: var(--muted); margin-bottom: 0.5rem; }
+    .metric-value { font-size: 2rem; font-weight: 700; line-height: 1; margin-bottom: 0.25rem; }
+    .metric-value.teal   { color: var(--teal); }
+    .metric-value.cyan   { color: var(--cyan); }
+    .metric-value.green  { color: var(--green); }
+    .metric-value.blue   { color: var(--blue); }
+    .metric-value.purple { color: var(--purple); }
+    .metric-value.orange { color: var(--orange); }
+    .metric-desc { font-size: 0.7rem; color: var(--muted); }
+
+    .tabs { display: flex; gap: 0.25rem; margin-bottom: 1.5rem; border-bottom: 1px solid var(--border); }
+    .tab { padding: 0.6rem 1.2rem; font-family: inherit; font-size: 0.8rem; background: none; border: none; color: var(--muted); cursor: pointer; border-bottom: 2px solid transparent; transition: all 0.2s; }
+    .tab.active { color: var(--teal); border-bottom-color: var(--teal); }
+    .tab-content { display: none; }
+    .tab-content.active { display: block; }
+
+    .panel { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; margin-bottom: 1.5rem; }
+    .panel-header { padding: 0.75rem 1.25rem; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; }
+    .panel-title { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--teal); font-weight: 700; }
+    .panel-body { padding: 1.25rem; }
+
+    label { font-size: 0.75rem; color: var(--muted); display: block; margin-bottom: 0.3rem; }
+    input, textarea, select { background: rgba(0,0,0,0.4); border: 1px solid var(--border); border-radius: 8px; color: var(--text); font-family: inherit; font-size: 0.85rem; padding: 0.6rem 0.8rem; width: 100%; }
+    input:focus, textarea:focus, select:focus { outline: none; border-color: var(--teal); box-shadow: 0 0 0 2px rgba(29,233,182,0.15); }
+    textarea { resize: vertical; }
+
+    .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; margin-bottom: 0.75rem; }
+    .form-group { margin-bottom: 0.75rem; }
+    .btn { padding: 0.6rem 1.2rem; border-radius: 8px; border: none; font-family: inherit; font-size: 0.85rem; font-weight: 600; cursor: pointer; transition: all 0.2s; }
+    .btn-primary { background: linear-gradient(135deg, var(--teal), var(--blue)); color: #000; }
+    .btn-primary:hover { opacity: 0.85; transform: translateY(-1px); }
+    .btn-sm { font-size: 0.75rem; padding: 0.4rem 0.8rem; }
+
+    .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; }
+    @media (max-width: 900px) { .two-col { grid-template-columns: 1fr; } .form-row { grid-template-columns: 1fr; } }
+
+    .badge { display: inline-block; padding: 0.15rem 0.5rem; border-radius: 20px; font-size: 0.65rem; font-weight: 700; text-transform: uppercase; }
+    .badge-development { background: rgba(0,229,255,0.15); color: var(--cyan); }
+    .badge-business     { background: rgba(41,121,255,0.2);  color: var(--blue); }
+    .badge-research     { background: rgba(213,0,249,0.2);   color: var(--purple); }
+    .badge-quality      { background: rgba(0,230,118,0.2);   color: var(--green); }
+    .badge-enterprise   { background: rgba(255,145,0,0.2);   color: var(--orange); }
+    .badge-active       { background: rgba(29,233,182,0.2);  color: var(--teal); }
+    .badge-paused       { background: rgba(255,145,0,0.2);   color: var(--orange); }
+    .badge-approved     { background: rgba(0,230,118,0.2);   color: var(--green); }
+    .badge-rejected     { background: rgba(255,23,68,0.2);   color: var(--red); }
+
+    .list-item { border-bottom: 1px solid var(--border); padding: 0.75rem 0; }
+    .list-item:last-child { border-bottom: none; }
+    .item-title { font-size: 0.85rem; font-weight: 700; margin-bottom: 0.3rem; }
+    .item-meta { font-size: 0.7rem; color: var(--muted); display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
+
+    .member-tag { display: inline-flex; align-items: center; gap: 0.3rem; background: rgba(29,233,182,0.1); border: 1px solid rgba(29,233,182,0.2); border-radius: 6px; padding: 0.2rem 0.5rem; font-size: 0.7rem; color: var(--teal); margin: 0.15rem; }
+
+    .knowledge-node { padding: 0.6rem; border: 1px solid var(--border); border-radius: 8px; margin-bottom: 0.5rem; }
+    .node-type-project    { border-left: 3px solid var(--cyan); }
+    .node-type-solution   { border-left: 3px solid var(--green); }
+    .node-type-component  { border-left: 3px solid var(--blue); }
+    .node-type-pattern    { border-left: 3px solid var(--purple); }
+    .node-type-experience { border-left: 3px solid var(--orange); }
+    .node-type-technology { border-left: 3px solid var(--teal); }
+    .node-type-research   { border-left: 3px solid var(--red); }
+
+    .msg-item { padding: 0.5rem 0.75rem; border-radius: 8px; margin-bottom: 0.5rem; background: rgba(0,0,0,0.3); font-size: 0.8rem; }
+    .msg-sender { color: var(--teal); font-weight: 700; }
+    .msg-receiver { color: var(--cyan); }
+    .msg-arrow { color: var(--muted); }
+
+    .score-bar { height: 6px; border-radius: 3px; background: rgba(255,255,255,0.1); overflow: hidden; margin-top: 4px; }
+    .score-fill { height: 100%; border-radius: 3px; transition: width 0.3s; }
+
+    .empty { text-align: center; color: var(--muted); font-size: 0.8rem; padding: 2rem; }
+    .error-msg { background: rgba(255,23,68,0.1); border: 1px solid rgba(255,23,68,0.3); border-radius: 8px; padding: 0.75rem 1rem; color: var(--red); font-size: 0.8rem; margin-top: 0.75rem; }
+    .success-msg { background: rgba(0,230,118,0.1); border: 1px solid rgba(0,230,118,0.3); border-radius: 8px; padding: 0.75rem 1rem; color: var(--green); font-size: 0.8rem; margin-top: 0.75rem; }
+    .loading { color: var(--muted); font-size: 0.8rem; text-align: center; padding: 1rem; }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="logo">
+      <div class="logo-icon">N</div>
+      <div>
+        <div class="logo-text">EditCore</div>
+        <div class="logo-sub">AI Network Center</div>
+      </div>
+    </div>
+    <div style="font-size:0.75rem;color:var(--teal);">
+      <span class="pulse"></span><span id="statusLabel">Conectando...</span>
+    </div>
+  </header>
+
+  <main>
+    <h1>Global AI Intelligence Network</h1>
+    <p class="subtitle">Red de agentes IA distribuidos — equipos, comunicacion, conocimiento global y calidad coordinada.</p>
+
+    <div class="metrics-grid">
+      <div class="metric-card teal"><div class="metric-label">Equipos activos</div><div class="metric-value teal" id="mTeams">—</div><div class="metric-desc">Agent teams</div></div>
+      <div class="metric-card cyan"><div class="metric-label">Mensajes (24h)</div><div class="metric-value cyan" id="mMsgs">—</div><div class="metric-desc">Comunicaciones</div></div>
+      <div class="metric-card purple"><div class="metric-label">Nodos knowledge</div><div class="metric-value purple" id="mNodes">—</div><div class="metric-desc">Grafo global</div></div>
+      <div class="metric-card blue"><div class="metric-label">Conexiones</div><div class="metric-value blue" id="mEdges">—</div><div class="metric-desc">Relaciones</div></div>
+      <div class="metric-card green"><div class="metric-label">Calidad media</div><div class="metric-value green" id="mQuality">—</div><div class="metric-desc">Score promedio</div></div>
+      <div class="metric-card orange"><div class="metric-label">Reportes (24h)</div><div class="metric-value orange" id="mResearch">—</div><div class="metric-desc">Investigacion</div></div>
+    </div>
+
+    <div class="tabs">
+      <button class="tab active" onclick="switchTab('teams')">Equipos</button>
+      <button class="tab" onclick="switchTab('messages')">Comunicacion</button>
+      <button class="tab" onclick="switchTab('knowledge')">Knowledge Graph</button>
+      <button class="tab" onclick="switchTab('supervisor')">Supervisor</button>
+      <button class="tab" onclick="switchTab('quality')">Calidad</button>
+      <button class="tab" onclick="switchTab('research')">Investigacion</button>
+    </div>
+
+    <!-- EQUIPOS -->
+    <div id="tab-teams" class="tab-content active">
+      <div class="two-col">
+        <div class="panel">
+          <div class="panel-header"><span class="panel-title">Crear Equipo</span></div>
+          <div class="panel-body">
+            <div class="form-group"><label>Nombre del equipo</label><input id="teamName" placeholder="Mi Equipo de Desarrollo" /></div>
+            <div class="form-row">
+              <div class="form-group"><label>Tipo</label>
+                <select id="teamType">
+                  <option value="development">Desarrollo</option>
+                  <option value="business">Negocio</option>
+                  <option value="research">Investigacion</option>
+                  <option value="quality">Calidad</option>
+                  <option value="enterprise">Enterprise</option>
+                </select>
+              </div>
+              <div class="form-group"><label>Descripcion</label><input id="teamDesc" placeholder="Opcional" /></div>
+            </div>
+            <button class="btn btn-primary" onclick="createTeam()">Crear Equipo</button>
+            <div id="teamResult"></div>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-header"><span class="panel-title">Mis Equipos</span><button class="btn btn-primary btn-sm" onclick="loadTeams()">Actualizar</button></div>
+          <div class="panel-body" id="teamsList"><div class="loading">Cargando...</div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- COMUNICACION -->
+    <div id="tab-messages" class="tab-content">
+      <div class="two-col">
+        <div class="panel">
+          <div class="panel-header"><span class="panel-title">Enviar Mensaje</span></div>
+          <div class="panel-body">
+            <div class="form-row">
+              <div class="form-group"><label>Agente emisor</label><input id="msgSender" placeholder="enterprise-architect" /></div>
+              <div class="form-group"><label>Agente receptor</label><input id="msgReceiver" placeholder="saas-builder" /></div>
+            </div>
+            <div class="form-row">
+              <div class="form-group"><label>Tipo</label>
+                <select id="msgType">
+                  <option value="request">Solicitud</option>
+                  <option value="response">Respuesta</option>
+                  <option value="transfer">Transferencia</option>
+                  <option value="validate">Validacion</option>
+                  <option value="broadcast">Broadcast</option>
+                  <option value="escalate">Escalacion</option>
+                </select>
+              </div>
+              <div class="form-group"><label>Asunto</label><input id="msgSubject" placeholder="Revision de arquitectura" /></div>
+            </div>
+            <div class="form-group"><label>Contenido (JSON)</label><textarea id="msgContent" rows="3" placeholder='{"action":"review","target":"api/v1/me.ts"}'></textarea></div>
+            <button class="btn btn-primary" onclick="sendMessage()">Enviar</button>
+            <div id="msgResult"></div>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-header"><span class="panel-title">Mensajes recientes</span><button class="btn btn-primary btn-sm" onclick="loadMessages()">Actualizar</button></div>
+          <div class="panel-body" id="msgList"><div class="loading">Cargando...</div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- KNOWLEDGE GRAPH -->
+    <div id="tab-knowledge" class="tab-content">
+      <div class="two-col">
+        <div class="panel">
+          <div class="panel-header"><span class="panel-title">Agregar Nodo</span></div>
+          <div class="panel-body">
+            <div class="form-row">
+              <div class="form-group"><label>Tipo</label>
+                <select id="nodeType">
+                  <option value="project">Proyecto</option>
+                  <option value="solution">Solucion</option>
+                  <option value="component">Componente</option>
+                  <option value="pattern">Patron</option>
+                  <option value="experience">Experiencia</option>
+                  <option value="technology">Tecnologia</option>
+                  <option value="research">Investigacion</option>
+                </select>
+              </div>
+              <div class="form-group"><label>Tags (coma)</label><input id="nodeTags" placeholder="auth, supabase, jwt" /></div>
+            </div>
+            <div class="form-group"><label>Titulo</label><input id="nodeTitle" placeholder="Patron de autenticacion JWT con Supabase" /></div>
+            <div class="form-group"><label>Resumen</label><textarea id="nodeSummary" rows="2" placeholder="Descripcion breve..."></textarea></div>
+            <div class="form-row">
+              <div class="form-group"><label>Confianza (0-100)</label><input type="number" id="nodeConfidence" value="80" min="0" max="100" /></div>
+              <div class="form-group"><label>Publico</label><select id="nodePublic"><option value="false">Privado</option><option value="true">Publico</option></select></div>
+            </div>
+            <button class="btn btn-primary" onclick="addNode()">Agregar al Grafo</button>
+            <div id="nodeResult"></div>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-header"><span class="panel-title">Knowledge Graph</span><button class="btn btn-primary btn-sm" onclick="loadNodes()">Actualizar</button></div>
+          <div class="panel-body" id="nodeList"><div class="loading">Cargando...</div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- SUPERVISOR -->
+    <div id="tab-supervisor" class="tab-content">
+      <div class="panel">
+        <div class="panel-header"><span class="panel-title">Master Supervisor Agent</span></div>
+        <div class="panel-body">
+          <div class="form-row">
+            <div class="form-group"><label>Objetivo</label><input id="supervisorGoal" placeholder="Crear API REST con autenticacion y rate limiting" /></div>
+            <div class="form-group"><label>Tipo de decision</label>
+              <select id="supervisorType">
+                <option value="routing">Enrutamiento de tareas</option>
+                <option value="conflict">Resolver conflicto</option>
+                <option value="optimization">Optimizar distribucion</option>
+                <option value="escalation">Escalacion</option>
+              </select>
+            </div>
+          </div>
+          <button class="btn btn-primary" onclick="runSupervisor()">Ejecutar Supervisor</button>
+          <div id="supervisorResult" style="margin-top:1rem;"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- CALIDAD -->
+    <div id="tab-quality" class="tab-content">
+      <div class="two-col">
+        <div class="panel">
+          <div class="panel-header"><span class="panel-title">Nueva Revision de Calidad</span></div>
+          <div class="panel-body">
+            <div class="form-group"><label>Agente revisor</label><input id="qAgent" placeholder="test-factory" /></div>
+            <p style="font-size:0.75rem;color:var(--muted);margin-bottom:0.5rem;">Puntajes por dimension (0-100):</p>
+            <div class="form-row">
+              <div class="form-group"><label>Calidad de codigo</label><input type="number" id="qCode" value="80" min="0" max="100" /></div>
+              <div class="form-group"><label>Seguridad</label><input type="number" id="qSec" value="80" min="0" max="100" /></div>
+            </div>
+            <div class="form-row">
+              <div class="form-group"><label>Arquitectura</label><input type="number" id="qArch" value="80" min="0" max="100" /></div>
+              <div class="form-group"><label>Rendimiento</label><input type="number" id="qPerf" value="80" min="0" max="100" /></div>
+            </div>
+            <div class="form-group"><label>UX</label><input type="number" id="qUX" value="80" min="0" max="100" /></div>
+            <div class="form-group"><label>Notas</label><textarea id="qNotes" rows="2" placeholder="Observaciones..."></textarea></div>
+            <button class="btn btn-primary" onclick="createReview()">Crear Revision</button>
+            <div id="qualityResult"></div>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-header"><span class="panel-title">Revisiones recientes</span><button class="btn btn-primary btn-sm" onclick="loadQuality()">Actualizar</button></div>
+          <div class="panel-body" id="qualityList"><div class="loading">Cargando...</div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- INVESTIGACION -->
+    <div id="tab-research" class="tab-content">
+      <div class="two-col">
+        <div class="panel">
+          <div class="panel-header"><span class="panel-title">Nuevo Reporte de Investigacion</span></div>
+          <div class="panel-body">
+            <div class="form-group"><label>Titulo</label><input id="rTitle" placeholder="Estado del arte: LLMs en 2026" /></div>
+            <div class="form-row">
+              <div class="form-group"><label>Tema</label><input id="rTopic" placeholder="LLMs, AI, arquitectura" /></div>
+              <div class="form-group"><label>Tags (coma)</label><input id="rTags" placeholder="ai, llm, 2026" /></div>
+            </div>
+            <div class="form-group"><label>Hallazgos</label><textarea id="rFindings" rows="4" placeholder="Descripcion de los hallazgos de investigacion..."></textarea></div>
+            <div class="form-row">
+              <div class="form-group"><label>Agente autor</label><input id="rAgent" placeholder="ai-architect" /></div>
+              <div class="form-group"><label>Score calidad (0-100)</label><input type="number" id="rScore" value="75" min="0" max="100" /></div>
+            </div>
+            <button class="btn btn-primary" onclick="createResearch()">Publicar Reporte</button>
+            <div id="researchResult"></div>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-header"><span class="panel-title">Reportes recientes</span><button class="btn btn-primary btn-sm" onclick="loadResearch()">Actualizar</button></div>
+          <div class="panel-body" id="researchList"><div class="loading">Cargando...</div></div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+  <script src="/assets/supabase-config.js"></script>
+  <script>
+    const API = '';
+    const supabase = window.supabase.createClient(window.EDITCORE_SUPABASE_URL, window.EDITCORE_SUPABASE_ANON_KEY);
+    let session = null;
+    function getToken() { return session?.access_token; }
+    function apiFetch(path, opts = {}) {
+      return fetch(API + path, { ...opts, headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${getToken()}`, ...(opts.headers || {}) } });
+    }
+    function switchTab(name) {
+      document.querySelectorAll('.tab').forEach((t,i) => t.classList.toggle('active', ['teams','messages','knowledge','supervisor','quality','research'][i] === name));
+      document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+      document.getElementById('tab-' + name).classList.add('active');
+    }
+
+    async function loadMetrics() {
+      const r = await apiFetch('/api/v1/network/metrics');
+      if (!r.ok) { document.getElementById('statusLabel').textContent = 'Sin sesion'; return; }
+      document.getElementById('statusLabel').textContent = 'Red activa';
+      const d = await r.json();
+      document.getElementById('mTeams').textContent = d.teams?.active ?? 0;
+      document.getElementById('mMsgs').textContent = d.messages?.total ?? 0;
+      document.getElementById('mNodes').textContent = d.knowledge?.nodes?.total ?? 0;
+      document.getElementById('mEdges').textContent = d.knowledge?.edges ?? 0;
+      document.getElementById('mQuality').textContent = d.quality?.avg_score ?? 0;
+      document.getElementById('mResearch').textContent = d.research?.reports_24h ?? 0;
+    }
+
+    async function loadTeams() {
+      const el = document.getElementById('teamsList'); el.innerHTML = '<div class="loading">Cargando...</div>';
+      const r = await apiFetch('/api/v1/network/teams');
+      if (!r.ok) { el.innerHTML = '<div class="empty">Sin sesion</div>'; return; }
+      const { teams } = await r.json();
+      if (!teams?.length) { el.innerHTML = '<div class="empty">Sin equipos aun.</div>'; return; }
+      el.innerHTML = teams.map(t => `
+        <div class="list-item">
+          <div class="item-title">${t.name} <span class="badge badge-${t.team_type}">${t.team_type}</span> <span class="badge badge-${t.status}">${t.status}</span></div>
+          <div style="margin:0.4rem 0;">${(t.members||[]).map(m => `<span class="member-tag">@${m.agent} <span style="color:var(--muted)">${m.role}</span></span>`).join('')}</div>
+          <div class="item-meta"><span>${new Date(t.created_at).toLocaleDateString('es-MX')}</span></div>
+        </div>`).join('');
+    }
+
+    async function createTeam() {
+      const name = document.getElementById('teamName').value.trim();
+      if (!name) return;
+      const r = await apiFetch('/api/v1/network/teams', { method: 'POST', body: JSON.stringify({ name, team_type: document.getElementById('teamType').value, description: document.getElementById('teamDesc').value }) });
+      const data = await r.json();
+      document.getElementById('teamResult').innerHTML = r.ok ? `<div class="success-msg">Equipo creado: ${data.team?.name}</div>` : `<div class="error-msg">${data.error}</div>`;
+      if (r.ok) { loadTeams(); loadMetrics(); }
+    }
+
+    async function loadMessages() {
+      const el = document.getElementById('msgList'); el.innerHTML = '<div class="loading">Cargando...</div>';
+      const r = await apiFetch('/api/v1/network/messages');
+      if (!r.ok) { el.innerHTML = '<div class="empty">Sin sesion</div>'; return; }
+      const { messages } = await r.json();
+      if (!messages?.length) { el.innerHTML = '<div class="empty">Sin mensajes aun.</div>'; return; }
+      el.innerHTML = messages.slice(-20).reverse().map(m => `
+        <div class="msg-item">
+          <span class="msg-sender">@${m.sender_agent}</span>
+          <span class="msg-arrow"> → </span>
+          <span class="msg-receiver">@${m.receiver_agent||'broadcast'}</span>
+          <span class="badge badge-${m.msg_type}" style="margin-left:0.4rem;">${m.msg_type}</span>
+          ${m.subject ? `<div style="color:var(--muted);font-size:0.7rem;margin-top:0.2rem;">${m.subject}</div>` : ''}
+        </div>`).join('');
+    }
+
+    async function sendMessage() {
+      let content = {};
+      try { content = JSON.parse(document.getElementById('msgContent').value || '{}'); } catch(e) { content = { text: document.getElementById('msgContent').value }; }
+      const r = await apiFetch('/api/v1/network/messages', { method: 'POST', body: JSON.stringify({ sender_agent: document.getElementById('msgSender').value, receiver_agent: document.getElementById('msgReceiver').value, msg_type: document.getElementById('msgType').value, subject: document.getElementById('msgSubject').value, content }) });
+      const data = await r.json();
+      document.getElementById('msgResult').innerHTML = r.ok ? `<div class="success-msg">Mensaje enviado — thread: ${data.message?.thread_id?.slice(0,8)}...</div>` : `<div class="error-msg">${data.error}</div>`;
+      if (r.ok) { loadMessages(); loadMetrics(); }
+    }
+
+    async function loadNodes() {
+      const el = document.getElementById('nodeList'); el.innerHTML = '<div class="loading">Cargando...</div>';
+      const r = await apiFetch('/api/v1/network/knowledge');
+      if (!r.ok) { el.innerHTML = '<div class="empty">Sin sesion</div>'; return; }
+      const { nodes } = await r.json();
+      if (!nodes?.length) { el.innerHTML = '<div class="empty">Sin nodos aun.</div>'; return; }
+      el.innerHTML = nodes.map(n => `
+        <div class="knowledge-node node-type-${n.node_type}">
+          <div style="font-size:0.8rem;font-weight:700;">${n.title}</div>
+          <div class="item-meta">
+            <span class="badge badge-${n.node_type==='project'?'development':n.node_type==='technology'?'enterprise':'research'}">${n.node_type}</span>
+            <span>confianza: ${n.confidence}%</span>
+            ${n.tags?.length ? `<span>${n.tags.join(', ')}</span>` : ''}
+          </div>
+          <div class="score-bar" style="margin-top:4px;"><div class="score-fill" style="width:${n.confidence}%;background:linear-gradient(90deg,var(--teal),var(--blue));"></div></div>
+        </div>`).join('');
+    }
+
+    async function addNode() {
+      const title = document.getElementById('nodeTitle').value.trim();
+      if (!title) return;
+      const tags = document.getElementById('nodeTags').value.split(',').map(t => t.trim()).filter(Boolean);
+      const r = await apiFetch('/api/v1/network/knowledge', { method: 'POST', body: JSON.stringify({ node_type: document.getElementById('nodeType').value, title, summary: document.getElementById('nodeSummary').value, tags, confidence: parseInt(document.getElementById('nodeConfidence').value), is_public: document.getElementById('nodePublic').value === 'true' }) });
+      const data = await r.json();
+      document.getElementById('nodeResult').innerHTML = r.ok ? `<div class="success-msg">Nodo agregado al grafo.</div>` : `<div class="error-msg">${data.error}</div>`;
+      if (r.ok) { loadNodes(); loadMetrics(); }
+    }
+
+    async function runSupervisor() {
+      const goal = document.getElementById('supervisorGoal').value.trim();
+      if (!goal) return;
+      const r = await apiFetch('/api/v1/network/supervisor', { method: 'POST', body: JSON.stringify({ goal, decision_type: document.getElementById('supervisorType').value }) });
+      const data = await r.json();
+      const el = document.getElementById('supervisorResult');
+      if (!r.ok) { el.innerHTML = `<div class="error-msg">${data.error}</div>`; return; }
+      const d = data.supervisor_decision;
+      el.innerHTML = `<div style="background:rgba(0,0,0,0.4);border:1px solid var(--border);border-radius:8px;padding:1rem;font-size:0.78rem;">
+        <div style="color:var(--teal);font-weight:700;margin-bottom:0.5rem;">Decision del Supervisor</div>
+        <div style="color:var(--muted);margin-bottom:0.75rem;">${d.rationale}</div>
+        <pre style="color:var(--text);font-size:0.72rem;overflow-x:auto;">${JSON.stringify(d.decision, null, 2)}</pre>
+      </div>`;
+    }
+
+    async function loadQuality() {
+      const el = document.getElementById('qualityList'); el.innerHTML = '<div class="loading">Cargando...</div>';
+      const r = await apiFetch('/api/v1/network/quality');
+      if (!r.ok) { el.innerHTML = '<div class="empty">Sin sesion</div>'; return; }
+      const { reviews } = await r.json();
+      if (!reviews?.length) { el.innerHTML = '<div class="empty">Sin revisiones aun.</div>'; return; }
+      el.innerHTML = reviews.map(rv => `
+        <div class="list-item">
+          <div class="item-title">@${rv.reviewer_agent} <span class="badge badge-${rv.approved?'approved':'rejected'}">${rv.approved?'Aprobado':'Rechazado'}</span></div>
+          <div class="item-meta"><span style="color:${rv.overall_score>=70?'var(--green)':'var(--red)'}">Score: ${rv.overall_score}/100</span><span>${new Date(rv.created_at).toLocaleString('es-MX',{dateStyle:'short',timeStyle:'short'})}</span></div>
+          <div class="score-bar"><div class="score-fill" style="width:${rv.overall_score}%;background:${rv.overall_score>=70?'linear-gradient(90deg,var(--green),var(--teal))':'linear-gradient(90deg,var(--red),var(--orange))'}"></div></div>
+        </div>`).join('');
+    }
+
+    async function createReview() {
+      const reviewer_agent = document.getElementById('qAgent').value.trim();
+      if (!reviewer_agent) return;
+      const dimensions = { code_quality: parseInt(document.getElementById('qCode').value), security: parseInt(document.getElementById('qSec').value), architecture: parseInt(document.getElementById('qArch').value), performance: parseInt(document.getElementById('qPerf').value), ux: parseInt(document.getElementById('qUX').value) };
+      const r = await apiFetch('/api/v1/network/quality', { method: 'POST', body: JSON.stringify({ reviewer_agent, dimensions, notes: document.getElementById('qNotes').value }) });
+      const data = await r.json();
+      document.getElementById('qualityResult').innerHTML = r.ok ? `<div class="success-msg">Revision creada. Score: ${data.review?.overall_score}/100. ${data.review?.approved?'✓ Aprobado':'✗ Rechazado'}</div>` : `<div class="error-msg">${data.error}</div>`;
+      if (r.ok) { loadQuality(); loadMetrics(); }
+    }
+
+    async function loadResearch() {
+      const el = document.getElementById('researchList'); el.innerHTML = '<div class="loading">Cargando...</div>';
+      const r = await apiFetch('/api/v1/network/research');
+      if (!r.ok) { el.innerHTML = '<div class="empty">Sin sesion</div>'; return; }
+      const { reports } = await r.json();
+      if (!reports?.length) { el.innerHTML = '<div class="empty">Sin reportes aun.</div>'; return; }
+      el.innerHTML = reports.map(rp => `
+        <div class="list-item">
+          <div class="item-title">${rp.title}</div>
+          <div class="item-meta">
+            <span style="color:var(--purple);">${rp.topic}</span>
+            <span>score: ${rp.quality_score}/100</span>
+            ${rp.created_by_agent ? `<span>@${rp.created_by_agent}</span>` : ''}
+            <span>${new Date(rp.created_at).toLocaleDateString('es-MX')}</span>
+          </div>
+          ${rp.tags?.length ? `<div style="margin-top:0.3rem;">${rp.tags.map(t=>`<span class="member-tag">${t}</span>`).join('')}</div>` : ''}
+        </div>`).join('');
+    }
+
+    async function createResearch() {
+      const title = document.getElementById('rTitle').value.trim();
+      const findings = document.getElementById('rFindings').value.trim();
+      if (!title || !findings) return;
+      const tags = document.getElementById('rTags').value.split(',').map(t => t.trim()).filter(Boolean);
+      const r = await apiFetch('/api/v1/network/research', { method: 'POST', body: JSON.stringify({ title, topic: document.getElementById('rTopic').value, findings, tags, created_by_agent: document.getElementById('rAgent').value, quality_score: parseInt(document.getElementById('rScore').value) }) });
+      const data = await r.json();
+      document.getElementById('researchResult').innerHTML = r.ok ? `<div class="success-msg">Reporte publicado: "${data.report?.title}"</div>` : `<div class="error-msg">${data.error}</div>`;
+      if (r.ok) { loadResearch(); loadMetrics(); }
+    }
+
+    async function init() {
+      const { data } = await supabase.auth.getSession();
+      session = data.session;
+      if (!session) {
+        document.getElementById('statusLabel').textContent = 'No has iniciado sesión';
+        return;
+      }
+      loadMetrics();
+      loadTeams();
+      loadMessages();
+      loadNodes();
+      loadQuality();
+      loadResearch();
+      setInterval(loadMetrics, 30000);
+    }
+    init();
+  </script>
+  <script defer src="/_vercel/insights/script.js"></script>
+  <script defer src="/_vercel/speed-insights/script.js"></script>
+</body>
+</html>

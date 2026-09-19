@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>EditCore — Asistente</title>
+<link rel="icon" href="/assets/favicon-32.png" />
+<style>
+  body { font-family: -apple-system, system-ui, sans-serif; background: #0b0d12; color: #e8eaf0; margin: 0; display: flex; flex-direction: column; height: 100vh; }
+  header { padding: 14px 20px; border-bottom: 1px solid #232733; display: flex; align-items: center; justify-content: space-between; }
+  header h1 { font-size: 16px; margin: 0; }
+  header a { color: #5865f2; font-size: 13px; text-decoration: none; }
+  #thread { flex: 1; overflow-y: auto; padding: 20px; max-width: 760px; width: 100%; margin: 0 auto; box-sizing: border-box; }
+  .msg { margin-bottom: 18px; max-width: 90%; }
+  .msg.user { margin-left: auto; text-align: right; }
+  .bubble { display: inline-block; padding: 10px 14px; border-radius: 10px; font-size: 14px; line-height: 1.5; text-align: left; }
+  .msg.user .bubble { background: #2b3040; }
+  .msg.assistant .bubble { background: #14171f; border: 1px solid #232733; }
+  .subtasks { margin-top: 10px; border-top: 1px solid #232733; padding-top: 10px; }
+  .subtask { font-size: 12.5px; color: #c4c8d4; padding: 4px 0; display: flex; gap: 8px; }
+  .subtask .agent { color: #8b909e; min-width: 90px; }
+  .meta { font-size: 11px; color: #8b909e; margin-top: 8px; }
+  form { display: flex; gap: 10px; padding: 16px 20px; border-top: 1px solid #232733; max-width: 760px; width: 100%; margin: 0 auto; box-sizing: border-box; }
+  textarea { flex: 1; resize: none; border-radius: 8px; border: 1px solid #232733; background: #14171f; color: #e8eaf0; padding: 10px 12px; font-size: 14px; font-family: inherit; }
+  select { border-radius: 8px; border: 1px solid #232733; background: #14171f; color: #e8eaf0; font-size: 12px; }
+  button { border-radius: 8px; border: none; background: #5865f2; color: white; padding: 0 18px; cursor: pointer; font-size: 14px; font-weight: 600; }
+  button:disabled { opacity: 0.5; cursor: default; }
+  .error { color: #f87171; }
+  .empty { color: #8b909e; font-size: 14px; text-align: center; margin-top: 60px; }
+</style>
+</head>
+<body>
+  <header>
+    <h1>Asistente EditCore</h1>
+    <a href="/account.html">Mi cuenta →</a>
+  </header>
+
+  <div id="thread"><div class="empty">Escribí un objetivo y el Orquestador Universal lo descompone en un plan real, asignando cada subtarea al agente correspondiente.</div></div>
+
+  <form id="form">
+    <select id="autonomy" title="Nivel de autonomía">
+      <option value="1">Nivel 1 — Asistente</option>
+      <option value="2">Nivel 2 — Analista</option>
+      <option value="3">Nivel 3 — Ejecutor supervisado</option>
+    </select>
+    <textarea id="input" rows="1" placeholder="Ej: crear una landing page con formulario de contacto..."></textarea>
+    <button id="sendBtn" type="submit">Enviar</button>
+  </form>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+  <script src="/assets/supabase-config.js"></script>
+  <script>
+    const thread = document.getElementById("thread");
+    const form = document.getElementById("form");
+    const input = document.getElementById("input");
+    const autonomySelect = document.getElementById("autonomy");
+    const sendBtn = document.getElementById("sendBtn");
+
+    if (!window.supabase || typeof window.supabase.createClient !== "function") {
+      thread.innerHTML = '<div class="empty error">No se pudo cargar la librería de Supabase.</div>';
+      throw new Error("supabase-js no cargó");
+    }
+    const supabase = window.supabase.createClient(window.EDITCORE_SUPABASE_URL, window.EDITCORE_SUPABASE_ANON_KEY);
+
+    let session = null;
+    let firstMessage = true;
+
+    function addMessage(role, html) {
+      if (firstMessage) {
+        thread.innerHTML = "";
+        firstMessage = false;
+      }
+      const div = document.createElement("div");
+      div.className = "msg " + role;
+      div.innerHTML = '<div class="bubble">' + html + "</div>";
+      thread.appendChild(div);
+      thread.scrollTop = thread.scrollHeight;
+      return div;
+    }
+
+    function escapeHtml(s) {
+      return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+    }
+
+    async function init() {
+      const { data } = await supabase.auth.getSession();
+      session = data.session;
+      if (!session) {
+        thread.innerHTML = '<div class="empty">No has iniciado sesión. <a href="/login.html" style="color:#5865f2;">Ir a iniciar sesión</a></div>';
+        input.disabled = true;
+        sendBtn.disabled = true;
+      }
+    }
+
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const goal = input.value.trim();
+      if (!goal || !session) return;
+
+      addMessage("user", escapeHtml(goal));
+      input.value = "";
+      sendBtn.disabled = true;
+      const thinking = addMessage("assistant", "Descomponiendo el objetivo en subtareas...");
+
+      try {
+        const res = await fetch("/api/v1/aios/orchestrate", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: "Bearer " + session.access_token,
+          },
+          body: JSON.stringify({ goal, autonomy_level: Number(autonomySelect.value) }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          thinking.querySelector(".bubble").innerHTML = '<span class="error">' + escapeHtml(data.error || "No se pudo generar el plan.") + "</span>";
+          return;
+        }
+
+        const plan = data.plan;
+        const subtasksHtml = (plan.subtasks || [])
+          .map((s) => '<div class="subtask"><span class="agent">' + escapeHtml(s.agent) + "</span><span>" + escapeHtml(s.title) + "</span></div>")
+          .join("");
+        thinking.querySelector(".bubble").innerHTML =
+          "<div>" + escapeHtml(plan.strategy) + "</div>" +
+          (subtasksHtml ? '<div class="subtasks">' + subtasksHtml + "</div>" : "") +
+          '<div class="meta">Run ' + escapeHtml(data.run.id) + " · " + plan.subtasks.length + " subtareas · complejidad " + plan.complexity_score + "/10" +
+          (plan.llm_reasoning_used ? " · razonamiento LLM" : " · reglas fijas") + "</div>";
+      } catch (err) {
+        thinking.querySelector(".bubble").innerHTML = '<span class="error">Error de red al consultar el orquestador.</span>';
+      } finally {
+        sendBtn.disabled = false;
+      }
+    });
+
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        form.requestSubmit();
+      }
+    });
+
+    init();
+  </script>
+  <script defer src="/_vercel/insights/script.js"></script>
+  <script defer src="/_vercel/speed-insights/script.js"></script>
+</body>
+</html>

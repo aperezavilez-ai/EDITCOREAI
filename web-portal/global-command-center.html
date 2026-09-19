@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>EditCore — Global Command Center</title>
+<style>
+  :root{--gold:#ffd600;--green:#00e676;--blue:#2979ff;--orange:#ff9100;--purple:#d500f9;--cyan:#00e5ff;--red:#ff1744;
+    --bg:#060b14;--surface:#0d1625;--border:rgba(0,229,255,0.15);--text:#e8f4f8;--muted:#7a9ab0}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'SF Mono','Fira Code',monospace;background:var(--bg);color:var(--text);min-height:100vh}
+  header{border-bottom:1px solid var(--border);padding:1rem 2rem;display:flex;align-items:center;justify-content:space-between;background:rgba(6,11,20,.9)}
+  .logo-text{font-size:1.1rem;font-weight:700;color:var(--gold);letter-spacing:.05em}
+  .logo-sub{font-size:.65rem;color:var(--muted);letter-spacing:.15em;text-transform:uppercase}
+  a.back{color:var(--cyan);text-decoration:none;font-size:.8rem}
+  main{padding:2rem;max-width:1300px;margin:0 auto}
+  h1{font-size:1.6rem;color:var(--gold);margin-bottom:.25rem}
+  .subtitle{color:var(--muted);font-size:.8rem;margin-bottom:2rem}
+  .section-title{font-size:.85rem;text-transform:uppercase;letter-spacing:.1em;color:var(--cyan);margin:1.75rem 0 .75rem}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:1rem}
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:1.1rem;position:relative;overflow:hidden}
+  .card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,var(--accent),transparent)}
+  .label{font-size:.62rem;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);margin-bottom:.4rem}
+  .value{font-size:1.7rem;font-weight:700;color:var(--accent);line-height:1}
+  .links{display:flex;flex-wrap:wrap;gap:.6rem;margin-top:2rem}
+  .links a{background:var(--surface);border:1px solid var(--border);color:var(--text);text-decoration:none;padding:.5rem .9rem;border-radius:8px;font-size:.75rem}
+  .links a:hover{border-color:var(--gold);color:var(--gold)}
+  .loading{color:var(--muted);font-size:.85rem;padding:2rem 0;text-align:center}
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <div class="logo-text">EditCore</div>
+    <div class="logo-sub">Global Command Center</div>
+  </div>
+  <a class="back" href="/account.html">← Cuenta</a>
+</header>
+<main>
+  <h1>Global Command Center</h1>
+  <div class="subtitle">Vista unificada de salud de la plataforma: inteligencia, red de agentes, fábrica de software, laboratorio de innovación, empresa digital y finanzas. Agrega datos reales de cada módulo (últimas 24h donde aplica).</div>
+
+  <div id="content" class="loading">Cargando métricas...</div>
+
+  <div class="links" id="moduleLinks"></div>
+</main>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script src="/assets/supabase-config.js"></script>
+<script>
+  const API='';
+  const supabase = window.supabase.createClient(window.EDITCORE_SUPABASE_URL, window.EDITCORE_SUPABASE_ANON_KEY);
+  let token = '';
+  function getToken(){return token}
+  function apiFetch(path){return fetch(API+path,{headers:{'Authorization':`Bearer ${getToken()}`}})}
+  function fmt(cents){return'$'+((cents||0)/100).toFixed(2)}
+
+  function card(label,value,accent){
+    return `<div class="card" style="--accent:${accent}"><div class="label">${label}</div><div class="value">${value}</div></div>`;
+  }
+
+  async function load(){
+    const { data } = await supabase.auth.getSession();
+    if(!data.session){
+      document.getElementById('content').innerHTML='<div class="loading">Inicia sesión para ver el Command Center. <a href="/login.html" style="color:#ffd600">Ir a login →</a></div>';
+      return;
+    }
+    token = data.session.access_token;
+    const r = await apiFetch('/api/v1/global/command-center');
+    if(!r.ok){
+      document.getElementById('content').innerHTML='<div class="loading">No se pudieron cargar las métricas.</div>';
+      return;
+    }
+    const d = await r.json();
+    const html = `
+      <div class="section-title">Inteligencia (AI Operating System)</div>
+      <div class="grid">
+        ${card('Runs orquestación 24h', d.intelligence.orchestration_runs_24h, '#ffd600')}
+        ${card('Agentes activos', d.intelligence.agents_active, '#00e676')}
+        ${card('Agentes en espera', d.intelligence.agents_idle, '#2979ff')}
+        ${card('Costo modelos 24h', fmt(d.intelligence.model_cost_usd_cents_24h), '#ff9100')}
+        ${card('Propuestas evolución abiertas', d.intelligence.open_evolution_proposals, '#d500f9')}
+      </div>
+      <div class="section-title">Red de Agentes</div>
+      <div class="grid">
+        ${card('Equipos totales', d.network.teams_total, '#00e5ff')}
+        ${card('Equipos activos', d.network.teams_active, '#00e676')}
+        ${card('Nodos de conocimiento', d.network.knowledge_nodes, '#ffd600')}
+        ${card('Conexiones de conocimiento', d.network.knowledge_edges, '#2979ff')}
+      </div>
+      <div class="section-title">Software Factory</div>
+      <div class="grid">
+        ${card('Proyectos totales', d.software_factory.projects_total, '#2979ff')}
+        ${card('En progreso', d.software_factory.projects_in_progress, '#ff9100')}
+      </div>
+      <div class="section-title">Innovation Lab</div>
+      <div class="grid">
+        ${card('Ideas totales', d.innovation_lab.ideas_total, '#d500f9')}
+        ${card('Ideas validadas', d.innovation_lab.ideas_validated, '#00e676')}
+        ${card('Experimentos corriendo', d.innovation_lab.experiments_running, '#00e5ff')}
+        ${card('Startups lanzadas', d.innovation_lab.startups_launched, '#ffd600')}
+      </div>
+      <div class="section-title">Empresa Digital</div>
+      <div class="grid">
+        ${card('Productos activos', d.digital_enterprise.products_active, '#00e676')}
+        ${card('MRR total', fmt(d.digital_enterprise.total_mrr_usd_cents), '#ffd600')}
+        ${card('Pipeline ventas', fmt(d.digital_enterprise.pipeline_usd_cents), '#2979ff')}
+        ${card('Soporte abierto', d.digital_enterprise.support_open, '#ff9100')}
+        ${card('Soporte crítico', d.digital_enterprise.support_critical, '#ff1744')}
+        ${card('Gobernanza pendiente', d.digital_enterprise.governance_pending, '#d500f9')}
+        ${card('Unidades de negocio', d.digital_enterprise.business_units_total, '#00e5ff')}
+      </div>
+      <div class="section-title">Finanzas y OKRs</div>
+      <div class="grid">
+        ${card('Resultado neto', fmt(d.finance.net_revenue_usd_cents), d.finance.net_revenue_usd_cents>=0?'#00e676':'#ff1744')}
+        ${card('Progreso OKR promedio', d.finance.avg_okr_progress+'%', '#ffd600')}
+      </div>
+    `;
+    document.getElementById('content').innerHTML = html;
+  }
+
+  document.getElementById('moduleLinks').innerHTML = [
+    ['/command-center.html','AI Command Center'],
+    ['/network-center.html','Agent Network'],
+    ['/factory.html','Software Factory'],
+    ['/operations-center.html','Operations Center'],
+    ['/innovation-center.html','Innovation Center'],
+    ['/enterprise-command.html','Digital Enterprise'],
+    ['/evolution.html','Evolution Engine'],
+    ['/browser-agent.html','Browser Agent'],
+  ].map(([href,label])=>`<a href="${href}">${label} →</a>`).join('');
+
+  load();
+</script>
+  <script defer src="/_vercel/insights/script.js"></script>
+  <script defer src="/_vercel/speed-insights/script.js"></script>
+</body>
+</html>

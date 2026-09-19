@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>EditCore — Iniciar sesión</title>
+<link rel="icon" href="/assets/favicon-32.png" />
+<style>
+  body { font-family: -apple-system, system-ui, sans-serif; background: #0b0d12; color: #e8eaf0; display: flex; min-height: 100vh; align-items: center; justify-content: center; margin: 0; }
+  .card { background: #14171f; border: 1px solid #232733; border-radius: 12px; padding: 32px; width: 360px; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  p.sub { color: #8b909e; font-size: 13px; margin: 0 0 24px; }
+  input { width: 100%; box-sizing: border-box; padding: 10px 12px; border-radius: 8px; border: 1px solid #2b3040; background: #0b0d12; color: #e8eaf0; font-size: 14px; margin-bottom: 12px; }
+  .pwd-wrap { position: relative; margin-bottom: 12px; }
+  .pwd-wrap input { margin-bottom: 0; padding-right: 40px; }
+  .pwd-toggle { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); background: none; border: none; width: auto; padding: 4px; cursor: pointer; font-size: 16px; line-height: 1; }
+  button { width: 100%; padding: 10px; border-radius: 8px; border: none; background: #5865f2; color: white; font-weight: 600; cursor: pointer; font-size: 14px; }
+  button.secondary { background: #2b3040; margin-top: 8px; }
+  button:disabled { opacity: 0.6; cursor: default; }
+  .msg { font-size: 13px; margin-top: 14px; }
+  .msg.ok { color: #4ade80; }
+  .msg.err { color: #f87171; }
+  .back-link { display: inline-block; color: #8b909e; font-size: 13px; text-decoration: none; margin-bottom: 16px; }
+  .back-link:hover { color: #e8eaf0; }
+</style>
+</head>
+<body>
+  <div class="card">
+    <a href="/index.html" class="back-link">← Volver a EditCore</a>
+    <h1>EditCore</h1>
+    <p class="sub">Inicia sesión o crea una cuenta con tu correo y contraseña.</p>
+    <input id="email" type="email" placeholder="tu@correo.com" autocomplete="email" />
+    <div class="pwd-wrap">
+      <input id="password" type="password" placeholder="Contraseña" autocomplete="current-password" />
+      <button type="button" id="togglePwd" class="pwd-toggle">👁</button>
+    </div>
+    <button id="loginBtn">Iniciar sesión</button>
+    <button id="signupBtn" class="secondary">Crear cuenta</button>
+    <div id="msg" class="msg"></div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+  <script src="/assets/supabase-config.js"></script>
+  <script>
+    const msg = document.getElementById("msg");
+    const loginBtn = document.getElementById("loginBtn");
+    const signupBtn = document.getElementById("signupBtn");
+    const togglePwd = document.getElementById("togglePwd");
+    const passwordInput = document.getElementById("password");
+
+    togglePwd.addEventListener("click", () => {
+      const isHidden = passwordInput.type === "password";
+      passwordInput.type = isHidden ? "text" : "password";
+      togglePwd.textContent = isHidden ? "🙈" : "👁";
+    });
+
+    function showError(text) {
+      msg.textContent = text;
+      msg.className = "msg err";
+    }
+
+    function getCredentials() {
+      const email = document.getElementById("email").value.trim();
+      const password = document.getElementById("password").value;
+      return { email, password };
+    }
+
+    if (!window.supabase || typeof window.supabase.createClient !== "function") {
+      showError("No se pudo cargar la librería de Supabase (revisa tu conexión o bloqueador de anuncios).");
+    } else if (!window.EDITCORE_SUPABASE_URL || !window.EDITCORE_SUPABASE_ANON_KEY) {
+      showError("Falta configuración de Supabase (supabase-config.js).");
+    } else {
+      const client = window.supabase.createClient(window.EDITCORE_SUPABASE_URL, window.EDITCORE_SUPABASE_ANON_KEY);
+
+      function setBusy(busy) {
+        loginBtn.disabled = busy;
+        signupBtn.disabled = busy;
+      }
+
+      loginBtn.addEventListener("click", async () => {
+        const { email, password } = getCredentials();
+        if (!email || !password) {
+          showError("Escribe correo y contraseña.");
+          return;
+        }
+        setBusy(true);
+        msg.textContent = "Iniciando sesión...";
+        msg.className = "msg";
+        try {
+          const { error } = await client.auth.signInWithPassword({ email, password });
+          if (error) {
+            showError("Error: " + error.message);
+          } else {
+            window.location.href = "/account.html";
+          }
+        } catch (err) {
+          showError("Error de red: " + (err && err.message ? err.message : String(err)));
+        } finally {
+          setBusy(false);
+        }
+      });
+
+      signupBtn.addEventListener("click", async () => {
+        const { email, password } = getCredentials();
+        if (!email || !password) {
+          showError("Escribe correo y contraseña.");
+          return;
+        }
+        if (password.length < 6) {
+          showError("La contraseña debe tener al menos 6 caracteres.");
+          return;
+        }
+        setBusy(true);
+        msg.textContent = "Creando cuenta...";
+        msg.className = "msg";
+        try {
+          const { data, error } = await client.auth.signUp({ email, password });
+          if (error) {
+            showError("Error: " + error.message);
+          } else if (data.session) {
+            window.location.href = "/account.html";
+          } else {
+            msg.textContent = "Cuenta creada. Ahora inicia sesión con el botón 'Iniciar sesión'.";
+            msg.className = "msg ok";
+          }
+        } catch (err) {
+          showError("Error de red: " + (err && err.message ? err.message : String(err)));
+        } finally {
+          setBusy(false);
+        }
+      });
+    }
+  </script>
+  <script defer src="/_vercel/insights/script.js"></script>
+  <script defer src="/_vercel/speed-insights/script.js"></script>
+</body>
+</html>

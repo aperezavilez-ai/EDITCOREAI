@@ -1,0 +1,571 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>EditCore — Operations Center</title>
+  <style>
+    :root {
+      --cyan:#00e5ff;--blue:#2979ff;--green:#00e676;
+      --orange:#ff9100;--red:#ff1744;--purple:#d500f9;--gold:#ffd600;
+      --bg:#060b14;--surface:#0d1625;--border:rgba(0,229,255,0.15);
+      --text:#e8f4f8;--muted:#7a9ab0;
+    }
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:'SF Mono','Fira Code',monospace;background:var(--bg);color:var(--text);min-height:100vh}
+    body::before{content:'';position:fixed;inset:0;z-index:0;pointer-events:none;
+      background:radial-gradient(ellipse 70% 50% at 20% 20%,rgba(255,214,0,0.05) 0%,transparent 60%),
+        radial-gradient(ellipse 60% 40% at 80% 80%,rgba(41,121,255,0.06) 0%,transparent 60%),
+        repeating-linear-gradient(0deg,transparent,transparent 39px,rgba(0,229,255,0.03) 40px),
+        repeating-linear-gradient(90deg,transparent,transparent 39px,rgba(0,229,255,0.03) 40px)}
+    header{position:relative;z-index:1;border-bottom:1px solid var(--border);padding:1rem 2rem;display:flex;align-items:center;justify-content:space-between;background:rgba(6,11,20,0.9);backdrop-filter:blur(8px)}
+    .logo{display:flex;align-items:center;gap:0.75rem}
+    .logo-icon{width:32px;height:32px;background:linear-gradient(135deg,var(--gold),var(--orange));border-radius:8px;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:16px;color:#000}
+    .logo-text{font-size:1.1rem;font-weight:700;color:var(--gold);letter-spacing:0.05em}
+    .logo-sub{font-size:0.65rem;color:var(--muted);letter-spacing:0.15em;text-transform:uppercase}
+    .pulse{width:8px;height:8px;border-radius:50%;background:var(--gold);animation:pulse 2s infinite;display:inline-block;margin-right:6px}
+    @keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.5;transform:scale(1.3)}}
+    main{position:relative;z-index:1;padding:2rem;max-width:1400px;margin:0 auto}
+    h1{font-size:1.6rem;color:var(--gold);margin-bottom:.25rem}
+    .subtitle{color:var(--muted);font-size:.8rem;margin-bottom:2rem}
+    .metrics-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:1rem;margin-bottom:2rem}
+    .metric-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:1.25rem;position:relative;overflow:hidden}
+    .metric-card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px}
+    .metric-card.gold::before{background:linear-gradient(90deg,var(--gold),transparent)}
+    .metric-card.green::before{background:linear-gradient(90deg,var(--green),transparent)}
+    .metric-card.blue::before{background:linear-gradient(90deg,var(--blue),transparent)}
+    .metric-card.orange::before{background:linear-gradient(90deg,var(--orange),transparent)}
+    .metric-card.purple::before{background:linear-gradient(90deg,var(--purple),transparent)}
+    .metric-card.cyan::before{background:linear-gradient(90deg,var(--cyan),transparent)}
+    .metric-label{font-size:.65rem;text-transform:uppercase;letter-spacing:.12em;color:var(--muted);margin-bottom:.5rem}
+    .metric-value{font-size:2rem;font-weight:700;line-height:1;margin-bottom:.25rem}
+    .metric-value.gold{color:var(--gold)}.metric-value.green{color:var(--green)}
+    .metric-value.blue{color:var(--blue)}.metric-value.orange{color:var(--orange)}
+    .metric-value.purple{color:var(--purple)}.metric-value.cyan{color:var(--cyan)}
+    .metric-desc{font-size:.7rem;color:var(--muted)}
+    .tabs{display:flex;gap:.25rem;margin-bottom:1.5rem;border-bottom:1px solid var(--border);flex-wrap:wrap}
+    .tab{padding:.6rem 1rem;font-family:inherit;font-size:.75rem;background:none;border:none;color:var(--muted);cursor:pointer;border-bottom:2px solid transparent;transition:all .2s}
+    .tab.active{color:var(--gold);border-bottom-color:var(--gold)}
+    .tab-content{display:none}.tab-content.active{display:block}
+    .two-col{display:grid;grid-template-columns:1fr 1fr;gap:1.5rem}
+    @media(max-width:900px){.two-col{grid-template-columns:1fr}}
+    .panel{background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:hidden;margin-bottom:1.5rem}
+    .panel-header{padding:.75rem 1.25rem;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}
+    .panel-title{font-size:.8rem;text-transform:uppercase;letter-spacing:.1em;color:var(--gold);font-weight:700}
+    .panel-body{padding:1.25rem}
+    label{font-size:.75rem;color:var(--muted);display:block;margin-bottom:.3rem}
+    input,textarea,select{background:rgba(0,0,0,.4);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:inherit;font-size:.85rem;padding:.6rem .8rem;width:100%}
+    input:focus,textarea:focus,select:focus{outline:none;border-color:var(--gold);box-shadow:0 0 0 2px rgba(255,214,0,.15)}
+    textarea{resize:vertical}
+    .form-row{display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin-bottom:.75rem}
+    .form-group{margin-bottom:.75rem}
+    .btn{padding:.6rem 1.2rem;border-radius:8px;border:none;font-family:inherit;font-size:.85rem;font-weight:600;cursor:pointer;transition:all .2s}
+    .btn-primary{background:linear-gradient(135deg,var(--gold),var(--orange));color:#000}
+    .btn-primary:hover{opacity:.85;transform:translateY(-1px)}
+    .btn-sm{font-size:.75rem;padding:.4rem .8rem}
+    .badge{display:inline-block;padding:.15rem .5rem;border-radius:20px;font-size:.65rem;font-weight:700;text-transform:uppercase}
+    .badge-active{background:rgba(0,230,118,.2);color:var(--green)}
+    .badge-paused{background:rgba(255,145,0,.2);color:var(--orange)}
+    .badge-draft{background:rgba(0,229,255,.15);color:var(--cyan)}
+    .badge-completed{background:rgba(0,230,118,.2);color:var(--green)}
+    .badge-at_risk{background:rgba(255,23,68,.2);color:var(--red)}
+    .badge-churned{background:rgba(255,23,68,.2);color:var(--red)}
+    .badge-prospect{background:rgba(213,0,249,.2);color:var(--purple)}
+    .list-item{border-bottom:1px solid var(--border);padding:.75rem 0}
+    .list-item:last-child{border-bottom:none}
+    .item-title{font-size:.85rem;font-weight:700;margin-bottom:.3rem}
+    .item-meta{font-size:.7rem;color:var(--muted);display:flex;flex-wrap:wrap;gap:.5rem;align-items:center}
+    .progress-bar{height:6px;border-radius:3px;background:rgba(255,255,255,.1);overflow:hidden;margin-top:4px}
+    .progress-fill{height:100%;border-radius:3px;background:linear-gradient(90deg,var(--gold),var(--orange));transition:width .3s}
+    .org-node{display:flex;align-items:center;gap:.5rem;padding:.4rem .75rem;border:1px solid var(--border);border-radius:8px;margin:.25rem 0;font-size:.78rem}
+    .org-node .level-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+    .level-1{background:var(--gold)}.level-2{background:var(--orange)}.level-3{background:var(--cyan)}.level-4{background:var(--green)}.level-5{background:var(--muted)}
+    .report-card{background:rgba(0,0,0,.3);border:1px solid var(--border);border-radius:8px;padding:1rem;margin-bottom:.75rem}
+    .report-summary{font-size:.78rem;color:var(--muted);margin-top:.5rem;line-height:1.5}
+    .fin-row{display:flex;justify-content:space-between;align-items:center;padding:.4rem 0;border-bottom:1px solid rgba(255,255,255,.04);font-size:.8rem}
+    .fin-row:last-child{border-bottom:none}
+    .amount-pos{color:var(--green)}.amount-neg{color:var(--red)}
+    .empty{text-align:center;color:var(--muted);font-size:.8rem;padding:2rem}
+    .success-msg{background:rgba(0,230,118,.1);border:1px solid rgba(0,230,118,.3);border-radius:8px;padding:.75rem 1rem;color:var(--green);font-size:.8rem;margin-top:.75rem}
+    .error-msg{background:rgba(255,23,68,.1);border:1px solid rgba(255,23,68,.3);border-radius:8px;padding:.75rem 1rem;color:var(--red);font-size:.8rem;margin-top:.75rem}
+    .loading{color:var(--muted);font-size:.8rem;text-align:center;padding:1rem}
+  </style>
+</head>
+<body>
+<header>
+  <div class="logo">
+    <div class="logo-icon">O</div>
+    <div>
+      <div class="logo-text">EditCore</div>
+      <div class="logo-sub">Operations Center</div>
+    </div>
+  </div>
+  <div style="font-size:.75rem;color:var(--gold)">
+    <span class="pulse"></span><span id="statusLabel">Conectando...</span>
+  </div>
+</header>
+
+<main>
+  <h1>Enterprise Operating Model</h1>
+  <p class="subtitle">Sistema operativo empresarial — organigrama, procesos, OKRs, clientes, finanzas y reportes ejecutivos.</p>
+
+  <div class="metrics-grid">
+    <div class="metric-card gold"><div class="metric-label">Clientes activos</div><div class="metric-value gold" id="mCust">—</div><div class="metric-desc">Enterprise customers</div></div>
+    <div class="metric-card green"><div class="metric-label">OKRs activos</div><div class="metric-value green" id="mOkrs">—</div><div class="metric-desc">Promedio progreso</div></div>
+    <div class="metric-card blue"><div class="metric-label">Procesos</div><div class="metric-value blue" id="mProc">—</div><div class="metric-desc">Activos</div></div>
+    <div class="metric-card orange"><div class="metric-label">Revenue (mes)</div><div class="metric-value orange" id="mRev">—</div><div class="metric-desc">USD cents</div></div>
+    <div class="metric-card purple"><div class="metric-label">Reuniones</div><div class="metric-value purple" id="mMeet">—</div><div class="metric-desc">Registradas</div></div>
+    <div class="metric-card cyan"><div class="metric-label">Nodos org</div><div class="metric-value cyan" id="mOrg">—</div><div class="metric-desc">Organigrama</div></div>
+  </div>
+
+  <div class="tabs">
+    <button class="tab active" onclick="switchTab('org')">Organigrama</button>
+    <button class="tab" onclick="switchTab('okrs')">OKRs</button>
+    <button class="tab" onclick="switchTab('processes')">Procesos</button>
+    <button class="tab" onclick="switchTab('customers')">Clientes</button>
+    <button class="tab" onclick="switchTab('meetings')">Reuniones</button>
+    <button class="tab" onclick="switchTab('finance')">Finanzas</button>
+    <button class="tab" onclick="switchTab('reports')">Reportes</button>
+  </div>
+
+  <!-- ORGANIGRAMA -->
+  <div id="tab-org" class="tab-content active">
+    <div class="two-col">
+      <div class="panel">
+        <div class="panel-header"><span class="panel-title">Agregar Rol</span></div>
+        <div class="panel-body">
+          <div class="form-group"><label>Titulo del rol</label><input id="orgTitle" placeholder="VP Engineering" /></div>
+          <div class="form-row">
+            <div class="form-group"><label>Agente</label><input id="orgAgent" placeholder="enterprise-architect" /></div>
+            <div class="form-group"><label>Departamento</label><input id="orgDept" placeholder="technology" /></div>
+          </div>
+          <div class="form-row">
+            <div class="form-group"><label>Nivel (1=CEO, 5=IC)</label><input type="number" id="orgLevel" value="3" min="1" max="5" /></div>
+            <div class="form-group"><label>Es humano</label><select id="orgHuman"><option value="false">No (agente IA)</option><option value="true">Si (humano)</option></select></div>
+          </div>
+          <button class="btn btn-primary" onclick="addOrgNode()">Agregar al Organigrama</button>
+          <div id="orgResult"></div>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-header"><span class="panel-title">Organigrama Digital</span>
+          <button class="btn btn-primary btn-sm" onclick="initOrg()">Inicializar por defecto</button>
+        </div>
+        <div class="panel-body" id="orgList"><div class="loading">Cargando...</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- OKRs -->
+  <div id="tab-okrs" class="tab-content">
+    <div class="two-col">
+      <div class="panel">
+        <div class="panel-header"><span class="panel-title">Crear OKR</span></div>
+        <div class="panel-body">
+          <div class="form-group"><label>Objetivo</label><input id="okrObj" placeholder="Lanzar EditCore v2.0 con 1000 usuarios" /></div>
+          <div class="form-row">
+            <div class="form-group"><label>Periodo</label><input id="okrPeriod" placeholder="Q3 2026" /></div>
+            <div class="form-group"><label>Agente responsable</label><input id="okrAgent" placeholder="product-manager" /></div>
+          </div>
+          <div class="form-group"><label>Key Results (JSON)</label>
+            <textarea id="okrKRs" rows="4" placeholder='[{"kr":"1000 usuarios registrados","target":1000,"current":0,"unit":"users"},{"kr":"NPS > 50","target":50,"current":0,"unit":"score"}]'></textarea>
+          </div>
+          <button class="btn btn-primary" onclick="createOKR()">Crear OKR</button>
+          <div id="okrResult"></div>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-header"><span class="panel-title">OKRs Activos</span><button class="btn btn-primary btn-sm" onclick="loadOKRs()">Actualizar</button></div>
+        <div class="panel-body" id="okrList"><div class="loading">Cargando...</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- PROCESOS -->
+  <div id="tab-processes" class="tab-content">
+    <div class="two-col">
+      <div class="panel">
+        <div class="panel-header"><span class="panel-title">Crear Proceso</span></div>
+        <div class="panel-body">
+          <div class="form-group"><label>Nombre</label><input id="procName" placeholder="Onboarding de nuevo cliente" /></div>
+          <div class="form-row">
+            <div class="form-group"><label>Disparador</label>
+              <select id="procTrigger">
+                <option value="manual">Manual</option>
+                <option value="scheduled">Programado</option>
+                <option value="event">Evento</option>
+              </select>
+            </div>
+            <div class="form-group"><label>Agente responsable</label><input id="procAgent" placeholder="sprint-planner" /></div>
+          </div>
+          <div class="form-group"><label>Pasos (JSON)</label>
+            <textarea id="procSteps" rows="4" placeholder='[{"step":1,"action":"Enviar bienvenida","agent":"product-manager","auto":true},{"step":2,"action":"Crear proyecto","agent":"sprint-planner","auto":false}]'></textarea>
+          </div>
+          <button class="btn btn-primary" onclick="createProcess()">Crear Proceso</button>
+          <div id="procResult"></div>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-header"><span class="panel-title">Procesos</span><button class="btn btn-primary btn-sm" onclick="loadProcesses()">Actualizar</button></div>
+        <div class="panel-body" id="procList"><div class="loading">Cargando...</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- CLIENTES -->
+  <div id="tab-customers" class="tab-content">
+    <div class="two-col">
+      <div class="panel">
+        <div class="panel-header"><span class="panel-title">Nuevo Cliente</span></div>
+        <div class="panel-body">
+          <div class="form-row">
+            <div class="form-group"><label>Nombre</label><input id="custName" placeholder="Ana Lopez" /></div>
+            <div class="form-group"><label>Empresa</label><input id="custCompany" placeholder="Acme Corp" /></div>
+          </div>
+          <div class="form-row">
+            <div class="form-group"><label>Email</label><input id="custEmail" placeholder="ana@acme.com" /></div>
+            <div class="form-group"><label>Valor contrato (USD cents)</label><input type="number" id="custValue" value="0" /></div>
+          </div>
+          <div class="form-row">
+            <div class="form-group"><label>Inicio contrato</label><input type="date" id="custStart" /></div>
+            <div class="form-group"><label>Fin contrato</label><input type="date" id="custEnd" /></div>
+          </div>
+          <div class="form-group"><label>Agente asignado</label><input id="custAgent" placeholder="enterprise-consultant" /></div>
+          <button class="btn btn-primary" onclick="createCustomer()">Agregar Cliente</button>
+          <div id="custResult"></div>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-header"><span class="panel-title">Clientes</span><button class="btn btn-primary btn-sm" onclick="loadCustomers()">Actualizar</button></div>
+        <div class="panel-body" id="custList"><div class="loading">Cargando...</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- REUNIONES -->
+  <div id="tab-meetings" class="tab-content">
+    <div class="two-col">
+      <div class="panel">
+        <div class="panel-header"><span class="panel-title">Registrar Reunion</span></div>
+        <div class="panel-body">
+          <div class="form-group"><label>Titulo</label><input id="meetTitle" placeholder="Planning Sprint 3" /></div>
+          <div class="form-group"><label>Resumen</label><textarea id="meetSummary" rows="2" placeholder="Puntos clave de la reunion..."></textarea></div>
+          <div class="form-group"><label>Asistentes (JSON)</label>
+            <textarea id="meetAttendees" rows="2" placeholder='[{"name":"@sprint-planner","type":"agent"},{"name":"Luis","type":"human"}]'></textarea>
+          </div>
+          <div class="form-group"><label>Action items (JSON)</label>
+            <textarea id="meetActions" rows="3" placeholder='[{"action":"Definir MVP","owner":"@product-manager","due":"2026-07-10"},{"action":"Setup CI","owner":"@release-manager","due":"2026-07-12"}]'></textarea>
+          </div>
+          <button class="btn btn-primary" onclick="createMeeting()">Registrar</button>
+          <div id="meetResult"></div>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-header"><span class="panel-title">Reuniones recientes</span><button class="btn btn-primary btn-sm" onclick="loadMeetings()">Actualizar</button></div>
+        <div class="panel-body" id="meetList"><div class="loading">Cargando...</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- FINANZAS -->
+  <div id="tab-finance" class="tab-content">
+    <div class="two-col">
+      <div class="panel">
+        <div class="panel-header"><span class="panel-title">Registrar Movimiento</span></div>
+        <div class="panel-body">
+          <div class="form-row">
+            <div class="form-group"><label>Descripcion</label><input id="finDesc" placeholder="Costo mensual Vercel Pro" /></div>
+            <div class="form-group"><label>Monto (USD cents)</label><input type="number" id="finAmount" value="2000" /></div>
+          </div>
+          <div class="form-row">
+            <div class="form-group"><label>Categoria</label>
+              <select id="finCat">
+                <option value="infrastructure">Infraestructura</option>
+                <option value="ai_usage">Uso IA</option>
+                <option value="development">Desarrollo</option>
+                <option value="revenue">Ingreso</option>
+                <option value="marketing">Marketing</option>
+                <option value="operations">Operaciones</option>
+                <option value="other">Otro</option>
+              </select>
+            </div>
+            <div class="form-group"><label>Tipo</label>
+              <select id="finType"><option value="false">Costo</option><option value="true">Ingreso</option></select>
+            </div>
+          </div>
+          <div class="form-group"><label>Periodo (YYYY-MM)</label><input id="finPeriod" placeholder="2026-06" /></div>
+          <button class="btn btn-primary" onclick="createFinance()">Registrar</button>
+          <div id="finResult"></div>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-header"><span class="panel-title">Resumen Financiero</span><button class="btn btn-primary btn-sm" onclick="loadFinance()">Actualizar</button></div>
+        <div class="panel-body" id="finList"><div class="loading">Cargando...</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- REPORTES -->
+  <div id="tab-reports" class="tab-content">
+    <div class="panel">
+      <div class="panel-header"><span class="panel-title">Generar Reporte Ejecutivo</span></div>
+      <div class="panel-body">
+        <div class="form-row">
+          <div class="form-group"><label>Tipo</label>
+            <select id="repType"><option value="daily">Diario</option><option value="weekly">Semanal</option><option value="monthly">Mensual</option><option value="strategic">Estrategico</option></select>
+          </div>
+          <div class="form-group"><label>Periodo</label><input id="repPeriod" placeholder="2026-06-30" /></div>
+        </div>
+        <button class="btn btn-primary" onclick="generateReport()">Generar Reporte</button>
+        <div id="repResult" style="margin-top:1rem"></div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="panel-header"><span class="panel-title">Reportes anteriores</span><button class="btn btn-primary btn-sm" onclick="loadReports()">Actualizar</button></div>
+      <div class="panel-body" id="repList"><div class="loading">Cargando...</div></div>
+    </div>
+  </div>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script src="/assets/supabase-config.js"></script>
+<script>
+  const API='';
+  const supabase = window.supabase.createClient(window.EDITCORE_SUPABASE_URL, window.EDITCORE_SUPABASE_ANON_KEY);
+  let session = null;
+  function getToken(){return session?.access_token}
+  function apiFetch(path,opts={}){return fetch(API+path,{...opts,headers:{'Content-Type':'application/json','Authorization':`Bearer ${getToken()}`,...(opts.headers||{})}})}
+  function switchTab(name){
+    const tabs=['org','okrs','processes','customers','meetings','finance','reports'];
+    document.querySelectorAll('.tab').forEach((t,i)=>t.classList.toggle('active',tabs[i]===name));
+    document.querySelectorAll('.tab-content').forEach(c=>c.classList.remove('active'));
+    document.getElementById('tab-'+name).classList.add('active');
+  }
+  function fmt(cents){return'$'+(cents/100).toFixed(2)}
+  function dateStr(d){return d?new Date(d).toLocaleDateString('es-MX'):'—'}
+
+  async function loadMetrics(){
+    const [custs,okrs,procs,fin,meets,org]=await Promise.all([
+      apiFetch('/api/v1/enterprise/customers'),
+      apiFetch('/api/v1/enterprise/okrs'),
+      apiFetch('/api/v1/enterprise/processes'),
+      apiFetch('/api/v1/enterprise/finance?period='+new Date().toISOString().slice(0,7)),
+      apiFetch('/api/v1/enterprise/meetings'),
+      apiFetch('/api/v1/enterprise/org-chart'),
+    ]);
+    if(custs.ok){const d=await custs.json();document.getElementById('mCust').textContent=(d.customers||[]).filter(c=>c.status==='active').length}
+    if(okrs.ok){const d=await okrs.json();const os=d.okrs||[];document.getElementById('mOkrs').textContent=os.length?(Math.round(os.reduce((a,o)=>a+o.progress,0)/os.length)+'%'):'0%'}
+    if(procs.ok){const d=await procs.json();document.getElementById('mProc').textContent=(d.processes||[]).filter(p=>p.status==='active').length}
+    if(fin.ok){const d=await fin.json();document.getElementById('mRev').textContent=d.summary?.revenue_usd_cents??0}
+    if(meets.ok){const d=await meets.json();document.getElementById('mMeet').textContent=(d.meetings||[]).length}
+    if(org.ok){const d=await org.json();document.getElementById('mOrg').textContent=(d.org_chart||[]).length}
+    document.getElementById('statusLabel').textContent='Sistema activo';
+  }
+
+  async function loadOrg(){
+    const el=document.getElementById('orgList');el.innerHTML='<div class="loading">Cargando...</div>';
+    const r=await apiFetch('/api/v1/enterprise/org-chart');
+    if(!r.ok){el.innerHTML='<div class="empty">Sin sesion</div>';return}
+    const{org_chart:nodes}=await r.json();
+    if(!nodes?.length){el.innerHTML='<div class="empty">Sin organigrama. Usa "Inicializar por defecto".</div>';return}
+    const sorted=nodes.sort((a,b)=>a.level-b.level||a.department.localeCompare(b.department));
+    el.innerHTML=sorted.map(n=>`
+      <div class="org-node">
+        <div class="level-dot level-${n.level}"></div>
+        <div style="flex:1">
+          <span style="font-weight:700">${n.role_title}</span>
+          ${n.agent_slug?`<span style="color:var(--cyan);margin-left:.5rem">@${n.agent_slug}</span>`:''}
+          ${n.is_human?'<span style="color:var(--gold);margin-left:.5rem">👤</span>':''}
+        </div>
+        <span style="color:var(--muted);font-size:.7rem">${n.department} L${n.level}</span>
+      </div>`).join('');
+  }
+
+  async function initOrg(){
+    const r=await apiFetch('/api/v1/enterprise/org-chart?init=true');
+    if(r.ok)loadOrg();
+  }
+
+  async function addOrgNode(){
+    const role_title=document.getElementById('orgTitle').value.trim();
+    if(!role_title)return;
+    const r=await apiFetch('/api/v1/enterprise/org-chart',{method:'POST',body:JSON.stringify({role_title,agent_slug:document.getElementById('orgAgent').value,department:document.getElementById('orgDept').value,level:parseInt(document.getElementById('orgLevel').value),is_human:document.getElementById('orgHuman').value==='true'})});
+    const d=await r.json();
+    document.getElementById('orgResult').innerHTML=r.ok?`<div class="success-msg">Rol agregado: ${d.node?.role_title}</div>`:`<div class="error-msg">${d.error}</div>`;
+    if(r.ok)loadOrg();
+  }
+
+  async function loadOKRs(){
+    const el=document.getElementById('okrList');el.innerHTML='<div class="loading">Cargando...</div>';
+    const r=await apiFetch('/api/v1/enterprise/okrs');
+    if(!r.ok){el.innerHTML='<div class="empty">Sin sesion</div>';return}
+    const{okrs}=await r.json();
+    if(!okrs?.length){el.innerHTML='<div class="empty">Sin OKRs aun.</div>';return}
+    el.innerHTML=okrs.map(o=>`
+      <div class="list-item">
+        <div class="item-title">${o.objective} <span class="badge badge-${o.status}">${o.status}</span></div>
+        <div class="item-meta"><span>${o.period}</span>${o.owner_agent?`<span>@${o.owner_agent}</span>`:''}<span style="color:var(--gold)">${o.progress}%</span></div>
+        <div class="progress-bar"><div class="progress-fill" style="width:${o.progress}%"></div></div>
+        ${(o.key_results||[]).map(k=>`<div style="font-size:.7rem;color:var(--muted);margin-top:.3rem">• ${k.kr}: ${k.current}/${k.target} ${k.unit||''}</div>`).join('')}
+      </div>`).join('');
+  }
+
+  async function createOKR(){
+    const objective=document.getElementById('okrObj').value.trim();
+    const period=document.getElementById('okrPeriod').value.trim();
+    if(!objective||!period)return;
+    let key_results=[];
+    try{key_results=JSON.parse(document.getElementById('okrKRs').value||'[]')}catch(e){}
+    const r=await apiFetch('/api/v1/enterprise/okrs',{method:'POST',body:JSON.stringify({objective,period,key_results,owner_agent:document.getElementById('okrAgent').value})});
+    const d=await r.json();
+    document.getElementById('okrResult').innerHTML=r.ok?`<div class="success-msg">OKR creado.</div>`:`<div class="error-msg">${d.error}</div>`;
+    if(r.ok)loadOKRs();
+  }
+
+  async function loadProcesses(){
+    const el=document.getElementById('procList');el.innerHTML='<div class="loading">Cargando...</div>';
+    const r=await apiFetch('/api/v1/enterprise/processes');
+    if(!r.ok){el.innerHTML='<div class="empty">Sin sesion</div>';return}
+    const{processes}=await r.json();
+    if(!processes?.length){el.innerHTML='<div class="empty">Sin procesos aun.</div>';return}
+    el.innerHTML=processes.map(p=>`
+      <div class="list-item">
+        <div class="item-title">${p.name} <span class="badge badge-${p.status}">${p.status}</span></div>
+        <div class="item-meta"><span>${p.trigger_type}</span>${p.owner_agent?`<span>@${p.owner_agent}</span>`:''}<span>runs: ${p.run_count}</span></div>
+        <div style="font-size:.7rem;color:var(--muted);margin-top:.3rem">${(p.steps||[]).length} pasos</div>
+      </div>`).join('');
+  }
+
+  async function createProcess(){
+    const name=document.getElementById('procName').value.trim();if(!name)return;
+    let steps=[];try{steps=JSON.parse(document.getElementById('procSteps').value||'[]')}catch(e){}
+    const r=await apiFetch('/api/v1/enterprise/processes',{method:'POST',body:JSON.stringify({name,steps,trigger_type:document.getElementById('procTrigger').value,owner_agent:document.getElementById('procAgent').value})});
+    const d=await r.json();
+    document.getElementById('procResult').innerHTML=r.ok?`<div class="success-msg">Proceso creado.</div>`:`<div class="error-msg">${d.error}</div>`;
+    if(r.ok)loadProcesses();
+  }
+
+  async function loadCustomers(){
+    const el=document.getElementById('custList');el.innerHTML='<div class="loading">Cargando...</div>';
+    const r=await apiFetch('/api/v1/enterprise/customers');
+    if(!r.ok){el.innerHTML='<div class="empty">Sin sesion</div>';return}
+    const{customers}=await r.json();
+    if(!customers?.length){el.innerHTML='<div class="empty">Sin clientes aun.</div>';return}
+    el.innerHTML=customers.map(c=>`
+      <div class="list-item">
+        <div class="item-title">${c.name} ${c.company?`<span style="color:var(--muted)">(${c.company})</span>`:''} <span class="badge badge-${c.status}">${c.status}</span></div>
+        <div class="item-meta"><span>${c.email||'—'}</span><span style="color:var(--gold)">${fmt(c.contract_value)}</span>${c.assigned_agent?`<span>@${c.assigned_agent}</span>`:''}</div>
+        <div style="font-size:.7rem;color:var(--muted);">${dateStr(c.contract_start)} → ${dateStr(c.contract_end)}</div>
+      </div>`).join('');
+  }
+
+  async function createCustomer(){
+    const name=document.getElementById('custName').value.trim();if(!name)return;
+    const r=await apiFetch('/api/v1/enterprise/customers',{method:'POST',body:JSON.stringify({name,company:document.getElementById('custCompany').value,email:document.getElementById('custEmail').value,contract_value:parseInt(document.getElementById('custValue').value)||0,contract_start:document.getElementById('custStart').value||null,contract_end:document.getElementById('custEnd').value||null,assigned_agent:document.getElementById('custAgent').value})});
+    const d=await r.json();
+    document.getElementById('custResult').innerHTML=r.ok?`<div class="success-msg">Cliente agregado.</div>`:`<div class="error-msg">${d.error}</div>`;
+    if(r.ok)loadCustomers();
+  }
+
+  async function loadMeetings(){
+    const el=document.getElementById('meetList');el.innerHTML='<div class="loading">Cargando...</div>';
+    const r=await apiFetch('/api/v1/enterprise/meetings');
+    if(!r.ok){el.innerHTML='<div class="empty">Sin sesion</div>';return}
+    const{meetings}=await r.json();
+    if(!meetings?.length){el.innerHTML='<div class="empty">Sin reuniones aun.</div>';return}
+    el.innerHTML=meetings.map(m=>`
+      <div class="list-item">
+        <div class="item-title">${m.title}</div>
+        <div class="item-meta"><span>${dateStr(m.held_at)}</span><span>${(m.attendees||[]).length} asistentes</span><span>${(m.action_items||[]).length} actions</span></div>
+        ${m.summary?`<div style="font-size:.72rem;color:var(--muted);margin-top:.3rem">${m.summary.slice(0,100)}${m.summary.length>100?'...':''}</div>`:''}
+      </div>`).join('');
+  }
+
+  async function createMeeting(){
+    const title=document.getElementById('meetTitle').value.trim();if(!title)return;
+    let attendees=[],action_items=[];
+    try{attendees=JSON.parse(document.getElementById('meetAttendees').value||'[]')}catch(e){}
+    try{action_items=JSON.parse(document.getElementById('meetActions').value||'[]')}catch(e){}
+    const r=await apiFetch('/api/v1/enterprise/meetings',{method:'POST',body:JSON.stringify({title,summary:document.getElementById('meetSummary').value,attendees,action_items})});
+    const d=await r.json();
+    document.getElementById('meetResult').innerHTML=r.ok?`<div class="success-msg">Reunion registrada.</div>`:`<div class="error-msg">${d.error}</div>`;
+    if(r.ok)loadMeetings();
+  }
+
+  async function loadFinance(){
+    const el=document.getElementById('finList');el.innerHTML='<div class="loading">Cargando...</div>';
+    const period=new Date().toISOString().slice(0,7);
+    const r=await apiFetch('/api/v1/enterprise/finance?period='+period);
+    if(!r.ok){el.innerHTML='<div class="empty">Sin sesion</div>';return}
+    const d=await r.json();
+    const s=d.summary||{};
+    el.innerHTML=`<div style="margin-bottom:1rem">
+      <div class="fin-row"><span>Revenue</span><span class="amount-pos">${fmt(s.revenue_usd_cents||0)}</span></div>
+      <div class="fin-row"><span>Costos</span><span class="amount-neg">-${fmt(s.costs_usd_cents||0)}</span></div>
+      <div class="fin-row" style="font-weight:700"><span>Neto</span><span style="color:${(s.net_usd_cents||0)>=0?'var(--green)':'var(--red)'}">${fmt(s.net_usd_cents||0)}</span></div>
+    </div>
+    ${(d.records||[]).slice(0,15).map(r=>`
+      <div class="fin-row">
+        <span style="max-width:60%;overflow:hidden;white-space:nowrap;text-overflow:ellipsis">${r.description}</span>
+        <span class="${r.is_revenue?'amount-pos':'amount-neg'}">${r.is_revenue?'+':'-'}${fmt(r.amount_usd_cents)}</span>
+      </div>`).join('')}`;
+  }
+
+  async function createFinance(){
+    const description=document.getElementById('finDesc').value.trim();
+    const amount_usd_cents=parseInt(document.getElementById('finAmount').value)||0;
+    if(!description)return;
+    const r=await apiFetch('/api/v1/enterprise/finance',{method:'POST',body:JSON.stringify({description,amount_usd_cents,category:document.getElementById('finCat').value,is_revenue:document.getElementById('finType').value==='true',period:document.getElementById('finPeriod').value||new Date().toISOString().slice(0,7)})});
+    const d=await r.json();
+    document.getElementById('finResult').innerHTML=r.ok?`<div class="success-msg">Movimiento registrado.</div>`:`<div class="error-msg">${d.error}</div>`;
+    if(r.ok)loadFinance();
+  }
+
+  async function loadReports(){
+    const el=document.getElementById('repList');el.innerHTML='<div class="loading">Cargando...</div>';
+    const r=await apiFetch('/api/v1/enterprise/reports');
+    if(!r.ok){el.innerHTML='<div class="empty">Sin sesion</div>';return}
+    const{reports}=await r.json();
+    if(!reports?.length){el.innerHTML='<div class="empty">Sin reportes aun.</div>';return}
+    el.innerHTML=reports.map(rp=>`
+      <div class="report-card">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <span style="font-weight:700;color:var(--gold)">${rp.report_type.toUpperCase()} — ${rp.period}</span>
+          <span style="font-size:.7rem;color:var(--muted)">${dateStr(rp.created_at)}</span>
+        </div>
+        <div class="report-summary">${rp.summary||'Sin resumen.'}</div>
+      </div>`).join('');
+  }
+
+  async function generateReport(){
+    const r=await apiFetch('/api/v1/enterprise/reports',{method:'POST',body:JSON.stringify({report_type:document.getElementById('repType').value,period:document.getElementById('repPeriod').value||new Date().toISOString().slice(0,10)})});
+    const d=await r.json();
+    const el=document.getElementById('repResult');
+    if(!r.ok){el.innerHTML=`<div class="error-msg">${d.error}</div>`;return}
+    el.innerHTML=`<div class="report-card"><div style="color:var(--green);font-weight:700;margin-bottom:.5rem">Reporte generado</div><div class="report-summary">${d.report?.summary}</div></div>`;
+    loadReports();
+  }
+
+  async function init(){
+    const { data } = await supabase.auth.getSession();
+    session = data.session;
+    if (!session) {
+      document.getElementById('statusLabel').textContent = 'No has iniciado sesión';
+      return;
+    }
+    loadMetrics();
+    loadOrg();
+    loadOKRs();
+    loadProcesses();
+    loadCustomers();
+    loadMeetings();
+    loadFinance();
+    loadReports();
+    setInterval(loadMetrics,30000);
+  }
+  init();
+</script>
+  <script defer src="/_vercel/insights/script.js"></script>
+  <script defer src="/_vercel/speed-insights/script.js"></script>
+</body>
+</html>

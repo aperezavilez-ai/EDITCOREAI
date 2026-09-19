@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>EditCore — Desarrolladores</title>
+<link rel="icon" href="/assets/favicon-32.png" />
+<style>
+  :root {
+    --bg: #050608;
+    --bg-card: #0a0c10;
+    --text: #f0f4f8;
+    --muted: #8b909e;
+    --cyan: #00e5ff;
+    --cyan-dim: #00b8d4;
+    --blue: #0288d1;
+    --border-neon: rgba(0, 229, 255, 0.35);
+    --border-soft: rgba(0, 229, 255, 0.12);
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: "Inter", "Segoe UI", system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    margin: 0;
+    min-height: 100vh;
+    padding: 56px 20px;
+    position: relative;
+  }
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    background:
+      radial-gradient(ellipse 90% 60% at 50% 0%, rgba(0, 180, 220, 0.14), transparent 55%),
+      radial-gradient(ellipse 50% 40% at 50% 35%, rgba(0, 229, 255, 0.06), transparent 70%),
+      linear-gradient(180deg, #050608 0%, #080a0e 50%, #050608 100%);
+    z-index: -2;
+  }
+  body::after {
+    content: "";
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(0, 229, 255, 0.07) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0, 229, 255, 0.07) 1px, transparent 1px);
+    background-size: 48px 48px;
+    mask-image: radial-gradient(ellipse 90% 80% at 50% 30%, black 15%, transparent 78%);
+    -webkit-mask-image: radial-gradient(ellipse 90% 80% at 50% 30%, black 15%, transparent 78%);
+    z-index: -1;
+  }
+  .wrap { max-width: 720px; margin: 0 auto; }
+  .topbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 28px; }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; letter-spacing: 0.5px; color: var(--text); text-decoration: none; }
+  .brand-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--cyan); box-shadow: 0 0 10px var(--cyan), 0 0 18px rgba(0,229,255,0.6); }
+  .back-link { color: var(--muted); text-decoration: none; font-size: 13px; transition: color 0.15s; }
+  .back-link:hover { color: var(--cyan); }
+
+  .card {
+    background: var(--bg-card);
+    border: 1px solid var(--border-soft);
+    border-radius: 14px;
+    padding: 30px 32px;
+    margin-bottom: 22px;
+    box-shadow: 0 0 0 1px rgba(255,255,255,0.02), 0 20px 50px -25px rgba(0,229,255,0.15);
+  }
+  h1 { font-size: 21px; margin: 0 0 6px; letter-spacing: -0.2px; }
+  h2 { font-size: 15px; margin: 0 0 18px; color: var(--text); font-weight: 600; }
+  p.sub { color: var(--muted); font-size: 13.5px; line-height: 1.6; margin: 0 0 24px; }
+  p.sub code { color: var(--cyan-dim); }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid var(--border-soft); }
+  th { color: var(--muted); font-weight: 500; font-size: 12px; text-transform: uppercase; letter-spacing: 0.4px; }
+  td { color: var(--text); }
+  tr:last-child td { border-bottom: none; }
+
+  input {
+    padding: 11px 14px;
+    border-radius: 9px;
+    border: 1px solid rgba(255,255,255,0.1);
+    background: #05060a;
+    color: var(--text);
+    font-size: 14px;
+    font-family: inherit;
+    outline: none;
+    transition: border-color 0.15s, box-shadow 0.15s;
+  }
+  input:focus { border-color: var(--border-neon); box-shadow: 0 0 0 3px rgba(0,229,255,0.1); }
+  input::placeholder { color: #5a606e; }
+
+  button {
+    padding: 11px 18px;
+    border-radius: 9px;
+    border: none;
+    background: linear-gradient(135deg, var(--cyan) 0%, var(--cyan-dim) 45%, var(--blue) 100%);
+    color: #03161a;
+    font-weight: 700;
+    cursor: pointer;
+    font-size: 14px;
+    transition: filter 0.15s, transform 0.1s;
+  }
+  button:hover { filter: brightness(1.08); }
+  button:active { transform: translateY(1px); }
+  button.danger {
+    background: rgba(248, 113, 113, 0.12);
+    color: #f87171;
+    border: 1px solid rgba(248, 113, 113, 0.3);
+    padding: 6px 12px;
+    font-size: 12px;
+    font-weight: 600;
+  }
+  button.danger:hover { background: rgba(248, 113, 113, 0.2); filter: none; }
+
+  .row-form { display: flex; gap: 10px; margin-bottom: 22px; }
+  .row-form input { flex: 1; }
+
+  .newkey {
+    background: #05060a;
+    border: 1px solid rgba(74, 222, 128, 0.4);
+    border-radius: 10px;
+    padding: 14px 16px;
+    font-family: "SFMono-Regular", Consolas, monospace;
+    font-size: 13px;
+    margin-bottom: 18px;
+    word-break: break-all;
+    color: #d8fde6;
+  }
+  .newkey strong { display: block; margin-top: 8px; color: #facc15; font-weight: 600; font-family: inherit; }
+
+  .msg { font-size: 13px; margin-top: 16px; color: var(--muted); }
+  .msg.err { color: #f87171; }
+
+  .empty-row td { color: var(--muted); text-align: center; padding: 22px 8px; }
+
+  pre {
+    background: #05060a;
+    border: 1px solid var(--border-soft);
+    border-radius: 10px;
+    padding: 16px;
+    font-size: 12.5px;
+    overflow-x: auto;
+    margin: 0;
+  }
+  code { font-family: "SFMono-Regular", Consolas, monospace; }
+  pre code { color: #b8f2ff; }
+
+  .sdk-line { font-size: 13px; color: var(--muted); margin-top: 14px; }
+  .sdk-line code { background: rgba(0,229,255,0.07); color: var(--cyan-dim); padding: 2px 6px; border-radius: 5px; }
+
+  a.link { color: var(--cyan); text-decoration: none; }
+  a.link:hover { text-decoration: underline; }
+
+  #gate { color: var(--muted); font-size: 14px; }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="topbar">
+      <a href="/index.html" class="brand"><span class="brand-dot"></span>EditCore</a>
+      <a href="/account.html" class="back-link">← Mi cuenta</a>
+    </div>
+
+    <div class="card">
+      <h1>Panel de desarrolladores</h1>
+      <p class="sub">Genera claves para usar la API pública de EditCore (<code>/api/v1/*</code>) desde tu propio código o el SDK <code>@editcore/sdk</code>.</p>
+      <div id="gate">Cargando sesión...</div>
+      <div id="panel" style="display:none">
+        <div class="row-form">
+          <input id="keyName" type="text" placeholder="Nombre de la clave (ej: mi-script)" />
+          <button id="createBtn">Crear clave</button>
+        </div>
+        <div id="newKeyBox"></div>
+        <table>
+          <thead><tr><th>Nombre</th><th>Prefijo</th><th>Creada</th><th>Estado</th><th></th></tr></thead>
+          <tbody id="keysBody"></tbody>
+        </table>
+        <div id="msg" class="msg"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Uso rápido</h2>
+      <pre><code>curl https://editcore.mx/api/v1/me \
+  -H "x-editcore-api-key: TU_CLAVE"</code></pre>
+      <div class="sdk-line">También disponible como SDK: <code>npm install @editcore/sdk</code> (ver <a class="link" href="https://github.com/aperezavilez-ai/editcore/tree/main/sdk/typescript" target="_blank" rel="noopener">código fuente</a>).</div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+  <script src="/assets/supabase-config.js"></script>
+  <script>
+    const gate = document.getElementById("gate");
+    const panel = document.getElementById("panel");
+    const msg = document.getElementById("msg");
+    const keysBody = document.getElementById("keysBody");
+    const newKeyBox = document.getElementById("newKeyBox");
+
+    const supabase = window.supabase.createClient(window.EDITCORE_SUPABASE_URL, window.EDITCORE_SUPABASE_ANON_KEY);
+    let accessToken = null;
+
+    function fmtDate(s) {
+      return s ? new Date(s).toLocaleString() : "—";
+    }
+
+    function esc(s) {
+      return String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+    }
+
+    async function loadKeys() {
+      const res = await fetch("/api/developer/keys", { headers: { Authorization: "Bearer " + accessToken } });
+      const data = await res.json();
+      if (!res.ok) {
+        msg.textContent = data.error || "No se pudieron cargar las claves.";
+        msg.className = "msg err";
+        return;
+      }
+      keysBody.innerHTML = data.keys.map(k => `
+        <tr>
+          <td>${esc(k.name)}</td>
+          <td>${k.key_prefix}…</td>
+          <td>${fmtDate(k.created_at)}</td>
+          <td>${k.is_active ? "Activa" : "Revocada"}</td>
+          <td>${k.is_active ? `<button class="danger" data-id="${esc(k.id)}">Revocar</button>` : ""}</td>
+        </tr>
+      `).join("") || `<tr class="empty-row"><td colspan="5">Sin claves todavía.</td></tr>`;
+
+      keysBody.querySelectorAll("button[data-id]").forEach(btn => {
+        btn.addEventListener("click", async () => {
+          await fetch("/api/developer/keys?id=" + btn.dataset.id, {
+            method: "DELETE",
+            headers: { Authorization: "Bearer " + accessToken },
+          });
+          await loadKeys();
+        });
+      });
+    }
+
+    document.getElementById("createBtn").addEventListener("click", async () => {
+      const name = document.getElementById("keyName").value.trim();
+      if (!name) {
+        msg.textContent = "Escribe un nombre para la clave.";
+        msg.className = "msg err";
+        return;
+      }
+      const res = await fetch("/api/developer/keys", {
+        method: "POST",
+        headers: { "content-type": "application/json", Authorization: "Bearer " + accessToken },
+        body: JSON.stringify({ name }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        msg.textContent = data.error || "No se pudo crear la clave.";
+        msg.className = "msg err";
+        return;
+      }
+      newKeyBox.innerHTML = `<div class="newkey">${esc(data.apiKey)}<strong>${esc(data.warning)}</strong></div>`;
+      document.getElementById("keyName").value = "";
+      msg.textContent = "";
+      msg.className = "msg";
+      await loadKeys();
+    });
+
+    (async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        gate.innerHTML = 'No has iniciado sesión. <a class="link" href="/login.html">Iniciar sesión</a>';
+        return;
+      }
+      accessToken = session.access_token;
+      gate.style.display = "none";
+      panel.style.display = "block";
+      await loadKeys();
+    })();
+  </script>
+  <script defer src="/_vercel/insights/script.js"></script>
+  <script defer src="/_vercel/speed-insights/script.js"></script>
+</body>
+</html>

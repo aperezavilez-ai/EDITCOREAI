@@ -135,9 +135,10 @@ document.addEventListener("DOMContentLoaded", async () => {
     });
   }
 
-  // Botón Login/Logout en navbar
-  $("webAuthBtn")?.addEventListener("click", () => {
+  // Botón Login/Logout en navbar: si está autenticado cierra sesión, si no, navega a login.html
+  $("webAuthBtn")?.addEventListener("click", (e) => {
     if (currentUser) {
+      e.preventDefault();
       if (confirm(`Sesión activa: ${currentUser.email}\n¿Deseas cerrar sesión?`)) {
         supabase?.auth?.signOut();
         currentUser = null;
@@ -146,9 +147,8 @@ document.addEventListener("DOMContentLoaded", async () => {
         updateNavUserUI();
         updateCreditsDisplay();
       }
-    } else {
-      openAuthModal(false);
     }
+    // Si no está logueado, el enlace <a> navega directo a /login.html
   });
 
   // Funciones de control de Web Studio
@@ -182,8 +182,12 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
   }
 
-  $("openWebIdeBtn")?.addEventListener("click", () => {
-    openWebStudio();
+  // Botón Usar en la Web: si tiene sesión activa navega a /app.html, si no navega a /login.html
+  $("openWebIdeBtn")?.addEventListener("click", (e) => {
+    // Si el usuario no tiene sesión, redirige a login.html directamente
+    if (!currentUser) {
+      // El navegador sigue el href natural a /app.html (que a su vez redirige a login.html) o /login.html
+    }
   });
 
   $("studioCloseBtn")?.addEventListener("click", closeWebStudio);

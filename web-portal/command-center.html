@@ -1,0 +1,493 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>EditCore — AI Command Center</title>
+  <style>
+    :root {
+      --cyan: #00e5ff;
+      --blue: #2979ff;
+      --green: #00e676;
+      --orange: #ff9100;
+      --red: #ff1744;
+      --purple: #d500f9;
+      --bg: #060b14;
+      --surface: #0d1625;
+      --border: rgba(0,229,255,0.15);
+      --text: #e8f4f8;
+      --muted: #7a9ab0;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'SF Mono', 'Fira Code', monospace;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+    }
+    body::before {
+      content: '';
+      position: fixed; inset: 0; z-index: 0; pointer-events: none;
+      background:
+        radial-gradient(ellipse 80% 50% at 20% 20%, rgba(0,229,255,0.07) 0%, transparent 60%),
+        radial-gradient(ellipse 60% 40% at 80% 80%, rgba(41,121,255,0.07) 0%, transparent 60%),
+        repeating-linear-gradient(0deg, transparent, transparent 39px, rgba(0,229,255,0.04) 40px),
+        repeating-linear-gradient(90deg, transparent, transparent 39px, rgba(0,229,255,0.04) 40px);
+    }
+    header {
+      position: relative; z-index: 1;
+      border-bottom: 1px solid var(--border);
+      padding: 1rem 2rem;
+      display: flex; align-items: center; justify-content: space-between;
+      background: rgba(6,11,20,0.9); backdrop-filter: blur(8px);
+    }
+    .logo { display: flex; align-items: center; gap: 0.75rem; }
+    .logo-icon {
+      width: 32px; height: 32px;
+      background: linear-gradient(135deg, var(--cyan), var(--blue));
+      border-radius: 8px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 16px; font-weight: 900;
+    }
+    .logo-text { font-size: 1.1rem; font-weight: 700; color: var(--cyan); letter-spacing: 0.05em; }
+    .logo-sub { font-size: 0.65rem; color: var(--muted); letter-spacing: 0.15em; text-transform: uppercase; }
+    .header-status { display: flex; align-items: center; gap: 0.5rem; font-size: 0.75rem; color: var(--green); }
+    .pulse { width: 8px; height: 8px; border-radius: 50%; background: var(--green); animation: pulse 2s infinite; }
+    @keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:0.5;transform:scale(1.3)} }
+
+    main { position: relative; z-index: 1; padding: 2rem; max-width: 1400px; margin: 0 auto; }
+
+    h1 { font-size: 1.6rem; color: var(--cyan); margin-bottom: 0.25rem; }
+    .subtitle { color: var(--muted); font-size: 0.8rem; margin-bottom: 2rem; }
+
+    /* Metrics grid */
+    .metrics-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 1rem; margin-bottom: 2rem;
+    }
+    .metric-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1.25rem;
+      position: relative; overflow: hidden;
+    }
+    .metric-card::before {
+      content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px;
+    }
+    .metric-card.cyan::before  { background: linear-gradient(90deg, var(--cyan), transparent); }
+    .metric-card.green::before { background: linear-gradient(90deg, var(--green), transparent); }
+    .metric-card.blue::before  { background: linear-gradient(90deg, var(--blue), transparent); }
+    .metric-card.orange::before{ background: linear-gradient(90deg, var(--orange), transparent); }
+    .metric-card.purple::before{ background: linear-gradient(90deg, var(--purple), transparent); }
+    .metric-card.red::before   { background: linear-gradient(90deg, var(--red), transparent); }
+    .metric-label { font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.12em; color: var(--muted); margin-bottom: 0.5rem; }
+    .metric-value { font-size: 2rem; font-weight: 700; line-height: 1; margin-bottom: 0.25rem; }
+    .metric-value.cyan   { color: var(--cyan); }
+    .metric-value.green  { color: var(--green); }
+    .metric-value.blue   { color: var(--blue); }
+    .metric-value.orange { color: var(--orange); }
+    .metric-value.purple { color: var(--purple); }
+    .metric-value.red    { color: var(--red); }
+    .metric-desc { font-size: 0.7rem; color: var(--muted); }
+
+    /* Two column layout */
+    .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin-bottom: 2rem; }
+    @media (max-width: 900px) { .two-col { grid-template-columns: 1fr; } }
+
+    .panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+    }
+    .panel-header {
+      padding: 0.75rem 1.25rem;
+      border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .panel-title { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--cyan); font-weight: 700; }
+    .panel-body { padding: 1.25rem; }
+
+    /* Orchestrate form */
+    .orchestrate-form { display: flex; flex-direction: column; gap: 0.75rem; }
+    label { font-size: 0.75rem; color: var(--muted); }
+    textarea, input, select {
+      background: rgba(0,0,0,0.4);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      font-family: inherit;
+      font-size: 0.85rem;
+      padding: 0.6rem 0.8rem;
+      width: 100%;
+      resize: vertical;
+    }
+    textarea:focus, input:focus, select:focus {
+      outline: none; border-color: var(--cyan);
+      box-shadow: 0 0 0 2px rgba(0,229,255,0.15);
+    }
+    .btn {
+      padding: 0.6rem 1.2rem; border-radius: 8px; border: none;
+      font-family: inherit; font-size: 0.85rem; font-weight: 600;
+      cursor: pointer; transition: all 0.2s;
+    }
+    .btn-primary {
+      background: linear-gradient(135deg, var(--cyan), var(--blue));
+      color: #000;
+    }
+    .btn-primary:hover { opacity: 0.85; transform: translateY(-1px); }
+    .btn-sm { font-size: 0.75rem; padding: 0.4rem 0.8rem; }
+
+    /* Runs list */
+    .run-item {
+      border-bottom: 1px solid var(--border);
+      padding: 0.75rem 0;
+    }
+    .run-item:last-child { border-bottom: none; }
+    .run-goal { font-size: 0.85rem; margin-bottom: 0.25rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .run-meta { font-size: 0.7rem; color: var(--muted); display: flex; gap: 0.75rem; }
+    .badge {
+      display: inline-block; padding: 0.15rem 0.5rem;
+      border-radius: 20px; font-size: 0.65rem; font-weight: 700;
+      text-transform: uppercase; letter-spacing: 0.08em;
+    }
+    .badge-planning  { background: rgba(0,229,255,0.15); color: var(--cyan); }
+    .badge-running   { background: rgba(41,121,255,0.2);  color: var(--blue); }
+    .badge-completed { background: rgba(0,230,118,0.2);   color: var(--green); }
+    .badge-failed    { background: rgba(255,23,68,0.2);    color: var(--red); }
+    .badge-paused    { background: rgba(255,145,0,0.2);    color: var(--orange); }
+
+    /* Plan output */
+    .plan-output {
+      background: rgba(0,0,0,0.4);
+      border: 1px solid rgba(0,229,255,0.2);
+      border-radius: 8px;
+      padding: 1rem;
+      font-size: 0.78rem;
+      max-height: 400px;
+      overflow-y: auto;
+    }
+    .plan-strategy { color: var(--cyan); margin-bottom: 0.75rem; }
+    .subtask {
+      padding: 0.5rem 0;
+      border-bottom: 1px solid rgba(255,255,255,0.05);
+    }
+    .subtask:last-child { border-bottom: none; }
+    .subtask-title { font-weight: 700; margin-bottom: 0.2rem; }
+    .subtask-meta { color: var(--muted); font-size: 0.7rem; display: flex; flex-wrap: wrap; gap: 0.5rem; }
+    .agent-tag { color: var(--purple); }
+    .model-tag { color: var(--blue); }
+    .approval-tag { color: var(--orange); }
+
+    /* Models usage table */
+    table { width: 100%; border-collapse: collapse; font-size: 0.78rem; }
+    th { text-align: left; padding: 0.4rem 0.6rem; color: var(--muted); font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.08em; border-bottom: 1px solid var(--border); }
+    td { padding: 0.5rem 0.6rem; border-bottom: 1px solid rgba(255,255,255,0.04); }
+    tr:last-child td { border-bottom: none; }
+
+    /* Governance levels */
+    .level-card {
+      display: flex; gap: 0.75rem; align-items: flex-start;
+      padding: 0.6rem 0; border-bottom: 1px solid rgba(255,255,255,0.04);
+    }
+    .level-card:last-child { border-bottom: none; }
+    .level-num {
+      width: 28px; height: 28px; border-radius: 6px; flex-shrink: 0;
+      display: flex; align-items: center; justify-content: center;
+      font-weight: 900; font-size: 0.85rem;
+    }
+    .level-num.l1 { background: rgba(0,230,118,0.2); color: var(--green); }
+    .level-num.l2 { background: rgba(0,229,255,0.2); color: var(--cyan); }
+    .level-num.l3 { background: rgba(41,121,255,0.2); color: var(--blue); }
+    .level-num.l4 { background: rgba(255,145,0,0.2); color: var(--orange); }
+    .level-num.l5 { background: rgba(213,0,249,0.2); color: var(--purple); }
+    .level-info .level-name { font-size: 0.8rem; font-weight: 700; }
+    .level-info .level-desc { font-size: 0.7rem; color: var(--muted); }
+
+    .empty { text-align: center; color: var(--muted); font-size: 0.8rem; padding: 1.5rem; }
+    .error-msg { background: rgba(255,23,68,0.1); border: 1px solid rgba(255,23,68,0.3); border-radius: 8px; padding: 0.75rem 1rem; color: var(--red); font-size: 0.8rem; }
+    .loading { color: var(--muted); font-size: 0.8rem; }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="logo">
+      <div class="logo-icon">E</div>
+      <div>
+        <div class="logo-text">EditCore</div>
+        <div class="logo-sub">AI Command Center</div>
+      </div>
+    </div>
+    <div class="header-status">
+      <div class="pulse"></div>
+      <span id="statusLabel">Conectando...</span>
+    </div>
+  </header>
+
+  <main>
+    <h1>AI Operating System</h1>
+    <p class="subtitle">Centro de operaciones central — orquestación, modelos, gobernanza y métricas en tiempo real.</p>
+
+    <!-- Metrics -->
+    <div class="metrics-grid" id="metricsGrid">
+      <div class="metric-card cyan"><div class="metric-label">Runs (24h)</div><div class="metric-value cyan" id="mRuns">—</div><div class="metric-desc">Orquestaciones</div></div>
+      <div class="metric-card green"><div class="metric-label">Completados</div><div class="metric-value green" id="mCompleted">—</div><div class="metric-desc">Exitosos</div></div>
+      <div class="metric-card blue"><div class="metric-label">Agentes activos</div><div class="metric-value blue" id="mAgents">—</div><div class="metric-desc">En ejecución</div></div>
+      <div class="metric-card orange"><div class="metric-label">Costo (24h)</div><div class="metric-value orange" id="mCost">—</div><div class="metric-desc">USD cents</div></div>
+      <div class="metric-card purple"><div class="metric-label">Lecciones aprendidas</div><div class="metric-value purple" id="mLearning">—</div><div class="metric-desc">Meta-learning</div></div>
+      <div class="metric-card red"><div class="metric-label">Fallos (24h)</div><div class="metric-value red" id="mFailed">—</div><div class="metric-desc">Orquestaciones fallidas</div></div>
+    </div>
+
+    <div class="two-col">
+      <!-- Orchestrate -->
+      <div class="panel">
+        <div class="panel-header">
+          <span class="panel-title">Orquestador</span>
+          <button class="btn btn-primary btn-sm" id="btnPlan" onclick="planGoal()">Previsualizar Plan</button>
+        </div>
+        <div class="panel-body">
+          <div class="orchestrate-form">
+            <div>
+              <label>Objetivo</label>
+              <textarea id="goalInput" rows="3" placeholder="Crear una plataforma de ventas con IA y pagos integrados..."></textarea>
+            </div>
+            <div>
+              <label>Nivel de autonomía</label>
+              <select id="autonomyLevel">
+                <option value="1">1 — Asistente (solo sugiere)</option>
+                <option value="2">2 — Analista (lee y analiza)</option>
+                <option value="3">3 — Ejecutor supervisado</option>
+                <option value="4">4 — Operador autónomo</option>
+                <option value="5">5 — Optimización continua</option>
+              </select>
+            </div>
+            <button class="btn btn-primary" onclick="orchestrate()">Iniciar Orquestación</button>
+          </div>
+          <div id="planOutput" style="margin-top:1rem;"></div>
+        </div>
+      </div>
+
+      <!-- Governance levels -->
+      <div class="panel">
+        <div class="panel-header">
+          <span class="panel-title">Gobernanza IA</span>
+        </div>
+        <div class="panel-body">
+          <div id="governanceLevels">
+            <div class="level-card"><div class="level-num l1">1</div><div class="level-info"><div class="level-name">Asistente</div><div class="level-desc">Solo sugiere. No ejecuta nada sin confirmación.</div></div></div>
+            <div class="level-card"><div class="level-num l2">2</div><div class="level-info"><div class="level-name">Analista</div><div class="level-desc">Lee y analiza. Puede llamar APIs de lectura.</div></div></div>
+            <div class="level-card"><div class="level-num l3">3</div><div class="level-info"><div class="level-name">Ejecutor supervisado</div><div class="level-desc">Puede escribir archivos y crear agentes con aprobación.</div></div></div>
+            <div class="level-card"><div class="level-num l4">4</div><div class="level-info"><div class="level-name">Operador autónomo</div><div class="level-desc">Puede hacer commits y deployar con aprobación humana.</div></div></div>
+            <div class="level-card"><div class="level-num l5">5</div><div class="level-info"><div class="level-name">Optimización continua</div><div class="level-desc">Autonomía máxima. Acciones críticas se registran y ejecutan.</div></div></div>
+          </div>
+          <div style="margin-top:1rem;">
+            <div style="font-size:0.75rem;color:var(--muted);margin-bottom:0.5rem;">Verificar permiso</div>
+            <div style="display:flex;gap:0.5rem;flex-wrap:wrap;">
+              <select id="checkAction" style="flex:1;min-width:120px;">
+                <option value="read_files">read_files</option>
+                <option value="write_files">write_files</option>
+                <option value="git_commit">git_commit</option>
+                <option value="deploy">deploy</option>
+                <option value="delete_data">delete_data</option>
+                <option value="modify_secrets">modify_secrets</option>
+                <option value="api_call">api_call</option>
+                <option value="create_agent">create_agent</option>
+              </select>
+              <input type="number" id="checkLevel" min="1" max="5" value="1" style="width:60px;" />
+              <button class="btn btn-primary btn-sm" onclick="checkPerm()">Verificar</button>
+            </div>
+            <div id="checkResult" style="margin-top:0.5rem;font-size:0.75rem;"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="two-col">
+      <!-- Recent runs -->
+      <div class="panel">
+        <div class="panel-header">
+          <span class="panel-title">Runs recientes</span>
+          <button class="btn btn-primary btn-sm" onclick="loadRuns()">Actualizar</button>
+        </div>
+        <div class="panel-body" id="runsList"><div class="loading">Cargando...</div></div>
+      </div>
+
+      <!-- Model router -->
+      <div class="panel">
+        <div class="panel-header">
+          <span class="panel-title">Router de Modelos</span>
+        </div>
+        <div class="panel-body">
+          <div style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-bottom:1rem;">
+            <select id="routeTaskType" style="flex:1;min-width:140px;">
+              <option value="architecture">architecture</option>
+              <option value="code_generation">code_generation</option>
+              <option value="code_review">code_review</option>
+              <option value="security_analysis">security_analysis</option>
+              <option value="test_generation">test_generation</option>
+              <option value="planning">planning</option>
+              <option value="documentation">documentation</option>
+              <option value="summarization">summarization</option>
+              <option value="simple_qa">simple_qa</option>
+              <option value="debugging">debugging</option>
+            </select>
+            <input type="number" id="routeComplexity" min="1" max="10" placeholder="Complejidad 1-10" style="width:130px;" />
+            <button class="btn btn-primary btn-sm" onclick="routeModel()">Recomendar</button>
+          </div>
+          <div id="routeResult"></div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+  <script src="/assets/supabase-config.js"></script>
+  <script>
+    const API = '';
+    const supabase = window.supabase.createClient(window.EDITCORE_SUPABASE_URL, window.EDITCORE_SUPABASE_ANON_KEY);
+    let session = null;
+
+    function getToken() { return session?.access_token; }
+    function apiFetch(path, opts = {}) {
+      return fetch(API + path, {
+        ...opts,
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${getToken()}`, ...(opts.headers || {}) },
+      });
+    }
+
+    async function loadMetrics() {
+      const r = await apiFetch('/api/v1/aios/metrics');
+      if (!r.ok) { document.getElementById('statusLabel').textContent = 'Sin sesión'; return; }
+      document.getElementById('statusLabel').textContent = 'Sistema activo';
+      const d = await r.json();
+      document.getElementById('mRuns').textContent = d.orchestration?.total ?? 0;
+      document.getElementById('mCompleted').textContent = d.orchestration?.completed ?? 0;
+      document.getElementById('mFailed').textContent = d.orchestration?.failed ?? 0;
+      document.getElementById('mAgents').textContent = d.agents?.active ?? 0;
+      document.getElementById('mCost').textContent = d.models?.total_cost_usd_cents ?? 0;
+      const ml = d.meta_learning || {};
+      document.getElementById('mLearning').textContent = (ml.success||0)+(ml.failure||0)+(ml.correction||0)+(ml.insight||0);
+    }
+
+    async function loadRuns() {
+      const el = document.getElementById('runsList');
+      el.innerHTML = '<div class="loading">Cargando...</div>';
+      const r = await apiFetch('/api/v1/aios/runs');
+      if (!r.ok) { el.innerHTML = '<div class="empty">Sin sesión</div>'; return; }
+      const { runs } = await r.json();
+      if (!runs?.length) { el.innerHTML = '<div class="empty">Sin orquestaciones aún.</div>'; return; }
+      el.innerHTML = runs.map(run => `
+        <div class="run-item">
+          <div class="run-goal">${run.goal}</div>
+          <div class="run-meta">
+            <span class="badge badge-${run.status}">${run.status}</span>
+            <span>Nivel ${run.autonomy_level}</span>
+            <span>${new Date(run.created_at).toLocaleString('es-MX',{dateStyle:'short',timeStyle:'short'})}</span>
+          </div>
+        </div>`).join('');
+    }
+
+    async function planGoal() {
+      const goal = document.getElementById('goalInput').value.trim();
+      if (!goal) return;
+      const el = document.getElementById('planOutput');
+      el.innerHTML = '<div class="loading">Generando plan...</div>';
+      const r = await apiFetch('/api/v1/aios/task-plan', { method:'POST', body: JSON.stringify({ goal }) });
+      const data = await r.json();
+      if (!r.ok) { el.innerHTML = `<div class="error-msg">${data.error}</div>`; return; }
+      const plan = data.plan;
+      el.innerHTML = `<div class="plan-output">
+        <div class="plan-strategy">Estrategia: ${plan.strategy}</div>
+        <div style="font-size:0.7rem;color:var(--muted);margin-bottom:0.75rem;">Complejidad: ${plan.complexity_score}/10 · Agentes: ${plan.estimated_agents.join(', ')}</div>
+        ${plan.subtasks.map(s => `
+          <div class="subtask">
+            <div class="subtask-title">${s.id}. ${s.title}</div>
+            <div class="subtask-meta">
+              <span class="agent-tag">@${s.agent}</span>
+              <span class="model-tag">${s.estimated_model}</span>
+              ${s.requires_human_approval ? '<span class="approval-tag">⚠ aprobación humana</span>' : ''}
+              ${s.depends_on.length ? `<span>deps: ${s.depends_on.join(',')}</span>` : ''}
+            </div>
+          </div>`).join('')}
+      </div>`;
+    }
+
+    async function orchestrate() {
+      const goal = document.getElementById('goalInput').value.trim();
+      const autonomy_level = parseInt(document.getElementById('autonomyLevel').value);
+      if (!goal) return;
+      const el = document.getElementById('planOutput');
+      el.innerHTML = '<div class="loading">Iniciando orquestación...</div>';
+      const r = await apiFetch('/api/v1/aios/orchestrate', { method:'POST', body: JSON.stringify({ goal, autonomy_level }) });
+      const data = await r.json();
+      if (!r.ok) { el.innerHTML = `<div class="error-msg">${data.error}</div>`; return; }
+      el.innerHTML = `<div class="plan-output">
+        <div style="color:var(--green);margin-bottom:0.5rem;">✓ Run creado: ${data.run.id.slice(0,8)}...</div>
+        <div class="plan-strategy">Estrategia: ${data.plan.strategy}</div>
+        ${data.plan.subtasks.map(s => `
+          <div class="subtask">
+            <div class="subtask-title">${s.id}. ${s.title}</div>
+            <div class="subtask-meta">
+              <span class="agent-tag">@${s.agent}</span>
+              <span class="model-tag">${s.estimated_model}</span>
+              ${s.requires_human_approval ? '<span class="approval-tag">⚠ aprobación requerida</span>' : ''}
+            </div>
+          </div>`).join('')}
+      </div>`;
+      loadRuns();
+      loadMetrics();
+    }
+
+    async function checkPerm() {
+      const action = document.getElementById('checkAction').value;
+      const autonomy_level = parseInt(document.getElementById('checkLevel').value) || 1;
+      const r = await apiFetch('/api/v1/aios/governance', { method:'POST', body: JSON.stringify({ action, autonomy_level }) });
+      const data = await r.json();
+      const result = data.result;
+      const el = document.getElementById('checkResult');
+      if (!r.ok) { el.innerHTML = `<span style="color:var(--red)">${data.error}</span>`; return; }
+      const color = result.allowed ? (result.requires_human_approval ? 'var(--orange)' : 'var(--green)') : 'var(--red)';
+      el.innerHTML = `<span style="color:${color}">${result.allowed ? '✓ Permitido' : '✗ Denegado'}${result.requires_human_approval ? ' (requiere aprobación)' : ''}</span><br><span style="color:var(--muted);font-size:0.7rem">${result.reason}</span>`;
+    }
+
+    async function routeModel() {
+      const task_type = document.getElementById('routeTaskType').value;
+      const complexityVal = document.getElementById('routeComplexity').value;
+      const body = { task_type };
+      if (complexityVal) body.complexity_score = parseInt(complexityVal);
+      const r = await apiFetch('/api/v1/aios/model-router', { method:'POST', body: JSON.stringify(body) });
+      const data = await r.json();
+      const el = document.getElementById('routeResult');
+      if (!r.ok) { el.innerHTML = `<div class="error-msg">${data.error}</div>`; return; }
+      const rec = data.recommendation;
+      const tierColor = rec.tier === 'premium' ? 'var(--purple)' : rec.tier === 'balanced' ? 'var(--cyan)' : 'var(--green)';
+      el.innerHTML = `<div class="plan-output">
+        <div style="color:var(--cyan);font-weight:700;margin-bottom:0.5rem;">${rec.model_id}</div>
+        <div class="subtask-meta" style="margin-bottom:0.5rem;">
+          <span style="color:${tierColor}">${rec.tier}</span>
+          <span style="color:var(--muted)">\$${rec.estimated_cost_per_1k_tokens_usd}/1k tokens</span>
+          <span style="color:var(--muted)">ctx: ${(rec.max_context_tokens/1000).toFixed(0)}k</span>
+        </div>
+        <div style="color:var(--muted);font-size:0.75rem;">${rec.rationale}</div>
+      </div>`;
+    }
+
+    async function init() {
+      const { data } = await supabase.auth.getSession();
+      session = data.session;
+      if (!session) {
+        document.getElementById('statusLabel').textContent = 'No has iniciado sesión';
+        return;
+      }
+      loadMetrics();
+      loadRuns();
+      setInterval(loadMetrics, 30000);
+    }
+    init();
+  </script>
+  <script defer src="/_vercel/insights/script.js"></script>
+  <script defer src="/_vercel/speed-insights/script.js"></script>
+</body>
+</html>
