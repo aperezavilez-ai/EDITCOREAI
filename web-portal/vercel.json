@@ -52,7 +52,7 @@
     },
     {
       "src": "/download",
-      "dest": "https://github.com/aperezavilez-ai/EDITCOREAI/releases/latest/download/EDITCOREAI.exe"
+      "dest": "https://github.com/aperezavilez-ai/EDITCOREAI/releases/download/v3.0.2/EDITCOREAI-Setup.exe"
     },
     {
       "handle": "filesystem"

@@ -151,11 +151,92 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
   });
 
-  $("openWebIdeBtn")?.addEventListener("click", () => {
+  // Funciones de control de Web Studio
+  function openWebStudio() {
     if (!currentUser) {
       openAuthModal(false);
-    } else {
-      alert(`¡Bienvenido a EditCore Web, ${currentUser.email}!\nAbriendo tu espacio de trabajo...`);
+      return;
+    }
+    const studio = $("webStudioModal");
+    if (studio) {
+      studio.hidden = false;
+      studio.removeAttribute("hidden");
+      studio.setAttribute("aria-hidden", "false");
+      const badge = $("studioUserBadge");
+      if (badge) badge.textContent = currentUser.email;
+      const credBadge = $("studioCreditsBadge");
+      if (credBadge) {
+        const bal = getDisplayBalance();
+        credBadge.textContent = bal === "∞" ? "⚡ Ilimitado" : `💳 ${bal || "25.0"} créditos`;
+      }
+      setTimeout(() => $("studioPrompt")?.focus(), 150);
+    }
+  }
+
+  function closeWebStudio() {
+    const studio = $("webStudioModal");
+    if (studio) {
+      studio.hidden = true;
+      studio.setAttribute("hidden", "");
+      studio.setAttribute("aria-hidden", "true");
+    }
+  }
+
+  $("openWebIdeBtn")?.addEventListener("click", () => {
+    openWebStudio();
+  });
+
+  $("studioCloseBtn")?.addEventListener("click", closeWebStudio);
+
+  // Cerrar modales haciendo clic en el fondo
+  $("authModal")?.addEventListener("click", (e) => {
+    if (e.target === $("authModal")) closeAuthModal();
+  });
+  $("webStudioModal")?.addEventListener("click", (e) => {
+    if (e.target === $("webStudioModal")) closeWebStudio();
+  });
+
+  // Envío interactivo de requerimientos en Web Studio
+  $("studioForm")?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const promptInput = $("studioPrompt");
+    const sendBtn = $("studioSendBtn");
+    const chat = $("studioChat");
+    const text = promptInput?.value?.trim();
+    if (!text) return;
+
+    const userMsg = document.createElement("div");
+    userMsg.className = "studio-msg studio-msg-user";
+    userMsg.textContent = text;
+    chat?.appendChild(userMsg);
+    promptInput.value = "";
+    if (sendBtn) sendBtn.disabled = true;
+
+    const aiMsg = document.createElement("div");
+    aiMsg.className = "studio-msg studio-msg-ai";
+    aiMsg.textContent = "⚙️ EditCoreAI procesando tu requerimiento...";
+    chat?.appendChild(aiMsg);
+    chat.scrollTop = chat.scrollHeight;
+
+    try {
+      const resp = await window.editcoreChat([{ role: "user", content: text }]);
+      if (resp?.reply) {
+        aiMsg.textContent = resp.reply;
+      } else if (resp?.error) {
+        aiMsg.textContent = `⚠️ ${resp.message || "Error al procesar consulta."}`;
+      } else {
+        aiMsg.textContent = "Requerimiento completado correctamente.";
+      }
+    } catch (err) {
+      aiMsg.textContent = `⚠️ Error de conexión: ${err.message}`;
+    } finally {
+      if (sendBtn) sendBtn.disabled = false;
+      const credBadge = $("studioCreditsBadge");
+      if (credBadge) {
+        const bal = getDisplayBalance();
+        credBadge.textContent = bal === "∞" ? "⚡ Ilimitado" : `💳 ${bal} créditos`;
+      }
+      chat.scrollTop = chat.scrollHeight;
     }
   });
 
@@ -197,7 +278,7 @@ document.addEventListener("DOMContentLoaded", async () => {
           // Bienvenida con saldo
           const bal = getDisplayBalance();
           const balMsg = bal === "∞" ? "Acceso ilimitado activo ⚡" : `Saldo: ${bal} créditos 💳`;
-          alert(`¡Bienvenido, ${currentUser.email}!\n${balMsg}`);
+          openWebStudio();
         } else {
           // Fallback sin Supabase (modo demo)
           currentUser = { email, id: "demo", role: email === ADMIN_EMAIL ? "admin" : "user" };
