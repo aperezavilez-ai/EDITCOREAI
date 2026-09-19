@@ -10702,6 +10702,24 @@ ipcMain.handle("credits:list-users", async () => {
   }
 });
 
+ipcMain.handle("credits:get-master-ledger", async () => {
+  try {
+    const { creditLedger } = require("./runtime/credit-ledger");
+    return await creditLedger.getMasterLedgerAsync();
+  } catch (error) {
+    return { totalUsd: 8000, totalCredits: 160000, totalTokens: 1600000000, consumedUsd: 0, consumedTokens: 0, remainingUsd: 8000, remainingCredits: 160000, remainingTokens: 1600000000 };
+  }
+});
+
+ipcMain.handle("credits:deduct-master-usage", async (_event, costUsd, tokensUsed) => {
+  try {
+    const { creditLedger } = require("./runtime/credit-ledger");
+    return await creditLedger.deductMasterUsageAsync(costUsd, tokensUsed);
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
+});
+
 // Role Policy Guard handlers
 ipcMain.handle("auth:check-access", async (_event, user, targetPath) => {
   try {

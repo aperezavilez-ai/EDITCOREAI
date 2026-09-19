@@ -632,6 +632,84 @@
       if (creditsBigNum) creditsBigNum.textContent = balStr;
       if (creditsPlanTag) creditsPlanTag.textContent = isAdm ? "Plan Administrador Maestro · Acceso Vitalicio" : "Plan Prepago ME AI · Solo Modelos Oficiales";
 
+      // Administrador Maestro vs Usuario Estándar:
+      const buyCreditsBtn = $("settingsBuyCreditsBtn");
+      const creditsBannerCta = $("settingsCreditsBannerCta");
+      const adminMasterDashboard = $("settingsAdminMasterDashboard");
+      const topMasterLedgerBar = $("topMasterLedgerBar");
+
+      if (isAdm) {
+        // Ocultar botón de compra para el Administrador Maestro
+        if (buyCreditsBtn) buyCreditsBtn.style.display = "none";
+        if (creditsBannerCta) creditsBannerCta.style.display = "none";
+
+        // Mostrar barra superior de fondo maestro
+        if (topMasterLedgerBar) {
+          topMasterLedgerBar.hidden = false;
+          topMasterLedgerBar.removeAttribute("hidden");
+        }
+
+        // Mostrar y actualizar Dashboard Maestro
+        if (adminMasterDashboard) {
+          adminMasterDashboard.hidden = false;
+          adminMasterDashboard.removeAttribute("hidden");
+        }
+
+        try {
+          if (window.editcoreCredits?.getMasterLedger) {
+            const master = await window.editcoreCredits.getMasterLedger();
+            if (master) {
+              const remUsd = Number(master.remainingUsd ?? 8000).toLocaleString("en-US", { style: "currency", currency: "USD" });
+              const remCredits = Number(master.remainingCredits ?? 160000).toLocaleString("en-US", { maximumFractionDigits: 1 });
+              const remTokens = Number(master.remainingTokens ?? 1600000000);
+              const remTokensFmt = remTokens >= 1e9 ? (remTokens / 1e9).toFixed(2) + "B" : (remTokens >= 1e6 ? (remTokens / 1e6).toFixed(1) + "M" : remTokens.toLocaleString());
+
+              // Barra superior
+              const topUsd = $("topStatUsd");
+              const topCred = $("topStatCredits");
+              const topTok = $("topStatTokens");
+              if (topUsd) topUsd.textContent = remUsd;
+              if (topCred) topCred.textContent = remCredits;
+              if (topTok) topTok.textContent = remTokensFmt;
+
+              // Modal de Configuración
+              const modalUsd = $("adminMasterUsd");
+              const modalCred = $("adminMasterCredits");
+              const modalTok = $("adminMasterTokens");
+              const modalConsUsd = $("adminMasterConsumedUsd");
+              const modalConsCred = $("adminMasterConsumedCredits");
+              const modalConsTok = $("adminMasterConsumedTokens");
+              const modalPct = $("adminMasterPct");
+              const modalFill = $("adminMasterProgressFill");
+
+              if (modalUsd) modalUsd.textContent = remUsd;
+              if (modalCred) modalCred.textContent = remCredits;
+              if (modalTok) modalTok.textContent = remTokens.toLocaleString();
+
+              const consUsd = Number(master.consumedUsd || 0);
+              const consTok = Number(master.consumedTokens || 0);
+              const consCred = (consUsd * 1.5) / 0.05;
+              const pct = Math.min(100, Math.max(0, (consUsd / (master.totalUsd || 8000)) * 100));
+
+              if (modalConsUsd) modalConsUsd.textContent = `Consumido: $${consUsd.toFixed(4)} USD`;
+              if (modalConsCred) modalConsCred.textContent = `Consumido: ${consCred.toFixed(2)} cred`;
+              if (modalConsTok) modalConsTok.textContent = `Consumido: ${consTok.toLocaleString()} tokens`;
+              if (modalPct) modalPct.textContent = `${pct.toFixed(2)}% consumido`;
+              if (modalFill) modalFill.style.width = `${pct.toFixed(2)}%`;
+            }
+          }
+        } catch (mErr) {
+          console.warn("[MasterLedger] Error loading stats:", mErr);
+        }
+
+      } else {
+        // Usuario Normal: mostrar compra de créditos y ocultar datos maestros
+        if (buyCreditsBtn) buyCreditsBtn.style.display = "";
+        if (creditsBannerCta) creditsBannerCta.style.display = "";
+        if (topMasterLedgerBar) topMasterLedgerBar.hidden = true;
+        if (adminMasterDashboard) adminMasterDashboard.hidden = true;
+      }
+
       // RBAC: Ocultar o blindar configuración de proveedores si no es administrador
       const modelsNavTab = document.querySelector('[data-settings-tab="models"]');
       if (modelsNavTab) {

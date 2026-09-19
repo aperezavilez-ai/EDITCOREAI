@@ -2189,5 +2189,143 @@ html[data-theme="azul"] .diff-decision-card {
   border-color: rgba(239, 68, 68, 0.3) !important;
 }
 
+/* ─── Top Master Ledger Bar (Admin Maestro) ─── */
+.top-master-ledger-bar {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(241, 245, 249, 0.85);
+  border: 1px solid rgba(226, 232, 240, 0.9);
+  border-radius: 20px;
+  padding: 3px 8px;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.top-stat-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 12px;
+  background: #ffffff;
+  font-size: 11px;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+}
+
+.top-stat-pill .stat-lbl {
+  font-weight: 600;
+  color: #64748b;
+  font-size: 10px;
+}
+
+.top-stat-pill .stat-val {
+  font-weight: 700;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.text-emerald { color: #059669 !important; }
+.text-indigo  { color: #4f46e5 !important; }
+.text-cyan    { color: #0891b2 !important; }
+
+/* ─── Master Dashboard Card en Configuración ─── */
+.ec-master-dashboard-card {
+  background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+  border-radius: 14px;
+  padding: 18px 20px;
+  color: #f8fafc;
+  margin-bottom: 16px;
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.15);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.ec-master-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+
+.ec-master-badge {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: #fbbf24;
+  background: rgba(251, 191, 36, 0.12);
+  padding: 3px 10px;
+  border-radius: 12px;
+  border: 1px solid rgba(251, 191, 36, 0.25);
+}
+
+.ec-master-updated {
+  font-size: 11px;
+  color: #94a3b8;
+}
+
+.ec-master-metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.ec-metric-box {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.ec-metric-title {
+  font-size: 11px;
+  color: #94a3b8;
+  font-weight: 600;
+}
+
+.ec-metric-number {
+  font-size: 18px;
+  font-weight: 800;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.ec-metric-sub {
+  font-size: 10px;
+  color: #64748b;
+}
+
+.ec-master-bar-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.ec-master-bar-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11px;
+  color: #94a3b8;
+}
+
+.ec-progress-track {
+  width: 100%;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.ec-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #059669, #10b981);
+  border-radius: 3px;
+  transition: width 0.3s ease;
+}
+
+
 
 

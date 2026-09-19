@@ -22,6 +22,20 @@
           <span>EditCoreAI</span>
         </div>
         <div class="chat-home-top-actions">
+          <div id="topMasterLedgerBar" class="top-master-ledger-bar" title="Fondo Maestro EditCoreAI" hidden>
+            <div class="top-stat-pill" title="Fondo Maestro en Dólares">
+              <span class="stat-lbl">💵 USD</span>
+              <span class="stat-val text-emerald" id="topStatUsd">$8,000.00</span>
+            </div>
+            <div class="top-stat-pill" title="Equivalente en Créditos">
+              <span class="stat-lbl">⚡ Créditos</span>
+              <span class="stat-val text-indigo" id="topStatCredits">160,000</span>
+            </div>
+            <div class="top-stat-pill" title="Tokens Disponibles">
+              <span class="stat-lbl">🔢 Tokens</span>
+              <span class="stat-val text-cyan" id="topStatTokens">1.60B</span>
+            </div>
+          </div>
           <button id="chatHomeFolderBtn" type="button" class="chat-home-folder-btn" title="Conectar carpeta local">Conectar carpeta</button>
           <button id="chatHomeIdeBtn" type="button" class="chat-home-ide-btn" title="Abrir el IDE existente de EditCore">IDE</button>
           <button id="chatHomeReloadAppBtn" type="button" class="chat-home-reload-btn" title="Actualizar EditCoreAI con el código actual" aria-label="Actualizar app"><span>Actualizar</span></button>
@@ -369,18 +383,54 @@
 
             <!-- PANE: Créditos y Facturación -->
             <div class="ec-settings-pane is-hidden" id="settingsPaneCredits" data-pane="credits" hidden>
-              <div class="ec-credits-overview-banner">
+              
+              <!-- Dashboard Maestro (Exclusivo Administrador) -->
+              <div id="settingsAdminMasterDashboard" class="ec-master-dashboard-card" hidden>
+                <div class="ec-master-card-head">
+                  <div class="ec-master-badge">👑 Cuenta Maestra · EditCoreAI Central</div>
+                  <div class="ec-master-updated" id="adminMasterUpdated">En vivo</div>
+                </div>
+                <div class="ec-master-metrics-grid">
+                  <div class="ec-metric-box">
+                    <span class="ec-metric-title">💵 Fondo Maestro en USD</span>
+                    <div class="ec-metric-number text-emerald" id="adminMasterUsd">$8,000.00</div>
+                    <span class="ec-metric-sub" id="adminMasterConsumedUsd">Consumido: $0.0000</span>
+                  </div>
+                  <div class="ec-metric-box">
+                    <span class="ec-metric-title">⚡ Reserva Global de Créditos</span>
+                    <div class="ec-metric-number text-indigo" id="adminMasterCredits">160,000.00</div>
+                    <span class="ec-metric-sub" id="adminMasterConsumedCredits">Consumido: 0.00 cred</span>
+                  </div>
+                  <div class="ec-metric-box">
+                    <span class="ec-metric-title">🔢 Reserva Global de Tokens</span>
+                    <div class="ec-metric-number text-cyan" id="adminMasterTokens">1,600,000,000</div>
+                    <span class="ec-metric-sub" id="adminMasterConsumedTokens">Consumido: 0 tokens</span>
+                  </div>
+                </div>
+                <div class="ec-master-bar-wrap">
+                  <div class="ec-master-bar-label">
+                    <span>Deducción y Uso del Fondo Maestro</span>
+                    <span id="adminMasterPct">0% consumido</span>
+                  </div>
+                  <div class="ec-progress-track">
+                    <div class="ec-progress-fill" id="adminMasterProgressFill" style="width: 0%;"></div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Banner de Saldo Personal (para Usuarios Normales o resumen de sesión) -->
+              <div class="ec-credits-overview-banner" id="settingsCreditsOverviewBanner">
                 <div class="ec-credits-banner-main">
                   <span class="ec-credits-caption">Saldo de Créditos Disponible</span>
                   <div class="ec-credits-big-num" id="settingsCreditsBigNum">∞ Ilimitado</div>
                   <div class="ec-credits-plan-tag" id="settingsCreditsPlanTag">Plan Administrador Maestro · Acceso Vitalicio</div>
                 </div>
-                <div class="ec-credits-banner-cta">
+                <div class="ec-credits-banner-cta" id="settingsCreditsBannerCta">
                   <button type="button" id="settingsBuyCreditsBtn" class="ec-btn-gold">💳 Comprar Créditos</button>
                 </div>
               </div>
 
-              <div class="ec-settings-group-card">
+              <div class="ec-settings-group-card" id="settingsVoucherCard">
                 <div class="ec-group-info">
                   <h4>Canjear Cupón o Código de Recarga</h4>
                   <p>Ingresa un código promocional para añadir saldo inmediatamente.</p>

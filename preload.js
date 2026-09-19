@@ -655,6 +655,8 @@ contextBridge.exposeInMainWorld("editcoreCredits", {
   getPacks: () => ipcRenderer.invoke("credits:get-packs"),
   createOrder: (userId, packCredits, gateway) => ipcRenderer.invoke("credits:create-order", userId, packCredits, gateway),
   calculateUsage: (model, inputTokens, outputTokens) => ipcRenderer.invoke("credits:calculate-usage", model, inputTokens, outputTokens),
+  getMasterLedger: () => ipcRenderer.invoke("credits:get-master-ledger"),
+  deductMasterUsage: (costUsd, tokensUsed) => ipcRenderer.invoke("credits:deduct-master-usage", costUsd, tokensUsed),
 });
 
 contextBridge.exposeInMainWorld("editcoreAuth", {

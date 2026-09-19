@@ -527,6 +527,128 @@ class CreditLedger extends EventEmitter {
       avatarUrl: u.avatarUrl || null,
     }));
   }
+
+  // ─── Master Ledger ($8,000 USD, Créditos y Tokens Globales) ───────────────
+  async getMasterLedgerAsync() {
+    let ledger = {
+      adminEmail: ADMIN_EMAIL,
+      totalUsd: 8000.0,
+      totalCredits: 160000.0,
+      totalTokens: 1600000000,
+      consumedUsd: 0.0,
+      consumedTokens: 0,
+      remainingUsd: 8000.0,
+      remainingCredits: 160000.0,
+      remainingTokens: 1600000000,
+    };
+
+    if (this._supabaseToken) {
+      const data = await this._supabaseGet(`/master_ledger?select=*&limit=1`);
+      if (data && data.length > 0) {
+        const row = data[0];
+        const totUsd = Number(row.total_usd || 8000);
+        const totCred = Number(row.total_credits || 160000);
+        const totTok = Number(row.total_tokens || 1600000000);
+        const consUsd = Number(row.consumed_usd || 0);
+        const consTok = Number(row.consumed_tokens || 0);
+        const consCred = (consUsd * 1.5) / 0.05;
+
+        ledger = {
+          id: row.id,
+          adminEmail: row.admin_email || ADMIN_EMAIL,
+          totalUsd: totUsd,
+          totalCredits: totCred,
+          totalTokens: totTok,
+          consumedUsd: consUsd,
+          consumedTokens: consTok,
+          consumedCredits: consCred,
+          remainingUsd: Math.max(0, totUsd - consUsd),
+          remainingCredits: Math.max(0, totCred - consCred),
+          remainingTokens: Math.max(0, totTok - consTok),
+          updatedAt: row.updated_at,
+          source: "supabase",
+        };
+        return ledger;
+      }
+    }
+
+    // Fallback local desde estado
+    const local = this.state.masterLedger || {};
+    const totUsd = Number(local.totalUsd || 8000);
+    const totCred = Number(local.totalCredits || 160000);
+    const totTok = Number(local.totalTokens || 1600000000);
+    const consUsd = Number(local.consumedUsd || 0);
+    const consTok = Number(local.consumedTokens || 0);
+    const consCred = (consUsd * 1.5) / 0.05;
+
+    return {
+      adminEmail: ADMIN_EMAIL,
+      totalUsd: totUsd,
+      totalCredits: totCred,
+      totalTokens: totTok,
+      consumedUsd: consUsd,
+      consumedTokens: consTok,
+      consumedCredits: consCred,
+      remainingUsd: Math.max(0, totUsd - consUsd),
+      remainingCredits: Math.max(0, totCred - consCred),
+      remainingTokens: Math.max(0, totTok - consTok),
+      source: "local",
+    };
+  }
+
+  getMasterLedger() {
+    const local = this.state.masterLedger || {
+      totalUsd: 8000.0,
+      totalCredits: 160000.0,
+      totalTokens: 1600000000,
+      consumedUsd: 0.0,
+      consumedTokens: 0,
+    };
+    const totUsd = Number(local.totalUsd || 8000);
+    const totCred = Number(local.totalCredits || 160000);
+    const totTok = Number(local.totalTokens || 1600000000);
+    const consUsd = Number(local.consumedUsd || 0);
+    const consTok = Number(local.consumedTokens || 0);
+    const consCred = (consUsd * 1.5) / 0.05;
+
+    return {
+      adminEmail: ADMIN_EMAIL,
+      totalUsd: totUsd,
+      totalCredits: totCred,
+      totalTokens: totTok,
+      consumedUsd: consUsd,
+      consumedTokens: consTok,
+      consumedCredits: consCred,
+      remainingUsd: Math.max(0, totUsd - consUsd),
+      remainingCredits: Math.max(0, totCred - consCred),
+      remainingTokens: Math.max(0, totTok - consTok),
+    };
+  }
+
+  async deductMasterUsageAsync(costUsd = 0, tokensUsed = 0) {
+    if (!this.state.masterLedger) {
+      this.state.masterLedger = { totalUsd: 8000, totalCredits: 160000, totalTokens: 1600000000, consumedUsd: 0, consumedTokens: 0 };
+    }
+    this.state.masterLedger.consumedUsd = (Number(this.state.masterLedger.consumedUsd || 0) + Number(costUsd || 0));
+    this.state.masterLedger.consumedTokens = (Number(this.state.masterLedger.consumedTokens || 0) + Number(tokensUsed || 0));
+    this._save();
+
+    if (this._supabaseToken) {
+      const data = await this._supabaseGet(`/master_ledger?select=*&limit=1`);
+      if (data && data.length > 0) {
+        const row = data[0];
+        const newConsUsd = Number(row.consumed_usd || 0) + Number(costUsd || 0);
+        const newConsTok = Number(row.consumed_tokens || 0) + Number(tokensUsed || 0);
+        await this._supabasePatch(`/master_ledger?id=eq.${row.id}`, {
+          consumed_usd: newConsUsd,
+          consumed_tokens: newConsTok,
+          updated_at: new Date().toISOString(),
+        });
+      }
+    }
+    this.emit("master-ledger:updated", this.getMasterLedger());
+    return this.getMasterLedger();
+  }
 }
 
 const creditLedgerInstance = new CreditLedger();
