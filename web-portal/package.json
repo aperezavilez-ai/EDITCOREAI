@@ -1,0 +1,14 @@
+﻿{
+  "name": "editcore-web-portal",
+  "version": "4.0.0",
+  "description": "EditCoreAI Web Platform & Cloud Gateway",
+  "main": "index.html",
+  "scripts": {
+    "start": "serve ."
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.45.4",
+    "stripe": "^16.12.0",
+    "mercadopago": "^2.0.15"
+  }
+}
