@@ -46,11 +46,11 @@ try {
   projectMapApi = null;
 }
 
-let atMentionsResolver = null;
+let projectRoadmapApi = null;
 try {
-  atMentionsResolver = require("../runtime/at-mentions-resolver");
+  projectRoadmapApi = require("../runtime/project-roadmap");
 } catch (_) {
-  atMentionsResolver = null;
+  projectRoadmapApi = null;
 }
 
 const DEFAULT_MAX_STEPS = 28;
@@ -58,10 +58,13 @@ const AUTHORIZED_MAX_STEPS = 32;
 const DEFAULT_TOTAL_TIMEOUT_MS = 600_000;
 const MAX_INCOMPLETE_RETRIES = 3;
 const HEARTBEAT_INTERVAL_MS = 5_000;
+const ROADMAP_MIN_LENGTH = 500;
+const MAX_PROMISE_RETRIES = 3;
 
 const LEADERSHIP_PROMPT = [
   "Sos guía líder del proyecto, pero te mantenés dentro del alcance de lo pedido.",
   "Antes de cada tool: 1 frase de qué vas a hacer y por qué. Después: el hallazgo concreto.",
+  "REGLA DURA: no digas que vas a hacer algo — hacelo en el mismo turno con la tool. Nunca cierres con 'Ahora leo X' sin haber llamado read_file(X).",
   "Si falla algo leve (oldText, git auxiliar, ruta ausente), releé contexto y reintentá. No detengas la sesión por eso.",
   "Con Acceso completo, no pidas PROCEDE durante la tarea pedida.",
 ].join("\n");
@@ -90,6 +93,22 @@ try {
   requestScopePolicy = require("../runtime/request-scope-policy");
 } catch (_) {
   requestScopePolicy = null;
+}
+
+function isRoadmapUsable(root) {
+  if (!root || !projectRoadmapApi?.readRoadmap) return false;
+  try {
+    const rm = projectRoadmapApi.readRoadmap(root);
+    if (!rm?.exists) return false;
+    const content = String(rm.content || "");
+    if (content.length < ROADMAP_MIN_LENGTH) return false;
+    const isStub = typeof projectRoadmapApi.isStubRoadmap === "function"
+      ? projectRoadmapApi.isStubRoadmap(content)
+      : false;
+    return !isStub;
+  } catch {
+    return false;
+  }
 }
 
 function formatAgentVisibleText(text = "") {
@@ -122,6 +141,17 @@ function successfulWritePaths(steps = []) {
     .filter((s) => (s.name === "write_file" || s.name === "replace_in_file" || s.name === "scaffold_project") && s.ok !== false && s.result?.ok !== false)
     .map((s) => s.input?.path || s.result?.path || s.result?.projectRoot)
     .filter(Boolean);
+}
+
+function looksLikePromiseWithoutAction(text = "") {
+  const raw = String(text || "").trim();
+  if (!raw) return false;
+  // Cierre explícito: no es promesa, es reporte.
+  if (/\b(?:complet[aé]|finalic[eé]|termin[eé]|listo|todo\s+hecho|an[aá]lisis\s+(?:completo|terminado)|reporte\s+final|no\s+encontr[eé]|sin\s+hallazgos?)\b/i.test(raw)) {
+    return false;
+  }
+  // Frases de promesa futura.
+  return /(?:^|[\s\n])(?:ahora|voy\s+a|luego|siguiente|empiezo|sigo|continuo|procedo\s+a|voy\s+con|paso\s+a)\s+(?:a\s+)?(?:leer|revisar|ver|abrir|analizar|analizar\s+el|buscar|escanear|recorrer|inspeccionar|verificar|ejecutar|correr|revisar\s+el|leer\s+el|abrir\s+el|analizar\s+las|leer\s+las|revisar\s+los)/i.test(raw);
 }
 
 function repairDanglingOutput(text, steps = [], userMessage = "", decision = {}) {
@@ -249,7 +279,7 @@ function ensureCognitiveMap(projectRoot) {
 function formatCognitiveBlock(projectRoot) {
   const map = ensureCognitiveMap(projectRoot);
   if (projectMapApi?.formatMapForPrompt) return projectMapApi.formatMapForPrompt(map);
-  return "MAPA COGNITIVO: usa list_files('.') — no asumas src/ ni app/.";
+  return "";
 }
 
 function buildRoadmapFirstBlock(projectRoot) {
@@ -268,22 +298,24 @@ function buildRoadmapFirstBlock(projectRoot) {
     }
     parts.push(formatRoadmapForPrompt(projectRoot));
   } catch {
-    parts.push("ROADMAP: no disponible en este turno; lee solo archivos puntuales del pedido.");
+    parts.push("");
   }
   try {
     const { formatSessionStateForPrompt, ensureSessionState } = require("../runtime/session-state");
     ensureSessionState(projectRoot);
     parts.push(formatSessionStateForPrompt(projectRoot, 2_000));
   } catch { /* ignore */ }
-    parts.push([
-    "ROADMAP-FIRST (obligatorio, ahorro de tokens):",
-    "1) El ROADMAP y session-state YA están arriba. NO ejecutes list_files('.') del repo entero si el mapa ya cubre la tarea.",
-    "2) Lee primero ## Proceso y ## Bloqueos.",
-    "3) Prohibido re-listar o re-leer archivos que ya aparezcan en ## Mapa.",
-    "4) Para modificar: read_file SOLO de los archivos concretos que vas a tocar.",
-    "5) Tras write_file/replace_in_file, EditCore actualiza ROADMAP.md solo.",
+  parts.push([
+    "## REGLAS DE LECTURA (obligatorias)",
+    "1) El ROADMAP y el session-state YA están arriba. NO ejecutes `list_files('.')` del repo entero si el mapa cubre la tarea — la herramienta está BLOQUEADA.",
+    "2) NO re-leas `ROADMAP.md` con `read_file` — ya está inyectado en tu contexto.",
+    "3) Para modificar: `read_file` SOLO de los archivos concretos que vas a tocar, con `startLine`/`endLine` si son grandes.",
+    "4) NO repitas `read_file` del mismo archivo en el mismo turno — la herramienta devuelve la versión cacheada.",
+    "5) Si el ROADMAP no cubre algo puntual, `list_files('subcarpeta')` SÍ está permitido (solo la raíz está bloqueada).",
+    "6) Tras `write_file`/`replace_in_file`, EditCore actualiza el ROADMAP automáticamente. No lo edites vos.",
+    "7) REGLA DURA: nunca cierres un turno diciendo 'ahora leo X' o 'voy a revisar Y' sin haber llamado la tool en el mismo turno. Si vas a leer, leé. Si vas a ejecutar, ejecutá.",
   ].join("\n"));
-  return parts.filter(Boolean).join("\n\n").slice(0, 7_500);
+  return parts.filter(Boolean).join("\n\n").slice(0, 9_000);
 }
 
 function recoverSoftToolFailure(name, args, result, projectRoot) {
@@ -313,11 +345,6 @@ function recoverSoftToolFailure(name, args, result, projectRoot) {
   return { recovered: false, payload: enriched };
 }
 
-function isVisualUiPath(rel) {
-  return /\.(tsx|jsx|css|scss|sass|module\.css)$/i.test(String(rel || ""))
-    || /(?:components|ui|app|pages|styles)\//i.test(String(rel || "").replace(/\\/g, "/"));
-}
-
 function formatToolActionNarration(name, args = {}) {
   const rel = String(args.path || "").replace(/\\/g, "/");
   const file = rel.split("/").filter(Boolean).pop() || rel;
@@ -334,12 +361,6 @@ function formatToolActionNarration(name, args = {}) {
     return q ? `Busco \`${q}\`.` : "Busco.";
   }
   return "";
-}
-
-function wantsBackground(message, decision, input) {
-  if (input?.background === true) return true;
-  if (decision?.background === true) return true;
-  return /\b(?:segundo\s+plano|en\s+background|background|sin\s+esperar)\b/i.test(String(message || ""));
 }
 
 function backgroundWorkerType(decisionKind) {
@@ -408,6 +429,33 @@ function detachLongRunningStreams(steps) {
   }
 }
 
+function maybeBlockRootListFiles(name, args, projectRoot) {
+  if (name !== "list_files") return null;
+  const p = String(args?.path || "").trim();
+  if (p && p !== "." && p !== "./") return null;
+  if (!isRoadmapUsable(projectRoot)) return null;
+  return {
+    ok: false,
+    blocked: true,
+    error: "Exploración de raíz bloqueada: el ROADMAP ya describe la estructura.",
+    guidance: "Ya tenés el `## Mapa` del ROADMAP en tu contexto. Usalo. Si necesitás una subcarpeta puntual, `list_files('<subcarpeta>')` SÍ está permitido.",
+  };
+}
+
+function maybeBlockRoadmapReadFile(name, args, projectRoot) {
+  if (name !== "read_file") return null;
+  const p = String(args?.path || "").replace(/\\/g, "/").trim();
+  if (!p) return null;
+  if (!/(^|\/)ROADMAP(\.md)?$/i.test(p) && !/^ROADMAP\.md$/i.test(p)) return null;
+  if (!isRoadmapUsable(projectRoot)) return null;
+  return {
+    ok: false,
+    blocked: true,
+    error: "El ROADMAP ya está inyectado en tu contexto al inicio del system prompt.",
+    guidance: "No hace falta leerlo con `read_file`. Consultá `## Mapa`, `## Proceso`, `## Bloqueos`, `## Siguiente` que ya tenés arriba.",
+  };
+}
+
 class ChatOrchestrator {
   constructor() {
     this.session = new ChatSession();
@@ -453,79 +501,6 @@ class ChatOrchestrator {
 
   isRunning() {
     return this.running === true;
-  }
-
-  enqueueBackgroundTask({ decision, message, projectRoot, onProgress, extra = {} }) {
-    const taskType = backgroundWorkerType(decision.kind);
-    const taskId = taskQueue.runInBackground(
-      taskType,
-      {
-        projectRoot,
-        message,
-        target: extra.target,
-        command: extra.command,
-        url: extra.url,
-        maxReads: extra.maxReads,
-        ...extra,
-      },
-      {
-        onProgress: (data) => {
-          if (data.status === "completed" || data.status === "failed") return;
-          onProgress?.({
-            phase: "background",
-            name: taskType.toLowerCase(),
-            text: data.text || `Tarea ${data.taskId} en curso…`,
-            taskId: data.taskId,
-            ok: data.ok,
-          });
-        },
-      },
-    );
-
-    const onComplete = (data) => {
-      if (data.taskId !== taskId) return;
-      taskQueue.off("task_complete", onComplete);
-      taskQueue.off("task_error", onError);
-      onProgress?.({
-        phase: "background_complete",
-        name: taskType.toLowerCase(),
-        text: `[Segundo plano] Tarea ${taskId} completada.\n${String(data.text || "").slice(0, 4000)}`,
-        taskId,
-        result: data.result,
-        ok: true,
-      });
-    };
-    const onError = (data) => {
-      if (data.taskId !== taskId) return;
-      taskQueue.off("task_complete", onComplete);
-      taskQueue.off("task_error", onError);
-      onProgress?.({
-        phase: "background_error",
-        name: taskType.toLowerCase(),
-        text: `[Segundo plano] Tarea ${taskId} falló: ${data.error || "error"}`,
-        taskId,
-        ok: false,
-      });
-    };
-    taskQueue.on("task_complete", onComplete);
-    taskQueue.on("task_error", onError);
-
-    onProgress?.({
-      phase: "background_start",
-      name: taskType.toLowerCase(),
-      text: `Tarea ${taskId} iniciada en segundo plano…`,
-      taskId,
-    });
-
-    return {
-      kind: "CHAT",
-      background: true,
-      taskId,
-      text: [
-        `Lancé la tarea [${taskId}] en segundo plano (${decision.label || decision.kind}).`,
-        `Podés seguir dándome instrucciones mientras trabaja.`,
-      ].join(" "),
-    };
   }
 
   async handle(input = {}) {
@@ -614,7 +589,7 @@ class ChatOrchestrator {
       };
     }
 
-    if (decision.kind === "CHAT" && /(?:^|[^\w])(?:analiz[aáá]|analizar|diagnostica|revis[aá]|inspecciona|explora(?:r)?\s+el\s+proyecto)(?=\s|$|[.!,?¿¡:])/i.test(effectiveText)) {
+    if (decision.kind === "CHAT" && /(?:^|[^\w])(?:analiz[aá]|analizar|diagnostica|revis[aá]|inspecciona|explora(?:r)?\s+el\s+proyecto)(?=\s|$|[.!,?¿¡:])/i.test(effectiveText)) {
       decision = { kind: "ANALYZE", label: "Análisis", allowTools: true, allowWrite: false, background: false };
     }
 
@@ -834,15 +809,18 @@ class ChatOrchestrator {
 
     const deadline = Date.now() + Math.max(30_000, Number(opts.totalTimeoutMs) || DEFAULT_TOTAL_TIMEOUT_MS);
     let incompleteRetries = 0;
+    let promiseRetries = 0;
 
     const toolHistory = new Map();
     const softRetryCounts = new Map();
+    const readCache = new Map();
     let lastVerifyError = null;
-    const cognitiveBlock = (!chatOnly && decision?.kind !== "CHAT")
-      ? formatCognitiveBlock(projectRoot)
-      : "";
+
     const roadmapFirstBlock = (!chatOnly && decision?.kind !== "CHAT")
       ? buildRoadmapFirstBlock(projectRoot)
+      : "";
+    const cognitiveBlock = (!chatOnly && decision?.kind !== "CHAT")
+      ? formatCognitiveBlock(projectRoot)
       : "";
     const connectionsBlock = (!chatOnly && decision?.kind !== "CHAT")
       ? buildConnectionsBlock(projectRoot)
@@ -869,15 +847,15 @@ class ChatOrchestrator {
         visionHardRule,
       ].filter(Boolean).join("\n\n")
       : [
+        roadmapFirstBlock,
         "Sos EditCoreAI. Hablá como un ingeniero senior al lado del usuario.",
         LEADERSHIP_PROMPT,
         LIVE_NARRATION_PROMPT,
         noConfirmBlock,
-        "Ejecutá YA la instrucción con tools y explicá cada fase completada.",
+        "REGLA CRÍTICA: no cierres un turno diciendo 'ahora leo X' o 'voy a revisar Y'. Si vas a leer o revisar algo, llamá la tool en el MISMO turno. Solo cerrá cuando el objetivo esté completo o no haya más pasos útiles.",
         "Respondé siempre en español al usuario.",
         previewBlock,
         visionHardRule,
-        roadmapFirstBlock,
         cognitiveBlock,
         connectionsBlock,
       ].filter(Boolean).join("\n\n"));
@@ -949,7 +927,6 @@ class ChatOrchestrator {
 
         let streamAccum = "";
         let lastVisible = "";
-        let toolStreamNotified = false;
         this.turnAbort = new AbortController();
         const turnSignal = (typeof AbortSignal.any === "function" && this.abort?.signal)
           ? AbortSignal.any([this.abort.signal, this.turnAbort.signal])
@@ -1003,14 +980,36 @@ class ChatOrchestrator {
         const cleanText = stripTextToolMarkup(turn.text || "");
 
         if (!toolCalls.length) {
+          // ── DETECCIÓN DE CIERRE PREMATURO ──
+          // El modelo dijo "ahora leo X" pero no llamó ninguna tool. Forzamos un turno
+          // más pidiéndole que ejecute lo que prometió. Hasta MAX_PROMISE_RETRIES veces.
+          const promisesAction = !chatOnly
+            && decision?.kind !== "CHAT"
+            && looksLikePromiseWithoutAction(cleanText)
+            && promiseRetries < MAX_PROMISE_RETRIES
+            && i < stepsLimit - 2
+            && successfulWritePaths(steps).length === 0;
+
+          if (promisesAction) {
+            promiseRetries += 1;
+            messages.push({
+              role: "assistant",
+              content: cleanText || null,
+            });
+            messages.push({
+              role: "user",
+              content: `No cierres el turno. Ejecutá AHORA las tools que acabás de prometer ("${cleanText.slice(-120)}"). No me cuentes lo que vas a hacer: llamá la tool. Si el análisis no está completo, seguí leyendo los archivos que faltan. Recordá: NO podés decir "ahora leo X" sin haber llamado read_file(X) en el mismo turno.`,
+            });
+            onProgress?.({ phase: "model", text: `Reintentando: el modelo prometió acción sin ejecutarla (${promiseRetries}/${MAX_PROMISE_RETRIES})` });
+            continue;
+          }
+
           this.session.kill();
 
           const written = successfulWritePaths(steps);
           let textOut = cleanText;
 
           if (written.length > 0) {
-            // Si el modelo ya escribió un cierre >= 60 chars con contenido real,
-            // respetarlo tal cual para no duplicar mensajes ni agregar texto canned.
             if (cleanText && cleanText.trim().length >= 60) {
               textOut = cleanText;
             } else {
@@ -1057,6 +1056,60 @@ class ChatOrchestrator {
           const actionLine = formatToolActionNarration(name, args);
           if (actionLine) onProgress?.({ phase: "narration", text: actionLine });
 
+          const blockedList = maybeBlockRootListFiles(name, args, projectRoot);
+          if (blockedList) {
+            const stepData = { name, input: args, result: blockedList, ok: false, blocked: true };
+            steps.push(stepData);
+            this.session.addStep(stepData);
+            onProgress?.({ phase: "tool", stage: "done", name, input: args, result: blockedList, ok: false, blocked: true });
+            messages.push({
+              role: "tool",
+              tool_call_id: call.id,
+              name,
+              content: tools.truncatePayload(blockedList, 2000),
+            });
+            continue;
+          }
+
+          const blockedRoadmap = maybeBlockRoadmapReadFile(name, args, projectRoot);
+          if (blockedRoadmap) {
+            const stepData = { name, input: args, result: blockedRoadmap, ok: false, blocked: true };
+            steps.push(stepData);
+            this.session.addStep(stepData);
+            onProgress?.({ phase: "tool", stage: "done", name, input: args, result: blockedRoadmap, ok: false, blocked: true });
+            messages.push({
+              role: "tool",
+              tool_call_id: call.id,
+              name,
+              content: tools.truncatePayload(blockedRoadmap, 2000),
+            });
+            continue;
+          }
+
+          if (name === "read_file" && args.path) {
+            const cacheKey = String(args.path).replace(/\\/g, "/").toLowerCase();
+            if (readCache.has(cacheKey)) {
+              const cachedResult = {
+                ok: true,
+                cached: true,
+                path: args.path,
+                content: readCache.get(cacheKey),
+                note: "Contenido devuelto desde caché de esta sesión. No gastaste tokens re-leyendo.",
+              };
+              const stepData = { name, input: args, result: cachedResult, ok: true, cached: true };
+              steps.push(stepData);
+              this.session.addStep(stepData);
+              onProgress?.({ phase: "tool", stage: "done", name, input: args, result: cachedResult, ok: true });
+              messages.push({
+                role: "tool",
+                tool_call_id: call.id,
+                name,
+                content: tools.truncatePayload(cachedResult, 2000),
+              });
+              continue;
+            }
+          }
+
           const callKey = `${name}:${JSON.stringify(args)}`;
           const execCount = toolHistory.get(callKey) || 0;
           if (execCount >= 1) {
@@ -1090,6 +1143,11 @@ class ChatOrchestrator {
 
           const softRecover = recoverSoftToolFailure(name, args, result, projectRoot);
           result = softRecover.payload;
+
+          if (name === "read_file" && result?.ok !== false && result?.content && args.path) {
+            const cacheKey = String(args.path).replace(/\\/g, "/").toLowerCase();
+            readCache.set(cacheKey, result.content);
+          }
 
           const stepData = {
             name,
