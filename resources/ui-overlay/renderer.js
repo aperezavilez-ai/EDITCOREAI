@@ -7272,6 +7272,13 @@ function revealAgentTurnActions(thinkingItem, { failed = false } = {}) {
     footer.hidden = true;
     return;
   }
+  // Con Acceso completo los cambios ya están aplicados por permiso explícito:
+  // no tiene sentido pedir "Aceptar todo" ni "Deshacer todo" a cada paso.
+  const isFullAccess = String(window.state?.permissionMode || "").toLowerCase() === "full";
+  if (isFullAccess && !failed) {
+    footer.hidden = true;
+    return;
+  }
   footer.hidden = false;
   footer.classList.toggle("is-failed", failed === true);
   if (failed) {

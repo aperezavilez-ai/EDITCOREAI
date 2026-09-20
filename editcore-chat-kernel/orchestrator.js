@@ -59,10 +59,6 @@ const DEFAULT_TOTAL_TIMEOUT_MS = 600_000;
 const MAX_INCOMPLETE_RETRIES = 3;
 const HEARTBEAT_INTERVAL_MS = 5_000;
 
-// NOTA: la detección de comandos long-running y el timeout de run_command
-// viven en editcore-chat-kernel/process-runner.js + tools.js. NO duplicar acá.
-
-// v5: prompts cortos y humanos. La voz completa vive en elite-communication-policy.
 const LEADERSHIP_PROMPT = [
   "Sos guía líder del proyecto, pero te mantenés dentro del alcance de lo pedido.",
   "Antes de cada tool: 1 frase de qué vas a hacer y por qué. Después: el hallazgo concreto.",
@@ -129,60 +125,37 @@ function successfulWritePaths(steps = []) {
 }
 
 function repairDanglingOutput(text, steps = [], userMessage = "", decision = {}) {
-  let value = String(text || "").trim();
-  const isDangling = !value
-    || /\b(?:quedan|queda|para|de|en|el|la|los|las|un|una|y|o|que|con|por|sin|voy\s+a|ejecuto|veo\s+que|ajusto)\s*$/i.test(value)
-    || (/^(?:voy\s+a\s+(?:ejecutar|filtrar|capturar|leer)|ejecuto\s+npm|las\s+pruebas\s+est[aá]n\s+corriendo|en\s+windows\s+tail|el\s+timeout\s+de)/i.test(value) && !/[.!?]$/.test(value))
-    || (!/[.!?:"`\n*]$/.test(value) && value.length < 80);
-
-  if (!isDangling && value.length > 20) {
+  const value = String(text || "").trim();
+  const isTrulyBroken = !value || /[a-záéíóúñ]{1,3}$/i.test(value);
+  if (!isTrulyBroken) {
     return formatAgentVisibleText(value);
-  }
-
-  if (/\b(?:conservar|aceptar)\s+todo\b/i.test(userMessage)) {
-    return formatAgentVisibleText(
-      "Entendido. Todos los cambios pendientes han sido confirmados y quedan guardados permanentemente en el proyecto.\n\n" +
-      "¿Con qué tarea o funcionalidad continuamos ahora?"
-    );
-  }
-
-  const cmdSteps = steps.filter((s) => s.name === "run_command" || s.name === "run_diagnostic");
-  if (cmdSteps.length > 0) {
-    const lastCmd = cmdSteps[cmdSteps.length - 1];
-    const out = String(lastCmd.result?.stdout || lastCmd.result?.output || lastCmd.result?.stderr || "").trim();
-    if (/pass\s+(\d+)|passed|ok/i.test(out)) {
-      return formatAgentVisibleText(
-        "Se ejecutaron las pruebas automatizadas del proyecto con éxito.\n\n" +
-        "Todas las suites de tests pasaron correctamente (0 fallos).\n\n" +
-        "¿Deseas que avancemos con la siguiente verificación o implementemos una nueva funcionalidad?"
-      );
-    }
   }
 
   const written = successfulWritePaths(steps);
   if (written.length > 0) {
     const lista = written.map((p) => `- \`${p}\``).join("\n");
     return formatAgentVisibleText(
-      `He finalizado esta tarea y aplicado las modificaciones solicitadas con éxito:\n\n${lista}\n\n` +
-      "¿Te parece si revisamos el resultado o continuamos con el siguiente paso?"
+      `Cambios aplicados:\n\n${lista}\n\nDecime la próxima tarea concreta.`
     );
   }
 
-  const readFiles = steps.filter((s) => s.name === "read_file" || s.name === "list_files").map((s) => s.input?.path).filter(Boolean);
+  const cmdSteps = steps.filter((s) => s.name === "run_command" || s.name === "run_diagnostic");
+  if (cmdSteps.length > 0) {
+    const last = cmdSteps[cmdSteps.length - 1];
+    const out = String(last.result?.stdout || last.result?.output || last.result?.stderr || "").trim();
+    if (out) {
+      return formatAgentVisibleText(`Último comando:\n\`\`\`\n${out.slice(0, 1200)}\n\`\`\``);
+    }
+  }
+
+  const readFiles = steps.filter((s) => s.name === "read_file" || s.name === "list_files")
+    .map((s) => s.input?.path).filter(Boolean);
   if (readFiles.length > 0) {
-    const filesStr = readFiles.slice(0, 3).map((f) => `\`${f}\``).join(", ");
-    return formatAgentVisibleText(
-      `He completado la inspección de ${filesStr}.\n\n` +
-      "¿Deseas que procedamos a implementar los ajustes en el proyecto?"
-    );
+    const filesStr = readFiles.slice(0, 5).map((f) => `\`${f}\``).join(", ");
+    return formatAgentVisibleText(`Leí: ${filesStr}. Decime qué hacer con esta evidencia.`);
   }
 
-  if (value && value.length > 10) {
-    const cleaned = value.replace(/\s+(?:quedan|queda|para|de|en|el|la|los|las|un|una|y|o|que|con|por|sin)\s*$/i, ".");
-    return formatAgentVisibleText(`${cleaned}\n\n¿Deseas que continuemos con el siguiente paso?`);
-  }
-
-  return formatAgentVisibleText("He completado la acción solicitada con éxito.\n\n¿En qué podemos avanzar ahora?");
+  return formatAgentVisibleText("No completé la instrucción en este turno. Reformulá o indicá el archivo puntual.");
 }
 
 function groundUngroundedClaims(text, steps = [], userMessage = "", decision = {}) {
@@ -202,7 +175,7 @@ function groundUngroundedClaims(text, steps = [], userMessage = "", decision = {
   if (claims && userWantsDiskMutation(userMessage)) {
     return formatAgentVisibleText(
       "No pude comprobar creación ni escritura real en disco en este turno (no hubo `write_file` / `replace_in_file` / `scaffold_project` exitoso).\n\n" +
-      "Conectá o indicá la carpeta destino y pedime de nuevo que lo cree con tools. No invento proyectos ni HTML sin guardarlos."
+      "Indica la carpeta de destino y pedime de nuevo que lo cree con tools."
     );
   }
   return repairDanglingOutput(text, steps, userMessage, decision);
@@ -254,37 +227,14 @@ function buildConnectionsBlock(projectRoot) {
 }
 
 function nextStepsClosingText(projectRoot, writtenFiles = [], steps = []) {
-  let suggestion = "";
-  try {
-    const { readRoadmap } = require("../runtime/project-roadmap");
-    const rm = readRoadmap(projectRoot);
-    if (rm?.content) {
-      const lines = rm.content.split("\n");
-      const nextPending = lines.find((l) => /^\s*-\s*\[\s*\]/i.test(l) || /^\s*\d+\.\s*\[\s*\]/i.test(l));
-      if (nextPending) {
-        const clean = nextPending.replace(/^\s*[-*0-9.]+\s*\[\s*\]\s*/, "").trim();
-        if (clean) suggestion = `¿Te parece si avanzamos ahora con el siguiente paso: **${clean}**?`;
-      }
-    }
-  } catch { /* ignore */ }
-
-  if (!suggestion) {
-    const rootName = path.basename(projectRoot || "").toLowerCase();
-    const hasVisual = writtenFiles.some((f) => /\.(tsx|jsx|css|html)$/i.test(f))
-      || steps.some((s) => /\.(tsx|jsx|css|html)$/i.test(s?.input?.path || ""));
-    const hasDb = writtenFiles.some((f) => /\.(sql|prisma)$/i.test(f) || /supabase|migration/i.test(f));
-
-    if (rootName.includes("lipoblue") || rootName.includes("shop") || rootName.includes("suplemento")) {
-      suggestion = "¿Te parece si avanzamos con la siguiente mejora: **implementar el botón de compra flotante (Sticky CTA) optimizado para móviles y el flujo de pedidos por WhatsApp**?";
-    } else if (hasVisual) {
-      suggestion = "El cambio visual y los componentes se encuentran verificados. ¿Deseas que refine algún acabado estético adicional o avanzamos con la siguiente funcionalidad técnica del proyecto?";
-    } else if (hasDb) {
-      suggestion = "La estructura de datos ha quedado lista. ¿Deseas que continuemos con la integración en la interfaz o pasamos a la siguiente prueba?";
-    } else {
-      suggestion = "¿Avanzamos con la siguiente funcionalidad o mejora técnica del proyecto?";
-    }
+  if (writtenFiles.length > 0) {
+    return "Cambios aplicados. Decime la próxima tarea concreta.";
   }
-  return suggestion;
+  if (steps.length > 0) {
+    const toolNames = [...new Set(steps.map((s) => s.name).filter(Boolean))].slice(0, 5).join(", ");
+    return `Ejecuté: ${toolNames}. Decime el siguiente paso concreto.`;
+  }
+  return "Sin acciones ejecutadas en este turno. Reformulá la instrucción o indicá el archivo puntual.";
 }
 
 function ensureCognitiveMap(projectRoot) {
@@ -327,14 +277,11 @@ function buildRoadmapFirstBlock(projectRoot) {
   } catch { /* ignore */ }
     parts.push([
     "ROADMAP-FIRST (obligatorio, ahorro de tokens):",
-    "1) El ROADMAP y session-state YA están arriba (## Proceso, ## Bloqueos, ## Tarea activa, ## Mapa). NO ejecutes list_files('.') ni project_discovery ni codebase_map del repo entero si el mapa cubre la tarea.",
-    "2) Lee primero ## Proceso y ## Bloqueos: es la memoria entre mensajes.",
-    "3) Prohibido re-listar o re-leer archivos que ya aparezcan en ## Mapa salvo que el usuario pida 'léelo ahora'.",
-    "4) Para modificar: read_file SOLO de los archivos concretos que vas a tocar. Máximo 1 lectura por archivo.",
-    "5) Si el ROADMAP está vacío y necesitás explorar, di en 1-2 frases qué falta y por qué, luego UNA sola llamada a list_files('.') — nunca dos seguidas.",
-    "6) Tras write_file/replace_in_file, EditCore actualiza ROADMAP.md solo. No lo reescribas a mano.",
-    "7) Prohibido re-leer un archivo que ya leíste en este turno. Si necesitás más contexto, usá search_files acotado o symbol_search.",
-    "8) Si el usuario pide algo simple y el ROADMAP ya dice dónde está: ve DIRECTO al archivo. No explores.",
+    "1) El ROADMAP y session-state YA están arriba. NO ejecutes list_files('.') del repo entero si el mapa ya cubre la tarea.",
+    "2) Lee primero ## Proceso y ## Bloqueos.",
+    "3) Prohibido re-listar o re-leer archivos que ya aparezcan en ## Mapa.",
+    "4) Para modificar: read_file SOLO de los archivos concretos que vas a tocar.",
+    "5) Tras write_file/replace_in_file, EditCore actualiza ROADMAP.md solo.",
   ].join("\n"));
   return parts.filter(Boolean).join("\n\n").slice(0, 7_500);
 }
@@ -347,7 +294,7 @@ function recoverSoftToolFailure(name, args, result, projectRoot) {
     ...(result || {}),
     soft: true,
     ooda: "continue",
-    guidance: "Fallo leve: NO detengas la sesión. Relee contexto y reintenta con parámetros corregidos.",
+    guidance: "Fallo leve: NO detengas la sesión. Relee contexto y reintenta.",
   };
 
   if (name === "replace_in_file" && args?.path) {
@@ -358,38 +305,9 @@ function recoverSoftToolFailure(name, args, result, projectRoot) {
           path: args.path,
           content: String(read.content || "").slice(0, 3500),
         };
-        enriched.guidance = "oldText no coincidió. Usa el contenido de autoRead para construir oldText EXACTO y vuelve a llamar replace_in_file. Continúa el ciclo OODA.";
+        enriched.guidance = "oldText no coincidió. Usa el contenido de autoRead para construir oldText EXACTO y vuelve a llamar replace_in_file.";
       }
     } catch { /* ignore */ }
-  }
-
-  if (name === "list_files") {
-    try {
-      const resolved = projectMapApi?.resolveExistingTarget?.(projectRoot, args?.path || ".");
-      if (resolved && resolved.target !== args?.path) {
-        const listed = tools.listFiles(projectRoot, resolved.target);
-        return {
-          recovered: listed?.ok === true,
-          payload: {
-            ...listed,
-            soft: true,
-            ooda: "continue",
-            requested: args?.path,
-            resolved: resolved.target,
-            missing: resolved.missing,
-            guidance: `Ruta inexistente corregida vía mapa cognitivo → '${resolved.target}'. Continúa.`,
-          },
-          stepsExtra: listed?.ok
-            ? [{ name: "list_files", input: { path: resolved.target }, result: listed, ok: true, softRecover: true }]
-            : [],
-        };
-      }
-    } catch { /* ignore */ }
-  }
-
-  if (name === "run_command" && /^\s*git\b/i.test(String(args?.command || ""))) {
-    enriched.guidance = "Comando git auxiliar falló (secundario). Ignóralo si no es crítico y continúa la tarea principal.";
-    enriched.secondary = true;
   }
 
   return { recovered: false, payload: enriched };
@@ -400,7 +318,6 @@ function isVisualUiPath(rel) {
     || /(?:components|ui|app|pages|styles)\//i.test(String(rel || "").replace(/\\/g, "/"));
 }
 
-// v5: narración humana natural (primera persona, verbo conjugado).
 function formatToolActionNarration(name, args = {}) {
   const rel = String(args.path || "").replace(/\\/g, "/");
   const file = rel.split("/").filter(Boolean).pop() || rel;
@@ -416,8 +333,6 @@ function formatToolActionNarration(name, args = {}) {
     const q = String(args.query || "").slice(0, 40);
     return q ? `Busco \`${q}\`.` : "Busco.";
   }
-  if (name === "clone_web_page") return "Clono la página.";
-  if (name === "capture_preview_screenshot") return "Capturo el preview.";
   return "";
 }
 
@@ -434,10 +349,6 @@ function backgroundWorkerType(decisionKind) {
   if (kind === "VERIFY") return "VERIFY";
   if (kind === "VISION") return "VISION";
   return kind || "ANALYZE";
-}
-
-function pickModelForKind(_kind, currentModel) {
-  return currentModel;
 }
 
 const APPROVAL_WORDS = new Set([
@@ -462,12 +373,12 @@ function persistKernelRoadmap(projectRoot, { task, steps, kind, text, completed 
       reportText: String(text || "").slice(0, 1800),
       status: completed
         ? (analysisMode
-            ? "Análisis cerrado. ROADMAP = Proceso+Mapa+Bloqueos; no reexplorar lo mapeado."
-            : "Tarea cerrada. El siguiente turno parte de ## Proceso / ## Tarea / ## Bloqueos.")
-        : `Incompleta: ${String(text || "").slice(0, 140)}`,
+            ? "Análisis completado. Fase lista para avanzar."
+            : "Ciclo finalizado. Listo para la siguiente tarea.")
+        : `En proceso: ${String(text || "").slice(0, 140)}`,
       nextAction: completed
-        ? "Leer ## Proceso + ## Tarea activa + ## Bloqueos y continuar. No reexplorar el proyecto entero."
-        : "Retomar desde ## Proceso y ## Siguiente de este ROADMAP.",
+        ? "Proponer optimización, analítica o nueva funcionalidad complementaria."
+        : "Continuar desde el estado actual.",
       phase: analysisMode ? "analisis" : "implementacion",
     });
 
@@ -487,11 +398,6 @@ function persistKernelRoadmap(projectRoot, { task, steps, kind, text, completed 
   }
 }
 
-/**
- * Cleanup defensivo: cierra streams de procesos long-running que quedaron vivos.
- * process-runner.js expone `detach` en el resultado para cortar stdout/stderr
- * sin matar el proceso. Sin esto, un dev-server mantiene el event loop ocupado.
- */
 function detachLongRunningStreams(steps) {
   if (!Array.isArray(steps)) return;
   for (const s of steps) {
@@ -588,14 +494,6 @@ class ChatOrchestrator {
         result: data.result,
         ok: true,
       });
-      try {
-        agentBus.wrapSubagentResult(
-          projectRoot,
-          extra.threadId || this._threadId,
-          String(taskType || "worker").toLowerCase(),
-          data.result || { text: data.text, ok: true },
-        );
-      } catch { /* bus best-effort */ }
     };
     const onError = (data) => {
       if (data.taskId !== taskId) return;
@@ -626,7 +524,6 @@ class ChatOrchestrator {
       text: [
         `Lancé la tarea [${taskId}] en segundo plano (${decision.label || decision.kind}).`,
         `Podés seguir dándome instrucciones mientras trabaja.`,
-        `Te aviso en el panel cuando termine.`,
       ].join(" "),
     };
   }
@@ -691,30 +588,6 @@ class ChatOrchestrator {
       this.pendingTask = null;
     }
 
-    if (!fullAccess && this.pendingTask && isApprovalText) {
-      const taskToRun = this.pendingTask;
-      this.pendingTask = null;
-      onProgress?.({ phase: "start", text: "Dale, ejecuto los cambios en disco." });
-      const runner = runModelTaskFn || this.runModelTask.bind(this);
-      return runner({
-        decision: taskToRun.decision,
-        message: taskToRun.message || effectiveText,
-        projectRoot: taskToRun.projectRoot,
-        apiBaseUrl,
-        apiKey,
-        model,
-        memory: taskToRun.memory,
-        onProgress,
-        allowWrite: true,
-        planAuthorizedExecution: true,
-        maxSteps: AUTHORIZED_MAX_STEPS,
-        helpers: taskToRun.helpers || helpers,
-        authorizedFromPending: true,
-        fullAccess: false,
-        permissionMode,
-      });
-    }
-
     let decision = classify(effectiveText, {
       allowWrite: fullAccess || inputAllowWrite === true,
       permissionMode: fullAccess ? "full" : permissionMode,
@@ -731,7 +604,6 @@ class ChatOrchestrator {
       }
     }
 
-    // Sin acceso completo: nunca degradar crear/mover/arreglar a chat ciego (sin tools = inventa).
     if (decision.kind === "CHAT" && userWantsDiskMutation(effectiveText)) {
       decision = {
         kind: "EXECUTE",
@@ -752,61 +624,9 @@ class ChatOrchestrator {
         : { kind: "ASK", label: "Análisis visual", allowTools: true, allowWrite: false, background: false };
     }
 
-    if (/\b(?:explora|explorer|directorio|listar|estructura|archivos)\b/i.test(text) && decision.kind === "CHAT" && !hasImages) {
-      decision = { kind: "LIST", label: "Explorar directorio", allowTools: true, allowWrite: false, background: false };
-    }
-    if (/\b(?:explica|explicar|lee|leer|describe|resume|revisa|qu[eé]\s+hace)\b/i.test(text)
-      && /(?:[\\/]|\.\w{1,10}\b)/i.test(text)
-      && decision.kind === "CHAT") {
-      decision = { kind: "ASK", label: "Lectura / explicación", allowTools: true, allowWrite: false, background: false };
-    }
-
     if (background === true) decision.background = true;
 
-    let unifiedPlan = null;
-    try {
-      unifiedPlan = resolveUnifiedAgentPlan({
-        prompt: text,
-        projectOpen: Boolean(projectRoot),
-        allowWrite: fullAccess ? true : (decision.allowWrite ?? true),
-        permissionMode: fullAccess ? "full" : (permissionMode || "step"),
-        planAuthorizedExecution: fullAccess === true,
-        requestedAgent: true,
-      });
-    } catch (_) {
-      unifiedPlan = null;
-    }
-
     if (decision.kind === "STOP") return this.stop();
-
-    if (!fullAccess && decision.kind === "CONFIRM") {
-      if (!this.pendingTask || !this.pendingTask.message) {
-        return {
-          kind: "CHAT",
-          text: "No hay nada pendiente de autorizar. Decime qué archivo o cambio necesitás.",
-        };
-      }
-      const taskToRun = this.pendingTask;
-      this.pendingTask = null;
-      onProgress?.({ phase: "start", text: "Dale, proceso los cambios." });
-      const runner = runModelTaskFn || this.runModelTask.bind(this);
-      return runner({
-        decision: taskToRun.decision,
-        message: taskToRun.message,
-        projectRoot: taskToRun.projectRoot,
-        apiBaseUrl,
-        apiKey,
-        model,
-        memory: taskToRun.memory,
-        onProgress,
-        allowWrite: true,
-        planAuthorizedExecution: true,
-        maxSteps: AUTHORIZED_MAX_STEPS,
-        helpers: taskToRun.helpers || helpers,
-        authorizedFromPending: true,
-        permissionMode,
-      });
-    }
 
     if (!projectRoot && decision.kind !== "CHAT") {
       return { kind: "CHAT", text: "Abrí un proyecto primero y después te ayudo con eso." };
@@ -832,75 +652,14 @@ class ChatOrchestrator {
     this._threadId = threadId;
     this._historyInput = historyInput;
     this._currentUserText = text;
-    if (projectRoot) {
-      agentBus.record(projectRoot, threadId, { goal: text, phase: "ingest" });
-    }
-
-    if (autoHeal?.summary) {
-      onProgress?.({ phase: "subagent", name: "auto-heal", text: autoHeal.summary });
-      if (!apiKey) {
-        return { kind: "CHAT", text: `Error de preview:\n${autoHeal.summary}\n\nConfigurá API key para auto-corregir.` };
-      }
-      onProgress?.({ phase: "subagent", name: "verifier", text: "Auto-heal: verificando / rollback..." });
-      let verif = null;
-      try {
-        verif = await runVerifier({
-          projectRoot,
-          onProgress,
-          autoRollback: true,
-          timeoutMs: 25_000,
-        });
-      } catch (err) {
-        verif = { ok: false, result: { error: String(err?.message || err) } };
-      }
-      const verifNote = verif?.ok
-        ? "Verifier OK tras el aviso de logs."
-        : `Verifier falló${verif?.rollback?.ok ? " (rollback aplicado)" : ""}: ${String(verif?.result?.error || verif?.result?.stderr || "").slice(0, 600)}`;
-      return this.runModelTask({
-        decision: { kind: "EXECUTE", label: "Auto-heal", allowTools: true, allowWrite: true },
-        message: [
-          "Corrige este error del servidor de desarrollo (auto-heal, sin esperar al usuario):",
-          autoHeal.excerpt || autoHeal.summary,
-          "",
-          `[VERIFIER] ${verifNote}`,
-          verif?.rollback?.snapshotId ? `Snapshot rollback: ${verif.rollback.snapshotId}` : "",
-        ].filter(Boolean).join("\n"),
-        projectRoot, apiBaseUrl, apiKey, model, memory, onProgress, allowWrite: true, maxSteps: 16, helpers,
-      });
-    }
 
     if (decision.kind === "CHAT") {
       this.pendingTask = null;
       if (!apiKey) {
         return {
           kind: "CHAT",
-          text: "EditCoreAI es un IDE con agente autónomo. Abrí un proyecto y pedime un cambio concreto, o escribí *ayuda*.",
+          text: "EditCoreAI es un IDE con agente autónomo. Abrí un proyecto y pedime un cambio concreto.",
         };
-      }
-      const liveBus = projectRoot ? agentBus.loadBus(projectRoot, threadId) : null;
-      const followThread = Boolean(liveBus && (liveBus.goal || liveBus.findings.length || liveBus.files.length));
-      const wantsAction = userWantsDiskMutation(text) || /\b(?:replace_in_file|write_file|scaffold_project)\b/i.test(text);
-      const continueLike = /^(?:contin[uú]a|procede|sigue)\b/i.test(text) && wantsAction;
-      if (followThread && continueLike && projectRoot) {
-        decision = {
-          kind: fullAccess ? "EXECUTE" : "ASK",
-          label: "Seguimiento del mismo hilo",
-          allowTools: true,
-          allowWrite: fullAccess,
-          background: false,
-        };
-        return this.runModelTask({
-          decision,
-          message: text,
-          projectRoot,
-          apiBaseUrl, apiKey, model, memory, onProgress,
-          allowWrite: fullAccess,
-          maxSteps: fullAccess ? 12 : 6,
-          helpers,
-          images: taskImages,
-          fullAccess,
-          permissionMode,
-        });
       }
       return this.runModelTask({
         decision, message: text, projectRoot: projectRoot || ".", apiBaseUrl, apiKey, model, memory, onProgress,
@@ -921,12 +680,6 @@ class ChatOrchestrator {
           images: taskImages,
           fullAccess: false,
           permissionMode,
-        });
-      }
-      if (wantsBackground(text, decision, input)) {
-        return this.enqueueBackgroundTask({
-          decision, message: text, projectRoot, onProgress,
-          extra: { target: extractListTarget(text, projectRoot) || ".", threadId: this._threadId },
         });
       }
       const target = extractListTarget(text, projectRoot) || ".";
@@ -972,15 +725,10 @@ class ChatOrchestrator {
           authorizedFromPending: fullAccess,
         });
       }
-      if (wantsBackground(text, decision, input)) {
-        return this.enqueueBackgroundTask({
-          decision, message: text, projectRoot, onProgress, extra: { maxReads: 8, threadId: this._threadId },
-        });
-      }
       this.session.start("ANALYZE", projectRoot);
       const scope = requestScopePolicy?.classifyRequestScope?.(text) || "focused";
       const maxReads = scope === "broad" ? 16 : scope === "action" ? 10 : 6;
-      onProgress?.({ phase: "start", text: scope === "broad" ? "Dando una mirada amplia al proyecto…" : "Revisando lo necesario para tu pregunta…" });
+      onProgress?.({ phase: "start", text: "Revisando lo necesario para tu pregunta…" });
       const out = agentBus.wrapSubagentResult(
         projectRoot,
         this._threadId,
@@ -1007,9 +755,6 @@ class ChatOrchestrator {
     }
 
     if (decision.kind === "VERIFY") {
-      if (wantsBackground(text, decision, input)) {
-        return this.enqueueBackgroundTask({ decision, message: text, projectRoot, onProgress, extra: { threadId: this._threadId } });
-      }
       this.session.start("VERIFY", projectRoot);
       const out = agentBus.wrapSubagentResult(
         projectRoot,
@@ -1027,19 +772,14 @@ class ChatOrchestrator {
       };
     }
 
-    const wantsWrite = fullAccess
-      || decision.allowWrite
-      || unifiedPlan?.mode === intentOrchestrator?.MODES?.EXECUTE
-      || unifiedPlan?.planAuthorizedExecution === true;
+    const wantsWrite = fullAccess || decision.allowWrite;
 
     if (wantsWrite) {
       if (!apiKey) return { kind: "CHAT", text: "Me falta la API key para ejecutar cambios." };
 
       onProgress?.({
         phase: "start",
-        text: fullAccess
-          ? "Acceso completo, ejecuto directo."
-          : "Ejecutando los cambios…",
+        text: "Ejecutando los cambios de forma autónoma…",
       });
       this.pendingTask = null;
 
@@ -1108,145 +848,41 @@ class ChatOrchestrator {
       ? buildConnectionsBlock(projectRoot)
       : "";
 
-    const specialist = (!chatOnly && decision?.kind !== "CHAT" && !authorizedFromPending)
-      ? dispatchSpecialist(message)
-      : null;
-    let specialistInstruction = "";
-    if (specialist) {
-      specialistInstruction = `\n\n[ROL: ${specialist.name}]\n${specialist.systemPrompt}`;
-    }
-
-    const globalLearned = (!chatOnly && decision?.kind !== "CHAT" && !authorizedFromPending)
-      ? globalMemory.promptBlock(message, 8)
-      : "";
-
     const previewUrl = String(helpers?.previewUrl || "").trim();
     const previewBlock = previewUrl
-      ? [
-        `PREVIEW ACTIVO DEL IDE: ${previewUrl}`,
-        "Usá esa URL (o la tool capture_preview_screenshot). No inventes puertos/URLs (ej. :1420) si el preview ya está publicado.",
-      ].join("\n")
-      : "Sin URL de preview conocida en este turno. No inventes localhost:puerto; preguntá o usá capture_preview_screenshot.";
+      ? `PREVIEW ACTIVO DEL IDE: ${previewUrl}`
+      : "";
 
     const visionHardRule = (Array.isArray(taskImages) && taskImages.length)
-      ? [
-        `VISION: Hay ${taskImages.length} imagen(es) adjunta(s) en este mensaje multimodal.`,
-        "PROHIBIDO decir que no hay imagen, que no la ves, o pedir que el usuario la suba otra vez.",
-        "Analizá el contenido visual en la PRIMERA respuesta (errores Vite/overlay, UI, texto legible).",
-      ].join("\n")
+      ? "VISION: Hay imágenes adjuntas. Analizalas directamente en este turno."
       : "";
 
     const noConfirmBlock = (accessFull || authorizedFromPending)
-      ? [
-        "ACCESO COMPLETO / EJECUCIÓN AUTORIZADA:",
-        "PROHIBIDO preguntar: '¿Deseas que proceda?', 'Confirma para aplicar los cambios.', 'Escribe procede.', '¿Procedo?'.",
-        "Ejecutá YA tools: write_file, replace_in_file, run_command. Sin preguntas previas.",
-      ].join("\n")
+      ? "ACCESO COMPLETO: Ejecutá herramientas de inmediato sin pedir confirmación previa."
       : "";
-
-    let mentionsBlock = "";
-    if (atMentionsResolver && message) {
-      try {
-        const mentions = atMentionsResolver.extractMentions(message);
-        if (mentions.length && projectRoot) {
-          mentionsBlock = await atMentionsResolver.resolveMentionsContext(mentions, projectRoot, {
-            activeSelection: helpers?.activeSelection || input?.activeSelection || "",
-            markers: helpers?.markers || input?.markers || [],
-          });
-        }
-      } catch (_) { /* ignore */ }
-    }
 
     let system = wrapSystemPrompt(chatOnly || decision?.kind === "CHAT"
       ? [
         "Sos EditCoreAI: asistente del IDE. Respondé siempre en español, claro y directo.",
-        "Hablá en prosa continua con párrafos separados por línea en blanco; nunca una plasta de texto.",
-        "PROHIBIDO: fingir que abriste tools, inventar exploración, HTML, carpetas o 'ya creé el proyecto' sin tools reales.",
         `Proyecto abierto: ${projectRoot || "(ninguno)"}.`,
         previewBlock,
         visionHardRule,
-        mentionsBlock,
       ].filter(Boolean).join("\n\n")
-      : authorizedFromPending || accessFull
-        ? [
-          "Sos EditCoreAI. Hablá como un ingeniero senior al lado del usuario.",
-          LEADERSHIP_PROMPT,
-          LIVE_NARRATION_PROMPT,
-          noConfirmBlock,
-          "Ejecutá YA la instrucción con tools (write_file, replace_in_file, run_command, scaffold_project).",
-          "Antes de mutar: contá en 2-4 líneas tu plan y procedé sin pedir confirmación.",
-          "DISCO REAL: PROHIBIDO pegar HTML/código en el chat y decir que creaste un proyecto. Solo existe lo que write_file/replace_in_file/scaffold_project confirmen ok.",
-          "Proyecto hermano / carpeta nueva bajo el padre: list_files('..') y write_file('../Nombre/archivo').",
-          "No reexplores el proyecto abierto si el pedido es otro directorio: usá '..' o la ruta indicada.",
-          "EditCore actualiza ROADMAP.md automáticamente tras cada write. Nunca digas que no podés modificarlo.",
-          "PROHIBIDO inventar tareas genéricas ajenas a la instrucción del usuario.",
-          "Ante fallo leve de tool: releé y reintentá; nunca abandones con 'Detenido' por errores secundarios.",
-          "IMPORTANTE: 'npm run dev' o 'vite' NO son comandos de verificación. Si necesitás el preview, usá inspect_preview. El dev-server ya está corriendo en el IDE.",
-          `Permiso de escritura: SÍ.${accessFull ? " Acceso completo activo." : ""}`,
-          "Respondé siempre en español al usuario.",
-          previewBlock,
-          visionHardRule,
-          roadmapFirstBlock,
-          cognitiveBlock,
-          connectionsBlock,
-          mentionsBlock,
-          specialistInstruction,
-        ].filter(Boolean).join("\n\n")
-        : [
-          "Sos EditCoreAI. Hablá como un ingeniero senior al lado del usuario.",
-          LEADERSHIP_PROMPT,
-          LIVE_NARRATION_PROMPT,
-          `Modo actual: ${decision?.kind || "EXECUTE"}. Permiso de escritura: ${allowWrite ? "SÍ" : "NO"}.`,
-          specialistInstruction,
-          "REGLAS OBLIGATORIAS:",
-          "1. Usá SOLO function calling / tools nativas. Nunca escribas XML como <list_directory>, <read_file>, <execute_command>, <tool_call>.",
-          "2. ROADMAP-FIRST: leé el bloque ROADMAP/session-state; PROHIBIDO list_files('.') del repo entero si el mapa ya está cargado. Para hermanos usá list_files('..').",
-          "3. Contá en prosa cada paso; no te limites a badges o checks.",
-          "4. No repitas exactamente la misma herramienta con los mismos parámetros.",
-          "5. Paths relativos al proyecto (ej. package.json) o '../Hermano/...'. No inventes rutas.",
-          "6. Si ejecutás 'run_command' o un test/build, analizá la salida y aplicá corrección inmediata (OODA).",
-          "7. Fallos leves (oldText, git auxiliar, list_files de ruta ausente): recuperá y continuá; no detengas la sesión.",
-          "8. EditCore actualiza ROADMAP.md solo tras cambios. No digas que está prohibido actualizarlo.",
-          "9. Respondé siempre en español al usuario.",
-          "10. DISCO REAL: nunca digas que creaste/moviste archivos sin write_file/replace_in_file/scaffold_project exitoso. No pegues HTML fingiendo un proyecto nuevo.",
-          previewBlock,
-          visionHardRule,
-          roadmapFirstBlock,
-          cognitiveBlock,
-          connectionsBlock,
-          mentionsBlock,
-          skillsPrompt(projectRoot, decision?.kind, message),
-          memory && !authorizedFromPending ? memory.promptBlock() : "",
-          projectRoot ? threadCore.threadMemory.projectPromptBlock(projectRoot, threadId, message) : "",
-          globalLearned,
-        ].filter(Boolean).join("\n\n"));
+      : [
+        "Sos EditCoreAI. Hablá como un ingeniero senior al lado del usuario.",
+        LEADERSHIP_PROMPT,
+        LIVE_NARRATION_PROMPT,
+        noConfirmBlock,
+        "Ejecutá YA la instrucción con tools y explicá cada fase completada.",
+        "Respondé siempre en español al usuario.",
+        previewBlock,
+        visionHardRule,
+        roadmapFirstBlock,
+        cognitiveBlock,
+        connectionsBlock,
+      ].filter(Boolean).join("\n\n"));
 
-    const isBareApproval = /^\s*(?:procede|continua|continúa|hazlo|adelante|ejecuta|dale|va|ok)\b/i.test(String(message || "").trim());
-    let finalInstruction = authorizedFromPending
-      ? String(message || "")
-      : (String(message || "").includes("ALCANCE:")
-        ? String(message || "")
-        : scopeUserMessage(message));
-
-    if (isBareApproval && projectRoot) {
-      try {
-        const threadData = threadCore.threadMemory.loadThread(projectRoot, threadId);
-        const pendingTask = threadData.workingOn || "";
-        if (pendingTask && !/^\s*(?:procede|continua|hazlo|ok)\b/i.test(pendingTask)) {
-          finalInstruction = `Autorización confirmada para el objetivo previo: "${pendingTask}". Aplica la solución concreta directamente sin reexploraciones redundantes.`;
-        }
-      } catch { /* ignore */ }
-    }
-
-    const userText = authorizedFromPending || isBareApproval
-      ? `Proyecto: ${projectRoot}\nEjecutá ahora:\n${finalInstruction}`
-      : `Proyecto: ${projectRoot}\n${finalInstruction}`;
-    if (projectRoot) {
-      const threadBlock = threadCore.threadMemory.projectPromptBlock(projectRoot, threadId, message);
-      if (threadBlock) system = `${system}\n\n${threadBlock}`;
-      const busBlock = agentBus.promptBlock(projectRoot, threadId);
-      if (busBlock) system = `${system}\n\n${busBlock}`;
-    }
+    const userText = `Proyecto: ${projectRoot}\n${scopeUserMessage(message)}`;
     const messages = threadCore.buildMessageList({
       system,
       userText,
@@ -1255,19 +891,8 @@ class ChatOrchestrator {
       historyInput,
       query: String(this._currentUserText || message || ""),
     });
-    if (Array.isArray(taskImages) && taskImages.length) {
-      try {
-        const { buildOpenAiImageContent, VISION_ACK_RULE } = require("../runtime/vision-intake");
-        messages.splice(1, 0, { role: "system", content: VISION_ACK_RULE });
-        const last = messages[messages.length - 1];
-        if (last && last.role === "user") {
-          last.content = buildOpenAiImageContent(userText, taskImages);
-        }
-      } catch { /* keep text-only user turn */ }
-    }
 
     const steps = [];
-    const pendingWrites = new Set();
     const runMutations = [];
     const stepsLimit = Math.max(1, Number(maxSteps) || DEFAULT_MAX_STEPS);
     const totalUsage = {
@@ -1287,33 +912,15 @@ class ChatOrchestrator {
     const routedModel = String(routed.model || model || "").trim();
     const rememberOut = (textOut) => {
       try {
-        threadCore.rememberExchange(
-          projectRoot,
-          threadId,
-          this._currentUserText || message,
-          textOut
-        );
-        if (projectRoot && textOut) {
-          threadCore.threadMemory.noteDecision(projectRoot, String(textOut).slice(0, 280));
-        }
+        threadCore.rememberExchange(projectRoot, threadId, this._currentUserText || message, textOut);
       } catch { /* persist best-effort */ }
     };
-
-    const fallbackProfiles = Array.isArray(opts.fallbackProfiles) ? opts.fallbackProfiles : [];
 
     try {
       for (let i = 0; i < stepsLimit; i++) {
         if (Date.now() > deadline) {
           this.session.kill();
-          const partial = formatAgentVisibleText(
-            steps.length
-              ? "Me quedé sin tiempo para terminar la tarea. Avance parcial:\n" +
-                steps.slice(-6).map((s) => `- ${s.name}${s.input?.path ? ` (${s.input.path})` : ""}`).join("\n")
-              : "Me quedé sin tiempo y no llegué a hacer nada. Reformulame la instrucción más concreta, porfa."
-          );
-          persistKernelRoadmap(projectRoot, {
-            task: message, steps, kind: decision?.kind, text: partial, completed: false,
-          });
+          const partial = formatAgentVisibleText("Se agotó el tiempo límite para completar la tarea. Avance parcial registrado.");
           rememberOut(partial);
           detachLongRunningStreams(steps);
           return { kind: decision?.kind || "CHAT", text: partial, steps, incomplete: true, threadId, usage: totalUsage };
@@ -1323,25 +930,6 @@ class ChatOrchestrator {
           rememberOut("Detenido.");
           detachLongRunningStreams(steps);
           return { kind: "STOP", text: "Detenido.", steps, threadId, usage: totalUsage };
-        }
-
-        if (Array.isArray(this.steering) && this.steering.length) {
-          const directions = this.steering.splice(0, this.steering.length);
-          for (const direction of directions) {
-            const instruction = String(direction?.instruction || "").trim();
-            if (!instruction) continue;
-            messages.push({
-              role: "user",
-              content: [
-                "NUEVA INSTRUCCIÓN DEL USUARIO (prioridad inmediata):",
-                instruction,
-                "Incorpórala YA. Conservá el avance útil y ajustá el plan a esta dirección. No reinicies exploración innecesaria.",
-              ].join("\n"),
-            });
-            try {
-              onProgress?.({ phase: "direction", stage: "running", text: instruction });
-            } catch { /* ignore */ }
-          }
         }
 
         const availableTools = (chatOnly || decision?.kind === "CHAT")
@@ -1362,23 +950,13 @@ class ChatOrchestrator {
         let streamAccum = "";
         let lastVisible = "";
         let toolStreamNotified = false;
-        if (steps.length > 0) {
-          try {
-            onProgress?.({
-              phase: "narration_delta",
-              text: "\n\n",
-              index: steps.length,
-              streaming: true,
-            });
-          } catch { /* ignore */ }
-        }
         this.turnAbort = new AbortController();
         const turnSignal = (typeof AbortSignal.any === "function" && this.abort?.signal)
           ? AbortSignal.any([this.abort.signal, this.turnAbort.signal])
           : (this.turnAbort.signal || this.abort?.signal);
 
         const hb = setInterval(() => {
-          try { onProgress?.({ phase: "heartbeat", text: "Esperando al modelo…" }); } catch { /* ignore */ }
+          try { onProgress?.({ phase: "heartbeat", text: "Procesando…" }); } catch { /* ignore */ }
         }, HEARTBEAT_INTERVAL_MS);
 
         let turn;
@@ -1388,15 +966,6 @@ class ChatOrchestrator {
             tools: (chatOnly || decision?.kind === "CHAT") ? [] : availableTools,
             signal: turnSignal,
             stream: true,
-            fallbackProfiles,
-            onFallback: (fb) => {
-              try {
-                onProgress?.({
-                  phase: "model",
-                  text: `Cambiando a proveedor de respaldo (${fb.model})…`,
-                });
-              } catch { /* ignore */ }
-            },
             onTextDelta: (delta) => {
               const chunk = String(delta || "");
               if (!chunk) return;
@@ -1406,66 +975,20 @@ class ChatOrchestrator {
                 let piece = "";
                 if (visible.startsWith(lastVisible)) {
                   piece = visible.slice(lastVisible.length);
-                } else if (visible.length < lastVisible.length && lastVisible.startsWith(visible)) {
-                  piece = "";
                 } else if (visible !== lastVisible) {
-                  let shared = 0;
-                  const lim = Math.min(lastVisible.length, visible.length);
-                  for (let n = lim; n >= 1; n -= 1) {
-                    if (lastVisible.endsWith(visible.slice(0, n))) {
-                      shared = n;
-                      break;
-                    }
-                  }
-                  if (shared > 0) {
-                    piece = visible.slice(shared);
-                  } else {
-                    const idx = visible.indexOf(lastVisible);
-                    if (idx >= 0) {
-                      piece = visible.slice(idx + lastVisible.length);
-                    } else if (!lastVisible) {
-                      piece = visible;
-                    } else {
-                      piece = `\n\n${visible}`;
-                    }
-                  }
+                  piece = visible;
                 }
                 lastVisible = visible;
-                if (!piece) {
-                  if (/<(?:tool_call|function\s*=)/i.test(streamAccum) && !toolStreamNotified) {
-                    toolStreamNotified = true;
-                    onProgress?.({ phase: "model", text: "Ejecutando herramienta…" });
-                  }
-                  return;
-                }
+                if (!piece) return;
                 onProgress?.({
                   phase: "narration_delta",
                   text: piece,
                   index: steps.length,
                   streaming: true,
                 });
-              } catch { /* ignore UI errors */ }
+              } catch { /* ignore */ }
             },
           });
-          if (turn?.usage) {
-            totalUsage.prompt_tokens += Number(turn.usage.prompt_tokens || turn.usage.inputTokens || 0);
-            totalUsage.completion_tokens += Number(turn.usage.completion_tokens || turn.usage.outputTokens || 0);
-            totalUsage.total_tokens += Number(turn.usage.total_tokens || turn.usage.totalTokens || 0);
-            const cr = Number(turn.usage.cache_read_input_tokens || turn.usage.cachedInputTokens || 0);
-            const cw = Number(turn.usage.cache_creation_input_tokens || 0);
-            totalUsage.cache_read_input_tokens += cr;
-            totalUsage.cachedInputTokens += cr;
-            totalUsage.cache_creation_input_tokens += cw;
-          }
-        } catch (turnErr) {
-          const steerHit = turnErr?.code === "AGENT_STEER"
-            || this.turnAbort?.signal?.reason?.code === "AGENT_STEER"
-            || turnErr?.cause?.code === "AGENT_STEER";
-          if (steerHit && i < stepsLimit - 1) {
-            this.turnAbort = null;
-            continue;
-          }
-          throw turnErr;
         } finally {
           clearInterval(hb);
           this.turnAbort = null;
@@ -1477,86 +1000,33 @@ class ChatOrchestrator {
         } else if (!toolCalls.length && turn.text) {
           toolCalls = parseTextToolCalls(turn.text, { projectRoot });
         }
-        for (const call of toolCalls) {
-          if (call.function?.name !== "write_file") continue;
-          let args = {};
-          try { args = JSON.parse(call.function.arguments || "{}"); } catch { args = {}; }
-          if (args.path || !args.content) continue;
-          const prose = visibleNarrationText(turn.text || "");
-          const m = prose.match(/\b([\w./\\-]+\.(?:tsx?|jsx?|css|html|json|md|sql))\b/i);
-          if (m) {
-            args.path = toRelativePath(projectRoot, m[1]);
-            call.function.arguments = JSON.stringify(args);
-          }
-        }
         const cleanText = stripTextToolMarkup(turn.text || "");
 
         if (!toolCalls.length) {
-          const incompleteIntent = /(?:^|\n)\s*(?:voy\s+a|ahora\s+(?:voy\s+a|leer[eé]|abrir[eé]|revisar[eé]|ejecutar[eé]|verificar[eé]|corregir[eé]|crear[eé]|generar[eé]|mover[eé])|procedo\s+a|dejar[eé]\s+que)\b/i.test(cleanText)
-            && !/(?:completad[oa]|listo\.|verificad[oa]|aplicad[oa]|hecho\.|sin errores)/i.test(cleanText)
-            && cleanText.trim().length < 900;
-          const writtenSoFar = successfulWritePaths(steps);
-          const fakeCreate = userWantsDiskMutation(message) && textClaimsDiskMutation(cleanText) && writtenSoFar.length === 0;
-          const needsTools = (incompleteIntent || fakeCreate) && i < stepsLimit - 1 && !chatOnly && decision?.kind !== "CHAT";
-
-          if (needsTools) {
-            incompleteRetries += 1;
-            if (incompleteRetries > MAX_INCOMPLETE_RETRIES) {
-              this.session.kill();
-              const textOut = groundUngroundedClaims(cleanText, steps, message, decision);
-              persistKernelRoadmap(projectRoot, {
-                task: message, steps, kind: decision?.kind, text: textOut, completed: false,
-              });
-              rememberOut(textOut);
-              detachLongRunningStreams(steps);
-              return { kind: decision?.kind || "CHAT", text: textOut, steps, incomplete: true, threadId, usage: totalUsage };
-            }
-
-            messages.push({ role: "assistant", content: cleanText || null });
-            messages.push({
-              role: "user",
-              content: fakeCreate
-                ? "STOP: anunciaste crear/mover archivos pero NO usaste tools. Ejecutá YA write_file/scaffold_project (ruta relativa o ../Hermano/...). PROHIBIDO inventar HTML o carpetas sin escribirlas en disco."
-                : "CONTINUA YA: anunciaste una acción y no la ejecutaste. Usá tools ahora (read_file/replace_in_file/run_command). No repitas el anuncio ni reexplores el proyecto.",
-            });
-            onProgress?.({ phase: "narration", text: fakeCreate ? "Falta escritura real en disco… uso tools." : "Retomo la acción que había anunciado…" });
-            continue;
-          }
-
           this.session.kill();
-          if (memory) memory.note(`finalizó ${decision?.kind || "task"}`);
 
           const written = successfulWritePaths(steps);
-
           let textOut = cleanText;
+
           if (written.length > 0) {
-            const head = cleanText && cleanText.length > 20 && !/^Cambios en:/.test(cleanText)
-              ? cleanText + "\n\n"
-              : "";
-            const lista = written.map((p) => `- \`${p}\``).join("\n");
-            const cierre = written.length === 1
-              ? "He finalizado esta tarea y aplicado la modificación solicitada en el proyecto con éxito."
-              : `He finalizado esta tarea y aplicado las modificaciones solicitadas (${written.length} archivos actualizados con éxito).`;
-            const sugerencia = nextStepsClosingText(projectRoot, written, steps);
-            textOut = `${head}${cierre}\n\n${lista}${sugerencia ? `\n\n${sugerencia}` : ""}`;
+            // Si el modelo ya escribió un cierre >= 60 chars con contenido real,
+            // respetarlo tal cual para no duplicar mensajes ni agregar texto canned.
+            if (cleanText && cleanText.trim().length >= 60) {
+              textOut = cleanText;
+            } else {
+              const head = cleanText && cleanText.length > 20 ? cleanText + "\n\n" : "";
+              const lista = written.map((p) => `- \`${p}\``).join("\n");
+              const sugerencia = nextStepsClosingText(projectRoot, written, steps);
+              textOut = `${head}Archivos actualizados:\n\n${lista}\n\n${sugerencia}`;
+            }
           } else {
             textOut = groundUngroundedClaims(cleanText, steps, message, decision);
           }
-          if (accessFull && /procede|¿procedo|cuando autorices/i.test(textOut)) {
-            textOut = `${textOut.replace(/\s*(Cuando autorices procedo[^.]*\.?|Escribe\s+\*{0,2}procede\*{0,2}[^.]*\.?|Si deseas que aplique[^.]*\.?)\s*$/gi, "").trim()}`;
-          }
-          if (!String(textOut || "").trim()) {
-            const toolNames = steps.map((s) => s.name).filter(Boolean).slice(-8);
-            textOut = toolNames.length
-              ? `He finalizado las acciones de este turno (${toolNames.join(", ")}).\n\n¿Continuamos con la siguiente fase?`
-              : "He finalizado el análisis del proyecto.\n\n¿Deseas que procedamos con el siguiente paso?";
-          }
+
           textOut = formatAgentVisibleText(textOut);
 
-          const stillIncomplete = incompleteIntent && !written.length;
           persistKernelRoadmap(projectRoot, {
-            task: message, steps, kind: decision?.kind, text: textOut,
-            completed: !stillIncomplete,
+            task: message, steps, kind: decision?.kind, text: textOut, completed: true,
           });
           rememberOut(textOut);
           detachLongRunningStreams(steps);
@@ -1565,8 +1035,8 @@ class ChatOrchestrator {
             text: textOut,
             steps,
             mutations: runMutations,
-            incomplete: stillIncomplete,
-            report: { completed: !stillIncomplete },
+            incomplete: false,
+            report: { completed: true },
             threadId,
             usage: totalUsage,
           };
@@ -1586,9 +1056,6 @@ class ChatOrchestrator {
 
           const actionLine = formatToolActionNarration(name, args);
           if (actionLine) onProgress?.({ phase: "narration", text: actionLine });
-          if ((name === "write_file" || name === "replace_in_file") && args.path) {
-            pendingWrites.add(String(args.path));
-          }
 
           const callKey = `${name}:${JSON.stringify(args)}`;
           const execCount = toolHistory.get(callKey) || 0;
@@ -1597,10 +1064,7 @@ class ChatOrchestrator {
               role: "tool",
               tool_call_id: call.id,
               name,
-              content: tools.truncatePayload({
-                ok: false,
-                error: `LÍMITE ALCANZADO: La acción '${name}' ya fue ejecutada con estos parámetros. Entrega una respuesta conclusiva o cambia de acción.`,
-              }),
+              content: tools.truncatePayload({ ok: false, error: "Límite alcanzado para esta acción repetida." }),
             });
             continue;
           }
@@ -1619,123 +1083,19 @@ class ChatOrchestrator {
               onProgress,
               threadId,
             });
-            try {
-              agentBus.wrapSubagentResult(projectRoot, threadId, "implementer", impl);
-              agentBus.record(projectRoot, threadId, {
-                agent: "implementer",
-                file: args.path,
-                action: name,
-                tool: name,
-              });
-            } catch { /* ignore */ }
             result = impl.result || impl;
-
-            if (specialist?.name === "UI/UX Specialist" && result?.ok && isVisualUiPath(args.path)) {
-              try {
-                const vision = await capture_preview_screenshot({
-                  url: helpers?.previewUrl || DEFAULT_PREVIEW_URL,
-                  projectRoot,
-                  viewport: "desktop",
-                  electronCapture: typeof helpers?.capturePreview === "function"
-                    ? (opts) => helpers.capturePreview(opts)
-                    : null,
-                });
-                const { screenshotAbs: _a, imageDataUrl: _i, ...visionSafe } = vision;
-                result = { ...result, vision: visionSafe };
-                steps.push({
-                  name: "capture_preview_screenshot",
-                  input: { url: helpers?.previewUrl || DEFAULT_PREVIEW_URL, auto: true },
-                  result: visionSafe,
-                  ok: vision.ok !== false,
-                });
-              } catch (visionErr) {
-                result = {
-                  ...result,
-                  vision: { ok: false, error: String(visionErr?.message || visionErr).slice(0, 300) },
-                };
-              }
-            }
-          } else if (name === "run_command" && (args.command?.includes("build") || args.command?.includes("tsc") || args.command?.includes("typecheck"))) {
-            const recentWrites = steps
-              .filter((s) => (s.name === "write_file" || s.name === "replace_in_file") && s.ok)
-              .slice(-4)
-              .map((s) => s.input?.path)
-              .filter(Boolean);
-            const heavy = /\bnpm run build\b|\bnext build\b/i.test(String(args.command || ""));
-            const verif = await runVerifier({
-              projectRoot,
-              command: heavy ? "" : args.command,
-              onProgress,
-              autoRollback: false,
-              incremental: true,
-              timeoutMs: 45_000,
-              priorError: lastVerifyError,
-              solutionApplied: recentWrites.length
-                ? `Corrección aplicada en: ${recentWrites.join(", ")}`
-                : (lastVerifyError ? "Reintento de verificación tras corrección del agente" : null),
-            });
-            result = verif.result || verif;
-            if (!verif.ok) {
-              lastVerifyError = String(verif?.result?.error || verif?.result?.stderr || args.command).slice(0, 800);
-            } else {
-              lastVerifyError = null;
-            }
           } else {
-            // tools.js → runCommand → process-runner.js ya gestiona:
-            //  - long-running (npm run dev, vite…) → background + streaming + detach()
-            //  - comandos normales → timeout 25s + captura stdout/stderr
             result = await tools.execute(name, args, projectRoot, allowWrite, helpers || {});
           }
 
           const softRecover = recoverSoftToolFailure(name, args, result, projectRoot);
-
-          if (Array.isArray(softRecover.stepsExtra) && softRecover.stepsExtra.length && softRecover.recovered) {
-            for (const extra of softRecover.stepsExtra) {
-              steps.push(extra);
-              this.session.addStep(extra);
-            }
-            result = softRecover.payload;
-            messages.push({
-              role: "tool",
-              tool_call_id: call.id,
-              name,
-              content: tools.truncatePayload(result || {}, tools.TOOL_RESULT_CAP || 2000),
-            });
-            continue;
-          } else {
-            result = softRecover.payload;
-          }
-
-          const isSoft = result?.soft === true || result?.ooda === "continue"
-            || tools.isSoftToolFailure?.(name, result, args);
-          if (isSoft && result?.ok === false) {
-            const softN = (softRetryCounts.get(callKey) || 0) + 1;
-            softRetryCounts.set(callKey, softN);
-            if (softN < 3) {
-              toolHistory.delete(callKey);
-              onProgress?.({
-                phase: "narration",
-                text: name === "replace_in_file"
-                  ? "Ajusto: releo el contexto para reintentar…"
-                  : "Fallo leve, sigo…",
-              });
-            } else {
-              result = {
-                ...result,
-                soft: true,
-                ooda: "stop-soft-retry",
-                guidance: "Tope de reintentos leves alcanzado para esta acción. Cambia de enfoque o entrega resultado parcial.",
-              };
-            }
-          }
+          result = softRecover.payload;
 
           const stepData = {
             name,
             input: args,
             result,
             ok: result?.ok !== false,
-            soft: isSoft || undefined,
-            softContinue: isSoft || undefined,
           };
           steps.push(stepData);
           this.session.addStep(stepData);
@@ -1748,91 +1108,34 @@ class ChatOrchestrator {
             ok: stepData.ok,
           });
 
-          if ((name === "write_file" || name === "replace_in_file") && result?.ok !== false && args.path) {
-            pendingWrites.delete(String(args.path));
-            try {
-              const { resolveSnapshotBackupAbs } = require("./snapshot");
-              const rel = String(args.path || "").replace(/\\/g, "/");
-              const backupPath = resolveSnapshotBackupAbs(projectRoot, result?.snapshotId, rel);
-              const existedBefore = Boolean(backupPath);
-              const idx = runMutations.findIndex((m) => m.path === rel);
-              if (idx >= 0) {
-                runMutations[idx].action = name;
-              } else {
-                runMutations.push({
-                  path: rel,
-                  action: name,
-                  backupPath,
-                  created: name === "write_file" && !existedBefore,
-                });
-              }
-            } catch { /* undo checkpoint best-effort */ }
-          }
-
-          if (memory) {
-            if ((name === "write_file" || name === "replace_in_file") && result?.ok) memory.touchFile(args.path, "write");
-            if (name === "read_file" && result?.ok) memory.touchFile(args.path, "read");
-          }
-
           messages.push({
             role: "tool",
             tool_call_id: call.id,
             name,
-            content: tools.truncatePayload(result || {}, tools.TOOL_RESULT_CAP || 2000),
+            content: tools.truncatePayload(result || {}, 2000),
           });
         }
       }
 
       this.session.kill();
       const written = successfulWritePaths(steps);
+      let textOut = written.length > 0
+        ? `Archivos actualizados:\n${written.map(p => `- \`${p}\``).join("\n")}\n\n${nextStepsClosingText(projectRoot, written, steps)}`
+        : `${nextStepsClosingText(projectRoot, [], steps)}`;
 
-      let textOut = "";
-      if (written.length > 0) {
-        const lista = written.map((p) => `- \`${p}\``).join("\n");
-        const cierre = written.length === 1
-          ? "He finalizado esta tarea y aplicado la modificación solicitada en el proyecto con éxito."
-          : `He finalizado esta tarea y aplicado las modificaciones solicitadas (${written.length} archivos actualizados con éxito).`;
-        const sugerencia = nextStepsClosingText(projectRoot, written, steps);
-        textOut = `${cierre}\n\n${lista}${sugerencia ? `\n\n${sugerencia}` : ""}`;
-      } else {
-        const lastAssistant = [...messages].reverse().find((m) => m.role === "assistant" && m.content)?.content || "";
-        textOut = groundUngroundedClaims(String(lastAssistant || ""), steps, message, decision);
-        if (!String(textOut || "").trim()) {
-          const readFiles = steps.filter((s) => s.name === "read_file" || s.name === "list_files").map((s) => s.input?.path).filter(Boolean);
-          if (readFiles.length > 0) {
-            const filesStr = readFiles.slice(0, 3).map((f) => `\`${f}\``).join(", ");
-            textOut = `Revisé con tools: ${filesStr}. No apliqué escrituras en este turno.`;
-          } else {
-            textOut = "No pude completar acciones con tools en este turno. Reformulá el pedido o verificá la carpeta conectada.";
-          }
-        }
-      }
-      textOut = repairDanglingOutput(textOut, steps, message, decision);
-
-      persistKernelRoadmap(projectRoot, {
-        task: message, steps, kind: decision?.kind, text: textOut, completed: true,
-      });
+      textOut = formatAgentVisibleText(textOut);
+      persistKernelRoadmap(projectRoot, { task: message, steps, kind: decision?.kind, text: textOut, completed: true });
       rememberOut(textOut);
       detachLongRunningStreams(steps);
-      return { kind: decision?.kind || "EXECUTE", text: textOut, steps, incomplete: false, mutations: runMutations, threadId, usage: totalUsage };
+      return { kind: decision?.kind || "EXECUTE", text: textOut, steps, incomplete: false, threadId, usage: totalUsage };
     } catch (err) {
       this.session.kill();
       let safeMsg = String(err?.message || err || "Error desconocido");
-      try {
-        const { sanitizeChatProviderError } = require("../runtime/chat-error-sanitize");
-        safeMsg = sanitizeChatProviderError(err);
-      } catch {
-        if (/gafcore/i.test(safeMsg)) {
-          safeMsg = "El proveedor no respondió a tiempo. Reintentá en unos segundos; tu modelo se conserva.";
-        }
-      }
       const errText = formatAgentVisibleText("Algo falló durante la ejecución: " + safeMsg);
-      persistKernelRoadmap(projectRoot, {
-        task: message, steps, kind: decision?.kind, text: errText, completed: false,
-      });
+      persistKernelRoadmap(projectRoot, { task: message, steps, kind: decision?.kind, text: errText, completed: false });
       rememberOut(errText);
       detachLongRunningStreams(steps);
-      return { kind: "CHAT", text: errText, steps, mutations: runMutations, threadId, usage: totalUsage };
+      return { kind: "CHAT", text: errText, steps, threadId, usage: totalUsage };
     } finally {
       this.running = false;
       this.turnAbort = null;
