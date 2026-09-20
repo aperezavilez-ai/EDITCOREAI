@@ -2,24 +2,25 @@
 
 /** Portero: una sola decisión por mensaje. Acceso completo aware. */
 
-const STOP_RE = /^\s*(?:alto|detente|deténte|cancela|cancelar|stop|para|basta|deten(?:te)?)\s*[.!?]?\s*$/i;
-
-const APPROVAL_RE = /^\s*(?:procede|continua|continúa|hazlo|autorizado|adelante|ejecuta|si|sí|confirmado|procedo|hazlo\s+ya|dale|va|ok)\b[.!?]?\s*$/i;
-
+const STOP_RE = /^\s*(?:alto|detente|cancela|cancelar|stop|para|basta|deten(?:te)?)\s*[.!?]?\s*$/i;
+const APPROVAL_RE = /^\s*(?:procede|continua|continúa|hazlo|autorizado|adelante|ejecuta|si|sí|confirmado|procedo|hazlo\s+ya|dale|va|ok)\s*[.!?]?\s*$/i;
 const CHAT_INFO_RE = /\b(?:para\s+qu[eé]\s+(?:sirve|funciona|es)|qu[eé]\s+(?:hace|es)|qui[eé]n\s+eres|c[oó]mo\s+te\s+llamas|ayuda|hola|buenos\s+d[ií]as|buenas\s+tardes|buenas\s+noches)\b/i;
 
-const TASK_FIX_RE = /\b(?:corrije|corrige|arregla|implementa(?:r)?|aplica|repara|soluciona|crea(?:r|ción)?|genera(?:r)?|escribe|escrib[ií]|modifica(?:r)?|refactoriza(?:r)?|actualiza(?:r)?|audita(?:r)?|añade|agrega(?:r)?|cambia(?:r)?|muev\w*|copiar?|haz|hacer|arma|armá|scaffold|nuevo\s+proyecto|ejecuta(?:r)?|run_command|run|build|tsc|npx|npm)\b/i;
+// Verbos de cambio/escritura. Ganan sobre TASK_VERIFY_RE si el mensaje pide modificar.
+const TASK_FIX_RE = /\b(?:corrige|corrije|arregla|arreglá|implementa(?:r)?|aplica|aplicá|repara|repará|soluciona|solucioná|crea(?:r|ción)?|creá|genera(?:r)?|generá|escribe|escrib[ií]|modifica(?:r)?|modificá|refactoriza(?:r)?|actualiza(?:r)?|actualizá|audita(?:r)?|añade|añadí|agrega(?:r)?|agregá|cambia(?:r)?|cambiá|muev\w*|mov[eé]|copiar?|copiá|haz|hacer|hacé|arma|armá|scaffold|nuevo\s+proyecto|ejecuta(?:r)?|ejecutá|reemplaza(?:r)?|reemplazá|pon[eé]?|setea(?:r)?|borra(?:r)?|elimina(?:r)?|renombra(?:r)?|run_command|run|build|tsc|npx|npm)\b/i;
+
 const TASK_CLONE_RE = /\b(?:clona|clonar|copia\s+esta\s+p[aá]gina|replica(?:r)?\s+(?:esta\s+)?(?:web|p[aá]gina|sitio)|clone_web_page)\b/i;
 const HTTP_URL_RE = /https?:\/\/[^\s)>"']+/i;
-
-const TASK_ANALYZE_RE = /(?:^|[^\w])(?:analiz[aáá]|analizar|audita(?:r)?|diagnostica(?:r)?|revisa(?:r)?\s+errores|hallazgos|reporte\s+completo|plan\s+de\s+acci[oó]n)(?=\s|$|[.!,?¿¡:])/i;
+const TASK_ANALYZE_RE = /(?:^|[^\w])(?:analiz[aá]|analizar|audita(?:r)?|diagnostica(?:r)?|revisa(?:r)?\s+errores|hallazgos|reporte\s+completo|plan\s+de\s+acci[oó]n)(?=\s|$|[.!,?¿¡:])/i;
 const TASK_LIST_RE = /\b(?:lista|listar|qu[eé]\s+contiene|qu[eé]\s+hay\s+en|contenido\s+de|muestra\s+(?:la\s+)?carpeta|explora|explorar|explorer|directorio|arbol|árbol)\b/i;
-const TASK_READ_RE = /\b(?:explica|explicar|lee|leer|describe|describ[eéa]|resume|resumir|revisa|revisar|qu[eé]\s+hace|c[oó]mo\s+funciona|para\s+qu[eé]\s+sirve)\b/i;
+const TASK_READ_RE = /\b(?:explica|explicar|lee|leer|describe|describ[eé]|resume|resumir|revisa|revisar|qu[eé]\s+hace|c[oó]mo\s+funciona|para\s+qu[eé]\s+sirve)\b/i;
 const PATHISH_RE = /(?:[\\/]|\b[a-z0-9_.-]+\.(?:js|ts|tsx|jsx|mjs|cjs|json|md|css|html|py|rs|go)\b)/i;
 const TASK_GIT_RE = /\b(?:commit|push|git\s+status|haz\s+commit)\b/i;
 const TASK_DEPLOY_RE = /\b(?:deploy|publica(?:r)?|vercel)\b/i;
 const BACKGROUND_RE = /\b(?:segundo\s+plano|en\s+background|background|sin\s+esperar)\b/i;
-const TASK_VERIFY_RE = /\b(?:verifica(?:r)?|typecheck|compila(?:r)?|tsc\b)\b/i;
+
+// Solo matchea si el mensaje EMPIEZA con verbo de verificación (no si aparece "ok" o "verifica" en cualquier parte).
+const TASK_VERIFY_RE = /^\s*(?:verifica(?:r)?|verificá|typecheck|compila(?:r)?|compilá|corre?\s+los?\s+tests?|corre?\s+tsc|pasa?\s+el\s+linter|hac[eé]\s+build|build)\b/i;
 
 function isFullAccess(opts = {}) {
   const mode = String(opts.permissionMode || opts.mode || "").toLowerCase().trim();
@@ -41,110 +42,61 @@ function classify(message, opts = {}) {
   if (STOP_RE.test(text)) {
     return { kind: "STOP", label: "Parada", allowTools: false, allowWrite: false, background: false };
   }
-
-  // Acceso completo: no clasificar como CONFIRM (no hay candado de autorización)
-  if (!full && APPROVAL_RE.test(text)) {
-    return { kind: "CONFIRM", label: "Autorización Confirmada", allowTools: true, allowWrite: true, background: false };
+  if (APPROVAL_RE.test(text)) {
+    return { kind: "EXECUTE", label: "Ejecución autorizada", allowTools: true, allowWrite: true, background };
   }
-  if (full && APPROVAL_RE.test(text)) {
-    return { kind: "EXECUTE", label: "Ejecución (Acceso completo)", allowTools: true, allowWrite: true, background: false };
+  if (TASK_CLONE_RE.test(text) && HTTP_URL_RE.test(text)) {
+    return { kind: "EXECUTE", label: "Clonar web", allowTools: true, allowWrite: true, background };
   }
 
+  // ORDEN CORREGIDO: verbos de cambio primero (si el usuario dice "cambia X y verifica", gana el cambio).
+  const fixMatch = TASK_FIX_RE.test(text);
+  const verifyMatch = TASK_VERIFY_RE.test(text);
 
-  const isNegativeClone = /\b(?:no\s+(?:te\s+ped[ií]\s+)?clonar|sin\s+clonar|no\s+clonar|no\s+quiero\s+clonar)\b/i.test(text);
-
-  if (!isNegativeClone && (TASK_CLONE_RE.test(text) || (HTTP_URL_RE.test(text) && /\b(?:clona|clonar|copia|replica)\b/i.test(text)))) {
+  if (fixMatch) {
+    // Si hay fix + verbo de verificación, el usuario quiere ejecutar y verificar → EXECUTE.
     return {
       kind: "EXECUTE",
-      label: "Clonar página web",
+      label: full ? "Ejecución (Acceso completo)" : "Construcción / Ejecución",
       allowTools: true,
       allowWrite: true,
       background,
-      preferredTool: "clone_web_page",
     };
   }
 
-  if (TASK_LIST_RE.test(text)) {
-    return { kind: "LIST", label: "Listado", allowTools: true, allowWrite: false, background };
-  }
-
-  // Explicar/leer/describir un archivo concreto → tools (read_file), nunca chat ciego
-  if (TASK_READ_RE.test(text) && PATHISH_RE.test(text) && !TASK_FIX_RE.test(text)) {
-    return { kind: "ASK", label: "Lectura / explicación", allowTools: true, allowWrite: false, background };
-  }
-
-  // Chat info solo si NO hay verbo de acción (evita degradar "crea X" / "implementa Y")
-  if (CHAT_INFO_RE.test(text) && !TASK_FIX_RE.test(text) && !TASK_READ_RE.test(text)) {
-    return { kind: "CHAT", label: "Consulta Informativa", allowTools: false, allowWrite: false, background: false };
+  if (verifyMatch) {
+    return { kind: "VERIFY", label: "Verificación", allowTools: true, allowWrite: false, background };
   }
 
   if (TASK_GIT_RE.test(text)) {
-    return { kind: "GIT", label: "Git", allowTools: true, allowWrite: true, background };
+    return { kind: "EXECUTE", label: "Git", allowTools: true, allowWrite: true, background };
   }
   if (TASK_DEPLOY_RE.test(text)) {
-    return { kind: "DEPLOY", label: "Deploy", allowTools: true, allowWrite: true, background };
+    return { kind: "EXECUTE", label: "Deploy", allowTools: true, allowWrite: true, background };
   }
-
-  if (TASK_FIX_RE.test(text)) {
-    return {
-      kind: "EXECUTE",
-      label: full ? "Construcción / Acceso completo" : "Construcción / Ejecución",
-      allowTools: true,
-      allowWrite: true,
-      background,
-    };
-  }
-
-  if (TASK_VERIFY_RE.test(text) && background) {
-    return { kind: "VERIFY", label: "Verificación", allowTools: true, allowWrite: false, background: true };
-  }
-
   if (TASK_ANALYZE_RE.test(text)) {
-    // "auditar" con acceso completo + intención de fix → EXECUTE
-    if (full && /\b(?:corrige|arregla|implementa|aplica|repara)\b/i.test(text)) {
-      return { kind: "EXECUTE", label: "Auditoría + corrección", allowTools: true, allowWrite: true, background };
-    }
     return { kind: "ANALYZE", label: "Análisis", allowTools: true, allowWrite: false, background };
   }
-
-  if (/^(?:qu[eé]|cual|cuál|donde|dónde|como|cómo)\b/i.test(text) && text.length < 180 && !TASK_FIX_RE.test(text)) {
-    return { kind: "ASK", label: "Pregunta", allowTools: true, allowWrite: false, background };
+  if (TASK_LIST_RE.test(text)) {
+    return { kind: "LIST", label: "Listado", allowTools: true, allowWrite: false, background };
   }
-
-  // Acceso completo: no degradar pedidos con acción a CHAT pasivo
-  if (full && TASK_FIX_RE.test(text)) {
-    return { kind: "EXECUTE", label: "Ejecución (Acceso completo)", allowTools: true, allowWrite: true, background };
+  if (TASK_READ_RE.test(text) || PATHISH_RE.test(text)) {
+    return { kind: "ASK", label: "Consulta", allowTools: true, allowWrite: false, background };
   }
-
-  return {
-    kind: "CHAT",
-    label: "Chat",
-    allowTools: false,
-    allowWrite: false,
-    background: false,
-  };
+  if (CHAT_INFO_RE.test(text)) {
+    return { kind: "CHAT", label: "Chat informativo", allowTools: false, allowWrite: false, background };
+  }
+  return { kind: "CHAT", label: "Chat", allowTools: false, allowWrite: false, background };
 }
 
 function loadProjectMapHelpers() {
-  try {
-    return require("../runtime/project-map");
-  } catch {
-    try {
-      return require("./project-map");
-    } catch {
-      return null;
-    }
-  }
+  try { return require("../runtime/project-map"); }
+  catch { try { return require("./project-map"); } catch { return null; } }
 }
 
-/**
- * Extrae el directorio ignorando palabras vacías.
- * Si hay projectRoot, resuelve contra `.editcore/project-map.json`.
- */
 function extractListTarget(message, projectRoot = null) {
   const t = String(message || "").trim();
   let candidate = ".";
-
   const matchPath = t.match(/(?:directorio|carpeta|folder|en|de)\s+([.\/\\a-zA-Z0-9_\-]+)/i);
   if (matchPath) {
     const raw = matchPath[1].trim();
@@ -154,29 +106,18 @@ function extractListTarget(message, projectRoot = null) {
   } else if (/\b\.\b/.test(t) || t.includes(" .")) {
     candidate = ".";
   }
-
   const root = String(projectRoot || "").trim();
   if (!root) return candidate || ".";
-
   const mapApi = loadProjectMapHelpers();
   if (!mapApi?.resolveExistingTarget) return candidate || ".";
-
   try {
     mapApi.ensureProjectMap?.(root, { maxAgeMs: 5 * 60_000 });
     const resolved = mapApi.resolveExistingTarget(root, candidate);
     return resolved?.target || ".";
-  } catch {
-    return candidate || ".";
-  }
+  } catch { return candidate || "."; }
 }
 
-const MODES = {
-  CHAT: "chat",
-  UNDERSTAND: "understand",
-  DISCOVER: "discover",
-  EXECUTE: "execute",
-};
-
+const MODES = { CHAT: "chat", UNDERSTAND: "understand", DISCOVER: "discover", EXECUTE: "execute" };
 const SUB_AGENTS = {
   INTENT: "intent-analyst",
   EXPLORER: "project-explorer",
@@ -184,19 +125,22 @@ const SUB_AGENTS = {
   RESUMER: "task-resumer",
 };
 
-const ALL_ALLOWED_TOOLS = [
-  "write_file", "replace_in_file", "create_project",
+const READ_ONLY_TOOLS = [
+  "list_files", "read_file", "search_files", "project_discovery",
+  "codebase_map", "symbol_search", "dependency_search",
+  "brain_search", "brain_skill", "brain_tools",
+  "search_codebase_semantic", "list_snapshots", "analyze_circular_dependencies",
+];
+const WRITE_TOOLS = [
+  "write_file", "replace_in_file", "delete_file", "create_project",
   "clone_web_page", "web_scrape", "images_to_code",
-  "list_files", "read_file", "search_files", "run_command",
-  "create_pdf", "create_word", "create_excel", "create_csv",
-  "project_discovery", "codebase_map", "symbol_search",
-  "inspect_preview", "brain_search", "brain_skill", "brain_tools",
-  "generate_image", "generate_video", "add_erp_module",
+  "run_command", "create_pdf", "create_word", "create_excel", "create_csv",
+  "inspect_preview", "generate_image", "generate_video", "add_erp_module",
   "deploy_one_click", "publish_project", "fullstack_deploy",
   "audit_env", "supabase_migrate", "scaffold_project", "capture_preview",
-  "capture_preview_screenshot", "run_e2e_pipeline", "search_codebase_semantic",
-  "rollback_last_change", "list_snapshots", "analyze_circular_dependencies",
+  "capture_preview_screenshot", "run_e2e_pipeline", "rollback_last_change",
 ];
+const ALL_ALLOWED_TOOLS = [...new Set([...READ_ONLY_TOOLS, ...WRITE_TOOLS])];
 
 const TOOL_ALLOWLIST = Object.assign(
   function (modeOrTool) {
@@ -205,108 +149,47 @@ const TOOL_ALLOWLIST = Object.assign(
   },
   {
     [MODES.CHAT]: [],
-    [MODES.UNDERSTAND]: [],
-    [MODES.DISCOVER]: [
-      "list_files", "read_file", "search_files",
-      "project_discovery", "codebase_map", "symbol_search",
-      "inspect_preview", "brain_search", "brain_skill", "brain_tools",
-      "audit_env", "list_snapshots", "search_codebase_semantic",
-      "analyze_circular_dependencies",
-    ],
+    [MODES.UNDERSTAND]: READ_ONLY_TOOLS,
+    [MODES.DISCOVER]: READ_ONLY_TOOLS,
     [MODES.EXECUTE]: ALL_ALLOWED_TOOLS,
     includes(toolName) {
-      if (!toolName) return false;
-      return ALL_ALLOWED_TOOLS.includes(toolName)
-        || (Array.isArray(this[MODES.EXECUTE]) && this[MODES.EXECUTE].includes(toolName))
-        || (Array.isArray(this[MODES.DISCOVER]) && this[MODES.DISCOVER].includes(toolName));
+      return ALL_ALLOWED_TOOLS.includes(toolName);
     },
     all: ALL_ALLOWED_TOOLS,
   }
 );
 
 function resolveExecutionMode(prompt = "", opts = {}) {
-  const text = String(prompt || "").trim();
-  const res = classify(text, opts);
-  if (res.kind === "EXECUTE" || (res.allowTools && res.allowWrite)) {
-    return { mode: "EXECUTE", isAgent: true, reason: res.label || "ORCHESTRATOR_EXECUTE" };
+  const decision = classify(prompt, opts);
+  if (decision.kind === "STOP") return { mode: "STOP", isAgent: false, reason: "stop" };
+  if (decision.kind === "CHAT") return { mode: MODES.CHAT, isAgent: false, reason: "chat" };
+  if (decision.kind === "ANALYZE" || decision.kind === "LIST" || decision.kind === "ASK") {
+    return { mode: MODES.DISCOVER, isAgent: true, reason: "read-only" };
   }
-  if (res.kind === "ANALYZE" || res.kind === "ASK" || res.kind === "LIST") {
-    return { mode: "DISCOVER", isAgent: false, usesProjectTools: true, reason: res.label || "ORCHESTRATOR_DISCOVER" };
-  }
-  return { mode: "CHAT", isAgent: false, usesProjectTools: false, reason: res.label || "ORCHESTRATOR_CHAT" };
+  return { mode: MODES.EXECUTE, isAgent: true, reason: "write" };
 }
 
 function isResumeIncompleteAnalysisRequest(prompt = "", options = {}) {
-  const text = String(prompt || "").trim();
-  if (!text) return false;
-  if (options.planAuthorizedExecution === true) return false;
-  const phase = String(options.workflowPhase || "");
-  if (phase === "awaiting_authorization") return false;
-  if (!options.resumableTask && !["interrupted", "executing"].includes(phase)) return false;
-  if (/^\s*(?:procede|adelante|autorizo)\b/i.test(text)) return false;
-  return /\bcontin[uú]a\b/i.test(text)
-    || /\b(termina|completa|cierra)\b.*\b(reporte|an[aá]lisis|auditor[ií]a)\b/i.test(text);
+  return /\b(?:contin[uú]a|retoma|reanuda|sigue)\b/i.test(String(prompt || ""))
+    && (options.previousIncomplete === true || options.resume === true);
 }
 
-function isAnalysisOnlyRequest(prompt = "", allowWrite = true) {
-  const text = String(prompt || "").trim();
-  if (!text) return false;
-  if (/\bNO\s+MODIFIQUES?\b|\bNO\s+MODIFICAR\b|\bDIAGN[OÓ]STICO\b.*\bNO\s+MODIFIC/i.test(text)) return true;
-  if (/\b(?:crear?|crees?|corregir?|corrijas?|modifica|modifiques|escribir?|escribas?|arreglar?|arregles?|implementar?|implementes?)\b/i.test(text)) return false;
-  return TASK_ANALYZE_RE.test(text);
+function isAnalysisOnlyRequest(prompt = "", allowWrite = false) {
+  if (allowWrite === false) return true;
+  return /(?:^|[^\w])(?:analiz[aá]|analizar|audita(?:r)?|diagnostica(?:r)?|revisa(?:r)?\s+errores)(?=\s|$|[.!,?¿¡:])/i.test(String(prompt || ""));
 }
 
 function resolveUnifiedAgentPlan(options = {}) {
-  const prompt = String(options.prompt || "").trim();
-  const requestedAgent = options.requestedAgent === true;
-  const projectOpen = options.projectOpen === true;
-  const allowWrite = options.allowWrite !== false && options.permissionMode !== "readonly";
-  const planAuthorizedExecution = options.planAuthorizedExecution === true;
-
-  if (!projectOpen && !options.ephemeralRoot) {
-    return {
-      mode: MODES.CHAT,
-      missingProject: true,
-      usesProjectTools: false,
-      isAgent: false,
-      promptOnlyMode: false,
-      allowedTools: [],
-      reason: "proyecto requerido",
-    };
-  }
-
-  const decision = classify(prompt, { permissionMode: options.permissionMode, fullAccess: options.permissionMode === "full" });
-  if (planAuthorizedExecution || (decision.kind === "EXECUTE" && allowWrite)) {
-    return {
-      mode: MODES.EXECUTE,
-      isAgent: true,
-      usesProjectTools: true,
-      directReadOnly: false,
-      planAuthorizedExecution: true,
-      allowedTools: TOOL_ALLOWLIST[MODES.EXECUTE],
-      reason: decision.label || "ejecucion autorizada",
-    };
-  }
-  if (decision.kind === "ANALYZE" || decision.kind === "ASK" || decision.kind === "LIST") {
-    return {
-      mode: MODES.DISCOVER,
-      isAgent: requestedAgent,
-      usesProjectTools: true,
-      directReadOnly: true,
-      planAuthorizedExecution: false,
-      allowedTools: TOOL_ALLOWLIST[MODES.DISCOVER],
-      reason: decision.label || "lectura y analisis",
-    };
-  }
+  const decision = classify(options.prompt || options.message || "", options);
+  const mode = decision.kind === "ANALYZE" ? MODES.DISCOVER : MODES.EXECUTE;
   return {
-    mode: MODES.CHAT,
-    isAgent: false,
-    usesProjectTools: false,
-    directReadOnly: true,
-    conversationOnly: true,
-    planAuthorizedExecution: false,
-    allowedTools: [],
-    reason: decision.label || "conversacion",
+    mode,
+    isAgent: decision.allowTools === true,
+    usesProjectTools: decision.allowTools === true,
+    directReadOnly: decision.allowWrite === false,
+    planAuthorizedExecution: options.planAuthorizedExecution === true,
+    allowedTools: TOOL_ALLOWLIST[mode] || ALL_ALLOWED_TOOLS,
+    reason: decision.label || "classify",
   };
 }
 

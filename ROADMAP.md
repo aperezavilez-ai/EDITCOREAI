@@ -6,11 +6,13 @@ EditCore actualiza este archivo tras cambios. No pedirlo al usuario. No pegar co
 
 ## Proceso
 - Fase: implementacion
-- Estado: Tarea cerrada. El siguiente turno parte de ## Proceso / ## Tarea / ## Bloqueos.
-- Actualizado: 2026-09-18 21:00
+- Estado: Ciclo finalizado. Listo para la siguiente tarea.
+- Actualizado: 2026-09-20 22:55
 - Preview: desconocido — usa el preview del IDE, no inventes puertos
 
 ## Mapa
+- resources/ui-overlay/renderer.js
+- renderer.js
 - scripts/auto-evolution/evolution-state.json
 - test/git-manager.test.js
 - preload.js
@@ -57,10 +59,10 @@ EditCore actualiza este archivo tras cambios. No pedirlo al usuario. No pegar co
 - test/composer-view.test.js
 - test/lsp-client.test.js
 - runtime/cloud-collab.js
-- runtime/lsp-ghost-text.js
-- runtime/lsp-client.js
 
 ## Archivos clave (no reexplorar)
+- renderer.js
+- resources/ui-overlay/renderer.js
 - runtime/git-manager.js
 - ide/git-panel.html
 - main.js
@@ -75,17 +77,16 @@ EditCore actualiza este archivo tras cambios. No pedirlo al usuario. No pegar co
 - scripts/phase2b-electron-seed.js
 - resources/ui-overlay/main.js
 - test/ui-boot-speed.test.js
-- test/windows-stt.test.js
-- runtime/mcp-client.js
 
 ## Tarea activa
-- # INICIO DE LA TAREA: SISTEMA AVANZADO DE GIT UI Y CONTROL DE VERSIONES NATIVO
+- ## Habilidades especializadas activas (Skills)
 
-Arranca de manera completamente autónoma la implementación del sistema avanzado de control de versiones y Git UI en EditCoreAI, permitiendo
+### Skill: n8n-code-javascript
+Write JavaScript code in n8n Code nodes. Use when writing JavaScript in n8n, using $input/$json/$node syntax, making HTTP requests with this.
 
 ## Bloqueos / bugs conocidos
-- errores y escape seguro de argumentos. |
-- Actualizado: 2026-09-18 20:53
+- falló, el footer se oculta incluso si hay archivos cambiados.
+- Actualizado: 2026-09-18 21:00
 - Preview: desconocido — usa el preview del IDE, no inventes puertos
 
 ## Decisiones
@@ -96,6 +97,10 @@ Arranca de manera completamente autónoma la implementación del sistema avanzad
 - **Skills como extensión**: las habilidades (editcore-connect, web-to-desktop-pake, etc.) se cargan bajo demanda y no forman parte del core. Motivo: mantener el kernel liviano.
 
 ## Cambios recientes
+- renderer.js
+- resources/ui-overlay/renderer.js
+- resources/ui-overlay/renderer.js — parche aplicado (kernel) (2026-09-20 22:55)
+- renderer.js — parche aplicado (kernel) (2026-09-20 22:55)
 - runtime/git-manager.js
 - ide/git-panel.html
 - main.js
@@ -110,16 +115,12 @@ Arranca de manera completamente autónoma la implementación del sistema avanzad
 - preload.js — parche aplicado (kernel) (2026-09-18 20:55)
 - main.js — parche aplicado (kernel) (2026-09-18 20:54)
 - ide/git-panel.html — archivo escrito (kernel) (2026-09-18 20:54)
-- runtime/git-manager.js — archivo escrito (kernel) (2026-09-18 20:53)
-- runtime/rag-memory.js
-- runtime/prompt-cache-manager.js
-- scripts/phase2b-electron-seed.js
 
 ## Verificado
 - Pendiente
 
 ## Siguiente
-- Leer ## Proceso + ## Tarea activa + ## Bloqueos y continuar. No reexplorar el proyecto entero.
+- Proponer optimización, analítica o nueva funcionalidad complementaria.
 
 ## Regla anti-reexploracion
 - Si el pedido del usuario apunta a un archivo ya listado arriba: ve DIRECTO a read_file/replace_in_file de ese path.
