@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx node *)",
+      "Bash(node test/intent-orchestrator.test.js)",
+      "Bash(node test/greenfield-create.test.js)",
+      "Bash(node test/chat-kernel-classify-actions.test.js)",
+      "Bash(npm test *)",
+      "Bash(node -e ' *)",
+      "Bash(git stash *)",
+      "Bash(node --test test/intent-orchestrator.test.js)",
+      "Bash(node --test test/intent-orchestrator.test.js test/greenfield-create.test.js)",
+      "Bash(git add *)",
+      "Bash(git commit -m 'fix: remove unused resolveUnifiedAgentPlan import from orchestrator.js *)"
+    ]
+  }
+}

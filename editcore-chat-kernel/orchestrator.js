@@ -6,7 +6,6 @@ const {
   extractListTarget,
   isFullAccess,
   resolveExecutionMode,
-  resolveUnifiedAgentPlan,
   MODES,
   TOOL_ALLOWLIST,
   SUB_AGENTS,
