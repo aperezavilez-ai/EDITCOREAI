@@ -79,7 +79,8 @@ EditCore actualiza este archivo tras cambios. No pedirlo al usuario. No pegar co
 - test/git-manager.test.js
 
 ## Tarea activa
-- ## Habilidades especializadas activas (Skills)
+- Consolida cerebro único: classify.js (portero) + intent-orchestrator.js (full). Imports corregidos en editcore-claude-adapter.js y main.js. 879/879 tests pasan.
+- Empaquetado: EDITCOREAI-Setup-v4.0.0.exe listo.
 
 ### Skill: n8n-code-tool
 Write JavaScript or Python for the n8n Custom Code Tool (@n8n/n8n-nodes-langchain.toolCode) — the AI-agent-callable tool, NOT the workflow Code nod
