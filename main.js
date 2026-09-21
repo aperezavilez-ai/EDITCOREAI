@@ -7589,6 +7589,29 @@ ipcMain.handle("agent:run", async (event, input = {}) => {
 
     // En analisis solo acepta la lista restringida de comandos sin mutacion.
     // En agente conserva la autorizacion de escritura del despachador.
+    // Tool: run_sql_migration — migraciones SQL a Supabase self-hosted vía SSH
+    try {
+      const { runRemoteSql } = require("./runtime/sql-migration-tool");
+      dispatcher.register({
+        name: "run_sql_migration",
+        description: "Aplica SQL DDL/DML a un proyecto Supabase self-hosted. Deriva el contenedor <proyecto>-db y ejecuta por SSH.",
+        write: true,
+        execute: async (toolInput) => {
+          const connections = (readSecureState()["editcore-connections"]) || {};
+          const targetRoot = String(toolInput.projectRoot || rootPath || "").trim();
+          if (!targetRoot) throw new Error("Sin projectRoot activo.");
+          return runRemoteSql({
+            projectRoot: targetRoot,
+            sql: toolInput.sql,
+            connections,
+            dryRun: toolInput.dryRun !== false,
+          });
+        },
+      });
+    } catch (err) {
+      console.warn("[sql-migration-tool] register failed:", err.message);
+    }
+
     dispatcher.register({
       name: "run_command",
       write: !analysisMode,
