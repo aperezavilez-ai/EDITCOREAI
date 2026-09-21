@@ -1,39 +1,109 @@
-# EditCoreAI — reglas persistentes de agentes (Codex + EditCore)
+# EDITCOREAI Agent Instructions
 
-## 0. PRIMERO Y CERO BUCLES
-- PROHIBIDO reexplorar carpetas enteras con list_files o glob si el mapa ya cubre la tarea. Trabaja de forma directa y quirúrgica.
-- Si necesitás confirmación para una mutación, pedila una sola vez y esperá respuesta. No repitas la misma pregunta en bucle.
-- Trabaja solo en la rama activa; no cambies de rama ni hagas force-push sin pedido explícito.
+## Critical Rules
 
-## 1. STACK Y ALCANCE
-- App: Electron IDE (main.js, preload.js, renderer.js) + `editcore-chat-kernel/` + `runtime/`.
-- Proveedores de modelos visibles al usuario: **ME AI** y **APICredits** (panel Modelos).
-- **PROHIBIDO** mencionar «GafCore Gateway», `gafcore-gateway`, project keys o URLs de gateway en el chat o en textos de ayuda al usuario.
-- Conexiones bóveda: GitHub, Vercel, Supabase, SSH (sin secretos en el chat).
+### 1. NO REEXPLORATION LOOPS
+- If ROADMAP.md exists and covers the task → read ONLY the files you will edit
+- PROHIBITED: `list_files`, `grep_search` of entire repo when ROADMAP has the info
+- ONE read per file you'll modify, then act
 
-## 2. HERRAMIENTAS REALES
-- Usa herramientas reales de escritura (`write_file`, `replace_in_file`) respetando el modo de permisos activo (readonly / step / full).
-- En modo step, confirmá antes de mutaciones; en modo full, aplicá directo salvo acciones externas (push, deploy, ssh).
-- Nunca muestres tool_call, tool_use, XML o JSON interno en el chat.
-- Lee archivos grandes por rangos concretos para optimizar tokens.
+### 2. BACKUP BEFORE MUTATION
+- ANY code change to working project → `git checkout -b backup/<task>`
+- For auth/login/database changes → DOUBLE confirm with user
+- Test locally BEFORE pushing: `npm run dev` or `npm start`
 
-## 3. LÍMITES DE ARCHIVOS Y CACHÉ
-- No modifiques archivos periféricos (snapshots `.editcore/snapshots`, `chats.json`, `memory.json`, EXE empaquetados) salvo que la tarea lo exija.
-- No truncar `main.js` / `renderer.js`. Mantén `resources/ui-overlay/` sincronizado cuando cambies UI/runtime empaquetable.
-- No inventes puertos de preview (`:1420`); usa el preview del IDE (`127.0.0.1:<asignado>`).
+### 3. PROJECT ECOSYSTEM AWARENESS
+All projects in `D:\PROGRAMAS IA\` are:
+- Connected to GitHub (`aperezavilez-ai/*`)
+- Auto-deploy to Vercel on push to main
+- Using Supabase at `supabase.gafcore.com`
 
-## 4. MEMORIA Y CONTINUIDAD (CERO RELECTURAS)
-- Conserva tarea, archivos afectados, estado, siguiente acción y checkpoints mediante el índice de memoria.
-- CONTINUA / PROCEDE / ADELANTE reanudan la tarea de inmediato sin reexplorar el disco desde cero.
-- ROADMAP del proyecto usuario: `## Proceso`, `## Bloqueos`, `## Archivos clave`, `## Siguiente`.
+**This means:** `git push origin main` = PRODUCTION DEPLOY
 
-## 5. MODELOS Y ERRORES
-- Timeouts 502/503 temporales: reintentar de forma automática; no cuarentenar Auto 20 min.
-- Errores al usuario: sanitizar con `runtime/chat-error-sanitize.js` (sin GafCore, sin hostnames).
-- No inventar modelos ni filtrar tools del kernel.
+### 4. SAFE WORKFLOW
+**BEFORE touching code:**
+1. `git checkout -b feature/<name>` or `backup/<name>`
+2. Read ONLY the files you will modify
+3. Ask user: "Will modify [X]. Proceed?"
 
-## 6. ACCESO Y CIERRE
-- Ejecuta la tarea autorizada hasta implementar, compilar y verificar con el test harness.
-- Si una acción requiere confirmación, pedila una vez. No entres en bucles de reintentos pasivos.
-- No reveles secretos. No salgas de la raíz del proyecto activo sin necesidad.
-- Al terminar un fix de producto: actualizar `ROADMAP.md`, versión en `package.json`, verify script y EXE si el usuario pide release.
+**DURING changes:**
+1. Small commits every 10-15 min
+2. Test after EACH change locally
+3. Never massive "fix everything" commits
+
+**AFTER changes:**
+1. Verify locally: `npm test`, `npm run dev`
+2. Push to feature branch first (NOT main)
+3. Verify preview deployment
+4. Only then merge to main
+
+### 5. RECOVERY PROCEDURES
+If you break something:
+1. `git log --oneline -20` - identify breaking commit
+2. `git revert <commit>` OR `git reset --hard <last-working>`
+3. Push to restore
+4. In Vercel: promote last working deployment to production
+
+### 6. SECRETS AND CONNECTIONS
+- GitHub tokens, Vercel tokens, Supabase keys → stored in vault
+- Access via `runtime/cloud-vault-bridge.js`
+- NEVER hardcode credentials
+- NEVER commit .env files
+
+### 7. PROHIBITED ACTIONS
+- ❌ Mentioning "GafCore Gateway" or project keys in chat
+- ❌ Massive refactors without user confirmation
+- ❌ Touching auth/login without backup + confirmation
+- ❌ Pushing directly to main for risky changes
+- ❌ Using write tools that ignore permission mode
+
+### 8. SELF-AWARENESS
+Know your own architecture:
+- `editcore-chat-kernel/classify.js` - lean classifier (portero)
+- `runtime/intent-orchestrator.js` - full orchestrator
+- `main.js` - Electron main process
+- `runtime/editcore-claude-adapter.js` - Claude API adapter
+
+Read [ARQUITECTURA-SISTEMA.md](ARQUITECTURA-SISTEMA.md) for complete details.
+
+## How to Handle User Requests
+
+### User says: "fix this bug"
+1. Read the specific file with the bug
+2. Understand what broke (git diff if recent)
+3. Fix in small, testable change
+4. Test locally
+5. Commit with clear message
+
+### User says: "add feature X"
+1. Check if ROADMAP.md mentions it
+2. Read ONLY files you'll modify
+3. Propose approach if unclear
+4. Implement incrementally
+5. Test each step
+
+### User says: "deploy to Vercel"
+1. Verify git status clean
+2. Run tests if they exist
+3. Push to feature branch
+4. Verify preview works
+5. Merge to main for production
+
+### User says: "this broke, fix it"
+1. `git log --oneline -10` - see recent changes
+2. `git diff HEAD~1` - see what changed
+3. Identify breaking commit
+4. `git revert <commit>` to undo
+5. Push to restore working state
+
+## Memory System
+Always check `.claude/memory/` for:
+- `project-ecosystem.md` - all projects and connections
+- `project-recovery.md` - emergency recovery steps
+- `safe-workflow.md` - required workflow
+- `orchestrator-consolidation.md` - architecture decisions
+
+## Final Rule
+**If it works, don't "fix" it unless user explicitly asks.**
+
+Working code > "clean" code that breaks functionality.
