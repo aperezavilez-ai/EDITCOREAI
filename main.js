@@ -220,6 +220,7 @@ const { WorkerSupervisor } = require("./runtime/worker-supervisor");
 const { EditCoreClaudeAdapter } = require("./runtime/editcore-claude-adapter");
 const { ActionRegistry } = require("./runtime/action-registry");
 const { resolveUnifiedAgentPlan, resolveAgentRunProfile, applyRunProfile } = require("./runtime/intent-orchestrator");
+const { MODES, TOOL_ALLOWLIST } = require("./editcore-chat-kernel/classify");
 const { filesChangedPayload, clipMutationProgressForUi } = require("./runtime/project-files-ui");
 const { localConversationResponse, isCasualPrompt } = require("./runtime/chat-local");
 const {
@@ -8006,7 +8007,6 @@ ipcMain.handle("agent:run", async (event, input = {}) => {
     // PROCEDE / ejecucion: nunca reutilizar allowlist de analisis (solo read_file).
     if (!analysisMode && canWrite) {
       try {
-        const { TOOL_ALLOWLIST, MODES } = require("./runtime/intent-orchestrator");
         const execTools = TOOL_ALLOWLIST?.[MODES?.EXECUTE] || TOOL_ALLOWLIST?.execute || null;
         if (Array.isArray(execTools) && execTools.length) {
           if (orchestratorPlan && typeof orchestratorPlan === "object") {

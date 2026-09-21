@@ -139,8 +139,12 @@ function systemPromptForMode(mode, allowWrite, opts = {}) {
     || ((s) => s);
   const fullAccess = opts.fullAccess === true || (allowWrite && opts.permissionMode === "full");
   const base = [
-    "Eres EDITCOREAI Agent Core v0.2 — GUÍA LÍDER autónomo. Responde SIEMPRE en espanol.",
-    "LIDERAZGO COGNITIVO: ante objetivos de alto nivel, genera hoja de ruta de 3-5 pasos, informa al usuario y ejecuta paso a paso sin esperar confirmaciones extra.",
+    "Eres EDITCOREAI Agent Core v0.3 — operador con tools. Responde SIEMPRE en espanol.",
+    "Hechos del proyecto SOLO salen de TOOL_RESULT. Si no hay result, el hecho no existe.",
+    "Protocolo de orden: ANALIZA (breve) → ANUNCIA → EJECUTA tools ahora → REPORTE final con hechos de TOOL_RESULT.",
+    "Maximo 3 tool_calls por turno. Observa el result antes de la siguiente oleada.",
+    "PROHIBIDO narrar 'ya lei / ya escribi / ya verifique' sin tool_calls en ESTE mensaje.",
+    "LIDERAZGO: hoja de ruta corta (3-5 pasos) y ejecuta el paso actual con tools.",
     "Usa tool_calls reales. PROHIBIDO inventar lecturas/escrituras.",
     "PROHIBIDO cerrar con 'Verificacion completada con evidencia real'.",
     "PROHIBIDO crear *-fixed.js o placeholders.",
@@ -540,6 +544,12 @@ async function runLlmToolLoop(input = {}, options = {}) {
 
   const toolSchemas = toolDefsForMode(mode, allowWrite && mode !== "diagnose");
   let finalText = "";
+  let promiseRetries = 0;
+
+  const claimsUnverifiedAction = (text = "") => {
+    const raw = String(text || "");
+    return /(?:voy\s+a|ahora\s+(?:leo|reviso|escribo|creo)|he\s+(?:le[ií]do|escrito|creado|verificado)|dejame\s+(?:leer|revisar))/i.test(raw);
+  };
 
   for (let i = 0; i < maxIterations; i += 1) {
     if (input.signal?.aborted) break;
@@ -567,14 +577,26 @@ async function runLlmToolLoop(input = {}, options = {}) {
       break;
     }
 
-    const toolCalls = parseToolCalls(response);
+    let toolCalls = parseToolCalls(response);
     const text = extractAssistantText(response);
     if (text) finalText = text;
 
     if (!toolCalls.length) {
+      if (claimsUnverifiedAction(text) && promiseRetries < 3 && i < maxIterations - 1) {
+        promiseRetries += 1;
+        messages.push({ role: "assistant", content: text || "(sin texto)" });
+        messages.push({
+          role: "user",
+          content: "No cierres. Acabas de afirmar una accion sin tool_calls. Llama ahora UNA tool real (read_file, search_files, write_file o replace_in_file). Sin TOOL_RESULT esa accion no ocurrio.",
+        });
+        input.onProgress?.({ phase: "model", text: `Reintento: accion narrada sin tool (${promiseRetries}/3)` });
+        continue;
+      }
       messages.push({ role: "assistant", content: text || "(sin texto)" });
       break;
     }
+
+    if (toolCalls.length > 3) toolCalls = toolCalls.slice(0, 3);
 
     messages.push({
       role: "assistant",
@@ -684,6 +706,11 @@ async function runLlmToolLoop(input = {}, options = {}) {
         });
       }
     }
+
+    messages.push({
+      role: "user",
+      content: "TOOL_RESULT ya esta en el hilo. Proximo turno: usa SOLO esos facts. Si falta un archivo, llama otra tool. Si ya puedes entregar, entrega el artefacto sin inventar rutas ni contenidos no leidos.",
+    });
   }
 
   return { steps, finalText, providerCalls, skipped: false };

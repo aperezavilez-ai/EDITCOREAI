@@ -84,7 +84,16 @@ function createCloudVaultBridge(deps = {}) {
       return { service: "supabase", url, key };
     }
     if (name === "gafcore" || name === "gateway") {
-      throw new Error("Esta integración ya no está disponible. Configura ME AI o APICredits en Modelos.");
+      const token = String(getGatewayAdminToken() || c.gafcoreAdminToken || c.gatewayToken || "").trim();
+      const origin = String(c.gafcoreOrigin || c.gafcoreUrl || gatewayOrigin || "").replace(/\/+$/, "");
+      if (!token && !origin) throw new Error("GafCore no configurado en Conexiones (bóveda).");
+      return { service: "gafcore", token, origin: origin || DEFAULT_GAFCORE_ORIGIN };
+    }
+    if (name === "server" || name === "custom" || name === "own" || name === "servidor") {
+      const url = String(c.customServerUrl || c.serverUrl || c.ownServerUrl || "").trim();
+      const token = String(c.customServerToken || c.serverToken || c.ownServerToken || "").trim();
+      if (!url) throw new Error("Servidor propio no configurado en Conexiones (bóveda).");
+      return { service: "server", url, token };
     }
     throw new Error(`Servicio de bóveda desconocido: ${service}`);
   }

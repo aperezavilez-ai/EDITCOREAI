@@ -76,7 +76,7 @@ const {
   filterToolsByPlan,
   isListOnlyRequest,
   isAnalysisOnlyRequest,
-} = require("./intent-orchestrator");
+} = require("../runtime/intent-orchestrator");
 const { extractAbsolutePathHints } = require("../project-analysis");
 const {
   withEliteCommunicationPolicy,

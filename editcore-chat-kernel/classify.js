@@ -125,6 +125,13 @@ const SUB_AGENTS = {
   RESUMER: "task-resumer",
 };
 
+const PHASES = {
+  CHAT: "understand",
+  UNDERSTAND: "understand",
+  DISCOVER: "discover",
+  EXECUTE: "execute",
+};
+
 const READ_ONLY_TOOLS = [
   "list_files", "read_file", "search_files", "project_discovery",
   "codebase_map", "symbol_search", "dependency_search",
@@ -179,20 +186,6 @@ function isAnalysisOnlyRequest(prompt = "", allowWrite = false) {
   return /(?:^|[^\w])(?:analiz[aá]|analizar|audita(?:r)?|diagnostica(?:r)?|revisa(?:r)?\s+errores)(?=\s|$|[.!,?¿¡:])/i.test(String(prompt || ""));
 }
 
-function resolveUnifiedAgentPlan(options = {}) {
-  const decision = classify(options.prompt || options.message || "", options);
-  const mode = decision.kind === "ANALYZE" ? MODES.DISCOVER : MODES.EXECUTE;
-  return {
-    mode,
-    isAgent: decision.allowTools === true,
-    usesProjectTools: decision.allowTools === true,
-    directReadOnly: decision.allowWrite === false,
-    planAuthorizedExecution: options.planAuthorizedExecution === true,
-    allowedTools: TOOL_ALLOWLIST[mode] || ALL_ALLOWED_TOOLS,
-    reason: decision.label || "classify",
-  };
-}
-
 function analyze(input = {}) {
   const prompt = String(input.prompt || input.message || "").trim();
   return classify(prompt, input);
@@ -202,13 +195,13 @@ module.exports = {
   classify,
   analyze,
   resolveExecutionMode,
-  resolveUnifiedAgentPlan,
   isResumeIncompleteAnalysisRequest,
   isAnalysisOnlyRequest,
   extractListTarget,
   isFullAccess,
   MODES,
   SUB_AGENTS,
+  PHASES,
   TOOL_ALLOWLIST,
   STOP_RE,
   APPROVAL_RE,

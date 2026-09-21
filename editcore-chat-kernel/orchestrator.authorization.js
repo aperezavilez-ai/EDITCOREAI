@@ -15,7 +15,10 @@ class Orchestrator {
     model,
     memory,
     onProgress,
-    runModelTaskFn
+    runModelTaskFn,
+    fullAccess: inputFullAccess,
+    permissionMode,
+    permissionFull,
   }) {
     // 1. Extraer y sanitizar texto plano del usuario
     const rawText = typeof userMessage === "object" && userMessage?.text ? userMessage.text : String(userMessage || "");
@@ -97,8 +100,14 @@ class Orchestrator {
     }
 
     // 6. RETENCIÓN DE SOLICITUDES DE CONSTRUCCIÓN / ESCRITURA (EXECUTE, GIT, DEPLOY)
-    if (decision.allowWrite) {
-      // Guardar SOLAMENTE la instrucción real que envió el usuario
+    // Acceso completo / full: NO pedir PROCEDE.
+    const modeName = String(permissionMode || "").toLowerCase();
+    const fullAccess = inputFullAccess === true
+      || permissionFull === true
+      || modeName === "full"
+      || modeName === "acceso completo";
+
+    if (decision.allowWrite && !fullAccess && permissionMode !== "readonly") {
       this.pendingTask = {
         decision,
         message: text,
@@ -108,8 +117,26 @@ class Orchestrator {
 
       return {
         kind: "CHAT",
-        text: `De acuerdo, tengo lista la estructura para ejecutar esta tarea. ¿Procedemos? Dime "Procede" o "Adelante" cuando quieras.`
+        text: `Tengo la tarea lista. En modo paso a paso necesito "Procede" o "Adelante". Si activas Acceso completo, no volveré a pedirlo.`
       };
+    }
+
+    if (decision.allowWrite && fullAccess) {
+      const runner = runModelTaskFn || this.runModelTask.bind(this);
+      return runner({
+        decision,
+        message: text,
+        projectRoot,
+        apiBaseUrl,
+        apiKey,
+        model,
+        memory,
+        onProgress,
+        allowWrite: true,
+        maxSteps: 32,
+        fullAccess: true,
+        permissionMode: "full",
+      });
     }
 
     // 7. MODO SÓLO LECTURA Y ANÁLISIS (ANALYZE, LIST, ASK)

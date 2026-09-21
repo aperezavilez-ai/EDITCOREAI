@@ -39,6 +39,7 @@ function safe(root, rel) {
       const resolved = pathPolicy.resolveAccessibleTarget(root, rawRel, {
         allowSiblingRead: true,
         fullAccess: true,
+        grantAbsoluteOnFull: true,
       });
       if (resolved?.absolute) return resolved.absolute;
     } catch { /* fallback */ }

@@ -1,5 +1,6 @@
 "use strict";
 const fs = require("node:fs");
+const os = require("node:os");
 const path = require("node:path");
 
 function normalizeDriveLetter(p) {
@@ -236,12 +237,76 @@ function resolveAuthorizedRoot(maybePath = "") {
   return "";
 }
 
+function isDeniedSystemPath(targetPath = "") {
+  const raw = normalizeDriveLetter(targetPath);
+  const lower = raw.replace(/\\/g, "/").toLowerCase();
+  const denied = [
+    /\/windows(\/|$)/i,
+    /\/windows\/system32/i,
+    /\/program files( \(x86\))?(\/|$)/i,
+    /\/\$recycle\.bin/i,
+    /\/system volume information/i,
+    /\/proc(\/|$)/,
+    /\/sys(\/|$)/,
+    /\/etc(\/|$)/,
+    /\/usr\/bin(\/|$)/,
+    /\/boot(\/|$)/,
+    /\.asar(\/|$)/i,
+  ];
+  return denied.some((re) => re.test(lower));
+}
+
+function userProfileRoots() {
+  const roots = [];
+  const add = (candidate) => {
+    const value = String(candidate || "").trim();
+    if (!value) return;
+    try {
+      if (fs.existsSync(value) && fs.statSync(value).isDirectory() && !isDeniedSystemPath(value)) {
+        roots.push(normalizeDriveLetter(value));
+      }
+    } catch { /* ignore */ }
+  };
+  const home = os.homedir();
+  add(home);
+  add(path.join(home, "Desktop"));
+  add(path.join(home, "Escritorio"));
+  add(path.join(home, "Documents"));
+  add(path.join(home, "Documentos"));
+  add(path.join(home, "Downloads"));
+  add(path.join(home, "Descargas"));
+  add(path.join(home, "OneDrive"));
+  add(path.join(home, "OneDrive", "Desktop"));
+  add(path.join(home, "OneDrive", "Documents"));
+  if (process.platform === "win32") {
+    add(process.env.USERPROFILE);
+    add(process.env.PUBLIC);
+    const homeDrive = process.env.HOMEDRIVE;
+    if (homeDrive && /^[a-z]:$/i.test(homeDrive)) {
+      // no añadir C:\ entero
+    }
+  }
+  return [...new Set(roots.map((item) => item.toLowerCase() === item ? normalizeDriveLetter(item) : item))];
+}
+
+function isUnderAllowedUserSpace(targetPath = "") {
+  const absolute = normalizeDriveLetter(targetPath);
+  if (!absolute || isDeniedSystemPath(absolute)) return false;
+  const roots = userProfileRoots();
+  const lower = absolute.toLowerCase();
+  return roots.some((root) => {
+    const base = normalizeDriveLetter(root).toLowerCase();
+    return lower === base || lower.startsWith(base + path.sep.toLowerCase()) || lower.startsWith(`${base}/`);
+  });
+}
+
 function collectFullAccessRoots(primaryRoot, prompt = "", extraRoots = []) {
   const fromPrompt = extractAuthorizedPaths(prompt)
     .map((item) => resolveAuthorizedRoot(item))
     .filter(Boolean);
   return collectAllowedRoots(primaryRoot, [
     workspaceParentRoot(primaryRoot),
+    ...userProfileRoots(),
     ...fromPrompt,
     ...(Array.isArray(extraRoots) ? extraRoots : []),
   ].filter(Boolean));
@@ -321,10 +386,17 @@ function resolveAccessibleTarget(primaryRoot, maybePath = "", options = {}) {
     if (hit) return hit;
   } else if (path.isAbsolute(raw)) {
     absolute = normalizeDriveLetter(raw);
-    if (options.grantAbsoluteOnFull === true) {
+    if (options.fullAccess === true || options.grantAbsoluteOnFull === true) {
       const granted = resolveAuthorizedRoot(absolute);
       if (granted && !roots.some((item) => item.toLowerCase() === granted.toLowerCase())) {
         roots.push(granted);
+      } else if (isUnderAllowedUserSpace(absolute)) {
+        const parent = fs.existsSync(absolute) && fs.statSync(absolute).isDirectory()
+          ? absolute
+          : path.dirname(absolute);
+        if (!roots.some((item) => item.toLowerCase() === normalizeDriveLetter(parent).toLowerCase())) {
+          roots.push(normalizeDriveLetter(parent));
+        }
       }
     }
     const hit = tryResolveAbsolute(absolute);
@@ -385,6 +457,9 @@ module.exports = {
   workspaceParentRoot,
   extractAuthorizedPaths,
   resolveAuthorizedRoot,
+  isDeniedSystemPath,
+  userProfileRoots,
+  isUnderAllowedUserSpace,
   collectFullAccessRoots,
   collectAllowedRoots,
   collectSiblingReadRoots,

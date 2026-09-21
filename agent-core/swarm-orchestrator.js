@@ -90,9 +90,10 @@ class SwarmOrchestrator extends EventEmitter {
           result = await executorFn(agent);
         } else {
           result = {
-            ok: true,
-            summary: `Completado por ${agent.roleName}`,
-            generatedFiles: agent.targetFiles,
+            ok: false,
+            summary: `Sin executor real para ${agent.roleName}. No se simula exito.`,
+            generatedFiles: [],
+            skipped: true,
           };
         }
 

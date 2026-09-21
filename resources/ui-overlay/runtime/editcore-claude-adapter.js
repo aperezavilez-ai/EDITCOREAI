@@ -76,7 +76,7 @@ const {
   filterToolsByPlan,
   isListOnlyRequest,
   isAnalysisOnlyRequest,
-} = require("./intent-orchestrator");
+} = require("../editcore-chat-kernel/classify");
 const { extractAbsolutePathHints } = require("../project-analysis");
 const {
   withEliteCommunicationPolicy,

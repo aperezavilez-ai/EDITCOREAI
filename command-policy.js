@@ -105,10 +105,11 @@ function buildWindowsCmdInvocation(executablePath, args = []) {
   return ["/d", "/s", "/c", commandLine];
 }
 
-function classifyCommandRisk(command = "") {
+function classifyCommandRisk(command = "", options = {}) {
   const raw = String(command || "").trim();
   const lower = raw.toLowerCase();
   if (!raw) return { level: "none" };
+  const fullAccess = options.fullAccess === true || options.permissionMode === "full";
 
   const blocked = [
     [/\bformat\s+[a-z]:/i, "Formateo de volumen"],
@@ -122,28 +123,42 @@ function classifyCommandRisk(command = "") {
   }
 
   if (/^git\s+push\b/i.test(lower)) {
-    return { level: "confirm", kind: "git push", message: "Publicar cambios en el repositorio remoto" };
+    return fullAccess
+      ? { level: "none", kind: "git push" }
+      : { level: "confirm", kind: "git push", message: "Publicar cambios en el repositorio remoto" };
   }
   if (/^gh\s+(pr|release|repo)\s+(create|merge|edit|publish)\b/i.test(lower)) {
-    return { level: "confirm", kind: "GitHub remoto", message: "Crear o publicar en GitHub" };
+    return fullAccess
+      ? { level: "none", kind: "GitHub remoto" }
+      : { level: "confirm", kind: "GitHub remoto", message: "Crear o publicar en GitHub" };
   }
   if (/^vercel\b/i.test(lower) && !/^vercel\s+(ls|list|whoami|inspect|logs|env\s+ls)\b/i.test(lower)) {
-    return { level: "confirm", kind: "deploy Vercel", message: "Desplegar en Vercel" };
+    return fullAccess
+      ? { level: "none", kind: "deploy Vercel" }
+      : { level: "confirm", kind: "deploy Vercel", message: "Desplegar en Vercel" };
   }
   if (/^supabase\s+(db\s+push|functions\s+deploy|secrets|migration\s+up|storage)\b/i.test(lower)) {
-    return { level: "confirm", kind: "Supabase remoto", message: "Aplicar cambios en Supabase" };
+    return fullAccess
+      ? { level: "none", kind: "Supabase remoto" }
+      : { level: "confirm", kind: "Supabase remoto", message: "Aplicar cambios en Supabase" };
   }
   if (/\brm\s+-rf\b/i.test(lower) || /\bdel\s+\/s\b/i.test(lower) || /\bremove-item\b.*\s-recurse\b/i.test(lower)) {
     return { level: "confirm", kind: "eliminacion recursiva", message: "Eliminar archivos o carpetas de forma masiva" };
   }
   if (/\bnode\b.*\s(-e|--eval|--print|-p)\b/i.test(lower)) {
-    return { level: "confirm", kind: "codigo Node ad-hoc", message: "Ejecutar codigo Node inline (node -e)" };
+    return fullAccess
+      ? { level: "none", kind: "codigo Node ad-hoc" }
+      : { level: "confirm", kind: "codigo Node ad-hoc", message: "Ejecutar codigo Node inline (node -e)" };
   }
   if (/^(powershell|pwsh|cmd)(\.exe)?\b/i.test(lower)) {
-    return { level: "confirm", kind: "interprete shell", message: "Ejecutar interprete de shell del sistema" };
+    return fullAccess
+      ? { level: "none", kind: "interprete shell" }
+      : { level: "confirm", kind: "interprete shell", message: "Ejecutar interprete de shell del sistema" };
   }
   if (/&&|\||`/.test(raw) || raw.includes("$(")) {
-    return { level: "confirm", kind: "comando compuesto", message: "Varios comandos encadenados en una sola ejecucion" };
+    return fullAccess
+      ? { level: "none", kind: "comando compuesto" }
+      : { level: "confirm", kind: "comando compuesto", message: "Varios comandos encadenados en una sola ejecucion" };
   }
   return { level: "none" };
 }

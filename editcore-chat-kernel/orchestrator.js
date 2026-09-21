@@ -62,11 +62,11 @@ const ROADMAP_MIN_LENGTH = 500;
 const MAX_PROMISE_RETRIES = 3;
 
 const LEADERSHIP_PROMPT = [
-  "Sos guía líder del proyecto, pero te mantenés dentro del alcance de lo pedido.",
-  "Antes de cada tool: 1 frase de qué vas a hacer y por qué. Después: el hallazgo concreto.",
+  "Protocolo obligatorio de cada orden: 1) Analiza la solicitud en 1-3 lineas. 2) Di que vas a hacer. 3) Ejecuta las tools EN ESTE TURNO. 4) Cierra con REPORTE: que hiciste, archivos/comandos reales, resultado, siguiente paso.",
+  "Con Acceso completo esta PROHIBIDO pedir Procede, Adelante, confirmacion o permiso extra.",
+  "Credenciales de GitHub, Vercel, Supabase, GafCore y servidor propio estan en la boveda: usa las tools de conexion, no pidas tokens al usuario.",
   "REGLA DURA: no digas que vas a hacer algo — hacelo en el mismo turno con la tool. Nunca cierres con 'Ahora leo X' sin haber llamado read_file(X).",
   "Si falla algo leve (oldText, git auxiliar, ruta ausente), releé contexto y reintentá. No detengas la sesión por eso.",
-  "Con Acceso completo, no pidas PROCEDE durante la tarea pedida.",
 ].join("\n");
 
 const LIVE_NARRATION_PROMPT = [
@@ -146,12 +146,11 @@ function successfulWritePaths(steps = []) {
 function looksLikePromiseWithoutAction(text = "") {
   const raw = String(text || "").trim();
   if (!raw) return false;
-  // Cierre explícito: no es promesa, es reporte.
-  if (/\b(?:complet[aé]|finalic[eé]|termin[eé]|listo|todo\s+hecho|an[aá]lisis\s+(?:completo|terminado)|reporte\s+final|no\s+encontr[eé]|sin\s+hallazgos?)\b/i.test(raw)) {
-    return false;
-  }
-  // Frases de promesa futura.
-  return /(?:^|[\s\n])(?:ahora|voy\s+a|luego|siguiente|empiezo|sigo|continuo|procedo\s+a|voy\s+con|paso\s+a)\s+(?:a\s+)?(?:leer|revisar|ver|abrir|analizar|analizar\s+el|buscar|escanear|recorrer|inspeccionar|verificar|ejecutar|correr|revisar\s+el|leer\s+el|abrir\s+el|analizar\s+las|leer\s+las|revisar\s+los)/i.test(raw);
+  const promisesFuture = /(?:ahora|voy\s+a|luego|siguiente|empiezo|sigo|continu[oa]|procedo\s+a|voy\s+con|paso\s+a|en\s+el\s+pr[oó]ximo|cuando\s+termine)\s+(?:a\s+)?(?:leer|revisar|ver|abrir|analizar|buscar|escanear|recorrer|inspeccionar|verificar|ejecutar|correr|escribir|crear|editar|implementar)/i.test(raw);
+  if (promisesFuture) return true;
+  const claimsDoneWork = /\b(?:he\s+(?:le[ií]do|creado|escrito|generado|implementado|verificado|ejecutado|analizado)|le[ií]\s+el\s+archivo|ya\s+(?:est[aá]|qu[eé]d[oó])\s+(?:listo|creado|hecho))\b/i.test(raw);
+  if (claimsDoneWork) return true;
+  return /(?:d[eé]jame|espera|un\s+momento|voy)\s+(?:revisar|leer|buscar|chequear)/i.test(raw);
 }
 
 function repairDanglingOutput(text, steps = [], userMessage = "", decision = {}) {

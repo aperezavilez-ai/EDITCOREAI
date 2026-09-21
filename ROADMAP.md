@@ -7,10 +7,11 @@ EditCore actualiza este archivo tras cambios. No pedirlo al usuario. No pegar co
 ## Proceso
 - Fase: implementacion
 - Estado: Ciclo finalizado. Listo para la siguiente tarea.
-- Actualizado: 2026-09-20 22:55
+- Actualizado: 2026-09-21 01:40
 - Preview: desconocido — usa el preview del IDE, no inventes puertos
 
 ## Mapa
+- runtime/sql-migration-tool.js
 - resources/ui-overlay/renderer.js
 - renderer.js
 - scripts/auto-evolution/evolution-state.json
@@ -58,33 +59,35 @@ EditCore actualiza este archivo tras cambios. No pedirlo al usuario. No pegar co
 - runtime/composer-view.js
 - test/composer-view.test.js
 - test/lsp-client.test.js
-- runtime/cloud-collab.js
 
 ## Archivos clave (no reexplorar)
+- runtime/sql-migration-tool.js
+- runtime/agent-tools.js
+- runtime/tool-dispatcher.js
+- runtime/agent-tools-suite.js
+- runtime/cloud-vault-bridge.js
+- main.js
+- runtime/plugin-manager.js
+- runtime/plugin-api.js
+- preload.js
+- runtime/terminal-agent.js
+- runtime/fullstack-deploy.js
 - renderer.js
 - resources/ui-overlay/renderer.js
 - runtime/git-manager.js
 - ide/git-panel.html
-- main.js
-- preload.js
 - test/git-manager.test.js
-- scripts/auto-evolution/evolution-state.json
-- test/pre-package-gate.test.js
-- package.json
-- test/unexpected-token-sanitize.test.js
-- runtime/rag-memory.js
-- runtime/prompt-cache-manager.js
-- scripts/phase2b-electron-seed.js
-- resources/ui-overlay/main.js
-- test/ui-boot-speed.test.js
 
 ## Tarea activa
 - ## Habilidades especializadas activas (Skills)
 
-### Skill: n8n-code-javascript
-Write JavaScript code in n8n Code nodes. Use when writing JavaScript in n8n, using $input/$json/$node syntax, making HTTP requests with this.
+### Skill: n8n-code-tool
+Write JavaScript or Python for the n8n Custom Code Tool (@n8n/n8n-nodes-langchain.toolCode) — the AI-agent-callable tool, NOT the workflow Code nod
 
 ## Bloqueos / bugs conocidos
+- Error("write_file_batch requiere un array 'files' no vacio.");
+- Error("write_file_batch admite un maximo de 50 archivos por llamada.");
+- Error(`Ruta fuera del workspace no permitida: ${relPath}`);
 - falló, el footer se oculta incluso si hay archivos cambiados.
 - Actualizado: 2026-09-18 21:00
 - Preview: desconocido — usa el preview del IDE, no inventes puertos
@@ -97,24 +100,24 @@ Write JavaScript code in n8n Code nodes. Use when writing JavaScript in n8n, usi
 - **Skills como extensión**: las habilidades (editcore-connect, web-to-desktop-pake, etc.) se cargan bajo demanda y no forman parte del core. Motivo: mantener el kernel liviano.
 
 ## Cambios recientes
+- runtime/sql-migration-tool.js
+- runtime/agent-tools.js
+- runtime/tool-dispatcher.js
+- runtime/sql-migration-tool.js — archivo escrito (kernel) (2026-09-21 01:21)
+- runtime/agent-tools-suite.js
+- runtime/cloud-vault-bridge.js
+- main.js
+- runtime/plugin-manager.js
+- runtime/plugin-api.js
+- preload.js
+- runtime/terminal-agent.js
+- runtime/fullstack-deploy.js
 - renderer.js
 - resources/ui-overlay/renderer.js
 - resources/ui-overlay/renderer.js — parche aplicado (kernel) (2026-09-20 22:55)
 - renderer.js — parche aplicado (kernel) (2026-09-20 22:55)
 - runtime/git-manager.js
 - ide/git-panel.html
-- main.js
-- preload.js
-- test/git-manager.test.js
-- scripts/auto-evolution/evolution-state.json
-- test/pre-package-gate.test.js
-- package.json
-- test/unexpected-token-sanitize.test.js
-- scripts/auto-evolution/evolution-state.json — archivo escrito (kernel) (2026-09-18 21:00)
-- test/git-manager.test.js — archivo escrito (kernel) (2026-09-18 20:55)
-- preload.js — parche aplicado (kernel) (2026-09-18 20:55)
-- main.js — parche aplicado (kernel) (2026-09-18 20:54)
-- ide/git-panel.html — archivo escrito (kernel) (2026-09-18 20:54)
 
 ## Verificado
 - Pendiente
