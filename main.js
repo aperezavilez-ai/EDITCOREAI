@@ -202,6 +202,10 @@ const {
   syncProjectRegistry,
   runMaintenanceCheck,
 } = require("./runtime/maintenance-scheduler");
+const { EcosystemScanner } = require("./runtime/ecosystem-scanner");
+const { createConnectionVerifier } = require("./runtime/connection-verifier");
+const { createRoadmapSync } = require("./runtime/roadmap-sync");
+const { createProjectBootstrap } = require("./runtime/project-bootstrap");
 const { createSupabaseProject } = require("./runtime/supabase-provision");
 const { checkForUpdates } = require("./runtime/update-check");
 const { authManager } = require("./runtime/auth-manager");
@@ -393,6 +397,11 @@ const activeInspectorRuns = new Map();
 const projectScaffoldService = new ProjectScaffoldService();
 let mainWindow = null;
 let maintenanceScheduler = null;
+let ecosystemScanner = null;
+let connectionVerifier = null;
+let roadmapSync = null;
+let projectBootstrap = null;
+const ecosystemState = { projects: [], connections: {}, lastScan: null };
 let permissionMode = "step";
 const permissionBySender = new Map();
 /** Ultimo projectRoot conocido por webContents.id (fallback si el agente llega sin root). */
@@ -1606,6 +1615,7 @@ const AGENT_TOOL_DEFINITIONS = [
   ["service_read", "Lee datos de un servicio conectado.", { service: { type: "string" }, path: { type: "string" } }],
   ["service_write", "Modifica un servicio conectado.", { service: { type: "string" }, method: { type: "string" }, path: { type: "string" }, body: {} }],
   ["project_discovery", "Detecta stack, lenguajes, scripts, entrypoints, configuracion y verificaciones reales del proyecto.", { refresh: { type: "boolean" } }],
+  ["ecosystem:status", "Estado completo del ecosistema EDITCOREAI: proyectos en D:\\PROGRAMAS IA\\, conexiones a GitHub/Vercel/Supabase/Servidor, roadmaps y conexiones activas.", { refresh: { type: "boolean" }, project: { type: "string" } }],
   ["codebase_map", "Construye o consulta un mapa estructural pequeno de archivos, modulos, simbolos, imports y exports.", { refresh: { type: "boolean" }, includeFiles: { type: "boolean" } }],
   ["symbol_search", "Busca funciones, clases, metodos, componentes, hooks, tipos y variables por nombre.", { query: { type: "string" }, kinds: { type: "array", items: { type: "string" } }, path: { type: "string" }, limit: { type: "number" } }],
   ["dependency_search", "Busca imports, exports y referencias relacionadas con un nombre o modulo.", { query: { type: "string" }, path: { type: "string" }, limit: { type: "number" } }],
@@ -4159,6 +4169,72 @@ ipcMain.handle("cloud:probe-endpoint", async (_event, input = {}) => {
 ipcMain.handle("cloud:test-local-api", async (_event, input = {}) => {
   const { testLocalApi } = require("./runtime/probe-endpoint");
   return testLocalApi(input || {});
+});
+
+ipcMain.handle("ecosystem:scan", async (_event, input = {}) => {
+  const force = Boolean(input?.force);
+  const result = ecosystemScanner.scan(null, { force });
+  ecosystemState.projects = result.projects || [];
+  ecosystemState.lastScan = result.scannedAt;
+  return result;
+});
+
+ipcMain.handle("ecosystem:projects", async (_event, input = {}) => {
+  const { filter, limit } = input || {};
+  let projects = ecosystemState.projects || [];
+  if (filter) {
+    const f = String(filter).toLowerCase();
+    projects = projects.filter(p => p.name.toLowerCase().includes(f));
+  }
+  if (limit && Number(limit) > 0) projects = projects.slice(0, Number(limit));
+  return { projects, total: projects.length, lastScan: ecosystemState.lastScan };
+});
+
+ipcMain.handle("ecosystem:connections", async () => {
+  return connectionVerifier.verifyAll();
+});
+
+ipcMain.handle("ecosystem:status", async (_event, input = {}) => {
+  const { refresh, project } = input || {};
+  if (refresh) {
+    const scanResult = ecosystemScanner.scan(null, { force: true });
+    ecosystemState.projects = scanResult.projects || [];
+    ecosystemState.lastScan = scanResult.scannedAt;
+  }
+  const connections = await connectionVerifier.verifyAll();
+  let projects = ecosystemState.projects || [];
+  if (project) {
+    projects = projects.filter(p => p.name === project);
+  }
+  return {
+    projects: projects.map(p => ({
+      name: p.name,
+      path: p.path,
+      stack: p.frameworks,
+      languages: p.languages,
+      hasGit: p.hasGit,
+      hasVercel: p.hasVercelDir || p.hasVercelConfig,
+      hasSupabase: p.hasSupabaseDir || !!p.supabaseUrl,
+      github: p.github,
+      vercel: p.vercel,
+      supabase: p.supabase,
+      roadmap: p.roadmap ? { exists: true, ...p.roadmap } : null,
+    })),
+    connections,
+    lastScan: ecosystemState.lastScan,
+  };
+});
+
+ipcMain.handle("ecosystem:roadmap", async (_event, input = {}) => {
+  const { projectRoot } = input || {};
+  if (!projectRoot) return { error: "projectRoot requerido" };
+  return roadmapSync.loadOrCreate(projectRoot);
+});
+
+ipcMain.handle("ecosystem:bootstrap", async (_event, input = {}) => {
+  const { projectName, stack, github, vercel, supabase, server } = input || {};
+  if (!projectName) return { error: "projectName requerido" };
+  return projectBootstrap.bootstrap(projectName, { stack, github, vercel, supabase, server });
 });
 
 function verificationReportPath() {
@@ -9549,6 +9625,54 @@ app.whenReady().then(async () => {
       logStartup("startup:brain-ready");
     } catch (error) {
       logStartup("startup:brain-failed", error);
+    }
+
+    try {
+      logStartup("startup:ecosystem-initializing");
+      ecosystemScanner = new EcosystemScanner();
+      connectionVerifier = createConnectionVerifier({
+        getConnections: readConnections,
+        getVaultCredentials: (service) => {
+          try {
+            const conn = readConnections();
+            if (service === "github") return { githubToken: conn.githubToken };
+            if (service === "vercel") return { vercelToken: conn.vercelToken };
+            if (service === "supabase") return { selfSupabaseUrl: conn.selfSupabaseUrl, selfSupabaseKey: conn.selfSupabaseKey };
+            if (service === "server") return { customServerUrl: conn.customServerUrl, customServerToken: conn.customServerToken };
+            return {};
+          } catch { return {}; }
+        },
+      });
+      roadmapSync = createRoadmapSync();
+      projectBootstrap = createProjectBootstrap({
+        getConnections: readConnections,
+        getVaultCredentials: (service) => {
+          try {
+            const conn = readConnections();
+            if (service === "github") return { githubToken: conn.githubToken };
+            if (service === "vercel") return { vercelToken: conn.vercelToken };
+            if (service === "supabase") return { selfSupabaseUrl: conn.selfSupabaseUrl, selfSupabaseKey: conn.selfSupabaseKey };
+            if (service === "server") return { customServerUrl: conn.customServerUrl, customServerToken: conn.customServerToken };
+            return {};
+          } catch { return {}; }
+        },
+        roadmapSync,
+      });
+
+      // Scan ecosistema en background
+      setTimeout(() => {
+        try {
+          const result = ecosystemScanner.scan();
+          ecosystemState.projects = result.projects || [];
+          ecosystemState.lastScan = result.scannedAt;
+          logStartup(`startup:ecosystem-ready projects=${result.total || 0}`);
+        } catch (error) {
+          logStartup("startup:ecosystem-scan-failed", error);
+        }
+      }, 2000);
+      logStartup("startup:ecosystem-initialized");
+    } catch (error) {
+      logStartup("startup:ecosystem-init-failed", error);
     }
 
     const jarvis = optionalJarvisLauncher();

@@ -10,7 +10,7 @@ const STATE_FILE = path.join(USER_DATA_DIR, "ecosystem-state.json");
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutos para verificacion de conexiones
 
 const SKIP_DIRS = new Set([
-  ".git", "node_modules", ".next", ".vercel", "dist", "build", "out",
+  "node_modules", ".next", "dist", "build", "out",
   "coverage", "vendor", "target", ".output", ".svelte-kit", ".turbo",
   ".cache", ".vscode", ".idea", "__pycache__", "venv", ".venv",
 ]);
@@ -101,13 +101,13 @@ function readGitRemote(root) {
 
 function readGitConfig(root) {
   const configPath = path.join(root, ".git", "config");
-  const config = safeReadJson(configPath);
-  if (!config) return null;
   try {
     const raw = fs.readFileSync(configPath, "utf8");
     const m = raw.match(/\[remote\s+"origin"\][^\[]*url\s*=\s*(.+)/i);
     if (m) return m[1].trim();
-  } catch {}
+  } catch {
+    // ignore missing/corrupt config; hasGit is still meaningful
+  }
   return null;
 }
 
