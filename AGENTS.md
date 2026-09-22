@@ -12,13 +12,38 @@
 - For auth/login/database changes → DOUBLE confirm with user
 - Test locally BEFORE pushing: `npm run dev` or `npm start`
 
-### 3. PROJECT ECOSYSTEM AWARENESS
-All projects in `D:\PROGRAMAS IA\` are:
-- Connected to GitHub (`aperezavilez-ai/*`)
-- Auto-deploy to Vercel on push to main
-- Using Supabase at `supabase.gafcore.com`
+### 3. AUTO-DISCOVERY DEL ECOSISTEMA
+- Todos los proyectos se descubren automaticamente desde `D:\PROGRAMAS IA\`
+- Usar `ecosystem:status` para obtener estado completo del ecosistema
+- Usar `ecosystem:scan` para forzar re-escaneo de proyectos
+- Usar `ecosystem:projects` para listar proyectos descubiertos
+- Usar `ecosystem:connections` para verificar conectividad
+- Usar `ecosystem:roadmap` para leer el roadmap de un proyecto
+- Usar `ecosystem:bootstrap` para inicializar un nuevo proyecto desde cero
 
-**This means:** `git push origin main` = PRODUCTION DEPLOY
+**Cada proyecto debe tener `.editcore/roadmap.json` con:**
+- Datos basicos del proyecto (stack, estado, fechas)
+- Conexiones configuradas (GitHub, Vercel, Supabase, servidor)
+- Historial de deploys
+- Issues conocidos y resoluciones
+- Analisis de editcore
+
+### 4. REGLAS DE ROADMAP
+- `runtime/roadmap-sync.js` actualiza el roadmap despues de cada operacion
+- `recordGitPush()` - despues de `git push origin main`
+- `recordVercelDeploy()` - despues de deploy en Vercel
+- `recordSupabaseMigration()` - despues de migracion en Supabase
+- `recordIssue()` - cuando se detecta un problema
+- `recordDeploy()` - para cualquier deploy
+- NUNCA modificar un proyecto sin consultar su roadmap primero
+
+### 5. PROYECTOS NUEVOS
+Cuando se cree un proyecto nuevo desde cero:
+1. Detectar que no tiene `.git/`, `.editcore/`, ni roadmap
+2. Preguntar al usuario si quiere conectar servicios (GitHub, Vercel, Supabase, servidor)
+3. Usar `runtime/project-bootstrap.js` para inicializar automaticamente
+4. Crear `.editcore/roadmap.json` con toda la informacion recolectada
+5. Marcar estado como `planning` si no se conecta nada, `active` si se conecta
 
 ### 4. SAFE WORKFLOW
 **BEFORE touching code:**
@@ -43,6 +68,7 @@ If you break something:
 2. `git revert <commit>` OR `git reset --hard <last-working>`
 3. Push to restore
 4. In Vercel: promote last working deployment to production
+5. **Consultar `ecosystem:roadmap` del proyecto afectado para ver historial y estado anterior**
 
 ### 6. SECRETS AND CONNECTIONS
 - GitHub tokens, Vercel tokens, Supabase keys → stored in vault
@@ -63,6 +89,14 @@ Know your own architecture:
 - `runtime/intent-orchestrator.js` - full orchestrator
 - `main.js` - Electron main process
 - `runtime/editcore-claude-adapter.js` - Claude API adapter
+- `runtime/ecosystem-scanner.js` - escaneo automatico de proyectos en D:\PROGRAMAS IA\
+- `runtime/connection-verifier.js` - verifica conectividad real a GitHub/Vercel/Supabase/servidor
+- `runtime/roadmap-sync.js` - sincroniza .editcore/roadmap.json de cada proyecto
+- `runtime/project-bootstrap.js` - inicializa proyectos nuevos desde cero
+- `runtime/cloud-vault-bridge.js` - credenciales desde safeStorage
+- `runtime/service-harness.js` - cliente HTTP unificado para APIs externas
+- `runtime/fullstack-deploy.js` - pipeline deploy estilo Lovable
+- `runtime/git-manager.js` - operaciones git incluyendo push a GitHub
 
 Read [ARQUITECTURA-SISTEMA.md](ARQUITECTURA-SISTEMA.md) for complete details.
 

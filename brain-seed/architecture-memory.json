@@ -1,7 +1,57 @@
 {
   "version": 1,
-  "updatedAt": "2026-07-25T00:16:54.920Z",
+  "updatedAt": "2026-09-22T00:00:00.000Z",
+  "ecosystem": {
+    "projectsRoot": "D:\\PROGRAMAS IA\\",
+    "connectionMode": "cloud_vault_bridge",
+    "selfHostedServices": {
+      "supabase": "https://supabase.gafcore.com",
+      "ownServer": "detected-from-connections"
+    },
+    "githubNamespace": "aperezavilez-ai",
+    "vercelDefault": true,
+    "productionDeployCommand": "git push origin main",
+    "rules": [
+      "git push origin main = deploy a produccion",
+      "cada proyecto debe tener .editcore/roadmap.json",
+      "ecosystem:status es la herramienta de agente principal",
+      "roadmap-sync actualiza roadmap despues de cada operacion",
+      "project-bootstrap inicializa proyectos nuevos desde cero",
+      "no corregir login de proyecto sin consultar roadmap y estado actual primero"
+    ]
+  },
   "components": [
+    {
+      "id": "runtime/ecosystem-scanner",
+      "name": "ecosystem-scanner",
+      "role": "runtime",
+      "path": "runtime/ecosystem-scanner.js"
+    },
+    {
+      "id": "runtime/connection-verifier",
+      "name": "connection-verifier",
+      "role": "runtime",
+      "path": "runtime/connection-verifier.js"
+    },
+    {
+      "id": "runtime/roadmap-sync",
+      "name": "roadmap-sync",
+      "role": "runtime",
+      "path": "runtime/roadmap-sync.js"
+    },
+    {
+      "id": "runtime/project-bootstrap",
+      "name": "project-bootstrap",
+      "role": "runtime",
+      "path": "runtime/project-bootstrap.js"
+    },
+    {
+      "id": "brain-seed/ecosystem-memory",
+      "name": "ecosystem-memory",
+      "role": "brain-seed",
+      "path": "brain-seed/ecosystem-memory.json"
+    }
+  ],
     {
       "id": ".claude",
       "name": ".claude",

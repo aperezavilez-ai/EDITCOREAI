@@ -1,0 +1,30 @@
+{
+  "ecosystem": {
+    "description": "Memoria del ecosistema EDITCOREAI: proyectos, conexiones y arquitectura conocida",
+    "projectsRoot": "D:\\PROGRAMAS IA\\",
+    "connectionMode": "cloud_vault_bridge",
+    "selfHostedServices": {
+      "supabase": "https://supabase.gafcore.com",
+      "ownServer": "detected-from-connections"
+    },
+    "githubNamespace": "aperezavilez-ai",
+    "vercelDefault": true,
+    "productionDeployCommand": "git push origin main",
+    "knownProjects": [],
+    "connections": {
+      "github": { status: "unknown", note: "Se verifica via connection-verifier" },
+      "vercel": { status: "unknown", note: "Se verifica via connection-verifier" },
+      "supabase": { status: "unknown", note: "Se verifica via connection-verifier" },
+      "server": { status: "unknown", note: "Se verifica via connection-verifier" }
+    },
+    "rules": [
+      "git push origin main = deploy a produccion",
+      "cada proyecto debe tener .editcore/roadmap.json",
+      "ecosystem:status es la herramienta de agente principal",
+      "roadmap-sync actualiza roadmap despues de cada operacion",
+      "project-bootstrap inicializa proyectos nuevos desde cero",
+      "no corregir login de proyecto sin consultar roadmap y estado actual primero"
+    ],
+    "discoveredAt": ""
+  }
+}
