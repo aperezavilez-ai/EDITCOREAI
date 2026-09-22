@@ -74,3 +74,5 @@ Abrir-EDITCOREAI-PORTABLE.bat
 .editcore/preview.log
 chat-local.js
 debug.log
+
+%APPDATA%/
