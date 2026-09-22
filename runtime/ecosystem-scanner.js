@@ -1,34 +1,20 @@
 "use strict";
 
 const fs = require("node:fs");
+const fsp = require("node:fs/promises");
 const path = require("node:path");
 const crypto = require("node:crypto");
 
 const PROGRAMAS_IA_ROOT = "D:\\PROGRAMAS IA\\";
 const USER_DATA_DIR = require("electron").app?.getPath?.("userData") || path.join(process.cwd(), ".editcore");
 const STATE_FILE = path.join(USER_DATA_DIR, "ecosystem-state.json");
-const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutos para verificacion de conexiones
+const CACHE_TTL_MS = 5 * 60 * 1000;
 
 const SKIP_DIRS = new Set([
   "node_modules", ".next", "dist", "build", "out",
   "coverage", "vendor", "target", ".output", ".svelte-kit", ".turbo",
   ".cache", ".vscode", ".idea", "__pycache__", "venv", ".venv",
 ]);
-
-const PROJECT_MARKERS = new Set([
-  "package.json", "tsconfig.json", "pyproject.toml", "requirements.txt",
-  "cargo.toml", "pom.xml", "go.mod", "composer.json", "Gemfile",
-  "Cargo.toml", "manage.py", "main.py",
-]);
-
-const CONNECTION_MARKERS = {
-  git: ".git",
-  vercel: ".vercel",
-  vercelConfig: "vercel.json",
-  vercelConfigJson: "vercel.config.json",
-  supabase: "supabase",
-  nextjs: ".next",
-};
 
 const SUPABASE_URL_VARIANTS = [
   "VITE_SUPABASE_URL", "NEXT_PUBLIC_SUPABASE_URL", "EXPO_PUBLIC_SUPABASE_URL",
@@ -49,9 +35,36 @@ function safeReadJson(filePath) {
   try { return JSON.parse(fs.readFileSync(filePath, "utf8")); } catch { return null; }
 }
 
+async function safeReadJsonAsync(filePath) {
+  try { return JSON.parse(await fsp.readFile(filePath, "utf8")); } catch { return null; }
+}
+
 function readEnvLines(filePath) {
   try {
     const content = fs.readFileSync(filePath, "utf8");
+    const vars = {};
+    for (const line of content.split(/\r?\n/)) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith("#")) continue;
+      const eq = trimmed.indexOf("=");
+      if (eq > 0) {
+        const key = trimmed.slice(0, eq).trim();
+        let value = trimmed.slice(eq + 1).trim();
+        if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+          value = value.slice(1, -1);
+        }
+        vars[key] = value;
+      }
+    }
+    return vars;
+  } catch {
+    return {};
+  }
+}
+
+async function readEnvLinesAsync(filePath) {
+  try {
+    const content = await fsp.readFile(filePath, "utf8");
     const vars = {};
     for (const line of content.split(/\r?\n/)) {
       const trimmed = line.trim();
@@ -113,13 +126,53 @@ function readGitConfig(root) {
 
 function parseGithubRemote(url) {
   if (!url) return null;
-  // HTTPS: https://github.com/owner/repo.git
   let m = url.match(/github\.com[/:]([^/]+)\/([^/]+?)(?:\.git)?$/);
   if (m) return { owner: m[1], repo: m[2], fullName: `${m[1]}/${m[2]}` };
-  // SSH: git@github.com:owner/repo.git
   m = url.match(/git@github\.com:([^/]+)\/([^/]+?)(?:\.git)?$/);
   if (m) return { owner: m[1], repo: m[2], fullName: `${m[1]}/${m[2]}` };
   return null;
+}
+
+function detectFrameworks(pkg, entries) {
+  const frameworks = [];
+  const languages = [];
+  if (!pkg) return { frameworks, languages };
+
+  const deps = new Set([
+    ...Object.keys(pkg.dependencies || {}),
+    ...Object.keys(pkg.devDependencies || {}),
+  ]);
+  if (deps.has("next")) frameworks.push("Next.js");
+  if (deps.has("react")) frameworks.push("React");
+  if (deps.has("vue")) frameworks.push("Vue");
+  if (deps.has("svelte")) frameworks.push("Svelte");
+  if (deps.has("electron")) frameworks.push("Electron");
+  if (deps.has("express")) frameworks.push("Express");
+  if (deps.has("fastify")) frameworks.push("Fastify");
+  if (deps.has("fastapi")) frameworks.push("FastAPI");
+  if (deps.has("django")) frameworks.push("Django");
+  if (deps.has("flask")) frameworks.push("Flask");
+  if (pkg.dependencies?.next || pkg.devDependencies?.next) frameworks.push("Next.js");
+
+  const scripts = pkg.scripts || {};
+  if (scripts.dev) frameworks.push("dev-server");
+  if (scripts.start) frameworks.push("start-server");
+
+  if (entries.includes("vite.config.js") || entries.includes("vite.config.ts")) frameworks.push("Vite");
+  if (entries.includes("electron-builder.yml") || entries.includes("electron-builder.json")) frameworks.push("Electron");
+
+  if (deps.has("typescript") || entries.includes("tsconfig.json")) languages.push("TypeScript");
+  if (deps.has("tailwindcss")) frameworks.push("TailwindCSS");
+  if (deps.has("@supabase/supabase-js")) frameworks.push("SupabaseClient");
+  if (deps.has("prisma")) frameworks.push("Prisma");
+  if (deps.has("drizzle-orm")) frameworks.push("DrizzleORM");
+
+  if (entries.includes(".next")) frameworks.push("Next.js-built");
+  if (entries.includes("src") && entries.includes("app")) frameworks.push("Next.js-AppRouter");
+  if (entries.includes("src") && entries.includes("pages")) frameworks.push("Next.js-PagesRouter");
+  if (entries.includes("supabase")) frameworks.push("SupabaseLocal");
+
+  return { frameworks: [...new Set(frameworks)], languages: [...new Set(languages)] };
 }
 
 function scanProject(root) {
@@ -148,12 +201,10 @@ function scanProject(root) {
     return null;
   }
 
-  // Leer package.json si existe
   if (entries.includes("package.json")) {
     pkg = safeReadJson(path.join(root, "package.json"));
   }
 
-  // Detectar Vercel
   if (hasVercelDir) {
     const projectJson = safeReadJson(path.join(root, ".vercel", "project.json"));
     vercelProject = projectJson || { linked: true };
@@ -162,7 +213,6 @@ function scanProject(root) {
     vercelProject = { linked: true, configFile: "vercel.json" };
   }
 
-  // Detectar Supabase en .env
   const envFiles = [".env.local", ".env.production", ".env.development", ".env"];
   for (const envFile of envFiles) {
     const envPath = path.join(root, envFile);
@@ -174,7 +224,6 @@ function scanProject(root) {
     }
   }
 
-  // Detectar Supabase
   if (hasSupabaseDir || envSupabaseUrl) {
     supabaseInfo = {
       hasLocalDir: hasSupabaseDir,
@@ -183,53 +232,11 @@ function scanProject(root) {
     };
   }
 
-  // Git info
   const gitInfo = readGitRemote(root);
   const remoteUrl = readGitConfig(root);
   const githubInfo = parseGithubRemote(remoteUrl);
+  const { frameworks, languages } = detectFrameworks(pkg, entries);
 
-  // Detectar stack
-  const frameworks = [];
-  const languages = [];
-  const packageManager = "";
-
-  if (pkg) {
-    const deps = new Set([
-      ...Object.keys(pkg.dependencies || {}),
-      ...Object.keys(pkg.devDependencies || {}),
-    ]);
-    if (deps.has("next")) frameworks.push("Next.js");
-    if (deps.has("react")) frameworks.push("React");
-    if (deps.has("vue")) frameworks.push("Vue");
-    if (deps.has("svelte")) frameworks.push("Svelte");
-    if (deps.has("electron")) frameworks.push("Electron");
-    if (deps.has("express")) frameworks.push("Express");
-    if (deps.has("fastify")) frameworks.push("Fastify");
-    if (deps.has("fastapi")) frameworks.push("FastAPI");
-    if (deps.has("django")) frameworks.push("Django");
-    if (deps.has("flask")) frameworks.push("Flask");
-    if (pkg.dependencies?.next || pkg.devDependencies?.next) frameworks.push("Next.js");
-
-    const scripts = pkg.scripts || {};
-    if (scripts.dev) frameworks.push("dev-server");
-    if (scripts.start) frameworks.push("start-server");
-
-    if (entries.includes("vite.config.js") || entries.includes("vite.config.ts")) frameworks.push("Vite");
-    if (entries.includes("electron-builder.yml") || entries.includes("electron-builder.json")) frameworks.push("Electron");
-
-    if (deps.has("typescript") || entries.includes("tsconfig.json")) languages.push("TypeScript");
-    if (deps.has("tailwindcss")) frameworks.push("TailwindCSS");
-    if (deps.has("@supabase/supabase-js")) frameworks.push("SupabaseClient");
-    if (deps.has("prisma")) frameworks.push("Prisma");
-    if (deps.has("drizzle-orm")) frameworks.push("DrizzleORM");
-  }
-
-  if (entries.includes(".next")) frameworks.push("Next.js-built");
-  if (entries.includes("src") && entries.includes("app")) frameworks.push("Next.js-AppRouter");
-  if (entries.includes("src") && entries.includes("pages")) frameworks.push("Next.js-PagesRouter");
-  if (entries.includes("supabase")) frameworks.push("SupabaseLocal");
-
-  // Roadmap
   const roadmapPath = path.join(root, ".editcore", "roadmap.json");
   const roadmapMdPath = path.join(root, "ROADMAP.md");
   let roadmap = null;
@@ -246,8 +253,111 @@ function scanProject(root) {
     hasVercelDir,
     hasVercelConfig,
     hasSupabaseDir,
-    frameworks: [...new Set(frameworks)],
-    languages: [...new Set(languages)],
+    frameworks,
+    languages,
+    vercel: vercelProject ? { linked: true, ...vercelProject } : null,
+    supabase: supabaseInfo,
+    supabaseUrl: envSupabaseUrl,
+    git: gitInfo,
+    github: githubInfo,
+    remoteUrl,
+    roadmap,
+    hasRoadmap: !!roadmap,
+    isProject: true,
+  };
+}
+
+async function scanProjectAsync(root) {
+  const name = path.basename(root);
+  let entries = [];
+  let pkg = null;
+  let vercelProject = null;
+  let supabaseInfo = null;
+  let envSupabaseUrl = null;
+  let envSupabaseKey = null;
+  let hasGit = false;
+  let hasVercelDir = false;
+  let hasVercelConfig = false;
+  let hasSupabaseDir = false;
+
+  try {
+    const dirents = await fsp.readdir(root, { withFileTypes: true });
+    for (const entry of dirents) {
+      if (SKIP_DIRS.has(entry.name.toLowerCase())) continue;
+      entries.push(entry.name);
+      if (entry.name === ".git") hasGit = true;
+      if (entry.name === ".vercel") hasVercelDir = true;
+      if (entry.name === "vercel.json" || entry.name === "vercel.config.json") hasVercelConfig = true;
+      if (entry.name === "supabase") hasSupabaseDir = true;
+    }
+  } catch {
+    return null;
+  }
+
+  if (entries.includes("package.json")) {
+    pkg = await safeReadJsonAsync(path.join(root, "package.json"));
+  }
+
+  if (hasVercelDir) {
+    const projectJson = await safeReadJsonAsync(path.join(root, ".vercel", "project.json"));
+    vercelProject = projectJson || { linked: true };
+  }
+  if (hasVercelConfig && !vercelProject) {
+    vercelProject = { linked: true, configFile: "vercel.json" };
+  }
+
+  const envFiles = [".env.local", ".env.production", ".env.development", ".env"];
+  for (const envFile of envFiles) {
+    const envPath = path.join(root, envFile);
+    try {
+      const stat = await fsp.stat(envPath);
+      if (!stat.isFile()) continue;
+    } catch {
+      continue;
+    }
+    const envVars = await readEnvLinesAsync(envPath);
+    if (!envSupabaseUrl) envSupabaseUrl = extractSupabaseUrl(envVars);
+    if (!envSupabaseKey) envSupabaseKey = extractSupabaseKey(envVars);
+    if (envSupabaseUrl && envSupabaseKey) break;
+  }
+
+  if (hasSupabaseDir || envSupabaseUrl) {
+    supabaseInfo = {
+      hasLocalDir: hasSupabaseDir,
+      url: envSupabaseUrl,
+      hasKey: !!envSupabaseKey,
+    };
+  }
+
+  const gitInfo = readGitRemote(root);
+  const remoteUrl = readGitConfig(root);
+  const githubInfo = parseGithubRemote(remoteUrl);
+  const { frameworks, languages } = detectFrameworks(pkg, entries);
+
+  const roadmapPath = path.join(root, ".editcore", "roadmap.json");
+  const roadmapMdPath = path.join(root, "ROADMAP.md");
+  let roadmap = null;
+  try {
+    const stat = await fsp.stat(roadmapPath);
+    if (stat.isFile()) roadmap = await safeReadJsonAsync(roadmapPath);
+  } catch {
+    try {
+      const statMd = await fsp.stat(roadmapMdPath);
+      if (statMd.isFile()) roadmap = { source: "ROADMAP.md", exists: true };
+    } catch {
+      // no roadmap
+    }
+  }
+
+  return {
+    name,
+    path: root,
+    hasGit,
+    hasVercelDir,
+    hasVercelConfig,
+    hasSupabaseDir,
+    frameworks,
+    languages,
     vercel: vercelProject ? { linked: true, ...vercelProject } : null,
     supabase: supabaseInfo,
     supabaseUrl: envSupabaseUrl,
@@ -275,9 +385,32 @@ function scanAllProjects(rootDir) {
   return results.sort((a, b) => a.name.localeCompare(b.name, "es", { sensitivity: "base" }));
 }
 
+async function scanAllProjectsAsync(rootDir) {
+  const results = [];
+  if (!await existsAsync(rootDir) || !(await fsp.stat(rootDir)).isDirectory()) return results;
+  const entries = await fsp.readdir(rootDir, { withFileTypes: true });
+  const dirs = entries
+    .filter((entry) => entry.isDirectory() && !entry.name.startsWith(".") && entry.name !== "node_modules")
+    .map((entry) => path.join(rootDir, entry.name));
+
+  const projects = await Promise.all(dirs.map((projectPath) => scanProjectAsync(projectPath)));
+  for (const project of projects) {
+    if (project) results.push(project);
+  }
+  return results.sort((a, b) => a.name.localeCompare(b.name, "es", { sensitivity: "base" }));
+}
+
 function buildSignature(projects) {
   const data = projects.map(p => [p.name, p.path, p.hasGit ? "1" : "0", p.remoteUrl || "", p.hasVercelDir ? "1" : "0", p.hasVercelConfig ? "1" : "0", p.hasSupabaseDir ? "1" : "0", p.supabaseUrl || "", p.roadmap ? "1" : "0"]);
   return digest(data);
+}
+
+function exists(filePath) {
+  try { return fs.existsSync(filePath); } catch { return false; }
+}
+
+async function existsAsync(filePath) {
+  try { return !!(await fsp.stat(filePath)); } catch { return false; }
 }
 
 function readState() {
@@ -289,6 +422,13 @@ function writeState(state) {
   try {
     fs.mkdirSync(USER_DATA_DIR, { recursive: true });
     fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2), "utf8");
+  } catch {}
+}
+
+async function writeStateAsync(state) {
+  try {
+    await fsp.mkdir(USER_DATA_DIR, { recursive: true });
+    await fsp.writeFile(STATE_FILE, JSON.stringify(state, null, 2), "utf8");
   } catch {}
 }
 
@@ -305,11 +445,10 @@ class EcosystemScanner {
     const signature = buildSignature(projects);
     const now = new Date().toISOString();
 
-    // Verificar cache
     const cached = this.cache.get("ecosystem");
     if (!force && cached && cached.signature === signature && cached.timestamp) {
       const age = Date.now() - new Date(cached.timestamp).getTime();
-      if (age < 60000) { // Cache valido por 1 minuto
+      if (age < 60000) {
         return { ...cached.value, cacheHit: true };
       }
     }
@@ -338,6 +477,48 @@ class EcosystemScanner {
     return value;
   }
 
+  async scanAsync(rootDir = PROGRAMAS_IA_ROOT, { force = false } = {}) {
+    const root = path.resolve(rootDir);
+    if (!await existsAsync(root) || !(await fsp.stat(root)).isDirectory()) {
+      return { error: `Directorio no existe: ${root}`, projects: [] };
+    }
+
+    const projects = await scanAllProjectsAsync(root);
+    const signature = buildSignature(projects);
+    const now = new Date().toISOString();
+
+    const cached = this.cache.get("ecosystem");
+    if (!force && cached && cached.signature === signature && cached.timestamp) {
+      const age = Date.now() - new Date(cached.timestamp).getTime();
+      if (age < 60000) {
+        return { ...cached.value, cacheHit: true };
+      }
+    }
+
+    const state = readState();
+    const value = {
+      projects,
+      total: projects.length,
+      withGit: projects.filter(p => p.hasGit).length,
+      withVercel: projects.filter(p => p.hasVercelDir || p.hasVercelConfig).length,
+      withSupabase: projects.filter(p => p.hasSupabaseDir || p.supabaseUrl).length,
+      withRoadmap: projects.filter(p => p.hasRoadmap).length,
+      withGithub: projects.filter(p => p.github).length,
+      signature,
+      scannedAt: now,
+      cacheHit: false,
+      root,
+    };
+
+    this.cache.set("ecosystem", { signature, timestamp: now, value });
+    state.projects = projects;
+    state.lastScan = now;
+    state.signature = signature;
+    await writeStateAsync(state);
+
+    return value;
+  }
+
   getProject(projectName, rootDir = PROGRAMAS_IA_ROOT) {
     const root = path.resolve(rootDir);
     const projectPath = path.join(root, projectName);
@@ -345,9 +526,21 @@ class EcosystemScanner {
     return scanProject(projectPath);
   }
 
+  async getProjectAsync(projectName, rootDir = PROGRAMAS_IA_ROOT) {
+    const root = path.resolve(rootDir);
+    const projectPath = path.join(root, projectName);
+    if (!await existsAsync(projectPath)) return null;
+    return scanProjectAsync(projectPath);
+  }
+
   refresh() {
     this.cache.delete("ecosystem");
     return this.scan(PROGRAMAS_IA_ROOT, { force: true });
+  }
+
+  async refreshAsync() {
+    this.cache.delete("ecosystem");
+    return this.scanAsync(PROGRAMAS_IA_ROOT, { force: true });
   }
 }
 
@@ -356,8 +549,12 @@ module.exports = {
   PROGRAMAS_IA_ROOT,
   SKIP_DIRS,
   scanAllProjects,
+  scanAllProjectsAsync,
   scanProject,
+  scanProjectAsync,
   buildSignature,
   readState,
   writeState,
+  exists,
+  existsAsync,
 };

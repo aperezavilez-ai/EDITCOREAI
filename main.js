@@ -543,7 +543,7 @@ function initializeTaskRuntime() {
   taskRecovery = new TaskRecovery({ manager: taskManager });
   workflowOrchestrator = new WorkflowOrchestrator({ manager: taskManager });
   workerSupervisor = new WorkerSupervisor({ manager: taskManager });
-  workerSupervisorTimer = setInterval(() => workerSupervisor?.supervise(), 5_000);
+  workerSupervisorTimer = setInterval(() => workerSupervisor?.supervise(), 10_000);
   workerSupervisorTimer.unref?.();
   registerTaskIpc(ipcMain, taskManager, taskRecovery, workflowOrchestrator);
   return taskManager;
@@ -4172,7 +4172,7 @@ ipcMain.handle("cloud:test-local-api", async (_event, input = {}) => {
 
 ipcMain.handle("ecosystem:scan", async (_event, input = {}) => {
   const force = Boolean(input?.force);
-  const result = ecosystemScanner.scan(null, { force });
+  const result = await ecosystemScanner.scanAsync(null, { force });
   ecosystemState.projects = result.projects || [];
   ecosystemState.lastScan = result.scannedAt;
   return result;
@@ -4196,7 +4196,7 @@ ipcMain.handle("ecosystem:connections", async () => {
 ipcMain.handle("ecosystem:status", async (_event, input = {}) => {
   const { refresh, project } = input || {};
   if (refresh) {
-    const scanResult = ecosystemScanner.scan(null, { force: true });
+    const scanResult = await ecosystemScanner.scanAsync(null, { force: true });
     ecosystemState.projects = scanResult.projects || [];
     ecosystemState.lastScan = scanResult.scannedAt;
   }
@@ -9659,9 +9659,9 @@ app.whenReady().then(async () => {
       });
 
       // Scan ecosistema en background
-      setTimeout(() => {
+      setTimeout(async () => {
         try {
-          const result = ecosystemScanner.scan();
+          const result = await ecosystemScanner.scanAsync();
           ecosystemState.projects = result.projects || [];
           ecosystemState.lastScan = result.scannedAt;
           logStartup(`startup:ecosystem-ready projects=${result.total || 0}`);

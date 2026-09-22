@@ -5827,11 +5827,11 @@ window.addEventListener("focus", () => {
   _focusCatalogTimer = setTimeout(() => {
     _focusCatalogTimer = null;
     refreshVisibleProjectCatalog();
-  }, 400);
+  }, 1000);
 });
 setInterval(() => {
   if ($("projectsDialog")?.open) refreshVisibleProjectCatalog();
-}, 30_000);
+}, 120_000);
 
 async function saveCurrentProjectEntry() {
   const root = String(state.projectRoot || "").trim();
