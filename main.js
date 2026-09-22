@@ -1602,7 +1602,6 @@ const AGENT_TOOL_DEFINITIONS = [
   ["write_file", "Escribe contenido completo en un archivo del proyecto.", { path: { type: "string", minLength: 1 }, content: { type: "string" } }],
   ["replace_in_file", "Reemplaza oldText exacto y no vacio por newText dentro de un archivo existente.", { path: { type: "string", minLength: 1 }, oldText: { type: "string", minLength: 1 }, newText: { type: "string" }, replaceAll: { type: "boolean" } }],
   ["delete_file", "Borra un archivo del proyecto (no carpetas).", { path: { type: "string", minLength: 1 } }],
-  ["create_project", "Crea un proyecto desde una plantilla profesional.", { name: { type: "string", minLength: 1 }, template: { type: "string" }, path: { type: "string" } }],
   ["run_command", "Ejecuta un comando permitido dentro del proyecto.", { command: { type: "string", minLength: 1 } }],
   ["inspect_preview", "Inicia y examina visualmente el proyecto en un navegador Electron real.", { viewport: { type: "string", enum: ["desktop", "mobile"] } }],
   ["inspect_browser", "Inspecciona el preview local (solo localhost).", { url: { type: "string" }, viewport: { type: "string", enum: ["desktop", "mobile"] } }],
@@ -1629,7 +1628,7 @@ const AGENT_TOOL_DEFINITIONS = [
       properties,
       required: ({
         read_file: ["path"], search_files: ["query"], write_file: ["path", "content"],
-        replace_in_file: ["path", "oldText", "newText"], delete_file: ["path"], create_project: ["name"],
+        replace_in_file: ["path", "oldText", "newText"], delete_file: ["path"],
         run_command: ["command"], retrieve_context: ["id"], load_tool_descriptor: ["name"],
         search: ["query"], run_diagnostics: [], mcp_invoke: ["serverId", "tool"],
         symbol_search: ["query"], dependency_search: ["query"], create_plan: ["objective", "steps"],
