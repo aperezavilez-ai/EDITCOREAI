@@ -1,4 +1,4 @@
-# RELEASE v4.0.0
+# RELEASE v4.0.1
 
 ## Fix: Consolidación de cerebro único — "Two Brains" resuelto
 
@@ -17,7 +17,7 @@
 
 **Test suite:** 879/879 tests pasan (1 skipped, e2e-operator requiere flag)
 
-**Ejecutable:** EDITCOREAI-Setup-v4.0.0.exe (196 MB, x64)
+**Ejecutable:** EDITCOREAI-Setup-v4.0.1.exe (196 MB, x64)
 
 ### Commits
 - `9461e12` fix: consolidate single brain architecture, clean up dead files, restore EDITCORE-MANIFEST.md

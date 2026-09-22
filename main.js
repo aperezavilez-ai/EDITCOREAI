@@ -6044,7 +6044,7 @@ ipcMain.handle("app:check-updates", async () => {
     packageJson = require("./package.json");
   } catch {}
   return checkForUpdates({
-    currentVersion: RUNTIME_VERSION || packageJson.version || "4.0.0",
+    currentVersion: RUNTIME_VERSION || packageJson.version || "4.0.1",
     packageJson,
   });
 });
@@ -6058,7 +6058,7 @@ ipcMain.handle("app:apply-update", async (_event, downloadUrl) => {
     let pkg = {};
     try { pkg = require("./package.json"); } catch {}
     const check = await checkForUpdates({
-      currentVersion: RUNTIME_VERSION || pkg.version || "4.0.0",
+      currentVersion: RUNTIME_VERSION || pkg.version || "4.0.1",
       packageJson: pkg,
       env: process.env,
     });
