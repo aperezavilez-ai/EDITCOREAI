@@ -75,11 +75,12 @@ async function parseProviderJsonOrThrow(response) {
   }
   if (!response?.ok) {
     let rawMsg = data?.error?.message || data?.message || raw || `HTTP ${status}`;
+    const providerRaw = String(rawMsg).slice(0, 500);
     try {
       const { sanitizeChatProviderError } = require("./chat-error-sanitize");
       rawMsg = sanitizeChatProviderError(rawMsg, { status });
     } catch { /* ignore */ }
-    const err = Object.assign(new Error(rawMsg), { status });
+    const err = Object.assign(new Error(rawMsg), { status, providerRaw });
     if (status === 524 || isGatewayHtmlBody(String(err.message || ""))) {
       throw createGatewayTimeoutError(status || 524, err.message);
     }

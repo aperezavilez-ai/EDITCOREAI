@@ -24,10 +24,22 @@ function seedThreadFromInput(projectRoot, threadId, input, currentMessage) {
   }
 }
 
-function buildMessageList({ system, userText, projectRoot, threadId, historyInput, query }) {
-  const messages = [{ role: "system", content: system }];
+// El modelo no sabe la fecha, la hora ni el sistema operativo si no se le dicen.
+function runtimeContextLine(now = new Date()) {
+  const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || "local";
+  const local = now.toLocaleString("es", { dateStyle: "full", timeStyle: "short", timeZone });
+  const osName = process.platform === "win32" ? "Windows (PowerShell)" : process.platform;
+  return `Contexto del sistema: ahora es ${local} (zona ${timeZone}; ISO ${now.toISOString()}). Sistema operativo: ${osName}. `
+    + "Responde fecha u hora con este dato; no pidas al usuario ejecutar comandos para obtenerlas.";
+}
+
+const FAILED_TURN_RE = /^Algo fall[oó] durante la ejecuci[oó]n:/;
+
+function buildMessageList({ system, userText, projectRoot, threadId, historyInput, query, now }) {
+  const messages = [{ role: "system", content: `${system}\n\n${runtimeContextLine(now)}` }];
   const short = threadMemory.shortHistoryMessages(historyInput, projectRoot, threadId, query);
   for (const m of short) {
+    if (m.role === "assistant" && FAILED_TURN_RE.test(String(m.content || ""))) continue;
     messages.push({ role: m.role, content: m.content });
   }
   messages.push({ role: "user", content: userText });
@@ -57,6 +69,7 @@ module.exports = {
   incomingHistory,
   seedThreadFromInput,
   buildMessageList,
+  runtimeContextLine,
   rememberExchange,
   subagentContext,
   threadMemory,

@@ -9,6 +9,7 @@ const {
   parseProviderJsonOrThrow,
   withCacheControl,
 } = require("../runtime/ai-core");
+const { logProviderError } = require("../runtime/provider-error-log");
 
 function normalizeUsage(raw = {}) {
   if (!raw || typeof raw !== "object") return null;
@@ -34,6 +35,62 @@ function isTransientError(error) {
   if ([408, 425, 429, 500, 502, 503, 504, 524].includes(status)) return true;
   const msg = String(error?.message || error || "").toLowerCase();
   return /timeout|time-?out|aborted|cloudflare|524|504|502|503|429|econnreset|etimedout|enotfound|fetch failed|socket|network|overloaded/i.test(msg);
+}
+
+// Una clave rechazada (401) no se recupera sola: sus perfiles pasan al final
+// de la cola un rato para no gastar el primer intento de cada turno en ella.
+const REJECTED_KEY_TTL_MS = 10 * 60_000;
+const rejectedKeys = new Map();
+
+function isRejectedKeyError(error) {
+  return Number(error?.status || 0) === 401;
+}
+
+function keyRejected(apiKey, now = Date.now()) {
+  const until = rejectedKeys.get(apiKey);
+  if (!until) return false;
+  if (until > now) return true;
+  rejectedKeys.delete(apiKey);
+  return false;
+}
+
+function orderProfiles(list, now = Date.now()) {
+  const seen = new Set();
+  const unique = list.filter((p) => {
+    const id = `${p.apiBaseUrl}|${p.model}|${p.apiKey}`;
+    if (seen.has(id)) return false;
+    seen.add(id);
+    return true;
+  });
+  return [
+    ...unique.filter((p) => !keyRejected(p.apiKey, now)),
+    ...unique.filter((p) => keyRejected(p.apiKey, now)),
+  ];
+}
+
+function providerLabel(host) {
+  if (/meai/i.test(host)) return "ME AI";
+  if (/apicredits/i.test(host)) return "APICredits";
+  return "Otro proveedor";
+}
+
+function allProvidersFailedError(failures, lastError) {
+  const byProvider = new Map();
+  for (const f of failures) {
+    const label = providerLabel(f.host);
+    const prev = byProvider.get(label) || new Set();
+    prev.add(f.status);
+    byProvider.set(label, prev);
+  }
+  const parts = [...byProvider].map(([label, statuses]) => {
+    if (statuses.has(401) || statuses.has(403)) return `${label}: clave rechazada, renuévala en Modelos`;
+    if (statuses.has(402)) return `${label}: sin saldo`;
+    return `${label}: no disponible ahora, reintenta en unos minutos`;
+  });
+  return Object.assign(new Error(`Ningún modelo respondió. ${parts.join(". ")}.`), {
+    status: Number(lastError?.status || 0) || undefined,
+    code: "ALL_PROVIDERS_FAILED",
+  });
 }
 
 function delay(ms, signal) {
@@ -178,16 +235,17 @@ async function callChat({
   fallbackProfiles = [],
   onFallback = null,
 }) {
-  const profileList = [
+  const profileList = orderProfiles([
     { apiBaseUrl, apiKey, model },
     ...(Array.isArray(fallbackProfiles) ? fallbackProfiles.map((p) => ({
       apiBaseUrl: p.baseUrl || p.apiBaseUrl,
       apiKey: p.apiKey,
       model: p.model || model,
     })) : []),
-  ].filter((p) => p.apiBaseUrl && p.apiKey && p.model);
+  ].filter((p) => p.apiBaseUrl && p.apiKey && p.model));
 
   let lastError = null;
+  const failures = [];
 
   for (let pIdx = 0; pIdx < profileList.length; pIdx++) {
     const currentProfile = profileList[pIdx];
@@ -231,7 +289,24 @@ async function callChat({
         if (err?.code === "AGENT_STEER" || signal?.aborted) {
           throw err;
         }
-        if (isTransientError(err) && attempt < maxRetries - 1) {
+        let host = "";
+        try { host = new URL(currentProfile.apiBaseUrl).host; } catch { /* sin host */ }
+        logProviderError({
+          model: currentProfile.model,
+          host,
+          profile: pIdx,
+          attempt,
+          status: Number(err?.status || 0) || null,
+          code: err?.code || null,
+          message: String(err?.providerRaw || err?.message || err).slice(0, 500),
+        });
+        const retry = !isRejectedKeyError(err) && isTransientError(err) && attempt < maxRetries - 1;
+        if (!retry) failures.push({ host, status: Number(err?.status || 0) });
+        if (isRejectedKeyError(err)) {
+          rejectedKeys.set(currentProfile.apiKey, Date.now() + REJECTED_KEY_TTL_MS);
+          break;
+        }
+        if (retry) {
           await delay(800 * (attempt + 1), signal).catch(() => {});
           continue;
         }
@@ -240,12 +315,15 @@ async function callChat({
     }
   }
 
+  if (profileList.length > 1 && failures.length) throw allProvidersFailedError(failures, lastError);
   throw lastError || createGatewayTimeoutError(524, "No se pudo obtener respuesta del proveedor.");
 }
 
 module.exports = {
   callChat,
   callChatSingleAttempt,
+  orderProfiles,
+  rejectedKeys,
   normalizeUsage,
   withCacheControl,
   GATEWAY_TIMEOUT_USER_MESSAGE,

@@ -37,6 +37,7 @@ EditCore actualiza este archivo tras cambios. No pedirlo al usuario. No pegar co
 
 ## Bloqueos / bugs conocidos
 - `.vercel/project.json` de EDITCOREAI WEB apunta a un proyecto que ya no existe en Vercel (404).
+- Proveedores (externo, 2026-09-30): las 7 claves de ME AI devuelven 401 (token inválido) → renovarlas en Modelos. APICredits: Claude/Gemini/DeepSeek responden 502 "Upstream access forbidden" salvo con max_tokens mínimo (saldo o cupo del lado del proveedor); GPT y Grok con 503 intermitentes.
 
 ## Decisiones
 - **Electron + contextBridge**: se usa `contextBridge.exposeInMainWorld` en `preload.js` para aislar el renderer del acceso directo a Node. Cada namespace se expone una sola vez (duplicar lanza y corta el preload).
@@ -52,6 +53,9 @@ EditCore actualiza este archivo tras cambios. No pedirlo al usuario. No pegar co
 - **Rotación de claves Supabase**: `npm run supabase:check` / `supabase:plan` / `supabase:rotate` (`scripts/supabase-rotate-keys.js`). Respaldo + dump en `Z RESPALDOS\supabase-key-rotation\`, verificación y rollback automáticos, historial en `historial.jsonl`. Las claves viven en `TAXIDRIV\supabase\.env` y `signing_keys.json` (gitignored); Kong fijado en 54325 detrás del proxy del watchdog; el PostgREST manual se recrea con el secreto nuevo.
 
 ## Cambios recientes
+- editcore-chat-kernel/orchestrator.js + provider.js — el kernel usa los perfiles de respaldo (antes se descartaban: un 401 del modelo elegido cortaba el turno); claves con 401 al final de la cola 10 min; si todos fallan, mensaje por proveedor (2026-09-30)
+- editcore-chat-kernel/thread-core.js — fecha, hora, zona y SO en el prompt de sistema; turnos "Algo falló…" fuera del historial (2026-09-30)
+- runtime/provider-error-log.js — error real del proveedor en `%APPDATA%\EDITCOREAI\logs\provider-errors.jsonl` (sin claves) (2026-09-30)
 - editcore-chat-kernel/classify.js — análisis con sustantivo y verbos con clítico (2026-09-30)
 - editcore-chat-kernel/tools.js — replace_in_file rechaza parches que rompen sintaxis (2026-09-30)
 - editcore-chat-kernel/orchestrator.js — aviso de análisis sin lecturas; ROADMAP sin chat ni errores de proveedor (2026-09-30)
@@ -64,7 +68,8 @@ EditCore actualiza este archivo tras cambios. No pedirlo al usuario. No pegar co
 - scripts/postinstall.js, scripts/supabase-rotate-keys.js, scripts/lib/supabase-keys.js — setup y rotación automáticos (2026-09-30)
 
 ## Verificado
-- npm run check; npm test 908 tests (907 ok, 1 omitido, 0 fallos).
+- npm run check; npm test 920 tests (919 ok, 1 omitido, 0 fallos).
+- Kernel real con perfil principal ME AI (401): pasa a respaldo y responde "Son las 14:38 … miércoles 30 de septiembre de 2026".
 - Probe Electron: preload.js expone 75 namespaces sin errores (HEAD exponía 17 y fallaba).
 - Embeddings (@xenova/transformers) 384 dims; puppeteer 25 lanza Chrome; node-pty spawn ok.
 
@@ -75,6 +80,7 @@ EditCore actualiza este archivo tras cambios. No pedirlo al usuario. No pegar co
 - Red: regla de firewall `GAFCORE` (`scripts/gafcore-firewall.ps1`, admin) bloquea desde Wi-Fi/Ethernet 3000, 5432, 9000-9001 y 54322-54329; localhost, 54321 y supabase.gafcore.com siguen OK. Túnel rápido `vibrant_lamarr` eliminado. Scripts de prueba leen la anon key del entorno.
 
 ## Siguiente
+- Usuario: renovar claves de ME AI y revisar saldo de APICredits (Claude) en Modelos.
 - Validación real: instalar 4.1.0, `npm run test:e2e`, prueba del chat con modelo real.
 - Mantenimiento: CLI Supabase 2.118, enlace Vercel de EDITCOREAI WEB, borrar rama feature ya integrada.
 

@@ -647,6 +647,7 @@ class ChatOrchestrator {
     input._historyInput = historyInput;
     this._threadId = threadId;
     this._historyInput = historyInput;
+    this._fallbackProfiles = Array.isArray(input.fallbackProfiles) ? input.fallbackProfiles : [];
     this._currentUserText = text;
 
     if (decision.kind === "CHAT") {
@@ -964,6 +965,10 @@ class ChatOrchestrator {
             tools: (chatOnly || decision?.kind === "CHAT") ? [] : availableTools,
             signal: turnSignal,
             stream: true,
+            fallbackProfiles: this._fallbackProfiles || [],
+            onFallback: ({ model: fallbackModel }) => {
+              try { onProgress?.({ phase: "heartbeat", text: `Cambiando a ${fallbackModel}…` }); } catch { /* ignore */ }
+            },
             onTextDelta: (delta) => {
               const chunk = String(delta || "");
               if (!chunk) return;
