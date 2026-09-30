@@ -47,7 +47,7 @@ if (!fs.existsSync(iconPath) || fs.statSync(iconPath).size < 1000) {
   fs.mkdirSync(path.dirname(iconPath), { recursive: true });
   fs.copyFileSync(iconFallback, iconPath);
 }
-const args = ["/nologo", "/target:winexe", "/r:System.Windows.Forms.dll", `/out:${outExe}`, `/win32icon:${iconPath}`, srcPath];
+const args = ["/nologo", "/target:winexe", "/r:System.Windows.Forms.dll", "/r:System.Drawing.dll", `/out:${outExe}`, `/win32icon:${iconPath}`, srcPath];
 
 const result = spawnSync(csc, args, { cwd: appRoot, stdio: "inherit", shell: false });
 if (result.status !== 0) process.exit(result.status || 1);

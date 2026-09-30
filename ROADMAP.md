@@ -36,7 +36,6 @@ EditCore actualiza este archivo tras cambios. No pedirlo al usuario. No pegar co
 - Auditoría forense cerrada. Claves del Supabase self-hosted rotadas (2026-09-30).
 
 ## Bloqueos / bugs conocidos
-- Electron arranca lento (30-90 s) desde D: (HDD 5400 rpm + Defender en tiempo real). No es un binario roto.
 - `.vercel/project.json` de EDITCOREAI WEB apunta a un proyecto que ya no existe en Vercel (404).
 
 ## Decisiones
@@ -48,6 +47,8 @@ EditCore actualiza este archivo tras cambios. No pedirlo al usuario. No pegar co
 - **IPC como bus principal**: `runtime/chat-kernel-bridge.js` y `runtime/intent-orchestrator.js` comunican renderer ↔ main ↔ kernel.
 - **Skills como extensión**: las habilidades se cargan bajo demanda y no forman parte del core.
 - **Setup automático**: `scripts/postinstall.js` (postinstall y `npm run setup`) repone Electron, node-pty, Chrome de puppeteer y branding; registra en `.editcore/logs/setup.jsonl`.
+- **Runtime en SSD**: D: es HDD y Electron tardaba 45-98 s solo en arrancar desde ahí (1-2 s desde C:). El launcher raíz copia `node_modules/electron/dist` a `%LOCALAPPDATA%\EDITCOREAI\runtime` (resincroniza por tamaño/fecha/versión del host) y arranca desde ahí; mutex contra dobles clics. Ventana en 17-20 s (57 s la primera vez con copia).
+- **Contraseña `postgres` del stack CLI**: no se cambia (la CLI la usa para todos los roles internos); la protección es de red: Docker publica en 0.0.0.0 y el firewall `GAFCORE` corta el acceso externo.
 - **Rotación de claves Supabase**: `npm run supabase:check` / `supabase:plan` / `supabase:rotate` (`scripts/supabase-rotate-keys.js`). Respaldo + dump en `Z RESPALDOS\supabase-key-rotation\`, verificación y rollback automáticos, historial en `historial.jsonl`. Las claves viven en `TAXIDRIV\supabase\.env` y `signing_keys.json` (gitignored); Kong fijado en 54325 detrás del proxy del watchdog; el PostgREST manual se recrea con el secreto nuevo.
 
 ## Cambios recientes
