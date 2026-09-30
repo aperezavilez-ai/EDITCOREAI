@@ -184,15 +184,20 @@ contextBridge.exposeInMainWorld("editcoreSkills", {
   toggle: (payload) => ipcRenderer.invoke("skills:toggle", payload),
 });
 
+// contextBridge lanza si un nombre se expone dos veces y corta el resto del preload: un solo bloque por namespace.
 contextBridge.exposeInMainWorld("editcoreCloud", {
   vaultStatus: () => ipcRenderer.invoke("cloud:vault-status"),
-  deployGithub: (input) => ipcRenderer.invoke("cloud:deploy-github", input),
-  deployVercel: (input) => ipcRenderer.invoke("cloud:deploy-vercel", input),
-  provisionSupabase: (input) => ipcRenderer.invoke("cloud:provision-supabase", input),
+  deployGithub: (input = {}) => ipcRenderer.invoke("cloud:deploy-github", input),
+  deployVercel: (input = {}) => ipcRenderer.invoke("cloud:deploy-vercel", input),
+  provisionSupabase: (input = {}) => ipcRenderer.invoke("cloud:provision-supabase", input),
   provisionGafcoreAi: () => ipcRenderer.invoke("cloud:provision-gafcore-ai"),
-  provisionFullstack: (input) => ipcRenderer.invoke("cloud:provision-fullstack", input),
-  probeEndpoint: (input) => ipcRenderer.invoke("cloud:probe-endpoint", input),
-  testLocalApi: (input) => ipcRenderer.invoke("cloud:test-local-api", input),
+  provisionFullstack: (input = {}) => ipcRenderer.invoke("cloud:provision-fullstack", input),
+  probeEndpoint: (input = {}) => ipcRenderer.invoke("cloud:probe-endpoint", input),
+  testLocalApi: (input = {}) => ipcRenderer.invoke("cloud:test-local-api", input),
+  connect: (input = {}) => ipcRenderer.invoke("cloud:connect", input),
+  sync: (input = {}) => ipcRenderer.invoke("cloud:sync", input),
+  shareSession: (input = {}) => ipcRenderer.invoke("cloud:share-session", input),
+  listPeers: (input = {}) => ipcRenderer.invoke("cloud:list-peers", input),
 });
 
 contextBridge.exposeInMainWorld("editcoreWindow", {
@@ -351,16 +356,6 @@ contextBridge.exposeInMainWorld("editcoreConnections", {
   operatorMemory: (input = {}) => ipcRenderer.invoke("connections:operator-memory", input),
 });
 
-contextBridge.exposeInMainWorld("editcoreCloud", {
-  vaultStatus: () => ipcRenderer.invoke("cloud:vault-status"),
-  deployGithub: (input = {}) => ipcRenderer.invoke("cloud:deploy-github", input),
-  deployVercel: (input = {}) => ipcRenderer.invoke("cloud:deploy-vercel", input),
-  provisionSupabase: (input = {}) => ipcRenderer.invoke("cloud:provision-supabase", input),
-  provisionFullstack: (input = {}) => ipcRenderer.invoke("cloud:provision-fullstack", input),
-  probeEndpoint: (input = {}) => ipcRenderer.invoke("cloud:probe-endpoint", input),
-  testLocalApi: (input = {}) => ipcRenderer.invoke("cloud:test-local-api", input),
-});
-
 contextBridge.exposeInMainWorld("editcoreStream", {
   onChunk: (cb) => ipcRenderer.on("editcore:chunk", (_e, delta) => cb(delta)),
   offChunk: () => ipcRenderer.removeAllListeners("editcore:chunk"),
@@ -419,6 +414,10 @@ contextBridge.exposeInMainWorld("editcorePatch", {
 });
 contextBridge.exposeInMainWorld("editcoreInlineEdit", {
   generate: (input = {}) => ipcRenderer.invoke("editor:inline-edit", input),
+  createRequest: (params) => ipcRenderer.invoke("inline-edit:create-request", params),
+  computeDiff: (originalText, modifiedText) => ipcRenderer.invoke("inline-edit:compute-diff", originalText, modifiedText),
+  applyPatch: (originalText, diffOrModified) => ipcRenderer.invoke("inline-edit:apply-patch", originalText, diffOrModified),
+  mockProposal: (prompt, originalText) => ipcRenderer.invoke("inline-edit:mock-proposal", prompt, originalText),
 });
 contextBridge.exposeInMainWorld("editcoreComposer", {
   plan: (input = {}) => ipcRenderer.invoke("composer:plan", input),
@@ -532,13 +531,6 @@ contextBridge.exposeInMainWorld("editcoreLsp", {
   diagnostics: () => ipcRenderer.invoke("lsp:diagnostics"),
 });
 
-contextBridge.exposeInMainWorld("editcoreCloud", {
-  connect: (input = {}) => ipcRenderer.invoke("cloud:connect", input),
-  sync: (input = {}) => ipcRenderer.invoke("cloud:sync", input),
-  shareSession: (input = {}) => ipcRenderer.invoke("cloud:share-session", input),
-  listPeers: (input = {}) => ipcRenderer.invoke("cloud:list-peers", input),
-});
-
 contextBridge.exposeInMainWorld("editcoreWindowsStt", {
   windowsSttStart: (input = {}) => ipcRenderer.invoke("agent:windows-stt-start", input),
   onWindowsSttText: (callback) => {
@@ -586,6 +578,11 @@ contextBridge.exposeInMainWorld("editcoreAst", {
 
 contextBridge.exposeInMainWorld("editcoreTelemetry", {
   getMetrics: () => ipcRenderer.invoke("telemetry:get-metrics"),
+  getSnapshot: () => ipcRenderer.invoke("telemetry:get-snapshot"),
+  recordTokenUsage: (promptTokens, completionTokens, cost) => ipcRenderer.invoke("telemetry:record-token-usage", promptTokens, completionTokens, cost),
+  recordRagHit: (isHit) => ipcRenderer.invoke("telemetry:record-rag-hit", isHit),
+  recordMetric: (category, name, value, meta) => ipcRenderer.invoke("telemetry:record-metric", category, name, value, meta),
+  getHistory: (category, limit) => ipcRenderer.invoke("telemetry:get-history", category, limit),
 });
 
 contextBridge.exposeInMainWorld("editcoreDebugger", {
@@ -661,6 +658,11 @@ contextBridge.exposeInMainWorld("editcoreCredits", {
 
 contextBridge.exposeInMainWorld("editcoreAuth", {
   checkAccess: (userId, targetPath, operation) => ipcRenderer.invoke("auth:check-access", userId, targetPath, operation),
+  getSession: () => ipcRenderer.invoke("auth:get-session"),
+  login: (credentials) => ipcRenderer.invoke("auth:login", credentials),
+  register: (data) => ipcRenderer.invoke("auth:register", data),
+  logout: () => ipcRenderer.invoke("auth:logout"),
+  updateProfile: (data) => ipcRenderer.invoke("auth:update-profile", data),
 });
 
 contextBridge.exposeInMainWorld("editcoreI18n", {
@@ -768,14 +770,6 @@ contextBridge.exposeInMainWorld("editcorePrAgent", {
   formatMarkdown: (proposal) => ipcRenderer.invoke("git-pr:format-markdown", proposal),
 });
 
-contextBridge.exposeInMainWorld("editcoreTelemetry", {
-  getSnapshot: () => ipcRenderer.invoke("telemetry:get-snapshot"),
-  recordTokenUsage: (promptTokens, completionTokens, cost) => ipcRenderer.invoke("telemetry:record-token-usage", promptTokens, completionTokens, cost),
-  recordRagHit: (isHit) => ipcRenderer.invoke("telemetry:record-rag-hit", isHit),
-  recordMetric: (category, name, value, meta) => ipcRenderer.invoke("telemetry:record-metric", category, name, value, meta),
-  getHistory: (category, limit) => ipcRenderer.invoke("telemetry:get-history", category, limit),
-});
-
 contextBridge.exposeInMainWorld("editcoreTestGenerator", {
   analyze: (filePath, codeContent) => ipcRenderer.invoke("test-generator:analyze", filePath, codeContent),
   generate: (params) => ipcRenderer.invoke("test-generator:generate", params),
@@ -785,14 +779,6 @@ contextBridge.exposeInMainWorld("editcoreTestGenerator", {
 // ====================================================
 // CICLO 33: INLINE EDIT, @ MENTIONS & LOCAL VECTOR RAG
 // ====================================================
-
-contextBridge.exposeInMainWorld("editcoreInlineEdit", {
-  createRequest: (params) => ipcRenderer.invoke("inline-edit:create-request", params),
-  computeDiff: (originalText, modifiedText) => ipcRenderer.invoke("inline-edit:compute-diff", originalText, modifiedText),
-  applyPatch: (originalText, diffOrModified) => ipcRenderer.invoke("inline-edit:apply-patch", originalText, diffOrModified),
-  mockProposal: (prompt, originalText) => ipcRenderer.invoke("inline-edit:mock-proposal", prompt, originalText),
-});
-
 contextBridge.exposeInMainWorld("editcoreMentions", {
   extract: (text) => ipcRenderer.invoke("mentions:extract", text),
   suggest: (query, workspaceFiles) => ipcRenderer.invoke("mentions:suggest", query, workspaceFiles),
@@ -944,14 +930,6 @@ contextBridge.exposeInMainWorld("editcoreOmega", {
 // ====================================================
 // AUTHENTICATION & APP UPDATES
 // ====================================================
-
-contextBridge.exposeInMainWorld("editcoreAuth", {
-  getSession: () => ipcRenderer.invoke("auth:get-session"),
-  login: (credentials) => ipcRenderer.invoke("auth:login", credentials),
-  register: (data) => ipcRenderer.invoke("auth:register", data),
-  logout: () => ipcRenderer.invoke("auth:logout"),
-  updateProfile: (data) => ipcRenderer.invoke("auth:update-profile", data),
-});
 
 contextBridge.exposeInMainWorld("editcoreUpdates", {
   checkForUpdates: (opts) => ipcRenderer.invoke("app:check-updates", opts),

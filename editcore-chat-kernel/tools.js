@@ -256,22 +256,34 @@ function replaceInFile(root, rel, oldText, newText) {
       preview: current.slice(0, 1200),
     };
   }
-  const snap = snapshotBeforeWrite(root, rel, "replace_in_file");
-  
   // FIX CRÍTICO: Se usa una función de reemplazo para evitar que los signos '$' 
   // en el código fuente interpreten patrones especiales de regex/string de JS.
   const next = current.replace(located.match, () => String(newText ?? ""));
-  
+
+  let syntaxCheck = null;
+  let syntaxBefore = null;
+  try {
+    const { validateSyntax } = require("../runtime/syntax-validator");
+    syntaxCheck = validateSyntax(rel, next);
+    if (syntaxCheck && !syntaxCheck.ok) syntaxBefore = validateSyntax(rel, current);
+  } catch {}
+  // Un archivo que compilaba no puede quedar roto por un parche: se rechaza sin escribir.
+  if (syntaxCheck && !syntaxCheck.ok && syntaxBefore?.ok) {
+    return {
+      ok: false,
+      soft: true,
+      path: rel,
+      error: `El reemplazo rompería la sintaxis de ${rel}: ${syntaxCheck.message}. No se escribió nada.`,
+      hint: "Relee el archivo con read_file e incluye en oldText/newText el bloque completo (llaves de apertura y cierre).",
+    };
+  }
+
+  const snap = snapshotBeforeWrite(root, rel, "replace_in_file");
   fs.writeFileSync(file, next, "utf8");
   if (runReadCache?.map) {
     const key = String(file || "").replace(/\\/g, "/").replace(/^\.\//, "").toLowerCase();
     runReadCache.map.delete(key);
   }
-  let syntaxCheck = null;
-  try {
-    const { validateSyntax } = require("../runtime/syntax-validator");
-    syntaxCheck = validateSyntax(rel, next);
-  } catch {}
   const out = {
     ok: true,
     path: rel,

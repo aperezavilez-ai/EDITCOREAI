@@ -20,3 +20,23 @@ test("crear/mover/analizá activan tools (no chat ciego)", () => {
     else assert.equal(d.allowTools, true);
   }
 });
+
+test("análisis con sustantivo lee el disco sin escribir; clíticos ejecutan", () => {
+  const cases = [
+    ["hazme un analisis forense del proyecto", "ANALYZE", false],
+    ["hazme un análisis lo más forense posible y dame un reporte completo", "ANALYZE", false],
+    ["dame una auditoría del repo", "ANALYZE", false],
+    ["quiero un diagnóstico del login", "ANALYZE", false],
+    ["hazme un análisis y corrige los errores", "EXECUTE", true],
+    ["genera un reporte en PDF", "EXECUTE", true],
+    ["hazme una landing para mi gimnasio", "EXECUTE", true],
+    ["créame un proyecto de uñas", "EXECUTE", true],
+    ["arréglame el build", "EXECUTE", true],
+  ];
+  for (const [msg, kind, write] of cases) {
+    const d = classify(msg, { fullAccess: true });
+    assert.equal(d.kind, kind, msg);
+    assert.equal(d.allowTools, true, msg);
+    assert.equal(d.allowWrite, write, msg);
+  }
+});

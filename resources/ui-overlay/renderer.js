@@ -276,7 +276,7 @@ window.addEventListener("unhandledrejection", (event) => {
   inspectorClientErrors.push(`unhandledrejection: ${event.reason?.message || event.reason || "promesa rechazada"}`);
   reportInspectorTelemetry();
 });
-setInterval(reportInspectorTelemetry, 15_000);
+setInterval(reportInspectorTelemetry, 120_000);
 let responseTimer = null;
 let projectTemplates = [];
 let activeProjectCreateRunId = "";
@@ -1224,6 +1224,16 @@ function resolveProviderApiKey(key, formKey = "") {
   if (String(chat.providerKey || "") === key && String(chat.apiKey || "").trim()) {
     return String(chat.apiKey).trim();
   }
+  try {
+    const gafv3 = JSON.parse(localStorage.getItem("gafcoreai_providers_v3") || "{}");
+    if (gafv3?.[key]?.apiKey && String(gafv3[key].apiKey).trim()) {
+      return String(gafv3[key].apiKey).trim();
+    }
+    const gafLegacy = JSON.parse(localStorage.getItem("gafcoreai_providers") || "{}");
+    if (gafLegacy?.[key]?.apiKey && String(gafLegacy[key].apiKey).trim()) {
+      return String(gafLegacy[key].apiKey).trim();
+    }
+  } catch { /* ignore */ }
   return "";
 }
 
@@ -1371,6 +1381,16 @@ function ensureDefaultProviderProfiles(profiles = []) {
     const provConfig = providers[provKey] || {};
     const existingForProv = current.filter((p) => p && p.providerKey === provKey);
 
+    const gafSaved = (() => {
+      try {
+        const v3 = JSON.parse(localStorage.getItem("gafcoreai_providers_v3") || "{}");
+        if (v3?.[provKey]?.apiKey) return v3[provKey];
+        const leg = JSON.parse(localStorage.getItem("gafcoreai_providers") || "{}");
+        if (leg?.[provKey]?.apiKey) return leg[provKey];
+      } catch { /* ignore */ }
+      return {};
+    })();
+
     const existingModelsMap = new Map();
     for (const p of existingForProv) {
       if (p?.model) existingModelsMap.set(String(p.model).toLowerCase(), p);
@@ -1384,8 +1404,8 @@ function ensureDefaultProviderProfiles(profiles = []) {
       }
     }
 
-    const defaultProvKey = provConfig.apiKey || existingForProv.find((p) => p.apiKey)?.apiKey || "";
-    const defaultProvStatus = provConfig.status === "active" || existingForProv.some((p) => ["active", "enabled"].includes(p.status)) ? "active" : "";
+    const defaultProvKey = provConfig.apiKey || gafSaved.apiKey || existingForProv.find((p) => p.apiKey)?.apiKey || "";
+    const defaultProvStatus = ((provConfig.status === "active" || gafSaved.apiKey || existingForProv.some((p) => ["active", "enabled"].includes(p.status))) && defaultProvKey) ? "active" : "";
 
     for (const m of catalog) {
       const mLower = m.toLowerCase();
@@ -1394,12 +1414,12 @@ function ensureDefaultProviderProfiles(profiles = []) {
         const fam = getModelFamilyKey(m);
         const famInfo = familyKeyMap.get(fam);
         const inheritedKey = famInfo?.apiKey || defaultProvKey;
-        const inheritedStatus = famInfo?.status || (inheritedKey ? defaultProvStatus : "");
+        const inheritedStatus = (famInfo?.status || (inheritedKey ? defaultProvStatus : "")) && inheritedKey ? "active" : "";
         const newProfile = {
           id: `${provKey}:${m}`,
           providerKey: provKey,
           providerName: provKey === "apicredits" ? "APICredits" : provKey === "meai" ? "ME AI Cloud" : provKey,
-          baseUrl: provConfig.baseUrl || PROVIDERS[provKey]?.baseUrl || "",
+          baseUrl: provConfig.baseUrl || gafSaved.baseUrl || PROVIDERS[provKey]?.baseUrl || "",
           apiKey: inheritedKey,
           model: m,
           status: inheritedStatus,
@@ -1412,7 +1432,7 @@ function ensureDefaultProviderProfiles(profiles = []) {
         const famInfo = familyKeyMap.get(fam);
         existing.apiKey = famInfo?.apiKey || defaultProvKey;
         if (!existing.status && (famInfo?.status || defaultProvStatus)) {
-          existing.status = famInfo?.status || defaultProvStatus;
+          existing.status = (famInfo?.status || defaultProvStatus) && existing.apiKey ? "active" : "";
         }
       }
     }
@@ -5827,11 +5847,11 @@ window.addEventListener("focus", () => {
   _focusCatalogTimer = setTimeout(() => {
     _focusCatalogTimer = null;
     refreshVisibleProjectCatalog();
-  }, 400);
+  }, 1000);
 });
 setInterval(() => {
   if ($("projectsDialog")?.open) refreshVisibleProjectCatalog();
-}, 30_000);
+}, 120_000);
 
 async function saveCurrentProjectEntry() {
   const root = String(state.projectRoot || "").trim();

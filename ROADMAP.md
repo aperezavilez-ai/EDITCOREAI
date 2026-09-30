@@ -6,125 +6,72 @@ EditCore actualiza este archivo tras cambios. No pedirlo al usuario. No pegar co
 
 ## Proceso
 - Fase: implementacion
-- Estado: Consolidado cerebro único. 879/879 tests pasan. Listo para empaquetar.
-- Actualizado: 2026-09-21 21:30
+- Estado: Correcciones de la auditoría forense del 2026-09-30 aplicadas (agente con tools reales, replace_in_file seguro, preload sin duplicados).
+- Actualizado: 2026-09-30
 - Preview: desconocido — usa el preview del IDE, no inventes puertos
 
 ## Mapa
-- runtime/sql-migration-tool.js
-- resources/ui-overlay/renderer.js
-- renderer.js
-- scripts/auto-evolution/evolution-state.json
-- test/git-manager.test.js
-- preload.js
-- main.js
-- ide/git-panel.html
-- runtime/git-manager.js
-- runtime/prompt-cache-manager.js
-- runtime/rag-memory.js
-- test/pre-package-gate.test.js
-- test/mcp-client.test.js
-- runtime/multi-agent-orchestrator.js
-- runtime/mcp-client.js
-- test/memory-stress.test.js
-- runtime/heap-snapshot-analyzer.js
-- test/db-manager.test.js
-- ide/db-explorer.js
-- ide/db-explorer.html
-- runtime/db-manager.js
-- runtime/n8n-manager.js
-- test/telemetry.test.js
-- ide/telemetry-panel.html
-- runtime/telemetry-monitor.js
-- runtime/ast-ipc-bridge.js
-- runtime/code-actions-provider.js
-- runtime/ast-refactorer.js
-- runtime/debug-session.js
-- runtime/debug-adapter-client.js
-- runtime/plugin-api.js
-- test/plugin-system.test.js
-- runtime/plugin-manager.js
-- test/multi-agent.test.js
-- runtime/git-integration.js
-- runtime/smart-diff.js
-- test/terminal-agent.test.js
-- runtime/terminal-agent.js
-- runtime/ghost-text-bridge.js
-- runtime/ghost-text-provider.js
-- runtime/rag-bridge.js
-- test/vector-indexer.test.js
-- runtime/vector-indexer.js
-- resources/ui-overlay/main.js
-- test/cloud-collab.test.js
-- runtime/composer-view.js
-- test/composer-view.test.js
-- test/lsp-client.test.js
+- main.js — proceso principal Electron (IPC, ventanas)
+- preload.js — contextBridge (un bloque por namespace; espejo en resources/ui-overlay/preload.js)
+- renderer.js — UI del IDE
+- chat-home.js / chat-home.css — shell Chat Home
+- editcore-chat-kernel/classify.js — portero de intención (CHAT / ANALYZE / EXECUTE…)
+- editcore-chat-kernel/orchestrator.js — ChatOrchestrator (tools, grounding, roadmap)
+- editcore-chat-kernel/tools.js — tools de disco del kernel
+- runtime/editcore-claude-adapter.js — agente del IDE (espejo en resources/ui-overlay/runtime/)
+- runtime/elite-communication-policy.js — estilo y reglas de comunicación
+- runtime/project-roadmap.js — escritura de este ROADMAP
+- resources/ui-overlay/ — copia empaquetada (mantener sincronizada)
 
 ## Archivos clave (no reexplorar)
-- runtime/sql-migration-tool.js
-- runtime/agent-tools.js
-- runtime/tool-dispatcher.js
-- runtime/agent-tools-suite.js
-- runtime/cloud-vault-bridge.js
-- main.js
-- runtime/plugin-manager.js
-- runtime/plugin-api.js
+- editcore-chat-kernel/classify.js
+- editcore-chat-kernel/orchestrator.js
+- editcore-chat-kernel/tools.js
+- runtime/editcore-claude-adapter.js
 - preload.js
-- runtime/terminal-agent.js
-- runtime/fullstack-deploy.js
+- main.js
 - renderer.js
-- resources/ui-overlay/renderer.js
-- runtime/git-manager.js
-- ide/git-panel.html
-- test/git-manager.test.js
 
 ## Tarea activa
-- Consolida cerebro único: classify.js (portero) + intent-orchestrator.js (full). Imports corregidos en editcore-claude-adapter.js y main.js. 879/879 tests pasan.
-- Empaquetado: EDITCOREAI-Setup-v4.0.0.exe listo.
-
-### Skill: n8n-code-tool
-Write JavaScript or Python for the n8n Custom Code Tool (@n8n/n8n-nodes-langchain.toolCode) — the AI-agent-callable tool, NOT the workflow Code nod
+- Auditoría forense cerrada. Claves del Supabase self-hosted rotadas (2026-09-30).
 
 ## Bloqueos / bugs conocidos
-- Error("write_file_batch requiere un array 'files' no vacio.");
-- Error("write_file_batch admite un maximo de 50 archivos por llamada.");
-- Error(`Ruta fuera del workspace no permitida: ${relPath}`);
-- falló, el footer se oculta incluso si hay archivos cambiados.
-- Actualizado: 2026-09-18 21:00
-- Preview: desconocido — usa el preview del IDE, no inventes puertos
+- Electron arranca lento (30-90 s) desde D: (HDD 5400 rpm + Defender en tiempo real). No es un binario roto.
+- Postgres del stack TAXIDRIV publicado en 0.0.0.0:54322 con contraseña `postgres`.
+- `.vercel/project.json` de EDITCOREAI WEB apunta a un proyecto que ya no existe en Vercel (404).
 
 ## Decisiones
-- **Electron + contextBridge**: se usa `contextBridge.exposeInMainWorld` en `preload.js` para aislar el renderer del acceso directo a Node. Motivo: seguridad y compatibilidad con sandbox de Electron.
+- **Electron + contextBridge**: se usa `contextBridge.exposeInMainWorld` en `preload.js` para aislar el renderer del acceso directo a Node. Cada namespace se expone una sola vez (duplicar lanza y corta el preload).
 - **Kernel de chat como capa separada**: `editcore-chat-kernel/orchestrator.js` maneja la lógica de conversación, intenciones y RAG. Motivo: separación de responsabilidades entre UI (renderer) y lógica de agente.
-- **RAG con brain-seed**: el conocimiento persistente vive en `brain-seed/` y se accede vía `brain-service.js` + `brain-memory-store.js`. Motivo: memoria contextual sin depender de APIs externas.
-- **IPC como bus principal**: `runtime/chat-kernel-bridge.js` y `runtime/intent-orchestrator.js` comunican renderer ↔ main ↔ kernel. Motivo: arquitectura multi-proceso de Electron lo exige.
-- **Skills como extensión**: las habilidades (editcore-connect, web-to-desktop-pake, etc.) se cargan bajo demanda y no forman parte del core. Motivo: mantener el kernel liviano.
+- **Análisis siempre con tools**: pedidos de análisis/auditoría/informe se clasifican ANALYZE (lectura de disco, sin escritura); un análisis sin lecturas exitosas se marca como no verificado.
+- **replace_in_file conservador**: coincidencia exacta o tolerante solo a CRLF/espacios finales; si el parche rompe la sintaxis de un archivo válido, no se escribe.
+- **RAG con brain-seed**: el conocimiento persistente vive en `brain-seed/` y se accede vía `brain-service.js` + `brain-memory-store.js`.
+- **IPC como bus principal**: `runtime/chat-kernel-bridge.js` y `runtime/intent-orchestrator.js` comunican renderer ↔ main ↔ kernel.
+- **Skills como extensión**: las habilidades se cargan bajo demanda y no forman parte del core.
+- **Setup automático**: `scripts/postinstall.js` (postinstall y `npm run setup`) repone Electron, node-pty, Chrome de puppeteer y branding; registra en `.editcore/logs/setup.jsonl`.
+- **Rotación de claves Supabase**: `npm run supabase:check` / `supabase:plan` / `supabase:rotate` (`scripts/supabase-rotate-keys.js`). Respaldo + dump en `Z RESPALDOS\supabase-key-rotation\`, verificación y rollback automáticos, historial en `historial.jsonl`. Las claves viven en `TAXIDRIV\supabase\.env` y `signing_keys.json` (gitignored); Kong fijado en 54325 detrás del proxy del watchdog; el PostgREST manual se recrea con el secreto nuevo.
 
 ## Cambios recientes
-- runtime/sql-migration-tool.js
-- runtime/agent-tools.js
-- runtime/tool-dispatcher.js
-- runtime/sql-migration-tool.js — archivo escrito (kernel) (2026-09-21 01:21)
-- runtime/agent-tools-suite.js
-- runtime/cloud-vault-bridge.js
-- main.js
-- runtime/plugin-manager.js
-- runtime/plugin-api.js
-- preload.js
-- runtime/terminal-agent.js
-- runtime/fullstack-deploy.js
-- renderer.js
-- resources/ui-overlay/renderer.js
-- resources/ui-overlay/renderer.js — parche aplicado (kernel) (2026-09-20 22:55)
-- renderer.js — parche aplicado (kernel) (2026-09-20 22:55)
-- runtime/git-manager.js
-- ide/git-panel.html
+- editcore-chat-kernel/classify.js — análisis con sustantivo y verbos con clítico (2026-09-30)
+- editcore-chat-kernel/tools.js — replace_in_file rechaza parches que rompen sintaxis (2026-09-30)
+- editcore-chat-kernel/orchestrator.js — aviso de análisis sin lecturas; ROADMAP sin chat ni errores de proveedor (2026-09-30)
+- runtime/editcore-claude-adapter.js — reglas anti-alucinación restauradas + identidad EditCoreAI (2026-09-30)
+- preload.js — namespaces duplicados fusionados (2026-09-30)
+- runtime/project-roadmap.js — bloqueos sin líneas de código ni errores de proveedor (2026-09-30)
+- package.json — vercel a devDependencies, puppeteer 25, node-pty 1.1 (prebuilds), overrides protobufjs 7 / sharp 0.35: npm audit --omit=dev = 0 (2026-09-30)
+- Eliminados: editcore-claude-adapter.js raíz, runtime/renderer.js y copias overlay; gafcore-chat-engine movido a Z RESPALDOS (2026-09-30)
+- resources/ui-overlay: renderer.js, main.js, preload.js sincronizados con la raíz (2026-09-30)
+- scripts/postinstall.js, scripts/supabase-rotate-keys.js, scripts/lib/supabase-keys.js — setup y rotación automáticos (2026-09-30)
 
 ## Verificado
-- Pendiente
+- npm run check; npm test 908 tests (907 ok, 1 omitido, 0 fallos).
+- Probe Electron: preload.js expone 75 namespaces sin errores (HEAD exponía 17 y fallaba).
+- Embeddings (@xenova/transformers) 384 dims; puppeteer 25 lanza Chrome; node-pty spawn ok.
+
+- Rotación Supabase OK: clave nueva aceptada y vieja rechazada (directo, proxy 54321, supabase.gafcore.com); GoTrue firma con ES256 propia; 95 archivos actualizados.
 
 ## Siguiente
-- Proponer optimización, analítica o nueva funcionalidad complementaria.
+- Generar instalador 4.1.0.
 
 ## Regla anti-reexploracion
 - Si el pedido del usuario apunta a un archivo ya listado arriba: ve DIRECTO a read_file/replace_in_file de ese path.

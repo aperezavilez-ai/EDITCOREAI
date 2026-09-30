@@ -186,7 +186,23 @@ function repairDanglingOutput(text, steps = [], userMessage = "", decision = {})
   return formatAgentVisibleText("No completé la instrucción en este turno. Reformulá o indicá el archivo puntual.");
 }
 
+const DISK_READ_TOOLS = new Set([
+  "read_file", "list_files", "search_files", "project_discovery", "codebase_map",
+  "symbol_search", "dependency_search", "search_codebase_semantic", "run_command", "run_diagnostic",
+]);
+
+function successfulDiskReads(steps = []) {
+  return (Array.isArray(steps) ? steps : [])
+    .filter((s) => DISK_READ_TOOLS.has(s.name) && s.ok !== false && s.result?.ok !== false).length;
+}
+
 function groundUngroundedClaims(text, steps = [], userMessage = "", decision = {}) {
+  if (decision?.kind === "ANALYZE" && successfulDiskReads(steps) === 0 && String(text || "").trim().length > 280) {
+    return formatAgentVisibleText(
+      "⚠️ Este análisis no se basa en lecturas del disco: en este turno no se ejecutó ninguna herramienta de lectura con éxito. Tómalo como orientativo y pedime que lo repita leyendo el proyecto.\n\n" +
+      String(repairDanglingOutput(text, steps, userMessage, decision) || "")
+    );
+  }
   if (
     decision?.kind === "ANALYZE" ||
     decision?.kind === "ASK" ||
@@ -377,6 +393,13 @@ const APPROVAL_WORDS = new Set([
 
 function persistKernelRoadmap(projectRoot, { task, steps, kind, text, completed } = {}) {
   if (!projectRoot) return false;
+  const okSteps = (Array.isArray(steps) ? steps : []).filter((s) => s && s.ok !== false);
+  const upperKind = String(kind || "").toUpperCase();
+  // Saludos, chat y errores de proveedor sin trabajo real no son estado del proyecto.
+  if (upperKind === "CHAT" || upperKind === "STOP" || okSteps.length === 0) return false;
+  if (completed !== true) {
+    text = "";
+  }
   try {
     const {
       syncProjectRoadmap,
@@ -394,7 +417,7 @@ function persistKernelRoadmap(projectRoot, { task, steps, kind, text, completed 
         ? (analysisMode
             ? "Análisis completado. Fase lista para avanzar."
             : "Ciclo finalizado. Listo para la siguiente tarea.")
-        : `En proceso: ${String(text || "").slice(0, 140)}`,
+        : `Interrumpido tras ${okSteps.length} herramienta(s) exitosa(s); retomar desde el último paso.`,
       nextAction: completed
         ? "Proponer optimización, analítica o nueva funcionalidad complementaria."
         : "Continuar desde el estado actual.",
@@ -587,7 +610,7 @@ class ChatOrchestrator {
       };
     }
 
-    if (decision.kind === "CHAT" && /(?:^|[^\w])(?:analiz[aá]|analizar|diagnostica|revis[aá]|inspecciona|explora(?:r)?\s+el\s+proyecto)(?=\s|$|[.!,?¿¡:])/i.test(effectiveText)) {
+    if (decision.kind === "CHAT" && /(?:^|[^\w])(?:analiz[aá]|analizar|an[aá]lisis|auditor[ií]a|diagn[oó]stico|diagnostica|revis[aá]|inspecciona|explora(?:r)?\s+el\s+proyecto)(?=\s|$|[.!,?¿¡:])/i.test(effectiveText)) {
       decision = { kind: "ANALYZE", label: "Análisis", allowTools: true, allowWrite: false, background: false };
     }
 

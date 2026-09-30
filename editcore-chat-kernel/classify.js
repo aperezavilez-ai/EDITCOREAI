@@ -7,11 +7,16 @@ const APPROVAL_RE = /^\s*(?:procede|continua|continúa|hazlo|autorizado|adelante
 const CHAT_INFO_RE = /\b(?:para\s+qu[eé]\s+(?:sirve|funciona|es)|qu[eé]\s+(?:hace|es)|qui[eé]n\s+eres|c[oó]mo\s+te\s+llamas|ayuda|hola|buenos\s+d[ií]as|buenas\s+tardes|buenas\s+noches)\b/i;
 
 // Verbos de cambio/escritura. Ganan sobre TASK_VERIFY_RE si el mensaje pide modificar.
-const TASK_FIX_RE = /\b(?:corrige|corrije|arregla|arreglá|implementa(?:r)?|aplica|aplicá|repara|repará|soluciona|solucioná|crea(?:r|ción)?|creá|genera(?:r)?|generá|escribe|escrib[ií]|modifica(?:r)?|modificá|refactoriza(?:r)?|actualiza(?:r)?|actualizá|audita(?:r)?|añade|añadí|agrega(?:r)?|agregá|cambia(?:r)?|cambiá|muev\w*|mov[eé]|copiar?|copiá|haz|hacer|hacé|arma|armá|scaffold|nuevo\s+proyecto|ejecuta(?:r)?|ejecutá|reemplaza(?:r)?|reemplazá|pon[eé]?|setea(?:r)?|borra(?:r)?|elimina(?:r)?|renombra(?:r)?|run_command|run|build|tsc|npx|npm)\b/i;
+const TASK_FIX_RE = /\b(?:corrige|corrije|arregla|arreglá|implementa(?:r)?|aplica|aplicá|repara|repará|soluciona|solucioná|crea(?:r|ción)?|creá|genera(?:r)?|generá|escribe|escrib[ií]|modifica(?:r)?|modificá|refactoriza(?:r)?|actualiza(?:r)?|actualizá|audita(?:r)?|añade|añadí|agrega(?:r)?|agregá|cambia(?:r)?|cambiá|muev\w*|mov[eé]|copiar?|copiá|haz(?:me|lo|la|los|las)?|hacer|hac[eé](?:me|lo|la)?|cr[eé]a(?:me|lo|la)|gen[eé]ra(?:me|lo|la)|arr[eé]gla(?:me|lo|la)|corr[ií][gj]e(?:me|lo|la)|agr[eé]ga(?:me|lo|la)|arma|armá|scaffold|nuevo\s+proyecto|ejecuta(?:r)?|ejecutá|reemplaza(?:r)?|reemplazá|pon[eé]?|setea(?:r)?|borra(?:r)?|elimina(?:r)?|renombra(?:r)?|run_command|run|build|tsc|npx|npm)\b/i;
 
 const TASK_CLONE_RE = /\b(?:clona|clonar|copia\s+esta\s+p[aá]gina|replica(?:r)?\s+(?:esta\s+)?(?:web|p[aá]gina|sitio)|clone_web_page)\b/i;
 const HTTP_URL_RE = /https?:\/\/[^\s)>"']+/i;
 const TASK_ANALYZE_RE = /(?:^|[^\w])(?:analiz[aá]|analizar|audita(?:r)?|diagnostica(?:r)?|revisa(?:r)?\s+errores|hallazgos|reporte\s+completo|plan\s+de\s+acci[oó]n)(?=\s|$|[.!,?¿¡:])/i;
+// Pedidos de análisis formulados con sustantivo ("hazme un análisis", "dame un informe").
+const ANALYSIS_NOUN_RE = /\b(?:an[aá]lisis|auditor[ií]a|diagn[oó]stico|forense|informe|reporte|revisi[oó]n\s+(?:del?|de\s+la|completa|general)|evaluaci[oó]n\s+(?:del?|de\s+la))\b/i;
+// Verbos genéricos que acompañan al sustantivo sin pedir escritura.
+const GENERIC_REQUEST_VERB_RE = /\b(?:haz(?:me)?|hacer|hac[eé](?:me)?|dame|d[eé]me|quiero|necesito|prepara(?:me)?|genera(?:me)?|gen[eé]rame|audita(?:r)?)\b/gi;
+const DOCUMENT_OUTPUT_RE = /\b(?:pdf|word|docx|excel|xlsx|csv|archivo|documento)\b/i;
 const TASK_LIST_RE = /\b(?:lista|listar|qu[eé]\s+contiene|qu[eé]\s+hay\s+en|contenido\s+de|muestra\s+(?:la\s+)?carpeta|explora|explorar|explorer|directorio|arbol|árbol)\b/i;
 const TASK_READ_RE = /\b(?:explica|explicar|lee|leer|describe|describ[eé]|resume|resumir|revisa|revisar|qu[eé]\s+hace|c[oó]mo\s+funciona|para\s+qu[eé]\s+sirve)\b/i;
 const PATHISH_RE = /(?:[\\/]|\b[a-z0-9_.-]+\.(?:js|ts|tsx|jsx|mjs|cjs|json|md|css|html|py|rs|go)\b)/i;
@@ -47,6 +52,14 @@ function classify(message, opts = {}) {
   }
   if (TASK_CLONE_RE.test(text) && HTTP_URL_RE.test(text)) {
     return { kind: "EXECUTE", label: "Clonar web", allowTools: true, allowWrite: true, background };
+  }
+
+  if (
+    ANALYSIS_NOUN_RE.test(text)
+    && !DOCUMENT_OUTPUT_RE.test(text)
+    && !TASK_FIX_RE.test(text.replace(GENERIC_REQUEST_VERB_RE, " "))
+  ) {
+    return { kind: "ANALYZE", label: "Análisis", allowTools: true, allowWrite: false, background };
   }
 
   // ORDEN CORREGIDO: verbos de cambio primero (si el usuario dice "cambia X y verifica", gana el cambio).

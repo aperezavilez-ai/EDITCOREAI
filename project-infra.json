@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "projectName": "EDITCOREAI",
+  "projectSlug": "editcoreai",
+  "isolationMode": "dedicated_supabase",
+  "supabase": {
+    "url": "https://supabase.gafcore.com",
+    "schema": "editcoreai"
+  }
+}

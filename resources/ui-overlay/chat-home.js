@@ -1955,7 +1955,13 @@
     { key: "@Archivos", icon: "folder", title: "@Archivos", desc: "Explorar y adjuntar archivos del proyecto", token: "[Contexto: Archivos del proyecto]" },
   ];
 
+  let _cachedFileList = null;
+  let _cachedFileListTime = 0;
   function getProjectFileList() {
+    const now = Date.now();
+    if (_cachedFileList && (now - _cachedFileListTime < 4000)) {
+      return _cachedFileList;
+    }
     const list = [];
     const projects = window.state?.projects || [];
     for (const p of projects) {
@@ -1979,11 +1985,13 @@
       list.unshift({ name: "README.md", path: "README.md" });
     }
     const seen = new Set();
-    return list.filter((item) => {
+    _cachedFileList = list.filter((item) => {
       if (seen.has(item.path)) return false;
       seen.add(item.path);
       return true;
     });
+    _cachedFileListTime = now;
+    return _cachedFileList;
   }
 
   function setupAutocomplete(inputEl, parentEl) {
@@ -2099,46 +2107,54 @@
       inputEl.setSelectionRange(nextPos, nextPos);
     }
 
+    let inputDebounceTimer = null;
     inputEl.addEventListener("input", () => {
       const val = inputEl.value;
-      const cursor = inputEl.selectionStart || val.length;
-      const before = val.slice(0, cursor);
-
-      // Check slash commands (at start or preceded by newline)
-      const slashMatch = before.match(/(?:^|\n)\/([a-zA-Z0-9_-]*)$/);
-      if (slashMatch) {
-        currentTrigger = "/";
-        const q = slashMatch[1].toLowerCase();
-        currentItems = SLASH_COMMANDS.filter((c) => c.key.toLowerCase().includes(q) || c.title.toLowerCase().includes(q) || c.desc.toLowerCase().includes(q));
-        activeIndex = 0;
-        renderItems();
+      if (!val.includes("/") && !val.includes("@")) {
+        if (!popup.hidden) hide();
         return;
       }
+      if (inputDebounceTimer) clearTimeout(inputDebounceTimer);
+      inputDebounceTimer = setTimeout(() => {
+        const cursor = inputEl.selectionStart || val.length;
+        const before = val.slice(0, cursor);
 
-      // Check @ mentions (including files from project)
-      const atMatch = before.match(/@([a-zA-Z0-9_\-\./]*)$/);
-      if (atMatch) {
-        currentTrigger = "@";
-        const q = atMatch[1].toLowerCase();
-        const baseItems = MENTION_TYPES.filter((m) => m.key.toLowerCase().includes(q) || m.title.toLowerCase().includes(q) || m.desc.toLowerCase().includes(q));
-        const fileList = getProjectFileList();
-        const fileMatches = fileList
-          .filter((f) => f.name.toLowerCase().includes(q) || f.path.toLowerCase().includes(q))
-          .slice(0, 15)
-          .map((f) => ({
-            key: `@${f.name}`,
-            icon: "file",
-            title: `@${f.name}`,
-            desc: f.path || f.name,
-            token: `[Archivo: ${f.path || f.name}]`,
-          }));
-        currentItems = [...baseItems, ...fileMatches];
-        activeIndex = 0;
-        renderItems();
-        return;
-      }
+        // Check slash commands (at start or preceded by newline)
+        const slashMatch = before.match(/(?:^|\n)\/([a-zA-Z0-9_-]*)$/);
+        if (slashMatch) {
+          currentTrigger = "/";
+          const q = slashMatch[1].toLowerCase();
+          currentItems = SLASH_COMMANDS.filter((c) => c.key.toLowerCase().includes(q) || c.title.toLowerCase().includes(q) || c.desc.toLowerCase().includes(q));
+          activeIndex = 0;
+          renderItems();
+          return;
+        }
 
-      hide();
+        // Check @ mentions (including files from project)
+        const atMatch = before.match(/@([a-zA-Z0-9_\-\./]*)$/);
+        if (atMatch) {
+          currentTrigger = "@";
+          const q = atMatch[1].toLowerCase();
+          const baseItems = MENTION_TYPES.filter((m) => m.key.toLowerCase().includes(q) || m.title.toLowerCase().includes(q) || m.desc.toLowerCase().includes(q));
+          const fileList = getProjectFileList();
+          const fileMatches = fileList
+            .filter((f) => f.name.toLowerCase().includes(q) || f.path.toLowerCase().includes(q))
+            .slice(0, 15)
+            .map((f) => ({
+              key: `@${f.name}`,
+              icon: "file",
+              title: `@${f.name}`,
+              desc: f.path || f.name,
+              token: `[Archivo: ${f.path || f.name}]`,
+            }));
+          currentItems = [...baseItems, ...fileMatches];
+          activeIndex = 0;
+          renderItems();
+          return;
+        }
+
+        hide();
+      }, 40);
     });
 
     inputEl.addEventListener("keydown", (ev) => {

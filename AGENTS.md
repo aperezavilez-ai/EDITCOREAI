@@ -76,6 +76,16 @@ If you break something:
 - NEVER hardcode credentials
 - NEVER commit .env files
 
+### 6b. BACKEND GAFCORE (SELF-HOSTED, $0/mes)
+**PROHIBIDO usar Supabase Cloud (`https://*.supabase.co`) o crear infraestructura cloud de pago.**
+- Public Supabase URL: `https://supabase.gafcore.com`
+- Local Kong API: `http://127.0.0.1:54321`
+- Direct PostgreSQL: `127.0.0.1:54322` (credenciales en `.env.local`)
+- Supabase Studio: `http://localhost:54323`
+- Anon key: `NEXT_PUBLIC_SUPABASE_ANON_KEY` en `.env.local`. Service role: `SUPABASE_SERVICE_ROLE_KEY` en `.env.local` (solo servidor, nunca en el cliente ni en archivos versionados).
+- Cada proyecto de `D:\PROGRAMAS IA\` necesita `project-infra.json` (`isolationMode: "dedicated_supabase"`, `supabase.schema: <project_slug>`), migraciones en `supabase/migrations/` aplicadas en su schema dedicado.
+- Backups y dumps: `D:\PROGRAMAS IA\Z RESPALDOS\`.
+
 ### 7. PROHIBITED ACTIONS
 - ❌ Mentioning "GafCore Gateway" or project keys in chat
 - ❌ Massive refactors without user confirmation

@@ -381,7 +381,9 @@ function buildRoadmapSyncFromRun({
   const inferredBlockers = [...(blockers || [])];
   for (const match of report.matchAll(/(?:ERROR|Error|Multiple exports|failed|fall[oó])[^\n]{0,120}/gi)) {
     const line = String(match[0] || "").replace(/\s+/g, " ").trim();
-    if (line.length > 12) inferredBlockers.push(line.slice(0, 160));
+    const looksLikeCode = /Error\s*\(|`|\$\{|=>|\bthrow\b|;\s*$/.test(line);
+    const providerNoise = /autenticar|api\s*key|not\s+supported|configured\s+account|timeout|\b(?:401|403|429|502|503)\b/i.test(line);
+    if (line.length > 24 && !looksLikeCode && !providerNoise) inferredBlockers.push(line.slice(0, 160));
     if (inferredBlockers.length >= 6) break;
   }
   const mapLines = uniqueLines([
