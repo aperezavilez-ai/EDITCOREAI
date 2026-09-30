@@ -70,8 +70,10 @@ EditCore actualiza este archivo tras cambios. No pedirlo al usuario. No pegar co
 
 - Rotación Supabase OK: clave nueva aceptada y vieja rechazada (directo, proxy 54321, supabase.gafcore.com); GoTrue firma con ES256 propia; 95 archivos actualizados.
 
+- Release 4.1.0: `EDITCOREAI.exe` 4.1.0.0 y `release/EDITCOREAI-Setup.exe` generados con `npm run dist:win` (npmRebuild desactivado: node-pty usa prebuilds N-API).
+
 ## Siguiente
-- Generar instalador 4.1.0.
+- Cerrar Postgres expuesto (0.0.0.0:54322, contraseña por defecto) y eliminar el túnel rápido sobrante `vibrant_lamarr`.
 
 ## Regla anti-reexploracion
 - Si el pedido del usuario apunta a un archivo ya listado arriba: ve DIRECTO a read_file/replace_in_file de ese path.

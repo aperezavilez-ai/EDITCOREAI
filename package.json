@@ -59,6 +59,7 @@
     "appId": "com.editcoreai.app",
     "productName": "EditCoreAI",
     "executableName": "EDITCOREAI",
+    "npmRebuild": false,
     "buildVersion": "4.1.0.0",
     "artifactName": "EDITCOREAI-Setup.${ext}",
     "win": {

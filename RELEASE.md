@@ -1,3 +1,39 @@
+# RELEASE v4.1.0
+
+## Auditoría forense: agentes que analizan de verdad, seguridad y automatización
+
+### Chat y agentes
+- Los pedidos de análisis/auditoría/informe se clasifican como ANALYZE y usan herramientas de lectura; un análisis sin lecturas de disco se marca como no verificado (`editcore-chat-kernel/classify.js`, `orchestrator.js`).
+- `replace_in_file` ya no corrompe archivos: si el parche rompe la sintaxis de un archivo válido, no se escribe (`editcore-chat-kernel/tools.js`).
+- Reglas anti-alucinación restauradas e identidad "Soy EditCoreAI" (`runtime/editcore-claude-adapter.js`).
+- `preload.js`: namespaces duplicados fusionados; antes `contextBridge` abortaba y el renderer perdía la mayoría de APIs.
+- ROADMAP del proyecto sin texto de chat, errores de proveedor ni código en bloqueos.
+
+### Seguridad
+- Claves del Supabase self-hosted rotadas (eran las demo públicas), incluida la clave ES256 de sesiones.
+- Reglas (`.cursorrules`, `AGENTS.md`, `CLAUDE.md`) sin claves: todo referencia `.env.local`.
+- Dependencias de producción: `npm audit --omit=dev` = 0 vulnerabilidades (vercel a devDependencies, puppeteer 25, node-pty 1.1, overrides protobufjs/sharp/uuid).
+- Eliminadas copias muertas del adapter/renderer y el motor ajeno `gafcore-chat-engine` del paquete.
+
+### Automatización
+- `scripts/postinstall.js` (`postinstall` y `npm run setup`): repone Electron, node-pty, Chrome de puppeteer y branding; log en `.editcore/logs/setup.jsonl`.
+- `npm run supabase:check | supabase:plan | supabase:rotate`: rotación con respaldo, dump, verificación, rollback automático y registro en `Z RESPALDOS\supabase-key-rotation\`.
+
+### Build
+- `npmRebuild: false`: node-pty 1.1 usa prebuilds N-API y no requiere node-gyp/Python.
+- Reconstruidos `EDITCOREAI.exe` (4.1.0.0) y `release/EDITCOREAI-Setup.exe` (4.1.0).
+- electron-builder 26.15.3 · electron 43.7.0 · node 24.18.0
+
+### Verificación
+- `npm test`: 914 tests, 913 ok, 1 omitido, 0 fallos. Gate de pre-empaquetado 9/9. `npm run check` OK.
+
+### Commits
+- `1369456` feat: setup post-install automático y rotación de claves Supabase
+- `b65f308` chore: dependencias sin vulnerabilidades en prod, copias muertas eliminadas, puppeteer headless
+- `865b8ad` fix: análisis reales con tools, replace_in_file seguro, preload sin namespaces duplicados
+
+---
+
 # RELEASE v4.0.2
 
 ## Fix: Limpieza de tooling duplicado y actualización de artefactos
