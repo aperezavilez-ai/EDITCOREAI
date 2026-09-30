@@ -37,7 +37,6 @@ EditCore actualiza este archivo tras cambios. No pedirlo al usuario. No pegar co
 
 ## Bloqueos / bugs conocidos
 - Electron arranca lento (30-90 s) desde D: (HDD 5400 rpm + Defender en tiempo real). No es un binario roto.
-- Postgres del stack TAXIDRIV publicado en 0.0.0.0:54322 con contraseña `postgres`.
 - `.vercel/project.json` de EDITCOREAI WEB apunta a un proyecto que ya no existe en Vercel (404).
 
 ## Decisiones
@@ -72,8 +71,11 @@ EditCore actualiza este archivo tras cambios. No pedirlo al usuario. No pegar co
 
 - Release 4.1.0: `EDITCOREAI.exe` 4.1.0.0 y `release/EDITCOREAI-Setup.exe` generados con `npm run dist:win` (npmRebuild desactivado: node-pty usa prebuilds N-API).
 
+- Red: regla de firewall `GAFCORE` (`scripts/gafcore-firewall.ps1`, admin) bloquea desde Wi-Fi/Ethernet 3000, 5432, 9000-9001 y 54322-54329; localhost, 54321 y supabase.gafcore.com siguen OK. Túnel rápido `vibrant_lamarr` eliminado. Scripts de prueba leen la anon key del entorno.
+
 ## Siguiente
-- Cerrar Postgres expuesto (0.0.0.0:54322, contraseña por defecto) y eliminar el túnel rápido sobrante `vibrant_lamarr`.
+- Validación real: instalar 4.1.0, `npm run test:e2e`, prueba del chat con modelo real.
+- Mantenimiento: CLI Supabase 2.118, enlace Vercel de EDITCOREAI WEB, borrar rama feature ya integrada.
 
 ## Regla anti-reexploracion
 - Si el pedido del usuario apunta a un archivo ya listado arriba: ve DIRECTO a read_file/replace_in_file de ese path.

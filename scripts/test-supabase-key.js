@@ -1,4 +1,8 @@
-﻿const key = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNzg5ODQ5MzMyLCJleHAiOjIxMDUyMDkzMzJ9.3LsN9Eis_cCkPT9sWJQwM9RmreAqM8-7Io0Uv2RqkdQ";
+﻿const key = process.env.SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+if (!key) {
+  console.error("Falta SUPABASE_ANON_KEY: node --env-file=.env.local scripts/test-supabase-key.js");
+  process.exit(1);
+}
 
 async function testSupabase() {
   const urls = [
