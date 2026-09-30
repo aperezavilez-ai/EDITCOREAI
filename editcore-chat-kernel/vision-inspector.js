@@ -96,7 +96,7 @@ async function withPuppeteer(url, size, outPath) {
   let browser = null;
   try {
     browser = await puppeteer.launch({
-      headless: "new",
+      headless: true,
       args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"],
     });
     const page = await browser.newPage();

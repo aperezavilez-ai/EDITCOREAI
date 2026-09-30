@@ -31,7 +31,6 @@ const MIRROR_FILES = [
   "editor-inline-edit.js",
   "logs-panel.js",
   "visual-preview-inspector.js",
-  "editcore-claude-adapter.js",
   "package.json",
 ];
 

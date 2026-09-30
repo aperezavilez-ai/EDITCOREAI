@@ -33,6 +33,10 @@ if (!csc) {
 }
 
 const outExe = path.join(appRoot, "EDITCOREAI.exe");
+if (fs.existsSync(outExe)) {
+  try { fs.unlinkSync(outExe); } catch {}
+}
+
 const iconPath = path.join(appRoot, "assets", "logo.ico");
 const iconFallback = path.join(appRoot, "resources", "ui-overlay", "assets", "logo.ico");
 if (!fs.existsSync(iconPath) || fs.statSync(iconPath).size < 1000) {
@@ -47,6 +51,11 @@ const args = ["/nologo", "/target:winexe", "/r:System.Windows.Forms.dll", `/out:
 
 const result = spawnSync(csc, args, { cwd: appRoot, stdio: "inherit", shell: false });
 if (result.status !== 0) process.exit(result.status || 1);
+
+try {
+  const now = new Date();
+  fs.utimesSync(outExe, now, now);
+} catch {}
 
 console.log("EDITCOREAI.exe", outExe);
 console.log("icon", iconPath);

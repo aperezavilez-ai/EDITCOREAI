@@ -41,6 +41,13 @@ const HOTFIX_FILES = [
   "preload.js",
   "project-analysis.js",
   "styles.css",
+  "chat-home.js",
+  "chat-home.css",
+  "logs-panel.js",
+  "logs-panel.css",
+  "editor-inline-edit.js",
+  "editor-inline-edit.css",
+  "renderer-markdown.js",
   "auto-model-selection.js",
   "main.js",
   "project-path-policy.js",
@@ -49,6 +56,7 @@ const HOTFIX_FILES = [
   "command-policy.js",
   "package.json",
   "visual-preview-inspector.js",
+  "evidence-grounding.js",
 ];
 
 function log(message) {
@@ -75,6 +83,10 @@ function collectHotfixFiles() {
   }
   // Motor multiagente nuevo (feature flag).
   for (const rel of listFilesRecursive(path.join(appRoot, "agent-core"), "agent-core")) {
+    files.add(rel);
+  }
+  // IDE panes
+  for (const rel of listFilesRecursive(path.join(appRoot, "ide"), "ide")) {
     files.add(rel);
   }
   // Skills del Cerebro (seed) para que brain_skill encuentre metodologias nuevas.
