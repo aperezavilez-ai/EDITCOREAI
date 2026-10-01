@@ -1,6 +1,7 @@
 "use strict";
 
 const threadMemory = require("./thread-memory");
+const { buildOpenAiImageContent } = require("../runtime/vision-intake");
 
 function resolveThreadId(input = {}) {
   return threadMemory.safeId(
@@ -35,14 +36,15 @@ function runtimeContextLine(now = new Date()) {
 
 const FAILED_TURN_RE = /^Algo fall[oó] durante la ejecuci[oó]n:/;
 
-function buildMessageList({ system, userText, projectRoot, threadId, historyInput, query, now }) {
+function buildMessageList({ system, userText, projectRoot, threadId, historyInput, query, now, images }) {
   const messages = [{ role: "system", content: `${system}\n\n${runtimeContextLine(now)}` }];
   const short = threadMemory.shortHistoryMessages(historyInput, projectRoot, threadId, query);
   for (const m of short) {
     if (m.role === "assistant" && FAILED_TURN_RE.test(String(m.content || ""))) continue;
     messages.push({ role: m.role, content: m.content });
   }
-  messages.push({ role: "user", content: userText });
+  const hasImages = Array.isArray(images) && images.length > 0;
+  messages.push({ role: "user", content: hasImages ? buildOpenAiImageContent(userText, images) : userText });
   return messages;
 }
 

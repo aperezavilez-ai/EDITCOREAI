@@ -5397,7 +5397,7 @@ async function renderedPreviewIsDocument(webview) {
         || document.getElementById("app")
         || document.getElementById("__nuxt")
         || document.querySelector('script[type="module"][src*="/src/"], script[src*="/@vite/client"], script[src*="vite"]')
-        || /@vite\/client|<div id="root"|<div id="app"/i.test(html)
+        || /@vite\\/client|<div id="root"|<div id="app"/i.test(html)
       );
       const renderedElements = body ? body.querySelectorAll("body *").length : 0;
       const visibleText = text.length > 0;

@@ -10,6 +10,12 @@ const {
   withCacheControl,
 } = require("../runtime/ai-core");
 const { logProviderError } = require("../runtime/provider-error-log");
+const { modelSupportsVision } = require("../runtime/vision-intake");
+
+function messagesHaveImages(messages) {
+  return (Array.isArray(messages) ? messages : []).some((m) =>
+    Array.isArray(m?.content) && m.content.some((part) => part?.type === "image_url" || part?.type === "image"));
+}
 
 function normalizeUsage(raw = {}) {
   if (!raw || typeof raw !== "object") return null;
@@ -54,7 +60,7 @@ function keyRejected(apiKey, now = Date.now()) {
   return false;
 }
 
-function orderProfiles(list, now = Date.now()) {
+function orderProfiles(list, now = Date.now(), { vision = false } = {}) {
   const seen = new Set();
   const unique = list.filter((p) => {
     const id = `${p.apiBaseUrl}|${p.model}|${p.apiKey}`;
@@ -62,10 +68,11 @@ function orderProfiles(list, now = Date.now()) {
     seen.add(id);
     return true;
   });
-  return [
-    ...unique.filter((p) => !keyRejected(p.apiKey, now)),
-    ...unique.filter((p) => keyRejected(p.apiKey, now)),
-  ];
+  const rank = (p) => (keyRejected(p.apiKey, now) ? 2 : 0) + (vision && !modelSupportsVision(p.model) ? 1 : 0);
+  return unique
+    .map((p, index) => ({ p, index, r: rank(p) }))
+    .sort((a, b) => a.r - b.r || a.index - b.index)
+    .map((row) => row.p);
 }
 
 function providerLabel(host) {
@@ -242,7 +249,7 @@ async function callChat({
       apiKey: p.apiKey,
       model: p.model || model,
     })) : []),
-  ].filter((p) => p.apiBaseUrl && p.apiKey && p.model));
+  ].filter((p) => p.apiBaseUrl && p.apiKey && p.model), Date.now(), { vision: messagesHaveImages(messages) });
 
   let lastError = null;
   const failures = [];

@@ -122,6 +122,32 @@ test("orderProfiles manda al final las claves rechazadas y quita duplicados", ()
   rejectedKeys.clear();
 });
 
+test("buildMessageList envía la imagen adjunta al modelo", () => {
+  const dataUrl = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUg==";
+  const messages = buildMessageList({
+    system: "SYS",
+    userText: "analiza la captura",
+    projectRoot: "",
+    threadId: "t-img",
+    historyInput: [],
+    images: [{ dataUrl, name: "captura.png" }],
+  });
+  const content = messages[messages.length - 1].content;
+  assert.ok(Array.isArray(content));
+  assert.deepEqual(content.map((p) => p.type), ["text", "image_url"]);
+  assert.equal(content[1].image_url.url, dataUrl);
+});
+
+test("con imágenes, los modelos con visión van primero en la cola", () => {
+  rejectedKeys.clear();
+  const ordered = orderProfiles([
+    { apiBaseUrl: "u", model: "deepseek-v4-pro", apiKey: "a" },
+    { apiBaseUrl: "u", model: "glm-5", apiKey: "b" },
+    { apiBaseUrl: "u", model: "claude-fable-5", apiKey: "c" },
+  ], Date.now(), { vision: true });
+  assert.equal(ordered[0].model, "claude-fable-5");
+});
+
 test("redactSecrets oculta claves y tokens", () => {
   const out = redactSecrets("Bearer abcdefghijkl sk-1234567890abcdef eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.x");
   assert.ok(!/sk-1234|abcdefghijkl|eyJhbGci/.test(out));

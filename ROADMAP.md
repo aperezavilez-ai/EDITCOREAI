@@ -53,6 +53,8 @@ EditCore actualiza este archivo tras cambios. No pedirlo al usuario. No pegar co
 - **Rotación de claves Supabase**: `npm run supabase:check` / `supabase:plan` / `supabase:rotate` (`scripts/supabase-rotate-keys.js`). Respaldo + dump en `Z RESPALDOS\supabase-key-rotation\`, verificación y rollback automáticos, historial en `historial.jsonl`. Las claves viven en `TAXIDRIV\supabase\.env` y `signing_keys.json` (gitignored); Kong fijado en 54325 detrás del proxy del watchdog; el PostgREST manual se recrea con el secreto nuevo.
 
 ## Cambios recientes
+- editcore-chat-kernel/thread-core.js + orchestrator.js + provider.js — las imágenes adjuntas llegan al modelo (antes solo se avisaba "hay imágenes" y el modelo respondía que no veía nada); con imágenes, la cola de respaldo prioriza modelos con visión (2026-09-30)
+- renderer.js (+overlay) — chequeo de salud del preview: regex `/@vite\/client/` dentro de template literal perdía la barra y lanzaba "Invalid regular expression flags" en cada preview (2026-09-30)
 - editcore-chat-kernel/orchestrator.js + provider.js — el kernel usa los perfiles de respaldo (antes se descartaban: un 401 del modelo elegido cortaba el turno); claves con 401 al final de la cola 10 min; si todos fallan, mensaje por proveedor (2026-09-30)
 - editcore-chat-kernel/thread-core.js — fecha, hora, zona y SO en el prompt de sistema; turnos "Algo falló…" fuera del historial (2026-09-30)
 - runtime/provider-error-log.js — error real del proveedor en `%APPDATA%\EDITCOREAI\logs\provider-errors.jsonl` (sin claves) (2026-09-30)
@@ -68,7 +70,7 @@ EditCore actualiza este archivo tras cambios. No pedirlo al usuario. No pegar co
 - scripts/postinstall.js, scripts/supabase-rotate-keys.js, scripts/lib/supabase-keys.js — setup y rotación automáticos (2026-09-30)
 
 ## Verificado
-- npm run check; npm test 920 tests (919 ok, 1 omitido, 0 fallos).
+- npm run check; npm test 922 tests (921 ok, 1 omitido, 0 fallos).
 - Kernel real con perfil principal ME AI (401): pasa a respaldo y responde "Son las 14:38 … miércoles 30 de septiembre de 2026".
 - Probe Electron: preload.js expone 75 namespaces sin errores (HEAD exponía 17 y fallaba).
 - Embeddings (@xenova/transformers) 384 dims; puppeteer 25 lanza Chrome; node-pty spawn ok.

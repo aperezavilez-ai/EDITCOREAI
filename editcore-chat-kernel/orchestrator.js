@@ -890,6 +890,7 @@ class ChatOrchestrator {
       threadId,
       historyInput,
       query: String(this._currentUserText || message || ""),
+      images: taskImages,
     });
 
     const steps = [];
