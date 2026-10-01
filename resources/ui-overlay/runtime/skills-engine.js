@@ -76,6 +76,54 @@ function saveSkillsConfig(userDataPath, config = {}) {
   } catch { /* ignore */ }
 }
 
+const NESTED_SKILL_MAX_DEPTH = 4;
+const NESTED_SKILL_MAX_FILES = 200;
+const NESTED_SKIP_DIRS = new Set([".git", "node_modules", "dist", "build", ".next", "vendor"]);
+const SKILL_BODY_MAX_CHARS = 8_000;
+
+function skillFileIn(dir) {
+  for (const name of ["SKILL.md", "skill.md"]) {
+    const candidate = path.join(dir, name);
+    if (fs.existsSync(candidate)) return candidate;
+  }
+  return "";
+}
+
+// Repos clonados (p. ej. anthropics/skills) guardan las skills en subcarpetas: <repo>/skills/<nombre>/SKILL.md.
+function findNestedSkillFiles(dir, depth = 1, out = []) {
+  if (depth > NESTED_SKILL_MAX_DEPTH || out.length >= NESTED_SKILL_MAX_FILES) return out;
+  let entries = [];
+  try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return out; }
+  for (const entry of entries) {
+    if (!entry.isDirectory() || NESTED_SKIP_DIRS.has(entry.name)) continue;
+    const child = path.join(dir, entry.name);
+    const file = skillFileIn(child);
+    if (file) out.push(file);
+    else findNestedSkillFiles(child, depth + 1, out);
+    if (out.length >= NESTED_SKILL_MAX_FILES) break;
+  }
+  return out;
+}
+
+function readSkillFile(skillFile, slug, scope) {
+  const raw = fs.readFileSync(skillFile, "utf8");
+  const { metadata, body } = parseFrontmatter(raw);
+  const name = metadata.name || slug;
+  const description = metadata.description || body.slice(0, 160).replace(/\r?\n/g, " ");
+  return {
+    id: `${scope}:${name}`,
+    name,
+    slug: normalizeSkillSlug(name),
+    description,
+    scope,
+    filePath: skillFile,
+    category: metadata.category || "general",
+    homepage: metadata.homepage || "",
+    body,
+    raw,
+  };
+}
+
 function scanSkillDir(baseDir, scope = "builtin") {
   const skills = [];
   if (!baseDir || !fs.existsSync(baseDir)) return skills;
@@ -83,42 +131,81 @@ function scanSkillDir(baseDir, scope = "builtin") {
   try {
     const entries = fs.readdirSync(baseDir, { withFileTypes: true });
     for (const entry of entries) {
-      let skillFile = "";
-      let slug = entry.name;
+      const files = [];
       if (entry.isDirectory()) {
-        const candidate = path.join(baseDir, entry.name, "SKILL.md");
-        const candidateLower = path.join(baseDir, entry.name, "skill.md");
-        if (fs.existsSync(candidate)) skillFile = candidate;
-        else if (fs.existsSync(candidateLower)) skillFile = candidateLower;
+        const direct = skillFileIn(path.join(baseDir, entry.name));
+        if (direct) files.push([direct, entry.name]);
+        else if (scope !== "builtin") {
+          for (const nested of findNestedSkillFiles(path.join(baseDir, entry.name))) {
+            files.push([nested, path.basename(path.dirname(nested))]);
+          }
+        }
       } else if (entry.isFile() && /\.(md|markdown)$/i.test(entry.name) && entry.name.toLowerCase() !== "readme.md") {
-        skillFile = path.join(baseDir, entry.name);
-        slug = entry.name.replace(/\.(md|markdown)$/i, "");
+        files.push([path.join(baseDir, entry.name), entry.name.replace(/\.(md|markdown)$/i, "")]);
       }
 
-      if (skillFile) {
-        try {
-          const raw = fs.readFileSync(skillFile, "utf8");
-          const { metadata, body } = parseFrontmatter(raw);
-          const name = metadata.name || slug;
-          const description = metadata.description || body.slice(0, 160).replace(/\r?\n/g, " ");
-          skills.push({
-            id: `${scope}:${name}`,
-            name,
-            slug: normalizeSkillSlug(name),
-            description,
-            scope,
-            filePath: skillFile,
-            category: metadata.category || "general",
-            homepage: metadata.homepage || "",
-            body,
-            raw,
-          });
-        } catch { /* ignore bad skill file */ }
+      for (const [skillFile, slug] of files) {
+        try { skills.push(readSkillFile(skillFile, slug, scope)); } catch { /* ignore bad skill file */ }
       }
     }
   } catch { /* ignore read errors */ }
 
   return skills;
+}
+
+function brainManifestPath(userDataPath = "") {
+  return userDataPath ? path.join(userDataPath, "editcore-brain", "brain-store", "installed.json") : "";
+}
+
+let brainCache = { file: "", mtimeMs: 0, skills: [] };
+
+// Skills de los repos instalados desde el panel Cerebro. El cuerpo se lee al activarlas (loadSkillBody).
+function scanBrainStoreSkills(userDataPath = "") {
+  const file = brainManifestPath(userDataPath);
+  if (!file || !fs.existsSync(file)) return [];
+  let mtimeMs = 0;
+  try { mtimeMs = fs.statSync(file).mtimeMs; } catch { return []; }
+  if (brainCache.file === file && brainCache.mtimeMs === mtimeMs) return brainCache.skills.map((s) => ({ ...s }));
+
+  let items = [];
+  try {
+    const manifest = JSON.parse(fs.readFileSync(file, "utf8"));
+    items = Array.isArray(manifest?.items) ? manifest.items : [];
+  } catch { return []; }
+
+  const skills = [];
+  for (const item of items) {
+    const repo = String(item?.name || item?.id || "").trim();
+    const installedPath = String(item?.installedPath || "").trim();
+    if (!repo || !installedPath) continue;
+    for (const s of Array.isArray(item.skills) ? item.skills : []) {
+      const name = String(s?.name || "").trim();
+      const rel = String(s?.relativePath || "").trim();
+      if (!name || !rel) continue;
+      skills.push({
+        id: `brain:${repo}/${name}`,
+        name,
+        slug: normalizeSkillSlug(name),
+        description: String(s.description || "").slice(0, 400),
+        scope: "brain",
+        filePath: path.join(installedPath, rel),
+        category: repo,
+        repo,
+        homepage: String(item.url || ""),
+      });
+    }
+  }
+  brainCache = { file, mtimeMs, skills };
+  return skills.map((s) => ({ ...s }));
+}
+
+function loadSkillBody(skill = {}) {
+  let body = String(skill.body || skill.raw || "");
+  if (!body && skill.filePath) {
+    try { body = parseFrontmatter(fs.readFileSync(skill.filePath, "utf8")).body; } catch { body = ""; }
+  }
+  if (body.length > SKILL_BODY_MAX_CHARS) body = `${body.slice(0, SKILL_BODY_MAX_CHARS)}\n…[skill recortada; archivo completo: ${skill.filePath || skill.name}]`;
+  return body;
 }
 
 function listAllSkills({ projectRoot = "", userDataPath = "" } = {}) {
@@ -130,14 +217,16 @@ function listAllSkills({ projectRoot = "", userDataPath = "" } = {}) {
   const userGlobal = scanSkillDir(globalDir, "global");
   const projectDir = projectRoot ? path.join(projectRoot, ".editcore", "skills") : "";
   const projectSkills = scanSkillDir(projectDir, "project");
+  const brainSkills = scanBrainStoreSkills(userDataPath);
 
   const skillMap = new Map();
-  for (const s of [...builtin, ...userGlobal, ...projectSkills]) {
+  for (const s of [...brainSkills, ...builtin, ...userGlobal, ...projectSkills]) {
     s.enabled = !disabledSet.has(s.id) && !disabledSet.has(s.name);
     skillMap.set(s.name, s);
   }
 
-  return Array.from(skillMap.values());
+  const values = Array.from(skillMap.values());
+  return [...values.filter((s) => s.scope !== "brain"), ...values.filter((s) => s.scope === "brain")];
 }
 
 function saveSkill({
@@ -186,6 +275,7 @@ function saveSkill({
 }
 
 function deleteSkill({ name = "", scope = "global", projectRoot = "", userDataPath = "" } = {}) {
+  if (scope === "brain") return { ok: false, error: "Las skills del Cerebro se quitan desinstalando su repositorio en el panel Cerebro. Puedes desactivarla aquí." };
   const cleanName = normalizeSkillSlug(name);
   let targetDir = "";
   if (scope === "project" && projectRoot) {
@@ -256,31 +346,53 @@ function parseLearnPrompt(promptText = "") {
   };
 }
 
+const MATCH_STOPWORDS = new Set([
+  "que", "con", "los", "las", "una", "uno", "unos", "unas", "por", "para", "del", "como", "este", "esta",
+  "estos", "esto", "eso", "esa", "ese", "mas", "sin", "sus", "hay", "muy", "todo", "toda", "todos", "pero",
+  "cual", "donde", "cuando", "porque", "quiero", "necesito", "puedes", "puede", "hacer", "haz", "dame",
+  "tengo", "tiene", "tienes", "mis", "algo", "bien", "genera", "generar", "crea", "crear", "hazme", "manda",
+  "mande", "revisa", "revisar", "ayuda", "ayudame", "the", "and", "for", "with", "you", "your", "that",
+  "this", "from", "are", "use", "using", "when",
+]);
+const BRAIN_MIN_SCORE = 7;
+
+function spacedWords(text = "") {
+  const words = String(text || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .split(/[^a-z0-9]+/).filter(Boolean);
+  return ` ${words.join(" ")} `;
+}
+
+// Palabras de 3 letras (api, seo, pdf) deben coincidir enteras; las más largas valen como prefijo de palabra.
+function hasWord(spaced, token) {
+  return token.length >= 4 ? spaced.includes(` ${token}`) : spaced.includes(` ${token} `);
+}
+
 function matchSkillsForPrompt(userPrompt = "", allSkills = [], maxSkills = 3) {
-  const query = String(userPrompt || "").toLowerCase();
-  const queryTokens = query.split(/[^a-z0-9áéíóúñ_-]+/).filter((t) => t.length > 2);
+  const queryTokens = [...new Set(spacedWords(userPrompt).trim().split(" "))]
+    .filter((t) => t.length > 2 && !MATCH_STOPWORDS.has(t));
   if (!queryTokens.length) return [];
 
   const scored = [];
   for (const skill of allSkills) {
     if (skill.enabled === false) continue;
     let score = 0;
-    const nameLower = skill.name.toLowerCase();
-    const descLower = (skill.description || "").toLowerCase();
-    const catLower = (skill.category || "").toLowerCase();
+    const name = spacedWords(skill.name);
+    const desc = spacedWords(skill.description);
+    const cat = spacedWords(skill.category);
 
     for (const token of queryTokens) {
-      if (nameLower.includes(token)) score += 5;
-      if (descLower.includes(token)) score += 2;
-      if (catLower.includes(token)) score += 3;
+      if (hasWord(name, token)) score += 5;
+      if (hasWord(desc, token)) score += 2;
+      if (hasWord(cat, token)) score += 3;
     }
 
-    if (score > 0) {
+    const minScore = skill.scope === "brain" ? BRAIN_MIN_SCORE : 1;
+    if (score >= minScore) {
       scored.push({ skill, score });
     }
   }
 
-  scored.sort((a, b) => b.score - a.score);
+  scored.sort((a, b) => b.score - a.score || (a.skill.scope === "brain") - (b.skill.scope === "brain"));
   return scored.slice(0, maxSkills).map((item) => item.skill);
 }
 
@@ -289,7 +401,8 @@ function assembleSkillsSystemPrompt(activeSkills = []) {
 
   const sections = ["## Habilidades especializadas activas (Skills)"];
   for (const skill of activeSkills) {
-    sections.push(`### Skill: ${skill.name}\n${skill.description}\n\n${skill.body || skill.raw}`);
+    const origin = skill.scope === "brain" && skill.repo ? ` (repo ${skill.repo})` : "";
+    sections.push(`### Skill: ${skill.name}${origin}\n${skill.description}\n\n${loadSkillBody(skill)}`);
   }
   return sections.join("\n\n");
 }
@@ -302,6 +415,9 @@ module.exports = {
   parseLearnPrompt,
   matchSkillsForPrompt,
   assembleSkillsSystemPrompt,
+  loadSkillBody,
+  scanBrainStoreSkills,
+  scanSkillDir,
   parseFrontmatter,
   stringifyFrontmatter,
   normalizeSkillSlug,

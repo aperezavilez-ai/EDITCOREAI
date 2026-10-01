@@ -662,20 +662,35 @@ async function installSkill(root, repoUrl, skillName) {
   if (!/^https?:\/\/|^git@/i.test(url)) return { ok: false, error: "URL inválida (usa https://...)" };
   const skillsRoot = path.join(root, ".editcore", "skills");
   const target = path.join(skillsRoot, name);
-  if (fs.existsSync(target) && fs.readdirSync(target).length) {
-    return { ok: true, path: path.relative(root, target).replace(/\\/g, "/"), skillName: name, note: "Ya existía; no se clonó de nuevo." };
-  }
-  fs.mkdirSync(path.dirname(target), { recursive: true });
-  try {
-    const quoted = url.includes(" ") ? `"${url}"` : url;
-    await execFileAsync("git", ["clone", "--depth", "1", quoted, target], { cwd: root, timeout: 120000 });
+  const relTarget = path.relative(root, target).replace(/\\/g, "/");
+  const detected = () => {
+    try {
+      const { scanSkillDir } = require("../runtime/skills-engine");
+      const prefix = path.resolve(target).toLowerCase() + path.sep;
+      return scanSkillDir(skillsRoot, "project")
+        .filter((s) => path.resolve(s.filePath).toLowerCase().startsWith(prefix))
+        .map((s) => s.name);
+    } catch { return []; }
+  };
+  const summary = (extra) => {
+    const skills = detected();
     return {
       ok: true,
-      path: path.relative(root, target).replace(/\\/g, "/"),
+      path: relTarget,
       skillName: name,
       url,
-      note: "Skill instalada. El agente puede usarla en próximas tareas.",
+      skillsDetected: skills.length,
+      skills: skills.slice(0, 40),
+      note: skills.length
+        ? `${extra} Se detectaron ${skills.length} skill(s); ya están disponibles para el agente.`
+        : `${extra} No se encontró ningún SKILL.md (ni en la raíz ni en subcarpetas): el repo no parece contener skills.`,
     };
+  };
+  if (fs.existsSync(target) && fs.readdirSync(target).length) return summary("Ya existía; no se clonó de nuevo.");
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  try {
+    await execFileAsync("git", ["clone", "--depth", "1", url, target], { cwd: root, timeout: 120000 });
+    return summary("Repositorio clonado.");
   } catch (e) {
     return { ok: false, error: String(e?.message || e).slice(0, 400) };
   }
@@ -687,18 +702,37 @@ function skillsUserDataPath(helpers = {}) {
   try { return require("electron").app?.getPath?.("userData") || ""; } catch { return ""; }
 }
 
-function listSkills(root, helpers = {}) {
+// El resultado de una tool se recorta a ~2000 caracteres: con cientos de skills se resume por origen.
+function listSkills(root, helpers = {}, query = "") {
   try {
     const engine = require("../runtime/skills-engine");
     const all = engine.listAllSkills({ projectRoot: root, userDataPath: skillsUserDataPath(helpers) });
-    const skills = all.map((s) => ({
-      name: s.name,
-      description: String(s.description || "").slice(0, 200),
-      category: s.category,
-      scope: s.scope,
-      enabled: s.enabled !== false,
-    }));
-    return { ok: true, count: skills.length, skills };
+    const count = all.length;
+    const byScope = {};
+    for (const s of all) byScope[s.scope] = (byScope[s.scope] || 0) + 1;
+
+    const q = String(query || "").trim().toLowerCase();
+    if (q) {
+      const matches = all
+        .filter((s) => [s.name, s.description, s.category].some((v) => String(v || "").toLowerCase().includes(q)))
+        .slice(0, 15)
+        .map((s) => `${s.name} [${s.scope === "brain" ? s.repo : s.scope}]: ${String(s.description || "").slice(0, 70)}`);
+      return { ok: true, count, query: q, matches };
+    }
+
+    const local = (scope) => all.filter((s) => s.scope === scope).map((s) => s.name);
+    const repos = {};
+    for (const s of all) if (s.scope === "brain") repos[s.repo] = (repos[s.repo] || 0) + 1;
+    return {
+      ok: true,
+      count,
+      byScope,
+      project: local("project"),
+      global: local("global"),
+      builtin: local("builtin"),
+      brainRepos: Object.entries(repos).sort((a, b) => b[1] - a[1]).slice(0, 12).map(([repo, n]) => `${repo} (${n})`),
+      hint: "Usa list_skills con query para buscar una skill concreta.",
+    };
   } catch { /* fallback: solo skills del proyecto */ }
   const skillsRoot = path.join(root, ".editcore", "skills");
   if (!fs.existsSync(skillsRoot)) return { ok: true, count: 0, skills: [] };
@@ -790,7 +824,7 @@ const DEFINITIONS = [
     type: "function",
     function: {
       name: "install_skill",
-      description: "Instala una skill clonando un repo GitHub en .editcore/skills/<name>/. La skill queda disponible para el agente.",
+      description: "Instala skills clonando un repo GitHub en .editcore/skills/<name>/. Detecta SKILL.md en la raíz o en subcarpetas (skills/<x>/SKILL.md) y devuelve las skills encontradas.",
       parameters: { type: "object", properties: { repoUrl: { type: "string" }, skillName: { type: "string" } }, required: ["repoUrl", "skillName"] },
     },
   },
@@ -798,8 +832,8 @@ const DEFINITIONS = [
     type: "function",
     function: {
       name: "list_skills",
-      description: "Lista las skills instaladas en el proyecto (.editcore/skills/).",
-      parameters: { type: "object", properties: {} },
+      description: "Skills disponibles: integradas, globales, del proyecto y de los repos del Cerebro. Sin query devuelve un resumen por origen; con query busca por nombre/descripción.",
+      parameters: { type: "object", properties: { query: { type: "string" } } },
     },
   },
   {
@@ -999,7 +1033,7 @@ async function execute(name, args, root, allowWrite, helpers = {}) {
       if (!allowWrite) return { ok: false, error: "install_skill requiere modo escritura" };
       return installSkill(root, a.repoUrl, a.skillName);
     case "list_skills":
-      return listSkills(root, helpers);
+      return listSkills(root, helpers, a.query);
     case "ingest_to_brain":
       if (!allowWrite) return { ok: false, error: "Ingesta al cerebro requiere modo escritura" };
       return saveToBrain(root, a.title, a.content, { source: a.source || "" });

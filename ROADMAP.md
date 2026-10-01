@@ -6,7 +6,7 @@ EditCore actualiza este archivo tras cambios. No pedirlo al usuario. No pegar co
 
 ## Proceso
 - Fase: implementacion
-- Estado: 4.1.1 — el chat usa herramientas de lectura (web, disco, skills), lista rutas absolutas y recibe las skills como contexto de sistema.
+- Estado: 4.1.2 — el chat ve las skills de los repos del Cerebro (692 en total) y install_skill detecta skills en subcarpetas.
 - Actualizado: 2026-10-01
 - Preview: desconocido — usa el preview del IDE, no inventes puertos
 
@@ -54,6 +54,7 @@ EditCore actualiza este archivo tras cambios. No pedirlo al usuario. No pegar co
 - **Rotación de claves Supabase**: `npm run supabase:check` / `supabase:plan` / `supabase:rotate` (`scripts/supabase-rotate-keys.js`). Respaldo + dump en `Z RESPALDOS\supabase-key-rotation\`, verificación y rollback automáticos, historial en `historial.jsonl`. Las claves viven en `TAXIDRIV\supabase\.env` y `signing_keys.json` (gitignored); Kong fijado en 54325 detrás del proxy del watchdog; el PostgREST manual se recrea con el secreto nuevo.
 
 ## Cambios recientes
+- Skills 4.1.2 (2026-10-01): runtime/skills-engine.js lee el manifiesto del Cerebro (`editcore-brain/brain-store/installed.json`, 49 repos, 642 skills; cuerpo bajo demanda, caché por mtime) y detecta SKILL.md en subcarpetas de repos clonados; coincidencia por palabra (3 letras exactas, sin muletillas) y umbral alto para skills del Cerebro; cuerpo recortado a 8000 caracteres. `list_skills` resume por origen y acepta query; `install_skill` informa las skills detectadas. Panel de skills (chat-home.js +overlay): activar/desactivar y borrar ahora se guardan (enviaban argumentos sueltos), estado y contenido correctos, insignia "Cerebro", 150 tarjetas máx. con buscador.
 - Chat 4.1.1 (2026-10-01): modo charla con herramientas de solo lectura (antes respondía "no puedo acceder al disco", "no tengo skills" o versiones viejas de memoria); `list_files` y la lista directa respetan rutas absolutas con espacios (`D:\PROGRAMAS IA` listaba EDITCOREAI); `list_skills` usa skills-engine (integradas + globales + proyecto); skills como contexto de sistema y respaldo de modelos también en la corrida de agente; el filtro del chat ya no convierte `supabase.gafcore.com` en "supabase.el proveedor.com" (solo oculta el gateway); análisis atribuyen datos de documentos ("según archivo.md") y no los presentan como verificados.
 - main.js (2026-10-01): codificación reparada (BOM + 304 secuencias mal convertidas por `Get-Content -Raw`), se conserva el bloqueo de credenciales del usuario (`runtime/credentials-vault-guard.js`). Integrados agent-core/tools y dependencias axios + simple-git.
 - Limpieza (2026-10-01): 224 rutas movidas a `Z RESPALDOS\editcoreai-limpieza-2026-10-01\` (MANIFIESTO.txt): 47 módulos de runtime sin uso, 129 scripts obsoletos, workers/verify del kernel, `evidence-grounding.js` raíz duplicado, volcadores de bóveda, logs, scratch/docs/tasks/skills/phase4-results/.vercel, `release/` y `.editcore/snapshots`. Se conservan agent-core/ (trabajo en curso) y web-portal/. Suite 840 tests, 0 fallos; arranque verificado sin errores.
@@ -75,7 +76,7 @@ EditCore actualiza este archivo tras cambios. No pedirlo al usuario. No pegar co
 - scripts/postinstall.js, scripts/supabase-rotate-keys.js, scripts/lib/supabase-keys.js — setup y rotación automáticos (2026-09-30)
 
 ## Verificado
-- npm run check; npm test 848 tests (847 ok, 1 omitido, 0 fallos) en 4.1.1 (`test/chat-mode-read-tools.test.js` nuevo).
+- npm run check; npm test 855 tests (854 ok, 1 omitido, 0 fallos) en 4.1.2 (`test/skills-brain-store.test.js` nuevo).
 - Kernel real con perfil principal ME AI (401): pasa a respaldo y responde "Son las 14:38 … miércoles 30 de septiembre de 2026".
 - Probe Electron: preload.js expone 75 namespaces sin errores (HEAD exponía 17 y fallaba).
 - Embeddings (@xenova/transformers) 384 dims; puppeteer 25 lanza Chrome; node-pty spawn ok.
@@ -88,6 +89,7 @@ EditCore actualiza este archivo tras cambios. No pedirlo al usuario. No pegar co
 
 ## Siguiente
 - Usuario: renovar claves de ME AI y revisar saldo de APICredits (Claude) en Modelos.
+- Pendiente de decisión: conectar al chat el Cerebro RAG (search_brain / brain-service), publish_project + deploy_one_click (hoy solo en el adaptador antiguo, inalcanzable) y herramientas read_pdf / screenshot_page / docker_ps.
 - Validación real: instalar 4.1.0, `npm run test:e2e`, prueba del chat con modelo real.
 - Mantenimiento: CLI Supabase 2.118, enlace Vercel de EDITCOREAI WEB, borrar rama feature ya integrada.
 

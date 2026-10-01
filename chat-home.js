@@ -949,7 +949,13 @@
 
   async function refreshSkillsList() {
     try {
-      cachedSkills = (await window.editcoreSkills?.list?.()) || [];
+      const list = (await window.editcoreSkills?.list?.()) || [];
+      cachedSkills = (Array.isArray(list) ? list : []).map((s) => ({
+        ...s,
+        disabled: s.enabled === false,
+        content: s.content || s.body || "",
+        file: s.file || s.filePath || "",
+      }));
     } catch (e) {
       console.warn("Error listing skills:", e);
       cachedSkills = [];
@@ -986,7 +992,8 @@
       return;
     }
 
-    for (const skill of filtered) {
+    const SKILLS_RENDER_LIMIT = 150;
+    for (const skill of filtered.slice(0, SKILLS_RENDER_LIMIT)) {
       const card = document.createElement("div");
       card.className = `skill-card${skill.disabled ? " is-disabled" : ""}`;
 
@@ -1003,7 +1010,7 @@
 
       const scopeBadge = document.createElement("span");
       scopeBadge.className = `skill-badge skill-badge-${skill.scope || "global"}`;
-      scopeBadge.textContent = skill.scope === "builtin" ? "Sistema" : skill.scope === "project" ? "Proyecto" : "Global";
+      scopeBadge.textContent = skill.scope === "builtin" ? "Sistema" : skill.scope === "project" ? "Proyecto" : skill.scope === "brain" ? "Cerebro" : "Global";
       titleWrap.appendChild(scopeBadge);
 
       if (skill.category) {
@@ -1026,7 +1033,7 @@
       chk.checked = !skill.disabled;
       chk.addEventListener("change", async () => {
         try {
-          await window.editcoreSkills?.toggle?.(skill.name, chk.checked);
+          await window.editcoreSkills?.toggle?.({ id: skill.id, name: skill.name, enabled: chk.checked });
           skill.disabled = !chk.checked;
           card.classList.toggle("is-disabled", skill.disabled);
           const newActive = cachedSkills.filter((s) => !s.disabled).length;
@@ -1057,22 +1064,24 @@
       const meta = document.createElement("span");
       meta.style.color = "var(--ec-text-muted)";
       meta.style.fontSize = "11px";
-      meta.textContent = skill.file ? skill.file.split(/[/\\]/).pop() : "SKILL.md";
+      meta.textContent = skill.scope === "brain" && skill.repo ? skill.repo : (skill.file ? skill.file.split(/[/\\]/).pop() : "SKILL.md");
       bottom.appendChild(meta);
 
       const actions = document.createElement("div");
       actions.className = "skill-card-actions";
 
-      const editBtn = document.createElement("button");
-      editBtn.type = "button";
-      editBtn.className = "skill-action-btn";
-      editBtn.textContent = "Ver / Editar";
-      editBtn.addEventListener("click", () => {
-        openSkillEditForm(skill);
-      });
-      actions.appendChild(editBtn);
+      if (skill.scope !== "brain") {
+        const editBtn = document.createElement("button");
+        editBtn.type = "button";
+        editBtn.className = "skill-action-btn";
+        editBtn.textContent = "Ver / Editar";
+        editBtn.addEventListener("click", () => {
+          openSkillEditForm(skill);
+        });
+        actions.appendChild(editBtn);
+      }
 
-      if (skill.scope !== "builtin") {
+      if (skill.scope !== "builtin" && skill.scope !== "brain") {
         const delBtn = document.createElement("button");
         delBtn.type = "button";
         delBtn.className = "skill-action-btn is-danger";
@@ -1080,7 +1089,7 @@
         delBtn.addEventListener("click", async () => {
           if (confirm(`¿Eliminar la habilidad "${skill.name}"?`)) {
             try {
-              await window.editcoreSkills?.delete?.(skill.name);
+              await window.editcoreSkills?.delete?.({ name: skill.name, scope: skill.scope });
               await refreshSkillsList();
             } catch (err) {
               alert("Error al eliminar habilidad: " + err.message);
@@ -1094,6 +1103,13 @@
       card.appendChild(bottom);
 
       listEl.appendChild(card);
+    }
+
+    if (filtered.length > SKILLS_RENDER_LIMIT) {
+      const more = document.createElement("div");
+      more.className = "skill-empty-state";
+      more.textContent = `Mostrando ${SKILLS_RENDER_LIMIT} de ${filtered.length}. Usa el buscador para encontrar el resto.`;
+      listEl.appendChild(more);
     }
   }
 

@@ -1453,6 +1453,11 @@ body[data-app-mode="chat"] #voiceOverlay {
   color: #a855f7;
 }
 
+.skill-badge-brain {
+  background: rgba(245, 158, 11, 0.15);
+  color: #f59e0b;
+}
+
 .skill-badge-category {
   background: var(--ec-bg-soft);
   color: var(--ec-text-muted);

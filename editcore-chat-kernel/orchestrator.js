@@ -120,7 +120,7 @@ const CHAT_TOOLS_PROMPT = [
   "=== HERRAMIENTAS EN MODO CHARLA (SOLO LECTURA) ===",
   "- **web_search(query)** / **web_scrape(url)**: informacion actual de internet (versiones, noticias, fechas de lanzamiento, documentacion).",
   "- **list_files(path)** / **read_file(path)** / **search_files(query)**: leer el disco. Aceptan rutas absolutas como `D:\\PROGRAMAS IA`.",
-  "- **list_skills**: skills instaladas en EditCoreAI (integradas, globales y del proyecto).",
+  "- **list_skills(query?)**: skills de EditCoreAI (integradas, globales, del proyecto y de los repos del Cerebro). Sin query da un resumen por origen; con query busca una concreta.",
   "- **git_status / git_log / git_diff**: estado del repositorio.",
   "REGLAS:",
   "- Si la pregunta depende de datos que cambian (ultima version de algo, precios, noticias), llama `web_search` ANTES de responder. No respondas de memoria.",
