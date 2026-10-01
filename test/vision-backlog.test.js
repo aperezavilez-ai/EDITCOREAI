@@ -10,8 +10,6 @@ const { renameSyncFile } = require("../runtime/rename-sync");
 const { imagesToCode } = require("../runtime/images-to-code");
 const { generateAutoDocs } = require("../runtime/auto-docs");
 const { applyDockerPlaybook, listDockerPlaybooks } = require("../runtime/docker-playbooks");
-const { buildDomProbeScript, formatDomProbe } = require("../runtime/browser-panel");
-
 test("rename sync updates import refs", () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "ec-ren-"));
   fs.mkdirSync(path.join(root, "src"), { recursive: true });
@@ -64,19 +62,4 @@ test("docker playbook writes templates", () => {
   assert.equal(out.playbook, "node");
   assert.ok(fs.existsSync(path.join(root, ".editcore", "playbooks", "docker", "node", "Dockerfile")));
   assert.ok(fs.existsSync(path.join(root, "Dockerfile")));
-});
-
-test("browser panel helpers", () => {
-  assert.match(buildDomProbeScript(), /querySelectorAll/);
-  const md = formatDomProbe({
-    ok: true,
-    url: "http://127.0.0.1:5173/",
-    title: "App",
-    headings: [{ tag: "h1", text: "Hola" }],
-    buttons: [],
-    images: 0,
-    issues: [],
-  });
-  assert.match(md, /Browser · DOM/);
-  assert.match(md, /Hola/);
 });

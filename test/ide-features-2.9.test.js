@@ -29,27 +29,6 @@ test("semantic incremental persist + reuse", () => {
   assert.equal(second.stats.reused >= 1, true);
 });
 
-test("composer plan preview apply roundtrip", () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "editcore-comp-"));
-  const file = path.join(dir, "demo.js");
-  fs.writeFileSync(file, "const x = 1;\n", "utf8");
-  const {
-    createComposerPlan,
-    previewComposer,
-    applyComposer,
-  } = require("../runtime/composer-orchestrator");
-  const plan = createComposerPlan(dir, {
-    goal: "bump x",
-    files: [{ path: "demo.js", oldText: "const x = 1;", newText: "const x = 2;" }],
-  });
-  const preview = previewComposer(dir, plan.sessionId);
-  assert.equal(preview.count, 1);
-  assert.match(preview.proposals[0].diff, /const x = 2/);
-  const applied = applyComposer(dir, plan.sessionId);
-  assert.equal(applied.ok, true);
-  assert.match(fs.readFileSync(file, "utf8"), /const x = 2/);
-});
-
 test("project memory architecture rules", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "editcore-mem-"));
   const {

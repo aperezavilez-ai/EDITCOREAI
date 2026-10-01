@@ -31,7 +31,6 @@ test("chat-home css pins sidebar left full-height", () => {
 test("chat-home assets exist", () => {
   assert.ok(fs.existsSync(path.join(root, "chat-home.js")));
   assert.ok(fs.existsSync(path.join(root, "chat-home.css")));
-  assert.ok(fs.existsSync(path.join(root, "docs/CHAT_AGENT_AUDIT.md")));
 });
 
 test("chat-home settings panels tema/permisos cableados", () => {

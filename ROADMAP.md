@@ -53,6 +53,7 @@ EditCore actualiza este archivo tras cambios. No pedirlo al usuario. No pegar co
 - **Rotación de claves Supabase**: `npm run supabase:check` / `supabase:plan` / `supabase:rotate` (`scripts/supabase-rotate-keys.js`). Respaldo + dump en `Z RESPALDOS\supabase-key-rotation\`, verificación y rollback automáticos, historial en `historial.jsonl`. Las claves viven en `TAXIDRIV\supabase\.env` y `signing_keys.json` (gitignored); Kong fijado en 54325 detrás del proxy del watchdog; el PostgREST manual se recrea con el secreto nuevo.
 
 ## Cambios recientes
+- Limpieza (2026-10-01): 224 rutas movidas a `Z RESPALDOS\editcoreai-limpieza-2026-10-01\` (MANIFIESTO.txt): 47 módulos de runtime sin uso, 129 scripts obsoletos, workers/verify del kernel, `evidence-grounding.js` raíz duplicado, volcadores de bóveda, logs, scratch/docs/tasks/skills/phase4-results/.vercel, `release/` y `.editcore/snapshots`. Se conservan agent-core/ (trabajo en curso) y web-portal/. Suite 840 tests, 0 fallos; arranque verificado sin errores.
 - renderer.js (+overlay) — en modo IDE la app arranca siempre en Inicio; ni el arranque ni `bootBackground` reabren el último proyecto/chat (salvo `projectRoot`/`openRoot`/`autoPick` explícitos) (2026-10-01)
 - editcore-chat-kernel/thread-core.js + orchestrator.js + provider.js — las imágenes adjuntas llegan al modelo (antes solo se avisaba "hay imágenes" y el modelo respondía que no veía nada); con imágenes, la cola de respaldo prioriza modelos con visión (2026-09-30)
 - renderer.js (+overlay) — chequeo de salud del preview: regex `/@vite\/client/` dentro de template literal perdía la barra y lanzaba "Invalid regular expression flags" en cada preview (2026-09-30)
@@ -71,7 +72,7 @@ EditCore actualiza este archivo tras cambios. No pedirlo al usuario. No pegar co
 - scripts/postinstall.js, scripts/supabase-rotate-keys.js, scripts/lib/supabase-keys.js — setup y rotación automáticos (2026-09-30)
 
 ## Verificado
-- npm run check; npm test 922 tests (921 ok, 1 omitido, 0 fallos).
+- npm run check; npm test 840 tests (839 ok, 1 omitido, 0 fallos) tras la limpieza.
 - Kernel real con perfil principal ME AI (401): pasa a respaldo y responde "Son las 14:38 … miércoles 30 de septiembre de 2026".
 - Probe Electron: preload.js expone 75 namespaces sin errores (HEAD exponía 17 y fallaba).
 - Embeddings (@xenova/transformers) 384 dims; puppeteer 25 lanza Chrome; node-pty spawn ok.
