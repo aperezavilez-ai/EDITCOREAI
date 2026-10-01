@@ -7,7 +7,8 @@ const { promisify } = require("util");
 const execFileAsync = promisify(execFile);
 const { scaffoldNextApp } = require("./scaffold");
 const { scrapeWebPage } = require("./browser-tool");
-const { saveToBrain, listBrainDocs } = require("./brain-ingest");
+const { saveToBrain, listBrainDocs, ingestPathToBrain } = require("./brain-ingest");
+const extraTools = require("./extra-tools");
 const {
   snapshotBeforeWrite,
   rollbackLastChange,
@@ -840,8 +841,8 @@ const DEFINITIONS = [
     type: "function",
     function: {
       name: "ingest_to_brain",
-      description: "Guarda documentación, código clonado o información en el Cerebro RAG (.editcore/rag/).",
-      parameters: { type: "object", properties: { title: { type: "string" }, content: { type: "string" }, source: { type: "string" } }, required: ["title", "content"] },
+      description: "Guarda conocimiento en el Cerebro RAG (.editcore/rag/). Con title+content guarda un texto; con path ingesta un archivo o una carpeta de documentación (md, txt, pdf, docx, xlsx; hasta 40 archivos).",
+      parameters: { type: "object", properties: { title: { type: "string" }, content: { type: "string" }, source: { type: "string" }, path: { type: "string" } } },
     },
   },
   {
@@ -1036,7 +1037,22 @@ async function execute(name, args, root, allowWrite, helpers = {}) {
       return listSkills(root, helpers, a.query);
     case "ingest_to_brain":
       if (!allowWrite) return { ok: false, error: "Ingesta al cerebro requiere modo escritura" };
+      if (a.path && !a.content) {
+        try { return await ingestPathToBrain(root, safe(root, a.path)); } catch (e) { return { ok: false, error: String(e?.message || e).slice(0, 300) }; }
+      }
       return saveToBrain(root, a.title, a.content, { source: a.source || "" });
+    case "search_brain":
+      return extraTools.searchBrain(root, a.query, helpers);
+    case "read_pdf":
+      try { return await extraTools.readPdf(safe(root, a.path), { maxChars: a.maxChars }); } catch (e) { return { ok: false, error: String(e?.message || e).slice(0, 300) }; }
+    case "screenshot_page":
+      try { return await extraTools.screenshotPage(a.url, { viewport: a.viewport, fullPage: a.fullPage, helpers }); } catch (e) { return { ok: false, error: String(e?.message || e).slice(0, 300) }; }
+    case "docker_ps":
+      return extraTools.dockerPs({ all: a.all === true });
+    case "publish_project":
+    case "deploy_one_click":
+      if (!allowWrite) return { ok: false, error: `${name} requiere modo ejecución` };
+      try { return await extraTools.runExternalAction(name, a, root, helpers); } catch (e) { return { ok: false, error: String(e?.message || e).slice(0, 400) }; }
     case "list_brain":
       return listBrainDocs(root);
     case "clone_repo":
@@ -1090,9 +1106,10 @@ function getToolDefinitions({ allowWrite = true, isFullAccess = false, isAnalysi
     "write_file", "replace_in_file", "run_command", "scaffold_project",
     "supabase_migrate", "ingest_to_brain", "clone_repo", "rollback_last_change",
     "images_to_code", "clone_web_page", "install_skill",
+    ...extraTools.EXTERNAL_ACTION_TOOLS,
   ]);
   const canWrite = allowWrite === true || isFullAccess === true;
-  return DEFINITIONS.filter((t) => {
+  return [...DEFINITIONS, ...extraTools.EXTRA_DEFINITIONS].filter((t) => {
     if (!canWrite && writeTools.has(t.function?.name)) return false;
     return true;
   });

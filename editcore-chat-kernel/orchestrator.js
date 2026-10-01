@@ -9,7 +9,9 @@ const {
   MODES,
   TOOL_ALLOWLIST,
   SUB_AGENTS,
+  APPROVAL_RE,
 } = require("./classify");
+const { searchBrainDocs } = require("./brain-ingest");
 const { ChatSession } = require("./session");
 const { PersistentMemory } = require("./memory");
 const { skillsPrompt, SKILL_IDS } = require("./skills-catalog");
@@ -105,7 +107,9 @@ const CAPABILITIES_PROMPT = [
   "- **git_status / git_log / git_diff**: inspecciona el repositorio git.",
   "- **install_skill(repoUrl, skillName)** y **list_skills**: gestiona skills.",
   "- **clone_repo(url)**: clona un repositorio Git dentro del proyecto.",
-  "- **ingest_to_brain / list_brain**: gestiona el Cerebro RAG.",
+  "- **ingest_to_brain(path|title+content) / list_brain / search_brain(query)**: gestiona y consulta el Cerebro RAG (con path ingesta una carpeta de documentacion).",
+  "- **read_pdf(path)**: texto de PDF, Word o Excel. **screenshot_page(url)**: captura y texto de una web. **docker_ps**: contenedores Docker.",
+  "- **publish_project / deploy_one_click**: publicar y desplegar. EditCore pide confirmacion al usuario antes de ejecutarlos; llamalos una sola vez y espera.",
   "Cuando necesites informacion externa (version de una libreria, API actual, error desconocido), usa `web_search` ANTES de responder con conocimiento desactualizado.",
   "=== FIN CAPACIDADES ===",
 ].join("\n");
@@ -113,8 +117,11 @@ const CAPABILITIES_PROMPT = [
 const CHAT_READ_TOOLS = new Set([
   "web_search", "web_scrape", "list_files", "read_file", "search_files",
   "list_skills", "list_brain", "git_status", "git_log", "git_diff",
+  "search_brain", "read_pdf", "screenshot_page", "docker_ps",
 ]);
 const CHAT_MAX_STEPS = 6;
+const PENDING_EXTERNAL_TTL_MS = 10 * 60_000;
+const BRAIN_CONTEXT_MIN_SCORE = 2;
 
 const CHAT_TOOLS_PROMPT = [
   "=== HERRAMIENTAS EN MODO CHARLA (SOLO LECTURA) ===",
@@ -122,6 +129,10 @@ const CHAT_TOOLS_PROMPT = [
   "- **list_files(path)** / **read_file(path)** / **search_files(query)**: leer el disco. Aceptan rutas absolutas como `D:\\PROGRAMAS IA`.",
   "- **list_skills(query?)**: skills de EditCoreAI (integradas, globales, del proyecto y de los repos del Cerebro). Sin query da un resumen por origen; con query busca una concreta.",
   "- **git_status / git_log / git_diff**: estado del repositorio.",
+  "- **search_brain(query)**: documentacion y memoria del proyecto guardadas en el Cerebro.",
+  "- **read_pdf(path)**: texto de un PDF, Word o Excel del disco.",
+  "- **screenshot_page(url)**: abre una web, guarda una captura y devuelve su titulo y texto visible.",
+  "- **docker_ps**: contenedores Docker y su estado.",
   "REGLAS:",
   "- Si la pregunta depende de datos que cambian (ultima version de algo, precios, noticias), llama `web_search` ANTES de responder. No respondas de memoria.",
   "- Si piden ver una carpeta o archivo del disco, usa `list_files` / `read_file` con la ruta indicada. NUNCA digas que no tenes acceso al disco.",
@@ -461,6 +472,29 @@ function maybeBlockRootListFiles(name, args, projectRoot, listOnly) {
   return { ok: false, blocked: true, error: "Exploración de raíz bloqueada: el ROADMAP ya describe la estructura.", guidance: "Usa `## Mapa` del ROADMAP o `list_files('<subcarpeta>')`." };
 }
 
+function buildBrainContextBlock(projectRoot, query) {
+  if (!projectRoot || projectRoot === ".") return "";
+  let hits = [];
+  try { hits = searchBrainDocs(projectRoot, query, 3).filter((h) => h.score >= BRAIN_CONTEXT_MIN_SCORE); } catch { return ""; }
+  if (!hits.length) return "";
+  return [
+    "=== CEREBRO DEL PROYECTO (documentos que el usuario ingirio; pueden estar desactualizados) ===",
+    "Si los usas, citalos: \"segun <titulo>\". No los presentes como verificados.",
+    ...hits.map((h) => `--- ${h.title} (${h.path}) ---\n${h.text.slice(0, 900)}`),
+    "=== FIN CEREBRO ===",
+  ].join("\n");
+}
+
+function formatExternalActionResult(name, result) {
+  const label = name === "deploy_one_click" ? "Deploy" : "Publicación";
+  const url = result?.url || result?.deployUrl || result?.deploy?.url || "";
+  const detail = String(result?.message || result?.error || "").slice(0, 600);
+  if (result?.ok) {
+    return [`## ✅ ${label} completado`, url ? `URL: ${url}` : "", detail].filter(Boolean).join("\n\n");
+  }
+  return [`## ❌ ${label} no se completó`, detail || "Sin detalle del error.", result?.failedStep ? `Paso que falló: \`${result.failedStep}\`` : ""].filter(Boolean).join("\n\n");
+}
+
 function maybeBlockRoadmapReadFile(name, args, projectRoot) {
   if (name !== "read_file") return null;
   const p = String(args?.path || "").replace(/\\/g, "/").trim();
@@ -496,13 +530,14 @@ class ChatOrchestrator {
     this.steering = [];
     this.running = false;
     this.pendingTask = null;
+    this.pendingExternal = null;
   }
 
   stop() {
     const reason = Object.assign(new Error("Detenido por el usuario."), { code: "AGENT_STEER" });
     if (this.turnAbort) { try { this.turnAbort.abort(reason); } catch (_) {} this.turnAbort = null; }
     if (this.abort) { try { this.abort.abort(reason); } catch (_) {} }
-    this.session.kill(); this.pendingTask = null; this.steering = []; this.running = false;
+    this.session.kill(); this.pendingTask = null; this.pendingExternal = null; this.steering = []; this.running = false;
     try { taskQueue.cancelAll(); } catch (_) {}
     return { kind: "STOP", text: "Frené lo que estaba haciendo. ¿Qué querés que haga ahora?" };
   }
@@ -522,6 +557,34 @@ class ChatOrchestrator {
 
   isRunning() { return this.running === true; }
 
+  async runPendingExternal(pending, { helpers, onProgress } = {}) {
+    const { name, args, projectRoot } = pending;
+    this.running = true;
+    const step = { name, input: args, result: null, ok: false };
+    try {
+      onProgress?.({ phase: "start", text: name === "deploy_one_click" ? "Desplegando…" : "Publicando…" });
+      onProgress?.({ phase: "tool", stage: "running", name, input: args });
+      const result = await tools.execute(name, args, projectRoot, true, { ...(helpers || {}), externalActionApproved: true });
+      step.result = result;
+      step.ok = result?.ok !== false;
+      onProgress?.({ phase: "tool", stage: "done", name, input: args, result, ok: step.ok });
+      if (step.ok) {
+        try {
+          const sync = require("../runtime/roadmap-sync").createRoadmapSync();
+          const url = result?.url || result?.deployUrl || "";
+          sync.recordDeploy(projectRoot, { type: name === "deploy_one_click" ? (result?.provider || "deploy") : "publish", status: "success", url });
+        } catch { /* el roadmap es opcional */ }
+      }
+      return { kind: "EXECUTE", text: formatAgentVisibleText(formatExternalActionResult(name, result)), steps: [step] };
+    } catch (err) {
+      step.result = { ok: false, error: String(err?.message || err) };
+      return { kind: "EXECUTE", text: formatAgentVisibleText(formatExternalActionResult(name, step.result)), steps: [step] };
+    } finally {
+      this.running = false;
+      try { onProgress?.({ phase: "done", text: "" }); } catch {}
+    }
+  }
+
   async handle(input = {}) {
     const { message, projectRoot, apiBaseUrl, apiKey, model, images, onProgress, helpers,
       autoHeal, background, runModelTaskFn, allowWrite: inputAllowWrite, permissionMode,
@@ -534,6 +597,15 @@ class ChatOrchestrator {
     const text = rawText.trim() || (hasImages ? "Analiza la imagen adjunta." : "");
     const textLower = text.toLowerCase();
     const isApprovalText = APPROVAL_WORDS.has(textLower);
+
+    if (this.pendingExternal) {
+      const pending = this.pendingExternal;
+      this.pendingExternal = null;
+      const fresh = Date.now() - pending.createdAt < PENDING_EXTERNAL_TTL_MS
+        && path.resolve(String(pending.projectRoot || "")) === path.resolve(String(projectRoot || ""));
+      if (fresh && APPROVAL_RE.test(text)) return this.runPendingExternal(pending, { helpers, onProgress });
+    }
+
     const visionAsk = hasImages && /\b(?:imagen|foto|captura|screenshot|adjunt|overlay|error\s+visible|analiza\s+(?:esto|la|el))\b/i.test(text);
 
     let effectiveText = text;
@@ -777,6 +849,10 @@ class ChatOrchestrator {
     }
 
     if (this._skillsPrompt) system = `${system}\n\n${this._skillsPrompt}`;
+    if (!listOnlyMode) {
+      const brainBlock = buildBrainContextBlock(projectRoot, this._currentUserText || message);
+      if (brainBlock) system = `${system}\n\n${brainBlock}`;
+    }
 
     const userText = `Proyecto: ${projectRoot}\n${scopeUserMessage(message)}`;
     const messages = threadCore.buildMessageList({ system, userText, projectRoot, threadId, historyInput, query: String(this._currentUserText || message || ""), images: taskImages });
@@ -957,6 +1033,17 @@ class ChatOrchestrator {
             result = impl.result || impl;
           } else {
             result = await tools.execute(name, args, projectRoot, allowWrite, helpers || {});
+          }
+
+          if (result?.needsConfirmation) {
+            this.pendingExternal = { name, args, projectRoot, createdAt: Date.now() };
+            const stepData = { name, input: args, result, ok: false, pendingConfirmation: true };
+            steps.push(stepData); this.session.addStep(stepData);
+            onProgress?.({ phase: "tool", stage: "done", name, input: args, result, ok: false });
+            this.session.kill();
+            const ask = formatAgentVisibleText(`## ⚠️ Confirmación requerida\n\n${result.preview || name}\n\nResponde **sí** o **procede** para ejecutarlo. Cualquier otro mensaje lo cancela.`);
+            rememberOut(ask); detachLongRunningStreams(steps);
+            return { kind: decision?.kind || "EXECUTE", text: ask, steps, pendingConfirmation: true, threadId, usage: totalUsage };
           }
 
           const softRecover = recoverSoftToolFailure(name, args, result, projectRoot);

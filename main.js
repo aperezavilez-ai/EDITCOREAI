@@ -1839,6 +1839,8 @@ ipcMain.handle("editcore:chat", async (_event, input = {}) => {
       capturePreview,
       previewUrl: previewProcesses.get(rootPath)?.url || "",
       appUserData: app.getPath("userData"),
+      brainSearch: (root, query, options) => brain().searchForAgent(root, query, options),
+      readConnections,
       ...buildKernelProcessHooks(rootPath),
     });
     const out = await handleChatKernel({
@@ -2785,6 +2787,8 @@ async function maybeAutoHealPreview(projectRoot, issue) {
       capturePreview,
       previewUrl: previewProcesses.get(projectRoot)?.url || "",
       appUserData: app.getPath("userData"),
+      brainSearch: (root, query, options) => brain().searchForAgent(root, query, options),
+      readConnections,
       ...buildKernelProcessHooks(projectRoot),
     });
     const out = await handleChatKernel({
@@ -6617,6 +6621,8 @@ ipcMain.handle("agent:run", async (event, input = {}) => {
         capturePreview,
         previewUrl: previewProcesses.get(rootPath)?.url || "",
         appUserData: app.getPath("userData"),
+        brainSearch: (root, query, options) => brain().searchForAgent(root, query, options),
+        readConnections,
         ...buildKernelProcessHooks(rootPath),
       });
 

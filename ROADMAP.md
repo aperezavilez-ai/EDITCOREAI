@@ -6,7 +6,7 @@ EditCore actualiza este archivo tras cambios. No pedirlo al usuario. No pegar co
 
 ## Proceso
 - Fase: implementacion
-- Estado: 4.1.2 — el chat ve las skills de los repos del Cerebro (692 en total) y install_skill detecta skills en subcarpetas.
+- Estado: 4.1.3 — el chat usa el Cerebro del proyecto (RAG), lee PDF/Word/Excel, captura páginas, ve contenedores Docker y publica/despliega con confirmación del usuario.
 - Actualizado: 2026-10-01
 - Preview: desconocido — usa el preview del IDE, no inventes puertos
 
@@ -48,12 +48,15 @@ EditCore actualiza este archivo tras cambios. No pedirlo al usuario. No pegar co
 - **IPC como bus principal**: `runtime/chat-kernel-bridge.js` y `runtime/intent-orchestrator.js` comunican renderer ↔ main ↔ kernel.
 - **Skills como extensión**: las habilidades se cargan bajo demanda y no forman parte del core. Van al prompt de sistema (`skillsPrompt`), nunca dentro del mensaje del usuario: si no, el clasificador y la memoria del hilo ven el texto de la skill en vez del pedido.
 - **Modo charla con lectura**: CHAT tiene web_search/web_scrape, list_files/read_file/search_files, list_skills, list_brain y git_status/log/diff (hasta 6 pasos; el último sin tools para forzar respuesta). Nunca escribe ni ejecuta comandos.
+- **Acciones externas con confirmación**: `publish_project` y `deploy_one_click` nunca se ejecutan en el turno del modelo (aunque se autoapruebe por argumentos): el orquestador guarda la acción en `pendingExternal` (10 min, mismo proyecto) y solo la ejecuta si el siguiente mensaje del usuario es una aprobación; cualquier otro mensaje la cancela. Fuera del modo charla.
+- **Cerebro como contexto automático**: cada turno (salvo listados) busca en `.editcore/rag/` y añade al sistema hasta 3 fragmentos con puntuación ≥ 2; el modelo los cita como "según <título>". `search_brain` suma memoria y código del índice global (`brain-service.searchForAgent`).
 - **Setup automático**: `scripts/postinstall.js` (postinstall y `npm run setup`) repone Electron, node-pty, Chrome de puppeteer y branding; registra en `.editcore/logs/setup.jsonl`.
 - **Runtime en SSD**: D: es HDD y Electron tardaba 45-98 s solo en arrancar desde ahí (1-2 s desde C:). El launcher raíz copia `node_modules/electron/dist` a `%LOCALAPPDATA%\EDITCOREAI\runtime` (resincroniza por tamaño/fecha/versión del host) y arranca desde ahí; mutex contra dobles clics. Ventana en 17-20 s (57 s la primera vez con copia).
 - **Contraseña `postgres` del stack CLI**: no se cambia (la CLI la usa para todos los roles internos); la protección es de red: Docker publica en 0.0.0.0 y el firewall `GAFCORE` corta el acceso externo.
 - **Rotación de claves Supabase**: `npm run supabase:check` / `supabase:plan` / `supabase:rotate` (`scripts/supabase-rotate-keys.js`). Respaldo + dump en `Z RESPALDOS\supabase-key-rotation\`, verificación y rollback automáticos, historial en `historial.jsonl`. Las claves viven en `TAXIDRIV\supabase\.env` y `signing_keys.json` (gitignored); Kong fijado en 54325 detrás del proxy del watchdog; el PostgREST manual se recrea con el secreto nuevo.
 
 ## Cambios recientes
+- Pendientes 4.1.3 (2026-10-01): nuevo `editcore-chat-kernel/extra-tools.js` con `read_pdf` (PDF/DOCX/XLSX, 12000 caracteres), `screenshot_page` (puppeteer, solo http(s), PNG en `userData/screenshots`), `docker_ps`, `search_brain`, `publish_project` y `deploy_one_click` (antes solo en el adaptador antiguo, inalcanzable desde el chat). `ingest_to_brain` acepta `path` (archivo o carpeta, sin .env/node_modules/.git) y `brain-ingest.js` busca por fragmentos. main.js (+overlay) pasa `brainSearch` y `readConnections` al kernel. `document-attachments.js`: los PDF pequeños fallaban con "bad XRef entry" cuando el Buffer venía del pool de Node (pdf.js leía el ArrayBuffer desde 0); se copia a un Uint8Array propio.
 - Skills 4.1.2 (2026-10-01): runtime/skills-engine.js lee el manifiesto del Cerebro (`editcore-brain/brain-store/installed.json`, 49 repos, 642 skills; cuerpo bajo demanda, caché por mtime) y detecta SKILL.md en subcarpetas de repos clonados; coincidencia por palabra (3 letras exactas, sin muletillas) y umbral alto para skills del Cerebro; cuerpo recortado a 8000 caracteres. `list_skills` resume por origen y acepta query; `install_skill` informa las skills detectadas. Panel de skills (chat-home.js +overlay): activar/desactivar y borrar ahora se guardan (enviaban argumentos sueltos), estado y contenido correctos, insignia "Cerebro", 150 tarjetas máx. con buscador.
 - Chat 4.1.1 (2026-10-01): modo charla con herramientas de solo lectura (antes respondía "no puedo acceder al disco", "no tengo skills" o versiones viejas de memoria); `list_files` y la lista directa respetan rutas absolutas con espacios (`D:\PROGRAMAS IA` listaba EDITCOREAI); `list_skills` usa skills-engine (integradas + globales + proyecto); skills como contexto de sistema y respaldo de modelos también en la corrida de agente; el filtro del chat ya no convierte `supabase.gafcore.com` en "supabase.el proveedor.com" (solo oculta el gateway); análisis atribuyen datos de documentos ("según archivo.md") y no los presentan como verificados.
 - main.js (2026-10-01): codificación reparada (BOM + 304 secuencias mal convertidas por `Get-Content -Raw`), se conserva el bloqueo de credenciales del usuario (`runtime/credentials-vault-guard.js`). Integrados agent-core/tools y dependencias axios + simple-git.
@@ -76,7 +79,7 @@ EditCore actualiza este archivo tras cambios. No pedirlo al usuario. No pegar co
 - scripts/postinstall.js, scripts/supabase-rotate-keys.js, scripts/lib/supabase-keys.js — setup y rotación automáticos (2026-09-30)
 
 ## Verificado
-- npm run check; npm test 855 tests (854 ok, 1 omitido, 0 fallos) en 4.1.2 (`test/skills-brain-store.test.js` nuevo).
+- npm run check; npm test 863 tests (862 ok, 1 omitido, 0 fallos) en 4.1.3 (`test/kernel-extra-tools.test.js` nuevo). Real: docker_ps ve los 13 contenedores supabase_*; screenshot_page captura example.com.
 - Kernel real con perfil principal ME AI (401): pasa a respaldo y responde "Son las 14:38 … miércoles 30 de septiembre de 2026".
 - Probe Electron: preload.js expone 75 namespaces sin errores (HEAD exponía 17 y fallaba).
 - Embeddings (@xenova/transformers) 384 dims; puppeteer 25 lanza Chrome; node-pty spawn ok.
@@ -89,7 +92,7 @@ EditCore actualiza este archivo tras cambios. No pedirlo al usuario. No pegar co
 
 ## Siguiente
 - Usuario: renovar claves de ME AI y revisar saldo de APICredits (Claude) en Modelos.
-- Pendiente de decisión: conectar al chat el Cerebro RAG (search_brain / brain-service), publish_project + deploy_one_click (hoy solo en el adaptador antiguo, inalcanzable) y herramientas read_pdf / screenshot_page / docker_ps.
+- Usuario: token de Vercel en Conexiones para que deploy_one_click/publish_project puedan desplegar.
 - Validación real: instalar 4.1.0, `npm run test:e2e`, prueba del chat con modelo real.
 - Mantenimiento: CLI Supabase 2.118, enlace Vercel de EDITCOREAI WEB, borrar rama feature ya integrada.
 

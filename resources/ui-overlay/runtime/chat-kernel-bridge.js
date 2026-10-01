@@ -11,9 +11,12 @@ const {
 
 const KERNEL_TIMEOUT_MS = 30 * 60 * 1000; // 30 min — el adapter tiene su propio deadline interno (analysis-depth.js)
 
-function buildKernelHelpers({ BrowserWindow, capturePreview, previewUrl, appUserData, onProcessChunk, onProcessSevereError, abortSignal }) {
+function buildKernelHelpers({ BrowserWindow, capturePreview, previewUrl, appUserData, onProcessChunk, onProcessSevereError, abortSignal, brainSearch, readConnections }) {
   return {
     previewUrl: previewUrl || "",
+    userDataPath: appUserData || "",
+    brainSearch: typeof brainSearch === "function" ? brainSearch : null,
+    readConnections: typeof readConnections === "function" ? readConnections : null,
     abortSignal: abortSignal || null,
     onProcessChunk: typeof onProcessChunk === "function" ? onProcessChunk : null,
     onProcessSevereError: typeof onProcessSevereError === "function" ? onProcessSevereError : null,

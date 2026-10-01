@@ -59,7 +59,8 @@ async function extractDocumentAttachment(document) {
       text = (await mammoth.extractRawText({ buffer })).value;
       format = "word-docx";
     } else if (extension === ".pdf" || mimeType === "application/pdf") {
-      text = (await pdfParse(buffer)).text;
+      // pdf.js lee el ArrayBuffer subyacente desde 0: un Buffer pequeño del pool de Node (byteOffset > 0) da "bad XRef entry".
+      text = (await pdfParse(new Uint8Array(buffer))).text;
       format = "pdf";
     } else if ([".txt", ".md", ".markdown", ".json", ".js", ".ts", ".tsx", ".jsx", ".css", ".html", ".xml", ".csv"].includes(extension)
       || /^text\//i.test(mimeType) || /json|javascript|typescript|css|html|xml/i.test(mimeType)) {
