@@ -2,6 +2,9 @@
 
 const fs = require("fs");
 const path = require("path");
+const { execFile } = require("child_process");
+const { promisify } = require("util");
+const execFileAsync = promisify(execFile);
 const { scaffoldNextApp } = require("./scaffold");
 const { scrapeWebPage } = require("./browser-tool");
 const { saveToBrain, listBrainDocs } = require("./brain-ingest");
@@ -80,8 +83,6 @@ function listFiles(root, rel = ".", max = 80, opts = {}) {
   const requested = String(rel || ".").replace(/\\/g, "/").trim() || ".";
   const forceReal = opts.forceReal === true || opts.real === true
     || requested === ".." || requested.startsWith("../") || requested.startsWith("..\\");
-  // ROADMAP-FIRST: no reescanear la raíz si ya hay índice (ahorro de tokens).
-  // Excepción: listar padre/hermanos o forceReal — ahí el disco manda.
   if (!forceReal && (requested === "." || requested === "/" || requested === "")) {
     try {
       const { readRoadmap, isStubRoadmap, formatRoadmapForPrompt } = require("../runtime/project-roadmap");
@@ -173,10 +174,6 @@ function writeFile(root, rel, content) {
   return out;
 }
 
-/**
- * Localiza oldText con tolerancia leve (CRLF/LF, whitespace de línea).
- * Fallos leves → el orquestador relee y reintenta sin detener la sesión[cite: 7].
- */
 function locateOldText(current, oldText) {
   const old = String(oldText ?? "");
   if (!old) return { ok: false, error: "oldText vacío" };
@@ -256,8 +253,6 @@ function replaceInFile(root, rel, oldText, newText) {
       preview: current.slice(0, 1200),
     };
   }
-  // FIX CRÍTICO: Se usa una función de reemplazo para evitar que los signos '$' 
-  // en el código fuente interpreten patrones especiales de regex/string de JS.
   const next = current.replace(located.match, () => String(newText ?? ""));
 
   let syntaxCheck = null;
@@ -267,7 +262,6 @@ function replaceInFile(root, rel, oldText, newText) {
     syntaxCheck = validateSyntax(rel, next);
     if (syntaxCheck && !syntaxCheck.ok) syntaxBefore = validateSyntax(rel, current);
   } catch {}
-  // Un archivo que compilaba no puede quedar roto por un parche: se rechaza sin escribir.
   if (syntaxCheck && !syntaxCheck.ok && syntaxBefore?.ok) {
     return {
       ok: false,
@@ -306,7 +300,6 @@ function replaceInFile(root, rel, oldText, newText) {
   return out;
 }
 
-/** Fallos leves que no deben detener la sesión OODA[cite: 7]. */
 function isSoftToolFailure(name, result, args = {}) {
   if (!result || result.ok !== false) return false;
   if (result.soft === true) return true;
@@ -525,10 +518,219 @@ async function cloneRepo(root, repoUrl, destRel) {
   };
 }
 
+// ============================================================
+// NEW: INTERNET — búsqueda web multi-fuente
+// ============================================================
+function stripHtml(html = "") {
+  return String(html || "")
+    .replace(/<script[\s\S]*?<\/script>/gi, "")
+    .replace(/<style[\s\S]*?<\/style>/gi, "")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#x27;/g, "'")
+    .replace(/&#39;/g, "'")
+    .replace(/&nbsp;/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+async function webSearch(query, options = {}) {
+  const q = String(query || "").trim();
+  if (!q) return { ok: false, error: "query vacía" };
+  const maxResults = Math.max(1, Math.min(10, Number(options.maxResults) || 5));
+
+  // Fuente 1: DuckDuckGo HTML (resultados generales)
+  try {
+    const url = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(q)}`;
+    const res = await fetch(url, {
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept-Language": "es-ES,es;q=0.9,en;q=0.8",
+      },
+      signal: AbortSignal.timeout(15000),
+    });
+    const html = await res.text();
+    const results = [];
+    const blockRegex = /<a[^>]*class="[^"]*result__a[^"]*"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>([\s\S]*?)(?=<a[^>]*class="[^"]*result__a|<\/div>\s*<\/div>|$)/g;
+    let m;
+    while ((m = blockRegex.exec(html)) !== null && results.length < maxResults) {
+      let link = m[1] || "";
+      const uddg = link.match(/uddg=([^&]+)/);
+      if (uddg) link = decodeURIComponent(uddg[1]);
+      if (link.startsWith("//")) link = "https:" + link;
+      const title = stripHtml(m[2]);
+      const snippetMatch = (m[3] || "").match(/class="[^"]*result__snippet[^"]*"[^>]*>([\s\S]*?)<\/a>/);
+      const snippet = snippetMatch ? stripHtml(snippetMatch[1]) : "";
+      if (link && title && !link.includes("duckduckgo.com/y.js")) {
+        results.push({ title, url: link, snippet });
+      }
+    }
+    if (results.length) {
+      return { ok: true, query: q, source: "duckduckgo-html", count: results.length, results };
+    }
+  } catch { /* fallback */ }
+
+  // Fuente 2: DuckDuckGo Instant Answer API
+  try {
+    const url = `https://api.duckduckgo.com/?q=${encodeURIComponent(q)}&format=json&no_html=1&skip_disambig=1`;
+    const res = await fetch(url, { signal: AbortSignal.timeout(10000) });
+    const data = await res.json();
+    const results = [];
+    if (data.AbstractText) {
+      results.push({ title: data.Heading || "Resultado", url: data.AbstractURL || "", snippet: data.AbstractText });
+    }
+    if (Array.isArray(data.RelatedTopics)) {
+      for (const t of data.RelatedTopics) {
+        if (results.length >= maxResults) break;
+        if (t.Text && t.FirstURL) {
+          results.push({ title: t.Text.slice(0, 120), url: t.FirstURL, snippet: t.Text });
+        }
+      }
+    }
+    if (results.length) return { ok: true, query: q, source: "duckduckgo-instant", count: results.length, results };
+  } catch { /* fallback */ }
+
+  // Fuente 3: Wikipedia ES
+  try {
+    const url = `https://es.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(q)}&format=json&srlimit=${maxResults}`;
+    const res = await fetch(url, { signal: AbortSignal.timeout(10000) });
+    const data = await res.json();
+    const hits = data?.query?.search || [];
+    const results = hits.slice(0, maxResults).map(h => ({
+      title: h.title,
+      url: `https://es.wikipedia.org/wiki/${encodeURIComponent(h.title)}`,
+      snippet: stripHtml(h.snippet || ""),
+    }));
+    if (results.length) return { ok: true, query: q, source: "wikipedia", count: results.length, results };
+  } catch { /* no more */ }
+
+  return { ok: false, error: "No se encontraron resultados en ninguna fuente", query: q };
+}
+
+// ============================================================
+// NEW: GIT — introspección del repositorio
+// ============================================================
+async function gitStatus(root) {
+  try {
+    const { stdout } = await execFileAsync("git", ["status", "--short", "--branch"], { cwd: root, timeout: 10000 });
+    return { ok: true, output: stdout.trim() };
+  } catch (e) {
+    return { ok: false, error: String(e?.message || e).slice(0, 400) };
+  }
+}
+
+async function gitLog(root, options = {}) {
+  try {
+    const maxCount = Math.max(1, Math.min(50, Number(options.maxCount) || 15));
+    const { stdout } = await execFileAsync(
+      "git",
+      ["log", `-${maxCount}`, "--pretty=format:%h|%an|%ad|%s", "--date=short"],
+      { cwd: root, timeout: 10000 },
+    );
+    const commits = stdout.trim().split("\n").filter(Boolean).map(line => {
+      const parts = line.split("|");
+      const [hash, author, date, ...rest] = parts;
+      return { hash, author, date, message: rest.join("|") };
+    });
+    return { ok: true, count: commits.length, commits };
+  } catch (e) {
+    return { ok: false, error: String(e?.message || e).slice(0, 400) };
+  }
+}
+
+async function gitDiff(root, options = {}) {
+  try {
+    const args = ["diff"];
+    if (options.staged === true) args.push("--staged");
+    const { stdout } = await execFileAsync("git", args, { cwd: root, timeout: 15000, maxBuffer: 5 * 1024 * 1024 });
+    return { ok: true, diff: stdout.slice(0, 20000) };
+  } catch (e) {
+    return { ok: false, error: String(e?.message || e).slice(0, 400) };
+  }
+}
+
+// ============================================================
+// NEW: SKILLS — instalar / listar skills desde GitHub
+// ============================================================
+async function installSkill(root, repoUrl, skillName) {
+  const url = String(repoUrl || "").trim();
+  const name = String(skillName || "").trim().replace(/[^a-zA-Z0-9._-]/g, "_");
+  if (!url || !name) return { ok: false, error: "install_skill requiere repoUrl y skillName" };
+  if (!/^https?:\/\/|^git@/i.test(url)) return { ok: false, error: "URL inválida (usa https://...)" };
+  const skillsRoot = path.join(root, ".editcore", "skills");
+  const target = path.join(skillsRoot, name);
+  if (fs.existsSync(target) && fs.readdirSync(target).length) {
+    return { ok: true, path: path.relative(root, target).replace(/\\/g, "/"), skillName: name, note: "Ya existía; no se clonó de nuevo." };
+  }
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  try {
+    const quoted = url.includes(" ") ? `"${url}"` : url;
+    await execFileAsync("git", ["clone", "--depth", "1", quoted, target], { cwd: root, timeout: 120000 });
+    return {
+      ok: true,
+      path: path.relative(root, target).replace(/\\/g, "/"),
+      skillName: name,
+      url,
+      note: "Skill instalada. El agente puede usarla en próximas tareas.",
+    };
+  } catch (e) {
+    return { ok: false, error: String(e?.message || e).slice(0, 400) };
+  }
+}
+
+function skillsUserDataPath(helpers = {}) {
+  const explicit = String(helpers?.userDataPath || process.env.EDITCORE_USER_DATA_PATH || "").trim();
+  if (explicit) return explicit;
+  try { return require("electron").app?.getPath?.("userData") || ""; } catch { return ""; }
+}
+
+function listSkills(root, helpers = {}) {
+  try {
+    const engine = require("../runtime/skills-engine");
+    const all = engine.listAllSkills({ projectRoot: root, userDataPath: skillsUserDataPath(helpers) });
+    const skills = all.map((s) => ({
+      name: s.name,
+      description: String(s.description || "").slice(0, 200),
+      category: s.category,
+      scope: s.scope,
+      enabled: s.enabled !== false,
+    }));
+    return { ok: true, count: skills.length, skills };
+  } catch { /* fallback: solo skills del proyecto */ }
+  const skillsRoot = path.join(root, ".editcore", "skills");
+  if (!fs.existsSync(skillsRoot)) return { ok: true, count: 0, skills: [] };
+  try {
+    const entries = fs.readdirSync(skillsRoot, { withFileTypes: true }).filter(e => e.isDirectory());
+    const skills = entries.map(e => {
+      const skillPath = path.join(skillsRoot, e.name);
+      let description = "";
+      let version = "";
+      const manifestPath = path.join(skillPath, "manifest.json");
+      if (fs.existsSync(manifestPath)) {
+        try {
+          const mf = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+          description = mf.description || "";
+          version = mf.version || "";
+        } catch { /* ignore */ }
+      }
+      return { name: e.name, path: `.editcore/skills/${e.name}`, description, version };
+    });
+    return { ok: true, count: skills.length, skills };
+  } catch (e) {
+    return { ok: false, error: String(e?.message || e).slice(0, 400) };
+  }
+}
+
+// ============================================================
+// TOOL DEFINITIONS
+// ============================================================
 const DEFINITIONS = [
   { type: "function", function: { name: "list_files", description: "Lista carpetas/archivos reales en disco. Usá path='..' para ver proyectos hermanos bajo el padre. forceReal=true fuerza listado real de '.' (ignora cache ROADMAP).", parameters: { type: "object", properties: { path: { type: "string" }, forceReal: { type: "boolean" } } } } },
-  { type: "function", function: { name: "read_file", description: "Lee archivo (truncado).", parameters: { type: "object", properties: { path: { type: "string" } }, required: ["path"] } } },
-  { type: "function", function: { name: "write_file", description: "Crea/sobrescribe archivo REAL en disco. Para proyecto hermano: '../NombreProyecto/archivo.ext'. NUNCA inventes contenido en el chat sin llamar esta tool.", parameters: { type: "object", properties: { path: { type: "string" }, content: { type: "string" } }, required: ["path", "content"] } } },
+  { type: "function", function: { name: "read_file", description: "Lee archivo (truncado). Acepta rutas absolutas (D:\\...) o relativas al proyecto.", parameters: { type: "object", properties: { path: { type: "string" } }, required: ["path"] } } },
+  { type: "function", function: { name: "write_file", description: "Crea/sobrescribe archivo REAL en disco. Para proyecto hermano: '../NombreProyecto/archivo.ext'.", parameters: { type: "object", properties: { path: { type: "string" }, content: { type: "string" } }, required: ["path", "content"] } } },
   { type: "function", function: { name: "replace_in_file", description: "Parche quirúrgico: reemplaza oldText exacto por newText.", parameters: { type: "object", properties: { path: { type: "string" }, oldText: { type: "string" }, newText: { type: "string" } }, required: ["path", "oldText", "newText"] } } },
   { type: "function", function: { name: "search_files", description: "Busca texto en el repo.", parameters: { type: "object", properties: { query: { type: "string" } }, required: ["query"] } } },
   { type: "function", function: { name: "run_command", description: "Comando shell (timeout 25s).", parameters: { type: "object", properties: { command: { type: "string" } }, required: ["command"] } } },
@@ -541,29 +743,63 @@ const DEFINITIONS = [
     function: {
       name: "capture_preview_screenshot",
       description: "Captura el preview activo (por defecto http://127.0.0.1:4568/) con Puppeteer/Playwright y diagnostica maquetación para evaluación multimodal UI/UX.",
-      parameters: {
-        type: "object",
-        properties: {
-          url: { type: "string", description: "URL del preview (default 127.0.0.1:4568)" },
-          viewport: { type: "string", description: "desktop | mobile" },
-        },
-      },
+      parameters: { type: "object", properties: { url: { type: "string" }, viewport: { type: "string" } } },
     },
   },
   {
     type: "function",
     function: {
       name: "web_scrape",
-      description: "Navega a una URL, extrae su contenido de texto y lo devuelve para análisis (Puppeteer/Playwright/fetch).",
-      parameters: {
-        type: "object",
-        properties: {
-          url: { type: "string", description: "URL del sitio web a explorar" },
-          ingest: { type: "boolean", description: "Si true, también guarda el extracto en .editcore/rag/" },
-          title: { type: "string", description: "Título opcional para la ingesta RAG" },
-        },
-        required: ["url"],
-      },
+      description: "Navega a una URL, extrae su contenido de texto y lo devuelve para análisis.",
+      parameters: { type: "object", properties: { url: { type: "string" }, ingest: { type: "boolean" }, title: { type: "string" } }, required: ["url"] },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "web_search",
+      description: "Busca en internet con DuckDuckGo + Wikipedia. Devuelve los mejores resultados con título, URL y snippet. Usala para documentación actualizada, APIs, librerías, errores de código.",
+      parameters: { type: "object", properties: { query: { type: "string" }, maxResults: { type: "number" } }, required: ["query"] },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "git_status",
+      description: "Estado actual del repo git (rama, modificados, staged, untracked).",
+      parameters: { type: "object", properties: {} },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "git_log",
+      description: "Historial de commits del repo git.",
+      parameters: { type: "object", properties: { maxCount: { type: "number" } } },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "git_diff",
+      description: "Diff de cambios sin commitear (staged=true para staged).",
+      parameters: { type: "object", properties: { staged: { type: "boolean" } } },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "install_skill",
+      description: "Instala una skill clonando un repo GitHub en .editcore/skills/<name>/. La skill queda disponible para el agente.",
+      parameters: { type: "object", properties: { repoUrl: { type: "string" }, skillName: { type: "string" } }, required: ["repoUrl", "skillName"] },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "list_skills",
+      description: "Lista las skills instaladas en el proyecto (.editcore/skills/).",
+      parameters: { type: "object", properties: {} },
     },
   },
   {
@@ -571,15 +807,7 @@ const DEFINITIONS = [
     function: {
       name: "ingest_to_brain",
       description: "Guarda documentación, código clonado o información en el Cerebro RAG (.editcore/rag/).",
-      parameters: {
-        type: "object",
-        properties: {
-          title: { type: "string", description: "Título del documento de conocimiento" },
-          content: { type: "string", description: "Contenido a almacenar de forma persistente" },
-          source: { type: "string", description: "URL o origen opcional" },
-        },
-        required: ["title", "content"],
-      },
+      parameters: { type: "object", properties: { title: { type: "string" }, content: { type: "string" }, source: { type: "string" } }, required: ["title", "content"] },
     },
   },
   {
@@ -595,14 +823,7 @@ const DEFINITIONS = [
     function: {
       name: "clone_repo",
       description: "Clona un repositorio Git dentro del proyecto (.editcore/repos/) e ingesta el README al cerebro si existe.",
-      parameters: {
-        type: "object",
-        properties: {
-          url: { type: "string", description: "URL del repositorio (https://github.com/...)" },
-          path: { type: "string", description: "Destino relativo opcional" },
-        },
-        required: ["url"],
-      },
+      parameters: { type: "object", properties: { url: { type: "string" }, path: { type: "string" } }, required: ["url"] },
     },
   },
   {
@@ -610,20 +831,7 @@ const DEFINITIONS = [
     function: {
       name: "clone_web_page",
       description: "Clona una URL: render DOM (Puppeteer/Playwright), capturas, visión→React/Tailwind y merge en golden template.",
-      parameters: {
-        type: "object",
-        properties: {
-          url: { type: "string" },
-          title: { type: "string" },
-          folder: { type: "string" },
-          viewport: { type: "string" },
-          replacements: { type: "object" },
-          skipVision: { type: "boolean" },
-          mergeApp: { type: "boolean" },
-          dryRun: { type: "boolean" },
-        },
-        required: ["url"],
-      },
+      parameters: { type: "object", properties: { url: { type: "string" }, title: { type: "string" }, folder: { type: "string" }, viewport: { type: "string" }, replacements: { type: "object" }, skipVision: { type: "boolean" }, mergeApp: { type: "boolean" }, dryRun: { type: "boolean" } }, required: ["url"] },
     },
   },
   {
@@ -631,14 +839,7 @@ const DEFINITIONS = [
     function: {
       name: "images_to_code",
       description: "Genera UI desde brief/imagen (scaffold o visión).",
-      parameters: {
-        type: "object",
-        properties: {
-          title: { type: "string" },
-          description: { type: "string" },
-          folder: { type: "string" },
-        },
-      },
+      parameters: { type: "object", properties: { title: { type: "string" }, description: { type: "string" }, folder: { type: "string" } } },
     },
   },
   {
@@ -646,12 +847,7 @@ const DEFINITIONS = [
     function: {
       name: "run_e2e_pipeline",
       description: "Verificación end-to-end 1→100 del cableado EditCore.",
-      parameters: {
-        type: "object",
-        properties: {
-          writeReport: { type: "boolean" },
-        },
-      },
+      parameters: { type: "object", properties: { writeReport: { type: "boolean" } } },
     },
   },
   {
@@ -659,12 +855,7 @@ const DEFINITIONS = [
     function: {
       name: "rollback_last_change",
       description: "Restaura el último snapshot (.editcore/snapshots/) tras un fallo de compilación.",
-      parameters: {
-        type: "object",
-        properties: {
-          snapshotId: { type: "string", description: "Id opcional de snapshot; por defecto el último" },
-        },
-      },
+      parameters: { type: "object", properties: { snapshotId: { type: "string" } } },
     },
   },
   {
@@ -680,13 +871,7 @@ const DEFINITIONS = [
     function: {
       name: "analyze_circular_dependencies",
       description: "Analiza el árbol de dependencias e imports/requires en el proyecto o carpeta y detecta ciclos circulares recursivos.",
-      parameters: {
-        type: "object",
-        properties: {
-          path: { type: "string", description: "Subcarpeta o archivo a analizar (por defecto todo el proyecto)" },
-          maxDepth: { type: "number", description: "Profundidad máxima de recursión (default 25)" },
-        },
-      },
+      parameters: { type: "object", properties: { path: { type: "string" }, maxDepth: { type: "number" } } },
     },
   },
 ];
@@ -706,6 +891,15 @@ async function execute(name, args, root, allowWrite, helpers = {}) {
   const a = args || {};
   switch (name) {
     case "list_files": {
+      const rawPath = String(a.path || "").trim();
+      if (rawPath && path.isAbsolute(rawPath)) {
+        const absolute = path.resolve(rawPath);
+        let isDir = false;
+        try { isDir = fs.statSync(absolute).isDirectory(); } catch { isDir = false; }
+        if (!isDir) return { ok: false, error: `No existe la carpeta: ${rawPath}` };
+        const listed = listFiles(root, absolute, 200, { forceReal: true });
+        return listed.ok ? { ...listed, path: absolute } : listed;
+      }
       const resolved = resolveListPath(root, a.path || ".");
       const listed = listFiles(root, resolved.target || ".", 80, {
         forceReal: a.forceReal === true || a.real === true,
@@ -761,11 +955,7 @@ async function execute(name, args, root, allowWrite, helpers = {}) {
             ? (opts) => helpers.capturePreview(opts)
             : null,
         });
-        const {
-          screenshotAbs: _abs,
-          imageDataUrl: _img,
-          ...safeShot
-        } = shot;
+        const { screenshotAbs: _abs, imageDataUrl: _img, ...safeShot } = shot;
         return safeShot;
       } catch (error) {
         return { ok: false, error: String(error?.message || error).slice(0, 400) };
@@ -797,6 +987,19 @@ async function execute(name, args, root, allowWrite, helpers = {}) {
         ingested,
       };
     }
+    case "web_search":
+      return webSearch(a.query, { maxResults: a.maxResults });
+    case "git_status":
+      return gitStatus(root);
+    case "git_log":
+      return gitLog(root, { maxCount: a.maxCount });
+    case "git_diff":
+      return gitDiff(root, { staged: a.staged === true });
+    case "install_skill":
+      if (!allowWrite) return { ok: false, error: "install_skill requiere modo escritura" };
+      return installSkill(root, a.repoUrl, a.skillName);
+    case "list_skills":
+      return listSkills(root, helpers);
     case "ingest_to_brain":
       if (!allowWrite) return { ok: false, error: "Ingesta al cerebro requiere modo escritura" };
       return saveToBrain(root, a.title, a.content, { source: a.source || "" });
@@ -818,7 +1021,7 @@ async function execute(name, args, root, allowWrite, helpers = {}) {
         viewport: a.viewport,
         replacements: a.replacements || a.data || {},
         skipVision: a.skipVision === true,
-        mergeApp: a.mergeApp === true, // Solo fusionar App si se pide explicitamente
+        mergeApp: a.mergeApp === true,
         dryRun: a.dryRun === true,
       }, { model: a.model || "" });
     }
@@ -851,7 +1054,8 @@ async function execute(name, args, root, allowWrite, helpers = {}) {
 function getToolDefinitions({ allowWrite = true, isFullAccess = false, isAnalysis = false } = {}) {
   const writeTools = new Set([
     "write_file", "replace_in_file", "run_command", "scaffold_project",
-    "supabase_migrate", "ingest_to_brain", "clone_repo", "rollback_last_change", "images_to_code", "clone_web_page"
+    "supabase_migrate", "ingest_to_brain", "clone_repo", "rollback_last_change",
+    "images_to_code", "clone_web_page", "install_skill",
   ]);
   const canWrite = allowWrite === true || isFullAccess === true;
   return DEFINITIONS.filter((t) => {
@@ -881,4 +1085,11 @@ module.exports = {
   execute,
   DEFINITIONS,
   getToolDefinitions,
+  // NUEVAS EXPORTS (por si otros módulos las necesitan)
+  webSearch,
+  gitStatus,
+  gitLog,
+  gitDiff,
+  installSkill,
+  listSkills,
 };

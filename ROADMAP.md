@@ -6,8 +6,8 @@ EditCore actualiza este archivo tras cambios. No pedirlo al usuario. No pegar co
 
 ## Proceso
 - Fase: implementacion
-- Estado: Correcciones de la auditoría forense del 2026-09-30 aplicadas (agente con tools reales, replace_in_file seguro, preload sin duplicados).
-- Actualizado: 2026-09-30
+- Estado: 4.1.1 — el chat usa herramientas de lectura (web, disco, skills), lista rutas absolutas y recibe las skills como contexto de sistema.
+- Actualizado: 2026-10-01
 - Preview: desconocido — usa el preview del IDE, no inventes puertos
 
 ## Mapa
@@ -46,13 +46,16 @@ EditCore actualiza este archivo tras cambios. No pedirlo al usuario. No pegar co
 - **replace_in_file conservador**: coincidencia exacta o tolerante solo a CRLF/espacios finales; si el parche rompe la sintaxis de un archivo válido, no se escribe.
 - **RAG con brain-seed**: el conocimiento persistente vive en `brain-seed/` y se accede vía `brain-service.js` + `brain-memory-store.js`.
 - **IPC como bus principal**: `runtime/chat-kernel-bridge.js` y `runtime/intent-orchestrator.js` comunican renderer ↔ main ↔ kernel.
-- **Skills como extensión**: las habilidades se cargan bajo demanda y no forman parte del core.
+- **Skills como extensión**: las habilidades se cargan bajo demanda y no forman parte del core. Van al prompt de sistema (`skillsPrompt`), nunca dentro del mensaje del usuario: si no, el clasificador y la memoria del hilo ven el texto de la skill en vez del pedido.
+- **Modo charla con lectura**: CHAT tiene web_search/web_scrape, list_files/read_file/search_files, list_skills, list_brain y git_status/log/diff (hasta 6 pasos; el último sin tools para forzar respuesta). Nunca escribe ni ejecuta comandos.
 - **Setup automático**: `scripts/postinstall.js` (postinstall y `npm run setup`) repone Electron, node-pty, Chrome de puppeteer y branding; registra en `.editcore/logs/setup.jsonl`.
 - **Runtime en SSD**: D: es HDD y Electron tardaba 45-98 s solo en arrancar desde ahí (1-2 s desde C:). El launcher raíz copia `node_modules/electron/dist` a `%LOCALAPPDATA%\EDITCOREAI\runtime` (resincroniza por tamaño/fecha/versión del host) y arranca desde ahí; mutex contra dobles clics. Ventana en 17-20 s (57 s la primera vez con copia).
 - **Contraseña `postgres` del stack CLI**: no se cambia (la CLI la usa para todos los roles internos); la protección es de red: Docker publica en 0.0.0.0 y el firewall `GAFCORE` corta el acceso externo.
 - **Rotación de claves Supabase**: `npm run supabase:check` / `supabase:plan` / `supabase:rotate` (`scripts/supabase-rotate-keys.js`). Respaldo + dump en `Z RESPALDOS\supabase-key-rotation\`, verificación y rollback automáticos, historial en `historial.jsonl`. Las claves viven en `TAXIDRIV\supabase\.env` y `signing_keys.json` (gitignored); Kong fijado en 54325 detrás del proxy del watchdog; el PostgREST manual se recrea con el secreto nuevo.
 
 ## Cambios recientes
+- Chat 4.1.1 (2026-10-01): modo charla con herramientas de solo lectura (antes respondía "no puedo acceder al disco", "no tengo skills" o versiones viejas de memoria); `list_files` y la lista directa respetan rutas absolutas con espacios (`D:\PROGRAMAS IA` listaba EDITCOREAI); `list_skills` usa skills-engine (integradas + globales + proyecto); skills como contexto de sistema y respaldo de modelos también en la corrida de agente; el filtro del chat ya no convierte `supabase.gafcore.com` en "supabase.el proveedor.com" (solo oculta el gateway); análisis atribuyen datos de documentos ("según archivo.md") y no los presentan como verificados.
+- main.js (2026-10-01): codificación reparada (BOM + 304 secuencias mal convertidas por `Get-Content -Raw`), se conserva el bloqueo de credenciales del usuario (`runtime/credentials-vault-guard.js`). Integrados agent-core/tools y dependencias axios + simple-git.
 - Limpieza (2026-10-01): 224 rutas movidas a `Z RESPALDOS\editcoreai-limpieza-2026-10-01\` (MANIFIESTO.txt): 47 módulos de runtime sin uso, 129 scripts obsoletos, workers/verify del kernel, `evidence-grounding.js` raíz duplicado, volcadores de bóveda, logs, scratch/docs/tasks/skills/phase4-results/.vercel, `release/` y `.editcore/snapshots`. Se conservan agent-core/ (trabajo en curso) y web-portal/. Suite 840 tests, 0 fallos; arranque verificado sin errores.
 - renderer.js (+overlay) — en modo IDE la app arranca siempre en Inicio; ni el arranque ni `bootBackground` reabren el último proyecto/chat (salvo `projectRoot`/`openRoot`/`autoPick` explícitos) (2026-10-01)
 - editcore-chat-kernel/thread-core.js + orchestrator.js + provider.js — las imágenes adjuntas llegan al modelo (antes solo se avisaba "hay imágenes" y el modelo respondía que no veía nada); con imágenes, la cola de respaldo prioriza modelos con visión (2026-09-30)
@@ -72,7 +75,7 @@ EditCore actualiza este archivo tras cambios. No pedirlo al usuario. No pegar co
 - scripts/postinstall.js, scripts/supabase-rotate-keys.js, scripts/lib/supabase-keys.js — setup y rotación automáticos (2026-09-30)
 
 ## Verificado
-- npm run check; npm test 840 tests (839 ok, 1 omitido, 0 fallos) tras la limpieza.
+- npm run check; npm test 848 tests (847 ok, 1 omitido, 0 fallos) en 4.1.1 (`test/chat-mode-read-tools.test.js` nuevo).
 - Kernel real con perfil principal ME AI (401): pasa a respaldo y responde "Son las 14:38 … miércoles 30 de septiembre de 2026".
 - Probe Electron: preload.js expone 75 namespaces sin errores (HEAD exponía 17 y fallaba).
 - Embeddings (@xenova/transformers) 384 dims; puppeteer 25 lanza Chrome; node-pty spawn ok.

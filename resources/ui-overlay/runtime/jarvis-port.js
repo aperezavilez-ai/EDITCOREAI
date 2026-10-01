@@ -138,7 +138,6 @@ function loadEditcoreManifest(maxChars = 4_500) {
         .replace(/https?:\/\/[^\s)]*gafcore-gateway[^\s)]*/gi, "")
         .replace(/\bgafcore-gateway(?:\.vercel\.app)?\b/gi, "proveedor de modelos")
         .replace(/\bGafCore\s+Gateway\b/gi, "proveedor de modelos")
-        .replace(/\bGafCore\b/gi, "el proveedor")
         .replace(/\bGAFCORE GATEWAY\b/gi, "proyecto hermano");
     } catch { /* ignore */ }
   }

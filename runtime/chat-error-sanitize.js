@@ -16,7 +16,7 @@ function scrubInternalProviderNames(text = "") {
     .replace(/https?:\/\/[^\s)]*gafcore-gateway[^\s)]*/gi, "")
     .replace(/\bgafcore-gateway(?:\.vercel\.app)?\b/gi, "proveedor de IA")
     .replace(/\bGafCore\s+Gateway\b/gi, "proveedor de IA")
-    .replace(/\bGafCore\b/gi, "proveedor")
+    .replace(/(?<![.\w/-])GafCore(?![.\w-])/gi, "proveedor")
     .replace(/\bGAFCORE_(?:GATEWAY_URL|API_KEY|ADMIN_TOKEN)\b/g, "credencial de IA")
     .replace(/\bx-project-key\b/gi, "API key")
     .replace(/\bproject\s*keys?\b/gi, "API keys")

@@ -3,10 +3,16 @@
 /**
  * Loop LLM + tools (OpenAI-compatible tool_calls).
  * EDITCOREAI inyecta providerApi.call({ messages, tools, signal, onTextDelta }).
+ * 
+ * v0.4.1 - Incluye:
+ *  - Acceso a internet, git, skills, shell y archivos externos.
+ *  - Formato de respuesta markdown rico (encabezados, listas, código, tablas).
+ *  - packEvidenceForModel con soporte de tools extendidas.
  */
 
 function toolDefsForMode(mode = "explain", allowWrite = false) {
   const readTools = [
+    // ============ TOOLS NATIVAS DEL PROYECTO ============
     {
       type: "function",
       function: {
@@ -48,6 +54,194 @@ function toolDefsForMode(mode = "explain", allowWrite = false) {
             path: { type: "string" },
           },
           required: ["query"],
+          additionalProperties: false,
+        },
+      },
+    },
+
+    // ============ INTERNET ============
+    {
+      type: "function",
+      function: {
+        name: "web_search",
+        description: "Busca informacion actualizada en internet (documentacion, errores, librerias, APIs). Usa esto cuando necesites datos fuera del proyecto.",
+        parameters: {
+          type: "object",
+          properties: {
+            query: { type: "string", description: "Consulta de busqueda" },
+            maxResults: { type: "integer", description: "Maximo de resultados (1-10)" },
+          },
+          required: ["query"],
+          additionalProperties: false,
+        },
+      },
+    },
+    {
+      type: "function",
+      function: {
+        name: "web_fetch",
+        description: "Descarga y lee el contenido completo de una URL (documentacion, README, articulos).",
+        parameters: {
+          type: "object",
+          properties: {
+            url: { type: "string", description: "URL completa a leer" },
+            maxChars: { type: "integer", description: "Maximo de caracteres a devolver" },
+          },
+          required: ["url"],
+          additionalProperties: false,
+        },
+      },
+    },
+
+    // ============ GIT ============
+    {
+      type: "function",
+      function: {
+        name: "git_clone",
+        description: "Clona un repositorio Git de GitHub/GitLab en una ruta local.",
+        parameters: {
+          type: "object",
+          properties: {
+            url: { type: "string" },
+            targetDir: { type: "string" },
+            depth: { type: "integer" },
+          },
+          required: ["url", "targetDir"],
+          additionalProperties: false,
+        },
+      },
+    },
+    {
+      type: "function",
+      function: {
+        name: "git_log",
+        description: "Muestra el historial de commits de un repositorio local.",
+        parameters: {
+          type: "object",
+          properties: {
+            repoPath: { type: "string" },
+            maxCount: { type: "integer" },
+          },
+          required: ["repoPath"],
+          additionalProperties: false,
+        },
+      },
+    },
+    {
+      type: "function",
+      function: {
+        name: "git_status",
+        description: "Muestra el estado actual de un repositorio Git (archivos modificados, staged, untracked).",
+        parameters: {
+          type: "object",
+          properties: { repoPath: { type: "string" } },
+          required: ["repoPath"],
+          additionalProperties: false,
+        },
+      },
+    },
+    {
+      type: "function",
+      function: {
+        name: "git_diff",
+        description: "Muestra las diferencias de un repositorio Git.",
+        parameters: {
+          type: "object",
+          properties: {
+            repoPath: { type: "string" },
+            staged: { type: "boolean" },
+          },
+          required: ["repoPath"],
+          additionalProperties: false,
+        },
+      },
+    },
+
+    // ============ ACCESO EXTERNO ============
+    {
+      type: "function",
+      function: {
+        name: "read_external_file",
+        description: "Lee un archivo de CUALQUIER ubicacion autorizada de tu equipo (fuera del proyecto).",
+        parameters: {
+          type: "object",
+          properties: {
+            path: { type: "string", description: "Ruta absoluta del archivo" },
+          },
+          required: ["path"],
+          additionalProperties: false,
+        },
+      },
+    },
+    {
+      type: "function",
+      function: {
+        name: "write_external_file",
+        description: "Escribe o modifica un archivo en CUALQUIER ubicacion autorizada de tu equipo.",
+        parameters: {
+          type: "object",
+          properties: {
+            path: { type: "string" },
+            content: { type: "string" },
+          },
+          required: ["path", "content"],
+          additionalProperties: false,
+        },
+      },
+    },
+    {
+      type: "function",
+      function: {
+        name: "list_external_directory",
+        description: "Lista archivos de una carpeta externa al proyecto (en rutas autorizadas).",
+        parameters: {
+          type: "object",
+          properties: { path: { type: "string" } },
+          required: ["path"],
+          additionalProperties: false,
+        },
+      },
+    },
+
+    // ============ SKILLS ============
+    {
+      type: "function",
+      function: {
+        name: "install_skill",
+        description: "Instala una nueva skill (habilidad) desde un repositorio de GitHub en la carpeta skills/.",
+        parameters: {
+          type: "object",
+          properties: {
+            repoUrl: { type: "string" },
+            skillName: { type: "string" },
+          },
+          required: ["repoUrl", "skillName"],
+          additionalProperties: false,
+        },
+      },
+    },
+    {
+      type: "function",
+      function: {
+        name: "list_skills",
+        description: "Lista todas las skills instaladas actualmente en el sistema.",
+        parameters: { type: "object", properties: {}, additionalProperties: false },
+      },
+    },
+
+    // ============ SHELL ============
+    {
+      type: "function",
+      function: {
+        name: "run_shell",
+        description: "Ejecuta un comando de shell en PowerShell. Util para: npm install, git, python, node, compiladores, etc.",
+        parameters: {
+          type: "object",
+          properties: {
+            command: { type: "string" },
+            cwd: { type: "string" },
+          },
+          required: ["command"],
           additionalProperties: false,
         },
       },
@@ -124,6 +318,10 @@ function toolDefsForMode(mode = "explain", allowWrite = false) {
   return readTools;
 }
 
+/**
+ * v0.4.1 — System prompt con reglas estrictas de FORMATO MARKDOWN.
+ * El agente debe responder como un chat moderno (títulos, listas, código, tablas).
+ */
 function systemPromptForMode(mode, allowWrite, opts = {}) {
   let elite = null;
   try {
@@ -138,57 +336,120 @@ function systemPromptForMode(mode, allowWrite, opts = {}) {
   const wrap = elite?.withEliteCommunicationPolicy
     || ((s) => s);
   const fullAccess = opts.fullAccess === true || (allowWrite && opts.permissionMode === "full");
+
   const base = [
-    "Eres EDITCOREAI Agent Core v0.3 — operador con tools. Responde SIEMPRE en espanol.",
+    "Eres EDITCOREAI Agent Core v0.4 — operador con tools avanzadas. Responde SIEMPRE en espanol.",
+    "",
+    "=== REGLAS DE FORMATO OBLIGATORIO (MARKDOWN RICO) ===",
+    "TODAS tus respuestas al usuario DEBEN estar formateadas en Markdown enriquecido, igual que un chat moderno (ChatGPT, Claude, Cursor).",
+    "",
+    "ESTRUCTURA OBLIGATORIA de cada respuesta:",
+    "1. **Título** en `##` para secciones principales (nunca uses # salvo para el título global).",
+    "2. **Negritas** (`**texto**`) para palabras clave, nombres de archivos, herramientas y conceptos importantes.",
+    "3. **Listas con viñetas** (`- item`) para enumerar cosas, pasos o hallazgos.",
+    "4. **Listas numeradas** (`1. paso`) para secuencias de acciones.",
+    "5. **Bloques de código** con triple backtick y lenguaje (```javascript, ```bash, ```json) para TODO código, comando o resultado técnico.",
+    "6. **Código inline** con backticks simples (`archivo.js`, `npm install`) para nombres de archivos, funciones, variables y comandos cortos.",
+    "7. **Tablas** (`| Col | Col |`) cuando compares opciones, listes archivos con metadatos o muestres datos estructurados.",
+    "8. **Citas** (`> texto`) para advertencias, notas importantes o resúmenes destacados.",
+    "9. **Separadores** (`---`) para dividir secciones largas.",
+    "10. **Emojis moderados** (✅ ❌ ⚠️ 🎯 📁 🚀 🔍) SOLO para marcar estado o categoría, nunca en exceso.",
+    "",
+    "REGLAS DE ESTILO:",
+    "- NUNCA respondas con un párrafo monolítico. Divide en secciones.",
+    "- NUNCA uses texto plano sin estructura cuando hay más de 2 ideas.",
+    "- SIEMPRE deja una línea en blanco entre secciones para respiración visual.",
+    "- Los paths de archivos van en `backticks` y con formato consistente.",
+    "- Los resultados de tools (búsquedas, listados, comandos) van dentro de bloques de código o tablas.",
+    "",
+    "EJEMPLO DE RESPUESTA CORRECTA:",
+    "```markdown",
+    "## 🔍 Búsqueda completada",
+    "",
+    "Encontré **3 resultados** relevantes para tu consulta:",
+    "",
+    "| # | Fuente | Título |",
+    "|---|--------|--------|",
+    "| 1 | Wikipedia | Node.js |",
+    "| 2 | GitHub | electron/electron |",
+    "| 3 | npm | latest versions |",
+    "",
+    "### 📁 Archivos encontrados",
+    "",
+    "En `D:\\PROGRAMAS IA` hay **4 carpetas**:",
+    "",
+    "- `EDITCOREAI/` — tu proyecto principal",
+    "- `old-backup/` — respaldo antiguo",
+    "",
+    "> 💡 **Siguiente paso sugerido:** ¿Quieres que analice la carpeta `EDITCOREAI/`?",
+    "```",
+    "",
+    "=== FIN DE REGLAS DE FORMATO ===",
+    "",
+    "=== REGLAS DE COMPORTAMIENTO ===",
     "Hechos del proyecto SOLO salen de TOOL_RESULT. Si no hay result, el hecho no existe.",
     "Protocolo de orden: ANALIZA (breve) → ANUNCIA → EJECUTA tools ahora → REPORTE final con hechos de TOOL_RESULT.",
     "Maximo 3 tool_calls por turno. Observa el result antes de la siguiente oleada.",
     "PROHIBIDO narrar 'ya lei / ya escribi / ya verifique' sin tool_calls en ESTE mensaje.",
-    "LIDERAZGO: hoja de ruta corta (3-5 pasos) y ejecuta el paso actual con tools.",
-    "Usa tool_calls reales. PROHIBIDO inventar lecturas/escrituras.",
+    "PROHIBIDO inventar lecturas/escrituras. Usa tool_calls reales.",
     "PROHIBIDO cerrar con 'Verificacion completada con evidencia real'.",
     "PROHIBIDO crear *-fixed.js o placeholders.",
-    "PROHIBIDO usar ANALISIS_ERRORES o .claude/*.md como evidencia forense.",
     "MAPA COGNITIVO: usa list_files('.') / rutas reales. PROHIBIDO asumir src/ o app/ si no existen.",
-    "OODA: si replace_in_file falla por oldText, relee el archivo y reintenta. Ignora fallos secundarios de git auxiliares.",
+    "OODA: si replace_in_file falla por oldText, relee el archivo y reintenta.",
+    "",
+    "=== CAPACIDADES AVANZADAS (v0.4) ===",
+    "ACCESO A INTERNET: `web_search(query)` para buscar, `web_fetch(url)` para leer URLs completas.",
+    "GIT AVANZADO: `git_clone`, `git_log`, `git_status`, `git_diff`.",
+    "ACCESO EXTERNO: `read_external_file`, `write_external_file`, `list_external_directory` (respetando config.json).",
+    "SKILLS: `install_skill(repoUrl, skillName)`, `list_skills()`.",
+    "SHELL: `run_shell(command, cwd)` para npm install, pip, git, python, etc.",
+    "",
+    "REGLAS DE USO DE TOOLS:",
+    "1. Info actualizada o externa → `web_search` PRIMERO.",
+    "2. Repositorio externo → `git_clone` + `list_files`/`read_file`.",
+    "3. Instalar libreria → `run_shell` con npm/pip install.",
+    "4. Funcionalidad nueva → `install_skill` o `web_search`.",
   ];
+
   if (fullAccess || (allowWrite && mode === "execute")) {
     base.push(
       "MODO ACCESO COMPLETO / EJECUCION AUTORIZADA:",
-      "PROHIBIDO detenerte o devolver solo texto diciendo 'Voy a buscar...', 'Voy a revisar...' o 'Voy a hacer...': DEBES invocar la tool (read_file, search_files, replace_in_file, write_file) EN ESTE MISMO MENSAJE.",
-      "PROHIBIDO preguntar: '¿Deseas que proceda?', 'Confirma para aplicar los cambios.', 'Escribe procede.', '¿Procedo?', u equivalentes.",
-      "NO esperes confirmacion del usuario. Ejecuta YA write_file / replace_in_file / run_command.",
-      "Narra brevemente (1 frase) que haras y aplica las tools de inmediato en la misma respuesta.",
+      "PROHIBIDO detenerte o devolver solo texto diciendo 'Voy a buscar...'. DEBES invocar la tool EN ESTE MISMO MENSAJE.",
+      "PROHIBIDO preguntar: '¿Deseas que proceda?', 'Confirma para aplicar los cambios.', '¿Procedo?'.",
+      "NO esperes confirmacion del usuario. Ejecuta YA write_file / replace_in_file / run_command / run_shell / install_skill.",
     );
   }
   if (mode === "diagnose") {
     base.push(
-      "MODO DIAGNOSTICO (solo lectura): list_files/read_file/search_files.",
-      "Entrega: ## Qué sí funcionó | ## Qué falló / hallazgos | ## Evidencia | ## Cómo lo corregiré",
+      "MODO DIAGNOSTICO (solo lectura): list_files/read_file/search_files/web_search/web_fetch/git_log/git_status.",
+      "Formato obligatorio de informe:",
+      "## Qué sí funcionó",
+      "## Qué falló / hallazgos",
+      "## Evidencia",
+      "## Cómo lo corregiré",
       "Si no hay defectos reales, dilo. No inventes TODOs.",
     );
   } else if (mode === "execute") {
     base.push(
-      "MODO EJECUCION: el usuario autorizo cambios (o Acceso completo esta activo).",
-      "EJECUCION DIRECTA: no te detengas tras narrar. Si mencionas buscar o editar, invoca la herramienta correspondiente en este turno.",
-      "No esperes oldText del usuario: lee el archivo con read_file y construye replace_in_file con oldText EXACTO del contenido leido.",
-      "Puedes hacer varios replace_in_file / write_file en la misma corrida.",
-      "Usa delete_file solo si el usuario pide borrar un archivo concreto.",
-      "Si hay tests/verificacion, usa run_command (npm test, node --test, etc.). Si falla, lee el error, corrige y reintenta (ciclo OODA completo).",
-      "Si no hay defecto real, di que no hay mutaciones y termina (no inventes cambios).",
-      "AL FINALIZAR LA EJECUCIÓN (CIERRE OBLIGATORIO):",
-      "1. Informa claramente qué tarea quedó completada y qué archivos se modificaron.",
-      "2. Resume el cambio visual o funcional logrado.",
-      "3. Propón proactivamente el siguiente paso o mejora técnica/visual que beneficie al proyecto y pregunta si avanzamos con eso.",
+      "MODO EJECUCION: el usuario autorizo cambios.",
+      "EJECUCION DIRECTA: no te detengas tras narrar. Invoca la herramienta correspondiente en este turno.",
+      "No esperes oldText del usuario: lee el archivo con read_file y construye replace_in_file con oldText EXACTO.",
+      "AL FINALIZAR, usa este formato:",
+      "## ✅ Resultado",
+      "## 📝 Cambios aplicados",
+      "## 🎯 Siguiente paso sugerido",
     );
   } else if (mode === "list" || mode === "explain") {
     base.push(
-      "Lista carpetas con list_files (solo rutas reales del proyecto) y explica archivos con read_file.",
-      "Respuesta clara en markdown. Sin meta-cierres.",
+      "Lista carpetas con list_files (solo rutas reales) y explica archivos con read_file.",
+      "Formato obligatorio:",
+      "## 📁 Contenido",
+      "## 🔍 Explicación",
+      "## 💡 Recomendación",
     );
   }
   if (!allowWrite || mode === "diagnose") {
-    base.push("PROHIBIDO write_file/replace_in_file/delete_file en esta corrida.");
+    base.push("PROHIBIDO write_file/replace_in_file/delete_file/write_external_file en esta corrida.");
   }
   return wrap(base.join("\n"));
 }
@@ -233,7 +494,6 @@ function extractEvidenceKeywords(prompt = "", filePath = "") {
     if (/^(resources|runtime|src|app|file|path|modo|diagn|audita|solo|estos|archivos)$/i.test(w)) continue;
     keys.add(w);
   }
-  // Símbolos críticos del Agent Core que suelen estar lejos del head.
   for (const k of [
     "tryRunAgentCore", "isAgentCoreEnabled", "loadAgentCore", "resolveCoreRoot",
     "runAgent", "planTask", "CORE_VERSION", "agent-core-bridge",
@@ -246,7 +506,6 @@ function sliceRelevantContent(content = "", keywords = [], headChars = 4500, win
   if (raw.length <= headChars + 500) {
     return { text: raw, truncated: false, totalChars: raw.length };
   }
-
   const lower = raw.toLowerCase();
   const seen = new Set();
   const takeMatches = (keys, maxHitsPerKey = 2) => {
@@ -264,10 +523,7 @@ function sliceRelevantContent(content = "", keywords = [], headChars = 4500, win
         const stamp = `${start}:${end}`;
         if (!seen.has(stamp)) {
           seen.add(stamp);
-          parts.push({
-            label: `MATCH ${key} @${idx}`,
-            text: raw.slice(start, end),
-          });
+          parts.push({ label: `MATCH ${key} @${idx}`, text: raw.slice(start, end) });
           hits += 1;
         }
         from = idx + needle.length;
@@ -275,32 +531,22 @@ function sliceRelevantContent(content = "", keywords = [], headChars = 4500, win
     }
     return parts;
   };
-
-  // PRIORIDAD: simbolos de invocacion Agent Core ANTES del HEAD,
-  // para que un CORTE_PRESUPUESTO no borre tryRunAgentCore(...).
   const priorityKeys = [
-    "tryRunAgentCore(",
-    "tryRunAgentCore",
-    "isAgentCoreEnabled(",
-    "isAgentCoreEnabled",
-    "useCore",
-    "Agent Core (motor",
+    "tryRunAgentCore(", "tryRunAgentCore", "isAgentCoreEnabled(",
+    "isAgentCoreEnabled", "useCore", "Agent Core (motor",
   ];
   const priorityParts = takeMatches(priorityKeys, 2);
   const headPart = { label: "HEAD", text: raw.slice(0, headChars) };
   const otherKeys = keywords.filter((k) => !priorityKeys.some((p) => p.toLowerCase().includes(String(k).toLowerCase())));
   const otherParts = takeMatches(otherKeys, 1);
   const tailPart = { label: "TAIL", text: raw.slice(-1200) };
-
   const parts = [...priorityParts, headPart, ...otherParts, tailPart];
   const text = parts.map((p) => `<<<${p.label}>>>\n${p.text}`).join("\n\n");
   return { text, truncated: true, totalChars: raw.length };
 }
 
 /**
- * Empaqueta evidencia para el modelo.
- * Nunca entrega un corte silencioso a mitad de línea sin etiquetar.
- * @returns {{ text: string, truncatedPaths: string[], fileMeta: object[] }}
+ * v0.4.1 — Empaqueta evidencia para el modelo, INCLUYENDO tools extendidas.
  */
 function packEvidenceForModel(steps = [], options = {}) {
   const maxChars = Number(options.maxChars) || 24000;
@@ -310,7 +556,6 @@ function packEvidenceForModel(steps = [], options = {}) {
   const fileMeta = [];
   let used = 0;
 
-  // Unir ventanas del mismo path antes de empaquetar (head + invocacion Agent Core).
   let { mergeReadStepsByPath } = (() => {
     try {
       return require("./verifier");
@@ -318,21 +563,20 @@ function packEvidenceForModel(steps = [], options = {}) {
       return {};
     }
   })();
+
   const listSteps = steps.filter((s) => s?.ok && s.name === "list_files");
   const readSteps = typeof mergeReadStepsByPath === "function"
     ? mergeReadStepsByPath(steps)
     : steps.filter((s) => s?.ok && s.name === "read_file");
 
-  // Archivos chicos primero; main.js al final pero con matches prioritarios al inicio del bloque.
-  readSteps.sort((a, b) => {
-    const ap = String(a.result?.path || "").toLowerCase();
-    const bp = String(b.result?.path || "").toLowerCase();
-    const aMain = /main\.js$/.test(ap) ? 1 : 0;
-    const bMain = /main\.js$/.test(bp) ? 1 : 0;
-    if (aMain !== bMain) return aMain - bMain;
-    return String(a.result?.content || "").length - String(b.result?.content || "").length;
-  });
+  const EXT_NAMES = [
+    "web_search", "web_fetch", "git_clone", "git_log", "git_status", "git_diff",
+    "read_external_file", "list_external_directory",
+    "install_skill", "list_skills", "run_shell",
+  ];
+  const extSteps = steps.filter((s) => s?.ok && EXT_NAMES.includes(s.name));
 
+  // 1) LIST steps
   for (const step of listSteps) {
     const entries = Array.isArray(step.result)
       ? step.result
@@ -344,13 +588,22 @@ function packEvidenceForModel(steps = [], options = {}) {
     used += block.length;
   }
 
+  // 2) READ steps
+  readSteps.sort((a, b) => {
+    const ap = String(a.result?.path || "").toLowerCase();
+    const bp = String(b.result?.path || "").toLowerCase();
+    const aMain = /main\.js$/.test(ap) ? 1 : 0;
+    const bMain = /main\.js$/.test(bp) ? 1 : 0;
+    if (aMain !== bMain) return aMain - bMain;
+    return String(a.result?.content || "").length - String(b.result?.content || "").length;
+  });
+
   for (const step of readSteps) {
     const p = String(step.result?.path || step.input?.path || "").replace(/\\/g, "/");
     const full = String(step.result?.content || "");
     const toolTruncated = step.result?.truncated === true
       || step.result?.partial === true
-      || (Array.isArray(step.result?.windows) && step.result.windows.length > 1)
-      || Number(step.result?.endLine || 0) > 0 && Number(step.result?.totalLines || 0) > Number(step.result?.endLine || 0);
+      || (Array.isArray(step.result?.windows) && step.result.windows.length > 1);
 
     const keywords = extractEvidenceKeywords(prompt, p);
     const packed = sliceRelevantContent(full, keywords);
@@ -358,7 +611,6 @@ function packEvidenceForModel(steps = [], options = {}) {
     let body = packed.text;
     let packTruncated = packed.truncated;
     if (body.length > budgetLeft) {
-      // Cortar al final: conserva MATCH tryRunAgentCore del inicio.
       body = `${body.slice(0, budgetLeft)}\n<<<CORTE_PRESUPUESTO>>>`;
       packTruncated = true;
     }
@@ -368,18 +620,12 @@ function packEvidenceForModel(steps = [], options = {}) {
     if (packTruncated) flags.push("PACK_TRUNCATED_FOR_MODEL");
     if (flags.length) truncatedPaths.push(p);
 
-    const hasInvoke = /tryRunAgentCore\s*\(/.test(full);
     const header = [
       `FILE ${p}`,
       `BYTES_IN_TOOL_RESULT=${full.length}`,
-      `TOTAL_CHARS_SOURCE≈${packed.totalChars}`,
-      hasInvoke ? "CONTIENE_INVOCACION=tryRunAgentCore(" : "CONTIENE_INVOCACION=no",
       flags.length
-        ? `AVISO: ${flags.join(", ")} — esto NO significa que el archivo en disco esté incompleto o con sintaxis rota. PROHIBIDO reportar "archivo truncado", "require incompleto" o "error de sintaxis" solo por este corte.`
-        : "AVISO: evidencia completa del resultado de read_file (sin corte de empaquetado).",
-      hasInvoke
-        ? "OBLIGATORIO en el informe: citar la invocacion visible de tryRunAgentCore( (no digas que no es verificable)."
-        : "",
+        ? `AVISO: ${flags.join(", ")} — NO significa que el archivo en disco esté incompleto.`
+        : "AVISO: evidencia completa.",
     ].filter(Boolean).join("\n");
 
     const block = `${header}\n\n${body}`;
@@ -387,12 +633,57 @@ function packEvidenceForModel(steps = [], options = {}) {
     const clipped = block.slice(0, Math.max(0, maxChars - used));
     chunks.push(clipped);
     used += clipped.length;
-    fileMeta.push({
-      path: p,
-      bytes: full.length,
-      truncatedForModel: packTruncated || toolTruncated,
-      hasInvoke,
-    });
+    fileMeta.push({ path: p, bytes: full.length, truncatedForModel: packTruncated || toolTruncated });
+  }
+
+  // 3) EXTENDED TOOLS (v0.4.1)
+  for (const step of extSteps) {
+    const name = step.name;
+    let block = "";
+
+    if (name === "web_search") {
+      const q = step.input?.query || "";
+      const src = step.result?.source || "n/a";
+      const results = Array.isArray(step.result?.results) ? step.result.results : [];
+      block = `WEB_SEARCH "${q}" (fuente: ${src}, ${results.length} resultados)\n\n`;
+      block += results.map((r, i) =>
+        `[${i + 1}] ${r.title}\n    ${r.snippet}\n    ${r.url}`
+      ).join("\n\n");
+    } else if (name === "web_fetch") {
+      const u = step.input?.url || "";
+      block = `WEB_FETCH ${u}\n\n${String(step.result?.content || "").slice(0, 6000)}`;
+    } else if (name === "read_external_file") {
+      const p = String(step.result?.path || step.input?.path || "").replace(/\\/g, "/");
+      const content = String(step.result?.content || "");
+      block = `EXTERNAL_FILE ${p}\n\n${content.slice(0, 6000)}`;
+    } else if (name === "list_external_directory") {
+      const p = String(step.result?.path || step.input?.path || "").replace(/\\/g, "/");
+      const entries = Array.isArray(step.result?.entries) ? step.result.entries : [];
+      block = `EXTERNAL_DIR ${p} (${entries.length} entradas)\n\n${entries.slice(0, 80).map((e) => e.name).join("\n")}`;
+    } else if (name === "git_log") {
+      const commits = Array.isArray(step.result?.commits) ? step.result.commits : [];
+      block = `GIT_LOG ${step.input?.repoPath}\n\n${commits.map((c) => `${c.hash} ${c.author} ${c.message}`).join("\n")}`;
+    } else if (name === "git_status") {
+      block = `GIT_STATUS ${step.input?.repoPath}\nBranch: ${step.result?.branch}\nModified: ${(step.result?.modified || []).join(", ")}\nUntracked: ${(step.result?.not_added || []).join(", ")}`;
+    } else if (name === "git_diff") {
+      block = `GIT_DIFF ${step.input?.repoPath}\n\n${String(step.result?.diff || "").slice(0, 4000)}`;
+    } else if (name === "git_clone") {
+      block = `GIT_CLONE ${step.input?.url} → ${step.input?.targetDir}`;
+    } else if (name === "run_shell") {
+      block = `RUN_SHELL: ${step.input?.command}\n\n${String(step.result?.stdout || "").slice(0, 4000)}`;
+    } else if (name === "install_skill") {
+      block = `INSTALL_SKILL "${step.input?.skillName}" desde ${step.input?.repoUrl}`;
+    } else if (name === "list_skills") {
+      block = `LIST_SKILLS (${step.result?.count || 0} instaladas)`;
+    }
+
+    if (!block.trim()) continue;
+    if (used + block.length > maxChars) {
+      block = block.slice(0, maxChars - used) + "\n<<<CORTE_PRESUPUESTO>>>";
+    }
+    chunks.push(block);
+    used += block.length;
+    if (used >= maxChars) break;
   }
 
   return {
@@ -402,10 +693,6 @@ function packEvidenceForModel(steps = [], options = {}) {
   };
 }
 
-/**
- * Una sola llamada al modelo SIN tools: sintetiza el informe desde evidencia ya leida.
- * Asi el agente razona de verdad, sin inventar view_file/edit_file ni plantillas fijas.
- */
 async function synthesizeFromEvidence(input = {}, options = {}) {
   const mode = options.mode || "diagnose";
   const seedSteps = options.seedSteps || [];
@@ -426,17 +713,31 @@ async function synthesizeFromEvidence(input = {}, options = {}) {
 
   const system = [
     "Eres EDITCOREAI Agent Core. Responde SIEMPRE en espanol.",
+    "",
+    "=== FORMATO OBLIGATORIO ===",
+    "Tu respuesta DEBE estar formateada en MARKDOWN RICO, igual que un chat moderno.",
+    "Usa:",
+    "- **Negritas** para conceptos clave y nombres de archivos.",
+    "- `codigo inline` para paths, comandos y variables.",
+    "- Bloques ```lenguaje para codigo o resultados tecnicos.",
+    "- Tablas `| Col | Col |` para comparaciones o listados estructurados.",
+    "- Listas con `-` o `1.` segun corresponda.",
+    "- Titulos `##` por seccion, `###` para subsecciones.",
+    "- Citas `> ` para advertencias o notas destacadas.",
+    "- Emojis moderados (✅ ❌ ⚠️ 🎯 📁 🔍 🚀) para marcar categorias.",
+    "NUNCA respondas con parrafos monoliticos sin estructura.",
+    "",
+    "=== REGLAS DE CONTENIDO ===",
     "Te doy EVIDENCIA REAL ya leida con tools. NO pidas ni inventes mas tools.",
     "PROHIBIDO mencionar view_file, edit_file, file_reader, codebase_search.",
     "PROHIBIDO inventar rutas o fallos que no esten en la evidencia.",
     "PROHIBIDO 'Verificacion completada con evidencia real'.",
-    "Si un FILE tiene CONTIENE_INVOCACION=tryRunAgentCore( o un bloque <<<MATCH tryRunAgentCore: DEBES citar esa invocacion. PROHIBIDO decir que no es verificable.",
-    "Si un FILE tiene AVISO PACK_TRUNCATED_FOR_MODEL o CORTE_PRESUPUESTO: el archivo en disco NO esta roto; solo se acorto el texto enviado al modelo.",
-    "PROHIBIDO concluir 'archivo truncado', 'linea incompleta', 'require sin cerrar' o 'error de sintaxis' por un corte de evidencia.",
-    "Solo reporta defectos si ves una sentencia completa claramente incorrecta en la evidencia.",
-    "Si falta contexto por truncado, dilo como limitacion de evidencia, NO como bug del archivo.",
+    "Si un FILE tiene AVISO PACK_TRUNCATED_FOR_MODEL: el archivo en disco NO esta roto.",
+    "Solo reporta defectos si ves una sentencia completa claramente incorrecta.",
+    "Si falta contexto por truncado, dilo como limitacion de evidencia.",
+    "",
     mode === "diagnose"
-      ? "Formato obligatorio: ## Qué sí funcionó | ## Resumen por archivo | ## Qué falló / hallazgos | ## Evidencia | ## Cómo lo corregiré"
+      ? "Formato del informe: ## Que si funciono | ## Resumen por archivo | ## Que fallo / hallazgos | ## Evidencia | ## Como lo corregire"
       : "Explica con claridad basandote solo en la evidencia.",
   ].join("\n");
 
@@ -457,7 +758,7 @@ async function synthesizeFromEvidence(input = {}, options = {}) {
         "EVIDENCIA REAL (unica fuente permitida):",
         evidence,
         "",
-        "Escribe el informe ahora. Solo sobre esta evidencia.",
+        "Escribe el informe ahora con formato Markdown rico. Solo sobre esta evidencia.",
       ].join("\n"),
     },
   ];
@@ -474,7 +775,6 @@ async function synthesizeFromEvidence(input = {}, options = {}) {
       },
     });
     const finalText = extractAssistantText(response);
-    // Si el provider igual devolvio tool_calls sin texto, la sintesis fallo.
     const toolCalls = parseToolCalls(response);
     return {
       finalText: finalText || "",
@@ -496,9 +796,6 @@ async function synthesizeFromEvidence(input = {}, options = {}) {
   }
 }
 
-/**
- * @returns {Promise<{ steps: object[], finalText: string, providerCalls: number }>}
- */
 async function runLlmToolLoop(input = {}, options = {}) {
   const {
     mode = "explain",
@@ -536,8 +833,10 @@ async function runLlmToolLoop(input = {}, options = {}) {
         repairHint ? `\nREPARACION REQUERIDA:\n${repairHint}` : "",
         "",
         seedSteps.length
-          ? `EVIDENCIA YA OBTENIDA (${seedSteps.filter((s) => s.ok).length} tools OK). Continua desde ahi; no repitas lecturas identicas sin motivo.`
+          ? `EVIDENCIA YA OBTENIDA (${seedSteps.filter((s) => s.ok).length} tools OK). Continua desde ahi.`
           : "Empieza con tools si hace falta.",
+        "",
+        "RECUERDA: tu respuesta final debe estar en Markdown rico (titulos ##, listas, bloques de codigo, tablas, negritas).",
       ].filter(Boolean).join("\n"),
     },
   ];
@@ -587,7 +886,7 @@ async function runLlmToolLoop(input = {}, options = {}) {
         messages.push({ role: "assistant", content: text || "(sin texto)" });
         messages.push({
           role: "user",
-          content: "No cierres. Acabas de afirmar una accion sin tool_calls. Llama ahora UNA tool real (read_file, search_files, write_file o replace_in_file). Sin TOOL_RESULT esa accion no ocurrio.",
+          content: "No cierres. Acabas de afirmar una accion sin tool_calls. Llama ahora UNA tool real. Sin TOOL_RESULT esa accion no ocurrio.",
         });
         input.onProgress?.({ phase: "model", text: `Reintento: accion narrada sin tool (${promiseRetries}/3)` });
         continue;
@@ -610,7 +909,7 @@ async function runLlmToolLoop(input = {}, options = {}) {
 
     for (const call of toolCalls) {
       if (input.signal?.aborted) break;
-      if ((call.name === "write_file" || call.name === "replace_in_file" || call.name === "delete_file")
+      if ((call.name === "write_file" || call.name === "replace_in_file" || call.name === "delete_file" || call.name === "write_external_file")
         && (mode === "diagnose" || !allowWrite)) {
         const err = "Escritura bloqueada en este modo.";
         steps.push({ name: call.name, input: call.input, ok: false, error: err, index: steps.length });
@@ -644,7 +943,7 @@ async function runLlmToolLoop(input = {}, options = {}) {
               ...result,
               soft: true,
               ooda: "continue",
-              guidance: "Fallo leve oldText. Usa autoRead y reintenta replace_in_file. No detengas la sesion.",
+              guidance: "Fallo leve oldText. Usa autoRead y reintenta replace_in_file.",
               autoRead: readBack,
             };
           } catch {
@@ -699,9 +998,6 @@ async function runLlmToolLoop(input = {}, options = {}) {
             error: msg,
             soft: soft || undefined,
             ooda: soft ? "continue" : undefined,
-            guidance: soft
-              ? "Fallo leve: relee contexto y reintenta. No detengas la sesion."
-              : undefined,
           }),
         });
       }
@@ -709,7 +1005,7 @@ async function runLlmToolLoop(input = {}, options = {}) {
 
     messages.push({
       role: "user",
-      content: "TOOL_RESULT ya esta en el hilo. Proximo turno: usa SOLO esos facts. Si falta un archivo, llama otra tool. Si ya puedes entregar, entrega el artefacto sin inventar rutas ni contenidos no leidos.",
+      content: "TOOL_RESULT ya esta en el hilo. Proximo turno: usa SOLO esos facts. Entrega la respuesta final con formato Markdown rico (titulos ##, listas, bloques de codigo, negritas).",
     });
   }
 

@@ -6990,7 +6990,6 @@ function prepareChatProseForRender(text) {
       .replace(/https?:\/\/[^\s)]*gafcore-gateway[^\s)]*/gi, "")
       .replace(/\bgafcore-gateway(?:\.vercel\.app)?\b/gi, "el proveedor de modelos")
       .replace(/\bGafCore\s+Gateway\b/gi, "el proveedor de modelos")
-      .replace(/\bGafCore\b/gi, "el proveedor")
       .replace(/\bx-project-key\b/gi, "API key")
       .replace(/\bproject\s*keys?\b/gi, "API keys")
       .replace(

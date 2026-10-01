@@ -2,7 +2,29 @@
 
 const { runLlmToolLoop, synthesizeFromEvidence } = require("./llm-loop");
 
-const MUTATION_TOOLS = ["write_file", "replace_in_file", "delete_file", "apply_diff"];
+const MUTATION_TOOLS = [
+  "write_file",
+  "replace_in_file",
+  "delete_file",
+  "apply_diff",
+  "write_external_file",
+];
+
+// Herramientas extendidas (v0.4.0) que no deben bloquearse por lockedPaths
+const EXTERNAL_TOOLS = [
+  "web_search",
+  "web_fetch",
+  "git_clone",
+  "git_log",
+  "git_status",
+  "git_diff",
+  "read_external_file",
+  "write_external_file",
+  "list_external_directory",
+  "install_skill",
+  "list_skills",
+  "run_shell",
+];
 
 function normalizePath(p = "") {
   return String(p || "").replace(/\\/g, "/");
@@ -24,9 +46,6 @@ function verificationOutput(result) {
   try { return JSON.stringify(result).slice(0, 4000); } catch { return String(result); }
 }
 
-/**
- * Resuelve replace de etiquetas HTML/MD: cambia el contenido interno de <h1>…</h1>.
- */
 function stripReadLinePrefixes(content = "") {
   return String(content || "")
     .split(/\r?\n/)
@@ -59,6 +78,9 @@ async function resolveTagSwapReplace(execute, toolInput = {}) {
   return { ...rest, path, oldText, newText };
 }
 
+/**
+ * v0.4.0 — Formatea evidencia incluyendo herramientas extendidas.
+ */
 function formatEvidenceFromSteps(steps = []) {
   const ok = steps.filter((s) => s.ok === true);
   const failed = steps.filter((s) => s.ok === false);
@@ -69,19 +91,62 @@ function formatEvidenceFromSteps(steps = []) {
   ];
   for (const s of ok) {
     const p = normalizePath(s.input?.path || s.result?.path || "");
-    if (s.name === "write_file") {
-      lines.push(`- write_file OK: \`${p}\`${s.result?.bytes != null ? ` (${s.result.bytes} bytes)` : ""}`);
-    } else if (s.name === "replace_in_file") {
-      lines.push(`- replace_in_file OK: \`${p}\``);
-    } else if (s.name === "delete_file") {
-      lines.push(`- delete_file OK: \`${p}\``);
-    } else if (s.name === "read_file") {
-      lines.push(`- read_file OK: \`${p}\``);
-    } else if (s.name === "run_command") {
-      const passed = isVerificationPassed(s.result);
-      lines.push(`- run_command ${passed ? "PASO" : "FALLO"}: \`${String(s.input?.command || "").slice(0, 120)}\``);
-    } else {
-      lines.push(`- ${s.name} OK${p ? `: \`${p}\`` : ""}`);
+    switch (s.name) {
+      case "write_file":
+        lines.push(`- write_file OK: \`${p}\`${s.result?.bytes != null ? ` (${s.result.bytes} bytes)` : ""}`);
+        break;
+      case "replace_in_file":
+        lines.push(`- replace_in_file OK: \`${p}\``);
+        break;
+      case "delete_file":
+        lines.push(`- delete_file OK: \`${p}\``);
+        break;
+      case "read_file":
+        lines.push(`- read_file OK: \`${p}\``);
+        break;
+      case "read_external_file":
+        lines.push(`- read_external_file OK: \`${p}\``);
+        break;
+      case "write_external_file":
+        lines.push(`- write_external_file OK: \`${p}\``);
+        break;
+      case "list_external_directory":
+        lines.push(`- list_external_directory OK: \`${p}\` (${Array.isArray(s.result?.entries) ? s.result.entries.length : "?"} entradas)`);
+        break;
+      case "run_command":
+      case "run_shell": {
+        const passed = isVerificationPassed(s.result);
+        const cmd = String(s.input?.command || "").slice(0, 120);
+        lines.push(`- ${s.name} ${passed ? "PASO" : "FALLO"}: \`${cmd}\``);
+        break;
+      }
+      case "web_search": {
+        const q = String(s.input?.query || "").slice(0, 100);
+        const count = s.result?.count ?? "?";
+        lines.push(`- web_search OK: "${q}" (${count} resultados, fuente: ${s.result?.source || "n/a"})`);
+        break;
+      }
+      case "web_fetch": {
+        const u = String(s.input?.url || "").slice(0, 100);
+        lines.push(`- web_fetch OK: ${u}`);
+        break;
+      }
+      case "git_clone":
+        lines.push(`- git_clone OK: ${s.input?.url} → \`${p}\``);
+        break;
+      case "git_log":
+      case "git_status":
+      case "git_diff":
+        lines.push(`- ${s.name} OK: \`${p}\``);
+        break;
+      case "install_skill":
+        lines.push(`- install_skill OK: "${s.input?.skillName}" desde ${s.input?.repoUrl}`);
+        break;
+      case "list_skills":
+        lines.push(`- list_skills OK: ${s.result?.count ?? "?"} skills instaladas`);
+        break;
+      default:
+        lines.push(`- ${s.name} OK${p ? `: \`${p}\`` : ""}`);
     }
   }
   for (const s of failed.slice(0, 8)) {
@@ -89,6 +154,18 @@ function formatEvidenceFromSteps(steps = []) {
     lines.push(`- FALLO ${s.name}${p ? ` \`${p}\`` : ""}: ${s.error || "error"}`);
   }
   return lines.join("\n");
+}
+
+/**
+ * v0.4.0 — Detecta si un plan es "puro texto" (solo lectura/consulta).
+ * Para estos casos usamos síntesis directa en vez de plan steps.
+ */
+function isPureQueryPlan(plan) {
+  if (!plan) return false;
+  if (plan.createSpec || plan.deleteSpec) return false;
+  if (Array.isArray(plan.replaceSpecs) && plan.replaceSpecs.length) return false;
+  if (plan.replaceSpec) return false;
+  return true;
 }
 
 /**
@@ -139,9 +216,15 @@ async function runPlan(plan, input = {}) {
   }
 
   const lockedExecute = async (name, toolInput = {}) => {
+    // v0.4.0: las herramientas extendidas NUNCA se bloquean por lockedPaths
+    // (búsqueda web, git, skills, shell, archivos externos son operaciones independientes).
+    if (EXTERNAL_TOOLS.includes(name)) {
+      return tools.execute(name, toolInput);
+    }
+
     if (lockedPaths.size && MUTATION_TOOLS.includes(name)) {
       const target = normalizePath(toolInput.path || "");
-      if (!lockedPaths.has(target)) {
+      if (target && !lockedPaths.has(target)) {
         throw new Error(`Bloqueado: solo se permiten mutar: ${[...lockedPaths].join(", ")}`);
       }
     }
@@ -180,7 +263,6 @@ async function runPlan(plan, input = {}) {
           ? { ...(item.input || {}), path: pathCandidate }
           : { ...(item.input || {}) };
 
-        // "cambia el h1 a X": leer archivo y resolver oldText/newText del tag
         if (item.tool === "replace_in_file" && toolInput.tagSwap?.tag) {
           try {
             const resolved = await resolveTagSwapReplace(lockedExecute, toolInput);
@@ -224,7 +306,6 @@ async function runPlan(plan, input = {}) {
         }
       }
 
-      // Swap/replace: si el archivo no existe, crear con newText.
       if (!ok && item.tool === "replace_in_file" && item.createIfMissing === true && allowWrite) {
         const missing = /no encontrado|ENOENT|does not exist|no existe/i.test(String(lastError?.message || lastError || ""));
         const noOld = /oldText no existe|oldText missing/i.test(String(lastError?.message || lastError || ""));
@@ -408,9 +489,12 @@ async function runPlan(plan, input = {}) {
     || input.analysisMode === true
   );
 
-  // list/explain: sintetizar sobre semilla esta OK.
-  // diagnose: NUNCA cerrar solo con semilla (producia "sin defectos" con 4 archivos).
-  if ((plan.mode === "list" || plan.mode === "explain") && seedOk > 0) {
+  // v0.4.0: Si es un plan "puro query" (sin specs de mutación), SIEMPRE pasamos por el LLM loop
+  // para que pueda usar web_search, git, etc. La síntesis sin tools solo sirve para list/explain
+  // con evidencia de archivos ya leída.
+  const pureQuery = isPureQueryPlan(plan);
+
+  if ((plan.mode === "list" || plan.mode === "explain") && seedOk > 0 && !pureQuery) {
     const synth = await synthesizeFromEvidence(input, {
       mode: plan.mode,
       seedSteps: steps,
@@ -436,7 +520,7 @@ async function runPlan(plan, input = {}) {
     mode: plan.mode,
     allowWrite,
     seedSteps: steps,
-    maxIterations: plan.mode === "execute" ? 12 : (plan.mode === "diagnose" ? (deepDiagnose ? 20 : 12) : 4),
+    maxIterations: plan.mode === "execute" ? 12 : (plan.mode === "diagnose" ? (deepDiagnose ? 20 : 12) : 6),
   });
   providerCalls += Number(llm.providerCalls || 0);
   finalText = llm.finalText || "";
@@ -453,7 +537,6 @@ async function runPlan(plan, input = {}) {
     if (String(synth.finalText || "").trim()) finalText = synth.finalText;
   }
 
-  // Semana 2: verificar + reintentar reparacion si el comando falla.
   const verifyCommand = plan.verifyCommand || null;
   if (plan.mode === "execute" && verifyCommand && allowWrite && !llmSkipped) {
     const maxRepairs = 2;
@@ -555,4 +638,5 @@ module.exports = {
   formatEvidenceFromSteps,
   isVerificationPassed,
   MUTATION_TOOLS,
+  EXTERNAL_TOOLS,
 };

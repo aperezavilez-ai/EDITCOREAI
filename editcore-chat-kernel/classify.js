@@ -17,6 +17,17 @@ const ANALYSIS_NOUN_RE = /\b(?:an[aá]lisis|auditor[ií]a|diagn[oó]stico|forens
 // Verbos genéricos que acompañan al sustantivo sin pedir escritura.
 const GENERIC_REQUEST_VERB_RE = /\b(?:haz(?:me)?|hacer|hac[eé](?:me)?|dame|d[eé]me|quiero|necesito|prepara(?:me)?|genera(?:me)?|gen[eé]rame|audita(?:r)?)\b/gi;
 const DOCUMENT_OUTPUT_RE = /\b(?:pdf|word|docx|excel|xlsx|csv|archivo|documento)\b/i;
+
+// ============================================================
+// NUEVO: LIST-ONLY agresivo — GANA sobre ANALYZE cuando es un pedido puro de listado.
+// Captura: "lista X", "listar X", "enumera X", "muéstrame X", "muéstrame los archivos",
+// "qué hay en X", "dame los archivos de X", "contenido de X", "explora X",
+// "dime qué hay en X", "cuántos archivos", "los archivos de X".
+// ============================================================
+const TASK_LIST_ONLY_RE = /(?:^|[^\w])(?:list(?:a|ar|ame|ado)?|enumer(?:a|ar|ame)|muestr(?:a|ame|e|ar)|mostr(?:a|ame|ar)|dame|dime|ense[ñn]ame|decime|ver|qu[eé]\s+hay\s+en|qu[eé]\s+contiene|contenido\s+(?:de|del?)|los\s+archivos\s+(?:de|del?|en)|las\s+carpetas\s+(?:de|del?|en)|cu[aá]ntos?\s+archivos?|cu[aá]ntas?\s+carpetas?|explora(?:r)?|inspecciona(?:r)?\s+(?:solo\s+)?(?:la\s+)?(?:carpeta|directorio)|ls\b|dir\b)(?=\s|$|[.!,?¿¡:])/i;
+// Excluir de LIST-ONLY cuando pide explícitamente analizar/diagnosticar.
+const LIST_ONLY_EXCLUDE_RE = /\b(?:analiz[aá]|analizar|audita(?:r)?|diagnostica(?:r)?|revisa(?:r)?\s+errores|hallazgos|forense|profund(?:o|a|idad)|completo|completa|reporte|informe|evaluaci[oó]n)\b/i;
+
 const TASK_LIST_RE = /\b(?:lista|listar|qu[eé]\s+contiene|qu[eé]\s+hay\s+en|contenido\s+de|muestra\s+(?:la\s+)?carpeta|explora|explorar|explorer|directorio|arbol|árbol)\b/i;
 const TASK_READ_RE = /\b(?:explica|explicar|lee|leer|describe|describ[eé]|resume|resumir|revisa|revisar|qu[eé]\s+hace|c[oó]mo\s+funciona|para\s+qu[eé]\s+sirve)\b/i;
 const PATHISH_RE = /(?:[\\/]|\b[a-z0-9_.-]+\.(?:js|ts|tsx|jsx|mjs|cjs|json|md|css|html|py|rs|go)\b)/i;
@@ -24,7 +35,7 @@ const TASK_GIT_RE = /\b(?:commit|push|git\s+status|haz\s+commit)\b/i;
 const TASK_DEPLOY_RE = /\b(?:deploy|publica(?:r)?|vercel)\b/i;
 const BACKGROUND_RE = /\b(?:segundo\s+plano|en\s+background|background|sin\s+esperar)\b/i;
 
-// Solo matchea si el mensaje EMPIEZA con verbo de verificación (no si aparece "ok" o "verifica" en cualquier parte).
+// Solo matchea si el mensaje EMPIEZA con verbo de verificación.
 const TASK_VERIFY_RE = /^\s*(?:verifica(?:r)?|verificá|typecheck|compila(?:r)?|compilá|corre?\s+los?\s+tests?|corre?\s+tsc|pasa?\s+el\s+linter|hac[eé]\s+build|build)\b/i;
 
 function isFullAccess(opts = {}) {
@@ -54,6 +65,22 @@ function classify(message, opts = {}) {
     return { kind: "EXECUTE", label: "Clonar web", allowTools: true, allowWrite: true, background };
   }
 
+  // ============================================================
+  // PRIORIDAD 1: LIST-ONLY explícito (gana sobre ANALYZE)
+  // Ej: "lista los archivos de X", "muéstrame la carpeta Y", "qué hay en Z"
+  // NO aplica si hay verbo de análisis ("analiza y lista") o sustantivo de análisis ("informe de X").
+  // ============================================================
+  if (
+    TASK_LIST_ONLY_RE.test(text)
+    && !LIST_ONLY_EXCLUDE_RE.test(text)
+    && !ANALYSIS_NOUN_RE.test(text)
+    && !TASK_FIX_RE.test(text.replace(GENERIC_REQUEST_VERB_RE, " "))
+    && !TASK_CLONE_RE.test(text)
+  ) {
+    return { kind: "LIST", label: "Listado", allowTools: true, allowWrite: false, background };
+  }
+
+  // PRIORIDAD 2: Análisis con sustantivo ("hazme un análisis", "dame un informe")
   if (
     ANALYSIS_NOUN_RE.test(text)
     && !DOCUMENT_OUTPUT_RE.test(text)
@@ -62,12 +89,11 @@ function classify(message, opts = {}) {
     return { kind: "ANALYZE", label: "Análisis", allowTools: true, allowWrite: false, background };
   }
 
-  // ORDEN CORREGIDO: verbos de cambio primero (si el usuario dice "cambia X y verifica", gana el cambio).
+  // PRIORIDAD 3: Verbos de cambio (fix gana sobre verify)
   const fixMatch = TASK_FIX_RE.test(text);
   const verifyMatch = TASK_VERIFY_RE.test(text);
 
   if (fixMatch) {
-    // Si hay fix + verbo de verificación, el usuario quiere ejecutar y verificar → EXECUTE.
     return {
       kind: "EXECUTE",
       label: full ? "Ejecución (Acceso completo)" : "Construcción / Ejecución",
@@ -107,18 +133,78 @@ function loadProjectMapHelpers() {
   catch { try { return require("./project-map"); } catch { return null; } }
 }
 
+// Las rutas Windows pueden tener espacios ("D:\PROGRAMAS IA"): se toma la más larga que exista.
+function longestExistingWindowsPath(text) {
+  const m = String(text || "").match(/\b([A-Za-z]:[\\/][^"'`\r\n]*)/);
+  if (!m) return "";
+  const fs = require("fs");
+  const parts = m[1].trim().split(/(\s+)/);
+  for (let n = parts.length; n > 0; n -= 1) {
+    const candidate = parts.slice(0, n).join("").trim().replace(/[.,;:!?)]+$/, "");
+    if (!candidate) continue;
+    try { if (fs.existsSync(candidate)) return candidate; } catch { /* sigue */ }
+  }
+  return "";
+}
+
+function isInsideRoot(root, target) {
+  const path = require("path");
+  const base = path.resolve(root).toLowerCase();
+  const abs = path.resolve(target).toLowerCase();
+  return abs === base || abs.startsWith(base + path.sep);
+}
+
 function extractListTarget(message, projectRoot = null) {
   const t = String(message || "").trim();
   let candidate = ".";
-  const matchPath = t.match(/(?:directorio|carpeta|folder|en|de)\s+([.\/\\a-zA-Z0-9_\-]+)/i);
+
+  // 1) Ruta absoluta Windows (D:\..., C:\...)
+  const absWinMatch = t.match(/\b([A-Za-z]:[\\/][^\s"'`]+)/);
+  if (absWinMatch) {
+    candidate = longestExistingWindowsPath(t) || absWinMatch[1].trim().replace(/[.,;]+$/, "");
+    const root = String(projectRoot || "").trim();
+    if (!root) return candidate;
+    if (!isInsideRoot(root, candidate)) return candidate;
+    const mapApi = loadProjectMapHelpers();
+    if (mapApi?.resolveExistingTarget) {
+      try {
+        mapApi.ensureProjectMap?.(root, { maxAgeMs: 5 * 60_000 });
+        const resolved = mapApi.resolveExistingTarget(root, candidate);
+        return resolved?.target || candidate;
+      } catch { return candidate; }
+    }
+    return candidate;
+  }
+
+  // 2) Ruta absoluta Unix (/home/..., /var/...)
+  const absUnixMatch = t.match(/(?:^|\s)(\/[^\s"'`]+)/);
+  if (absUnixMatch && !absUnixMatch[1].startsWith("//")) {
+    candidate = absUnixMatch[1].trim().replace(/[.,;]+$/, "");
+    const root = String(projectRoot || "").trim();
+    if (!root) return candidate;
+    const mapApi = loadProjectMapHelpers();
+    if (mapApi?.resolveExistingTarget) {
+      try {
+        mapApi.ensureProjectMap?.(root, { maxAgeMs: 5 * 60_000 });
+        const resolved = mapApi.resolveExistingTarget(root, candidate);
+        return resolved?.target || candidate;
+      } catch { return candidate; }
+    }
+    return candidate;
+  }
+
+  // 3) "de X", "en X", "carpeta X", "directorio X"
+  const matchPath = t.match(/(?:directorio|carpeta|folder|en|de|del?)\s+([.\/\\a-zA-Z0-9_\-\s]+?)(?=\s*[.!,?¿¡:]|$)/i);
   if (matchPath) {
     const raw = matchPath[1].trim();
-    if (!["el", "la", "los", "las", "un", "una", "este", "esta"].includes(raw.toLowerCase())) {
+    const stop = new Set(["el", "la", "los", "las", "un", "una", "este", "esta", "mi", "tu", "su", "proyecto"]);
+    if (raw && !stop.has(raw.toLowerCase())) {
       candidate = raw;
     }
   } else if (/\b\.\b/.test(t) || t.includes(" .")) {
     candidate = ".";
   }
+
   const root = String(projectRoot || "").trim();
   if (!root) return candidate || ".";
   const mapApi = loadProjectMapHelpers();
@@ -150,6 +236,8 @@ const READ_ONLY_TOOLS = [
   "codebase_map", "symbol_search", "dependency_search",
   "brain_search", "brain_skill", "brain_tools",
   "search_codebase_semantic", "list_snapshots", "analyze_circular_dependencies",
+  // Nuevas tools de solo lectura
+  "web_search", "git_status", "git_log", "git_diff", "list_skills",
 ];
 const WRITE_TOOLS = [
   "write_file", "replace_in_file", "delete_file", "create_project",
@@ -159,6 +247,8 @@ const WRITE_TOOLS = [
   "deploy_one_click", "publish_project", "fullstack_deploy",
   "audit_env", "supabase_migrate", "scaffold_project", "capture_preview",
   "capture_preview_screenshot", "run_e2e_pipeline", "rollback_last_change",
+  // Nuevas tools de escritura
+  "install_skill", "clone_repo", "ingest_to_brain",
 ];
 const ALL_ALLOWED_TOOLS = [...new Set([...READ_ONLY_TOOLS, ...WRITE_TOOLS])];
 
@@ -221,4 +311,6 @@ module.exports = {
   CHAT_INFO_RE,
   BACKGROUND_RE,
   TASK_FIX_RE,
+  TASK_LIST_ONLY_RE,
+  TASK_LIST_RE,
 };

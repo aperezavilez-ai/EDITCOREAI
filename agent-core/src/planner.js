@@ -12,6 +12,127 @@ const {
 } = require("./modes");
 const { isFullAccess } = require("./classify");
 
+// ============================================================
+// v0.4.0 — Deteccion de intents de herramientas extendidas
+// ============================================================
+
+const EXT_READ_ONLY = new Set([
+  "web_search", "web_fetch", "git_log", "git_status", "git_diff",
+  "read_external_file", "list_external_directory", "list_skills",
+]);
+
+const EXT_MUTATION = new Set([
+  "git_clone", "write_external_file", "install_skill", "run_shell",
+]);
+
+function isExtendedReadOnly(tool) { return EXT_READ_ONLY.has(tool); }
+function isExtendedMutation(tool) { return EXT_MUTATION.has(tool); }
+
+/**
+ * Analiza el prompt y detecta intents de herramientas extendidas.
+ * @returns {{tool: string, input: object}[]}
+ */
+function detectExtendedIntent(prompt = "") {
+  const p = String(prompt || "");
+  const intents = [];
+
+  // ---- web_search ----
+  const searchRe = /\b(?:busca(?:r|me)?(?:\s+en\s+(?:internet|la\s+web|google))?|investiga(?:r)?|averigua(?:r)?|googlea(?:r)?|consulta(?:r)?(?:\s+en\s+(?:internet|la\s+web))|b[uú]scame|buscar\s+en\s+(?:internet|la\s+web))\s+(?:sobre\s+|acerca\s+de\s+|por\s+|la\s+|el\s+|los\s+|las\s+|cu[aá]l\s+es\s+(?:la\s+)?|qu[eé]\s+es\s+)?["“']?([^"\n'.”]{3,200})["”']?/i;
+  const searchMatch = p.match(searchRe);
+  if (searchMatch) {
+    let query = searchMatch[1].trim();
+    query = query.replace(/\s+(?:y\s+luego.*|y\s+dime.*|y\s+despu[eé]s.*|y\s+lista.*|y\s+muestra.*)$/i, "").trim();
+    if (query && !/^(?:archivos?|carpetas?|archivo|carpeta)\b/i.test(query)) {
+      intents.push({ tool: "web_search", input: { query, maxResults: 5 } });
+    }
+  }
+
+  // ---- web_fetch ----
+  const urlInPrompt = p.match(/\bhttps?:\/\/[^\s<>"'”]+/);
+  if (urlInPrompt && /\b(?:lee|abre|fetchea|descarga|revisa|analiza|consulta)\b/i.test(p)) {
+    intents.push({ tool: "web_fetch", input: { url: urlInPrompt[0] } });
+  }
+
+  // ---- git_clone ----
+  const cloneRe = /\b(?:clona(?:r|me)?|git\s+clone|descarga(?:r)?\s+el\s+repo(?:sitorio)?|trae(?:me)?\s+el\s+repo(?:sitorio)?)\s+(?:el\s+repo(?:sitorio)?\s+|de\s+|desde\s+)?["“']?(https?:\/\/[^\s<>"'”]+|git@[^\s"'”]+)["”']?(?:\s+(?:en|a|hacia|dentro\s+de)\s+["“']?([^"\n'”]+?)["”']?)?/i;
+  const cloneMatch = p.match(cloneRe);
+  if (cloneMatch) {
+    intents.push({
+      tool: "git_clone",
+      input: {
+        url: cloneMatch[1],
+        targetDir: cloneMatch[2] ? cloneMatch[2].trim() : "",
+        depth: 1,
+      },
+    });
+  }
+
+  // ---- list_external_directory ----
+  const listDirRe = /\b(?:lista(?:r|me)?|muestra(?:me)?|enlista(?:r|me)?|dame|qu[eé]\s+hay\s+en)\s+(?:los\s+|las\s+|el\s+|la\s+)?(?:archivos?|carpetas?|contenido)?\s*(?:de|en|dentro\s+de)?\s+["“']?([A-Za-z]:\\[^"\n'”]+|\/[^"\n'”\s]+)["”']?/i;
+  const listDirMatch = p.match(listDirRe);
+  if (listDirMatch) {
+    const path = listDirMatch[1].trim().replace(/[.,;]+$/, "");
+    if (path.length > 2) {
+      intents.push({ tool: "list_external_directory", input: { path } });
+    }
+  }
+
+  // ---- read_external_file ----
+  const readFileRe = /\b(?:lee|abre|muestra\s+el\s+contenido\s+de|revisa)\s+(?:el\s+archivo\s+)?["“']?([A-Za-z]:\\[^"\n'”]+\.\w{1,6}|\/[^"\n'”]+\.\w{1,6})["”']?/i;
+  const readFileMatch = p.match(readFileRe);
+  if (readFileMatch) {
+    intents.push({ tool: "read_external_file", input: { path: readFileMatch[1].trim() } });
+  }
+
+  // ---- git_log / git_status / git_diff ----
+  const gitRepoRe = /(?:repo(?:sitorio)?\s+(?:en|de)\s+["“']?([A-Za-z]:\\[^"\n'”]+)["”']?|["“']?([A-Za-z]:\\[^"\n'”]+)["”']?\s+(?:es\s+un\s+)?repo(?:sitorio)?)/i;
+  const gitRepoMatch = p.match(gitRepoRe);
+  if (gitRepoMatch) {
+    const repoPath = (gitRepoMatch[1] || gitRepoMatch[2] || "").trim();
+    if (repoPath) {
+      if (/\b(?:commit|historial|log|últimos\s+cambios)\b/i.test(p)) {
+        intents.push({ tool: "git_log", input: { repoPath, maxCount: 10 } });
+      } else if (/\b(?:diff|cambios\s+sin\s+confirmar)\b/i.test(p)) {
+        intents.push({ tool: "git_diff", input: { repoPath, staged: false } });
+      } else if (/\b(?:status|estado|estatus)\b/i.test(p)) {
+        intents.push({ tool: "git_status", input: { repoPath } });
+      }
+    }
+  }
+
+  // ---- run_shell ----
+  const shellRe = /\b(?:ejecuta(?:r|me)?|corre(?:r|me)?|lanza(?:r|me)?)\s+(?:el\s+comando\s+|la\s+terminal\s+con\s+|en\s+shell\s+|en\s+powershell\s+)?(?:["'`])?([^\n"'`]{3,300})(?:["'`])?/i;
+  const shellMatch = p.match(shellRe);
+  if (shellMatch) {
+    let cmd = shellMatch[1].trim();
+    if (/^(?:npm|yarn|pnpm|node|python|python3|pip|pip3|git|dir|ls|cd|mkdir|rmdir|rm|del|copy|move|type|where|find|findstr|echo|cat|curl|wget|Invoke-WebRequest|Get-ChildItem|Set-Location)\b/i.test(cmd)
+        || /[;&|]/.test(cmd)
+        || /--?\w+/.test(cmd)) {
+      intents.push({ tool: "run_shell", input: { command: cmd } });
+    }
+  }
+
+  // ---- list_skills ----
+  if (/\b(?:qu[eé]\s+skills(?:\s+tienes|\s+hay|\s+est[aá]n\s+instaladas)?|skills\s+instaladas|lista(?:r|me)?\s+(?:las\s+)?skills|mis\s+skills)\b/i.test(p)) {
+    intents.push({ tool: "list_skills", input: {} });
+  }
+
+  // ---- install_skill ----
+  const installRe = /\b(?:instala(?:r|me)?|a[ñn]ade|agrega(?:r)?)\s+(?:la\s+)?skill\s+["“']?([^\s"'”\n]{2,80})["”']?(?:\s+(?:desde|de|con)\s+["“']?(https?:\/\/[^\s"'”<>]+)["”']?)?/i;
+  const installMatch = p.match(installRe);
+  if (installMatch) {
+    intents.push({
+      tool: "install_skill",
+      input: {
+        repoUrl: installMatch[2] || "",
+        skillName: installMatch[1],
+      },
+    });
+  }
+
+  return intents;
+}
+
 /**
  * Planner: decide modo y pasos concretos.
  */
@@ -36,6 +157,43 @@ function planTask(input = {}) {
   const deleteSpec = extractDeleteSpec(prompt);
   const verifyCommand = extractVerifyCommand(prompt);
 
+  // ============ v0.4.0: Intents extendidos PRIORITARIOS ============
+  const extendedIntents = detectExtendedIntent(prompt);
+  const hasExtReadOnly = extendedIntents.some(i => isExtendedReadOnly(i.tool));
+  const hasExtMutation = extendedIntents.some(i => isExtendedMutation(i.tool));
+
+  // Si hay intents extendidos y NO hay specs de archivos locales → camino extendido
+  if (extendedIntents.length > 0 && !createSpec && !replaceSpecs.length && !deleteSpec) {
+    const extSteps = extendedIntents.map(intent => ({
+      type: "tool",
+      tool: intent.tool,
+      input: intent.input,
+      note: `Intent extendido (${intent.tool})`,
+    }));
+    // Si es solo lectura, además añadir un report
+    extSteps.push({ type: "report", note: "Armar respuesta final en markdown con evidencia de tools extendidas." });
+
+    const resolvedMode = hasExtMutation ? "execute" : "research";
+
+    return {
+      mode: resolvedMode,
+      steps: extSteps,
+      allowMutation: hasExtMutation && (fullAccess || input.planAuthorized === true || input.allowWrite !== false),
+      paths,
+      verifyCommand: verifyCommand || null,
+      extendedIntents,
+      needsConcreteChange: false,
+    };
+  }
+
+  // Si hay intents extendidos Y también specs de archivos → prepend ext steps
+  const prependExtSteps = extendedIntents.map(intent => ({
+    type: "tool",
+    tool: intent.tool,
+    input: intent.input,
+    note: `Intent extendido (${intent.tool})`,
+  }));
+
   if (mode === "chat") {
     return {
       mode,
@@ -48,6 +206,7 @@ function planTask(input = {}) {
     return {
       mode,
       steps: [
+        ...prependExtSteps,
         {
           type: "tool",
           tool: "write_file",
@@ -74,6 +233,7 @@ function planTask(input = {}) {
     return {
       mode,
       steps: [
+        ...prependExtSteps,
         {
           type: "tool",
           tool: "delete_file",
@@ -91,7 +251,7 @@ function planTask(input = {}) {
   }
 
   if (mode === "execute" && replaceSpecs.length) {
-    const steps = [];
+    const steps = [...prependExtSteps];
     const lockedPaths = [...new Set(replaceSpecs.map((s) => s.path))];
     for (const path of lockedPaths) {
       steps.push({
@@ -116,7 +276,6 @@ function planTask(input = {}) {
         note: isTagSwap
           ? `Cambiar texto de <${spec.tagSwap.tag}>`
           : "Replace/swap pedido por el usuario",
-        // tagSwap necesita el archivo real; no crear basura con solo el texto nuevo
         createIfMissing: !isTagSwap,
       });
     }
@@ -158,20 +317,21 @@ function planTask(input = {}) {
     if (!authorized) {
       return {
         mode: "diagnose",
-        steps: [],
+        steps: prependExtSteps,
         allowMutation: false,
         note: "Sin autorizacion: solo diagnostico. Espera PROCEDE para mutar.",
       };
     }
 
-    const hasExplicitMutationIntent = /\b(crea(?:r)?|corrige|arregla|repara|implementa|modifica|refactoriza|actualiza|audita|replace|borra|elimina|delete|a[ñn]ade|agrega|renombra|fix\b|cambia(?:r)?\s+|escribe\s+el\s+archivo)\b/i.test(prompt)
+    const hasExplicitMutationIntent = /\b(crea(?:r)?|corrige|arregla|repara|implementa|modifica|refactoriza|actualiza|audita|replace|borra|elimina|delete|a[ñn]ade|agrega|renombra|fix\b|cambia(?:r)?\s+|escribe\s+el\s+archivo|clona(?:r)?|instala(?:r)?|ejecuta(?:r)?)\b/i.test(prompt)
       || /SMOKE_AGENT_CORE|SMOKE_MUTATION|replace_in_file|oldText\s*:|delete_file/i.test(prompt)
       || Boolean(swapSpec)
+      || hasExtMutation
       || (paths.files.length > 0 && /\b(bug|error|falla|roto|rompe|defect)\b/i.test(prompt));
     if (!createSpec && !replaceSpecs.length && !deleteSpec && !hasExplicitMutationIntent) {
       return {
         mode: "execute",
-        steps: [],
+        steps: prependExtSteps,
         allowMutation: false,
         createSpec: null,
         needsConcreteChange: true,
@@ -181,7 +341,7 @@ function planTask(input = {}) {
   }
 
   /** @type {{ type: string, tool?: string, input?: object, note?: string }[]} */
-  const steps = [];
+  const steps = [...prependExtSteps];
 
   if (mode === "list" || mode === "explain") {
     const dir = paths.dirs[0] || "resources/app/runtime";
@@ -260,4 +420,7 @@ function planTask(input = {}) {
 
 module.exports = {
   planTask,
+  detectExtendedIntent,
+  isExtendedReadOnly,
+  isExtendedMutation,
 };

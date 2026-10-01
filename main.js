@@ -68,6 +68,7 @@ app.commandLine.appendSwitch("disable-features", "CalculateNativeWinOcclusion,In
 app.commandLine.appendSwitch("enable-gpu-rasterization");
 app.commandLine.appendSwitch("enable-zero-copy");
 app.commandLine.appendSwitch("ignore-gpu-blocklist");
+const { hasUserLock, markUserLock } = require("./runtime/credentials-vault-guard");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
@@ -351,6 +352,7 @@ function logStartup(message, error) {
 }
 
 function migrateLegacyUserData() {
+  if (hasUserLock(readSecureState())) return;
   const targetRoot = app.getPath("userData");
   fs.mkdirSync(targetRoot, { recursive: true });
   for (const sourceRoot of legacyUserDataPaths) {
@@ -4975,7 +4977,7 @@ ipcMain.handle("secure-config:save", async (_event, value) => {
     merged["editcore-connections"] = conn;
   }
 
-  writeSecureState(merged);
+  writeSecureState(markUserLock(merged));
   syncOperatorConnectionsToBrain("");
   return true;
 });
@@ -6619,7 +6621,7 @@ ipcMain.handle("agent:run", async (event, input = {}) => {
       });
 
       // Match & attach active skills
-      let effectiveTask = task;
+      let skillsPrompt = "";
       try {
         const allSkills = skillsEngine.listAllSkills({
           projectRoot: rootPath,
@@ -6627,15 +6629,16 @@ ipcMain.handle("agent:run", async (event, input = {}) => {
         });
         const matchedSkills = skillsEngine.matchSkillsForPrompt(task, allSkills);
         if (matchedSkills.length > 0) {
-          const skillsBlock = skillsEngine.assembleSkillsSystemPrompt(matchedSkills);
-          effectiveTask = `${skillsBlock}\n\n${task}`;
+          skillsPrompt = skillsEngine.assembleSkillsSystemPrompt(matchedSkills);
         }
       } catch (err) {
-        /* proceed with original task if skills match fails */
+        /* proceed without skills if matching fails */
       }
 
       const out = await handleChatKernel({
-        message: effectiveTask,
+        message: task,
+        skillsPrompt,
+        fallbackProfiles: fallbackProviderProfiles({ providerKey, baseUrl, model, apiKey }),
         history: Array.isArray(input.history) ? input.history : (Array.isArray(input.messages) ? input.messages : []),
         threadId: input.chatId || input.threadId || input.conversationId || input.runId || "",
         chatId: input.chatId || input.threadId || "",
@@ -9352,6 +9355,7 @@ function gatewayToolsDir() {
 }
 
 function ensureDirectUpstreamProfiles() {
+  if (hasUserLock(readSecureState())) return false;
   try {
     scrubGatewayFromSecureState();
     const secure = readSecureState();
@@ -9450,6 +9454,7 @@ function ensureDirectUpstreamProfiles() {
 }
 
 function ensureExpandedMeaiGatewayModels() {
+  if (hasUserLock(readSecureState())) return false;
   // Ya no se amplía catálogo vía gateway; solo se limpia residuo.
   try {
     return scrubGatewayFromSecureState();
