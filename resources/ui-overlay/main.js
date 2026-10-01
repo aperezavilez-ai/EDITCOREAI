@@ -138,7 +138,7 @@ const { ResponseCache } = require("./response-cache");
 const { ToolCache } = require("./tool-cache");
 const { READ_METHODS, connectionSummary, digest, executeServiceRequest } = require("./service-harness");
 const { aggregateUsage, localCacheUsage, normalizeProviderUsage } = require("./usage-metrics");
-const { builtNextPreviewLaunch, directPreviewLaunch, findRunnableProjectRoot, isPreviewDocumentContentType, normalizePreviewUrl, previewRuntimeFingerprint, readProjectPreviewEnv, stablePreviewPort, staticPreviewLaunch } = require("./preview-runtime");
+const { builtNextPreviewLaunch, directPreviewLaunch, findRunnableProjectRoot, isPreviewDocumentContentType, normalizePreviewUrl, previewRuntimeFingerprint, readProjectPreviewEnv, resolveDesktopPreviewTarget, stablePreviewPort, staticPreviewLaunch } = require("./preview-runtime");
 const { ensureProjectDependencies } = require("./project-dependencies");
 const { capturePreview } = require("./visual-preview-inspector");
 const { documentContext, normalizeDocuments } = require("./document-attachments");
@@ -2853,9 +2853,17 @@ async function startProjectPreviewNow(safeRoot, ownerId) {
   }
   const runtimeRoot = findRunnableProjectRoot(safeRoot);
   const packagePath = runtimeRoot ? path.join(runtimeRoot, "package.json") : "";
-  if (!fs.existsSync(packagePath)) return { available: false, url: "", message: "Este directorio no contiene una aplicacion ejecutable (falta package.json)." };
+  if (!fs.existsSync(packagePath)) {
+    let rootPkg = null;
+    try { rootPkg = JSON.parse(fs.readFileSync(path.join(safeRoot, "package.json"), "utf8")); } catch { /* sin package.json */ }
+    const desktop = resolveDesktopPreviewTarget(safeRoot, rootPkg);
+    if (desktop) return startDesktopPreview(safeRoot, ownerId, desktop);
+    return { available: false, url: "", message: "Este proyecto no tiene interfaz que mostrar en el navegador (ni script dev/start ni index.html). Ejecutalo desde la Terminal." };
+  }
   let pkg;
   try { pkg = JSON.parse(fs.readFileSync(packagePath, "utf8")); } catch { throw new Error("package.json invalido."); }
+  const desktop = resolveDesktopPreviewTarget(runtimeRoot, pkg);
+  if (desktop) return startDesktopPreview(safeRoot, ownerId, desktop);
   if (!pkg?.scripts?.dev && !pkg?.scripts?.start) return { available: false, url: "", message: "El proyecto no define un script dev o start." };
 
   // Preflight: si .next esta corrupto (routes-manifest / server), regenerar antes de abrir preview.
@@ -3041,6 +3049,99 @@ const dependencyReport = await ensureProjectDependencies(runtimeRoot, pkg, manag
       throw new Error(`${String(error?.message || error).slice(0, 300)}; la vista previa estatica tambien fallo: ${String(fallbackError?.message || fallbackError).slice(0, 300)}`);
     }
   }
+}
+
+const DESKTOP_PREVIEW_LABELS = { tauri: "Tauri", electron: "Electron", nwjs: "NW.js", static: "HTML" };
+
+async function startDesktopPreview(safeRoot, ownerId, target) {
+  const label = DESKTOP_PREVIEW_LABELS[target.kind] || "de escritorio";
+  const isApp = target.kind !== "static";
+  if (target.mode === "none") {
+    return { available: false, url: "", message: `App ${label} sin interfaz HTML localizable (ni servidor de desarrollo ni index.html). Ejecutala desde la Terminal para verla.` };
+  }
+  const desktopKey = [target.kind, target.mode, target.staticRoot || target.cwd || "", target.entry || target.url || ""].join("|");
+  const describe = (runtime, started) => ({
+    available: true,
+    started,
+    remote: runtime.remote === true,
+    pid: runtime.child?.pid || 0,
+    script: runtime.script,
+    url: runtime.url,
+    runtimeRoot: runtime.runtimeRoot,
+    desktop: isApp ? target.kind : "",
+    desktopLabel: isApp ? label : "",
+  });
+  const existing = previewProcesses.get(safeRoot);
+  if (existing?.desktopKey === desktopKey && existing.url && (existing.remote || existing.child?.exitCode === null) && await isHttpReady(existing.url)) {
+    existing.owners.add(ownerId);
+    return describe(existing, false);
+  }
+  if (existing) {
+    stopPreviewRuntime(existing);
+    previewProcesses.delete(safeRoot);
+  }
+  const track = (runtime) => {
+    previewProcesses.set(safeRoot, runtime);
+    if (!runtime.child) return;
+    runtime.child.once("exit", () => { try { runtime.logDetach?.(); } catch { /* ignore */ } if (previewProcesses.get(safeRoot) === runtime) previewProcesses.delete(safeRoot); });
+    runtime.child.once("error", () => { try { runtime.logDetach?.(); } catch { /* ignore */ } if (previewProcesses.get(safeRoot) === runtime) previewProcesses.delete(safeRoot); });
+  };
+  const fail = (runtime, error) => {
+    stopPreviewRuntime(runtime);
+    if (previewProcesses.get(safeRoot) === runtime) previewProcesses.delete(safeRoot);
+    throw error;
+  };
+
+  if (target.mode === "dev-server") {
+    if (await isHttpReady(target.url)) {
+      const runtime = { child: null, remote: true, url: target.url, script: `servidor de la app ${label} (ya en marcha)`, runtimeRoot: target.cwd, owners: new Set([ownerId]), desktopKey };
+      track(runtime);
+      return describe(runtime, false);
+    }
+    let cwdPkg = null;
+    try { cwdPkg = JSON.parse(fs.readFileSync(path.join(target.cwd, "package.json"), "utf8")); } catch { /* comando sin package.json */ }
+    if (cwdPkg) {
+      const manager = fs.existsSync(path.join(target.cwd, "bun.lockb")) || fs.existsSync(path.join(target.cwd, "bun.lock")) ? "bun" : fs.existsSync(path.join(target.cwd, "pnpm-lock.yaml")) ? "pnpm" : "npm";
+      await ensureProjectDependencies(target.cwd, cwdPkg, manager, {
+        onProgress: (ev) => {
+          try { emitPreviewDaemonEvent(safeRoot, { type: "preview-deps-progress", phase: String(ev?.phase || "deps"), line: String(ev?.line || "").slice(0, 500), at: Date.now() }); } catch { /* ignore UI */ }
+        },
+      });
+    }
+    const child = spawn(target.command, [], {
+      cwd: target.cwd,
+      shell: true,
+      windowsHide: true,
+      detached: false,
+      stdio: ["ignore", "pipe", "pipe"],
+      env: { ...process.env, ...readProjectPreviewEnv(safeRoot, target.cwd), BROWSER: "none", FORCE_COLOR: "0" },
+    });
+    const runtime = { child, script: `${target.command} (frontend de la app ${label})`, url: "", runtimeRoot: target.cwd, owners: new Set([ownerId]), desktopKey };
+    track(runtime);
+    runtime.logDetach = attachPreviewLogStream({ child, projectRoot: safeRoot, stateByRoot: previewLogStates, emit: (payload) => emitPreviewDaemonEvent(safeRoot, payload) }).detach;
+    try {
+      runtime.url = await detectListeningUrl(child, target.url, PREVIEW_START_TIMEOUT_MS, { value: "" });
+    } catch (error) {
+      fail(runtime, error);
+    }
+    logPreviewRuntime(`Preview ${label} listo ${safeRoot} → ${runtime.url}`);
+    return describe(runtime, true);
+  }
+
+  const port = await findAvailablePort(stablePreviewPort(safeRoot), 1800);
+  const launch = staticPreviewLaunch(target.staticRoot, port, process.execPath, path.join(__dirname, "static-preview-server.js"), target.entry);
+  if (!launch) return { available: false, url: "", message: `No se encontro ${target.entry} de la app ${label}.` };
+  const child = spawn(launch.executable, launch.args, { cwd: target.staticRoot, windowsHide: true, detached: false, stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, ...launch.env } });
+  const shown = path.relative(safeRoot, path.join(target.staticRoot, target.entry)).replace(/\\/g, "/") || target.entry;
+  const runtime = { child, script: isApp ? `interfaz de la app ${label} (${shown})` : `pagina estatica (${shown})`, url: "", runtimeRoot: target.staticRoot, owners: new Set([ownerId]), desktopKey };
+  track(runtime);
+  try {
+    runtime.url = await detectListeningUrl(child, `http://127.0.0.1:${port}`, 20_000);
+  } catch (error) {
+    fail(runtime, error);
+  }
+  logPreviewRuntime(`Preview ${label} estatico ${safeRoot} → ${runtime.url}`);
+  return describe(runtime, true);
 }
 
 function portIsFreeOnHost(port, host) {

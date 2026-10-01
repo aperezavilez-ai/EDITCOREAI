@@ -5777,7 +5777,9 @@ async function selectProject(id, options = {}) {
       } else {
         $("previewUrl").value = preview.url;
         await openPreview({ forceReload: true });
-        $("status").textContent = preview.remote
+        $("status").textContent = preview.desktop
+          ? `Interfaz de la app ${preview.desktopLabel} · las funciones nativas solo responden en la app de escritorio`
+          : preview.remote
           ? "Proyecto conectado mediante la vista previa remota del despliegue"
           : preview.fallback
           ? "Proyecto conectado mediante la vista previa estatica del build"

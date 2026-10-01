@@ -192,15 +192,115 @@ function builtNextPreviewLaunch(pkg, runtimeRoot, port) {
   };
 }
 
-function staticPreviewLaunch(runtimeRoot, port, executable, serverScript) {
-  if (!fs.existsSync(path.join(runtimeRoot, "index.html"))) return null;
+function staticPreviewLaunch(runtimeRoot, port, executable, serverScript, entry = "index.html") {
+  if (!fs.existsSync(path.join(runtimeRoot, entry))) return null;
   return {
     executable,
-    args: [serverScript, runtimeRoot, String(port)],
+    args: [serverScript, runtimeRoot, String(port), entry],
     label: `static preview en 127.0.0.1:${port}`,
     direct: true,
     env: { ELECTRON_RUN_AS_NODE: "1" },
   };
+}
+
+const STATIC_UI_DIRS = ["", "web", "www", "public", "static", "src", "app", "renderer", "src/renderer", "frontend", "ui", "dist", "build", "out"];
+const DESKTOP_DEV_SCRIPT = /\b(?:electron|electron-forge|nw)\b/i;
+const BUNDLED_DEV_SCRIPT = /\b(?:vite|webpack|next|react-scripts|parcel|electron-vite|concurrently|wait-on|nuxt|astro|ng)\b/i;
+
+function isInside(root, target) {
+  const rel = path.relative(path.resolve(root), path.resolve(target));
+  return rel === "" || (!rel.startsWith("..") && !path.isAbsolute(rel));
+}
+
+/** index.html de código fuente de un bundler (`<script src="/src/main.tsx">`) no se puede servir tal cual. */
+function isServableHtml(file) {
+  try {
+    if (!fs.statSync(file).isFile()) return false;
+    const html = fs.readFileSync(file, "utf8").slice(0, 200_000);
+    return !/<script[^>]+src=["'][^"']+\.(?:tsx?|jsx|vue|svelte)["']/i.test(html);
+  } catch { return false; }
+}
+
+function findStaticUiRoot(base, preferred = []) {
+  for (const rel of [...preferred, ...STATIC_UI_DIRS]) {
+    const dir = path.resolve(base, rel);
+    if (isInside(base, dir) && isServableHtml(path.join(dir, "index.html"))) return dir;
+  }
+  return "";
+}
+
+function readJsonFile(file) {
+  try { return JSON.parse(fs.readFileSync(file, "utf8").replace(/^\uFEFF/, "")); } catch { return null; }
+}
+
+function readTauriConfig(root) {
+  for (const rel of ["src-tauri/tauri.conf.json", "tauri.conf.json"]) {
+    const file = path.join(root, rel);
+    const config = fs.existsSync(file) ? readJsonFile(file) : null;
+    if (config) return { config, dir: path.dirname(file) };
+  }
+  return null;
+}
+
+/** HTML que carga la ventana principal de Electron (`loadFile("x.html")`, `path.join(__dirname, "a", "b.html")`, `file://${__dirname}/x.html`). */
+function electronEntryHtml(root, pkg) {
+  const mainFile = path.resolve(root, String(pkg?.main || "main.js"));
+  if (/\.html?$/i.test(mainFile)) return isInside(root, mainFile) && isServableHtml(mainFile) ? mainFile : "";
+  let source = "";
+  try { source = fs.readFileSync(mainFile, "utf8"); } catch { return ""; }
+  for (const line of source.split(/\r?\n/)) {
+    if (!/\bload(?:File|URL)\s*\(/.test(line)) continue;
+    const parts = [...line.matchAll(/["'`]([^"'`]+)["'`]/g)].map((m) => m[1].replace(/^file:\/\/(?:\$\{__dirname\})?\/?/i, ""));
+    const htmlIndex = parts.findIndex((part) => /\.html?$/i.test(part));
+    if (htmlIndex < 0) continue;
+    const candidate = path.resolve(path.dirname(mainFile), ...parts.slice(0, htmlIndex + 1).filter((part) => !/[:${}]/.test(part)));
+    if (isInside(root, candidate) && isServableHtml(candidate)) return candidate;
+  }
+  return "";
+}
+
+/**
+ * Apps de escritorio (Tauri, Electron, NW.js) y proyectos HTML sin servidor: su script dev abre una ventana
+ * nativa y nunca publica una URL. Devuelve cómo mostrar su interfaz en el panel Web, o null si el flujo normal sirve.
+ */
+function resolveDesktopPreviewTarget(root, pkg) {
+  const activeScript = String(pkg?.scripts?.dev || pkg?.scripts?.start || "");
+  const tauri = readTauriConfig(root);
+  if (tauri && (!activeScript || /\btauri\b/i.test(activeScript))) {
+    const build = tauri.config.build || {};
+    const devUrl = [build.devUrl, build.devPath].find((value) => /^https?:\/\//i.test(String(value || ""))) || "";
+    const before = typeof build.beforeDevCommand === "object" ? build.beforeDevCommand : { script: build.beforeDevCommand };
+    const appRoot = path.basename(tauri.dir) === "src-tauri" ? path.dirname(tauri.dir) : tauri.dir;
+    if (devUrl && String(before?.script || "").trim()) {
+      return {
+        kind: "tauri",
+        mode: "dev-server",
+        url: devUrl,
+        command: String(before.script).trim(),
+        cwd: before.cwd ? path.resolve(appRoot, before.cwd) : appRoot,
+      };
+    }
+    const distRel = [build.frontendDist, build.distDir, build.devPath].find((value) => value && !/^https?:\/\//i.test(String(value)));
+    const distDir = distRel ? path.resolve(tauri.dir, String(distRel)) : "";
+    const staticRoot = distDir && isServableHtml(path.join(distDir, "index.html")) ? distDir : findStaticUiRoot(appRoot);
+    if (staticRoot) return { kind: "tauri", mode: "static", staticRoot, entry: "index.html", url: devUrl };
+    return { kind: "tauri", mode: "none" };
+  }
+  const deps = { ...(pkg?.dependencies || {}), ...(pkg?.devDependencies || {}) };
+  const isNw = /\.html?$/i.test(String(pkg?.main || "")) && (deps.nw || /\bnw\b/i.test(activeScript) || pkg?.window);
+  const isElectron = (deps.electron || deps["@electron-forge/cli"]) && DESKTOP_DEV_SCRIPT.test(activeScript) && !BUNDLED_DEV_SCRIPT.test(activeScript);
+  if (isNw || isElectron) {
+    const html = electronEntryHtml(root, pkg);
+    if (html) return { kind: isNw ? "nwjs" : "electron", mode: "static", staticRoot: root, entry: path.relative(root, html).replace(/\\/g, "/") };
+    const staticRoot = findStaticUiRoot(root);
+    if (staticRoot) return { kind: isNw ? "nwjs" : "electron", mode: "static", staticRoot, entry: "index.html" };
+    return { kind: isNw ? "nwjs" : "electron", mode: "none" };
+  }
+  if (!activeScript) {
+    const staticRoot = findStaticUiRoot(root);
+    if (staticRoot) return { kind: "static", mode: "static", staticRoot, entry: "index.html" };
+  }
+  return null;
 }
 
 /**
@@ -261,6 +361,8 @@ module.exports = {
   builtNextPreviewLaunch,
   directPreviewLaunch,
   findRunnableProjectRoot,
+  findStaticUiRoot,
+  resolveDesktopPreviewTarget,
   isPreviewDocumentContentType,
   normalizePreviewUrl,
   buildPreviewUrl,

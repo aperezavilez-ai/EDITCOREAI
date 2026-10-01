@@ -6,7 +6,8 @@ const path = require("node:path");
 
 const root = path.resolve(String(process.argv[2] || ""));
 const port = Number(process.argv[3]);
-if (!root || !Number.isInteger(port) || port < 1 || !fs.existsSync(path.join(root, "index.html"))) {
+const entry = String(process.argv[4] || "index.html").replace(/\\/g, "/").replace(/^\/+/, "");
+if (!root || !Number.isInteger(port) || port < 1 || !fs.existsSync(path.join(root, entry))) {
   throw new Error("Servidor estatico: raiz o puerto invalido.");
 }
 
@@ -14,16 +15,20 @@ const mime = {
   ".css": "text/css; charset=utf-8", ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8",
   ".json": "application/json; charset=utf-8", ".svg": "image/svg+xml", ".png": "image/png", ".jpg": "image/jpeg",
   ".jpeg": "image/jpeg", ".webp": "image/webp", ".ico": "image/x-icon", ".woff": "font/woff", ".woff2": "font/woff2",
+  ".mjs": "text/javascript; charset=utf-8", ".htm": "text/html; charset=utf-8", ".gif": "image/gif", ".wasm": "application/wasm",
+  ".ttf": "font/ttf", ".mp3": "audio/mpeg", ".mp4": "video/mp4", ".txt": "text/plain; charset=utf-8", ".map": "application/json; charset=utf-8",
 };
 
 function resolveRequest(urlValue) {
   const pathname = decodeURIComponent(new URL(urlValue || "/", "http://127.0.0.1").pathname);
-  const relative = pathname.replace(/^\/+/, "") || "index.html";
+  const relative = pathname.replace(/^\/+/, "") || entry;
+  // Puede servir la raíz de un proyecto de escritorio: nunca exponer .env, .git ni node_modules.
+  if (relative.split("/").some((segment) => segment.startsWith(".") || segment === "node_modules")) return "";
   const target = path.resolve(root, relative);
   const inside = target === root || target.startsWith(`${root}${path.sep}`);
   if (!inside) return "";
   if (fs.existsSync(target) && fs.statSync(target).isFile()) return target;
-  if (!path.extname(relative)) return path.join(root, "index.html");
+  if (!path.extname(relative)) return path.join(root, entry);
   return "";
 }
 
@@ -94,6 +99,18 @@ const server = http.createServer(async (request, response) => {
   if (!target) {
     response.writeHead(404, { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" });
     response.end("Not found");
+    return;
+  }
+  const entryDir = path.posix.dirname(entry);
+  if (entryDir !== "." && target === path.join(root, entry)) {
+    // Entrada en subcarpeta servida en "/": sus rutas relativas deben resolverse desde su carpeta.
+    let html = fs.readFileSync(target, "utf8");
+    if (!/<base\s/i.test(html)) {
+      const baseTag = `<base href="/${entryDir.split("/").map(encodeURIComponent).join("/")}/">`;
+      html = /<head[^>]*>/i.test(html) ? html.replace(/<head[^>]*>/i, (head) => `${head}${baseTag}`) : `${baseTag}${html}`;
+    }
+    response.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store", "Access-Control-Allow-Origin": "*" });
+    response.end(html);
     return;
   }
   response.writeHead(200, {
