@@ -13669,6 +13669,9 @@ async function boot() {
   if (!matchedProject && state.projects.length) {
     matchedProject = state.projects.find((p) => p.projectRoot) || state.projects[0];
   }
+  // En modo IDE la app arranca en Inicio; el último proyecto se abre desde ahí.
+  const openOnHome = !chatFirst && !autoPick && !explicitOpenRoot;
+  if (openOnHome) matchedProject = null;
 
   if (autoPick) {
     if (!chatFirst) showWelcomeScreen();
@@ -13738,6 +13741,7 @@ async function boot() {
     storedActiveProjectId,
     bootPermission,
     chatFirst,
+    openOnHome,
   }), deferMs);
   if (chatFirst) setTimeout(startBg, 400);
   else startBg();
@@ -13805,6 +13809,7 @@ async function bootBackground({
   storedActiveProjectId = "",
   bootPermission = "step",
   chatFirst = false,
+  openOnHome = false,
 } = {}) {
   try {
     await initializeSecureState();
@@ -13871,10 +13876,11 @@ async function bootBackground({
     const sourceActiveId = state.activeProjectId || diskActive || storedActiveProjectId;
 
     // Solo hidratar chats del proyecto activo (el resto al abrirlo).
-    const activeNow = state.projects.find((project) => project.id === (state.activeProjectId || sourceActiveId) && project.projectRoot)
+    const activeNow = openOnHome ? null : (
+      state.projects.find((project) => project.id === (state.activeProjectId || sourceActiveId) && project.projectRoot)
       || state.projects.find((project) => project.id === sourceActiveId && project.projectRoot)
       || state.projects.find((project) => project.id === sourceActiveId)
-      || (state.projects.length ? state.projects[0] : null);
+      || (state.projects.length ? state.projects[0] : null));
     if (activeNow) {
       await hydrateProjectChatsFromDisk(activeNow);
       ensureProjectChats(activeNow);

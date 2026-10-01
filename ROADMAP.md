@@ -53,6 +53,7 @@ EditCore actualiza este archivo tras cambios. No pedirlo al usuario. No pegar co
 - **Rotación de claves Supabase**: `npm run supabase:check` / `supabase:plan` / `supabase:rotate` (`scripts/supabase-rotate-keys.js`). Respaldo + dump en `Z RESPALDOS\supabase-key-rotation\`, verificación y rollback automáticos, historial en `historial.jsonl`. Las claves viven en `TAXIDRIV\supabase\.env` y `signing_keys.json` (gitignored); Kong fijado en 54325 detrás del proxy del watchdog; el PostgREST manual se recrea con el secreto nuevo.
 
 ## Cambios recientes
+- renderer.js (+overlay) — en modo IDE la app arranca siempre en Inicio; ni el arranque ni `bootBackground` reabren el último proyecto/chat (salvo `projectRoot`/`openRoot`/`autoPick` explícitos) (2026-10-01)
 - editcore-chat-kernel/thread-core.js + orchestrator.js + provider.js — las imágenes adjuntas llegan al modelo (antes solo se avisaba "hay imágenes" y el modelo respondía que no veía nada); con imágenes, la cola de respaldo prioriza modelos con visión (2026-09-30)
 - renderer.js (+overlay) — chequeo de salud del preview: regex `/@vite\/client/` dentro de template literal perdía la barra y lanzaba "Invalid regular expression flags" en cada preview (2026-09-30)
 - editcore-chat-kernel/orchestrator.js + provider.js — el kernel usa los perfiles de respaldo (antes se descartaban: un 401 del modelo elegido cortaba el turno); claves con 401 al final de la cola 10 min; si todos fallan, mensaje por proveedor (2026-09-30)
