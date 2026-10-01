@@ -10493,10 +10493,14 @@ function refreshAppStatusBar() {
 }
 
 async function initAppStatusBar() {
+  // renderer.js se carga antes que el marcado de la barra de estado en index.html.
+  if (document.readyState === "loading") {
+    await new Promise((resolve) => document.addEventListener("DOMContentLoaded", resolve, { once: true }));
+  }
   const verEl = $("statusBarVersion");
   let ver = "";
   try { ver = String(await window.editcoreApp?.version?.() || "").trim(); } catch { /* ignore */ }
-  if (verEl) verEl.textContent = ver ? (ver.startsWith("v") ? `EditCore ${ver}` : `EditCore v${ver}`) : "EditCore v3.0.5";
+  if (verEl) verEl.textContent = ver ? (ver.startsWith("v") ? `EditCore ${ver}` : `EditCore v${ver}`) : "EditCore";
   refreshAppStatusBar();
   try {
     let refreshTimer = null;
