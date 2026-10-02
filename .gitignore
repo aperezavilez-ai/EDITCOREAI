@@ -76,3 +76,4 @@ chat-local.js
 debug.log
 
 %APPDATA%/
+runtime/workspace-siblings*
