@@ -113,6 +113,14 @@ EditCore actualiza este archivo tras cambios. No pedirlo al usuario. No pegar co
 - **Versionado (2026-10-02)**: `package.json` es la fuente de verdad de la versión (`4.1.6`). El `buildVersion` de `electron-builder` (`4.1.6.0`) sigue el esquema Windows `MAJOR.MINOR.PATCH.BUILD`. `EDITCORE-MANIFEST.md` refleja la misma versión de producto.
 
 ## Cambios recientes (2026-10-02)
+- Hallazgos del análisis técnico (cada uno con commit de respaldo previo):
+  - `c53620e` fix #1: el diálogo de error de arranque enmascara rutas del sistema (`…\archivo.js:línea`) y el stack completo va a `startup.log` (main.js +overlay).
+  - `3af2ccf` fix #2: agent-core avisa al modelo (prompt de sistema) y en `result.warnings` cuando no cargan las tools extendidas.
+  - #3 no aplicado: falso positivo. Nadie usa `module.exports` de preload.js; `{ skipped: true }` solo existe fuera de Electron, sin renderer.
+  - `928f479` fix #4: `@xenova/transformers` a optionalDependencies (solo Whisper local, protegido con `isAvailable()`); lockfile marcado optional.
+  - #5 no aplicado: falso positivo. `AdaptiveBudget.shouldReadFile` no se llama en ningún sitio y su límite de 5 KB en emergency es inalcanzable (priority high retorna antes). Lo que limita es `maxToolResultChars` = 1200 en emergency (decisión de producto pendiente).
+  - `cc8df99` fix #6: executor de agent-core separado en `buildNativeTools` (sin prototipo) y `executeExtended`, misma interfaz.
+  - Nota: agent-core no está conectado a la app (ni main.js ni el kernel lo cargan); sus tests propios (`agent-core/test`) ya tenían 7 de 26 fallos desactualizados antes de estos cambios.
 - `7f47aaa` chore: bump version 4.1.5 → 4.1.6 (package.json + EDITCORE-MANIFEST.md).
 - `12e1799` chore: ignorar backups main.js.bak-* (limpieza).
 - `4006c66` chore: ignorar runtime/workspace-siblings* (copia personal).
@@ -126,12 +134,12 @@ EditCore actualiza este archivo tras cambios. No pedirlo al usuario. No pegar co
 - `git diff --stat` confirmó 369 inserciones, 0 eliminaciones en los 6 archivos modificados.
 - Chat responde: charla simple, listado de directorios, análisis de proyecto.
 - Análisis produjo 28 archivos leídos y reporte completo con estructura obligatoria + cierre sugerido.
-- Suite de tests: `npm test` → 870 tests, 869 pass, 1 skip, 0 fail, ~24s.
+- Suite de tests: `npm test` → 877 tests, 876 pass, 1 skip, 0 fail tras los hallazgos (`test/agent-core-extended-tools.test.js`, `test/agent-core-executor.test.js` nuevos). Arranque aislado OK ("EditCore v4.1.6").
 
 ## Siguiente
 - Renovar claves de ME AI (401) y revisar cupo de APICredits (502/503) para restaurar proveedores.
 - Revisar `.vercel/project.json` de EDITCOREAI WEB (apunta a proyecto inexistente).
-- Evaluar hallazgos del análisis (bajo riesgo, mejoras de calidad): main.js stack en UI, adaptive-budget emergency, llm-loop fallback silencioso, preload.js edge case, executor mixto, @xenova/transformers peso.
+- Decidir si subir `maxToolResultChars` de emergency (1200) en runtime/adaptive-budget.js; actualizar o retirar los 7 tests desactualizados de `agent-core/test`.
 
 ## Regla anti-reexploracion
 - Si el pedido del usuario apunta a un archivo ya listado arriba: ve DIRECTO a read_file/replace_in_file de ese path.
