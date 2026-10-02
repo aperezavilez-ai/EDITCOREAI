@@ -87,6 +87,7 @@
       "!**/.env.local",
       "!.claude/**",
       "!verify-debug.log",
+      "!release/**",
       "!resources/rtk/**",
       "!resources/app.asar",
       "!test/**",
