@@ -123,6 +123,23 @@ test("GATE: panel de archivos y preview reaccionan a escrituras del agente", () 
   assert.equal(payload.fileName, "README.md");
 });
 
+test("GATE: main.js no carga al arrancar archivos que el empaquetado excluye", () => {
+  const pkg = require("../package.json");
+  const excludedDirs = (pkg.build?.files || [])
+    .map((p) => String(p).match(/^!([\w-]+)\/\*\*$/))
+    .filter(Boolean)
+    .map((m) => m[1]);
+  assert.ok(excludedDirs.includes("scripts"));
+  const offenders = mainSource
+    .split(/\r?\n/)
+    .map((line, i) => ({ line, n: i + 1 }))
+    .filter(({ line }) => /^\S/.test(line))
+    .flatMap(({ line, n }) => [...line.matchAll(/require\(\s*["']\.\/([\w-]+)\//g)]
+      .filter((m) => excludedDirs.includes(m[1]))
+      .map((m) => `main.js:${n} -> ${m[1]}/`));
+  assert.deepEqual(offenders, []);
+});
+
 test("GATE: version semver con segmentos de maximo 2 digitos", () => {
   const pkg = require("../package.json");
   assert.match(pkg.version, /^\d{1,2}\.\d{1,2}\.\d{1,2}$/);

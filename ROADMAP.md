@@ -6,25 +6,25 @@ EditCore actualiza este archivo tras cambios. No pedirlo al usuario. No pegar co
 
 ## Proceso
 - Fase: implementacion
-- Estado: 4.1.8 — modo forense real: cada análisis corre chequeos deterministas (sintaxis, imports, conflictos, env, referencias, git; en modo a fondo también tests, typecheck y build) y separa errores VERIFICADOS de hipótesis; el verificador nunca da OK sin comprobar; cada corrección se re-verifica antes/después.
+- Estado: 4.1.9 — limpieza total: 607 archivos sin uso eliminados (agent-core, skills duplicadas, módulos sin cargar, paneles huérfanos, copia espejo `resources/ui-overlay`); el instalador vuelve a arrancar (main.js ya no carga `scripts/` al inicio). 4.1.8 — modo forense real: cada análisis corre chequeos deterministas (sintaxis, imports, conflictos, env, referencias, git; en modo a fondo también tests, typecheck y build) y separa errores VERIFICADOS de hipótesis; el verificador nunca da OK sin comprobar; cada corrección se re-verifica antes/después.
 - Actualizado: 2026-10-02
 - Preview: desconocido — usa el preview del IDE, no inventes puertos
 
 ## Mapa
 - main.js — proceso principal Electron (IPC, ventanas)
-- preload.js — contextBridge (un bloque por namespace; espejo en resources/ui-overlay/preload.js)
+- preload.js — contextBridge (un bloque por namespace)
 - renderer.js — UI del IDE
 - chat-home.js / chat-home.css — shell Chat Home
-- package.json — scripts de test, empaquetado Windows, deploy; version 4.1.8
+- package.json — scripts de test, empaquetado Windows, deploy; version 4.1.9
 - ARQUITECTURA-SISTEMA.md — arquitectura general
-- EDITCORE-MANIFEST.md — manifiesto del producto (version producto 4.1.8)
+- EDITCORE-MANIFEST.md — manifiesto del producto (version producto 4.1.9)
 - AGENTS.md — reglas operativas del agente
 
 ### editcore-chat-kernel/
 - classify.js — portero de intención (CHAT / ANALYZE / EXECUTE…)
 - orchestrator.js — ChatOrchestrator (tools, grounding, roadmap, red neuronal)
 - provider.js — proveedor LLM (streaming, fallback, cache read/write, orderProfiles)
-- tools.js — tools de disco del kernel + métricas por tool + rate limiter
+- tools.js — tools de disco del kernel + métricas por tool
 - memory.js — memoria persistente de proyecto + búsqueda semántica (vector store)
 - agent-bus.js — tablero compartido entre agentes + mensajería dirigida
 - agent-network.js — red neuronal entre agentes (routing por embeddings + feedback)
@@ -37,21 +37,13 @@ EditCore actualiza este archivo tras cambios. No pedirlo al usuario. No pegar co
 - package.json — metadata del kernel
 - index.js — API pública (handleChat, stopChat, steerChat)
 
-### agent-core/
-- src/orchestrator.js — orquestador del core
-- src/llm-loop.js — loop LLM con tool_calls (tools nativas + extendidas)
-- src/classify.js — clasificación del core
-- src/verifier.js — verificación de resultados
-- src/tools-extended.js — herramientas extendidas (web, git, skills)
-- classify.js / composer-engine.js / deploy-bridge.js / index.js
-
 ### runtime/
 - ai-core.js — utilidades base del proveedor (withCacheControl, readOpenAiStream, etc.)
 - action-registry.js — deduplicación de acciones por hash
 - adaptive-budget.js — presupuesto de tokens (full/moderate/minimal/emergency)
 - agent-memory.js — memoria agente (conversaciones, archivos, decisiones)
 - agent-git.js — git seguro (spawnSync sin shell)
-- editcore-claude-adapter.js — agente del IDE (espejo en resources/ui-overlay/runtime/)
+- editcore-claude-adapter.js — agente del IDE
 - elite-communication-policy.js — estilo y reglas de comunicación
 - project-roadmap.js — escritura de este ROADMAP
 - roadmap-sync.js — sincronización del ROADMAP
@@ -60,29 +52,21 @@ EditCore actualiza este archivo tras cambios. No pedirlo al usuario. No pegar co
 - project-map.js — mapa cognitivo
 - embeddings.js — embeddings con fallback local determinista (NEW 2026-10-02)
 - vector-memory.js — vector store persistente en JSONL (NEW 2026-10-02)
-- cache-manager.js — cache read/write con TTL + LRU + métricas (NEW 2026-10-02)
-- rate-limiter.js — token bucket por clave (NEW 2026-10-02)
 - tracer.js — trazabilidad por sesión en JSONL (NEW 2026-10-02)
 
 ### Otros
-- resources/ui-overlay/ — copia empaquetada (mantener sincronizada)
-- test/ — suite de tests (870 tests, 869 pass, 1 skip, 0 fail)
+- test/ — suite de tests (877 tests, 877 pass, 0 fail)
 - brain-seed/ + brain-service.js + brain-memory-store.js — cerebro persistente del proyecto
 
 ## Archivos clave (no reexplorar)
 - package.json
 - ARQUITECTURA-SISTEMA.md
 - EDITCORE-MANIFEST.md
-- agent-core/src/orchestrator.js
-- agent-core/src/llm-loop.js
 - editcore-chat-kernel/index.js
 - preload.js
-- agent-core/src/verifier.js
-- agent-core/src/classify.js
 - editcore-chat-kernel/orchestrator.js
 - editcore-chat-kernel/provider.js
 - editcore-chat-kernel/package.json
-- agent-core/src/tools-extended.js
 - main.js
 - runtime/credentials-vault-guard.js
 - runtime/roadmap-sync.js
@@ -91,10 +75,13 @@ EditCore actualiza este archivo tras cambios. No pedirlo al usuario. No pegar co
 - Sin tarea en curso.
 
 ## Bloqueos / bugs conocidos
+- El instalador v4.1.8 publicado en GitHub no arranca: `main.js` cargaba `./scripts/failsafe-recovery` al inicio y el empaquetado excluye `scripts/**`. Corregido en 4.1.9 (pendiente de publicar).
+- Otro agente (Codex) modifica el kernel en paralelo: cambios sin commit en `agent-network.js`, `classify.js`, `extra-tools.js`, `index.js`, `provider.js` y `prompt-cache.js` nuevo (2026-10-02). Revisarlos antes de commitear.
 - `.vercel/project.json` de EDITCOREAI WEB apunta a un proyecto que ya no existe en Vercel (404).
 - Proveedores (externo, 2026-09-30): las 7 claves de ME AI devuelven 401 (token inválido) → renovarlas en Modelos. APICredits: Claude/Gemini/DeepSeek responden 502 "Upstream access forbidden" salvo con max_tokens mínimo (saldo o cupo del lado del proveedor); GPT y Grok con 503 intermitentes.
 
 ## Decisiones
+- **Código en un solo lugar (2026-10-02)**: no existe copia espejo. `resources/ui-overlay` se eliminó: la app empaquetada corre desde `app.asar` y la copia nunca se ejecutaba. El gate de pre-empaquetado falla si `main.js` carga al arrancar algo de una carpeta excluida del paquete (`scripts/`, `test/`).
 - **Electron + contextBridge**: se usa `contextBridge.exposeInMainWorld` en `preload.js` para aislar el renderer del acceso directo a Node. Cada namespace se expone una sola vez (duplicar lanza y corta el preload).
 - **Kernel de chat como capa separada**: `editcore-chat-kernel/orchestrator.js` maneja la lógica de conversación, intenciones y RAG. Motivo: separación de responsabilidades entre UI (renderer) y lógica de agente.
 - **Análisis siempre con tools**: pedidos de análisis/auditoría/informe se clasifican ANALYZE (lectura de disco, sin escritura); un análisis sin lecturas exitosas se marca como no verificado.
@@ -115,9 +102,16 @@ EditCore actualiza este archivo tras cambios. No pedirlo al usuario. No pegar co
 - **Memoria semántica (2026-10-02)**: `vector-memory.js` + `embeddings.js` (fallback local determinista). `memory.js` y `global-memory.js` indexan notas, archivos y soluciones de error en background sin bloquear el flujo del orquestador. Búsqueda con `searchSemantic()` y `promptBlockSemantic()`.
 - **Métricas de rendimiento (2026-10-02)**: `model-router.js` y `tools.js` registran latencia y éxito/fallo por modelo y por tool. Persistencia en `.editcore/model-router-stats.json`. Consulta con `getModelStats()` / `getToolStats()`.
 - **Mensajería dirigida entre agentes (2026-10-02)**: `agent-bus.js` expone `postMessage` / `readMessages` / `messagesPromptBlock` para comunicación explícita entre subagentes.
-- **Versionado (2026-10-02)**: `package.json` es la fuente de verdad de la versión (`4.1.8`). El `buildVersion` de `electron-builder` (`4.1.8.0`) sigue el esquema Windows `MAJOR.MINOR.PATCH.BUILD`. `EDITCORE-MANIFEST.md` refleja la misma versión de producto.
+- **Versionado (2026-10-02)**: `package.json` es la fuente de verdad de la versión (`4.1.9`). El `buildVersion` de `electron-builder` (`4.1.9.0`) sigue el esquema Windows `MAJOR.MINOR.PATCH.BUILD`. `EDITCORE-MANIFEST.md` refleja la misma versión de producto.
 
 ## Cambios recientes (2026-10-02)
+- `f19b0e0` chore: limpieza total (4.1.9). Grafo real de dependencias desde main.js, preload.js, renderer.js, index.html y scripts npm; 607 archivos eliminados (respaldo en `Z RESPALDOS\editcoreai-limpieza-2026-10-02`):
+  - `agent-core/` (27): no lo cargaba ni main.js ni el kernel.
+  - `editcore-chat-kernel/skills/` (56): copias de `brain-seed/skills` (las 3 distintas eran versiones viejas).
+  - runtime: `cache-manager.js`, `rate-limiter.js` (nunca conectados), `patch-engine.js` (duplicado del de la raíz), `context-engine.js` (cargado sin usar), `e2e-operator.js` y `ai-database-studio.js` (solo sus tests).
+  - kernel: `subagents/coordinator.js`, `subagents/planner.js`, `INTEGRAR.txt`, `_INSTALL_MANIFEST.json`; ide: 5 paneles HTML que nada abría; `.editcore-mcp.example.json`; 2 `*-SKILL.md` duplicados; 7 tests de código muerto.
+  - `resources/ui-overlay/` completo (499): copia que el instalador incluía pero nunca ejecutaba; `failsafe-recovery.js` y main.js la recreaban (`syncMirrors`).
+- Gate nuevo en `test/pre-package-gate.test.js`: main.js no puede cargar al arrancar archivos excluidos del paquete (habría detectado el fallo de 4.1.8 en la línea 222).
 - Release v4.1.8: `EDITCOREAI.exe` (4.1.8.0) y `release/EDITCOREAI-Setup.exe` reconstruidos; launcher C# a 4.1.8; publicado en GitHub Releases con ambos ejecutables.
 - `7db46f2` feat: modo forense determinista (4.1.8). Los análisis forenses no mostraban todos los errores reales:
   - `editcore-chat-kernel/forensic-checks.js` (nuevo): motor de chequeos reales, comparación antes/después y formatos markdown/prompt.
@@ -138,7 +132,7 @@ EditCore actualiza este archivo tras cambios. No pedirlo al usuario. No pegar co
   - `928f479` fix #4: `@xenova/transformers` a optionalDependencies (solo Whisper local, protegido con `isAvailable()`); lockfile marcado optional.
   - #5 no aplicado: falso positivo. `AdaptiveBudget.shouldReadFile` no se llama en ningún sitio y su límite de 5 KB en emergency es inalcanzable (priority high retorna antes). Lo que limita es `maxToolResultChars` = 1200 en emergency (decisión de producto pendiente).
   - `cc8df99` fix #6: executor de agent-core separado en `buildNativeTools` (sin prototipo) y `executeExtended`, misma interfaz.
-  - Nota: agent-core no está conectado a la app (ni main.js ni el kernel lo cargan); sus tests propios (`agent-core/test`) ya tenían 7 de 26 fallos desactualizados antes de estos cambios.
+  - Nota: agent-core no está conectado a la app (ni main.js ni el kernel lo cargan); sus tests propios ya tenían 7 de 26 fallos desactualizados antes de estos cambios.
 - `7f47aaa` chore: bump version 4.1.5 → 4.1.6 (package.json + EDITCORE-MANIFEST.md).
 - `12e1799` chore: ignorar backups main.js.bak-* (limpieza).
 - `4006c66` chore: ignorar runtime/workspace-siblings* (copia personal).
@@ -152,7 +146,9 @@ EditCore actualiza este archivo tras cambios. No pedirlo al usuario. No pegar co
 - `git diff --stat` confirmó 369 inserciones, 0 eliminaciones en los 6 archivos modificados.
 - Chat responde: charla simple, listado de directorios, análisis de proyecto.
 - Análisis produjo 28 archivos leídos y reporte completo con estructura obligatoria + cierre sugerido.
-- Suite de tests: `npm test` → 899 tests, 898 pass, 1 skip, 0 fail con `test/forensic-checks.test.js` (12 nuevos). `npm run check` OK.
+- Suite de tests: `npm test` → 877 tests, 877 pass, 0 fail tras la limpieza (los 23 tests retirados probaban código eliminado). Gate de pre-empaquetado 10/10. `npm run check` OK.
+- Paquete de prueba (`electron-builder --dir`): `app.asar` sin requires relativos sin resolver al arrancar; los 12 diferidos son cadenas try/catch con alternativa existente o `jarvis-launcher` opcional.
+- Suite anterior: 899 tests, 898 pass, 1 skip, 0 fail con `test/forensic-checks.test.js` (12 nuevos).
 - Motor forense en proyectos reales: EDITCOREAI 0 errores / 11 avisos (898 tests pasan); GAFCOREAI 0 errores (107/107 tests); TICKETIA: script `test` de jest sin ningún test; CALILI: typecheck falla con 23 errores reales (mayoría TS2307 por alias `@/…` sin resolver) + aviso `GPT_MODEL` sin definir.
 - Analista sobre EDITCOREAI: main.js, adaptive-budget, agent-memory, composer-engine y deploy-bridge salen "sintaxis JS OK (archivo completo)" con su rango real; ningún "[truncado]"; package.json leído con su script `test`.
 
@@ -160,7 +156,8 @@ EditCore actualiza este archivo tras cambios. No pedirlo al usuario. No pegar co
 - Renovar claves de ME AI (401) y revisar cupo de APICredits (502/503) para restaurar proveedores.
 - Revisar el `project.json` de Vercel en EDITCOREAI WEB (apunta a proyecto inexistente).
 - AGENTS.md cita archivos inexistentes (`runtime/service-harness.js`, `.claude/memory/orchestrator-consolidation.md`); `recordGitPush`/`recordVercelDeploy`/`recordSupabaseMigration`/`recordIssue` de roadmap-sync.js no tienen llamadas. Corregir referencias y decidir si conectarlos.
-- Decidir si subir `maxToolResultChars` de emergency (1200) en runtime/adaptive-budget.js; actualizar o retirar los 7 tests desactualizados de `agent-core/test`.
+- Publicar 4.1.9 (EXE + Setup) para reemplazar el instalador 4.1.8 que no arranca.
+- Decidir si subir `maxToolResultChars` de emergency (1200) en runtime/adaptive-budget.js.
 
 ## Regla anti-reexploracion
 - Si el pedido del usuario apunta a un archivo ya listado arriba: ve DIRECTO a read_file/replace_in_file de ese path.
