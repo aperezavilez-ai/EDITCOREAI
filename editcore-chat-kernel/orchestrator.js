@@ -780,6 +780,8 @@ class ChatOrchestrator {
           onProgress,
         });
         forensic.saveForensic(projectRoot, verified);
+        const flagged = [...new Set((verified?.findings || []).map((f) => f.file).filter(Boolean))].slice(0, 30);
+        for (const file of flagged) onProgress?.({ phase: "tool", stage: "done", name: "read_file", ok: true, input: { path: file } });
       } catch (err) {
         onProgress?.({ phase: "warn", text: `No se pudieron ejecutar los chequeos reales: ${String(err?.message || err).slice(0, 160)}` });
       }
@@ -787,6 +789,13 @@ class ChatOrchestrator {
       onProgress?.({ phase: "start", text: "Reuniendo evidencia del proyecto…" });
       const out = agentBus.wrapSubagentResult(projectRoot, this._threadId, "analyst",
         await runAnalyst({ projectRoot, onProgress, maxReads, userMessage: text, threadId: this._threadId }));
+      const testsRun = (verified?.checks || []).find((c) => c.id === "tests" && (c.status === "pass" || c.status === "fail"));
+      if (testsRun && typeof out?.report === "string") {
+        out.report = out.report.replace(
+          /- \*\*Tests\*\*: script `npm test` = [^\n]*No ejecutado en este análisis \(resultado no verificado\)\./,
+          `- **Tests**: ejecutados en este análisis (\`${testsRun.command || "npm test"}\`): ${testsRun.summary}.`,
+        );
+      }
       if (memory) { memory.setReport(out.report); memory.note("análisis completado"); }
       this.session.kill();
       const evidence = verified ? `${forensic.formatForensicPromptBlock(verified)}\n\n${out.report}` : out.report;
@@ -955,7 +964,7 @@ class ChatOrchestrator {
     const steps = [];
     const runMutations = [];
     const stepsLimit = Math.max(1, Number(maxSteps) || DEFAULT_MAX_STEPS);
-    const totalUsage = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0, cache_read_input_tokens: 0, cache_creation_input_tokens: 0, cache_write_input_tokens: 0, cachedInputTokens: 0 };
+    const totalUsage = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0, cache_read_input_tokens: 0, cache_creation_input_tokens: 0, cache_write_input_tokens: 0, cachedInputTokens: 0, provider_cache_read_tokens: 0, cached_input_tokens: 0, provider_calls: 0 };
     const addUsage = (raw = {}) => {
       const input = Number(raw.prompt_tokens || raw.input_tokens || 0);
       const output = Number(raw.completion_tokens || raw.output_tokens || 0);
@@ -968,6 +977,9 @@ class ChatOrchestrator {
       totalUsage.cache_creation_input_tokens += cacheWrite;
       totalUsage.cache_write_input_tokens += cacheWrite;
       totalUsage.cachedInputTokens += cacheRead;
+      totalUsage.provider_cache_read_tokens += cacheRead;
+      totalUsage.cached_input_tokens += cacheRead;
+      if (input || output) totalUsage.provider_calls += 1;
     };
 
     const routed = pickModel({ requested: model, kind: decision?.kind || "CHAT", hasTools: !(chatOnly || decision?.kind === "CHAT") });

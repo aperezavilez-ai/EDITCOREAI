@@ -1,3 +1,22 @@
+# RELEASE v4.2.3
+
+## Análisis sin falsos errores, caché del proveedor completa y puntos del árbol
+
+### Corregido
+- El análisis ya no reporta como errores imports opcionales protegidos (playwright) ni líneas de documentación que listan archivos eliminados. En EditCoreAI pasa de 12 avisos a 0.
+- Si el análisis corrió los tests, el informe muestra el resultado real en lugar de "No ejecutado".
+- Rutas desactualizadas en AGENTS.md y ARQUITECTURA-SISTEMA.md.
+- Los puntos del árbol de archivos vuelven a marcar lo que toca el agente: archivos con hallazgos del análisis y archivos que escribe una corrección.
+
+### Tokens y caché
+- La caché del proveedor ahora cubre todo el bucle de herramientas (antes solo el prompt de sistema y el primer mensaje): cada llamada lee de caché el contexto ya enviado.
+- La línea de uso bajo cada respuesta muestra caché leída y escrita (antes siempre 0 por nombres de campo distintos).
+
+### Build
+- `EDITCOREAI.exe` (4.2.3.0) y `release/EDITCOREAI-Setup.exe` (4.2.3), construidos desde un árbol limpio en el commit publicado.
+
+---
+
 # RELEASE v4.2.2
 
 ## Reintentos de listado de archivos que funcionan

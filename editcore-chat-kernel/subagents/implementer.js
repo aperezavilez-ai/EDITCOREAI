@@ -21,7 +21,7 @@ async function runImplementer({ projectRoot, path: rel, content, oldText, newTex
 
   if (oldText != null && newText != null) {
     const result = tools.replaceInFile(projectRoot, rel, String(oldText), String(newText));
-    onProgress?.({ phase: "tool", name: "replace_in_file", ok: result.ok, input: { path: rel } });
+    onProgress?.({ phase: "tool", stage: "done", name: "replace_in_file", ok: result.ok, input: { path: rel } });
     return {
       role: "implementer",
       ok: result.ok,
@@ -34,7 +34,7 @@ async function runImplementer({ projectRoot, path: rel, content, oldText, newTex
   const existing = tools.readFile(projectRoot, rel, 50);
   if (existing.ok && content != null) {
     const result = tools.writeFile(projectRoot, rel, content);
-    onProgress?.({ phase: "tool", name: "write_file", ok: result.ok, input: { path: rel } });
+    onProgress?.({ phase: "tool", stage: "done", name: "write_file", ok: result.ok, input: { path: rel } });
     return {
       role: "implementer",
       ok: result.ok,
@@ -45,7 +45,7 @@ async function runImplementer({ projectRoot, path: rel, content, oldText, newTex
   }
 
   const result = tools.writeFile(projectRoot, rel, content ?? "");
-  onProgress?.({ phase: "tool", name: "write_file", ok: result.ok, input: { path: rel } });
+  onProgress?.({ phase: "tool", stage: "done", name: "write_file", ok: result.ok, input: { path: rel } });
   return {
     role: "implementer",
     ok: result.ok,

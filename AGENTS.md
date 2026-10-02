@@ -104,7 +104,7 @@ Know your own architecture:
 - `runtime/roadmap-sync.js` - sincroniza .editcore/roadmap.json de cada proyecto
 - `runtime/project-bootstrap.js` - inicializa proyectos nuevos desde cero
 - `runtime/cloud-vault-bridge.js` - credenciales desde safeStorage
-- `runtime/service-harness.js` - cliente HTTP unificado para APIs externas
+- `service-harness.js` - cliente HTTP unificado para APIs externas
 - `runtime/fullstack-deploy.js` - pipeline deploy estilo Lovable
 - `runtime/git-manager.js` - operaciones git incluyendo push a GitHub
 

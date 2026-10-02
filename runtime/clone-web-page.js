@@ -252,6 +252,7 @@ async function extractWebPage(url, options = {}) {
     errors.push(`puppeteer: ${error?.message || error}`);
   }
   try {
+    require.resolve("playwright");
     return await extractWithPlaywright(href, { viewport, outDir });
   } catch (error) {
     errors.push(`playwright: ${error?.message || error}`);

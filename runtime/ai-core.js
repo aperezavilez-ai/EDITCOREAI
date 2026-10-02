@@ -107,9 +107,14 @@ function usage(raw = {}) {
 }
 
 function withCacheControl(messages) {
+  let rolling = -1;
+  for (let i = messages.length - 1; i > 1; i -= 1) {
+    const m = messages[i];
+    if ((m?.role === "user" || m?.role === "tool") && typeof m.content === "string" && m.content) { rolling = i; break; }
+  }
   return messages.map((msg, idx) => {
     if (typeof msg.content !== "string" || !msg.content) return msg;
-    if (msg.role === "system" || (msg.role === "user" && idx <= 1)) {
+    if (msg.role === "system" || (msg.role === "user" && idx <= 1) || idx === rolling) {
       return { ...msg, content: [{ type: "text", text: msg.content, cache_control: { type: "ephemeral" } }] };
     }
     return msg;

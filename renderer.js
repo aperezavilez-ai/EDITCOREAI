@@ -2955,13 +2955,14 @@ function usageMetaText(usage) {
     return `cache local · ${saved} tokens evitados${localConfirmed ? " confirmados" : " estimados"}${modelBit}`;
   }
   if (confirmedInput || confirmedOutput) {
-    const providerCache = Number(usage?.provider_cache_read_tokens || usage?.cached_input_tokens || 0);
+    const providerCache = Number(usage?.provider_cache_read_tokens || usage?.cached_input_tokens || usage?.cache_read_input_tokens || 0);
+    const providerCacheWrite = Number(usage?.cache_creation_input_tokens || usage?.cache_write_input_tokens || 0);
     const netInput = Math.max(0, confirmedInput - providerCache);
     const calls = Number(usage?.provider_calls || 0);
     const peak = Number(usage?.peak_request_input_tokens_estimate || 0);
     const compacted = Number(usage?.context_compaction_count || 0);
     const total = Number(usage?.total_tokens || 0) || (confirmedInput + confirmedOutput);
-    return `↑${confirmedInput} ↓${confirmedOutput} tokens · cache proveedor ${providerCache} · entrada neta aprox. ${netInput} · total ${total}${calls ? ` · ${calls} llamada(s)` : ""}${peak ? ` · pico contexto est. ${peak}` : ""}${compacted ? ` · contexto compactado ${compacted} vez/veces` : ""}${modelBit}`;
+    return `↑${confirmedInput} ↓${confirmedOutput} tokens · cache proveedor leído ${providerCache} · escrito ${providerCacheWrite} · entrada neta aprox. ${netInput} · total ${total}${calls ? ` · ${calls} llamada(s)` : ""}${peak ? ` · pico contexto est. ${peak}` : ""}${compacted ? ` · contexto compactado ${compacted} vez/veces` : ""}${modelBit}`;
   }
   if (estimatedInput || estimatedOutput) {
     return `est. ↑${estimatedInput} ↓${estimatedOutput} tokens · medicion local${modelBit}`;
@@ -15250,6 +15251,9 @@ window.editcoreAgent.onProgress((progress) => {
     const isLogPhase = ["confirm", "repair", "human_intervention", "direction"].includes(progress?.phase);
     const narrative = agentProgressText(progress);
     if (isToolStep || isLogPhase) {
+      if (isToolStep) {
+        try { notifyAgentFileMutationProgress(thinkingEl, progress); } catch { /* el árbol no debe cortar el log */ }
+      }
       addAgentStepToThinking(thinkingEl, progress);
       if (isToolStep) {
         if (narrative) {
@@ -15257,7 +15261,6 @@ window.editcoreAgent.onProgress((progress) => {
           setAgentLiveActivity(thinkingEl, narrative);
           $("status").textContent = narrative;
         }
-        notifyAgentFileMutationProgress(thinkingEl, progress);
         // Espejo Cursor: exploración + diffs inline desde tools
         const toolName = String(progress.name || "");
         const target = String(progress.input?.path || progress.input?.filePath || progress.input?.query || "").trim();

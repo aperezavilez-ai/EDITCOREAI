@@ -483,6 +483,8 @@ function checkImports(root, files, ctx) {
       const installed = pkgCtx.isInstalled(path.dirname(file.abs), name);
       if (!installed && declared) {
         findings.push({ check: "imports", severity: "error", file: file.rel, line, key: `imports|pkg|${name}|missing`, message: `"${name}" está declarado en package.json pero no está instalado (falta npm install).`, evidence: "node_modules/<paquete>/package.json" });
+      } else if (!installed && lazy && new RegExp(`require\\.resolve\\(\\s*["'\`]${name.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&")}["'\`]`).test(source)) {
+        continue;
       } else if (!installed && lazy) {
         findings.push({ check: "imports", severity: "warning", file: file.rel, line, key: `imports|pkg|${name}|absent`, message: `Carga bajo demanda el paquete "${name}", que no está declarado ni instalado: si esa ruta se ejecuta, fallará.`, evidence: "package.json + node_modules" });
       } else if (!installed) {
@@ -558,12 +560,22 @@ async function checkGit(root) {
 
 const DOC_FILES = /^(AGENTS|CLAUDE|README|ROADMAP|CONTRIBUTING|ARQUITECTURA[\w-]*)\.md$/i;
 const DOC_PATH = /`([\w@.\-/]+\.(?:js|cjs|mjs|ts|tsx|jsx|json|md|css|html|py|sql|sh|ps1|yml|yaml|toml))`/g;
+const DOCUMENTS_MISSING = /eliminad|borrad|retirad|inexistente|no existe|ya no existe|deleted|removed/i;
 
 function checkDocReferences(root, files) {
   const findings = [];
   for (const file of files.filter((f) => !f.rel.includes("/") && DOC_FILES.test(f.name))) {
     const lines = fs.readFileSync(file.abs, "utf8").split(/\r?\n/);
+    let missingCtxIndent = -1;
     lines.forEach((text, idx) => {
+      if (!text.trim()) return;
+      const indent = text.length - text.trimStart().length;
+      if (missingCtxIndent >= 0 && indent <= missingCtxIndent) missingCtxIndent = -1;
+      if (DOCUMENTS_MISSING.test(text)) {
+        if (missingCtxIndent < 0) missingCtxIndent = indent;
+        return;
+      }
+      if (missingCtxIndent >= 0) return;
       for (const m of text.matchAll(DOC_PATH)) {
         const ref = m[1];
         if (!ref.includes("/") || ref.startsWith("node_modules") || ref.startsWith(".editcore/") || ref.includes("..") || /^[A-Z_]+\//.test(ref)) continue;

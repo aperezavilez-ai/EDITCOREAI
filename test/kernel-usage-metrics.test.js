@@ -35,6 +35,36 @@ test("el orquestador suma el uso de cada turno del modelo (antes devolvía siemp
   assert.match(src, /totalUsage\.total_tokens \+= Number\(raw\.total_tokens \|\| 0\) \|\| input \+ output;/);
 });
 
+test("el orquestador expone los campos de caché que lee la pantalla", () => {
+  const src = fs.readFileSync(path.join(__dirname, "..", "editcore-chat-kernel", "orchestrator.js"), "utf8");
+  assert.match(src, /totalUsage\.provider_cache_read_tokens \+= cacheRead;/);
+  assert.match(src, /totalUsage\.cached_input_tokens \+= cacheRead;/);
+  assert.match(src, /totalUsage\.provider_calls \+= 1;/);
+  const renderer = fs.readFileSync(path.join(__dirname, "..", "renderer.js"), "utf8");
+  assert.match(renderer, /cache proveedor leído \$\{providerCache\} · escrito \$\{providerCacheWrite\}/);
+});
+
+test("withCacheControl marca system, primer user y el último mensaje del bucle de tools", () => {
+  const { withCacheControl } = require("../runtime/ai-core");
+  const marked = (m) => Array.isArray(m.content) && m.content[0]?.cache_control?.type === "ephemeral";
+  const msgs = [
+    { role: "system", content: "sys" },
+    { role: "user", content: "pedido" },
+    { role: "assistant", content: null, tool_calls: [{ id: "t1", type: "function", function: { name: "read_file", arguments: "{}" } }] },
+    { role: "tool", tool_call_id: "t1", content: "contenido del archivo" },
+    { role: "assistant", content: null, tool_calls: [{ id: "t2", type: "function", function: { name: "read_file", arguments: "{}" } }] },
+    { role: "tool", tool_call_id: "t2", content: "otro archivo" },
+  ];
+  const out = withCacheControl(msgs);
+  assert.deepEqual(out.map(marked), [true, true, false, false, false, true]);
+  assert.equal(out[2].content, null);
+  assert.equal(out[5].tool_call_id, "t2");
+  assert.equal(out.filter(marked).length <= 4, true);
+
+  const short = withCacheControl([{ role: "system", content: "s" }, { role: "user", content: "u" }]);
+  assert.deepEqual(short.map(marked), [true, true]);
+});
+
 test("el chat no reutiliza respuestas guardadas en lugar de llamar al modelo", () => {
   const src = fs.readFileSync(path.join(__dirname, "..", "editcore-chat-kernel", "orchestrator.js"), "utf8");
   assert.doesNotMatch(src, /promptCache\.cacheRead\(/);

@@ -111,6 +111,27 @@ test("referencias rotas en documentación y exclusiones declaradas en package.js
   assert.match(fc.formatForensicMarkdown(res), /Excluido por configuración del proyecto: `plantillas`/);
 }));
 
+test("sin falsos positivos: lazy protegido con require.resolve y docs que listan archivos eliminados", () => withProject({
+  "package.json": JSON.stringify({ name: "demo" }),
+  "node_modules/.keep": "",
+  "opcional.js": "function f() { return require('pw-opcional'); }\nasync function g() {\n  try {\n    require.resolve('pw-opcional');\n    return f();\n  } catch { return null; }\n}\nmodule.exports = g;\n",
+  "ROADMAP.md": [
+    "- Hallazgos pendientes: `runtime/borrado.js` ya no existe.",
+    "- Archivos eliminados en la limpieza:",
+    "  - `src/viejo-a.js`",
+    "  - `src/viejo-b.js`",
+    "- Sigue vigente `src/real.js` y `src/falta.js`.",
+  ].join("\n"),
+  "src/real.js": "module.exports = 1;\n",
+}, async (dir) => {
+  const res = await fc.runForensicChecks(dir, { runTests: false, runTypecheck: false });
+  assert.ok(!res.findings.some((f) => f.file === "opcional.js"));
+  const docs = res.findings.filter((f) => f.check === "docs");
+  assert.equal(docs.length, 1);
+  assert.match(docs[0].message, /src\/falta\.js/);
+  assert.equal(docs[0].line, 5);
+}));
+
 test("respaldos y copias viejas se excluyen y se informan", () => withProject({
   "package.json": JSON.stringify({ name: "demo" }),
   "src/app.js": "module.exports = require('./util');\n",

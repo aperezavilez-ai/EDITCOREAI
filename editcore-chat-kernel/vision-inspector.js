@@ -160,6 +160,7 @@ async function capture_preview_screenshot(opts = {}) {
   } catch (err) {
     lastError = err;
     try {
+      require.resolve("playwright");
       const shot = await withPlaywright(url, size, outPath);
       engine = shot.engine;
       diagnostics = shot.diagnostics;

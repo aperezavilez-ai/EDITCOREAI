@@ -39,7 +39,7 @@ D:\PROGRAMAS IA\TAXIDRIV\
 - **Host:** `supabase.gafcore.com`
 - **Projects:** Un proyecto por app
 - **Auth:** Service keys en vault
-- **Acceso:** `runtime/supabase-client.js`
+- **Acceso:** `runtime/supabase-manager.js` (`supabaseHealth`, `checkMigrationDrift`, `manageSupabaseProject`)
 
 ## 3. HERRAMIENTAS INTERNAS DE EDITCOREAI
 
@@ -89,8 +89,8 @@ D:\PROGRAMAS IA\TAXIDRIV\
 
 **Diagnóstico:**
 1. Verificar qué cambió: `git diff HEAD~1`
-2. Ver logs de Vercel: `runtime/vercel-client.js` tiene `getDeploymentLogs()`
-3. Revisar errores de Supabase: `supabase-client.js` tiene `checkMigrations()`
+2. Ver logs de Vercel: `npx vercel logs <url-del-deploy>` (EDITCOREAI no tiene cliente propio de logs de Vercel)
+3. Revisar migraciones de Supabase: `runtime/supabase-manager.js` → `checkMigrationDrift()`
 
 **Restauración:**
 ```bash
@@ -114,7 +114,7 @@ git push origin main
 
 **Rollback en Vercel:**
 - Vercel UI → Deployments → Click en el deploy funcional → "Promote to Production"
-- O desde EDITCOREAI: `runtime/vercel-client.js` → `promoteDeployment(deploymentId)`
+- O por CLI: `npx vercel promote <url-del-deploy>` (o `npx vercel rollback`)
 
 ## 6. ANTI-PATRONES (LO QUE ROMPE PROYECTOS)
 
