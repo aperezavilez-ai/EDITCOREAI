@@ -6,7 +6,7 @@ EditCore actualiza este archivo tras cambios. No pedirlo al usuario. No pegar co
 
 ## Proceso
 - Fase: implementacion
-- Estado: 4.2.0 — métricas reales de uso y caché del chat (antes siempre en cero). 4.1.9 — limpieza total: 607 archivos sin uso eliminados (agent-core, skills duplicadas, módulos sin cargar, paneles huérfanos, copia espejo `resources/ui-overlay`); el instalador vuelve a arrancar (main.js ya no carga `scripts/` al inicio). 4.1.8 — modo forense real: cada análisis corre chequeos deterministas (sintaxis, imports, conflictos, env, referencias, git; en modo a fondo también tests, typecheck y build) y separa errores VERIFICADOS de hipótesis; el verificador nunca da OK sin comprobar; cada corrección se re-verifica antes/después.
+- Estado: 4.2.1 — el chat ya no puede dejar EditCoreAI sin abrir: si edita su propio código y el arranque queda roto, revierte ese turno solo. 4.2.0 — métricas reales de uso y caché del chat (antes siempre en cero). 4.1.9 — limpieza total: 607 archivos sin uso eliminados (agent-core, skills duplicadas, módulos sin cargar, paneles huérfanos, copia espejo `resources/ui-overlay`); el instalador vuelve a arrancar (main.js ya no carga `scripts/` al inicio). 4.1.8 — modo forense real: cada análisis corre chequeos deterministas (sintaxis, imports, conflictos, env, referencias, git; en modo a fondo también tests, typecheck y build) y separa errores VERIFICADOS de hipótesis; el verificador nunca da OK sin comprobar; cada corrección se re-verifica antes/después.
 - Actualizado: 2026-10-02
 - Preview: desconocido — usa el preview del IDE, no inventes puertos
 
@@ -15,9 +15,9 @@ EditCore actualiza este archivo tras cambios. No pedirlo al usuario. No pegar co
 - preload.js — contextBridge (un bloque por namespace)
 - renderer.js — UI del IDE
 - chat-home.js / chat-home.css — shell Chat Home
-- package.json — scripts de test, empaquetado Windows, deploy; version 4.2.0
+- package.json — scripts de test, empaquetado Windows, deploy; version 4.2.1
 - ARQUITECTURA-SISTEMA.md — arquitectura general
-- EDITCORE-MANIFEST.md — manifiesto del producto (version producto 4.2.0)
+- EDITCORE-MANIFEST.md — manifiesto del producto (version producto 4.2.1)
 - AGENTS.md — reglas operativas del agente
 
 ### editcore-chat-kernel/
@@ -102,9 +102,10 @@ EditCore actualiza este archivo tras cambios. No pedirlo al usuario. No pegar co
 - **Memoria semántica (2026-10-02)**: `vector-memory.js` + `embeddings.js` (fallback local determinista). `memory.js` y `global-memory.js` indexan notas, archivos y soluciones de error en background sin bloquear el flujo del orquestador. Búsqueda con `searchSemantic()` y `promptBlockSemantic()`.
 - **Métricas de rendimiento (2026-10-02)**: `model-router.js` y `tools.js` registran latencia y éxito/fallo por modelo y por tool. Persistencia en `.editcore/model-router-stats.json`. Consulta con `getModelStats()` / `getToolStats()`.
 - **Mensajería dirigida entre agentes (2026-10-02)**: `agent-bus.js` expone `postMessage` / `readMessages` / `messagesPromptBlock` para comunicación explícita entre subagentes.
-- **Versionado (2026-10-02)**: `package.json` es la fuente de verdad de la versión (`4.2.0`). El `buildVersion` de `electron-builder` (`4.2.0.0`) sigue el esquema Windows `MAJOR.MINOR.PATCH.BUILD`. `EDITCORE-MANIFEST.md` refleja la misma versión de producto. Cada parte va de 0 a 9, nunca 10: después de 4.1.9 sigue 4.2.0 y después de 4.9.9 sigue 5.0.0 (lo verifica el gate de pre-empaquetado).
+- **Versionado (2026-10-02)**: `package.json` es la fuente de verdad de la versión (`4.2.1`). El `buildVersion` de `electron-builder` (`4.2.1.0`) sigue el esquema Windows `MAJOR.MINOR.PATCH.BUILD`. `EDITCORE-MANIFEST.md` refleja la misma versión de producto. Cada parte va de 0 a 9, nunca 10: después de 4.1.9 sigue 4.2.0 y después de 4.9.9 sigue 5.0.0 (lo verifica el gate de pre-empaquetado).
 
 ## Cambios recientes (2026-10-02)
+- Release v4.2.1: guardia de auto-modificación (`editcore-chat-kernel/self-guard.js`). Causa real de que el EXE no abriera (2:54–3:44 PM): el chat de EditCoreAI, con EditCoreAI como proyecto abierto, editaba su propio código (`require` a `./prompt-cache`, `./runtime/context-engine`, `./runtime/chat-turn-context` inexistentes). Ahora, al final de cada turno que escribe o ejecuta comandos sobre la carpeta de la app, recorre el grafo de arranque (main.js, preload.js, kernel; 160 archivos, ~0,2 s): sintaxis + cada `require` de nivel superior. Si falla, revierte las escrituras del turno con sus snapshots (y borra los archivos creados) y lo avisa en el chat. Cambios en varios pasos (require + archivo nuevo) no se revierten porque se verifica al final del turno. Detecta los 4 incidentes reales del día (probado con los respaldos). `test/self-guard.test.js`: 6 tests. Respaldo de los cambios del chat: `Z RESPALDOS\editcore-autocambios-2026-10-02-1545`.
 - Release v4.2.0: fix de métricas de uso y caché del chat. El orquestador devolvía siempre `totalUsage` en cero (se inicializaba y nunca se sumaba); ahora suma el uso de cada turno (`addUsage`) y `provider.js` reconoce también `cached_tokens`, `cache_write_input_tokens` y `cache_creation.input_tokens`. Rescatado de cambios de Codex (respaldo completo en `Z RESPALDOS\codex-cambios-2026-10-02`); su `prompt-cache.js` (repetía respuestas guardadas hasta 24 h en lugar de llamar al modelo) NO se integró: daría resultados viejos de herramientas en vivo. `test/kernel-usage-metrics.test.js`: 3 tests.
 - Release v4.1.9: instalador construido desde un worktree limpio (sin cambios ajenos sin commit); 214/214 dependencias en `app.asar`, sin `.env` ni `.claude/`. El v4.1.8 no arrancaba (`scripts/` excluido del paquete).
 - `8e7c68d` security: el empaquetado excluye `.env*`, `.env.local`, `.claude/`; `5349927` excluye `release/`. Gate nuevo que verifica las exclusiones.

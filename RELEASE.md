@@ -1,3 +1,17 @@
+# RELEASE v4.2.1
+
+## El chat ya no puede dejar EditCoreAI sin abrir
+
+### Corregido
+- Cuando el proyecto abierto en el chat es el propio EditCoreAI, el agente podía editar su código y dejar el arranque roto (por ejemplo, un `require` a un archivo que no existe): el EXE dejaba de abrir.
+- Ahora, al terminar cada turno que modificó la carpeta de la app, EditCoreAI verifica que `main.js`, `preload.js` y el núcleo del chat cargan (sintaxis y cada `require` de nivel superior). Si algo falla, deshace solo los cambios de ese turno, borra los archivos que creó y lo explica en el chat.
+- Los cambios legítimos en varios pasos (agregar un `require` y después crear el archivo) no se revierten: la verificación se hace al final del turno.
+
+### Build
+- `EDITCOREAI.exe` (4.2.1.0) y `release/EDITCOREAI-Setup.exe` (4.2.1), construidos desde un árbol limpio en el commit publicado.
+
+---
+
 # RELEASE v4.2.0
 
 ## Métricas reales de uso y caché del chat

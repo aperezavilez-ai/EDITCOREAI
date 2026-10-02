@@ -23,6 +23,7 @@ const threadCore = require("./thread-core");
 const threadMemory = require("./thread-memory");
 const modelRouter = require("./model-router");
 const agentBus = require("./agent-bus");
+const selfGuard = require("./self-guard");
 
 const orchestrator = new ChatOrchestrator();
 
@@ -43,7 +44,14 @@ async function handleChat(input) {
         blocked: true,
       };
     }
-    return await orchestrator.handle(input || {});
+    const out = await orchestrator.handle(input || {});
+    let guard = null;
+    try { guard = selfGuard.verifyAfterTurn(input?.projectRoot, out?.steps); } catch { guard = null; }
+    if (guard && !guard.ok && out && typeof out === "object") {
+      out.selfGuard = guard;
+      out.text = [String(out.text || "").trim(), selfGuard.formatGuardNotice(guard)].filter(Boolean).join("\n\n");
+    }
+    return out;
   } finally {
     release();
   }
