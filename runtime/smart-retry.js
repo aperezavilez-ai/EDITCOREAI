@@ -181,15 +181,19 @@ function createCommonStrategies(operation, params, options = {}) {
       name: "glob pattern",
       timeout: 10000,
       execute: async () => {
-        const glob = require("glob");
-        return new Promise((resolve, reject) => {
-          const pattern = path ? `${path}/**/*` : "**/*";
-          glob(pattern, { nodir: true, maxDepth: 10 }, (err, files) => {
-            if (err) reject(err);
-            else if (files.length === 0) reject(new Error("No se encontraron archivos"));
-            else resolve(files.map((file) => ({ path: file, name: file.split("/").pop(), kind: "file" })));
-          });
-        });
+        const fsp = require("fs").promises;
+        const pathModule = require("path");
+        if (typeof fsp.glob !== "function") throw new Error("fs.glob no disponible en esta versión de Node");
+        const skip = new Set(["node_modules", ".git", "dist", "build"]);
+        const pattern = path ? `${path}/**/*` : "**/*";
+        const files = [];
+        for await (const entry of fsp.glob(pattern, { withFileTypes: true, exclude: (d) => skip.has(d.name) })) {
+          if (entry.isFile()) {
+            files.push({ path: pathModule.join(entry.parentPath, entry.name).replace(/\\/g, "/"), name: entry.name, kind: "file" });
+          }
+        }
+        if (files.length === 0) throw new Error("No se encontraron archivos");
+        return files;
       },
     });
 

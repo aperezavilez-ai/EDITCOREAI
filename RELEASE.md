@@ -1,3 +1,15 @@
+# RELEASE v4.2.2
+
+## Reintentos de listado de archivos que funcionan
+
+### Corregido
+- La estrategia "glob" de reintentos de `list_files` (`runtime/smart-retry.js`) fallaba siempre: usaba la API con callback del paquete `glob`, que en la versión instalada (v13) ya no existe. Ahora usa `fs.promises.glob` nativo de Node, excluye `node_modules`, `.git`, `dist` y `build`, y no agrega dependencias.
+
+### Build
+- `EDITCOREAI.exe` (4.2.2.0) y `release/EDITCOREAI-Setup.exe` (4.2.2), construidos desde un árbol limpio en el commit publicado.
+
+---
+
 # RELEASE v4.2.1
 
 ## El chat ya no puede dejar EditCoreAI sin abrir
