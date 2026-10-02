@@ -20,6 +20,14 @@ const { runAnalyst } = require("./subagents/analyst");
 const { runImplementer } = require("./subagents/implementer");
 const { runVerifier } = require("./subagents/verifier");
 
+// [EDITCORE-ADD] Red neuronal entre agentes (opcional). Si el archivo no está, no-op.
+let agentNetwork = null;
+try {
+  const _an = require("./agent-network");
+  agentNetwork = _an.globalNetwork || new _an.AgentNetwork();
+} catch (_) { agentNetwork = null; }
+// [/EDITCORE-ADD]
+
 let dispatchSpecialist = () => null;
 try {
   const _dispatcher = require("./subagents/dispatcher");
@@ -187,6 +195,7 @@ const ANALYSIS_MODE_PROMPT = [
   "- Si un documento tiene cifras distintas en varias secciones (ej. 19/19, 30/30, 46/46 tests), usa la mas reciente y menciona la discrepancia.",
   "- Usa tablas cuando listes varios hallazgos o archivos.",
   "- Si no hay evidencia suficiente, dilo explicitamente.",
+  "- CIERRE: Después de 📁 Evidencia real, agregá 1-2 líneas preguntando al usuario si quiere profundizar en algún módulo o pasar a implementar una mejora concreta.",
   "=== FIN MODO ANALISIS ===",
 ].join("\n");
 
@@ -667,6 +676,23 @@ class ChatOrchestrator {
     this._skillsPrompt = String(input.skillsPrompt || "").trim();
     this._currentUserText = text;
 
+    // [EDITCORE-ADD] Ruteo por red neuronal (opcional). Guarda el agente elegido para feedback.
+    try {
+      if (agentNetwork && typeof agentNetwork.route === "function") {
+        const _r = await agentNetwork.route(String(text || "").slice(0, 500));
+        this._ecRoutedAgent = _r && _r.agent || null;
+        this._ecRoutedScore = _r && _r.score || 0;
+        try {
+          agentBus.record(projectRoot || ".", threadId, {
+            agent: this._ecRoutedAgent,
+            summary: `routed (score ${Number(this._ecRoutedScore || 0).toFixed(2)})`,
+            phase: "routing",
+          });
+        } catch (_) {}
+      }
+    } catch (_) { /* no-op */ }
+    // [/EDITCORE-ADD]
+
     if (decision.kind === "CHAT") {
       this.pendingTask = null;
       if (!apiKey) return { kind: "CHAT", text: "EditCoreAI es un IDE con agente autónomo. Abrí un proyecto y pedime un cambio concreto." };
@@ -974,6 +1000,13 @@ class ChatOrchestrator {
           textOut = formatAgentVisibleText(textOut);
           persistKernelRoadmap(projectRoot, { task: message, steps, kind: decision?.kind, text: textOut, completed: true });
           rememberOut(textOut); detachLongRunningStreams(steps);
+          // [EDITCORE-ADD] Feedback de éxito a la red neuronal.
+          try {
+            if (agentNetwork && this._ecRoutedAgent && typeof agentNetwork.recordOutcome === "function") {
+              agentNetwork.recordOutcome(this._ecRoutedAgent, true);
+            }
+          } catch (_) {}
+          // [/EDITCORE-ADD]
           return { kind: decision?.kind || "CHAT", text: textOut, steps, mutations: runMutations, incomplete: false, report: { completed: true }, threadId, usage: totalUsage };
         }
 
@@ -1071,6 +1104,13 @@ class ChatOrchestrator {
       textOut = formatAgentVisibleText(textOut);
       persistKernelRoadmap(projectRoot, { task: message, steps, kind: decision?.kind, text: textOut, completed: true });
       rememberOut(textOut); detachLongRunningStreams(steps);
+      // [EDITCORE-ADD] Feedback de éxito (steps agotados pero sin excepción).
+      try {
+        if (agentNetwork && this._ecRoutedAgent && typeof agentNetwork.recordOutcome === "function") {
+          agentNetwork.recordOutcome(this._ecRoutedAgent, true);
+        }
+      } catch (_) {}
+      // [/EDITCORE-ADD]
       return { kind: decision?.kind || "EXECUTE", text: textOut, steps, incomplete: false, threadId, usage: totalUsage };
     } catch (err) {
       this.session.kill();
@@ -1078,6 +1118,13 @@ class ChatOrchestrator {
       const errText = formatAgentVisibleText("## ❌ Error\n\nAlgo falló durante la ejecución: " + safeMsg);
       persistKernelRoadmap(projectRoot, { task: message, steps, kind: decision?.kind, text: errText, completed: false });
       rememberOut(errText); detachLongRunningStreams(steps);
+      // [EDITCORE-ADD] Feedback de fallo a la red neuronal (baja confianza del agente).
+      try {
+        if (agentNetwork && this._ecRoutedAgent && typeof agentNetwork.recordOutcome === "function") {
+          agentNetwork.recordOutcome(this._ecRoutedAgent, false);
+        }
+      } catch (_) {}
+      // [/EDITCORE-ADD]
       return { kind: "CHAT", text: errText, steps, threadId, usage: totalUsage };
     } finally {
       this.running = false; this.turnAbort = null;

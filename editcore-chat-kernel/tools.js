@@ -1115,6 +1115,52 @@ function getToolDefinitions({ allowWrite = true, isFullAccess = false, isAnalysi
   });
 }
 
+// =====================================================================
+// [EDITCORE-ADD] Métricas de uso por tool + rate limiter. Puro add-on.
+// No modifica ni reemplaza nada. Si no se usa, no-op.
+// =====================================================================
+const _ecToolStats = new Map();
+const _ecToolRateBuckets = new Map();
+
+function _ecToolKey(name) { return String(name || "unknown"); }
+
+function _ecRateAcquire(name, capacity = 60, refillPerSec = 4) {
+  const key = _ecToolKey(name);
+  const now = Date.now();
+  let b = _ecToolRateBuckets.get(key);
+  if (!b) { b = { tokens: capacity, last: now, capacity, refillPerSec }; _ecToolRateBuckets.set(key, b); }
+  const elapsed = (now - b.last) / 1000;
+  if (elapsed > 0) { b.tokens = Math.min(b.capacity, b.tokens + elapsed * b.refillPerSec); b.last = now; }
+  if (b.tokens >= 1) { b.tokens -= 1; return { ok: true, remaining: b.tokens }; }
+  return { ok: false, remaining: b.tokens, waitMs: Math.ceil((1 - b.tokens) / b.refillPerSec * 1000) };
+}
+
+function recordToolCall(name, { ok, durationMs } = {}) {
+  const key = _ecToolKey(name);
+  const s = _ecToolStats.get(key) || { calls: 0, ok: 0, fail: 0, totalMs: 0 };
+  s.calls++;
+  if (ok) s.ok++; else s.fail++;
+  s.totalMs += Number(durationMs) || 0;
+  _ecToolStats.set(key, s);
+}
+
+function getToolStats() {
+  const out = {};
+  for (const [k, v] of _ecToolStats) {
+    out[k] = {
+      calls: v.calls,
+      ok: v.ok,
+      fail: v.fail,
+      successRate: v.calls > 0 ? v.ok / v.calls : null,
+      avgMs: v.calls > 0 ? Math.round(v.totalMs / v.calls) : null,
+    };
+  }
+  return out;
+}
+
+function resetToolStats() { _ecToolStats.clear(); _ecToolRateBuckets.clear(); }
+// [/EDITCORE-ADD]
+
 module.exports = {
   TOOL_RESULT_CAP,
   truncatePayload,
@@ -1143,4 +1189,8 @@ module.exports = {
   gitDiff,
   installSkill,
   listSkills,
+  // [EDITCORE-ADD]
+  recordToolCall,
+  getToolStats,
+  resetToolStats,
 };

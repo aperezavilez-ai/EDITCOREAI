@@ -6,8 +6,8 @@ EditCore actualiza este archivo tras cambios. No pedirlo al usuario. No pegar co
 
 ## Proceso
 - Fase: implementacion
-- Estado: 4.1.5 — la barra de estado muestra la versión real; el panel Web muestra también apps de escritorio (Tauri, Electron, NW.js) y proyectos HTML sin servidor.
-- Actualizado: 2026-10-01
+- Estado: Kernel reforzado (red neuronal, memoria semántica, métricas). Fase lista para nueva funcionalidad.
+- Actualizado: 2026-10-02
 - Preview: desconocido — usa el preview del IDE, no inventes puertos
 
 ## Mapa
@@ -15,25 +15,76 @@ EditCore actualiza este archivo tras cambios. No pedirlo al usuario. No pegar co
 - preload.js — contextBridge (un bloque por namespace; espejo en resources/ui-overlay/preload.js)
 - renderer.js — UI del IDE
 - chat-home.js / chat-home.css — shell Chat Home
-- editcore-chat-kernel/classify.js — portero de intención (CHAT / ANALYZE / EXECUTE…)
-- editcore-chat-kernel/orchestrator.js — ChatOrchestrator (tools, grounding, roadmap)
-- editcore-chat-kernel/tools.js — tools de disco del kernel
-- runtime/editcore-claude-adapter.js — agente del IDE (espejo en resources/ui-overlay/runtime/)
-- runtime/elite-communication-policy.js — estilo y reglas de comunicación
-- runtime/project-roadmap.js — escritura de este ROADMAP
+- package.json — scripts de test, empaquetado Windows, deploy
+- ARQUITECTURA-SISTEMA.md — arquitectura general
+- EDITCORE-MANIFEST.md — manifiesto del producto
+- AGENTS.md — reglas operativas del agente
+
+### editcore-chat-kernel/
+- classify.js — portero de intención (CHAT / ANALYZE / EXECUTE…)
+- orchestrator.js — ChatOrchestrator (tools, grounding, roadmap, red neuronal)
+- provider.js — proveedor LLM (streaming, fallback, cache read/write, orderProfiles)
+- tools.js — tools de disco del kernel + métricas por tool + rate limiter
+- memory.js — memoria persistente de proyecto + búsqueda semántica (vector store)
+- agent-bus.js — tablero compartido entre agentes + mensajería dirigida
+- agent-network.js — red neuronal entre agentes (routing por embeddings + feedback)
+- global-memory.js — memoria global cross-project + búsqueda semántica de soluciones
+- model-router.js — selección de modelo + métricas por modelo
+- thread-core.js / thread-memory.js — hilo, historial, estado de proyecto
+- task-queue.js — cola de tareas
+- session.js — sesión de chat
+- skills-catalog.js — catálogo de skills
+- package.json — metadata del kernel
+- index.js — API pública (handleChat, stopChat, steerChat)
+
+### agent-core/
+- src/orchestrator.js — orquestador del core
+- src/llm-loop.js — loop LLM con tool_calls (tools nativas + extendidas)
+- src/classify.js — clasificación del core
+- src/verifier.js — verificación de resultados
+- src/tools-extended.js — herramientas extendidas (web, git, skills)
+- classify.js / composer-engine.js / deploy-bridge.js / index.js
+
+### runtime/
+- ai-core.js — utilidades base del proveedor (withCacheControl, readOpenAiStream, etc.)
+- action-registry.js — deduplicación de acciones por hash
+- adaptive-budget.js — presupuesto de tokens (full/moderate/minimal/emergency)
+- agent-memory.js — memoria agente (conversaciones, archivos, decisiones)
+- agent-git.js — git seguro (spawnSync sin shell)
+- editcore-claude-adapter.js — agente del IDE (espejo en resources/ui-overlay/runtime/)
+- elite-communication-policy.js — estilo y reglas de comunicación
+- project-roadmap.js — escritura de este ROADMAP
+- roadmap-sync.js — sincronización del ROADMAP
+- credentials-vault-guard.js — protección de bóveda
+- session-state.js — estado de sesión
+- project-map.js — mapa cognitivo
+
+### Otros
 - resources/ui-overlay/ — copia empaquetada (mantener sincronizada)
+- test/ — suite de tests (unitarios + E2E)
+- brain-seed/ + brain-service.js + brain-memory-store.js — cerebro persistente del proyecto
 
 ## Archivos clave (no reexplorar)
-- editcore-chat-kernel/classify.js
-- editcore-chat-kernel/orchestrator.js
-- editcore-chat-kernel/tools.js
-- runtime/editcore-claude-adapter.js
+- package.json
+- ARQUITECTURA-SISTEMA.md
+- EDITCORE-MANIFEST.md
+- agent-core/src/orchestrator.js
+- agent-core/src/llm-loop.js
+- editcore-chat-kernel/index.js
 - preload.js
+- agent-core/src/verifier.js
+- agent-core/src/classify.js
+- editcore-chat-kernel/orchestrator.js
+- editcore-chat-kernel/provider.js
+- editcore-chat-kernel/package.json
+- agent-core/src/tools-extended.js
 - main.js
-- renderer.js
+- runtime/credentials-vault-guard.js
+- runtime/roadmap-sync.js
 
 ## Tarea activa
-- Auditoría forense cerrada. Claves del Supabase self-hosted rotadas (2026-09-30).
+- ALCANCE: FOCALIZADO — responde SOLO a lo pedido.
+- Sin tarea en curso.
 
 ## Bloqueos / bugs conocidos
 - `.vercel/project.json` de EDITCOREAI WEB apunta a un proyecto que ya no existe en Vercel (404).
@@ -50,54 +101,34 @@ EditCore actualiza este archivo tras cambios. No pedirlo al usuario. No pegar co
 - **Modo charla con lectura**: CHAT tiene web_search/web_scrape, list_files/read_file/search_files, list_skills, list_brain y git_status/log/diff (hasta 6 pasos; el último sin tools para forzar respuesta). Nunca escribe ni ejecuta comandos.
 - **Acciones externas con confirmación**: `publish_project` y `deploy_one_click` nunca se ejecutan en el turno del modelo (aunque se autoapruebe por argumentos): el orquestador guarda la acción en `pendingExternal` (10 min, mismo proyecto) y solo la ejecuta si el siguiente mensaje del usuario es una aprobación; cualquier otro mensaje la cancela. Fuera del modo charla.
 - **Cerebro como contexto automático**: cada turno (salvo listados) busca en `.editcore/rag/` y añade al sistema hasta 3 fragmentos con puntuación ≥ 2; el modelo los cita como "según <título>". `search_brain` suma memoria y código del índice global (`brain-service.searchForAgent`).
-- **Preview de apps de escritorio**: si el script dev/start abre una ventana nativa (`tauri dev`, `electron .`, NW.js) no se ejecuta; `preview-runtime.resolveDesktopPreviewTarget` arranca solo el frontend (`devUrl` + `beforeDevCommand` de Tauri) o sirve su HTML (`frontendDist`, el `loadFile` de Electron, `web/`, `public/`…) con `static-preview-server.js`. Las funciones nativas no responden en el panel. Si el script ya es un servidor web (vite, concurrently…) se usa el flujo normal.
-- **Setup automático**: `scripts/postinstall.js` (postinstall y `npm run setup`) repone Electron, node-pty, Chrome de puppeteer y branding; registra en `.editcore/logs/setup.jsonl`.
-- **Runtime en SSD**: D: es HDD y Electron tardaba 45-98 s solo en arrancar desde ahí (1-2 s desde C:). El launcher raíz copia `node_modules/electron/dist` a `%LOCALAPPDATA%\EDITCOREAI\runtime` (resincroniza por tamaño/fecha/versión del host) y arranca desde ahí; mutex contra dobles clics. Ventana en 17-20 s (57 s la primera vez con copia).
-- **Contraseña `postgres` del stack CLI**: no se cambia (la CLI la usa para todos los roles internos); la protección es de red: Docker publica en 0.0.0.0 y el firewall `GAFCORE` corta el acceso externo.
-- **Rotación de claves Supabase**: `npm run supabase:check` / `supabase:plan` / `supabase:rotate` (`scripts/supabase-rotate-keys.js`). Respaldo + dump en `Z RESPALDOS\supabase-key-rotation\`, verificación y rollback automáticos, historial en `historial.jsonl`. Las claves viven en `TAXIDRIV\supabase\.env` y `signing_keys.json` (gitignored); Kong fijado en 54325 detrás del proxy del watchdog; el PostgREST manual se recrea con el secreto nuevo.
+- **Red neuronal entre agentes (2026-10-02)**: `agent-network.js` enruta la tarea a explorer/analyst/implementer/verifier por similitud de embeddings y ajusta la confianza de cada agente con el feedback de éxito/fallo. Persistencia en `.editcore/agent-network.json`. Add-on opcional; si falta el módulo, el orquestador sigue funcionando igual.
+- **Memoria semántica (2026-10-02)**: `vector-memory.js` + `embeddings.js` (fallback local determinista). `memory.js` y `global-memory.js` indexan notas, archivos y soluciones de error en background sin bloquear el flujo del orquestador. Búsqueda con `searchSemantic()` y `promptBlockSemantic()`.
+- **Métricas de rendimiento (2026-10-02)**: `model-router.js` y `tools.js` registran latencia y éxito/fallo por modelo y por tool. Persistencia en `.editcore/model-router-stats.json` y en memoria del proceso. Consulta con `getModelStats()` / `getToolStats()`.
+- **Mensajería dirigida entre agentes (2026-10-02)**: `agent-bus.js` expone `postMessage` / `readMessages` / `messagesPromptBlock` para comunicación explícita entre subagentes.
 
-## Cambios recientes
+## Cambios recientes (2026-10-02)
+- `editcore-chat-kernel/orchestrator.js` (+47 líneas): integración de red neuronal (route + recordOutcome) + cierre sugerido al final de análisis. Cero eliminaciones.
+- `editcore-chat-kernel/tools.js` (+50 líneas): métricas de uso por tool + rate limiter. Cero eliminaciones.
+- `editcore-chat-kernel/memory.js` (+63 líneas): vector store opcional + indexado en background + searchSemantic + promptBlockSemantic. Cero eliminaciones.
+- `editcore-chat-kernel/agent-bus.js` (+60 líneas): mensajería dirigida (postMessage / readMessages / messagesPromptBlock). Cero eliminaciones.
+- `editcore-chat-kernel/global-memory.js` (+41 líneas): indexado vectorial de soluciones + searchSemantic + promptBlockSemantic. Cero eliminaciones.
+- `editcore-chat-kernel/model-router.js` (+108 líneas): tracking de rendimiento por modelo + pickModelWithStats + recordModelOutcome + getModelStats. Cero eliminaciones.
+- Archivos NUEVOS (aún sin commitear): `editcore-chat-kernel/agent-network.js`, `editcore-chat-kernel/subagents/coordinator.js`, `runtime/embeddings.js`, `runtime/vector-memory.js`, `runtime/cache-manager.js`, `runtime/rate-limiter.js`.
+
+## Cambios previos
 - Versión visible 4.1.5 (2026-10-01): la barra de estado siempre decía "EditCore v4.1.0" (texto fijo de index.html) porque `initAppStatusBar` corría antes de que el navegador creara la barra (renderer.js se carga en la línea 1235 de index.html y la barra está en la 1255). Ahora espera a DOMContentLoaded y el HTML ya no lleva número de versión (renderer.js + index.html, también en overlay).
 - Preview 4.1.4 (2026-10-01): GAFCOREAI (Tauri) mostraba "El servidor del proyecto no publicó una página disponible" porque se ejecutaba `tauri dev` (compila Rust y abre ventana propia). main.js (+overlay) `startDesktopPreview` muestra la interfaz de Tauri/Electron/NW.js y de proyectos HTML sin package.json. `static-preview-server.js` (+overlay): entrada configurable (con `<base>` si está en subcarpeta), no sirve `.env`/`.git`/`node_modules`, MIME de `.mjs`/`.wasm`/fuentes. Barra de estado del renderer (+overlay) avisa que las funciones nativas solo responden en escritorio.
-- Pendientes 4.1.3 (2026-10-01): nuevo `editcore-chat-kernel/extra-tools.js` con `read_pdf` (PDF/DOCX/XLSX, 12000 caracteres), `screenshot_page` (puppeteer, solo http(s), PNG en `userData/screenshots`), `docker_ps`, `search_brain`, `publish_project` y `deploy_one_click` (antes solo en el adaptador antiguo, inalcanzable desde el chat). `ingest_to_brain` acepta `path` (archivo o carpeta, sin .env/node_modules/.git) y `brain-ingest.js` busca por fragmentos. main.js (+overlay) pasa `brainSearch` y `readConnections` al kernel. `document-attachments.js`: los PDF pequeños fallaban con "bad XRef entry" cuando el Buffer venía del pool de Node (pdf.js leía el ArrayBuffer desde 0); se copia a un Uint8Array propio.
-- Skills 4.1.2 (2026-10-01): runtime/skills-engine.js lee el manifiesto del Cerebro (`editcore-brain/brain-store/installed.json`, 49 repos, 642 skills; cuerpo bajo demanda, caché por mtime) y detecta SKILL.md en subcarpetas de repos clonados; coincidencia por palabra (3 letras exactas, sin muletillas) y umbral alto para skills del Cerebro; cuerpo recortado a 8000 caracteres. `list_skills` resume por origen y acepta query; `install_skill` informa las skills detectadas. Panel de skills (chat-home.js +overlay): activar/desactivar y borrar ahora se guardan (enviaban argumentos sueltos), estado y contenido correctos, insignia "Cerebro", 150 tarjetas máx. con buscador.
-- Chat 4.1.1 (2026-10-01): modo charla con herramientas de solo lectura (antes respondía "no puedo acceder al disco", "no tengo skills" o versiones viejas de memoria); `list_files` y la lista directa respetan rutas absolutas con espacios (`D:\PROGRAMAS IA` listaba EDITCOREAI); `list_skills` usa skills-engine (integradas + globales + proyecto); skills como contexto de sistema y respaldo de modelos también en la corrida de agente; el filtro del chat ya no convierte `supabase.gafcore.com` en "supabase.el proveedor.com" (solo oculta el gateway); análisis atribuyen datos de documentos ("según archivo.md") y no los presentan como verificados.
-- main.js (2026-10-01): codificación reparada (BOM + 304 secuencias mal convertidas por `Get-Content -Raw`), se conserva el bloqueo de credenciales del usuario (`runtime/credentials-vault-guard.js`). Integrados agent-core/tools y dependencias axios + simple-git.
-- Limpieza (2026-10-01): 224 rutas movidas a `Z RESPALDOS\editcoreai-limpieza-2026-10-01\` (MANIFIESTO.txt): 47 módulos de runtime sin uso, 129 scripts obsoletos, workers/verify del kernel, `evidence-grounding.js` raíz duplicado, volcadores de bóveda, logs, scratch/docs/tasks/skills/phase4-results/.vercel, `release/` y `.editcore/snapshots`. Se conservan agent-core/ (trabajo en curso) y web-portal/. Suite 840 tests, 0 fallos; arranque verificado sin errores.
-- renderer.js (+overlay) — en modo IDE la app arranca siempre en Inicio; ni el arranque ni `bootBackground` reabren el último proyecto/chat (salvo `projectRoot`/`openRoot`/`autoPick` explícitos) (2026-10-01)
-- editcore-chat-kernel/thread-core.js + orchestrator.js + provider.js — las imágenes adjuntas llegan al modelo (antes solo se avisaba "hay imágenes" y el modelo respondía que no veía nada); con imágenes, la cola de respaldo prioriza modelos con visión (2026-09-30)
-- renderer.js (+overlay) — chequeo de salud del preview: regex `/@vite\/client/` dentro de template literal perdía la barra y lanzaba "Invalid regular expression flags" en cada preview (2026-09-30)
-- editcore-chat-kernel/orchestrator.js + provider.js — el kernel usa los perfiles de respaldo (antes se descartaban: un 401 del modelo elegido cortaba el turno); claves con 401 al final de la cola 10 min; si todos fallan, mensaje por proveedor (2026-09-30)
-- editcore-chat-kernel/thread-core.js — fecha, hora, zona y SO en el prompt de sistema; turnos "Algo falló…" fuera del historial (2026-09-30)
-- runtime/provider-error-log.js — error real del proveedor en `%APPDATA%\EDITCOREAI\logs\provider-errors.jsonl` (sin claves) (2026-09-30)
-- editcore-chat-kernel/classify.js — análisis con sustantivo y verbos con clítico (2026-09-30)
-- editcore-chat-kernel/tools.js — replace_in_file rechaza parches que rompen sintaxis (2026-09-30)
-- editcore-chat-kernel/orchestrator.js — aviso de análisis sin lecturas; ROADMAP sin chat ni errores de proveedor (2026-09-30)
-- runtime/editcore-claude-adapter.js — reglas anti-alucinación restauradas + identidad EditCoreAI (2026-09-30)
-- preload.js — namespaces duplicados fusionados (2026-09-30)
-- runtime/project-roadmap.js — bloqueos sin líneas de código ni errores de proveedor (2026-09-30)
-- package.json — vercel a devDependencies, puppeteer 25, node-pty 1.1 (prebuilds), overrides protobufjs 7 / sharp 0.35: npm audit --omit=dev = 0 (2026-09-30)
-- Eliminados: editcore-claude-adapter.js raíz, runtime/renderer.js y copias overlay; gafcore-chat-engine movido a Z RESPALDOS (2026-09-30)
-- resources/ui-overlay: renderer.js, main.js, preload.js sincronizados con la raíz (2026-09-30)
-- scripts/postinstall.js, scripts/supabase-rotate-keys.js, scripts/lib/supabase-keys.js — setup y rotación automáticos (2026-09-30)
 
-## Verificado
-- npm run check; npm test 870 tests (869 ok, 1 omitido, 0 fallos) en 4.1.4 (`test/desktop-preview.test.js` nuevo). Real: la interfaz de GAFCOREAI (Tauri, `web/`) carga en Chrome headless con 200, título "GafCoreAI v1.5.4" y 0 errores de consola; docker_ps ve los 13 contenedores supabase_*.
-- Kernel real con perfil principal ME AI (401): pasa a respaldo y responde "Son las 14:38 … miércoles 30 de septiembre de 2026".
-- Probe Electron: preload.js expone 75 namespaces sin errores (HEAD exponía 17 y fallaba).
-- Embeddings (@xenova/transformers) 384 dims; puppeteer 25 lanza Chrome; node-pty spawn ok.
-
-- Rotación Supabase OK: clave nueva aceptada y vieja rechazada (directo, proxy 54321, supabase.gafcore.com); GoTrue firma con ES256 propia; 95 archivos actualizados.
-
-- Release 4.1.0: `EDITCOREAI.exe` 4.1.0.0 y `release/EDITCOREAI-Setup.exe` generados con `npm run dist:win` (npmRebuild desactivado: node-pty usa prebuilds N-API).
-
-- Red: regla de firewall `GAFCORE` (`scripts/gafcore-firewall.ps1`, admin) bloquea desde Wi-Fi/Ethernet 3000, 5432, 9000-9001 y 54322-54329; localhost, 54321 y supabase.gafcore.com siguen OK. Túnel rápido `vibrant_lamarr` eliminado. Scripts de prueba leen la anon key del entorno.
+## Verificado (2026-10-02)
+- Los 6 archivos del kernel cargan sin errores (`node -e "require('./editcore-chat-kernel/X')"` → OK en todos).
+- `git diff --stat` confirma 369 inserciones, 0 eliminaciones en los 6 archivos.
+- Chat responde: charla simple, listado de directorios, análisis de proyecto.
+- Análisis produjo 28 archivos leídos y reporte completo con estructura obligatoria + cierre sugerido.
 
 ## Siguiente
-- Usuario: renovar claves de ME AI y revisar saldo de APICredits (Claude) en Modelos.
-- Usuario: token de Vercel en Conexiones para que deploy_one_click/publish_project puedan desplegar.
-- Validación real: instalar 4.1.0, `npm run test:e2e`, prueba del chat con modelo real.
-- Mantenimiento: CLI Supabase 2.118, enlace Vercel de EDITCOREAI WEB, borrar rama feature ya integrada.
+- Commit de los 6 archivos del kernel + decisión sobre los 6 archivos NUEVOS (agent-network, coordinator, embeddings, vector-memory, cache-manager, rate-limiter): commitear como parte del plan o dejar sin trackear.
+- Evaluar los 7 hallazgos del análisis (main.js stack en UI, adaptive-budget emergency, llm-loop fallback silencioso, preload.js edge case, executor mixto, @xenova/transformers peso) uno por vez con el protocolo "muéstrame antes de aplicar".
+- Renovar claves de ME AI (401) y revisar cupo de APICredits (502/503) para restaurar proveedores.
 
 ## Regla anti-reexploracion
 - Si el pedido del usuario apunta a un archivo ya listado arriba: ve DIRECTO a read_file/replace_in_file de ese path.

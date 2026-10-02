@@ -147,3 +147,63 @@ module.exports = {
   wrapSubagentResult,
   busFile,
 };
+
+// =====================================================================
+// [EDITCORE-ADD] Mensajería dirigida entre agentes (comunicación real).
+// Exports agregados después del module.exports original para no tocar
+// ni una línea de lo que ya funcionaba.
+// =====================================================================
+function _ecMsgFile(projectRoot, threadId) {
+  const id = String(threadId || "default").replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 80) || "default";
+  return path.join(String(projectRoot || "."), ".editcore", "chat-memory", `msgs-${id}.json`);
+}
+
+function _ecLoadMsgs(projectRoot, threadId) {
+  try {
+    const f = _ecMsgFile(projectRoot, threadId);
+    if (!fs.existsSync(f)) return [];
+    const raw = JSON.parse(fs.readFileSync(f, "utf8"));
+    return Array.isArray(raw) ? raw : [];
+  } catch { return []; }
+}
+
+function _ecSaveMsgs(projectRoot, threadId, msgs) {
+  try {
+    const f = _ecMsgFile(projectRoot, threadId);
+    fs.mkdirSync(path.dirname(f), { recursive: true });
+    const tmp = `${f}.${process.pid}.tmp`;
+    fs.writeFileSync(tmp, JSON.stringify(msgs.slice(-500), null, 2), "utf8");
+    fs.renameSync(tmp, f);
+  } catch (_) {}
+}
+
+function postMessage(projectRoot, threadId, { from, to = "*", topic = "generic", payload = null } = {}) {
+  const msgs = _ecLoadMsgs(projectRoot, threadId);
+  const msg = { id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, t: Date.now(), from: from || "kernel", to, topic, payload };
+  msgs.push(msg);
+  _ecSaveMsgs(projectRoot, threadId, msgs);
+  return msg;
+}
+
+function readMessages(projectRoot, threadId, { to = null, topic = null, limit = 20 } = {}) {
+  let msgs = _ecLoadMsgs(projectRoot, threadId);
+  if (to) msgs = msgs.filter((m) => m.to === to || m.to === "*");
+  if (topic) msgs = msgs.filter((m) => m.topic === topic);
+  return msgs.slice(-limit);
+}
+
+function messagesPromptBlock(projectRoot, threadId, { agent = null, limit = 6 } = {}) {
+  const msgs = readMessages(projectRoot, threadId, { to: agent, limit });
+  if (!msgs.length) return "";
+  const lines = ["[MENSAJES ENTRE AGENTES]"];
+  for (const m of msgs) {
+    const p = m.payload ? JSON.stringify(m.payload).slice(0, 200) : "";
+    lines.push(`- ${m.from} → ${m.to} [${m.topic}]: ${p}`);
+  }
+  return lines.join("\n").slice(0, 1500);
+}
+
+module.exports.postMessage = postMessage;
+module.exports.readMessages = readMessages;
+module.exports.messagesPromptBlock = messagesPromptBlock;
+// [/EDITCORE-ADD]

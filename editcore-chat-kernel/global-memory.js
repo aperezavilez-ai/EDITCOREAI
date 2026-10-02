@@ -110,6 +110,8 @@ function recordSolution({ tipoError, solucionAplicada, errorExcerpt, projectHint
   }
 
   saveGlobalMemory(store);
+  // [EDITCORE-ADD] Indexar en el vector store (background, no bloquea).
+  _ecIndexSolution(tipo, solucion, errorExcerpt).catch(() => {});
   return { ok: true, tipoError: tipo, total: store.solutions.length };
 }
 
@@ -173,3 +175,42 @@ module.exports = {
   promptBlock,
   listSolutions,
 };
+
+// =====================================================================
+// [EDITCORE-ADD] Búsqueda semántica de soluciones con vector-memory.
+// Exports agregados después del module.exports original para no tocar
+// ni una línea de lo que ya funcionaba.
+// =====================================================================
+let _ecVector = null;
+try {
+  const { VectorMemory } = require("../runtime/vector-memory");
+  _ecVector = new VectorMemory(path.join(os.homedir(), ".editcore", "global-memory", "vectors"));
+} catch (_) { _ecVector = null; }
+
+async function _ecIndexSolution(tipo, solucion, errorExcerpt) {
+  if (!_ecVector || !solucion) return;
+  const text = `[${tipo || "generic"}] ${solucion}\n${String(errorExcerpt || "").slice(0, 400)}`;
+  try { await _ecVector.add(text, { type: "solution", tipo }, "solutions"); } catch (_) {}
+}
+
+async function searchSemantic(query, { topK = 5 } = {}) {
+  if (!_ecVector || !query) return [];
+  try {
+    return await _ecVector.search(String(query), { topK, ns: "solutions", minScore: 0.15 });
+  } catch (_) { return []; }
+}
+
+async function promptBlockSemantic(query, { topK = 5 } = {}) {
+  try {
+    const hits = await searchSemantic(query, { topK });
+    if (!hits.length) return promptBlock(query, topK);
+    const lines = hits.map((h) => `- ${String(h.text || "").replace(/\s+/g, " ").slice(0, 260)}`);
+    return "[MEMORIA GLOBAL SEMÁNTICA]\n" + lines.join("\n");
+  } catch (_) {
+    return promptBlock(query, topK);
+  }
+}
+
+module.exports.searchSemantic = searchSemantic;
+module.exports.promptBlockSemantic = promptBlockSemantic;
+// [/EDITCORE-ADD]
