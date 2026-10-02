@@ -19,6 +19,10 @@ const { runExplorer } = require("./subagents/explorer");
 const { runAnalyst } = require("./subagents/analyst");
 const { runImplementer } = require("./subagents/implementer");
 const { runVerifier } = require("./subagents/verifier");
+const forensic = require("./forensic-checks");
+
+const DEEP_FORENSIC_REQUEST = /forens|auditor|audita|errores|bugs?\b|fallas?|fallos?|diagn[oó]stic|qu[eé]\s+(est[aá]\s+)?(mal|roto|falla)|revisi[oó]n\s+(completa|total|profunda)|revisa\s+todo|verifica|a\s+fondo|completo/i;
+const BUILD_REQUEST = /\bbuild\b|compila|compilaci[oó]n/i;
 
 // [EDITCORE-ADD] Red neuronal entre agentes (opcional). Si el archivo no está, no-op.
 let agentNetwork = null;
@@ -181,8 +185,10 @@ const ANALYSIS_MODE_PROMPT = [
   "   - Que tecnologias usa, como esta organizado, entrypoints reales.",
   "## ⚙️ Funcionalidad principal",
   "   - Que hace el proyecto hoy, con evidencia de archivos leidos.",
-  "## ⚠️ Hallazgos y riesgos",
-  "   - Problemas concretos (archivo + problema). NO inventes.",
+  "## ⚠️ Errores verificados: prioridad y causa",
+  "   - Los errores de HECHOS VERIFICADOS ordenados por impacto, con causa probable y arreglo (archivo:linea). Si no hay errores verificados, dilo.",
+  "## 🔎 Hipótesis (no verificadas)",
+  "   - Riesgos que ves al leer codigo pero que ningun chequeo confirmo. Marcalos como hipotesis, nunca como hechos.",
   "## 🎯 Recomendaciones",
   "   - 3-5 acciones concretas priorizadas.",
   "## 📁 Evidencia real",
@@ -763,26 +769,45 @@ class ChatOrchestrator {
       this.session.start("ANALYZE", projectRoot);
       const scope = requestScopePolicy?.classifyRequestScope?.(text) || "focused";
       const maxReads = scope === "broad" ? 18 : scope === "action" ? 12 : 10;
+      const deep = scope === "broad" || DEEP_FORENSIC_REQUEST.test(text);
+      onProgress?.({ phase: "start", text: deep ? "Ejecutando chequeos reales: sintaxis, imports, tipos y tests…" : "Ejecutando chequeos reales: sintaxis e imports…" });
+      let verified = null;
+      try {
+        verified = await forensic.runForensicChecks(projectRoot, {
+          runTests: deep,
+          runTypecheck: deep,
+          runBuild: deep && BUILD_REQUEST.test(text),
+          onProgress,
+        });
+        forensic.saveForensic(projectRoot, verified);
+      } catch (err) {
+        onProgress?.({ phase: "warn", text: `No se pudieron ejecutar los chequeos reales: ${String(err?.message || err).slice(0, 160)}` });
+      }
+      const verifiedMd = verified ? forensic.formatForensicMarkdown(verified) : "";
       onProgress?.({ phase: "start", text: "Reuniendo evidencia del proyecto…" });
       const out = agentBus.wrapSubagentResult(projectRoot, this._threadId, "analyst",
         await runAnalyst({ projectRoot, onProgress, maxReads, userMessage: text, threadId: this._threadId }));
       if (memory) { memory.setReport(out.report); memory.note("análisis completado"); }
       this.session.kill();
+      const evidence = verified ? `${forensic.formatForensicPromptBlock(verified)}\n\n${out.report}` : out.report;
 
       if (apiKey) {
         onProgress?.({ phase: "model", text: "Generando reporte completo..." });
-        return this.runModelTask({
+        const res = await this.runModelTask({
           decision,
-          message: scopeUserMessage(text, out.report),
+          message: scopeUserMessage(text, evidence),
           projectRoot, apiBaseUrl, apiKey, model, memory, onProgress,
           allowWrite: false,
           maxSteps: ANALYSIS_MAX_STEPS,          // ← 8 turnos
           totalTimeoutMs: 900_000,               // 15 min global
           helpers,
           images: taskImages,
+          verifiedShown: Boolean(verifiedMd),
         });
+        if (verifiedMd && res && typeof res.text === "string") res.text = `${verifiedMd}\n\n---\n\n${res.text}`;
+        return res;
       }
-      return { kind: "ANALYZE", text: out.report, steps: out.steps };
+      return { kind: "ANALYZE", text: verifiedMd ? `${verifiedMd}\n\n---\n\n${out.report}` : out.report, steps: out.steps };
     }
 
     if (decision.kind === "VERIFY") {
@@ -790,7 +815,13 @@ class ChatOrchestrator {
       const out = agentBus.wrapSubagentResult(projectRoot, this._threadId, "verifier",
         await runVerifier({ projectRoot, onProgress, timeoutMs: 60_000, threadId: this._threadId }));
       this.session.kill();
-      return { kind: "VERIFY", text: out?.ok ? "Verificación OK." : `Falló la verificación: ${String(out?.result?.error || out?.result?.stderr || "").slice(0, 600)}`, steps: out?.steps || [] };
+      if (out?.forensic) {
+        const previous = forensic.loadForensic(projectRoot);
+        const comparison = previous ? forensic.formatComparisonMarkdown(forensic.compareForensic(previous, out.forensic)) : "";
+        if (!out.forensic.onlyFiles) forensic.saveForensic(projectRoot, out.forensic);
+        return { kind: "VERIFY", text: [out.report, comparison].filter(Boolean).join("\n\n"), steps: out?.steps || [] };
+      }
+      return { kind: "VERIFY", text: out?.ok ? `Verificación OK (\`${out?.result?.command || "comando"}\`).` : `Falló la verificación: ${String(out?.result?.error || out?.result?.stderr || "").slice(0, 600)}`, steps: out?.steps || [] };
     }
 
     const wantsWrite = fullAccess || decision.allowWrite;
@@ -808,6 +839,27 @@ class ChatOrchestrator {
     }
 
     return { kind: "CHAT", text: "No terminé de entender el pedido. ¿Me lo reformulás?" };
+  }
+
+  // Tras escribir código: con errores verificados pendientes se repiten los mismos chequeos del
+  // análisis; si no, solo los estáticos sobre los archivos tocados. Resuelto = el chequeo ahora pasa.
+  async appendBeforeAfter(projectRoot, written, textOut, onProgress) {
+    const previous = projectRoot ? forensic.loadForensic(projectRoot) : null;
+    if (!previous) return textOut;
+    try {
+      const fixing = Number(previous.counts?.error || 0) > 0;
+      const ran = (id) => (previous.checks || []).some((c) => c.id === id && c.status !== "skipped");
+      onProgress?.({ phase: "subagent", name: "verifier", text: fixing ? "Reverificando con los mismos chequeos del análisis (antes / después)…" : "Verificando sintaxis e imports de los archivos cambiados…" });
+      const after = await forensic.runForensicChecks(projectRoot, fixing
+        ? { runTests: ran("tests"), runTypecheck: ran("typecheck"), runBuild: ran("build"), onProgress }
+        : { runTests: false, runTypecheck: false, onlyFiles: written, onProgress });
+      if (fixing) forensic.saveForensic(projectRoot, after);
+      const cmp = forensic.compareForensic(previous, after);
+      if (!fixing && !cmp.introduced.length) return textOut;
+      return `${textOut}\n\n${forensic.formatComparisonMarkdown(cmp)}`;
+    } catch {
+      return textOut;
+    }
   }
 
   async runModelTask(opts) {
@@ -839,6 +891,15 @@ class ChatOrchestrator {
     const roadmapFirstBlock = (!chatOnly && decision?.kind !== "CHAT" && !listOnlyMode && !analysisMode) ? buildRoadmapFirstBlock(projectRoot) : "";
     const cognitiveBlock = (!chatOnly && decision?.kind !== "CHAT" && !listOnlyMode && !analysisMode) ? formatCognitiveBlock(projectRoot) : "";
     const connectionsBlock = (!chatOnly && decision?.kind !== "CHAT" && !listOnlyMode && !analysisMode) ? buildConnectionsBlock(projectRoot) : "";
+    const pendingVerified = (!chatOnly && decision?.kind !== "CHAT" && !listOnlyMode && !analysisMode && allowWrite) ? forensic.loadForensic(projectRoot) : null;
+    const pendingVerifiedBlock = pendingVerified?.counts?.error
+      ? [
+        `ERRORES VERIFICADOS PENDIENTES (última corrida de chequeos reales, ${String(pendingVerified.generatedAt || "").slice(0, 16).replace("T", " ")}):`,
+        ...pendingVerified.findings.filter((f) => f.severity === "error").slice(0, 30)
+          .map((f) => `- ${f.file ? `${f.file}${f.line ? `:${f.line}` : ""}` : "(proyecto)"} — ${String(f.message).split("\n")[0]}`),
+        "Si el usuario pide corregir, empieza por estos. Al terminar, EditCore repite los mismos chequeos y muestra cuáles quedaron resueltos: no declares resuelto nada que no hayas corregido.",
+      ].join("\n")
+      : "";
 
     const previewUrl = String(helpers?.previewUrl || "").trim();
     const previewBlock = previewUrl ? `PREVIEW ACTIVO DEL IDE: ${previewUrl}` : "";
@@ -867,6 +928,7 @@ class ChatOrchestrator {
         CAPABILITIES_PROMPT,
         "Tenes acceso a `read_file`, `list_files`, `search_files`, `git_status`, `web_search` para profundizar el analisis.",
         "NO uses write_file / replace_in_file (modo solo lectura).",
+        opts.verifiedShown ? "La tabla de chequeos reales y la lista completa de hallazgos verificados YA se muestran al usuario arriba de tu respuesta. NO las copies: prioriza los errores verificados, explica la causa probable de cada uno citando archivo:línea y propone el arreglo. Tus observaciones propias van en la sección de hipótesis." : "",
         `Proyecto: ${projectRoot}.`,
         previewBlock,
       ].filter(Boolean).join("\n\n"));
@@ -877,7 +939,7 @@ class ChatOrchestrator {
         LEADERSHIP_PROMPT, LIVE_NARRATION_PROMPT, MARKDOWN_FORMAT_PROMPT, CAPABILITIES_PROMPT, noConfirmBlock,
         "REGLA CRÍTICA: no cierres un turno diciendo 'ahora leo X' o 'voy a revisar Y'. Si vas a leer algo, llamá la tool en el MISMO turno.",
         "Respondé siempre en español al usuario.",
-        previewBlock, visionHardRule, cognitiveBlock, connectionsBlock,
+        previewBlock, visionHardRule, cognitiveBlock, connectionsBlock, pendingVerifiedBlock,
       ].filter(Boolean).join("\n\n"));
     }
 
@@ -1004,6 +1066,7 @@ class ChatOrchestrator {
             textOut = groundUngroundedClaims(cleanText, steps, message, decision);
           }
 
+          if (written.length > 0) textOut = await this.appendBeforeAfter(projectRoot, written, textOut, onProgress);
           textOut = formatAgentVisibleText(textOut);
           persistKernelRoadmap(projectRoot, { task: this._currentUserText || message, steps, kind: decision?.kind, text: textOut, completed: true });
           rememberOut(textOut); detachLongRunningStreams(steps);
@@ -1107,6 +1170,7 @@ class ChatOrchestrator {
       else if (written.length > 0) textOut = `## ✅ Archivos actualizados\n\n${written.map(p => `- \`${p}\``).join("\n")}\n\n${nextStepsClosingText(projectRoot, written, steps)}`;
       else textOut = `## ℹ️ Sin acciones registradas\n\n${nextStepsClosingText(projectRoot, [], steps)}`;
 
+      if (written.length > 0) textOut = await this.appendBeforeAfter(projectRoot, written, textOut, onProgress);
       textOut = formatAgentVisibleText(textOut);
       persistKernelRoadmap(projectRoot, { task: this._currentUserText || message, steps, kind: decision?.kind, text: textOut, completed: true });
       rememberOut(textOut); detachLongRunningStreams(steps);

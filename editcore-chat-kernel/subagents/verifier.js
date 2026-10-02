@@ -9,6 +9,7 @@
 const fs = require("fs");
 const path = require("path");
 const tools = require("../tools");
+const forensic = require("../forensic-checks");
 const { recordSolution, classifyErrorType } = require("../global-memory");
 
 function ensureNextTypesStub(projectRoot) {
@@ -93,14 +94,34 @@ async function runVerifier({
     onProgress?.({
       phase: "subagent",
       name: "verifier",
-      text: "Nada que validar con un build pesado. El cambio puntual se deja en disco.",
+      text: "Sin typecheck: reviso sintaxis e imports y corro los tests del proyecto si existen.",
     });
+    const checks = await forensic.runForensicChecks(projectRoot, {
+      runTypecheck: false,
+      runTests: true,
+      testTimeoutMs: Math.max(timeoutMs, 180_000),
+      onlyFiles: rel ? [rel] : null,
+      onProgress,
+    });
+    steps.push({ name: "forensic_checks", ok: checks.ok, input: { path: rel || "." }, result: { counts: checks.counts, checks: checks.checks } });
+    const exercised = checks.checks.filter((c) => ["pass", "fail", "warn"].includes(c.status));
+    const testsRan = checks.checks.some((c) => c.id === "tests" && (c.status === "pass" || c.status === "fail"));
+    const report = forensic.formatForensicMarkdown(checks);
+    const firstErrors = checks.findings.filter((f) => f.severity === "error").slice(0, 5)
+      .map((f) => `${f.file}${f.line ? `:${f.line}` : ""} — ${String(f.message).split("\n")[0]}`).join("\n");
     return {
       role: "verifier",
       steps,
-      ok: true,
-      skippedHeavyBuild: true,
-      result: { ok: true, note: "Verificación ligera: no se lanza npm run build." },
+      ok: checks.ok && exercised.length > 0,
+      verified: exercised.length > 0,
+      testsRan,
+      forensic: checks,
+      report: testsRan ? report : `${report}\n\n_El proyecto no tiene tests: solo se verificó sintaxis e imports._`,
+      result: {
+        ok: checks.ok,
+        note: testsRan ? "Sintaxis, imports y tests verificados." : "Sin tests ni typecheck: solo se verificó sintaxis e imports.",
+        error: checks.ok ? undefined : firstErrors,
+      },
     };
   }
 

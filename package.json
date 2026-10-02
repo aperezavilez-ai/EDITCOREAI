@@ -1,6 +1,9 @@
 {
   "name": "editcoreai",
   "version": "4.1.7",
+  "editcoreForensic": {
+    "skip": ["runtime/golden-templates"]
+  },
   "description": "EditCoreAI — IDE con agente (MEAI/APICREDITS)",
   "author": "EditCoreAI",
   "private": true,

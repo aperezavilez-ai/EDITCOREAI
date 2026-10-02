@@ -12,10 +12,10 @@
     "productionDeployCommand": "git push origin main",
     "knownProjects": [],
     "connections": {
-      "github": { status: "unknown", note: "Se verifica via connection-verifier" },
-      "vercel": { status: "unknown", note: "Se verifica via connection-verifier" },
-      "supabase": { status: "unknown", note: "Se verifica via connection-verifier" },
-      "server": { status: "unknown", note: "Se verifica via connection-verifier" }
+      "github": { "status": "unknown", "note": "Se verifica via connection-verifier" },
+      "vercel": { "status": "unknown", "note": "Se verifica via connection-verifier" },
+      "supabase": { "status": "unknown", "note": "Se verifica via connection-verifier" },
+      "server": { "status": "unknown", "note": "Se verifica via connection-verifier" }
     },
     "rules": [
       "git push origin main = deploy a produccion",
