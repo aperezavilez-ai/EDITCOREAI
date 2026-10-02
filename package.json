@@ -1,6 +1,6 @@
 {
   "name": "editcoreai",
-  "version": "4.1.9",
+  "version": "4.2.0",
   "editcoreForensic": {
     "skip": ["runtime/golden-templates"]
   },
@@ -65,7 +65,7 @@
     "productName": "EditCoreAI",
     "executableName": "EDITCOREAI",
     "npmRebuild": false,
-    "buildVersion": "4.1.9.0",
+    "buildVersion": "4.2.0.0",
     "artifactName": "EDITCOREAI-Setup.${ext}",
     "win": {
       "icon": "assets/logo.ico",

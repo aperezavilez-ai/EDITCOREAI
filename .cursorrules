@@ -37,6 +37,7 @@
 - Si una acción requiere confirmación, pedila una vez. No entres en bucles de reintentos pasivos.
 - No reveles secretos. No salgas de la raíz del proyecto activo sin necesidad.
 - Al terminar un fix de producto: actualizar `ROADMAP.md`, versión en `package.json`, verify script y EXE si el usuario pide release.
+- Versiones: cada parte va de 0 a 9; nunca 10. Después de 4.1.9 sigue 4.2.0; después de 4.9.9 sigue 5.0.0. El gate de pre-empaquetado lo verifica.
 
 ## 7. BACKEND GAFCORE (SELF-HOSTED)
 - PROHIBIDO usar Supabase Cloud (`*.supabase.co`) o crear infraestructura cloud de pago.

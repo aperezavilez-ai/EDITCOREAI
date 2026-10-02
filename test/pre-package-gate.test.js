@@ -147,6 +147,19 @@ test("GATE: el empaquetado excluye secretos y configuración local", () => {
   }
 });
 
+test("GATE: versión con partes de 0 a 9 e igual en todos los archivos", () => {
+  const pkg = require("../package.json");
+  assert.match(pkg.version, /^\d\.\d\.\d$/, `versión ${pkg.version}: cada parte va de 0 a 9 (después de 4.1.9 sigue 4.2.0)`);
+  assert.equal(pkg.build?.buildVersion, `${pkg.version}.0`);
+  const lock = require("../package-lock.json");
+  assert.equal(lock.version, pkg.version);
+  assert.equal(lock.packages?.[""]?.version, pkg.version);
+  const manifest = fs.readFileSync(path.join(appRoot, "EDITCORE-MANIFEST.md"), "utf8");
+  assert.ok(manifest.includes(`**${pkg.version}**`), "EDITCORE-MANIFEST.md desactualizado");
+  const launcher = fs.readFileSync(path.join(appRoot, "scripts", "EditCoreAiRootLauncher.cs"), "utf8");
+  assert.ok(launcher.includes(`AssemblyVersion("${pkg.version}.0")`), "EditCoreAiRootLauncher.cs desactualizado");
+});
+
 test("GATE: version semver con segmentos de maximo 2 digitos", () => {
   const pkg = require("../package.json");
   assert.match(pkg.version, /^\d{1,2}\.\d{1,2}\.\d{1,2}$/);

@@ -1,3 +1,19 @@
+# RELEASE v4.2.0
+
+## Métricas reales de uso y caché del chat
+
+### Corregido
+- El chat devolvía siempre el uso de tokens en cero: se inicializaba y nunca se sumaba. Ahora suma entrada, salida, total y tokens de caché (lectura y escritura) de cada turno del modelo.
+- Los tokens de caché se reconocen en más formatos de proveedor (`cached_tokens`, `cache_write_input_tokens`, `cache_creation.input_tokens`).
+
+### Versionado
+- Cada parte de la versión va de 0 a 9: después de 4.1.9 sigue 4.2.0. Nuevo gate de pre-empaquetado que lo verifica y comprueba que la versión coincide en `package.json`, `package-lock.json`, `EDITCORE-MANIFEST.md` y el lanzador.
+
+### Build
+- `EDITCOREAI.exe` (4.2.0.0) y `release/EDITCOREAI-Setup.exe` (4.2.0), construidos desde un árbol limpio en el commit publicado.
+
+---
+
 # RELEASE v4.1.9
 
 ## Limpieza total, instalador que arranca y sin secretos dentro del paquete
