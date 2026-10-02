@@ -76,7 +76,7 @@ EditCore actualiza este archivo tras cambios. No pedirlo al usuario. No pegar co
 
 ## Bloqueos / bugs conocidos
 - Los instaladores v2.9.0–v4.1.8 incluían `.env.local` (anon + service_role del Supabase autohospedado) dentro de `app.asar` y el repo es público. Ejecutables retirados de GitHub Releases el 2026-10-02; el usuario decidió no rotar las claves por ahora: siguen comprometidas hasta rotarlas (`npm run supabase:rotate`).
-- Otro agente (Codex) modifica el kernel en paralelo: cambios sin commit en `agent-network.js`, `classify.js`, `extra-tools.js`, `index.js`, `provider.js` y `prompt-cache.js` nuevo (2026-10-02). Revisarlos antes de commitear.
+- Resuelto (2026-10-02): la app Codex (Microsoft Store, con servicio de arranque automático y una meta activa) reescribía archivos de este repo sin que el usuario la abriera; su `main.js` volvía a cargar `runtime/context-engine` (eliminado) y el EXE no arrancaba. Codex desinstalado por completo (app, servicio, extensiones, `~/.codex`). Si el EXE no abre: revisar `%APPDATA%\EDITCOREAI\startup.log` y `git status`.
 - `.vercel/project.json` de EDITCOREAI WEB apunta a un proyecto que ya no existe en Vercel (404).
 - Proveedores (externo, 2026-09-30): las 7 claves de ME AI devuelven 401 (token inválido) → renovarlas en Modelos. APICredits: Claude/Gemini/DeepSeek responden 502 "Upstream access forbidden" salvo con max_tokens mínimo (saldo o cupo del lado del proveedor); GPT y Grok con 503 intermitentes.
 
