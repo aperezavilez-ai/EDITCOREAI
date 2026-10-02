@@ -75,7 +75,7 @@ EditCore actualiza este archivo tras cambios. No pedirlo al usuario. No pegar co
 - Sin tarea en curso.
 
 ## Bloqueos / bugs conocidos
-- El instalador v4.1.8 publicado en GitHub no arranca: `main.js` cargaba `./scripts/failsafe-recovery` al inicio y el empaquetado excluye `scripts/**`. Corregido en 4.1.9 (pendiente de publicar).
+- Los instaladores v2.9.0–v4.1.8 incluían `.env.local` (anon + service_role del Supabase autohospedado) dentro de `app.asar` y el repo es público. Ejecutables retirados de GitHub Releases el 2026-10-02; el usuario decidió no rotar las claves por ahora: siguen comprometidas hasta rotarlas (`npm run supabase:rotate`).
 - Otro agente (Codex) modifica el kernel en paralelo: cambios sin commit en `agent-network.js`, `classify.js`, `extra-tools.js`, `index.js`, `provider.js` y `prompt-cache.js` nuevo (2026-10-02). Revisarlos antes de commitear.
 - `.vercel/project.json` de EDITCOREAI WEB apunta a un proyecto que ya no existe en Vercel (404).
 - Proveedores (externo, 2026-09-30): las 7 claves de ME AI devuelven 401 (token inválido) → renovarlas en Modelos. APICredits: Claude/Gemini/DeepSeek responden 502 "Upstream access forbidden" salvo con max_tokens mínimo (saldo o cupo del lado del proveedor); GPT y Grok con 503 intermitentes.
@@ -105,6 +105,8 @@ EditCore actualiza este archivo tras cambios. No pedirlo al usuario. No pegar co
 - **Versionado (2026-10-02)**: `package.json` es la fuente de verdad de la versión (`4.1.9`). El `buildVersion` de `electron-builder` (`4.1.9.0`) sigue el esquema Windows `MAJOR.MINOR.PATCH.BUILD`. `EDITCORE-MANIFEST.md` refleja la misma versión de producto.
 
 ## Cambios recientes (2026-10-02)
+- Release v4.1.9: instalador construido desde un worktree limpio (sin cambios ajenos sin commit); 214/214 dependencias en `app.asar`, sin `.env` ni `.claude/`. El v4.1.8 no arrancaba (`scripts/` excluido del paquete).
+- `8e7c68d` security: el empaquetado excluye `.env*`, `.env.local`, `.claude/`; `5349927` excluye `release/`. Gate nuevo que verifica las exclusiones.
 - `f19b0e0` chore: limpieza total (4.1.9). Grafo real de dependencias desde main.js, preload.js, renderer.js, index.html y scripts npm; 607 archivos eliminados (respaldo en `Z RESPALDOS\editcoreai-limpieza-2026-10-02`):
   - `agent-core/` (27): no lo cargaba ni main.js ni el kernel.
   - `editcore-chat-kernel/skills/` (56): copias de `brain-seed/skills` (las 3 distintas eran versiones viejas).
@@ -156,7 +158,7 @@ EditCore actualiza este archivo tras cambios. No pedirlo al usuario. No pegar co
 - Renovar claves de ME AI (401) y revisar cupo de APICredits (502/503) para restaurar proveedores.
 - Revisar el `project.json` de Vercel en EDITCOREAI WEB (apunta a proyecto inexistente).
 - AGENTS.md cita archivos inexistentes (`runtime/service-harness.js`, `.claude/memory/orchestrator-consolidation.md`); `recordGitPush`/`recordVercelDeploy`/`recordSupabaseMigration`/`recordIssue` de roadmap-sync.js no tienen llamadas. Corregir referencias y decidir si conectarlos.
-- Publicar 4.1.9 (EXE + Setup) para reemplazar el instalador 4.1.8 que no arranca.
+- Rotar las claves del Supabase autohospedado (expuestas en instaladores públicos anteriores).
 - Decidir si subir `maxToolResultChars` de emergency (1200) en runtime/adaptive-budget.js.
 
 ## Regla anti-reexploracion

@@ -1,3 +1,24 @@
+# RELEASE v4.1.9
+
+## Limpieza total, instalador que arranca y sin secretos dentro del paquete
+
+### Corregido
+- El instalador v4.1.8 no arrancaba: `main.js` cargaba `./scripts/failsafe-recovery` al inicio y el empaquetado excluye `scripts/`. Nuevo gate de pre-empaquetado que bloquea cualquier carga al arranque de una carpeta excluida.
+- Los instaladores anteriores incluían `.env.local` y `.claude/settings.local.json` dentro de `app.asar`. Ahora el empaquetado excluye `.env*`, `.env.local`, `.claude/` y `release/`, con un gate que lo verifica. Los instaladores anteriores se retiraron de GitHub Releases.
+
+### Limpieza (607 archivos sin uso)
+- `agent-core/` (no lo cargaba nada), `editcore-chat-kernel/skills/` (copias de `brain-seed/skills`), módulos de `runtime/` nunca conectados o cargados sin usar, subagentes y paneles HTML huérfanos, y tests que solo probaban ese código.
+- `resources/ui-overlay/` completo: copia que el instalador incluía pero nunca ejecutaba. El código vive solo en la raíz.
+
+### Build
+- `EDITCOREAI.exe` (4.1.9.0) y `release/EDITCOREAI-Setup.exe` (4.1.9), construidos desde un árbol limpio en el commit publicado.
+- Verificado: 214/214 dependencias dentro de `app.asar`, ningún `.env` ni configuración local, ningún require sin resolver al arrancar.
+
+### Verificación
+- `npm run verify:prepackage`: gate 11/11; `npm test` 877 tests, 877 ok, 0 fallos. `npm run check` OK.
+
+---
+
 # RELEASE v4.1.8
 
 ## Análisis forense real: errores verificados, verificador honesto y corrección con antes/después
