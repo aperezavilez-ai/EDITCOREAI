@@ -105,6 +105,7 @@ EditCore actualiza este archivo tras cambios. No pedirlo al usuario. No pegar co
 - **Versionado (2026-10-02)**: `package.json` es la fuente de verdad de la versión (`4.1.9`). El `buildVersion` de `electron-builder` (`4.1.9.0`) sigue el esquema Windows `MAJOR.MINOR.PATCH.BUILD`. `EDITCORE-MANIFEST.md` refleja la misma versión de producto.
 
 ## Cambios recientes (2026-10-02)
+- fix: métricas de uso y caché del chat (sin publicar). El orquestador devolvía siempre `totalUsage` en cero (se inicializaba y nunca se sumaba); ahora suma el uso de cada turno (`addUsage`) y `provider.js` reconoce también `cached_tokens`, `cache_write_input_tokens` y `cache_creation.input_tokens`. Rescatado de cambios de Codex (respaldo completo en `Z RESPALDOS\codex-cambios-2026-10-02`); su `prompt-cache.js` (repetía respuestas guardadas hasta 24 h en lugar de llamar al modelo) NO se integró: daría resultados viejos de herramientas en vivo. `test/kernel-usage-metrics.test.js`: 3 tests.
 - Release v4.1.9: instalador construido desde un worktree limpio (sin cambios ajenos sin commit); 214/214 dependencias en `app.asar`, sin `.env` ni `.claude/`. El v4.1.8 no arrancaba (`scripts/` excluido del paquete).
 - `8e7c68d` security: el empaquetado excluye `.env*`, `.env.local`, `.claude/`; `5349927` excluye `release/`. Gate nuevo que verifica las exclusiones.
 - `f19b0e0` chore: limpieza total (4.1.9). Grafo real de dependencias desde main.js, preload.js, renderer.js, index.html y scripts npm; 607 archivos eliminados (respaldo en `Z RESPALDOS\editcoreai-limpieza-2026-10-02`):
@@ -144,6 +145,7 @@ EditCore actualiza este archivo tras cambios. No pedirlo al usuario. No pegar co
 - `ba48c40` fix(preview): mostrar apps de escritorio (Tauri, Electron, NW.js) y proyectos HTML en el panel Web (4.1.4).
 
 ## Verificado (2026-10-02)
+- Tras el fix de métricas: `npm run check` OK, gate de pre-empaquetado 11/11, suite 881/881.
 - Los 6 archivos del kernel cargan sin errores (`node -e "require('./editcore-chat-kernel/X')"` → OK en todos).
 - `git diff --stat` confirmó 369 inserciones, 0 eliminaciones en los 6 archivos modificados.
 - Chat responde: charla simple, listado de directorios, análisis de proyecto.

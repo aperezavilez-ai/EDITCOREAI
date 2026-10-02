@@ -955,7 +955,20 @@ class ChatOrchestrator {
     const steps = [];
     const runMutations = [];
     const stepsLimit = Math.max(1, Number(maxSteps) || DEFAULT_MAX_STEPS);
-    const totalUsage = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0, cache_read_input_tokens: 0, cache_creation_input_tokens: 0, cachedInputTokens: 0 };
+    const totalUsage = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0, cache_read_input_tokens: 0, cache_creation_input_tokens: 0, cache_write_input_tokens: 0, cachedInputTokens: 0 };
+    const addUsage = (raw = {}) => {
+      const input = Number(raw.prompt_tokens || raw.input_tokens || 0);
+      const output = Number(raw.completion_tokens || raw.output_tokens || 0);
+      totalUsage.prompt_tokens += input;
+      totalUsage.completion_tokens += output;
+      totalUsage.total_tokens += Number(raw.total_tokens || 0) || input + output;
+      const cacheRead = Number(raw.cache_read_input_tokens || raw.cachedInputTokens || raw.cached_tokens || 0);
+      const cacheWrite = Number(raw.cache_creation_input_tokens || raw.cache_write_input_tokens || 0);
+      totalUsage.cache_read_input_tokens += cacheRead;
+      totalUsage.cache_creation_input_tokens += cacheWrite;
+      totalUsage.cache_write_input_tokens += cacheWrite;
+      totalUsage.cachedInputTokens += cacheRead;
+    };
 
     const routed = pickModel({ requested: model, kind: decision?.kind || "CHAT", hasTools: !(chatOnly || decision?.kind === "CHAT") });
     const routedModel = String(routed.model || model || "").trim();
@@ -1020,6 +1033,7 @@ class ChatOrchestrator {
         } finally {
           clearInterval(hb); this.turnAbort = null;
         }
+        addUsage(turn?.usage || {});
 
         let toolCalls = Array.isArray(turn.toolCalls) ? turn.toolCalls : [];
         if (!toolCalls.length && turn.text) toolCalls = parseTextToolCalls(turn.text, { projectRoot });

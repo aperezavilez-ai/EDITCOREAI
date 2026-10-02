@@ -22,8 +22,9 @@ function normalizeUsage(raw = {}) {
   return {
     input_tokens: Number(raw.input_tokens || raw.prompt_tokens || 0),
     output_tokens: Number(raw.output_tokens || raw.completion_tokens || 0),
-    cache_read_input_tokens: Number(raw.cache_read_input_tokens || raw.prompt_tokens_details?.cached_tokens || 0),
-    cache_creation_input_tokens: Number(raw.cache_creation_input_tokens || 0),
+    cache_read_input_tokens: Number(raw.cache_read_input_tokens || raw.prompt_tokens_details?.cached_tokens || raw.cached_tokens || 0),
+    cache_creation_input_tokens: Number(raw.cache_creation_input_tokens || raw.cache_write_input_tokens || raw.cache_creation?.input_tokens || 0),
+    cache_write_input_tokens: Number(raw.cache_write_input_tokens || raw.cache_creation_input_tokens || raw.cache_creation?.input_tokens || 0),
   };
 }
 
