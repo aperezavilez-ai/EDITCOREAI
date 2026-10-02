@@ -459,7 +459,7 @@
       .trim();
     let fixQueueBlock = "";
     try {
-      const { buildFixQueueFromReport, buildFixQueueExecutionPrompt, syncFixQueueWithSteps } = require("./runtime/fix-queue");
+      const { buildFixQueueFromReport, buildFixQueueExecutionPrompt, syncFixQueueWithSteps } = require("./fix-queue");
       const queue = Array.isArray(workflow.fixQueue) && workflow.fixQueue.length
         ? workflow.fixQueue
         : buildFixQueueFromReport(cleanedPlan, { findings: workflow.findings || [] });
