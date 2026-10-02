@@ -1,4 +1,0 @@
-interface:
-  display_name: "Agent Model Selection"
-  short_description: "Choose agent models by risk, cost, and task complexity"
-  default_prompt: "Use $agent-model-selection to choose and justify the right model before launching an agent."

@@ -38,14 +38,9 @@ if (fs.existsSync(outExe)) {
 }
 
 const iconPath = path.join(appRoot, "assets", "logo.ico");
-const iconFallback = path.join(appRoot, "resources", "ui-overlay", "assets", "logo.ico");
 if (!fs.existsSync(iconPath) || fs.statSync(iconPath).size < 1000) {
-  if (!fs.existsSync(iconFallback)) {
-    console.error("Falta assets/logo.ico (logo oficial). No se compila el launcher sin icono.");
-    process.exit(1);
-  }
-  fs.mkdirSync(path.dirname(iconPath), { recursive: true });
-  fs.copyFileSync(iconFallback, iconPath);
+  console.error("Falta assets/logo.ico (logo oficial). No se compila el launcher sin icono.");
+  process.exit(1);
 }
 const args = ["/nologo", "/target:winexe", "/r:System.Windows.Forms.dll", "/r:System.Drawing.dll", `/out:${outExe}`, `/win32icon:${iconPath}`, srcPath];
 

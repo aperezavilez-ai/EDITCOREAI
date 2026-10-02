@@ -10,17 +10,12 @@ const { spawnSync } = require("node:child_process");
 
 const appRoot = path.resolve(__dirname, "..");
 const logoIco = path.join(appRoot, "assets", "logo.ico");
-const logoIcoOverlay = path.join(appRoot, "resources", "ui-overlay", "assets", "logo.ico");
 const launcherExe = path.join(appRoot, "EDITCOREAI.exe");
 const shortcutName = "EditCoreAI.lnk";
 
 function ensureLogoIco() {
   fs.mkdirSync(path.join(appRoot, "assets"), { recursive: true });
   if (fs.existsSync(logoIco) && fs.statSync(logoIco).size > 1000) return logoIco;
-  if (fs.existsSync(logoIcoOverlay) && fs.statSync(logoIcoOverlay).size > 1000) {
-    fs.copyFileSync(logoIcoOverlay, logoIco);
-    return logoIco;
-  }
   throw new Error("Falta assets/logo.ico (logo oficial EditCoreAI).");
 }
 

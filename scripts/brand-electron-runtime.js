@@ -15,15 +15,9 @@ const distDir = path.join(appRoot, "node_modules", "electron", "dist");
 const electronExe = path.join(distDir, "electron.exe");
 const hostExe = path.join(distDir, "EDITCOREAI-host.exe");
 const logoIco = path.join(appRoot, "assets", "logo.ico");
-const logoFallback = path.join(appRoot, "resources", "ui-overlay", "assets", "logo.ico");
-
 function resolveLogo() {
   fs.mkdirSync(path.join(appRoot, "assets"), { recursive: true });
   if (fs.existsSync(logoIco) && fs.statSync(logoIco).size > 1000) return logoIco;
-  if (fs.existsSync(logoFallback) && fs.statSync(logoFallback).size > 1000) {
-    fs.copyFileSync(logoFallback, logoIco);
-    return logoIco;
-  }
   throw new Error("Falta assets/logo.ico (logo oficial EditCoreAI).");
 }
 

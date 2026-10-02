@@ -51,19 +51,6 @@ if (!fs.existsSync(unpackedExe)) {
 
 const archivePath = path.join(unpackedDir, "resources", "app.asar");
 if (!fs.existsSync(archivePath)) throw new Error("El empaquetado no genero resources/app.asar.");
-const uiOverlayPacked = path.join(unpackedDir, "resources", "ui-overlay", "index.html");
-if (!fs.existsSync(uiOverlayPacked)) {
-  const uiOverlaySrc = path.join(appRoot, "resources", "ui-overlay");
-  const uiOverlayDest = path.join(unpackedDir, "resources", "ui-overlay");
-  if (!fs.existsSync(path.join(uiOverlaySrc, "index.html"))) {
-    throw new Error("Falta resources/ui-overlay (UI lean requerida para evitar pantalla en blanco).");
-  }
-  fs.cpSync(uiOverlaySrc, uiOverlayDest, { recursive: true, force: true });
-  console.warn("[build-windows] ui-overlay inyectado manualmente en win-unpacked/resources/");
-}
-if (!fs.existsSync(uiOverlayPacked) && !fs.existsSync(path.join(unpackedDir, "resources", "ui-overlay", "index.html"))) {
-  throw new Error("El empaquetado no incluye resources/ui-overlay/index.html.");
-}
 
 const mismatches = [];
 for (const archiveEntry of asar.listPackage(archivePath)) {

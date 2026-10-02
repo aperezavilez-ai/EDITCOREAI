@@ -70,7 +70,7 @@ class IntentAnticipator {
     if (lastAction.query || lastAction.activeTask) {
       const term = (lastAction.query || lastAction.activeTask).toLowerCase();
       if (term.includes("db") || term.includes("sql") || term.includes("database")) {
-        predictedFiles.push("runtime/ai-database-studio.js", "runtime/db-manager.js");
+        predictedFiles.push("runtime/db-manager.js");
         predictedSymbols.push("DatabaseManager", "runMigration");
       }
       if (term.includes("auth") || term.includes("security") || term.includes("cve")) {

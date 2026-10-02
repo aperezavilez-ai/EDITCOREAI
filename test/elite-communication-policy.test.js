@@ -114,13 +114,6 @@ test("inyeccion: intent-orchestrator hints elite + index.html carga el modulo", 
   assert.match(html, /elite-communication-policy\.js/);
 });
 
-test("inyeccion: context-engine y agent-core llm-loop", () => {
-  const ctx = fs.readFileSync(path.join(__dirname, "..", "runtime", "context-engine.js"), "utf8");
-  assert.match(ctx, /withEliteCommunicationPolicy\(\[/);
-  const loop = fs.readFileSync(path.join(__dirname, "..", "agent-core", "src", "llm-loop.js"), "utf8");
-  assert.match(loop, /elite-communication-policy/);
-});
-
 test("chatConversationHint de orquestador incluye marcador elite", () => {
   const ProjectAnalysis = require("../project-analysis");
   const orch = require("../runtime/intent-orchestrator");

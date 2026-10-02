@@ -1,9 +1,0 @@
-{
-  "id": "animated-pwa",
-  "name": "Animated PWA Web",
-  "description": "React/Vite + Tailwind transitions + Framer Motion + PWA shell",
-  "dependencies": {
-    "framer-motion": "^11.15.0"
-  },
-  "default": true
-}

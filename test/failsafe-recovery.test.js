@@ -7,7 +7,7 @@ const path = require("node:path");
 const os = require("node:os");
 
 const { createSnapshot, rollbackLastChange, listSnapshots } = require("../editcore-chat-kernel/snapshot");
-const { syncMirrors, verifySyntax } = require("../scripts/failsafe-recovery");
+const { verifySyntax } = require("../scripts/failsafe-recovery");
 
 test("snapshot engine creates backup and rolls back cleanly", () => {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "editcore-snapshot-test-"));
@@ -34,8 +34,7 @@ test("snapshot engine creates backup and rolls back cleanly", () => {
   fs.rmSync(tmpDir, { recursive: true, force: true });
 });
 
-test("failsafe-recovery syncMirrors and verifySyntax function cleanly", () => {
-  assert.equal(typeof syncMirrors, "function");
+test("failsafe-recovery verifySyntax functions cleanly", () => {
   assert.equal(typeof verifySyntax, "function");
   const syntaxOk = verifySyntax();
   assert.equal(syntaxOk, true);

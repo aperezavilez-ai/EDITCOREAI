@@ -219,9 +219,7 @@ const { createSupabaseProject } = require("./runtime/supabase-provision");
 const { checkForUpdates } = require("./runtime/update-check");
 const { authManager } = require("./runtime/auth-manager");
 const { createSnapshot, rollbackLastChange, listSnapshots } = require("./editcore-chat-kernel/snapshot");
-const { syncMirrors } = require("./scripts/failsafe-recovery");
 const { Phase1Audit } = require("./runtime/phase1-audit");
-const { ContextEngine, evidenceLedger } = require("./runtime/context-engine");
 const { TokenLedger } = require("./runtime/token-ledger");
 const { TaskStore, digest: taskDigest } = require("./runtime/task-store");
 const { TaskManager } = require("./runtime/task-manager");
@@ -1197,11 +1195,10 @@ const RUNTIME_VERSION = (() => {
     const v = String(require("./package.json").version || "").trim();
     if (!isJunk(v)) return v;
   } catch { /* continue */ }
-  // 2) overlay / resources/app (fuente sincronizada del EXE)
+  // 2) resources/app (fuente del EXE)
   const near = [
     path.join(__dirname, "package.json"),
     path.join(process.resourcesPath || "", "app", "package.json"),
-    path.join(process.resourcesPath || "", "ui-overlay", "package.json"),
     path.join(path.dirname(process.execPath || ""), "resources", "app", "package.json"),
   ];
   for (const file of near) {
@@ -6278,9 +6275,6 @@ ipcMain.handle("recovery:rollback-latest", async (_event, input = {}) => {
   try {
     const root = String(input?.projectRoot || globalActiveWorkspacePath || app.getAppPath()).trim();
     const res = rollbackLastChange(root, input?.snapshotId || null);
-    if (res.ok) {
-      try { syncMirrors(); } catch {}
-    }
     return { success: res.ok, result: res };
   } catch (error) {
     return { success: false, error: error?.message || String(error) };

@@ -111,9 +111,9 @@ test("GATE: panel de archivos y preview reaccionan a escrituras del agente", () 
   assert.match(rendererSource, /function closeOpenProject/);
   assert.match(rendererSource, /handleProjectFilesChanged/);
   assert.match(rendererSource, /maybeRefreshPreviewAfterWrite/);
-  const overlayPreload = fs.readFileSync(path.join(appRoot, "resources", "ui-overlay", "preload.js"), "utf8");
-  assert.match(overlayPreload, /project:files-changed/);
-  assert.match(overlayPreload, /project:preview-stop/);
+  const preloadSource = fs.readFileSync(path.join(appRoot, "preload.js"), "utf8");
+  assert.match(preloadSource, /project:files-changed/);
+  assert.match(preloadSource, /project:preview-stop/);
   const { filesChangedPayload } = require("../runtime/project-files-ui");
   const payload = filesChangedPayload({
     name: "write_file",

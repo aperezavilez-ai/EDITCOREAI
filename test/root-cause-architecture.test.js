@@ -23,14 +23,6 @@ test("runtime/session.js existe y expone memoria de workspace", () => {
   }
 });
 
-test("deploy-bridge commit usa -F y no shell -m", () => {
-  const source = fs.readFileSync(path.join(__dirname, "..", "agent-core", "deploy-bridge.js"), "utf8");
-  assert.match(source, /\["commit",\s*"\-F"/);
-  assert.doesNotMatch(source, /run\(`git commit/);
-  assert.doesNotMatch(source, /spawnSync\([^)]*shell:\s*true/);
-  assert.match(source, /shell:\s*false/);
-});
-
 test("publish-pipeline llama ensureVercelProjectId(connections, opts)", () => {
   const source = fs.readFileSync(path.join(__dirname, "..", "runtime", "publish-pipeline.js"), "utf8");
   assert.match(source, /ensureVercelProjectId\(connections,\s*\{/);

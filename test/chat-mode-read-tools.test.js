@@ -124,7 +124,7 @@ test("el filtro de errores no rompe supabase.gafcore.com y sigue ocultando el ga
 });
 
 test("la vista del chat ya no reemplaza GafCore suelto", () => {
-  for (const rel of ["renderer.js", "resources/ui-overlay/renderer.js"]) {
+  for (const rel of ["renderer.js"]) {
     const src = fs.readFileSync(path.join(__dirname, "..", rel), "utf8");
     assert.ok(!src.includes('.replace(/\\bGafCore\\b/gi, "el proveedor")'), rel);
     assert.ok(src.includes('.replace(/\\bGafCore\\s+Gateway\\b/gi, "el proveedor de modelos")'), rel);

@@ -203,18 +203,13 @@ async function runEditcoreE2ePipeline(projectRoot = "", options = {}) {
       missing.length ? `faltan ids: ${missing.join(", ")}` : ids.join(", "), 4));
   }
 
-  // ── 5. Overlay drift Bodega (mismo bug) ─────────────────────────────────
+  // ── 5. Renderer Bodega null-safe ────────────────────────────────────────
   {
-    const overlay = path.join(repo, "resources", "ui-overlay", "renderer.js");
-    if (!exists(overlay)) {
-      steps.push(step(5, "Overlay renderer Bodega null-safe", "warn", "overlay renderer ausente", 3));
-    } else {
-      const src = read(overlay);
-      const unsafe = /activeProject\(\)\.brainSnapshot\s*=/.test(src);
-      const guarded = /if \(project\) \{[\s\S]{0,60}project\.brainSnapshot/.test(src);
-      steps.push(step(5, "Overlay renderer Bodega null-safe", !unsafe && guarded ? "pass" : "fail",
-        unsafe ? "overlay aún tiene activeProject().brainSnapshot" : "overlay alineado", 5));
-    }
+    const src = read(path.join(repo, "renderer.js"));
+    const unsafe = /activeProject\(\)\.brainSnapshot\s*=/.test(src);
+    const guarded = /if \(project\) \{[\s\S]{0,60}project\.brainSnapshot/.test(src);
+    steps.push(step(5, "Renderer Bodega null-safe", !unsafe && guarded ? "pass" : "fail",
+      unsafe ? "renderer aún tiene activeProject().brainSnapshot" : "renderer alineado", 5));
   }
 
   // ── 6. activeProject().X inseguro en renderer canónico ──────────────────

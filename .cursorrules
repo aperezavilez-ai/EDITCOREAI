@@ -19,7 +19,7 @@
 
 ## 3. LÍMITES DE ARCHIVOS Y CACHÉ
 - No modifiques archivos periféricos (snapshots `.editcore/snapshots`, `chats.json`, `memory.json`, EXE empaquetados) salvo que la tarea lo exija.
-- No truncar `main.js` / `renderer.js`. Mantén `resources/ui-overlay/` sincronizado cuando cambies UI/runtime empaquetable.
+- No truncar `main.js` / `renderer.js`. El código fuente vive solo en la raíz (no hay copia espejo); no crees duplicados de módulos existentes.
 - No inventes puertos de preview (`:1420`); usa el preview del IDE (`127.0.0.1:<asignado>`).
 
 ## 4. MEMORIA Y CONTINUIDAD (CERO RELECTURAS)

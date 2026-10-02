@@ -107,7 +107,7 @@ const MARKDOWN_FORMAT_PROMPT = [
   "REGLAS DURAS:",
   "- NUNCA respondas con un parrafo monolitico. Divide en secciones.",
   "- SIEMPRE deja una linea en blanco entre secciones.",
-  "- Los paths van en backticks: `agent-core/src/llm-loop.js`.",
+  "- Los paths van en backticks: `editcore-chat-kernel/orchestrator.js`.",
   "- Los resultados de herramientas van en bloques de codigo o tablas.",
   "=== FIN DE FORMATO ===",
 ].join("\n");
