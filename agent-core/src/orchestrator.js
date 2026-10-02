@@ -206,7 +206,15 @@ async function runAgent(input = {}, maybeOptions = {}) {
   // Fallback: si el caller no provee un executor, montamos el completo.
   if (!input.tools?.execute) {
     input.tools = buildDefaultExecutor(input);
+    if (!extendedTools) input.unavailableTools = [...EXTENDED_TOOL_NAMES];
   }
+  const warnings = Array.isArray(input.unavailableTools) && input.unavailableTools.length
+    ? [{
+      code: "EXTENDED_TOOLS_UNAVAILABLE",
+      tools: [...input.unavailableTools],
+      message: "No se cargó agent-core/src/tools-extended.js (o faltan axios/simple-git): sin internet, git avanzado, skills, shell ni archivos externos en esta corrida.",
+    }]
+    : [];
 
   const fullAccess = isFullAccess(input);
   if (fullAccess) {
@@ -265,6 +273,7 @@ async function runAgent(input = {}, maybeOptions = {}) {
     toolCalls: steps.length,
     reason,
     stopReason: verified.stopReason || reason,
+    warnings,
     usage: {
       stepsExecuted: steps.length,
       provider_calls: Number(ran.providerCalls || 0),

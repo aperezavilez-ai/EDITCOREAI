@@ -451,6 +451,13 @@ function systemPromptForMode(mode, allowWrite, opts = {}) {
   if (!allowWrite || mode === "diagnose") {
     base.push("PROHIBIDO write_file/replace_in_file/delete_file/write_external_file en esta corrida.");
   }
+  const unavailable = Array.isArray(opts.unavailableTools) ? opts.unavailableTools.filter(Boolean) : [];
+  if (unavailable.length) {
+    base.push(
+      `HERRAMIENTAS NO DISPONIBLES EN ESTA CORRIDA: ${unavailable.join(", ")} (no se cargó el módulo de herramientas extendidas).`,
+      "No las llames ni prometas usarlas: trabaja con las tools del proyecto y dile al usuario qué capacidad falta y por qué.",
+    );
+  }
   return wrap(base.join("\n"));
 }
 
@@ -818,6 +825,7 @@ async function runLlmToolLoop(input = {}, options = {}) {
       content: systemPromptForMode(mode, allowWrite, {
         fullAccess: input.fullAccess === true || input.permissionMode === "full" || input.permissionFull === true,
         permissionMode: input.permissionMode,
+        unavailableTools: input.unavailableTools,
       }),
     },
     {
