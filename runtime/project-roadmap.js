@@ -30,6 +30,16 @@ function readRoadmap(projectRoot, maxChars = 8_000) {
   }
 }
 
+function readRoadmapRaw(projectRoot) {
+  const found = resolveRoadmapPath(projectRoot);
+  if (!found.exists) return { ...found, raw: "" };
+  try {
+    return { ...found, raw: fs.readFileSync(found.absolute, "utf8") };
+  } catch {
+    return { ...found, raw: "" };
+  }
+}
+
 function projectTitle(projectRoot) {
   return path.basename(path.resolve(String(projectRoot || ""))) || "proyecto";
 }
@@ -137,7 +147,7 @@ function isStubRoadmap(content = "") {
 
 function parseSectionBullets(content = "", heading = "") {
   const re = new RegExp(`##\\s*${heading}`, "i");
-  const block = String(content || "").split(re)[1]?.split(/##\s+/i)[0] || "";
+  const block = String(content || "").split(re)[1]?.split(/\r?\n##\s/)[0] || "";
   return uniqueLines(
     block.split(/\r?\n/)
       .filter((line) => /^\s*-\s+/.test(line))
@@ -267,6 +277,81 @@ function extractRoadmapMeta(content = "") {
   };
 }
 
+const TEMPLATE_HEADINGS = new Set([
+  "proceso", "mapa", "archivos clave (no reexplorar)", "tarea activa", "bloqueos / bugs conocidos",
+  "decisiones", "cambios recientes", "verificado", "siguiente", "regla anti-reexploracion",
+]);
+const AUTO_CHANGE_PREFIX = "[EditCore] ";
+const AUTO_CHANGE_MAX = 10;
+
+// Un ROADMAP con contenido que renderRoadmap no puede reproducir (subsecciones, viñetas anidadas,
+// secciones propias) no se regenera: se parchea por líneas para no perder lo escrito a mano.
+function isCuratedRoadmap(content = "") {
+  const text = String(content || "");
+  if (!text.trim() || isStubRoadmap(text)) return false;
+  if (/^###\s/m.test(text) || /^[ \t]{2,}[-*]\s/m.test(text)) return true;
+  return [...text.matchAll(/^##\s+(.+?)\s*$/gm)].some((m) => !TEMPLATE_HEADINGS.has(m[1].trim().toLowerCase()));
+}
+
+function patchCuratedRoadmap(raw = "", { task = "", changes = [] } = {}) {
+  const eol = raw.includes("\r\n") ? "\r\n" : "\n";
+  const lines = String(raw || "").split(/\r?\n/);
+  const sectionRange = (re) => {
+    const start = lines.findIndex((line) => re.test(line));
+    if (start < 0) return null;
+    let end = lines.length;
+    for (let i = start + 1; i < lines.length; i += 1) {
+      if (/^#{1,2}\s/.test(lines[i])) { end = i; break; }
+    }
+    return { start, end };
+  };
+  const stamp = new Date().toISOString().slice(0, 16).replace("T", " ");
+
+  const proceso = sectionRange(/^##\s+Proceso\b/i);
+  if (proceso) {
+    for (let i = proceso.start + 1; i < proceso.end; i += 1) {
+      if (/^-\s*Actualizado:/i.test(lines[i])) { lines[i] = `- Actualizado: ${stamp}`; break; }
+    }
+  }
+
+  const taskText = String(task || "").replace(/\s+/g, " ").trim().slice(0, 280);
+  const tarea = taskText ? sectionRange(/^##\s+Tarea activa\b/i) : null;
+  if (tarea) {
+    const body = lines.slice(tarea.start + 1, tarea.end);
+    const simple = body.every((line) => !line.trim() || /^-\s+/.test(line));
+    if (simple) {
+      const trailing = body.length && !body[body.length - 1].trim() ? [""] : [];
+      lines.splice(tarea.start + 1, body.length, `- ${taskText}`, ...trailing);
+    }
+  }
+
+  const fresh = uniqueLines(changes).map((c) => c.replace(/\s+/g, " ").slice(0, 200));
+  if (fresh.length) {
+    const freshKeys = new Set(fresh.map((c) => c.split(" — ")[0]));
+    const autoLines = fresh.map((c) => `- ${AUTO_CHANGE_PREFIX}${c}`);
+    const cambios = sectionRange(/^##\s+Cambios recientes\b/i);
+    if (cambios) {
+      const body = lines.slice(cambios.start + 1, cambios.end)
+        .filter((line) => !/^-\s+Ninguno todavia\s*$/i.test(line))
+        .filter((line) => {
+          if (!line.startsWith(`- ${AUTO_CHANGE_PREFIX}`)) return true;
+          return !freshKeys.has(line.slice(2 + AUTO_CHANGE_PREFIX.length).split(" — ")[0]);
+        });
+      let kept = 0;
+      const merged = [...autoLines, ...body].filter((line) => {
+        if (!line.startsWith(`- ${AUTO_CHANGE_PREFIX}`)) return true;
+        kept += 1;
+        return kept <= AUTO_CHANGE_MAX;
+      });
+      lines.splice(cambios.start + 1, cambios.end - cambios.start - 1, ...merged);
+    } else {
+      while (lines.length && !lines[lines.length - 1].trim()) lines.pop();
+      lines.push("", "## Cambios recientes", ...autoLines, "");
+    }
+  }
+  return lines.join(eol);
+}
+
 function ensureProjectRoadmap(projectRoot, input = {}) {
   const found = resolveRoadmapPath(projectRoot);
   const existing = found.exists ? readRoadmap(projectRoot).content : "";
@@ -299,7 +384,23 @@ function ensureProjectRoadmap(projectRoot, input = {}) {
 }
 
 function syncProjectRoadmap(projectRoot, input = {}) {
-  const previousRaw = readRoadmap(projectRoot);
+  const current = readRoadmapRaw(projectRoot);
+  if (current.exists && isCuratedRoadmap(current.raw)) {
+    const mutated = uniqueLines(Array.isArray(input.mutated)
+      ? input.mutated
+      : (input.analysisMode ? [] : input.files));
+    if (!mutated.length) {
+      return { ...current, content: current.raw, created: false, updated: false, skipped: "curated-readonly" };
+    }
+    const label = String(input.task || "").replace(/\s+/g, " ").trim().slice(0, 100);
+    const content = patchCuratedRoadmap(current.raw, {
+      task: input.task,
+      changes: mutated.map((rel) => (label ? `${rel} — ${label}` : rel)),
+    });
+    fs.writeFileSync(current.absolute, content, "utf8");
+    return { ...current, exists: true, created: false, updated: true, curated: true, content };
+  }
+  const previousRaw = readRoadmap(projectRoot, Infinity);
   const previous = extractRoadmapMeta(previousRaw.content);
   const needScan = !previousRaw.exists || isStubRoadmap(previousRaw.content) || (previous.mapLines || []).length < 3;
   const scan = needScan ? scanProjectForRoadmap(projectRoot) : { mapLines: previous.mapLines, stackInfo: null };
@@ -396,6 +497,8 @@ function buildRoadmapSyncFromRun({
   return {
     task: String(task || "").slice(0, 280),
     files,
+    mutated: uniqueLines(mutated),
+    analysisMode: analysisMode === true,
     mapLines,
     keyFiles: uniqueLines([...mutated, ...filesRead]).slice(0, 16),
     blockers: uniqueLines([...inferredBlockers, ...gaps]).slice(0, 10),
@@ -443,12 +546,18 @@ function appendPatchSummaryToRoadmap(projectRoot, { path: filePath = "", action 
   if (!rel || /^ROADMAP(\/ROADMAP)?\.md$/i.test(rel) || rel.startsWith(".editcore/")) {
     return { ok: true, skipped: true };
   }
-  const previousRaw = readRoadmap(projectRoot);
-  const previous = extractRoadmapMeta(previousRaw.content);
   const stamp = new Date().toISOString().slice(0, 16).replace("T", " ");
   const changeLine = summary
     ? `${rel} — ${String(summary).slice(0, 120)} (${stamp})`
     : `${rel} (${action}) @ ${stamp}`;
+  const current = readRoadmapRaw(projectRoot);
+  if (current.exists && isCuratedRoadmap(current.raw)) {
+    const curatedLine = `${rel} — ${summary ? String(summary).slice(0, 120) : action} (${stamp})`;
+    fs.writeFileSync(current.absolute, patchCuratedRoadmap(current.raw, { changes: [curatedLine] }), "utf8");
+    return { ok: true, updated: true, curated: true, path: current.relative, change: curatedLine };
+  }
+  const previousRaw = readRoadmap(projectRoot, Infinity);
+  const previous = extractRoadmapMeta(previousRaw.content);
   const content = renderRoadmap({
     title: projectTitle(projectRoot),
     status: `Patch OK: ${rel} (${stamp})`,
@@ -484,6 +593,8 @@ module.exports = {
   formatRoadmapForPrompt,
   renderRoadmap,
   isStubRoadmap,
+  isCuratedRoadmap,
+  patchCuratedRoadmap,
   extractRoadmapMeta,
   detectStackHints,
 };

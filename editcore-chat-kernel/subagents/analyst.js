@@ -1,6 +1,67 @@
 "use strict";
 
+const fs = require("node:fs");
+const path = require("node:path");
+const vm = require("node:vm");
 const tools = require("../tools");
+
+const SYNTAX_CHECK_MAX_BYTES = 2_000_000;
+
+function checkSyntax(projectRoot, file) {
+  const ext = path.extname(file).toLowerCase();
+  if (![".js", ".cjs", ".mjs", ".json"].includes(ext)) return "";
+  let source = "";
+  try {
+    const abs = path.resolve(projectRoot, file);
+    if (fs.statSync(abs).size > SYNTAX_CHECK_MAX_BYTES) return "";
+    source = fs.readFileSync(abs, "utf8");
+  } catch {
+    return "";
+  }
+  if (ext === ".json") {
+    try { JSON.parse(source); return "JSON válido (archivo completo)"; } catch (err) { return `ERROR: JSON inválido: ${String(err?.message || err).slice(0, 160)}`; }
+  }
+  // Mismo envoltorio que usa Node para CommonJS (permite return de nivel superior); suma 1 línea arriba.
+  const wrapped = `(function (exports, require, module, __filename, __dirname) {\n${source.replace(/^#!.*/, "")}\n})`;
+  try {
+    new vm.Script(wrapped, { filename: file });
+    return "sintaxis JS OK (archivo completo)";
+  } catch (err) {
+    const msg = String(err?.message || err).slice(0, 160);
+    const lineMatch = String(err?.stack || "").match(/:(\d+)\r?\n/);
+    const rawLine = lineMatch ? Number(lineMatch[1]) : 0;
+    const line = rawLine ? Math.max(1, rawLine - 1) : 0;
+    const where = line ? ` en línea ${line}` : "";
+    // Un error en la línea de cierre del envoltorio significa que faltan cierres al final del archivo.
+    if (/Unexpected end of input/i.test(msg) || (rawLine && rawLine >= wrapped.split("\n").length)) {
+      return `ERROR: el archivo termina a mitad de código (faltan cierres al final; ${msg})`;
+    }
+    if (ext === ".mjs" || /Cannot use import statement|Unexpected token 'export'|import\.meta|top level bodies of modules/i.test(msg)) {
+      return "sintaxis no verificada (módulo ES)";
+    }
+    return `posible error de sintaxis${where}: ${msg} (puede ser normal si el proyecto transpila JSX/TypeScript/decoradores)`;
+  }
+}
+
+function excerptHeader(file, res, syntax) {
+  const parts = [`${res.totalLines} líneas, ${res.bytes} bytes`];
+  parts.push(res.partial
+    ? `extracto: líneas ${res.startLine}-${res.endLine} (el archivo continúa)`
+    : "extracto completo");
+  if (syntax) parts.push(syntax);
+  return `### ${file} — ${parts.join(" · ")}`;
+}
+
+function testScriptLine(projectRoot) {
+  try {
+    const pkg = JSON.parse(fs.readFileSync(path.join(projectRoot, "package.json"), "utf8"));
+    const script = String(pkg?.scripts?.test || "").trim();
+    if (!script) return "- **Tests**: package.json no define script `test`.";
+    return `- **Tests**: script \`npm test\` = \`${script.slice(0, 120)}\`. No ejecutado en este análisis (resultado no verificado).`;
+  } catch {
+    return "";
+  }
+}
 
 function loadMap() {
   try {
@@ -53,7 +114,7 @@ async function runAnalyst({ projectRoot, onProgress, maxReads = 14, userMessage 
 
   // Config
   for (const f of listedFiles) {
-    if (/^(package\.json|next\.config|vite\.config|tailwind\.config|tsconfig|jsconfig|jest\.config|vitest\.config|eslint\.config)\.(js|ts|mjs|cjs|json)?$/i.test(f)) {
+    if (/^(package\.json|(next|vite|tailwind|jest|vitest|eslint)\.config\.(js|ts|mjs|cjs)|(tsconfig|jsconfig)\.json)$/i.test(f)) {
       priority.config.push(f);
     }
   }
@@ -109,17 +170,18 @@ async function runAnalyst({ projectRoot, onProgress, maxReads = 14, userMessage 
   for (const file of unique) {
     if (readCount >= maxReads) break;
     onProgress?.({ phase: "tool", name: "read_file", input: { path: file } });
-    const contentRes = tools.readFile(projectRoot, file, 6000);
+    const budget = /roadmap/i.test(file) ? 4000
+      : /package\.json/i.test(file) ? 1500
+      : /\.(md|txt)$/i.test(file) ? 2500
+      : 3200;
+    const contentRes = tools.readFile(projectRoot, file, budget);
     steps.push({ name: "read_file", input: { path: file }, result: contentRes, ok: contentRes.ok });
     readCount += 1;
     if (contentRes?.ok && contentRes.content) {
-      const budget = /roadmap/i.test(file) ? 4000
-        : /package\.json/i.test(file) ? 1500
-        : /\.(md|txt)$/i.test(file) ? 2500
-        : 3200;
       excerpts.push({
         path: file,
-        content: String(contentRes.content).slice(0, budget),
+        header: excerptHeader(file, contentRes, checkSyntax(projectRoot, file)),
+        content: String(contentRes.content),
       });
     }
   }
@@ -135,13 +197,21 @@ async function runAnalyst({ projectRoot, onProgress, maxReads = 14, userMessage 
     `- **Carpetas de código detectadas**: ${presentSourceDirs.length ? presentSourceDirs.join(", ") : "(ninguna obvia)"}`,
     cognitive?.rootDirs?.length ? `- **Carpetas raíz**: ${cognitive.rootDirs.slice(0, 20).join(", ")}` : "",
     cognitive?.stack?.length ? `- **Stack detectado**: ${cognitive.stack.join(", ")}` : "",
+    testScriptLine(projectRoot),
     "",
     roadmapBits.length
-      ? ["## ROADMAP (extracto)", ...roadmapBits.map((e) => `### ${e.path}\n\`\`\`\n${e.content}\n\`\`\``)].join("\n")
+      ? ["## ROADMAP (extracto)", ...roadmapBits.map((e) => `${e.header}\n\`\`\`\n${e.content}\n\`\`\``)].join("\n")
       : "## ROADMAP\n_No se encontró ROADMAP.md legible._",
     "",
     "## Archivos leídos",
-    ...nonRoadmapBits.map((e) => `### ${e.path}\n\`\`\`\n${e.content}\n\`\`\``),
+    ...nonRoadmapBits.map((e) => `${e.header}\n\`\`\`\n${e.content}\n\`\`\``),
+    "",
+    "## Reglas de evidencia",
+    "- Los extractos son PARCIALES por presupuesto de tokens. Que un extracto termine a mitad de una función NO significa que el archivo esté truncado ni incompleto: nunca lo reportes como hallazgo.",
+    "- La integridad de cada archivo está en su encabezado (líneas totales, bytes, sintaxis). Solo hay archivo roto si la sintaxis dice ERROR.",
+    "- Para ver más de un archivo usa read_file con startLine/endLine.",
+    "- EditCore no ejecutó tests ni builds en este análisis: no afirmes que pasan ni que no se ejecutaron; di 'no verificado en este análisis'.",
+    "- Cada hallazgo cita archivo y línea leída. Si no pudiste comprobar algo, márcalo 'no verificado'.",
     "",
     "## Instrucción para el analista",
     "Con esta evidencia genera un informe real. Si necesitas más contexto (módulos, configuraciones específicas, tests), usa read_file para leerlos ANTES de cerrar.",

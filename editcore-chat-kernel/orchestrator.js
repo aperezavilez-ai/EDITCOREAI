@@ -191,6 +191,10 @@ const ANALYSIS_MODE_PROMPT = [
   "REGLAS DURAS:",
   "- NO uses write_file / replace_in_file (modo solo lectura).",
   "- NO inventes. Si un archivo no lo leiste, no afirmes nada sobre el.",
+  "- Los extractos y lecturas son PARCIALES por presupuesto. Que un extracto termine a mitad de una funcion NO es un hallazgo: PROHIBIDO reportar un archivo como 'truncado' o 'incompleto' por eso. La integridad esta en el encabezado del extracto (lineas totales, bytes, sintaxis): solo hay archivo roto si la sintaxis dice ERROR.",
+  "- Para ver mas de un archivo usa read_file con startLine/endLine (el resultado trae totalLines y endLine).",
+  "- Cada hallazgo cita archivo y linea que leiste. Lo que no pudiste comprobar va como 'no verificado', nunca como 'no existe' ni 'no hay evidencia'. Antes de afirmar que algo falta, buscalo con search_files.",
+  "- En este modo no se ejecutan tests ni builds: no afirmes que pasan ni que no se ejecutaron; di 'no verificado en este analisis'.",
   "- Los datos que salen de documentos del proyecto (ROADMAP, ANALISIS_*.md, informes, changelogs) se atribuyen: \"segun `archivo.md`\". NO los presentes como verificados por vos: en este modo no ejecutas tests ni builds.",
   "- Si un documento tiene cifras distintas en varias secciones (ej. 19/19, 30/30, 46/46 tests), usa la mas reciente y menciona la discrepancia.",
   "- Usa tablas cuando listes varios hallazgos o archivos.",
@@ -458,7 +462,10 @@ function persistKernelRoadmap(projectRoot, { task, steps, kind, text, completed 
       .filter((s) => s && s.ok !== false && ["write_file", "replace_in_file", "delete_file", "apply_diff", "create_project"].includes(String(s?.name || "")))
       .map((s) => String(s?.input?.path || s?.result?.path || "").replace(/\\/g, "/"))
       .filter(Boolean);
-    if (changed.length) payload.files = [...new Set([...(payload.files || []), ...changed])];
+    if (changed.length) {
+      payload.files = [...new Set([...(payload.files || []), ...changed])];
+      payload.mutated = [...new Set([...(payload.mutated || []), ...changed])];
+    }
     syncProjectRoadmap(projectRoot, payload);
     return true;
   } catch { return false; }
@@ -998,7 +1005,7 @@ class ChatOrchestrator {
           }
 
           textOut = formatAgentVisibleText(textOut);
-          persistKernelRoadmap(projectRoot, { task: message, steps, kind: decision?.kind, text: textOut, completed: true });
+          persistKernelRoadmap(projectRoot, { task: this._currentUserText || message, steps, kind: decision?.kind, text: textOut, completed: true });
           rememberOut(textOut); detachLongRunningStreams(steps);
           // [EDITCORE-ADD] Feedback de éxito a la red neuronal.
           try {
@@ -1038,16 +1045,16 @@ class ChatOrchestrator {
             continue;
           }
 
-          if (name === "read_file" && args.path) {
-            const cacheKey = String(args.path).replace(/\\/g, "/").toLowerCase();
-            if (readCache.has(cacheKey)) {
-              const cachedResult = { ok: true, cached: true, path: args.path, content: readCache.get(cacheKey), note: "Contenido devuelto desde caché." };
-              const stepData = { name, input: args, result: cachedResult, ok: true, cached: true };
-              steps.push(stepData); this.session.addStep(stepData);
-              onProgress?.({ phase: "tool", stage: "done", name, input: args, result: cachedResult, ok: true });
-              messages.push({ role: "tool", tool_call_id: call.id, name, content: tools.truncatePayload(cachedResult, 2000) });
-              continue;
-            }
+          const readCacheKey = name === "read_file" && args.path
+            ? `${String(args.path).replace(/\\/g, "/").toLowerCase()}#${Number(args.startLine) || 1}-${Number(args.endLine) || 0}`
+            : "";
+          if (readCacheKey && readCache.has(readCacheKey)) {
+            const cachedResult = { ...readCache.get(readCacheKey), cached: true };
+            const stepData = { name, input: args, result: cachedResult, ok: true, cached: true };
+            steps.push(stepData); this.session.addStep(stepData);
+            onProgress?.({ phase: "tool", stage: "done", name, input: args, result: cachedResult, ok: true });
+            messages.push({ role: "tool", tool_call_id: call.id, name, content: tools.truncatePayload(cachedResult, tools.READ_FILE_PAYLOAD_CAP) });
+            continue;
           }
 
           const callKey = `${name}:${JSON.stringify(args)}`;
@@ -1082,15 +1089,14 @@ class ChatOrchestrator {
           const softRecover = recoverSoftToolFailure(name, args, result, projectRoot);
           result = softRecover.payload;
 
-          if (name === "read_file" && result?.ok !== false && result?.content && args.path) {
-            const cacheKey = String(args.path).replace(/\\/g, "/").toLowerCase();
-            readCache.set(cacheKey, result.content);
+          if (readCacheKey && result?.ok !== false && typeof result?.content === "string") {
+            readCache.set(readCacheKey, result);
           }
 
           const stepData = { name, input: args, result, ok: result?.ok !== false };
           steps.push(stepData); this.session.addStep(stepData);
           onProgress?.({ phase: "tool", stage: "done", name, input: args, result, ok: stepData.ok });
-          messages.push({ role: "tool", tool_call_id: call.id, name, content: tools.truncatePayload(result || {}, 2000) });
+          messages.push({ role: "tool", tool_call_id: call.id, name, content: tools.truncatePayload(result || {}, name === "read_file" ? tools.READ_FILE_PAYLOAD_CAP : 2000) });
         }
       }
 
@@ -1102,7 +1108,7 @@ class ChatOrchestrator {
       else textOut = `## ℹ️ Sin acciones registradas\n\n${nextStepsClosingText(projectRoot, [], steps)}`;
 
       textOut = formatAgentVisibleText(textOut);
-      persistKernelRoadmap(projectRoot, { task: message, steps, kind: decision?.kind, text: textOut, completed: true });
+      persistKernelRoadmap(projectRoot, { task: this._currentUserText || message, steps, kind: decision?.kind, text: textOut, completed: true });
       rememberOut(textOut); detachLongRunningStreams(steps);
       // [EDITCORE-ADD] Feedback de éxito (steps agotados pero sin excepción).
       try {
@@ -1116,7 +1122,7 @@ class ChatOrchestrator {
       this.session.kill();
       let safeMsg = String(err?.message || err || "Error desconocido");
       const errText = formatAgentVisibleText("## ❌ Error\n\nAlgo falló durante la ejecución: " + safeMsg);
-      persistKernelRoadmap(projectRoot, { task: message, steps, kind: decision?.kind, text: errText, completed: false });
+      persistKernelRoadmap(projectRoot, { task: this._currentUserText || message, steps, kind: decision?.kind, text: errText, completed: false });
       rememberOut(errText); detachLongRunningStreams(steps);
       // [EDITCORE-ADD] Feedback de fallo a la red neuronal (baja confianza del agente).
       try {

@@ -19,6 +19,8 @@ const { capture_preview_screenshot, DEFAULT_PREVIEW_URL } = require("./vision-in
 const { detectCircularDependencies } = require("./circular-dependency-detector");
 
 const TOOL_RESULT_CAP = 2000;
+const READ_FILE_TOOL_CAP = 4000;
+const READ_FILE_PAYLOAD_CAP = 6000;
 
 let pathPolicy = null;
 try {
@@ -77,7 +79,7 @@ function safe(root, rel) {
 function truncatePayload(value, max = TOOL_RESULT_CAP) {
   const text = typeof value === "string" ? value : JSON.stringify(value ?? {});
   if (text.length <= max) return text;
-  return `${text.slice(0, max)}\n…[truncado ${text.length - max} chars]`;
+  return `${text.slice(0, max)}\n…[respuesta de la herramienta recortada: ${text.length - max} caracteres más. Es un límite del chat, no un problema del archivo]`;
 }
 
 function listFiles(root, rel = ".", max = 80, opts = {}) {
@@ -119,25 +121,66 @@ function listFiles(root, rel = ".", max = 80, opts = {}) {
   };
 }
 
-function readFile(root, rel, maxChars = TOOL_RESULT_CAP) {
+function invalidateReadCache(file) {
+  if (!runReadCache?.map) return;
+  const key = String(file || "").replace(/\\/g, "/").replace(/^\.\//, "").toLowerCase();
+  for (const cached of [...runReadCache.map.keys()]) {
+    if (cached === key || cached.startsWith(`${key}#`)) runReadCache.map.delete(cached);
+  }
+}
+
+// El contenido se corta en límites de línea y la respuesta declara qué rango se leyó:
+// un corte por presupuesto nunca debe parecer un archivo truncado.
+function readFile(root, rel, maxChars = TOOL_RESULT_CAP, opts = {}) {
   const file = safe(root, rel);
   if (!fs.existsSync(file)) return { ok: false, error: `No existe: ${rel}` };
-  if (fs.statSync(file).isDirectory()) return { ok: false, error: `Es carpeta: ${rel}` };
+  const stat = fs.statSync(file);
+  if (stat.isDirectory()) return { ok: false, error: `Es carpeta: ${rel}` };
 
-  let mtime = 0;
-  try { mtime = fs.statSync(file).mtimeMs; } catch { /* ignore */ }
+  const startReq = Math.max(1, Math.floor(Number(opts.startLine) || 1));
+  const endReq = Math.max(0, Math.floor(Number(opts.endLine) || 0));
+  const cacheKey = `${file}#${startReq}-${endReq}#${maxChars}`;
   if (runReadCache) {
-    const cached = runReadCache.get(file, mtime);
+    const cached = runReadCache.get(cacheKey, stat.mtimeMs);
     if (cached) return cached;
   }
 
-  let content = fs.readFileSync(file, "utf8");
-  const bytes = content.length;
-  if (content.length > maxChars) content = content.slice(0, maxChars) + "\n…[truncado]";
-  const result = { ok: true, path: rel, content, bytes };
-  if (runReadCache) {
-    runReadCache.set(file, result, mtime);
+  const full = fs.readFileSync(file, "utf8");
+  const lines = full === "" ? [] : full.split(/\r?\n/);
+  if (lines.length > 1 && lines[lines.length - 1] === "") lines.pop();
+  const totalLines = lines.length;
+  if (totalLines && startReq > totalLines) {
+    return { ok: false, path: rel, totalLines, error: `startLine ${startReq} fuera de rango: el archivo tiene ${totalLines} líneas.` };
   }
+  const lastWanted = endReq >= startReq ? Math.min(endReq, totalLines) : totalLines;
+  const out = [];
+  let used = 0;
+  let endLine = totalLines ? startReq - 1 : 0;
+  let lineCut = false;
+  for (let i = startReq; i <= lastWanted; i += 1) {
+    const line = lines[i - 1];
+    if (out.length && used + line.length + 1 > maxChars) break;
+    if (line.length > maxChars) { out.push(line.slice(0, maxChars)); lineCut = true; endLine = i; break; }
+    out.push(line);
+    used += line.length + 1;
+    endLine = i;
+  }
+
+  const startLine = totalLines ? startReq : 0;
+  const partial = startLine > 1 || endLine < totalLines || lineCut;
+  const result = { ok: true, path: rel, totalLines, startLine, endLine, bytes: stat.size, partial };
+  if (partial) {
+    const notes = [];
+    if (endLine < totalLines) {
+      notes.push(`Lectura parcial por límite de la herramienta: líneas ${startLine}-${endLine} de ${totalLines}. El archivo continúa; NO está truncado ni incompleto. Para seguir: read_file con startLine=${endLine + 1}.`);
+    } else {
+      notes.push(`Lectura de las líneas ${startLine}-${endLine} de ${totalLines}.`);
+    }
+    if (lineCut) notes.push(`La línea ${endLine} supera el límite y se muestra recortada (línea muy larga o archivo minificado).`);
+    result.note = notes.join(" ");
+  }
+  result.content = out.join("\n");
+  if (runReadCache) runReadCache.set(cacheKey, result, stat.mtimeMs);
   return result;
 }
 
@@ -146,10 +189,7 @@ function writeFile(root, rel, content) {
   const file = safe(root, rel);
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(file, String(content ?? ""), "utf8");
-  if (runReadCache?.map) {
-    const key = String(file || "").replace(/\\/g, "/").replace(/^\.\//, "").toLowerCase();
-    runReadCache.map.delete(key);
-  }
+  invalidateReadCache(file);
   let syntaxCheck = null;
   try {
     const { validateSyntax } = require("../runtime/syntax-validator");
@@ -275,10 +315,7 @@ function replaceInFile(root, rel, oldText, newText) {
 
   const snap = snapshotBeforeWrite(root, rel, "replace_in_file");
   fs.writeFileSync(file, next, "utf8");
-  if (runReadCache?.map) {
-    const key = String(file || "").replace(/\\/g, "/").replace(/^\.\//, "").toLowerCase();
-    runReadCache.map.delete(key);
-  }
+  invalidateReadCache(file);
   const out = {
     ok: true,
     path: rel,
@@ -764,7 +801,7 @@ function listSkills(root, helpers = {}, query = "") {
 // ============================================================
 const DEFINITIONS = [
   { type: "function", function: { name: "list_files", description: "Lista carpetas/archivos reales en disco. Usá path='..' para ver proyectos hermanos bajo el padre. forceReal=true fuerza listado real de '.' (ignora cache ROADMAP).", parameters: { type: "object", properties: { path: { type: "string" }, forceReal: { type: "boolean" } } } } },
-  { type: "function", function: { name: "read_file", description: "Lee archivo (truncado). Acepta rutas absolutas (D:\\...) o relativas al proyecto.", parameters: { type: "object", properties: { path: { type: "string" } }, required: ["path"] } } },
+  { type: "function", function: { name: "read_file", description: "Lee un archivo por rango de líneas. Devuelve totalLines, startLine y endLine; si partial=true el archivo CONTINÚA (no está truncado): pedí el resto con startLine. Acepta rutas absolutas (D:\\...) o relativas al proyecto.", parameters: { type: "object", properties: { path: { type: "string" }, startLine: { type: "integer", description: "Primera línea a leer (1 = inicio)." }, endLine: { type: "integer", description: "Última línea a leer (opcional)." } }, required: ["path"] } } },
   { type: "function", function: { name: "write_file", description: "Crea/sobrescribe archivo REAL en disco. Para proyecto hermano: '../NombreProyecto/archivo.ext'.", parameters: { type: "object", properties: { path: { type: "string" }, content: { type: "string" } }, required: ["path", "content"] } } },
   { type: "function", function: { name: "replace_in_file", description: "Parche quirúrgico: reemplaza oldText exacto por newText.", parameters: { type: "object", properties: { path: { type: "string" }, oldText: { type: "string" }, newText: { type: "string" } }, required: ["path", "oldText", "newText"] } } },
   { type: "function", function: { name: "search_files", description: "Busca texto en el repo.", parameters: { type: "object", properties: { query: { type: "string" } }, required: ["query"] } } },
@@ -950,7 +987,7 @@ async function execute(name, args, root, allowWrite, helpers = {}) {
       }
       return listed;
     }
-    case "read_file": return readFile(root, a.path);
+    case "read_file": return readFile(root, a.path, READ_FILE_TOOL_CAP, { startLine: a.startLine, endLine: a.endLine });
     case "search_files": return searchFiles(root, a.query || "");
     case "write_file":
       if (!allowWrite) return { ok: false, error: "Escritura no permitida" };
@@ -1163,6 +1200,7 @@ function resetToolStats() { _ecToolStats.clear(); _ecToolRateBuckets.clear(); }
 
 module.exports = {
   TOOL_RESULT_CAP,
+  READ_FILE_PAYLOAD_CAP,
   truncatePayload,
   listFiles,
   readFile,
