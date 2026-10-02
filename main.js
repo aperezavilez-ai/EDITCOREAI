@@ -20,17 +20,25 @@ if (ipcMain && typeof ipcMain.handle === "function") {
 let __editcoreBooting = true;
 let __editcoreBootErrorHandled = false;
 
+// El diálogo lo ve el usuario: sin rutas del sistema. El stack completo va a startup.log y a la consola.
+function maskBootErrorPaths(text) {
+  return String(text || "")
+    .replace(/(?:file:\/\/\/?)?(?:[A-Za-z]:|\\\\[^\\/\s]+)[\\/](?:[^\\/:*?"<>|()\r\n]+[\\/])*([^\\/:*?"<>|()\r\n]+)/g, "…\\$1")
+    .replace(/\/(?:Users|home|opt|usr|var|tmp|private|Applications|mnt|root|snap)\/(?:[^/:\s()"'<>]+\/)*([^/:\s()"'<>]+)/g, "…/$1");
+}
+
 process.on("uncaughtException", (error) => {
   console.error("[CRITICAL BOOT GUARD] Uncaught Exception:", error);
   if (__editcoreBooting && !__editcoreBootErrorHandled) {
     __editcoreBootErrorHandled = true;
     try {
       const errText = error?.stack || error?.message || String(error);
+      logStartup("[CRITICAL BOOT GUARD] Uncaught Exception", error);
       const { runRecovery } = require("./scripts/failsafe-recovery");
       const choice = dialog.showMessageBoxSync({
         type: "error",
         title: "EditCoreAI - Auto-Recuperación de Arranque",
-        message: "EditCoreAI detectó un error crítico durante el inicio:\n\n" + errText.slice(0, 400) + "\n\n¿Deseas auto-restaurar inmediatamente el último estado funcional verificado?",
+        message: "EditCoreAI detectó un error crítico durante el inicio:\n\n" + maskBootErrorPaths(errText).slice(0, 400) + "\n\n¿Deseas auto-restaurar inmediatamente el último estado funcional verificado?",
         buttons: ["Restaurar y Reabrir", "Cerrar"],
         defaultId: 0,
         cancelId: 1,
