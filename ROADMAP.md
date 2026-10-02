@@ -118,6 +118,7 @@ EditCore actualiza este archivo tras cambios. No pedirlo al usuario. No pegar co
 - **Versionado (2026-10-02)**: `package.json` es la fuente de verdad de la versión (`4.1.8`). El `buildVersion` de `electron-builder` (`4.1.8.0`) sigue el esquema Windows `MAJOR.MINOR.PATCH.BUILD`. `EDITCORE-MANIFEST.md` refleja la misma versión de producto.
 
 ## Cambios recientes (2026-10-02)
+- Release v4.1.8: `EDITCOREAI.exe` (4.1.8.0) y `release/EDITCOREAI-Setup.exe` reconstruidos; launcher C# a 4.1.8; publicado en GitHub Releases con ambos ejecutables.
 - `7db46f2` feat: modo forense determinista (4.1.8). Los análisis forenses no mostraban todos los errores reales:
   - `editcore-chat-kernel/forensic-checks.js` (nuevo): motor de chequeos reales, comparación antes/después y formatos markdown/prompt.
   - `editcore-chat-kernel/orchestrator.js`: ANALYZE corre el motor (a fondo con tests/typecheck/build), antepone la tabla verificada y separa hipótesis; VERIFY compara con el forense anterior; `appendBeforeAfter` re-verifica tras escribir; errores pendientes al prompt de ejecución.

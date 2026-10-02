@@ -1,3 +1,35 @@
+# RELEASE v4.1.8
+
+## Análisis forense real: errores verificados, verificador honesto y corrección con antes/después
+
+### Análisis que dicen la verdad (4.1.7–4.1.8)
+- Motor forense determinista (`editcore-chat-kernel/forensic-checks.js`): sintaxis (JS, ESM, JSON), imports y paquetes, marcadores de conflicto, variables de entorno (solo nombres), referencias rotas en documentación y `git status`. En modo a fondo ("forense", "errores", "bugs", "a fondo", "verifica") también `npm test`, typecheck y build.
+- El informe del chat antepone la tabla de chequeos reales con archivo, línea y evidencia; lo no comprobado va a "Hipótesis (no verificadas)".
+- Verificador honesto: nunca da OK sin ejecutar algo; si el proyecto no tiene tests lo dice.
+- Antes/después: tras cada corrección se re-corren los chequeos y se muestran resueltos, pendientes e introducidos.
+- La cola de correcciones de PROCEDE vuelve a generarse (require roto de `./fix-queue`).
+- Extractos con integridad real: líneas totales, bytes y sintaxis del archivo completo; `read_file` por rangos (`startLine`/`endLine`); ningún archivo completo se presenta como truncado.
+- El ROADMAP escrito a mano ya no se regenera desde la plantilla.
+
+### Chat, kernel y UI (4.1.1–4.1.6)
+- Cerebro RAG, `read_pdf`, `screenshot_page`, `docker_ps`; deploy/publish solo con confirmación.
+- Modo charla con herramientas de lectura; skills como contexto de sistema y skills de los repos del Cerebro.
+- Imágenes adjuntas llegan al modelo; agentes con fecha/hora y respaldo de modelos cuando falla una clave.
+- Red neuronal entre agentes, memoria semántica y métricas de tools/modelos.
+- Panel Web lista apps de escritorio (Tauri, Electron, NW.js) y proyectos HTML; la barra de estado muestra la versión real.
+- Launcher: runtime Electron desde el SSD y bloqueo de dobles clics.
+- Diálogo de error de arranque sin rutas internas (stack en `startup.log`).
+- Firewall GAFCORE para servicios locales y scripts sin anon key fija.
+
+### Build
+- `EDITCOREAI.exe` (4.1.8.0) y `release/EDITCOREAI-Setup.exe` (4.1.8).
+
+### Verificación
+- `npm run verify:prepackage`: gate 9/9; `npm test` 899 tests, 898 ok, 1 omitido, 0 fallos. `npm run check` OK.
+- Motor forense probado en EDITCOREAI (0 errores, 898 tests pasan), GAFCOREAI (0 errores, 107/107), TICKETIA (script de test sin tests) y CALILI (23 errores reales de typecheck).
+
+---
+
 # RELEASE v4.1.0
 
 ## Auditoría forense: agentes que analizan de verdad, seguridad y automatización
