@@ -6,7 +6,7 @@ EditCore actualiza este archivo tras cambios. No pedirlo al usuario. No pegar co
 
 ## Proceso
 - Fase: implementacion
-- Estado: Kernel reforzado (red neuronal, memoria semántica, métricas). Fase lista para nueva funcionalidad.
+- Estado: 4.1.6 — kernel reforzado (red neuronal, memoria semántica, métricas tools/modelos). Barra de estado muestra versión real; panel Web lista apps de escritorio (Tauri, Electron, NW.js) y proyectos HTML sin servidor.
 - Actualizado: 2026-10-02
 - Preview: desconocido — usa el preview del IDE, no inventes puertos
 
@@ -15,9 +15,9 @@ EditCore actualiza este archivo tras cambios. No pedirlo al usuario. No pegar co
 - preload.js — contextBridge (un bloque por namespace; espejo en resources/ui-overlay/preload.js)
 - renderer.js — UI del IDE
 - chat-home.js / chat-home.css — shell Chat Home
-- package.json — scripts de test, empaquetado Windows, deploy
+- package.json — scripts de test, empaquetado Windows, deploy; version 4.1.6
 - ARQUITECTURA-SISTEMA.md — arquitectura general
-- EDITCORE-MANIFEST.md — manifiesto del producto
+- EDITCORE-MANIFEST.md — manifiesto del producto (version producto 4.1.6)
 - AGENTS.md — reglas operativas del agente
 
 ### editcore-chat-kernel/
@@ -58,10 +58,15 @@ EditCore actualiza este archivo tras cambios. No pedirlo al usuario. No pegar co
 - credentials-vault-guard.js — protección de bóveda
 - session-state.js — estado de sesión
 - project-map.js — mapa cognitivo
+- embeddings.js — embeddings con fallback local determinista (NEW 2026-10-02)
+- vector-memory.js — vector store persistente en JSONL (NEW 2026-10-02)
+- cache-manager.js — cache read/write con TTL + LRU + métricas (NEW 2026-10-02)
+- rate-limiter.js — token bucket por clave (NEW 2026-10-02)
+- tracer.js — trazabilidad por sesión en JSONL (NEW 2026-10-02)
 
 ### Otros
 - resources/ui-overlay/ — copia empaquetada (mantener sincronizada)
-- test/ — suite de tests (unitarios + E2E)
+- test/ — suite de tests (870 tests, 869 pass, 1 skip, 0 fail)
 - brain-seed/ + brain-service.js + brain-memory-store.js — cerebro persistente del proyecto
 
 ## Archivos clave (no reexplorar)
@@ -97,38 +102,36 @@ EditCore actualiza este archivo tras cambios. No pedirlo al usuario. No pegar co
 - **replace_in_file conservador**: coincidencia exacta o tolerante solo a CRLF/espacios finales; si el parche rompe la sintaxis de un archivo válido, no se escribe.
 - **RAG con brain-seed**: el conocimiento persistente vive en `brain-seed/` y se accede vía `brain-service.js` + `brain-memory-store.js`.
 - **IPC como bus principal**: `runtime/chat-kernel-bridge.js` y `runtime/intent-orchestrator.js` comunican renderer ↔ main ↔ kernel.
-- **Skills como extensión**: las habilidades se cargan bajo demanda y no forman parte del core. Van al prompt de sistema (`skillsPrompt`), nunca dentro del mensaje del usuario: si no, el clasificador y la memoria del hilo ven el texto de la skill en vez del pedido.
+- **Skills como extensión**: las habilidades se cargan bajo demanda y no forman parte del core. Van al prompt de sistema (`skillsPrompt`), nunca dentro del mensaje del usuario.
 - **Modo charla con lectura**: CHAT tiene web_search/web_scrape, list_files/read_file/search_files, list_skills, list_brain y git_status/log/diff (hasta 6 pasos; el último sin tools para forzar respuesta). Nunca escribe ni ejecuta comandos.
 - **Acciones externas con confirmación**: `publish_project` y `deploy_one_click` nunca se ejecutan en el turno del modelo (aunque se autoapruebe por argumentos): el orquestador guarda la acción en `pendingExternal` (10 min, mismo proyecto) y solo la ejecuta si el siguiente mensaje del usuario es una aprobación; cualquier otro mensaje la cancela. Fuera del modo charla.
 - **Cerebro como contexto automático**: cada turno (salvo listados) busca en `.editcore/rag/` y añade al sistema hasta 3 fragmentos con puntuación ≥ 2; el modelo los cita como "según <título>". `search_brain` suma memoria y código del índice global (`brain-service.searchForAgent`).
 - **Red neuronal entre agentes (2026-10-02)**: `agent-network.js` enruta la tarea a explorer/analyst/implementer/verifier por similitud de embeddings y ajusta la confianza de cada agente con el feedback de éxito/fallo. Persistencia en `.editcore/agent-network.json`. Add-on opcional; si falta el módulo, el orquestador sigue funcionando igual.
 - **Memoria semántica (2026-10-02)**: `vector-memory.js` + `embeddings.js` (fallback local determinista). `memory.js` y `global-memory.js` indexan notas, archivos y soluciones de error en background sin bloquear el flujo del orquestador. Búsqueda con `searchSemantic()` y `promptBlockSemantic()`.
-- **Métricas de rendimiento (2026-10-02)**: `model-router.js` y `tools.js` registran latencia y éxito/fallo por modelo y por tool. Persistencia en `.editcore/model-router-stats.json` y en memoria del proceso. Consulta con `getModelStats()` / `getToolStats()`.
+- **Métricas de rendimiento (2026-10-02)**: `model-router.js` y `tools.js` registran latencia y éxito/fallo por modelo y por tool. Persistencia en `.editcore/model-router-stats.json`. Consulta con `getModelStats()` / `getToolStats()`.
 - **Mensajería dirigida entre agentes (2026-10-02)**: `agent-bus.js` expone `postMessage` / `readMessages` / `messagesPromptBlock` para comunicación explícita entre subagentes.
+- **Versionado (2026-10-02)**: `package.json` es la fuente de verdad de la versión (`4.1.6`). El `buildVersion` de `electron-builder` (`4.1.6.0`) sigue el esquema Windows `MAJOR.MINOR.PATCH.BUILD`. `EDITCORE-MANIFEST.md` refleja la misma versión de producto.
 
 ## Cambios recientes (2026-10-02)
-- `editcore-chat-kernel/orchestrator.js` (+47 líneas): integración de red neuronal (route + recordOutcome) + cierre sugerido al final de análisis. Cero eliminaciones.
-- `editcore-chat-kernel/tools.js` (+50 líneas): métricas de uso por tool + rate limiter. Cero eliminaciones.
-- `editcore-chat-kernel/memory.js` (+63 líneas): vector store opcional + indexado en background + searchSemantic + promptBlockSemantic. Cero eliminaciones.
-- `editcore-chat-kernel/agent-bus.js` (+60 líneas): mensajería dirigida (postMessage / readMessages / messagesPromptBlock). Cero eliminaciones.
-- `editcore-chat-kernel/global-memory.js` (+41 líneas): indexado vectorial de soluciones + searchSemantic + promptBlockSemantic. Cero eliminaciones.
-- `editcore-chat-kernel/model-router.js` (+108 líneas): tracking de rendimiento por modelo + pickModelWithStats + recordModelOutcome + getModelStats. Cero eliminaciones.
-- Archivos NUEVOS (aún sin commitear): `editcore-chat-kernel/agent-network.js`, `editcore-chat-kernel/subagents/coordinator.js`, `runtime/embeddings.js`, `runtime/vector-memory.js`, `runtime/cache-manager.js`, `runtime/rate-limiter.js`.
-
-## Cambios previos
-- Versión visible 4.1.5 (2026-10-01): la barra de estado siempre decía "EditCore v4.1.0" (texto fijo de index.html) porque `initAppStatusBar` corría antes de que el navegador creara la barra (renderer.js se carga en la línea 1235 de index.html y la barra está en la 1255). Ahora espera a DOMContentLoaded y el HTML ya no lleva número de versión (renderer.js + index.html, también en overlay).
-- Preview 4.1.4 (2026-10-01): GAFCOREAI (Tauri) mostraba "El servidor del proyecto no publicó una página disponible" porque se ejecutaba `tauri dev` (compila Rust y abre ventana propia). main.js (+overlay) `startDesktopPreview` muestra la interfaz de Tauri/Electron/NW.js y de proyectos HTML sin package.json. `static-preview-server.js` (+overlay): entrada configurable (con `<base>` si está en subcarpeta), no sirve `.env`/`.git`/`node_modules`, MIME de `.mjs`/`.wasm`/fuentes. Barra de estado del renderer (+overlay) avisa que las funciones nativas solo responden en escritorio.
+- `7f47aaa` chore: bump version 4.1.5 → 4.1.6 (package.json + EDITCORE-MANIFEST.md).
+- `12e1799` chore: ignorar backups main.js.bak-* (limpieza).
+- `4006c66` chore: ignorar runtime/workspace-siblings* (copia personal).
+- `43b0106` kernel: add-ons (red neuronal, embeddings, vector memory, cache, rate limiter) — 6 archivos nuevos, +543 líneas.
+- `25b3cc4` kernel: red neuronal, memoria semántica, métricas tools/modelos, ROADMAP sync — 6 archivos modificados, +369 líneas, 0 eliminaciones.
+- `1437b3a` fix(ui): la barra de estado muestra la version real (4.1.5).
+- `ba48c40` fix(preview): mostrar apps de escritorio (Tauri, Electron, NW.js) y proyectos HTML en el panel Web (4.1.4).
 
 ## Verificado (2026-10-02)
 - Los 6 archivos del kernel cargan sin errores (`node -e "require('./editcore-chat-kernel/X')"` → OK en todos).
-- `git diff --stat` confirma 369 inserciones, 0 eliminaciones en los 6 archivos.
+- `git diff --stat` confirmó 369 inserciones, 0 eliminaciones en los 6 archivos modificados.
 - Chat responde: charla simple, listado de directorios, análisis de proyecto.
 - Análisis produjo 28 archivos leídos y reporte completo con estructura obligatoria + cierre sugerido.
+- Suite de tests: `npm test` → 870 tests, 869 pass, 1 skip, 0 fail, ~24s.
 
 ## Siguiente
-- Commit de los 6 archivos del kernel + decisión sobre los 6 archivos NUEVOS (agent-network, coordinator, embeddings, vector-memory, cache-manager, rate-limiter): commitear como parte del plan o dejar sin trackear.
-- Evaluar los 7 hallazgos del análisis (main.js stack en UI, adaptive-budget emergency, llm-loop fallback silencioso, preload.js edge case, executor mixto, @xenova/transformers peso) uno por vez con el protocolo "muéstrame antes de aplicar".
 - Renovar claves de ME AI (401) y revisar cupo de APICredits (502/503) para restaurar proveedores.
+- Revisar `.vercel/project.json` de EDITCOREAI WEB (apunta a proyecto inexistente).
+- Evaluar hallazgos del análisis (bajo riesgo, mejoras de calidad): main.js stack en UI, adaptive-budget emergency, llm-loop fallback silencioso, preload.js edge case, executor mixto, @xenova/transformers peso.
 
 ## Regla anti-reexploracion
 - Si el pedido del usuario apunta a un archivo ya listado arriba: ve DIRECTO a read_file/replace_in_file de ese path.
