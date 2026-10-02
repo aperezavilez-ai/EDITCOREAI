@@ -140,6 +140,13 @@ test("GATE: main.js no carga al arrancar archivos que el empaquetado excluye", (
   assert.deepEqual(offenders, []);
 });
 
+test("GATE: el empaquetado excluye secretos y configuración local", () => {
+  const files = require("../package.json").build?.files || [];
+  for (const pattern of ["!.env*", "!**/.env.local", "!.claude/**"]) {
+    assert.ok(files.includes(pattern), `falta ${pattern} en build.files`);
+  }
+});
+
 test("GATE: version semver con segmentos de maximo 2 digitos", () => {
   const pkg = require("../package.json");
   assert.match(pkg.version, /^\d{1,2}\.\d{1,2}\.\d{1,2}$/);
