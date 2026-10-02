@@ -52,7 +52,7 @@
     },
     {
       "src": "/download",
-      "dest": "https://github.com/aperezavilez-ai/EDITCOREAI/releases/download/v3.0.2/EDITCOREAI-Setup.exe"
+      "dest": "https://github.com/aperezavilez-ai/EDITCOREAI/releases/latest/download/EDITCOREAI-Setup.exe"
     },
     {
       "handle": "filesystem"
@@ -80,7 +80,7 @@
     },
     {
       "source": "/download",
-      "destination": "https://github.com/aperezavilez-ai/EDITCOREAI/releases/download/v3.0.2/EDITCOREAI-Setup.exe"
+      "destination": "https://github.com/aperezavilez-ai/EDITCOREAI/releases/latest/download/EDITCOREAI-Setup.exe"
     }
   ]
 }
