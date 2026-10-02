@@ -6,7 +6,7 @@ EditCore actualiza este archivo tras cambios. No pedirlo al usuario. No pegar co
 
 ## Proceso
 - Fase: implementacion
-- Estado: 4.1.7 — análisis veraz: los extractos declaran líneas totales, bytes y sintaxis real; read_file lee por rangos; el ROADMAP escrito a mano ya no se regenera desde plantilla.
+- Estado: 4.1.8 — modo forense real: cada análisis corre chequeos deterministas (sintaxis, imports, conflictos, env, referencias, git; en modo a fondo también tests, typecheck y build) y separa errores VERIFICADOS de hipótesis; el verificador nunca da OK sin comprobar; cada corrección se re-verifica antes/después.
 - Actualizado: 2026-10-02
 - Preview: desconocido — usa el preview del IDE, no inventes puertos
 
@@ -15,9 +15,9 @@ EditCore actualiza este archivo tras cambios. No pedirlo al usuario. No pegar co
 - preload.js — contextBridge (un bloque por namespace; espejo en resources/ui-overlay/preload.js)
 - renderer.js — UI del IDE
 - chat-home.js / chat-home.css — shell Chat Home
-- package.json — scripts de test, empaquetado Windows, deploy; version 4.1.7
+- package.json — scripts de test, empaquetado Windows, deploy; version 4.1.8
 - ARQUITECTURA-SISTEMA.md — arquitectura general
-- EDITCORE-MANIFEST.md — manifiesto del producto (version producto 4.1.7)
+- EDITCORE-MANIFEST.md — manifiesto del producto (version producto 4.1.8)
 - AGENTS.md — reglas operativas del agente
 
 ### editcore-chat-kernel/
@@ -100,6 +100,10 @@ EditCore actualiza este archivo tras cambios. No pedirlo al usuario. No pegar co
 - **Análisis siempre con tools**: pedidos de análisis/auditoría/informe se clasifican ANALYZE (lectura de disco, sin escritura); un análisis sin lecturas exitosas se marca como no verificado.
 - **Análisis veraz (2026-10-02)**: cada extracto que el analista entrega al modelo lleva encabezado con líneas totales, bytes, rango mostrado y chequeo de sintaxis real (JS vía `vm.Script`, JSON vía `JSON.parse`). Un corte por presupuesto nunca se presenta como archivo truncado; lo no comprobado se reporta como "no verificado". `read_file` acepta `startLine`/`endLine` y devuelve `totalLines`/`endLine`/`partial`.
 - **ROADMAP curado (2026-10-02)**: si el ROADMAP tiene contenido que la plantilla no reproduce (subsecciones `###`, viñetas anidadas, secciones propias), EditCore no lo regenera: un análisis de solo lectura no lo toca y un cambio real solo actualiza `Actualizado`, `Tarea activa` y líneas `[EditCore]` en `Cambios recientes` (máx. 10).
+- **Modo forense determinista (2026-10-02)**: `editcore-chat-kernel/forensic-checks.js` ejecuta chequeos reales y devuelve hallazgos con archivo, línea y evidencia: sintaxis (JS `vm.Script`, ESM `node --check`, JSON), imports relativos y paquetes (lexer que ignora strings/comentarios; `require` en try/catch = opcional, dentro de función = perezoso → aviso), marcadores de conflicto, variables de entorno (solo nombres, nunca valores), referencias en docs, `git status`, y con pedido a fondo (`forense`, `errores`, `bugs`, `a fondo`, `verifica`…) typecheck (`npm run typecheck` o `tsc --noEmit`), `npm test` (node:test, jest, vitest, mocha) y build si se pide. Excluye node_modules, dist, build, fixtures, dot-dirs, overlay, carpetas de respaldo (`_backups`, `*.bak`…) y lo configurado en `package.json` → `editcoreForensic.skip` o `.editcore/forensic.json`. Resultado en `.editcore/forensic-last.json` (anterior en `forensic-prev.json`).
+- **Errores verificados vs hipótesis (2026-10-02)**: la tabla de chequeos reales se antepone al informe del modelo; el modelo solo prioriza y explica causas de lo verificado y todo lo demás va a "Hipótesis (no verificadas)".
+- **Verificador honesto (2026-10-02)**: sin comando ligero, `editcore-chat-kernel/subagents/verifier.js` corre el motor forense (sintaxis + imports + tests) en vez de dar OK por omisión; `ok` solo si algo se ejecutó y pasó. Si el proyecto no tiene tests lo dice.
+- **Antes/después (2026-10-02)**: tras escribir archivos, si había errores verificados se re-corren los mismos chequeos y se muestra resueltos / pendientes / introducidos; si no, se revisan solo los archivos escritos y se avisa únicamente si se introdujo un error. Los errores pendientes se inyectan al prompt de ejecución.
 - **replace_in_file conservador**: coincidencia exacta o tolerante solo a CRLF/espacios finales; si el parche rompe la sintaxis de un archivo válido, no se escribe.
 - **RAG con brain-seed**: el conocimiento persistente vive en `brain-seed/` y se accede vía `brain-service.js` + `brain-memory-store.js`.
 - **IPC como bus principal**: `runtime/chat-kernel-bridge.js` y `runtime/intent-orchestrator.js` comunican renderer ↔ main ↔ kernel.
@@ -111,11 +115,18 @@ EditCore actualiza este archivo tras cambios. No pedirlo al usuario. No pegar co
 - **Memoria semántica (2026-10-02)**: `vector-memory.js` + `embeddings.js` (fallback local determinista). `memory.js` y `global-memory.js` indexan notas, archivos y soluciones de error en background sin bloquear el flujo del orquestador. Búsqueda con `searchSemantic()` y `promptBlockSemantic()`.
 - **Métricas de rendimiento (2026-10-02)**: `model-router.js` y `tools.js` registran latencia y éxito/fallo por modelo y por tool. Persistencia en `.editcore/model-router-stats.json`. Consulta con `getModelStats()` / `getToolStats()`.
 - **Mensajería dirigida entre agentes (2026-10-02)**: `agent-bus.js` expone `postMessage` / `readMessages` / `messagesPromptBlock` para comunicación explícita entre subagentes.
-- **Versionado (2026-10-02)**: `package.json` es la fuente de verdad de la versión (`4.1.7`). El `buildVersion` de `electron-builder` (`4.1.7.0`) sigue el esquema Windows `MAJOR.MINOR.PATCH.BUILD`. `EDITCORE-MANIFEST.md` refleja la misma versión de producto.
+- **Versionado (2026-10-02)**: `package.json` es la fuente de verdad de la versión (`4.1.8`). El `buildVersion` de `electron-builder` (`4.1.8.0`) sigue el esquema Windows `MAJOR.MINOR.PATCH.BUILD`. `EDITCORE-MANIFEST.md` refleja la misma versión de producto.
 
 ## Cambios recientes (2026-10-02)
+- `7db46f2` feat: modo forense determinista (4.1.8). Los análisis forenses no mostraban todos los errores reales:
+  - `editcore-chat-kernel/forensic-checks.js` (nuevo): motor de chequeos reales, comparación antes/después y formatos markdown/prompt.
+  - `editcore-chat-kernel/orchestrator.js`: ANALYZE corre el motor (a fondo con tests/typecheck/build), antepone la tabla verificada y separa hipótesis; VERIFY compara con el forense anterior; `appendBeforeAfter` re-verifica tras escribir; errores pendientes al prompt de ejecución.
+  - `editcore-chat-kernel/subagents/verifier.js`: nunca OK sin verificar.
+  - `brain-seed/ecosystem-memory.json`: era JSON inválido (claves sin comillas); lo detectó el propio motor.
+  - `test/forensic-checks.test.js`: 12 tests nuevos.
+- `e94fba8` fix: `runtime/project-analysis.js` (+overlay) requería `./fix-queue` con ruta rota; la cola de correcciones nunca se generaba.
 - `f331a8f` fix: analizador veraz (4.1.7). El analizador del chat reportaba como "truncados" archivos completos y "sin tests" un proyecto con 877 tests:
-  - `subagents/analyst.js`: encabezado de integridad por extracto, línea de tests desde package.json ("no ejecutado en este análisis") y reglas de evidencia. Además nunca leía `package.json` (regex de configs exigía extensión extra).
+  - `editcore-chat-kernel/subagents/analyst.js`: encabezado de integridad por extracto, línea de tests desde package.json ("no ejecutado en este análisis") y reglas de evidencia. Además nunca leía `package.json` (regex de configs exigía extensión extra).
   - `tools.js`: `read_file` por rangos de línea, sin marcador "[truncado]"; caché por rango; el recorte de payload aclara que no es un problema del archivo.
   - `orchestrator.js`: reglas de evidencia en el prompt de análisis; caché de lecturas por rango; el ROADMAP registra el texto literal del usuario (antes guardaba el mensaje interno con la evidencia).
   - `runtime/project-roadmap.js` (+overlay): ROADMAP curado preservado (lectura completa sin tope de 8000, parser que no corta en `###`, parche por líneas).
@@ -140,12 +151,13 @@ EditCore actualiza este archivo tras cambios. No pedirlo al usuario. No pegar co
 - `git diff --stat` confirmó 369 inserciones, 0 eliminaciones en los 6 archivos modificados.
 - Chat responde: charla simple, listado de directorios, análisis de proyecto.
 - Análisis produjo 28 archivos leídos y reporte completo con estructura obligatoria + cierre sugerido.
-- Suite de tests: `npm test` → 887 tests, 886 pass, 1 skip, 0 fail con `test/analyzer-truthful.test.js` (10 nuevos). `npm run check` OK.
+- Suite de tests: `npm test` → 899 tests, 898 pass, 1 skip, 0 fail con `test/forensic-checks.test.js` (12 nuevos). `npm run check` OK.
+- Motor forense en proyectos reales: EDITCOREAI 0 errores / 11 avisos (898 tests pasan); GAFCOREAI 0 errores (107/107 tests); TICKETIA: script `test` de jest sin ningún test; CALILI: typecheck falla con 23 errores reales (mayoría TS2307 por alias `@/…` sin resolver) + aviso `GPT_MODEL` sin definir.
 - Analista sobre EDITCOREAI: main.js, adaptive-budget, agent-memory, composer-engine y deploy-bridge salen "sintaxis JS OK (archivo completo)" con su rango real; ningún "[truncado]"; package.json leído con su script `test`.
 
 ## Siguiente
 - Renovar claves de ME AI (401) y revisar cupo de APICredits (502/503) para restaurar proveedores.
-- Revisar `.vercel/project.json` de EDITCOREAI WEB (apunta a proyecto inexistente).
+- Revisar el `project.json` de Vercel en EDITCOREAI WEB (apunta a proyecto inexistente).
 - AGENTS.md cita archivos inexistentes (`runtime/service-harness.js`, `.claude/memory/orchestrator-consolidation.md`); `recordGitPush`/`recordVercelDeploy`/`recordSupabaseMigration`/`recordIssue` de roadmap-sync.js no tienen llamadas. Corregir referencias y decidir si conectarlos.
 - Decidir si subir `maxToolResultChars` de emergency (1200) en runtime/adaptive-budget.js; actualizar o retirar los 7 tests desactualizados de `agent-core/test`.
 
