@@ -6,7 +6,7 @@ EditCore actualiza este archivo tras cambios. No pedirlo al usuario. No pegar co
 
 ## Proceso
 - Fase: implementacion
-- Estado: 4.1.6 — kernel reforzado (red neuronal, memoria semántica, métricas tools/modelos). Barra de estado muestra versión real; panel Web lista apps de escritorio (Tauri, Electron, NW.js) y proyectos HTML sin servidor.
+- Estado: 4.1.7 — análisis veraz: los extractos declaran líneas totales, bytes y sintaxis real; read_file lee por rangos; el ROADMAP escrito a mano ya no se regenera desde plantilla.
 - Actualizado: 2026-10-02
 - Preview: desconocido — usa el preview del IDE, no inventes puertos
 
@@ -15,9 +15,9 @@ EditCore actualiza este archivo tras cambios. No pedirlo al usuario. No pegar co
 - preload.js — contextBridge (un bloque por namespace; espejo en resources/ui-overlay/preload.js)
 - renderer.js — UI del IDE
 - chat-home.js / chat-home.css — shell Chat Home
-- package.json — scripts de test, empaquetado Windows, deploy; version 4.1.6
+- package.json — scripts de test, empaquetado Windows, deploy; version 4.1.7
 - ARQUITECTURA-SISTEMA.md — arquitectura general
-- EDITCORE-MANIFEST.md — manifiesto del producto (version producto 4.1.6)
+- EDITCORE-MANIFEST.md — manifiesto del producto (version producto 4.1.7)
 - AGENTS.md — reglas operativas del agente
 
 ### editcore-chat-kernel/
@@ -88,7 +88,6 @@ EditCore actualiza este archivo tras cambios. No pedirlo al usuario. No pegar co
 - runtime/roadmap-sync.js
 
 ## Tarea activa
-- ALCANCE: FOCALIZADO — responde SOLO a lo pedido.
 - Sin tarea en curso.
 
 ## Bloqueos / bugs conocidos
@@ -99,6 +98,8 @@ EditCore actualiza este archivo tras cambios. No pedirlo al usuario. No pegar co
 - **Electron + contextBridge**: se usa `contextBridge.exposeInMainWorld` en `preload.js` para aislar el renderer del acceso directo a Node. Cada namespace se expone una sola vez (duplicar lanza y corta el preload).
 - **Kernel de chat como capa separada**: `editcore-chat-kernel/orchestrator.js` maneja la lógica de conversación, intenciones y RAG. Motivo: separación de responsabilidades entre UI (renderer) y lógica de agente.
 - **Análisis siempre con tools**: pedidos de análisis/auditoría/informe se clasifican ANALYZE (lectura de disco, sin escritura); un análisis sin lecturas exitosas se marca como no verificado.
+- **Análisis veraz (2026-10-02)**: cada extracto que el analista entrega al modelo lleva encabezado con líneas totales, bytes, rango mostrado y chequeo de sintaxis real (JS vía `vm.Script`, JSON vía `JSON.parse`). Un corte por presupuesto nunca se presenta como archivo truncado; lo no comprobado se reporta como "no verificado". `read_file` acepta `startLine`/`endLine` y devuelve `totalLines`/`endLine`/`partial`.
+- **ROADMAP curado (2026-10-02)**: si el ROADMAP tiene contenido que la plantilla no reproduce (subsecciones `###`, viñetas anidadas, secciones propias), EditCore no lo regenera: un análisis de solo lectura no lo toca y un cambio real solo actualiza `Actualizado`, `Tarea activa` y líneas `[EditCore]` en `Cambios recientes` (máx. 10).
 - **replace_in_file conservador**: coincidencia exacta o tolerante solo a CRLF/espacios finales; si el parche rompe la sintaxis de un archivo válido, no se escribe.
 - **RAG con brain-seed**: el conocimiento persistente vive en `brain-seed/` y se accede vía `brain-service.js` + `brain-memory-store.js`.
 - **IPC como bus principal**: `runtime/chat-kernel-bridge.js` y `runtime/intent-orchestrator.js` comunican renderer ↔ main ↔ kernel.
@@ -110,9 +111,14 @@ EditCore actualiza este archivo tras cambios. No pedirlo al usuario. No pegar co
 - **Memoria semántica (2026-10-02)**: `vector-memory.js` + `embeddings.js` (fallback local determinista). `memory.js` y `global-memory.js` indexan notas, archivos y soluciones de error en background sin bloquear el flujo del orquestador. Búsqueda con `searchSemantic()` y `promptBlockSemantic()`.
 - **Métricas de rendimiento (2026-10-02)**: `model-router.js` y `tools.js` registran latencia y éxito/fallo por modelo y por tool. Persistencia en `.editcore/model-router-stats.json`. Consulta con `getModelStats()` / `getToolStats()`.
 - **Mensajería dirigida entre agentes (2026-10-02)**: `agent-bus.js` expone `postMessage` / `readMessages` / `messagesPromptBlock` para comunicación explícita entre subagentes.
-- **Versionado (2026-10-02)**: `package.json` es la fuente de verdad de la versión (`4.1.6`). El `buildVersion` de `electron-builder` (`4.1.6.0`) sigue el esquema Windows `MAJOR.MINOR.PATCH.BUILD`. `EDITCORE-MANIFEST.md` refleja la misma versión de producto.
+- **Versionado (2026-10-02)**: `package.json` es la fuente de verdad de la versión (`4.1.7`). El `buildVersion` de `electron-builder` (`4.1.7.0`) sigue el esquema Windows `MAJOR.MINOR.PATCH.BUILD`. `EDITCORE-MANIFEST.md` refleja la misma versión de producto.
 
 ## Cambios recientes (2026-10-02)
+- `f331a8f` fix: analizador veraz (4.1.7). El analizador del chat reportaba como "truncados" archivos completos y "sin tests" un proyecto con 877 tests:
+  - `subagents/analyst.js`: encabezado de integridad por extracto, línea de tests desde package.json ("no ejecutado en este análisis") y reglas de evidencia. Además nunca leía `package.json` (regex de configs exigía extensión extra).
+  - `tools.js`: `read_file` por rangos de línea, sin marcador "[truncado]"; caché por rango; el recorte de payload aclara que no es un problema del archivo.
+  - `orchestrator.js`: reglas de evidencia en el prompt de análisis; caché de lecturas por rango; el ROADMAP registra el texto literal del usuario (antes guardaba el mensaje interno con la evidencia).
+  - `runtime/project-roadmap.js` (+overlay): ROADMAP curado preservado (lectura completa sin tope de 8000, parser que no corta en `###`, parche por líneas).
 - Hallazgos del análisis técnico (cada uno con commit de respaldo previo):
   - `c53620e` fix #1: el diálogo de error de arranque enmascara rutas del sistema (`…\archivo.js:línea`) y el stack completo va a `startup.log` (main.js +overlay).
   - `3af2ccf` fix #2: agent-core avisa al modelo (prompt de sistema) y en `result.warnings` cuando no cargan las tools extendidas.
@@ -134,11 +140,13 @@ EditCore actualiza este archivo tras cambios. No pedirlo al usuario. No pegar co
 - `git diff --stat` confirmó 369 inserciones, 0 eliminaciones en los 6 archivos modificados.
 - Chat responde: charla simple, listado de directorios, análisis de proyecto.
 - Análisis produjo 28 archivos leídos y reporte completo con estructura obligatoria + cierre sugerido.
-- Suite de tests: `npm test` → 877 tests, 876 pass, 1 skip, 0 fail tras los hallazgos (`test/agent-core-extended-tools.test.js`, `test/agent-core-executor.test.js` nuevos). Arranque aislado OK ("EditCore v4.1.6").
+- Suite de tests: `npm test` → 887 tests, 886 pass, 1 skip, 0 fail con `test/analyzer-truthful.test.js` (10 nuevos). `npm run check` OK.
+- Analista sobre EDITCOREAI: main.js, adaptive-budget, agent-memory, composer-engine y deploy-bridge salen "sintaxis JS OK (archivo completo)" con su rango real; ningún "[truncado]"; package.json leído con su script `test`.
 
 ## Siguiente
 - Renovar claves de ME AI (401) y revisar cupo de APICredits (502/503) para restaurar proveedores.
 - Revisar `.vercel/project.json` de EDITCOREAI WEB (apunta a proyecto inexistente).
+- AGENTS.md cita archivos inexistentes (`runtime/service-harness.js`, `.claude/memory/orchestrator-consolidation.md`); `recordGitPush`/`recordVercelDeploy`/`recordSupabaseMigration`/`recordIssue` de roadmap-sync.js no tienen llamadas. Corregir referencias y decidir si conectarlos.
 - Decidir si subir `maxToolResultChars` de emergency (1200) en runtime/adaptive-budget.js; actualizar o retirar los 7 tests desactualizados de `agent-core/test`.
 
 ## Regla anti-reexploracion
