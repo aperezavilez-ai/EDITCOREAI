@@ -18,7 +18,7 @@
         { "key": "X-Content-Type-Options", "value": "nosniff" },
         { "key": "X-Frame-Options", "value": "DENY" },
         { "key": "X-XSS-Protection", "value": "1; mode=block" },
-        { "key": "Cache-Control", "value": "public, max-age=120, s-maxage=86400, stale-while-revalidate=604800" }
+        { "key": "Cache-Control", "value": "public, max-age=0, must-revalidate" }
       ]
     }
   ],
@@ -27,7 +27,7 @@
     { "src": "/api/create-checkout", "dest": "/web-portal/api/create-checkout.js" },
     { "src": "/api/webhook-stripe", "dest": "/web-portal/api/webhook-stripe.js" },
     { "src": "/api/webhook-mercadopago", "dest": "/web-portal/api/webhook-mercadopago.js" },
-    { "src": "/download", "dest": "https://github.com/aperezavilez-ai/EDITCOREAI/releases/latest/download/EDITCOREAI.exe", "status": 302 },
+    { "src": "/(download|descargar)", "dest": "https://github.com/aperezavilez-ai/EDITCOREAI/releases/latest/download/EDITCOREAI-Setup.exe", "status": 302, "headers": { "Location": "https://github.com/aperezavilez-ai/EDITCOREAI/releases/latest/download/EDITCOREAI-Setup.exe", "Cache-Control": "no-store" } },
     { "handle": "filesystem" },
     { "src": "/(.*)", "dest": "/web-portal/index.html" }
   ]

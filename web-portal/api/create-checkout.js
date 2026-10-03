@@ -1,4 +1,4 @@
-﻿// Serverless Function: POST /api/create-checkout
+// Serverless Function: POST /api/create-checkout
 module.exports = async (req, res) => {
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed" });

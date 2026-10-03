@@ -11,14 +11,21 @@ const MODEL_CREDIT_COST = {
   "claude-haiku-3-5":   0.2,
   "deepseek-v4-pro":    0.3,
   "deepseek-chat":      0.3,
+  "qwen3.6-plus":       0.3,
+  "glm-5":              0.4,
+  "kimi-k2.6":          0.4,
   "gemini-2.5-flash":   0.4,
   "gemini-flash":       0.4,
   "grok-4.5":           0.8,
+  "claude-sonnet-4.6":  1.0,
   "claude-sonnet-4-6":  1.0,
   "claude-sonnet-3-7":  1.0,
   "gpt-5.6-luna":       1.5,
+  "gpt-5.6-sol":        1.5,
+  "gpt-5.6-terra":      1.5,
   "gpt-4o":             1.5,
   "claude-fable-5":     2.0,
+  "claude-opus-4.8":    3.0,
   "claude-opus-4-8":    3.0,
   "claude-opus-4":      3.0,
 };
@@ -49,25 +56,8 @@ async function getUserProfile(userId) {
   return data && data.length > 0 ? data[0] : null;
 }
 
-// ─── Descontar créditos y registrar en ledger ──────────────────────────────────
+// ─── Descontar créditos del usuario y registrar en ledger ───────────────────────
 async function deductCredits(userId, creditsToDeduct, model, tokensIn, tokensOut, description) {
-  // Descontar del balance
-  await supabaseRequest(`/profiles?id=eq.${userId}`, "PATCH", {
-    credits_balance: null, // se maneja con RPC
-  });
-
-  // Usar RPC para decrement atómico seguro
-  const rpcBody = {
-    user_id: userId,
-    amount: creditsToDeduct,
-    tx_type: "usage_ai",
-    model_name: model,
-    t_in: tokensIn,
-    t_out: tokensOut,
-    desc_text: description,
-  };
-
-  // Fallback: PATCH directo si no hay RPC configurada
   const profile = await getUserProfile(userId);
   if (profile) {
     const newBalance = Math.max(0, (profile.credits_balance || 0) - creditsToDeduct);
@@ -88,6 +78,35 @@ async function deductCredits(userId, creditsToDeduct, model, tokensIn, tokensOut
     description: description || `Uso de ${model} (${tokensIn + tokensOut} tokens)`,
     created_at: new Date().toISOString(),
   });
+}
+
+// ─── Descontar del Fondo Maestro ($8,000 USD / Tokens Globales) ───────────────
+async function deductMasterLedger(tokensIn, tokensOut, model) {
+  try {
+    const totalTokens = (tokensIn || 0) + (tokensOut || 0);
+    // Costo estimado en USD por millón según modelo
+    let costPer1M = 3.0;
+    const m = String(model || "").toLowerCase();
+    if (m.includes("haiku") || m.includes("flash")) costPer1M = 0.8;
+    else if (m.includes("deepseek")) costPer1M = 0.3;
+    else if (m.includes("opus")) costPer1M = 15.0;
+
+    const costUsd = (totalTokens / 1_000_000) * costPer1M;
+
+    const rows = await supabaseRequest("/master_ledger?select=*&limit=1");
+    if (rows && rows.length > 0) {
+      const row = rows[0];
+      const newConsUsd = Number(row.consumed_usd || 0) + Number(costUsd);
+      const newConsTok = Number(row.consumed_tokens || 0) + Number(totalTokens);
+      await supabaseRequest(`/master_ledger?id=eq.${row.id}`, "PATCH", {
+        consumed_usd: newConsUsd,
+        consumed_tokens: newConsTok,
+        updated_at: new Date().toISOString(),
+      });
+    }
+  } catch (err) {
+    console.error("[MasterLedger Deduct Error]", err);
+  }
 }
 
 // ─── Calcular créditos a cobrar ────────────────────────────────────────────────
@@ -151,6 +170,8 @@ module.exports = async (req, res) => {
       );
       currentBalance -= creditsUsed;
     }
+    // Descontar siempre del Fondo Maestro
+    await deductMasterLedger(demoUsage.prompt_tokens, demoUsage.completion_tokens, model);
 
     return res.status(200).json({
       ok: true,
@@ -195,6 +216,9 @@ module.exports = async (req, res) => {
       await deductCredits(userId, creditsUsed, model, tokensIn, tokensOut, `${model} — ${messages.length} mensajes`);
       newBalance = Math.max(0, currentBalance - creditsUsed);
     }
+
+    // Descontar simultáneamente del Fondo Maestro global ($8,000 USD / tokens)
+    await deductMasterLedger(tokensIn, tokensOut, model);
 
     // ── 5. Responder con metadata de créditos ─────────────────────────────────
     return res.status(200).json({

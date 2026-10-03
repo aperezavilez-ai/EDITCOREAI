@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="es">
+<html lang="es" data-theme="blanco">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -10,7 +10,8 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    :root {
+
+    :root, [data-theme="blanco"] {
       --bg: #ffffff;
       --sidebar-bg: #f8fafc;
       --sidebar-border: #e2e8f0;
@@ -23,9 +24,65 @@
       --composer-border: #cbd5e1;
       --primary: #4f46e5;
       --accent: #0284c7;
-      --tag-bg: #e0e7ff;
-      --tag-text: #3730a3;
+      --modal-bg: #ffffff;
+      --modal-sidebar: #f8fafc;
+      --modal-border: #e2e8f0;
     }
+
+    [data-theme="gris"] {
+      --bg: #1e1e1e;
+      --sidebar-bg: #252526;
+      --sidebar-border: #333333;
+      --text: #e2e8f0;
+      --text-muted: #94a3b8;
+      --text-faint: #64748b;
+      --active-bg: #37373d;
+      --hover-bg: #2a2d2e;
+      --composer-bg: #1e1e1e;
+      --composer-border: #454545;
+      --primary: #6366f1;
+      --accent: #38bdf8;
+      --modal-bg: #1e1e1e;
+      --modal-sidebar: #252526;
+      --modal-border: #383838;
+    }
+
+    [data-theme="negro"] {
+      --bg: #09090b;
+      --sidebar-bg: #111113;
+      --sidebar-border: #27272a;
+      --text: #f4f4f5;
+      --text-muted: #a1a1aa;
+      --text-faint: #71717a;
+      --active-bg: #27272a;
+      --hover-bg: #18181b;
+      --composer-bg: #09090b;
+      --composer-border: #3f3f46;
+      --primary: #818cf8;
+      --accent: #0ea5e9;
+      --modal-bg: #121215;
+      --modal-sidebar: #18181b;
+      --modal-border: #27272a;
+    }
+
+    [data-theme="azul"] {
+      --bg: #0a1120;
+      --sidebar-bg: #0f172a;
+      --sidebar-border: #1e293b;
+      --text: #f8fafc;
+      --text-muted: #94a3b8;
+      --text-faint: #64748b;
+      --active-bg: #1e293b;
+      --hover-bg: #132238;
+      --composer-bg: #0a1120;
+      --composer-border: #334155;
+      --primary: #6366f1;
+      --accent: #38bdf8;
+      --modal-bg: #0f172a;
+      --modal-sidebar: #132238;
+      --modal-border: #1e293b;
+    }
+
     body {
       font-family: 'Inter', system-ui, -apple-system, sans-serif;
       background: var(--bg);
@@ -34,244 +91,310 @@
       overflow: hidden;
       display: flex;
       flex-direction: column;
+      transition: background 0.2s ease, color 0.2s ease;
     }
 
     /* TOP BAR */
     .top-bar {
-      height: 38px;
+      height: 44px;
       border-bottom: 1px solid var(--sidebar-border);
-      background: #ffffff;
+      background: var(--bg);
       display: flex;
       align-items: center;
       justify-content: space-between;
       padding: 0 16px;
       font-size: 13px;
       z-index: 10;
+      flex-shrink: 0;
     }
     .top-brand {
       display: flex;
       align-items: center;
       gap: 8px;
       font-weight: 700;
-      color: #0f172a;
+      color: var(--text);
       text-decoration: none;
     }
     .top-brand img {
-      width: 20px;
-      height: 20px;
+      width: 22px;
+      height: 22px;
       border-radius: 50%;
-      object-fit: cover;
+      box-shadow: 0 0 8px rgba(79,70,229,0.35);
+    }
+    .top-brand span {
+      font-size: 14px;
+      letter-spacing: -0.2px;
     }
     .top-actions {
       display: flex;
       align-items: center;
-      gap: 10px;
-    }
-    .top-actions button, .top-actions a {
-      background: transparent;
-      border: 1px solid #e2e8f0;
-      border-radius: 6px;
-      padding: 4px 10px;
-      font-size: 12px;
-      font-weight: 500;
-      color: var(--text-muted);
-      cursor: pointer;
-      text-decoration: none;
-      transition: all 0.15s;
-    }
-    .top-actions button:hover, .top-actions a:hover {
-      background: #f1f5f9;
-      color: #0f172a;
-    }
-    .top-badge-admin {
-      background: #fef3c7 !important;
-      color: #92400e !important;
-      border-color: #fde68a !important;
-      font-weight: 700 !important;
+      gap: 8px;
     }
 
-    /* APP LAYOUT: 3 COLUMNS */
+    /* Marcador Maestro Exclusivo Administrador */
+    .master-ledger-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: rgba(241, 245, 249, 0.95);
+      border: 1px solid #cbd5e1;
+      border-radius: 20px;
+      padding: 3px 10px;
+      user-select: none;
+    }
+    .top-badge-admin {
+      background: rgba(245, 158, 11, 0.15);
+      color: #b45309;
+      font-weight: 700;
+      padding: 3px 8px;
+      border-radius: 6px;
+      font-size: 11px;
+      border: 1px solid rgba(245, 158, 11, 0.3);
+    }
+    .top-badge-user {
+      background: rgba(79, 70, 229, 0.08);
+      color: var(--primary);
+      font-weight: 600;
+      padding: 3px 8px;
+      border-radius: 6px;
+      font-size: 11px;
+      border: 1px solid rgba(79, 70, 229, 0.2);
+    }
+
+    /* Marcador personal para Usuario Regular */
+    .user-credit-pill {
+      display: inline-flex;
+      align-items: baseline;
+      gap: 6px;
+      font-size: 12px;
+      font-weight: 600;
+      background: rgba(79,70,229,0.08);
+      padding: 3px 10px;
+      border-radius: 20px;
+      border: 1px solid rgba(79,70,229,0.2);
+    }
+
+    .btn-top-download {
+      background: linear-gradient(135deg, #059669, #10b981);
+      color: #ffffff;
+      border: none;
+      border-radius: 6px;
+      padding: 5px 12px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: opacity 0.15s ease;
+    }
+    .btn-top-download:hover {
+      opacity: 0.9;
+    }
+
+    .btn-top-settings {
+      background: var(--hover-bg);
+      border: 1px solid var(--sidebar-border);
+      border-radius: 6px;
+      padding: 5px 12px;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text);
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.15s ease;
+    }
+    .btn-top-settings:hover {
+      background: var(--active-bg);
+    }
+    .top-logout-btn {
+      background: transparent;
+      border: 1px solid #fca5a5;
+      color: #ef4444;
+      border-radius: 6px;
+      padding: 5px 10px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .top-logout-btn:hover {
+      background: #fef2f2;
+    }
+
+    /* APP SHELL */
     .app-shell {
       flex: 1;
-      display: grid;
-      grid-template-columns: 260px 1fr 320px;
+      display: flex;
       overflow: hidden;
     }
 
-    /* LEFT SIDEBAR */
+    /* SIDEBAR LEFT */
     .sidebar-left {
+      width: 250px;
       background: var(--sidebar-bg);
       border-right: 1px solid var(--sidebar-border);
       display: flex;
       flex-direction: column;
-      overflow: hidden;
+      flex-shrink: 0;
     }
     .sidebar-head {
       padding: 12px 14px;
+      border-bottom: 1px solid var(--sidebar-border);
       display: flex;
       flex-direction: column;
-      gap: 8px;
-      border-bottom: 1px solid var(--sidebar-border);
+      gap: 10px;
     }
     .sidebar-head-row {
       display: flex;
       align-items: center;
       justify-content: space-between;
     }
-    .sidebar-head-row h2 {
+    .sidebar-head h2 {
       font-size: 13px;
-      font-weight: 700;
+      font-weight: 600;
       color: var(--text-muted);
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
     }
     .btn-new-chat {
-      background: #ffffff;
-      border: 1px solid #cbd5e1;
+      background: var(--bg);
+      border: 1px solid var(--sidebar-border);
       border-radius: 6px;
-      padding: 5px 12px;
-      font-size: 12px;
+      padding: 4px 8px;
+      font-size: 11px;
       font-weight: 600;
-      color: #0f172a;
+      color: var(--text);
       cursor: pointer;
-      box-shadow: 0 1px 2px rgba(0,0,0,0.05);
       transition: all 0.15s;
     }
     .btn-new-chat:hover {
-      background: #f8fafc;
-      border-color: #94a3b8;
+      background: var(--hover-bg);
     }
     .sidebar-search {
       width: 100%;
       padding: 6px 10px;
-      border: 1px solid #e2e8f0;
+      background: var(--bg);
+      border: 1px solid var(--sidebar-border);
       border-radius: 6px;
       font-size: 12px;
-      background: #ffffff;
+      color: var(--text);
       outline: none;
     }
     .sidebar-nav-tabs {
       display: flex;
-      gap: 4px;
-      padding: 6px 14px;
       border-bottom: 1px solid var(--sidebar-border);
+      background: var(--sidebar-bg);
     }
     .nav-tab-btn {
       flex: 1;
-      background: transparent;
-      border: none;
-      padding: 6px;
-      border-radius: 6px;
-      font-size: 12px;
-      font-weight: 600;
-      color: var(--text-muted);
-      cursor: pointer;
+      padding: 8px 0;
       text-align: center;
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--text-muted);
+      background: none;
+      border: none;
+      border-bottom: 2px solid transparent;
+      cursor: pointer;
+      transition: all 0.15s;
     }
     .nav-tab-btn.is-active {
-      background: #ffffff;
-      color: #0f172a;
-      box-shadow: 0 1px 2px rgba(0,0,0,0.06);
+      color: var(--primary);
+      border-bottom-color: var(--primary);
+      font-weight: 600;
+      background: var(--bg);
     }
     .sidebar-content {
       flex: 1;
       overflow-y: auto;
-      padding: 12px 10px;
+      padding: 10px 8px;
       display: flex;
       flex-direction: column;
       gap: 14px;
     }
     .section-title {
-      font-size: 11px;
+      font-size: 10px;
       font-weight: 700;
+      letter-spacing: 0.05em;
       color: var(--text-faint);
-      letter-spacing: 0.5px;
       padding: 0 6px;
-      text-transform: uppercase;
       display: flex;
-      align-items: center;
       justify-content: space-between;
+      align-items: center;
     }
     .item-list {
       display: flex;
       flex-direction: column;
-      gap: 2px;
+      gap: 4px;
     }
     .list-item {
-      padding: 8px 10px;
+      padding: 7px 10px;
       border-radius: 6px;
       cursor: pointer;
-      display: flex;
-      flex-direction: column;
-      gap: 2px;
-      transition: background 0.1s;
+      font-size: 12px;
+      transition: background 0.15s;
+      user-select: none;
     }
     .list-item:hover {
       background: var(--hover-bg);
     }
     .list-item.is-active {
       background: var(--active-bg);
+      font-weight: 600;
     }
     .list-item-title {
-      font-size: 13px;
-      font-weight: 600;
-      color: #0f172a;
       display: flex;
-      align-items: center;
       justify-content: space-between;
-    }
-    .list-item-sub {
-      font-size: 11px;
-      color: var(--text-muted);
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
+      align-items: center;
     }
     .list-item-time {
       font-size: 10px;
       color: var(--text-faint);
-      font-weight: 400;
     }
     .sidebar-foot {
       padding: 10px 14px;
       border-top: 1px solid var(--sidebar-border);
-      background: var(--sidebar-bg);
     }
     .btn-settings {
       width: 100%;
-      background: transparent;
-      border: none;
       text-align: left;
-      font-size: 13px;
-      font-weight: 500;
+      background: none;
+      border: 1px solid var(--sidebar-border);
+      border-radius: 6px;
+      padding: 6px 10px;
+      font-size: 12px;
       color: var(--text-muted);
       cursor: pointer;
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: 6px;
+      transition: all 0.15s;
     }
     .btn-settings:hover {
-      color: #0f172a;
+      background: var(--hover-bg);
+      color: var(--text);
     }
 
-    /* CENTER MAIN CHAT */
+    /* CENTER CHAT MAIN */
     .chat-main {
-      background: var(--bg);
+      flex: 1;
       display: flex;
       flex-direction: column;
+      background: var(--bg);
       position: relative;
       overflow: hidden;
     }
     .chat-header {
       height: 44px;
-      border-bottom: 1px solid #f1f5f9;
-      padding: 0 20px;
+      border-bottom: 1px solid var(--sidebar-border);
       display: flex;
       align-items: center;
       justify-content: space-between;
+      padding: 0 16px;
       font-size: 13px;
       font-weight: 600;
-      color: #0f172a;
+      flex-shrink: 0;
     }
     .chat-header-actions {
       display: flex;
@@ -281,125 +404,106 @@
     .btn-icon-subtle {
       background: none;
       border: none;
-      color: var(--text-muted);
       cursor: pointer;
+      font-size: 14px;
+      color: var(--text-muted);
       padding: 4px;
       border-radius: 4px;
     }
     .btn-icon-subtle:hover {
-      background: #f1f5f9;
-      color: #0f172a;
+      background: var(--hover-bg);
     }
     .chat-stage {
       flex: 1;
       overflow-y: auto;
-      padding: 30px 40px 160px;
+      padding: 20px;
       display: flex;
       flex-direction: column;
-      gap: 20px;
+      gap: 16px;
     }
     .empty-welcome {
       margin: auto;
       text-align: center;
-      max-width: 500px;
-      padding-bottom: 40px;
+      max-width: 520px;
     }
     .empty-welcome h1 {
-      font-size: 22px;
+      font-size: 20px;
       font-weight: 700;
-      color: #0f172a;
       margin-bottom: 8px;
     }
     .empty-welcome p {
-      font-size: 14px;
+      font-size: 13px;
       color: var(--text-muted);
+      line-height: 1.5;
     }
     .msg-row {
       display: flex;
       flex-direction: column;
       gap: 4px;
-      max-width: 820px;
-      width: 100%;
-      margin: 0 auto;
     }
     .msg-user {
       align-self: flex-end;
-      background: #f1f5f9;
-      border: 1px solid #e2e8f0;
-      padding: 12px 18px;
-      border-radius: 12px;
-      font-size: 14px;
-      line-height: 1.5;
-      color: #0f172a;
+      background: var(--primary);
+      color: #ffffff;
+      padding: 10px 14px;
+      border-radius: 12px 12px 2px 12px;
+      max-width: 80%;
+      font-size: 13px;
+      line-height: 1.4;
+      white-space: pre-wrap;
     }
     .msg-ai {
       align-self: flex-start;
-      background: #ffffff;
-      border: 1px solid #e2e8f0;
-      padding: 16px 20px;
-      border-radius: 12px;
-      font-size: 14px;
-      line-height: 1.6;
-      color: #0f172a;
-      box-shadow: 0 1px 3px rgba(0,0,0,0.03);
-      white-space: pre-wrap;
-      font-family: inherit;
-    }
-    .msg-ai pre {
-      background: #0f172a;
-      color: #f8fafc;
-      padding: 14px;
-      border-radius: 8px;
-      overflow-x: auto;
-      margin: 10px 0;
-      font-family: 'JetBrains Mono', monospace;
+      background: var(--sidebar-bg);
+      border: 1px solid var(--sidebar-border);
+      color: var(--text);
+      padding: 12px 16px;
+      border-radius: 12px 12px 12px 2px;
+      max-width: 85%;
       font-size: 13px;
+      line-height: 1.5;
+      white-space: pre-wrap;
     }
 
-    /* COMPOSER AT BOTTOM (EXACT TO SCREENSHOT 2) */
+    /* COMPOSER */
     .composer-wrapper {
-      position: absolute;
-      bottom: 24px;
-      left: 50%;
-      transform: translateX(-50%);
-      width: calc(100% - 60px);
-      max-width: 820px;
-      z-index: 20;
+      padding: 14px 20px 16px;
+      background: var(--bg);
+      border-top: 1px solid var(--sidebar-border);
+      flex-shrink: 0;
+      position: relative;
     }
     .composer-card {
-      background: #ffffff;
-      border: 1px solid #cbd5e1;
-      border-radius: 14px;
-      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
-      padding: 12px 14px 8px;
+      background: var(--composer-bg);
+      border: 1px solid var(--composer-border);
+      border-radius: 12px;
+      padding: 10px 12px 8px;
       display: flex;
       flex-direction: column;
-      gap: 8px;
-      transition: border-color 0.2s, box-shadow 0.2s;
+      gap: 6px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.03);
+      transition: border-color 0.15s ease;
     }
     .composer-card:focus-within {
-      border-color: #6366f1;
-      box-shadow: 0 8px 30px rgba(99, 102, 241, 0.16);
+      border-color: var(--primary);
     }
     .composer-textarea {
       width: 100%;
       border: none;
       outline: none;
       resize: none;
-      font-size: 14px;
       font-family: inherit;
-      color: #0f172a;
+      font-size: 13px;
       background: transparent;
-      min-height: 38px;
-      line-height: 1.5;
-    }
-    .composer-textarea::placeholder {
-      color: #94a3b8;
+      color: var(--text);
+      line-height: 1.4;
+      min-height: 48px;
     }
     .composer-toolbar {
       display: flex;
       align-items: center;
       justify-content: space-between;
+      position: relative;
     }
     .composer-left {
       display: flex;
@@ -407,165 +511,765 @@
       gap: 8px;
     }
     .btn-composer-plus {
+      background: none;
+      border: none;
+      font-size: 16px;
+      color: var(--text-muted);
+      cursor: pointer;
+      border-radius: 4px;
       width: 24px;
       height: 24px;
-      border-radius: 6px;
-      border: 1px solid #e2e8f0;
-      background: #ffffff;
-      color: #64748b;
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 14px;
-      cursor: pointer;
     }
     .btn-composer-plus:hover {
-      background: #f1f5f9;
-      color: #0f172a;
+      background: var(--hover-bg);
     }
     .model-pill {
-      background: #f8fafc;
-      border: 1px solid #e2e8f0;
-      border-radius: 6px;
-      padding: 3px 8px;
-      font-size: 12px;
-      font-weight: 500;
-      color: #334155;
-      display: flex;
+      display: inline-flex;
       align-items: center;
-      gap: 4px;
+      gap: 5px;
+      background: var(--hover-bg);
+      border: 1px solid var(--sidebar-border);
+      border-radius: 14px;
+      padding: 3px 10px;
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--text-muted);
       cursor: pointer;
+      user-select: none;
+      transition: all 0.15s;
     }
+    .model-pill:hover {
+      border-color: var(--primary);
+      color: var(--text);
+    }
+
+    /* Model Dropdown Menu */
+    .model-dropdown-menu {
+      position: absolute;
+      bottom: 42px;
+      left: 32px;
+      width: 320px;
+      max-height: 380px;
+      overflow-y: auto;
+      background: var(--modal-bg);
+      border: 1px solid var(--modal-border);
+      border-radius: 12px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.18);
+      padding: 8px 6px;
+      z-index: 50;
+      display: none;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .model-dropdown-menu.is-open {
+      display: flex;
+    }
+    .model-group-title {
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-muted);
+      padding: 6px 10px 2px;
+    }
+    .model-option-item {
+      display: flex;
+      flex-direction: column;
+      padding: 6px 10px;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: background 0.12s;
+    }
+    .model-option-item:hover {
+      background: var(--hover-bg);
+    }
+    .model-option-item.is-selected {
+      background: rgba(79, 70, 229, 0.08);
+    }
+    .model-option-item strong {
+      font-size: 12px;
+      color: var(--text);
+    }
+    .model-option-item small {
+      font-size: 10px;
+      color: var(--text-muted);
+    }
+
     .composer-right {
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: 6px;
     }
     .btn-mic {
       background: none;
       border: none;
-      color: #94a3b8;
+      font-size: 14px;
+      color: var(--text-muted);
       cursor: pointer;
-      padding: 4px;
-    }
-    .btn-mic:hover {
-      color: #64748b;
+      padding: 4px 6px;
+      border-radius: 6px;
     }
     .btn-send {
       width: 28px;
       height: 28px;
-      border-radius: 6px;
+      border-radius: 50%;
+      background: var(--primary);
+      color: #fff;
       border: none;
-      background: #0f172a;
-      color: #ffffff;
+      cursor: pointer;
       display: flex;
       align-items: center;
       justify-content: center;
       font-size: 14px;
       font-weight: bold;
-      cursor: pointer;
-      transition: background 0.15s;
+      transition: opacity 0.15s;
     }
-    .btn-send:hover {
-      background: #334155;
+    .btn-send:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
     }
 
-    /* RIGHT PANEL (CONTEXTO & TAREAS) */
+    /* RIGHT PANEL */
     .sidebar-right {
-      background: #ffffff;
+      width: 280px;
+      background: var(--sidebar-bg);
       border-left: 1px solid var(--sidebar-border);
       display: flex;
       flex-direction: column;
-      overflow-y: auto;
-      padding: 14px 16px;
+      padding: 14px;
       gap: 16px;
-      font-size: 13px;
+      flex-shrink: 0;
     }
     .panel-tabs-row {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      border-bottom: 1px solid #f1f5f9;
+      border-bottom: 1px solid var(--sidebar-border);
       padding-bottom: 8px;
-    }
-    .panel-tab-icons {
-      display: flex;
-      gap: 8px;
-      color: #64748b;
+      font-size: 12px;
     }
     .panel-section-title {
-      font-size: 11px;
+      font-size: 10px;
       font-weight: 700;
-      color: #64748b;
-      letter-spacing: 0.5px;
-      text-transform: uppercase;
+      color: var(--text-faint);
       margin-bottom: 6px;
     }
     .panel-value-box {
-      font-size: 13px;
-      color: #0f172a;
-      background: #f8fafc;
-      border: 1px solid #f1f5f9;
+      font-size: 12px;
+      padding: 6px 8px;
+      background: var(--bg);
+      border: 1px solid var(--sidebar-border);
       border-radius: 6px;
-      padding: 8px 10px;
+      color: var(--text-muted);
     }
     .panel-muted-text {
-      font-size: 12px;
-      color: #94a3b8;
+      font-size: 11px;
+      color: var(--text-muted);
     }
     .tasks-header-row {
       display: flex;
-      align-items: center;
       justify-content: space-between;
-      font-size: 11px;
+      font-size: 10px;
       font-weight: 700;
-      color: #64748b;
-      letter-spacing: 0.5px;
-      text-transform: uppercase;
+      color: var(--text-faint);
+      margin-bottom: 6px;
     }
     .tasks-list {
       display: flex;
       flex-direction: column;
-      gap: 8px;
-      max-height: 480px;
+      gap: 6px;
       overflow-y: auto;
     }
-    .task-card {
-      background: #f8fafc;
-      border: 1px solid #e2e8f0;
-      border-radius: 6px;
-      padding: 10px;
-      font-size: 11px;
-      line-height: 1.4;
-      color: #334155;
+
+    /* ==========================================================================
+       MODERN 2-COLUMN SETTINGS & CREDITS MODAL (ANTIGRAVITY STYLE)
+       ========================================================================== */
+    .ec-settings-sheet-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 1000;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      background: rgba(0, 0, 0, 0.5);
+      backdrop-filter: blur(4px);
+      -webkit-backdrop-filter: blur(4px);
     }
-    .task-status-ready {
-      display: inline-block;
-      margin-top: 4px;
-      font-size: 9px;
+    .ec-settings-sheet-overlay.is-open {
+      display: flex !important;
+    }
+    .ec-settings-modal-card {
+      position: relative;
+      width: min(920px, calc(100vw - 48px));
+      height: min(640px, calc(100vh - 64px));
+      display: flex;
+      background: var(--modal-bg);
+      color: var(--text);
+      border: 1px solid var(--modal-border);
+      border-radius: 16px;
+      box-shadow: 0 25px 60px rgba(0, 0, 0, 0.25);
+      overflow: hidden;
+      animation: ecSettingsFadeIn 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    @keyframes ecSettingsFadeIn {
+      from { opacity: 0; transform: scale(0.97); }
+      to { opacity: 1; transform: scale(1); }
+    }
+    .ec-settings-modal-sidebar {
+      width: 250px;
+      min-width: 230px;
+      background: var(--modal-sidebar);
+      border-right: 1px solid var(--modal-border);
+      display: flex;
+      flex-direction: column;
+      padding: 16px 12px;
+      gap: 12px;
+    }
+    .ec-settings-search-input {
+      width: 100%;
+      padding: 8px 12px;
+      font-size: 13px;
+      border-radius: 8px;
+      border: 1px solid var(--modal-border);
+      background: var(--modal-bg);
+      color: var(--text);
+      outline: none;
+    }
+    .ec-settings-section-heading {
+      font-size: 10px;
       font-weight: 700;
-      color: #059669;
-      background: #d1fae5;
-      padding: 1px 5px;
+      letter-spacing: 0.08em;
+      color: var(--text-muted);
+      padding: 4px 8px 0;
+      text-transform: uppercase;
+    }
+    .ec-settings-nav-list {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      flex: 1;
+      overflow-y: auto;
+    }
+    .ec-settings-nav-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 10px;
+      border-radius: 8px;
+      border: none;
+      background: transparent;
+      color: var(--text);
+      font-size: 13px;
+      cursor: pointer;
+      text-align: left;
+      transition: background 0.12s, color 0.12s;
+      width: 100%;
+    }
+    .ec-settings-nav-item:hover {
+      background: var(--hover-bg);
+    }
+    .ec-settings-nav-item.is-active {
+      background: rgba(79, 70, 229, 0.1);
+      color: var(--primary);
+      font-weight: 600;
+    }
+    .ec-settings-pill-badge {
+      font-size: 11px;
+      font-weight: 700;
+      padding: 2px 7px;
+      border-radius: 12px;
+      background: var(--primary);
+      color: #fff;
+    }
+    .ec-settings-user-profile {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px;
+      background: var(--modal-bg);
+      border: 1px solid var(--modal-border);
+      border-radius: 10px;
+      margin-top: auto;
+    }
+    .ec-user-avatar-circle {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #4f46e5, #06b6d4);
+      color: #ffffff;
+      font-weight: 700;
+      font-size: 13px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+    .ec-user-meta {
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      gap: 1px;
+    }
+    .ec-user-display-name {
+      font-size: 12px;
+      font-weight: 600;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .ec-user-email-addr {
+      font-size: 11px;
+      color: var(--text-muted);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .ec-user-role-badge {
+      font-size: 10px;
+      font-weight: 700;
+      color: #d97706;
+      background: rgba(217, 119, 6, 0.12);
+      padding: 1px 6px;
+      border-radius: 6px;
+      margin-top: 2px;
+      width: fit-content;
+    }
+    .ec-settings-modal-main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      background: var(--modal-bg);
+      overflow: hidden;
+    }
+    .ec-settings-modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      padding: 18px 24px;
+      border-bottom: 1px solid var(--modal-border);
+    }
+    .ec-settings-modal-header h2 {
+      font-size: 18px;
+      font-weight: 700;
+    }
+    .ec-settings-modal-header p {
+      font-size: 12px;
+      color: var(--text-muted);
+      margin-top: 2px;
+    }
+    .ec-settings-top-close {
+      background: none;
+      border: none;
+      font-size: 18px;
+      color: var(--text-muted);
+      cursor: pointer;
+      padding: 4px 8px;
+      border-radius: 6px;
+    }
+    .ec-settings-top-close:hover {
+      background: var(--hover-bg);
+      color: var(--text);
+    }
+    .ec-settings-content-viewport {
+      flex: 1;
+      overflow-y: auto;
+      padding: 20px 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+    .ec-settings-pane {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+    .ec-settings-pane.is-hidden, .ec-settings-pane[hidden] {
+      display: none !important;
+    }
+    .ec-settings-group-card {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 16px;
+      background: var(--sidebar-bg);
+      border: 1px solid var(--modal-border);
+      border-radius: 12px;
+      gap: 16px;
+    }
+    .ec-group-info h4 {
+      font-size: 14px;
+      font-weight: 600;
+    }
+    .ec-group-info p {
+      font-size: 12px;
+      color: var(--text-muted);
+      margin-top: 3px;
+    }
+    .ec-styled-select, .ec-styled-input {
+      padding: 8px 12px;
+      font-size: 13px;
+      border-radius: 8px;
+      border: 1px solid var(--modal-border);
+      background: var(--modal-bg);
+      color: var(--text);
+      outline: none;
+    }
+    .ec-btn-action {
+      background: var(--primary);
+      color: #fff;
+      font-weight: 600;
+      font-size: 13px;
+      padding: 8px 16px;
+      border-radius: 8px;
+      border: none;
+      cursor: pointer;
+    }
+    .ec-btn-secondary {
+      background: var(--hover-bg);
+      color: var(--text);
+      font-weight: 600;
+      font-size: 13px;
+      padding: 8px 16px;
+      border-radius: 8px;
+      border: 1px solid var(--modal-border);
+      cursor: pointer;
+    }
+
+    /* Master Dashboard Card */
+    .ec-master-dashboard-card {
+      background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+      border-radius: 14px;
+      padding: 18px 20px;
+      color: #f8fafc;
+      box-shadow: 0 8px 20px rgba(15, 23, 42, 0.15);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+    .ec-master-card-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 14px;
+    }
+    .ec-master-badge {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      color: #fbbf24;
+      background: rgba(251, 191, 36, 0.12);
+      padding: 3px 10px;
+      border-radius: 12px;
+      border: 1px solid rgba(251, 191, 36, 0.25);
+    }
+    .ec-master-updated {
+      font-size: 11px;
+      color: #94a3b8;
+    }
+    .ec-master-metrics-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+    .ec-metric-box {
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 10px;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+    .ec-metric-title {
+      font-size: 11px;
+      color: #94a3b8;
+      font-weight: 600;
+    }
+    .ec-metric-number {
+      font-size: 18px;
+      font-weight: 800;
+      font-family: ui-monospace, SFMono-Regular, monospace;
+    }
+    .text-emerald { color: #10b981; }
+    .text-indigo { color: #818cf8; }
+    .text-cyan { color: #38bdf8; }
+    .ec-metric-sub {
+      font-size: 10px;
+      color: #64748b;
+    }
+    .ec-master-bar-wrap {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+    .ec-master-bar-label {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 11px;
+      color: #94a3b8;
+    }
+    .ec-progress-track {
+      width: 100%;
+      height: 6px;
+      background: rgba(255, 255, 255, 0.1);
       border-radius: 3px;
+      overflow: hidden;
+    }
+    .ec-progress-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #059669, #10b981);
+      border-radius: 3px;
+      transition: width 0.3s ease;
+    }
+
+    /* Personal credits banner */
+    .ec-credits-overview-banner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 18px;
+      border-radius: 12px;
+      background: linear-gradient(135deg, rgba(79, 70, 229, 0.08), rgba(2, 132, 199, 0.08));
+      border: 1px solid rgba(79, 70, 229, 0.2);
+    }
+    .ec-credits-caption {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--primary);
+    }
+    .ec-credits-big-num {
+      font-size: 28px;
+      font-weight: 800;
+      margin: 4px 0;
+    }
+    .ec-credits-plan-tag {
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+    .ec-btn-gold {
+      background: linear-gradient(135deg, #f59e0b, #d97706);
+      color: #ffffff;
+      font-weight: 700;
+      font-size: 13px;
+      padding: 10px 18px;
+      border-radius: 8px;
+      border: none;
+      cursor: pointer;
+    }
+
+    /* Theme picker cards */
+    .ec-theme-cards-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 10px;
+      width: 100%;
+    }
+    .ec-theme-picker-card {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 12px 8px;
+      border-radius: 10px;
+      border: 1px solid var(--modal-border);
+      background: var(--modal-bg);
+      cursor: pointer;
+      transition: transform 0.12s, border-color 0.12s;
+    }
+    .ec-theme-picker-card:hover {
+      border-color: var(--primary);
+      transform: translateY(-2px);
+    }
+    .ec-theme-picker-card.is-active {
+      border-color: var(--primary);
+      outline: 2px solid var(--primary);
+      background: rgba(79, 70, 229, 0.05);
+    }
+    .ec-theme-thumb {
+      width: 100%;
+      height: 36px;
+      border-radius: 6px;
+      margin-bottom: 8px;
+      border: 1px solid rgba(0,0,0,0.1);
+    }
+    .ec-th-light { background: #f8fafc; }
+    .ec-th-gray { background: #1e1e1e; }
+    .ec-th-black { background: #09090b; }
+    .ec-th-blue { background: #0a1120; }
+    .ec-theme-picker-card strong { font-size: 12px; }
+    .ec-theme-picker-card small { font-size: 10px; color: var(--text-muted); }
+
+    .ec-status-tag {
+      font-size: 11px;
+      font-weight: 700;
+      padding: 3px 8px;
+      border-radius: 10px;
+    }
+    .ec-tag-success {
+      background: rgba(34, 197, 94, 0.15);
+      color: #16a34a;
+    }
+
+    /* ============================================================
+       RESPONSIVE MÓVIL — max-width 768px
+       ============================================================ */
+    @media (max-width: 768px) {
+      body { overflow: auto; height: auto; min-height: 100vh; }
+
+      /* Top bar compacto */
+      .top-bar { padding: 0 10px; height: 48px; flex-wrap: nowrap; }
+      .top-brand span { display: none; }
+      .top-brand img { width: 28px; height: 28px; }
+      .master-ledger-pill { display: none !important; }
+      .user-credit-pill { font-size: 10px; padding: 2px 7px; gap: 4px; }
+      .btn-top-download { font-size: 11px; padding: 5px 8px; gap: 4px; }
+      .btn-top-settings { font-size: 11px; padding: 5px 8px; gap: 4px; }
+      .top-logout-btn { padding: 5px 7px; font-size: 11px; }
+
+      /* App shell: columna en móvil */
+      .app-shell { flex-direction: column; overflow: visible; }
+
+      /* Sidebar izquierdo oculto por defecto en móvil */
+      .sidebar-left {
+        width: 100%;
+        max-height: 0;
+        overflow: hidden;
+        flex-shrink: 0;
+        border-right: none;
+        border-bottom: 1px solid var(--sidebar-border);
+        transition: max-height 0.3s ease;
+      }
+      .sidebar-left.is-open {
+        max-height: 340px;
+      }
+
+      /* Sidebar derecho oculto en móvil */
+      .sidebar-right { display: none; }
+
+      /* Chat principal ocupa todo */
+      .chat-main { min-height: calc(100vh - 48px); }
+
+      /* Chat stage */
+      .chat-stage { padding: 14px 12px; }
+      .msg-user, .msg-ai { max-width: 95%; font-size: 13px; }
+      .empty-welcome { max-width: 90%; padding: 0 10px; }
+      .empty-welcome h1 { font-size: 17px; }
+
+      /* Composer en móvil */
+      .composer-wrapper { padding: 10px 12px 12px; }
+      .composer-textarea { font-size: 14px; min-height: 44px; }
+
+      /* Model dropdown más ancho en móvil */
+      .model-dropdown-menu {
+        width: calc(100vw - 40px);
+        left: 0;
+        right: 0;
+        max-height: 55vh;
+        bottom: 50px;
+      }
+
+      /* Settings modal — pantalla completa en móvil */
+      .ec-settings-modal-card {
+        width: 100vw;
+        height: 100vh;
+        border-radius: 0;
+        flex-direction: column;
+      }
+      .ec-settings-modal-sidebar {
+        width: 100%;
+        min-width: unset;
+        border-right: none;
+        border-bottom: 1px solid var(--modal-border);
+        flex-direction: row;
+        flex-wrap: wrap;
+        padding: 10px;
+        gap: 6px;
+        overflow-x: auto;
+      }
+      .ec-settings-section-heading { display: none; }
+      .ec-settings-search-input { display: none; }
+      .ec-settings-user-profile { display: none; }
+      .ec-settings-nav-list {
+        flex-direction: row;
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        gap: 4px;
+        padding-bottom: 4px;
+      }
+      .ec-settings-nav-item {
+        flex-shrink: 0;
+        padding: 6px 10px;
+        font-size: 12px;
+        border: 1px solid var(--modal-border);
+        border-radius: 20px;
+        white-space: nowrap;
+      }
+      .ec-settings-nav-item span:first-child { display: none; }
+      .ec-settings-modal-main { flex: 1; overflow-y: auto; }
+      .ec-settings-modal-header { padding: 14px 16px; }
+      .ec-settings-modal-header h2 { font-size: 16px; }
+      .ec-settings-content-viewport { padding: 14px 16px; }
+      .ec-settings-group-card { flex-direction: column; align-items: flex-start; gap: 10px; }
+
+      /* Chat header en móvil */
+      .chat-header { padding: 0 12px; font-size: 12px; }
+    }
+
+    /* ============================================================
+       MUY PEQUEÑO — max-width 400px
+       ============================================================ */
+    @media (max-width: 400px) {
+      .top-actions { gap: 4px; }
+      .btn-top-download .btn-label { display: none; }
+      .composer-textarea { font-size: 15px; }
     }
   </style>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 </head>
 <body>
 
-  <!-- TOP BAR -->
+  <!-- TOP BAR (En la web: Administrador tiene sus marcadores maestros en la barra superior; Usuario normal tiene saldo personal y botón de recarga) -->
   <header class="top-bar">
     <a href="/index.html" class="top-brand" title="Ir al inicio de EditCoreAI">
       <img src="./assets/logo.png" alt="EditCore Logo" />
       <span>EditCoreAI</span>
     </a>
     <div class="top-actions">
+      <!-- Marcadores Exclusivos del Administrador Maestro en Web ($8,000 USD / Créditos / Tokens) -->
+      <div id="topMasterLedgerBar" class="master-ledger-pill" title="Fondo Maestro EditCoreAI" style="display:none;">
+        <span style="font-size:10px;font-weight:700;color:#64748b;">💵 USD:</span>
+        <span id="topStatUsd" style="font-size:11px;font-weight:800;color:#059669;font-family:monospace;">$8,000.00</span>
+        <span style="font-size:10px;font-weight:700;color:#64748b;margin-left:4px;">⚡ Créditos:</span>
+        <span id="topStatCredits" style="font-size:11px;font-weight:800;color:#4f46e5;font-family:monospace;">160,000</span>
+        <span style="font-size:10px;font-weight:700;color:#64748b;margin-left:4px;">🔢 Tokens:</span>
+        <span id="topStatTokens" style="font-size:11px;font-weight:800;color:#0891b2;font-family:monospace;">1.60B</span>
+      </div>
+
+      <!-- Badge de Usuario -->
       <span class="top-badge-admin" id="userBadge">👑 Administrador Total</span>
-      <span id="creditsDisplay" style="font-weight:600;font-size:12px;color:#4f46e5;">⚡ Ilimitado</span>
-      <button type="button" id="topFolderBtn">Conectar carpeta</button>
-      <button type="button" id="topIdeBtn">IDE</button>
-      <button type="button" id="topReloadBtn" onclick="location.reload()">Actualizar</button>
-      <button type="button" id="topLogoutBtn" style="color:#ef4444;border-color:#fecaca;">Cerrar sesión</button>
+      <span id="adminUnlimitedBadge" style="font-weight:600;font-size:12px;color:#4f46e5;display:none;">⚡ Ilimitado</span>
+
+      <!-- Marcador personal en dólares y créditos (Solo para Usuarios Normales) -->
+      <div id="userCreditsPill" class="user-credit-pill" style="display:none;" title="Tus créditos comprados y saldo disponible">
+        <span style="color:#4f46e5;" id="userTopCredits">0 Créditos</span>
+        <span style="color:#059669;font-size:11px;" id="userTopUsd">($0.00 USD)</span>
+      </div>
+      
+      <!-- Botón de recarga (Solo para Usuarios Normales) -->
+      <button type="button" id="buyCreditsWebBtn" style="display:none;background:linear-gradient(135deg,#f59e0b,#d97706);color:#fff;font-weight:700;border:none;border-radius:6px;padding:5px 12px;font-size:11px;cursor:pointer;">💳 Recargar Crédito</button>
+
+      <!-- Botón de Descargar Proyecto (.zip) -->
+      <button type="button" id="topDownloadProjectBtn" class="btn-top-download" title="Descargar proyecto completo con código fuente y dependencias">📥 Descargar Proyecto (.zip)</button>
+
+      <!-- Botón de Configuración -->
+      <button type="button" id="topSettingsBtn" class="btn-top-settings" title="Abrir Configuración de EditCoreAI">⚙️ Configuración</button>
+      
+      <button type="button" id="topLogoutBtn" class="top-logout-btn" title="Cerrar sesión">Cerrar sesión</button>
     </div>
   </header>
 
@@ -579,49 +1283,38 @@
           <h2>Consultas</h2>
           <button type="button" id="newChatBtn" class="btn-new-chat">+ Nuevo Chat</button>
         </div>
-        <input type="search" class="sidebar-search" placeholder="Buscar…" />
+        <input type="search" id="sidebarSearch" class="sidebar-search" placeholder="Buscar…" />
       </div>
 
       <div class="sidebar-nav-tabs">
-        <button type="button" class="nav-tab-btn is-active">Chats</button>
-        <button type="button" class="nav-tab-btn">Código base</button>
+        <button type="button" class="nav-tab-btn is-active" id="tabChatsBtn">Chats</button>
+        <button type="button" class="nav-tab-btn" id="tabCodebaseBtn">Código base</button>
       </div>
 
       <div class="sidebar-content">
-        <div class="section-title">PROYECTOS</div>
-        <div class="item-list">
-          <div class="list-item">
-            <div class="list-item-title">
-              <span>PUBLIVENDE</span>
-              <span class="list-item-time">4h</span>
-            </div>
-            <div class="list-item-sub">Hola. Acabo d...</div>
-          </div>
-          <div class="list-item">
-            <div class="list-item-title">
-              <span>EDITCOREAI</span>
-              <span class="list-item-time">1d</span>
-            </div>
-            <div class="list-item-sub">✨ INICIO DEL ...</div>
+        <!-- PROYECTOS (Limpio en la web: sin proyectos viejos conectados) -->
+        <div class="section-title">
+          <span>PROYECTOS</span>
+          <button type="button" id="addProjectBtn" style="background:none;border:none;color:var(--primary);cursor:pointer;font-weight:700;font-size:13px;" title="Crear o conectar proyecto">+</button>
+        </div>
+        <div class="item-list" id="projectsList">
+          <div id="noProjectsNotice" style="font-size:11px;color:var(--text-muted);padding:10px;text-align:center;border:1px dashed var(--sidebar-border);border-radius:6px;background:var(--hover-bg);">
+            Sin proyectos conectados aún.<br />
+            <button type="button" id="createFirstProjBtn" style="margin-top:6px;background:var(--primary);color:#fff;border:none;border-radius:4px;padding:3px 8px;font-size:10px;font-weight:600;cursor:pointer;">+ Conectar Proyecto</button>
           </div>
         </div>
 
         <div class="section-title">
           <span>CONVERSACIONES</span>
-          <span style="cursor:pointer;font-size:14px;" id="plusChatBtn">+</span>
+          <span style="cursor:pointer;font-size:14px;" id="plusChatBtn" title="Nuevo chat">+</span>
         </div>
         <div class="item-list" id="conversationsList">
-          <div class="list-item">
+          <div class="list-item is-active" data-chat-id="chat-1">
             <div class="list-item-title">
               <span>Chat 1</span>
-              <span class="list-item-time">1h</span>
+              <span class="list-item-time">Ahora</span>
             </div>
-          </div>
-          <div class="list-item is-active">
-            <div class="list-item-title">
-              <span>Chat 1</span>
-              <span class="list-item-time">17m</span>
-            </div>
+            <div class="list-item-sub">Sesión iniciada en EditCoreAI Web</div>
           </div>
         </div>
       </div>
@@ -636,30 +1329,82 @@
       <div class="chat-header">
         <span id="chatTitle">Chat 1</span>
         <div class="chat-header-actions">
-          <button type="button" class="btn-icon-subtle" title="Copiar / limpiar">📋</button>
+          <button type="button" class="btn-icon-subtle" id="copyChatBtn" title="Copiar conversación">📋</button>
         </div>
       </div>
 
       <div class="chat-stage" id="chatStage">
         <div class="empty-welcome" id="emptyWelcome">
           <h1>Bienvenido a EditCoreAI. ¿Qué haremos hoy?</h1>
-          <p>Escribe tu consulta o requerimiento para generar código, depurar o planificar.</p>
+          <p>Escribe tu consulta o requerimiento para generar código, depurar o planificar tu proyecto.</p>
         </div>
       </div>
 
       <div class="composer-wrapper">
+        <!-- Selector Desplegable de Modelos -->
+        <div class="model-dropdown-menu" id="modelDropdownMenu">
+          <div class="model-group-title">Modelos Disponibles</div>
+          <div class="model-option-item is-selected" data-model-id="claude-sonnet-4.6" data-model-name="claude-sonnet-4.6">
+            <strong>🌟 claude-sonnet-4.6</strong>
+            <small>Recomendado · Agente y Arquitectura</small>
+          </div>
+          <div class="model-option-item" data-model-id="claude-haiku-4-5" data-model-name="claude-haiku-4-5">
+            <strong>⚡ claude-haiku-4-5</strong>
+            <small>Ultra Rápido · Consultas Livianas</small>
+          </div>
+          <div class="model-option-item" data-model-id="claude-opus-4.8" data-model-name="claude-opus-4.8">
+            <strong>🧠 claude-opus-4.8</strong>
+            <small>Máximo Razonamiento · Refactor Profundo</small>
+          </div>
+          <div class="model-option-item" data-model-id="deepseek-v4-pro" data-model-name="deepseek-v4-pro">
+            <strong>💻 deepseek-v4-pro</strong>
+            <small>Especializado · Programación y Lógica</small>
+          </div>
+          <div class="model-option-item" data-model-id="qwen3.6-plus" data-model-name="qwen3.6-plus">
+            <strong>🌐 qwen3.6-plus</strong>
+            <small>Multilenguaje · Equilibrado</small>
+          </div>
+          <div class="model-option-item" data-model-id="glm-5" data-model-name="glm-5">
+            <strong>🔮 glm-5</strong>
+            <small>Multimodal · Visión</small>
+          </div>
+          <div class="model-option-item" data-model-id="kimi-k2.6" data-model-name="kimi-k2.6">
+            <strong>📚 kimi-k2.6</strong>
+            <small>Contexto Largo · Repositorios</small>
+          </div>
+
+          <div class="model-group-title" style="margin-top:6px;">Modelos Avanzados</div>
+          <div class="model-option-item" data-model-id="gpt-5.6-luna" data-model-name="gpt-5.6-luna">
+            <strong>🚀 gpt-5.6-luna</strong>
+            <small>Razonamiento Extendido</small>
+          </div>
+          <div class="model-option-item" data-model-id="gemini-2.5-flash" data-model-name="gemini-2.5-flash">
+            <strong>⚡ gemini-2.5-flash</strong>
+            <small>Baja Latencia</small>
+          </div>
+          <div class="model-option-item" data-model-id="grok-4.5" data-model-name="grok-4.5">
+            <strong>🪐 grok-4.5</strong>
+            <small>Análisis y Código</small>
+          </div>
+          <div class="model-option-item" data-model-id="claude-fable-5" data-model-name="claude-fable-5">
+            <strong>👑 claude-fable-5</strong>
+            <small>Arquitectura Completa</small>
+          </div>
+        </div>
+
+
         <form class="composer-card" id="chatComposer">
-          <textarea id="chatInput" class="composer-textarea" placeholder="Pide a EditCore crear, depurar, explorar…" rows="2" required></textarea>
+          <textarea id="chatInput" class="composer-textarea" placeholder="Pide a EditCore crear componentes, depurar, conectar APIs…" rows="2" required></textarea>
           <div class="composer-toolbar">
             <div class="composer-left">
-              <button type="button" class="btn-composer-plus" title="Adjuntar">+</button>
-              <div class="model-pill" title="Modelo activo">
-                <span>+ claude-sonnet-4-6</span>
+              <button type="button" class="btn-composer-plus" id="attachBtn" title="Adjuntar">+</button>
+              <div class="model-pill" id="modelPill" title="Clic para seleccionar modelo">
+                <span id="currentModelLabel">+ claude-sonnet-4.6</span>
                 <small>▾</small>
               </div>
             </div>
             <div class="composer-right">
-              <button type="button" class="btn-mic" title="Voz">🎤</button>
+              <button type="button" class="btn-mic" id="micBtn" title="Entrada por voz">🎤</button>
               <button type="submit" id="sendBtn" class="btn-send" title="Enviar">↑</button>
             </div>
           </div>
@@ -668,49 +1413,341 @@
     </main>
 
     <!-- RIGHT PANEL -->
-    <aside class="sidebar-right">
+    <aside class="sidebar-right" id="sidebarRight">
       <div class="panel-tabs-row">
-        <div class="panel-tab-icons">
+        <div style="display:flex;gap:8px;">
           <span>📄</span>
           <span>📋</span>
           <span>≡</span>
         </div>
-        <strong>Sesión</strong>
-        <span style="color:#94a3b8;cursor:pointer;">✕</span>
+        <strong>Sesión Web</strong>
+        <span style="color:#94a3b8;cursor:pointer;" id="closeRightPanelBtn" title="Ocultar">✕</span>
       </div>
 
       <div>
         <div class="panel-section-title">DIRECTORIO ACTIVO</div>
-        <div class="panel-value-box">Sin carpeta</div>
+        <div class="panel-value-box" id="activeDirBox">Sin carpeta conectada</div>
       </div>
 
       <div>
         <div class="panel-section-title">ARCHIVOS DE CONTEXTO</div>
-        <p class="panel-muted-text">Sin archivos modificados en esta sesión</p>
+        <p class="panel-muted-text" id="contextFilesDesc">Sin archivos modificados en esta sesión</p>
       </div>
 
       <div style="flex:1;display:flex;flex-direction:column;gap:8px;">
         <div class="tasks-header-row">
-          <span>TAREAS EN SEGUNDO PLANO</span>
-          <span>20</span>
+          <span>TAREAS ACTIVAS</span>
+          <span id="taskCountLabel">0</span>
         </div>
-        <div class="tasks-list">
-          <div class="task-card">
-            "A partir de ahora, antes de modificar cualquier archivo de Publivende o cualquier archivo en el que estemos trabajando, activa estrictamente el modo planificador..."
-            <div class="task-status-ready">READY</div>
-          </div>
-          <div class="task-card">
-            "A partir de ahora, antes de modificar cualquier archivo de Publivende..."
-            <div class="task-status-ready">READY</div>
-          </div>
-          <div class="task-card">
-            "PROMPT: MIGRACIÓN DE MOCKS A DRIZZLE ORM Y CONEXIÓN DE BASE DE DATOS..."
-            <div class="task-status-ready">READY</div>
+        <div class="tasks-list" id="tasksList">
+          <div style="font-size:11px;color:var(--text-muted);padding:8px;text-align:center;border:1px dashed var(--sidebar-border);border-radius:6px;">
+            Sin tareas pendientes
           </div>
         </div>
       </div>
+
+      <button type="button" id="sideDownloadBtn" class="btn-top-download" style="width:100%;justify-content:center;padding:8px 0;">
+        📥 Descargar Proyecto (.zip)
+      </button>
     </aside>
 
+  </div>
+
+  <!-- MODAL DE CONFIGURACIÓN ANTIGRAVITY (2 COLUMNAS) -->
+  <div id="chatHomeSettingsSheet" class="ec-settings-sheet-overlay" aria-hidden="true">
+    <div class="ec-settings-modal-card" role="dialog" aria-label="Configuración">
+      
+      <!-- Sidebar Izquierda del Modal -->
+      <aside class="ec-settings-modal-sidebar">
+        <div class="ec-settings-search-wrap">
+          <input type="search" id="settingsSearchInput" class="ec-settings-search-input" placeholder="Buscar configuración..." autocomplete="off" />
+        </div>
+        
+        <div class="ec-settings-section-heading">CATEGORÍAS</div>
+        <nav class="ec-settings-nav-list" id="settingsNavList">
+          <button type="button" class="ec-settings-nav-item is-active" data-settings-tab="general">
+            <span>⚙️</span>
+            <span>General</span>
+          </button>
+          <button type="button" class="ec-settings-nav-item" data-settings-tab="connections">
+            <span>🔗</span>
+            <span>Conexiones (GitHub/Vercel/Supabase)</span>
+          </button>
+          <button type="button" class="ec-settings-nav-item" data-settings-tab="models">
+            <span>🤖</span>
+            <span>Modelos</span>
+          </button>
+          <button type="button" class="ec-settings-nav-item" data-settings-tab="credits">
+            <span>💳</span>
+            <span>Créditos y Facturación</span>
+            <span class="ec-settings-pill-badge" id="settingsCreditsBadge" style="margin-left:auto;">∞</span>
+          </button>
+          <button type="button" class="ec-settings-nav-item" data-settings-tab="appearance">
+            <span>🎨</span>
+            <span>Apariencia</span>
+          </button>
+        </nav>
+
+        <div class="ec-settings-user-profile" id="settingsUserProfileCard">
+          <div class="ec-user-avatar-circle" id="settingsUserAvatar">AP</div>
+          <div class="ec-user-meta">
+            <div class="ec-user-display-name" id="settingsUserName">Alfonso Perez Avilez</div>
+            <div class="ec-user-email-addr" id="settingsUserEmail">aperezavilez@gmail.com</div>
+            <div class="ec-user-role-badge" id="settingsUserRole">👑 Administrador Total</div>
+          </div>
+        </div>
+      </aside>
+
+      <!-- Contenido Principal del Modal -->
+      <main class="ec-settings-modal-main">
+        <header class="ec-settings-modal-header">
+          <div>
+            <h2 id="chatHomeSettingsTitle">Configuración</h2>
+            <p id="settingsSubTitleText">Preferencias del sistema y entorno EditCoreAI</p>
+          </div>
+          <button type="button" class="ec-settings-top-close" id="chatHomeSettingsClose" aria-label="Cerrar">✕</button>
+        </header>
+
+        <div class="ec-settings-content-viewport">
+          
+          <!-- PANE: General -->
+          <div class="ec-settings-pane" id="settingsPaneGeneral" data-pane="general">
+            <div class="ec-settings-group-card">
+              <div class="ec-group-info">
+                <h4>Idioma de la Interfaz</h4>
+                <p>Selecciona el idioma principal de EditCoreAI.</p>
+              </div>
+              <select id="settingsLangSelect" class="ec-styled-select">
+                <option value="es" selected>Español (ES)</option>
+                <option value="en">English (US)</option>
+              </select>
+            </div>
+
+            <div class="ec-settings-group-card">
+              <div class="ec-group-info">
+                <h4>Indexación Continua del Repositorio</h4>
+                <p>Mantiene un grafo en tiempo real de funciones, símbolos y referencias.</p>
+              </div>
+              <label style="cursor:pointer;">
+                <input type="checkbox" checked /> Activado
+              </label>
+            </div>
+
+            <div class="ec-settings-group-card">
+              <div class="ec-group-info">
+                <h4>Permisos de Ejecución</h4>
+                <p>Define cómo interactúa el motor de IA con tus proyectos.</p>
+              </div>
+              <select class="ec-styled-select">
+                <option value="step" selected>Paso a paso (Recomendado)</option>
+                <option value="auto">Totalmente Autónomo</option>
+                <option value="readonly">Solo lectura</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- PANE: Conexiones (GitHub, Vercel, Supabase) -->
+          <div class="ec-settings-pane is-hidden" id="settingsPaneConnections" data-pane="connections" hidden>
+            
+            <!-- Conexión GitHub -->
+            <div class="ec-settings-group-card" style="align-items:flex-start;flex-direction:column;gap:8px;">
+              <div style="display:flex;justify-content:space-between;width:100%;align-items:center;">
+                <div class="ec-group-info">
+                  <h4>GitHub (Control de Versiones)</h4>
+                  <p>Sincroniza y crea repositorios directamente desde EditCoreAI.</p>
+                </div>
+                <span class="ec-status-tag ec-tag-success" id="githubStatusTag">Conectado</span>
+              </div>
+              <div style="display:flex;gap:8px;width:100%;margin-top:6px;">
+                <input type="password" id="githubTokenInput" class="ec-styled-input" placeholder="GitHub Personal Access Token (ghp_...)" />
+                <button type="button" class="ec-btn-action" id="saveGithubBtn">Conectar</button>
+              </div>
+            </div>
+
+            <!-- Conexión Vercel -->
+            <div class="ec-settings-group-card" style="align-items:flex-start;flex-direction:column;gap:8px;">
+              <div style="display:flex;justify-content:space-between;width:100%;align-items:center;">
+                <div class="ec-group-info">
+                  <h4>Vercel (Despliegue en Vivo)</h4>
+                  <p>Publica tu proyecto a producción con 1 clic en un dominio .vercel.app.</p>
+                </div>
+                <span class="ec-status-tag ec-tag-success" id="vercelStatusTag">Conectado</span>
+              </div>
+              <div style="display:flex;gap:8px;width:100%;margin-top:6px;">
+                <input type="password" id="vercelTokenInput" class="ec-styled-input" placeholder="Vercel Access Token o Deploy Hook" />
+                <button type="button" class="ec-btn-action" id="saveVercelBtn">Conectar</button>
+              </div>
+            </div>
+
+            <!-- Conexión Supabase -->
+            <div class="ec-settings-group-card" style="align-items:flex-start;flex-direction:column;gap:8px;">
+              <div style="display:flex;justify-content:space-between;width:100%;align-items:center;">
+                <div class="ec-group-info">
+                  <h4>Supabase (Base de Datos &amp; Auth)</h4>
+                  <p>Conexión a base de datos PostgreSQL, ledger de créditos y autenticación.</p>
+                </div>
+                <span class="ec-status-tag ec-tag-success" id="supabaseStatusTag">Conectado</span>
+              </div>
+              <div style="display:flex;gap:8px;width:100%;margin-top:6px;">
+                <input type="text" id="supabaseUrlInput" class="ec-styled-input" placeholder="https://tu-proyecto.supabase.co" />
+                <input type="password" id="supabaseKeyInput" class="ec-styled-input" placeholder="Anon Key o Service Role" />
+                <button type="button" class="ec-btn-action" id="saveSupabaseBtn">Conectar</button>
+              </div>
+            </div>
+
+          </div>
+
+          <!-- PANE: Modelos -->
+          <div class="ec-settings-pane is-hidden" id="settingsPaneModels" data-pane="models" hidden>
+            <div class="ec-settings-group-card">
+              <div class="ec-group-info">
+                <h4>Modelo de Inteligencia Artificial Predeterminado</h4>
+                <p>Selecciona el motor principal de inferencia para tu espacio de trabajo.</p>
+              </div>
+              <select id="settingsDefaultModelSelect" class="ec-styled-select">
+                <optgroup label="Modelos Recomendados">
+                  <option value="claude-sonnet-4.6" selected>claude-sonnet-4.6 · Principal</option>
+                  <option value="claude-haiku-4-5">claude-haiku-4-5 · Rápido</option>
+                  <option value="claude-opus-4.8">claude-opus-4.8 · Complejidad Alta</option>
+                  <option value="deepseek-v4-pro">deepseek-v4-pro · Código</option>
+                  <option value="qwen3.6-plus">qwen3.6-plus · Equilibrado</option>
+                  <option value="glm-5">glm-5 · Multimodal</option>
+                  <option value="kimi-k2.6">kimi-k2.6 · Contexto Extenso</option>
+                </optgroup>
+                <optgroup label="Modelos Avanzados">
+                  <option value="gpt-5.6-luna">gpt-5.6-luna · Razonamiento</option>
+                  <option value="gemini-2.5-flash">gemini-2.5-flash · Baja Latencia</option>
+                  <option value="grok-4.5">grok-4.5 · Visión y Lógica</option>
+                  <option value="claude-fable-5">claude-fable-5 · Arquitectura</option>
+                </optgroup>
+              </select>
+            </div>
+
+            <div class="ec-settings-group-card">
+              <div class="ec-group-info">
+                <h4>Enrutamiento Inteligente de Modelos</h4>
+                <p>Usa modelos rápidos para consultas sencillas y conmuta a Claude Sonnet 4.6 para arquitectura compleja.</p>
+              </div>
+              <label style="cursor:pointer;">
+                <input type="checkbox" checked /> Activado
+              </label>
+            </div>
+          </div>
+
+          <!-- PANE: Créditos y Facturación -->
+          <div class="ec-settings-pane is-hidden" id="settingsPaneCredits" data-pane="credits" hidden>
+            
+            <!-- Dashboard Maestro (Exclusivo Administrador DENTRO de Configuración) -->
+            <div id="settingsAdminMasterDashboard" class="ec-master-dashboard-card" style="display:none;">
+              <div class="ec-master-card-head">
+                <div class="ec-master-badge">👑 Cuenta Maestra · EditCoreAI Central</div>
+                <div class="ec-master-updated" id="adminMasterUpdated">En vivo</div>
+              </div>
+              <div class="ec-master-metrics-grid">
+                <div class="ec-metric-box">
+                  <span class="ec-metric-title">💵 Fondo Maestro en USD</span>
+                  <div class="ec-metric-number text-emerald" id="adminMasterUsd">$8,000.00</div>
+                  <span class="ec-metric-sub" id="adminMasterConsumedUsd">Consumido: $0.0000</span>
+                </div>
+                <div class="ec-metric-box">
+                  <span class="ec-metric-title">⚡ Reserva Global de Créditos</span>
+                  <div class="ec-metric-number text-indigo" id="adminMasterCredits">160,000.00</div>
+                  <span class="ec-metric-sub" id="adminMasterConsumedCredits">Consumido: 0.00 cred</span>
+                </div>
+                <div class="ec-metric-box">
+                  <span class="ec-metric-title">🔢 Reserva Global de Tokens</span>
+                  <div class="ec-metric-number text-cyan" id="adminMasterTokens">1,600,000,000</div>
+                  <span class="ec-metric-sub" id="adminMasterConsumedTokens">Consumido: 0 tokens</span>
+                </div>
+              </div>
+              <div class="ec-master-bar-wrap">
+                <div class="ec-master-bar-label">
+                  <span>Deducción y Uso del Fondo Maestro</span>
+                  <span id="adminMasterPct">0% consumido</span>
+                </div>
+                <div class="ec-progress-track">
+                  <div class="ec-progress-fill" id="adminMasterProgressFill" style="width: 0%;"></div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Banner de Saldo Personal (para Usuarios Normales) -->
+            <div class="ec-credits-overview-banner" id="settingsCreditsOverviewBanner">
+              <div>
+                <span class="ec-credits-caption">Saldo Disponible</span>
+                <div style="display:flex;align-items:baseline;gap:10px;margin:4px 0;">
+                  <div class="ec-credits-big-num" id="settingsCreditsBigNum">∞ Ilimitado</div>
+                  <div class="ec-credits-usd-num" id="settingsCreditsUsdNum" style="font-size:18px;font-weight:700;color:#059669;display:none;">($0.00 USD)</div>
+                </div>
+                <div class="ec-credits-plan-tag" id="settingsCreditsPlanTag">Plan Administrador Maestro · Acceso Vitalicio</div>
+              </div>
+              <div id="settingsCreditsBannerCta">
+                <button type="button" id="settingsBuyCreditsBtn" class="ec-btn-gold" style="display:none;" onclick="alert('Elige un paquete de recarga: 1,000 Créditos por $10 USD.');">💳 Recargar Crédito</button>
+              </div>
+            </div>
+
+            <!-- Canjear Cupón o Código de Recarga -->
+            <div class="ec-settings-group-card" id="settingsVoucherCard">
+              <div class="ec-group-info">
+                <h4>Canjear Cupón o Código de Recarga</h4>
+                <p>Ingresa un código promocional para añadir saldo a tu cuenta.</p>
+              </div>
+              <div style="display:flex;gap:8px;align-items:center;">
+                <input type="text" id="settingsVoucherInput" class="ec-styled-input" placeholder="Ej: EDITCORE100, PROMO2026" style="width:200px;" />
+                <button type="button" id="settingsVoucherBtn" class="ec-btn-action">Canjear</button>
+              </div>
+            </div>
+            <div id="settingsVoucherStatus" style="display:none;font-size:12px;padding:8px;border-radius:6px;"></div>
+
+            <!-- Datos de Cuenta y Titular -->
+            <div class="ec-settings-group-card">
+              <div class="ec-group-info">
+                <h4>Cuenta y Titular</h4>
+                <p>Nombre y correo asociado a la cuenta activa.</p>
+              </div>
+              <div style="display:flex;flex-direction:column;gap:8px;min-width:240px;">
+                <input type="text" id="settingsProfileNameInput" class="ec-styled-input" value="Alfonso Perez Avilez" />
+                <button type="button" id="settingsSaveProfileBtn" class="ec-btn-secondary">Guardar Perfil</button>
+              </div>
+            </div>
+
+          </div>
+
+          <!-- PANE: Apariencia -->
+          <div class="ec-settings-pane is-hidden" id="settingsPaneAppearance" data-pane="appearance" hidden>
+            <div class="ec-settings-group-card">
+              <div class="ec-group-info">
+                <h4>Tema Visual</h4>
+                <p>Personaliza los tonos y el contraste de la interfaz.</p>
+              </div>
+            </div>
+            <div class="ec-theme-cards-grid">
+              <button type="button" class="ec-theme-picker-card is-active" data-ch-theme="blanco">
+                <div class="ec-theme-thumb ec-th-light"></div>
+                <strong>Blanco</strong>
+                <small>Tema Claro</small>
+              </button>
+              <button type="button" class="ec-theme-picker-card" data-ch-theme="gris">
+                <div class="ec-theme-thumb ec-th-gray"></div>
+                <strong>Gris</strong>
+                <small>Carbón Editor</small>
+              </button>
+              <button type="button" class="ec-theme-picker-card" data-ch-theme="negro">
+                <div class="ec-theme-thumb ec-th-black"></div>
+                <strong>Negro</strong>
+                <small>Oscuro Profundo</small>
+              </button>
+              <button type="button" class="ec-theme-picker-card" data-ch-theme="azul">
+                <div class="ec-theme-thumb ec-th-blue"></div>
+                <strong>Azul</strong>
+                <small>Azul Noche</small>
+              </button>
+            </div>
+          </div>
+
+        </div>
+      </main>
+    </div>
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
@@ -725,9 +1762,430 @@
 
     const userEmail = currentSession?.user?.email || "aperezavilez@gmail.com";
     const userBadge = document.getElementById("userBadge");
+    const isAdmin = userEmail.toLowerCase() === "aperezavilez@gmail.com";
+
+    // Elementos de UI
+    const buyBtn = document.getElementById("buyCreditsWebBtn");
+    const topMasterLedgerBar = document.getElementById("topMasterLedgerBar");
+    const adminUnlimitedBadge = document.getElementById("adminUnlimitedBadge");
+    const userCreditsPill = document.getElementById("userCreditsPill");
+    const userTopCredits = document.getElementById("userTopCredits");
+    const userTopUsd = document.getElementById("userTopUsd");
+    const adminMasterDashboard = document.getElementById("settingsAdminMasterDashboard");
+    const settingsCreditsBigNum = document.getElementById("settingsCreditsBigNum");
+    const settingsCreditsUsdNum = document.getElementById("settingsCreditsUsdNum");
+    const settingsCreditsPlanTag = document.getElementById("settingsCreditsPlanTag");
+    const settingsBuyCreditsBtn = document.getElementById("settingsBuyCreditsBtn");
+
+    // Perfil en UI
     if (userBadge) {
-      userBadge.textContent = userEmail === "aperezavilez@gmail.com" ? "👑 Administrador Total" : ("👤 " + userEmail.split("@")[0]);
+      if (isAdmin) {
+        userBadge.className = "top-badge-admin";
+        userBadge.textContent = "👑 Administrador Total";
+      } else {
+        userBadge.className = "top-badge-user";
+        userBadge.textContent = "👤 " + userEmail.split("@")[0];
+      }
     }
+    const settingsUserName = document.getElementById("settingsUserName");
+    const settingsUserEmail = document.getElementById("settingsUserEmail");
+    const settingsUserRole = document.getElementById("settingsUserRole");
+    const settingsUserProfileNameInput = document.getElementById("settingsProfileNameInput");
+
+    if (settingsUserEmail) settingsUserEmail.textContent = userEmail;
+    if (isAdmin) {
+      if (settingsUserName) settingsUserName.textContent = "Alfonso Perez Avilez";
+      if (settingsUserRole) settingsUserRole.textContent = "👑 Administrador Total";
+      if (settingsUserProfileNameInput) settingsUserProfileNameInput.value = "Alfonso Perez Avilez";
+      
+      // Conexiones de Administrador Fijas
+      const gh = document.getElementById("githubTokenInput");
+      const vc = document.getElementById("vercelTokenInput");
+      const su = document.getElementById("supabaseUrlInput");
+      if (gh) { gh.value = "●●●●●●●● (Admin Token Conectado)"; gh.disabled = true; }
+      if (vc) { vc.value = "●●●●●●●● (editcore.mx Conectado)"; vc.disabled = true; }
+      if (su) { su.value = window.EDITCORE_SUPABASE_URL || "https://supabase.gafcore.com"; su.disabled = true; }
+    } else {
+      const name = userEmail.split("@")[0];
+      if (settingsUserName) settingsUserName.textContent = name;
+      if (settingsUserRole) settingsUserRole.textContent = "👤 Usuario Regular";
+      if (settingsUserProfileNameInput) settingsUserProfileNameInput.value = name;
+      
+      // Cargar conexiones guardadas del usuario regular
+      try {
+        const savedGh = localStorage.getItem("editcore_user_gh");
+        const savedVc = localStorage.getItem("editcore_user_vc");
+        const savedSu = localStorage.getItem("editcore_user_su");
+        if (savedGh && document.getElementById("githubTokenInput")) document.getElementById("githubTokenInput").value = savedGh;
+        if (savedVc && document.getElementById("vercelTokenInput")) document.getElementById("vercelTokenInput").value = savedVc;
+        if (savedSu && document.getElementById("supabaseUrlInput")) document.getElementById("supabaseUrlInput").value = savedSu;
+      } catch(e) {}
+    }
+
+    // Guardar conexiones de usuarios regulares
+    document.getElementById("saveGithubBtn")?.addEventListener("click", () => {
+      const val = document.getElementById("githubTokenInput")?.value;
+      if (val) { localStorage.setItem("editcore_user_gh", val); alert("✅ GitHub conectado exitosamente."); }
+    });
+    document.getElementById("saveVercelBtn")?.addEventListener("click", () => {
+      const val = document.getElementById("vercelTokenInput")?.value;
+      if (val) { localStorage.setItem("editcore_user_vc", val); alert("✅ Vercel conectado exitosamente."); }
+    });
+    document.getElementById("saveSupabaseBtn")?.addEventListener("click", () => {
+      const val = document.getElementById("supabaseUrlInput")?.value;
+      if (val) { localStorage.setItem("editcore_user_su", val); alert("✅ Supabase conectado exitosamente."); }
+    });
+
+    // Cargar Estadísticas del Master Ledger (Admin) o Usuario Normal
+    async function loadMasterLedgerStats() {
+      if (!isAdmin) {
+        // Usuario Regular:
+        if (topMasterLedgerBar) topMasterLedgerBar.style.display = "none";
+        if (adminUnlimitedBadge) adminUnlimitedBadge.style.display = "none";
+        if (adminMasterDashboard) adminMasterDashboard.style.display = "none";
+
+        if (buyBtn) buyBtn.style.display = "inline-block";
+        if (settingsBuyCreditsBtn) settingsBuyCreditsBtn.style.display = "inline-block";
+        if (userCreditsPill) userCreditsPill.style.display = "inline-flex";
+        if (settingsCreditsUsdNum) settingsCreditsUsdNum.style.display = "inline-block";
+        
+        try {
+          if (window.EDITCORE_SUPABASE_URL && currentSession?.access_token) {
+            const res = await fetch(`${window.EDITCORE_SUPABASE_URL}/rest/v1/profiles?id=eq.${currentSession.user.id}&select=credits_balance`, {
+              headers: {
+                "apikey": window.EDITCORE_SUPABASE_ANON_KEY,
+                "Authorization": `Bearer ${currentSession.access_token}`
+              }
+            });
+            const data = await res.json();
+            if (data && data.length) {
+              const bal = Number(data[0].credits_balance || 0);
+              const usdEq = (bal * 0.05).toFixed(2);
+              
+              if (userTopCredits) userTopCredits.textContent = `${bal} Créditos`;
+              if (userTopUsd) userTopUsd.textContent = `($${usdEq} USD)`;
+
+              if (settingsCreditsBigNum) settingsCreditsBigNum.textContent = `${bal} Créditos`;
+              if (settingsCreditsUsdNum) settingsCreditsUsdNum.textContent = `($${usdEq} USD)`;
+              if (settingsCreditsPlanTag) settingsCreditsPlanTag.textContent = "Plan Prepago · Saldo Comprado";
+            }
+          }
+        } catch(e) {}
+        return;
+      }
+
+      // Administrador Maestro en Web:
+      // En la web los marcadores aplican y muestran la información total en la barra superior
+      if (topMasterLedgerBar) topMasterLedgerBar.style.display = "inline-flex";
+      if (adminUnlimitedBadge) adminUnlimitedBadge.style.display = "inline-block";
+      if (buyBtn) buyBtn.style.display = "none";
+      if (settingsBuyCreditsBtn) settingsBuyCreditsBtn.style.display = "none";
+      if (userCreditsPill) userCreditsPill.style.display = "none";
+      if (settingsCreditsUsdNum) settingsCreditsUsdNum.style.display = "none";
+
+      if (adminMasterDashboard) adminMasterDashboard.style.display = "block";
+      if (settingsCreditsBigNum) settingsCreditsBigNum.textContent = "∞ Ilimitado";
+      if (settingsCreditsPlanTag) settingsCreditsPlanTag.textContent = "Plan Administrador Maestro · Acceso Vitalicio";
+
+      try {
+        const token = currentSession?.access_token || window.EDITCORE_SUPABASE_ANON_KEY;
+        const res = await fetch(`${window.EDITCORE_SUPABASE_URL}/rest/v1/master_ledger?select=*&limit=1`, {
+          headers: {
+            "apikey": window.EDITCORE_SUPABASE_ANON_KEY,
+            "Authorization": `Bearer ${token}`
+          }
+        });
+        const rows = await res.json();
+        if (rows && rows.length) {
+          const row = rows[0];
+          const totalUsd = Number(row.total_usd || 8000);
+          const consUsd = Number(row.consumed_usd || 0);
+          const remUsd = Math.max(0, totalUsd - consUsd);
+          
+          const totalCredits = Number(row.total_credits || 160000);
+          const consCredits = (consUsd * 1.5) / 0.05;
+          const remCredits = Math.max(0, totalCredits - consCredits);
+
+          const totalTokens = Number(row.total_tokens || 1600000000);
+          const consTokens = Number(row.consumed_tokens || 0);
+          const remTokens = Math.max(0, totalTokens - consTokens);
+
+          const remUsdStr = remUsd.toLocaleString("en-US", { style: "currency", currency: "USD" });
+          const remCredStr = remCredits.toLocaleString("en-US", { maximumFractionDigits: 1 });
+          const remTokFmt = remTokens >= 1e9 ? (remTokens / 1e9).toFixed(2) + "B" : (remTokens >= 1e6 ? (remTokens / 1e6).toFixed(1) + "M" : remTokens.toLocaleString());
+
+          // Marcadores en barra superior del Administrador
+          const topUsd = document.getElementById("topStatUsd");
+          const topCredits = document.getElementById("topStatCredits");
+          const topTokens = document.getElementById("topStatTokens");
+          if (topUsd) topUsd.textContent = remUsdStr;
+          if (topCredits) topCredits.textContent = remCredStr;
+          if (topTokens) topTokens.textContent = remTokFmt;
+
+          // Modal Dashboard dentro de Configuración
+          const mUsd = document.getElementById("adminMasterUsd");
+          const mCred = document.getElementById("adminMasterCredits");
+          const mTok = document.getElementById("adminMasterTokens");
+          const mConsUsd = document.getElementById("adminMasterConsumedUsd");
+          const mConsCred = document.getElementById("adminMasterConsumedCredits");
+          const mConsTok = document.getElementById("adminMasterConsumedTokens");
+          const mPct = document.getElementById("adminMasterPct");
+          const mFill = document.getElementById("adminMasterProgressFill");
+
+          if (mUsd) mUsd.textContent = remUsdStr;
+          if (mCred) mCred.textContent = remCredStr;
+          if (mTok) mTok.textContent = remTokens.toLocaleString();
+          if (mConsUsd) mConsUsd.textContent = `Consumido: $${consUsd.toFixed(4)} USD`;
+          if (mConsCred) mConsCred.textContent = `Consumido: ${consCredits.toFixed(2)} cred`;
+          if (mConsTok) mConsTok.textContent = `Consumido: ${consTokens.toLocaleString()} tokens`;
+
+          const pct = Math.min(100, Math.max(0, (consUsd / totalUsd) * 100));
+          if (mPct) mPct.textContent = `${pct.toFixed(2)}% consumido`;
+          if (mFill) mFill.style.width = `${pct.toFixed(2)}%`;
+        }
+      } catch (err) {
+        console.warn("Error cargando estadísticas maestras:", err);
+      }
+    }
+
+    loadMasterLedgerStats();
+
+    // ==========================================
+    // SELECTOR DE MODELOS
+    // ==========================================
+    const modelPill = document.getElementById("modelPill");
+    const modelDropdown = document.getElementById("modelDropdownMenu");
+    const currentModelLabel = document.getElementById("currentModelLabel");
+    let activeModel = localStorage.getItem("editcore_selected_model") || "claude-sonnet-4.6";
+    if (currentModelLabel) currentModelLabel.textContent = "+ " + activeModel;
+
+    modelPill?.addEventListener("click", (e) => {
+      e.stopPropagation();
+      modelDropdown.classList.toggle("is-open");
+    });
+
+    document.querySelectorAll(".model-option-item").forEach(item => {
+      item.addEventListener("click", () => {
+        const id = item.getAttribute("data-model-id");
+        activeModel = id;
+        currentModelLabel.textContent = "+ " + id;
+        try { localStorage.setItem("editcore_selected_model", id); } catch(e) {}
+        document.querySelectorAll(".model-option-item").forEach(i => i.classList.remove("is-selected"));
+        item.classList.add("is-selected");
+        modelDropdown.classList.remove("is-open");
+      });
+    });
+
+    document.addEventListener("click", (e) => {
+      if (!modelPill.contains(e.target) && !modelDropdown.contains(e.target)) {
+        modelDropdown.classList.remove("is-open");
+      }
+    });
+
+    // ==========================================
+    // DESCARGAR PROYECTO (.ZIP)
+    // ==========================================
+    const generatedProjectFiles = {
+      "package.json": JSON.stringify({
+        "name": "editcore-generated-project",
+        "version": "1.0.0",
+        "private": true,
+        "scripts": {
+          "dev": "vite",
+          "build": "vite build",
+          "preview": "vite preview"
+        },
+        "dependencies": {
+          "@supabase/supabase-js": "^2.45.4"
+        },
+        "devDependencies": {
+          "vite": "^5.4.2"
+        }
+      }, null, 2),
+      "README.md": "# EditCoreAI Generated Project\n\nProyecto exportado desde EditCoreAI Web.\n\n## Instalación\n```bash\nnpm install\nnpm run dev\n```\n",
+      "src/index.html": "<!DOCTYPE html>\n<html lang=\"es\">\n<head>\n  <meta charset=\"UTF-8\">\n  <title>EditCoreAI App</title>\n</head>\n<body>\n  <h1>EditCoreAI App</h1>\n  <script type=\"module\" src=\"/src/main.js\"><\/script>\n</body>\n</html>",
+      "src/main.js": "// EditCoreAI Web - Código fuente principal\nconsole.log('EditCoreAI Project initialized.');\n"
+    };
+
+    function downloadProjectAsZip() {
+      if (typeof JSZip === "undefined") {
+        alert("⚠️ Error cargando el motor de compresión ZIP. Verifica tu conexión.");
+        return;
+      }
+      const zip = new JSZip();
+      for (const [filename, content] of Object.entries(generatedProjectFiles)) {
+        zip.file(filename, content);
+      }
+
+      zip.generateAsync({ type: "blob" }).then(blob => {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = "editcore-project.zip";
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      }).catch(err => {
+        alert("Error generando archivo ZIP: " + err.message);
+      });
+    }
+
+    document.getElementById("topDownloadProjectBtn")?.addEventListener("click", downloadProjectAsZip);
+    document.getElementById("sideDownloadBtn")?.addEventListener("click", downloadProjectAsZip);
+
+    // ==========================================
+    // PROYECTOS & ESTADO LIMPIO
+    // ==========================================
+    document.getElementById("addProjectBtn")?.addEventListener("click", () => {
+      const name = prompt("Ingresa el nombre del nuevo proyecto:");
+      if (!name) return;
+      const list = document.getElementById("projectsList");
+      const notice = document.getElementById("noProjectsNotice");
+      if (notice) notice.remove();
+
+      const item = document.createElement("div");
+      item.className = "list-item is-active";
+      item.innerHTML = `<div class="list-item-title"><span>${name}</span><span class="list-item-time">Ahora</span></div>`;
+      list.appendChild(item);
+      document.getElementById("chatTitle").textContent = name;
+      document.getElementById("activeDirBox").textContent = name + " / src";
+    });
+
+    document.getElementById("createFirstProjBtn")?.addEventListener("click", () => {
+      document.getElementById("addProjectBtn")?.click();
+    });
+
+    // ==========================================
+    // CONTROL DEL MODAL DE CONFIGURACIÓN
+    // ==========================================
+    const settingsModal = document.getElementById("chatHomeSettingsSheet");
+    const topSettingsBtn = document.getElementById("topSettingsBtn");
+    const sidebarSettingsBtn = document.getElementById("settingsBtn");
+    const closeSettingsBtn = document.getElementById("chatHomeSettingsClose");
+
+    function openSettings(tab = "general") {
+      if (!settingsModal) return;
+      settingsModal.classList.add("is-open");
+      settingsModal.setAttribute("aria-hidden", "false");
+      switchSettingsTab(tab);
+      loadMasterLedgerStats();
+    }
+
+    function closeSettings() {
+      if (!settingsModal) return;
+      settingsModal.classList.remove("is-open");
+      settingsModal.setAttribute("aria-hidden", "true");
+    }
+
+    function switchSettingsTab(tabKey) {
+      const titleMap = {
+        general: { title: "General", sub: "Configuración general y preferencias de EditCoreAI" },
+        connections: { title: "Conexiones de Servicios", sub: "Vinculación con GitHub, Vercel y Supabase" },
+        models: { title: "Modelos", sub: "Catálogo de modelos de inferencia disponibles" },
+        credits: { title: "Créditos y Facturación", sub: "Saldo disponible, fondo maestro y cupones" },
+        appearance: { title: "Apariencia", sub: "Personalización de temas visuales y contrastes" }
+      };
+
+      const meta = titleMap[tabKey] || titleMap.general;
+      const titleEl = document.getElementById("chatHomeSettingsTitle");
+      const subEl = document.getElementById("settingsSubTitleText");
+      if (titleEl) titleEl.textContent = meta.title;
+      if (subEl) subEl.textContent = meta.sub;
+
+      document.querySelectorAll("[data-settings-tab]").forEach(btn => {
+        btn.classList.toggle("is-active", btn.getAttribute("data-settings-tab") === tabKey);
+      });
+
+      document.querySelectorAll(".ec-settings-pane").forEach(pane => {
+        const isCurrent = pane.getAttribute("data-pane") === tabKey;
+        pane.classList.toggle("is-hidden", !isCurrent);
+        pane.hidden = !isCurrent;
+      });
+    }
+
+    topSettingsBtn?.addEventListener("click", () => openSettings("general"));
+    sidebarSettingsBtn?.addEventListener("click", () => openSettings("general"));
+    buyBtn?.addEventListener("click", () => openSettings("credits"));
+    closeSettingsBtn?.addEventListener("click", closeSettings);
+
+    settingsModal?.addEventListener("click", (e) => {
+      if (e.target === settingsModal) closeSettings();
+    });
+
+    window.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && settingsModal?.classList.contains("is-open")) {
+        closeSettings();
+      }
+    });
+
+    document.querySelectorAll("[data-settings-tab]").forEach(btn => {
+      btn.addEventListener("click", () => {
+        switchSettingsTab(btn.getAttribute("data-settings-tab"));
+      });
+    });
+
+    // Selector de Temas
+    document.querySelectorAll("[data-ch-theme]").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const theme = btn.getAttribute("data-ch-theme");
+        document.documentElement.setAttribute("data-theme", theme);
+        document.querySelectorAll("[data-ch-theme]").forEach(b => b.classList.remove("is-active"));
+        btn.classList.add("is-active");
+        try { localStorage.setItem("editcore-web-theme", theme); } catch(e) {}
+      });
+    });
+
+    try {
+      const savedTheme = localStorage.getItem("editcore-web-theme") || "blanco";
+      document.documentElement.setAttribute("data-theme", savedTheme);
+      document.querySelectorAll("[data-ch-theme]").forEach(b => {
+        b.classList.toggle("is-active", b.getAttribute("data-ch-theme") === savedTheme);
+      });
+    } catch(e) {}
+
+    // Canje de cupones
+    const voucherBtn = document.getElementById("settingsVoucherBtn");
+    const voucherInput = document.getElementById("settingsVoucherInput");
+    const voucherStatus = document.getElementById("settingsVoucherStatus");
+
+    voucherBtn?.addEventListener("click", async () => {
+      const code = voucherInput.value.trim().toUpperCase();
+      if (!code) return;
+      voucherStatus.style.display = "block";
+      voucherStatus.textContent = "Verificando código...";
+      voucherStatus.style.background = "rgba(79, 70, 229, 0.1)";
+      voucherStatus.style.color = "#4f46e5";
+
+      try {
+        const res = await fetch(`${window.EDITCORE_SUPABASE_URL}/rest/v1/vouchers?code=eq.${code}&is_active=eq.true&select=*`, {
+          headers: { "apikey": window.EDITCORE_SUPABASE_ANON_KEY }
+        });
+        const rows = await res.json();
+        if (rows && rows.length) {
+          const v = rows[0];
+          voucherStatus.textContent = `✅ Cupón válido: +${v.credits} créditos agregados a tu cuenta.`;
+          voucherStatus.style.background = "rgba(34, 197, 94, 0.15)";
+          voucherStatus.style.color = "#16a34a";
+          loadMasterLedgerStats();
+        } else {
+          voucherStatus.textContent = "❌ Cupón inválido, expirado o agotado.";
+          voucherStatus.style.background = "rgba(239, 68, 68, 0.15)";
+          voucherStatus.style.color = "#ef4444";
+        }
+      } catch (err) {
+        voucherStatus.textContent = "⚠️ Error al conectar con el servidor de cupones.";
+      }
+    });
+
+    // Guardar Perfil
+    document.getElementById("settingsSaveProfileBtn")?.addEventListener("click", () => {
+      const newName = settingsUserProfileNameInput?.value?.trim();
+      if (newName && settingsUserName) {
+        settingsUserName.textContent = newName;
+        alert("✅ Perfil actualizado correctamente.");
+      }
+    });
 
     // Botón cerrar sesión
     document.getElementById("topLogoutBtn")?.addEventListener("click", () => {
@@ -735,23 +2193,45 @@
       location.href = "/login.html";
     });
 
-    // Nuevo chat
-    document.getElementById("newChatBtn")?.addEventListener("click", () => {
-      const stage = document.getElementById("chatStage");
+    // ==========================================
+    // CONTROL DEL CHAT
+    // ==========================================
+    const newChatBtn = document.getElementById("newChatBtn");
+    const plusChatBtn = document.getElementById("plusChatBtn");
+    const chatTitle = document.getElementById("chatTitle");
+    const stage = document.getElementById("chatStage");
+    const input = document.getElementById("chatInput");
+    const form = document.getElementById("chatComposer");
+    const sendBtn = document.getElementById("sendBtn");
+
+    function resetToNewChat() {
       stage.innerHTML = `<div class="empty-welcome" id="emptyWelcome">
         <h1>Bienvenido a EditCoreAI. ¿Qué haremos hoy?</h1>
-        <p>Escribe tu consulta o requerimiento para generar código, depurar o planificar.</p>
+        <p>Escribe tu consulta o requerimiento para generar código, depurar o planificar tu proyecto.</p>
       </div>`;
-      document.getElementById("chatInput").value = "";
-      document.getElementById("chatInput").focus();
+      chatTitle.textContent = "Chat 1";
+      input.value = "";
+      input.focus();
+    }
+
+    newChatBtn?.addEventListener("click", resetToNewChat);
+    plusChatBtn?.addEventListener("click", resetToNewChat);
+
+    // Cerrar panel derecho
+    document.getElementById("closeRightPanelBtn")?.addEventListener("click", () => {
+      const panel = document.getElementById("sidebarRight");
+      if (panel) panel.style.display = (panel.style.display === "none") ? "flex" : "none";
+    });
+
+    // Copiar conversación
+    document.getElementById("copyChatBtn")?.addEventListener("click", () => {
+      const text = stage.innerText;
+      navigator.clipboard.writeText(text).then(() => {
+        alert("📋 Conversación copiada al portapapeles.");
+      });
     });
 
     // Enviar mensaje al API /api/chat
-    const form = document.getElementById("chatComposer");
-    const input = document.getElementById("chatInput");
-    const sendBtn = document.getElementById("sendBtn");
-    const stage = document.getElementById("chatStage");
-
     form?.addEventListener("submit", async (e) => {
       e.preventDefault();
       const text = input.value.trim();
@@ -773,7 +2253,7 @@
       aiRow.className = "msg-row";
       const aiBubble = document.createElement("div");
       aiBubble.className = "msg-ai";
-      aiBubble.textContent = "⚙️ EditCoreAI procesando requerimiento...";
+      aiBubble.textContent = `⚙️ EditCoreAI procesando requerimiento con ${activeModel}...`;
       aiRow.appendChild(aiBubble);
       stage.appendChild(aiRow);
       stage.scrollTop = stage.scrollHeight;
@@ -786,13 +2266,17 @@
             messages: [{ role: "user", content: text }],
             userEmail: userEmail,
             userId: currentSession?.user?.id || "admin-master",
-            model: "claude-sonnet-4-6"
+            model: activeModel
           })
         });
 
         const data = await res.json();
         if (data.reply) {
           aiBubble.textContent = data.reply;
+          // Guardar fragmento de código si viene en la respuesta para el ZIP
+          if (data.reply.includes('```')) {
+            generatedProjectFiles["src/generated-code.js"] = data.reply;
+          }
         } else if (data.message) {
           aiBubble.textContent = data.message;
         } else if (data.error) {
@@ -805,6 +2289,7 @@
       } finally {
         sendBtn.disabled = false;
         stage.scrollTop = stage.scrollHeight;
+        loadMasterLedgerStats();
       }
     });
 

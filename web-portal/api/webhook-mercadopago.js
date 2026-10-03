@@ -1,4 +1,4 @@
-﻿// Serverless Function: POST /api/webhook-mercadopago
+// Serverless Function: POST /api/webhook-mercadopago
 module.exports = async (req, res) => {
   const { type, data } = req.body || {};
   // Recibir notificación IPN de Mercado Pago

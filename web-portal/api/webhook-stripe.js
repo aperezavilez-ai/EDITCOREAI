@@ -1,4 +1,4 @@
-﻿// Serverless Function: POST /api/webhook-stripe
+// Serverless Function: POST /api/webhook-stripe
 module.exports = async (req, res) => {
   const { type, data } = req.body || {};
   // Recibir evento de checkout.session.completed de Stripe
