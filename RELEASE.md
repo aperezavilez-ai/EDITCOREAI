@@ -1,3 +1,15 @@
+# RELEASE v4.2.5
+
+## Sin avisos falsos de "no se basa en lecturas del disco"
+
+### Corregido
+- El reporte de análisis mostraba "Este análisis no se basa en lecturas del disco" aunque EditCore sí había leído los archivos de la evidencia. El aviso solo contaba las lecturas que hacía el modelo; ahora cuenta también las del analista y solo aparece si de verdad no se leyó nada.
+
+### Build
+- `EDITCOREAI.exe` (4.2.5.0) y `release/EDITCOREAI-Setup.exe` (4.2.5), construidos desde un árbol limpio en el commit publicado.
+
+---
+
 # RELEASE v4.2.4
 
 ## Reporte de análisis sin secciones duplicadas

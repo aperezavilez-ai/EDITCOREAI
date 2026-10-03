@@ -172,6 +172,20 @@ test("el reporte del modelo no repite la tabla de chequeos ni los verificados qu
   assert.doesNotMatch(fc.formatForensicPromptBlock({ checks: [], findings: [], counts: { error: 0, warning: 0 } }), /lista TODOS los hallazgos/);
 });
 
+test("el aviso 'no se basa en lecturas del disco' cuenta las lecturas del analista", async () => {
+  const { groundUngroundedClaims, successfulDiskReads } = require("../editcore-chat-kernel/orchestrator");
+  const { runAnalyst } = require("../editcore-chat-kernel/subagents/analyst");
+  const analyst = await runAnalyst({ projectRoot: path.join(__dirname, ".."), maxReads: 4, userMessage: "analiza el proyecto" });
+  const evidenceReads = successfulDiskReads(analyst.steps);
+  assert.ok(evidenceReads > 0, "el analista lee archivos reales");
+  const report = "## 📊 Resumen ejecutivo\n" + "- El proyecto es una app Electron con kernel de chat y tests.\n".repeat(8);
+  const decision = { kind: "ANALYZE" };
+  assert.doesNotMatch(groundUngroundedClaims(report, [], "analiza", decision, evidenceReads), /no se basa en lecturas del disco/);
+  assert.match(groundUngroundedClaims(report, [], "analiza", decision, 0), /no se basa en lecturas del disco/);
+  const orch = fs.readFileSync(path.join(__dirname, "..", "editcore-chat-kernel", "orchestrator.js"), "utf8");
+  assert.match(orch, /evidenceReads: successfulDiskReads\(out\?\.steps\),/);
+});
+
 test("respaldos y copias viejas se excluyen y se informan", () => withProject({
   "package.json": JSON.stringify({ name: "demo" }),
   "src/app.js": "module.exports = require('./util');\n",

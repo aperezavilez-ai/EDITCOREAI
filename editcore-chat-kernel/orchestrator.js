@@ -304,9 +304,9 @@ function successfulDiskReads(steps = []) {
   return (Array.isArray(steps) ? steps : []).filter((s) => DISK_READ_TOOLS.has(s.name) && s.ok !== false && s.result?.ok !== false).length;
 }
 
-function groundUngroundedClaims(text, steps = [], userMessage = "", decision = {}) {
+function groundUngroundedClaims(text, steps = [], userMessage = "", decision = {}, evidenceReads = 0) {
   if (decision?.kind === "LIST") return formatAgentVisibleText(String(text || "").trim());
-  if (decision?.kind === "ANALYZE" && successfulDiskReads(steps) === 0 && String(text || "").trim().length > 280) {
+  if (decision?.kind === "ANALYZE" && successfulDiskReads(steps) + evidenceReads === 0 && String(text || "").trim().length > 280) {
     return formatAgentVisibleText(
       "> ⚠️ **Este análisis no se basa en lecturas del disco:** en este turno no se ejecutó ninguna herramienta de lectura con éxito.\n\n" +
       String(repairDanglingOutput(text, steps, userMessage, decision) || "")
@@ -813,6 +813,7 @@ class ChatOrchestrator {
           helpers,
           images: taskImages,
           verifiedShown: Boolean(verifiedMd),
+          evidenceReads: successfulDiskReads(out?.steps),
         });
         if (verifiedMd && res && typeof res.text === "string") res.text = `${verifiedMd}\n\n---\n\n${forensic.stripRepeatedForensic(res.text)}`;
         return res;
@@ -1090,7 +1091,7 @@ class ChatOrchestrator {
               textOut = `## ✅ Cambios aplicados\n\n${head}Archivos actualizados:\n\n${lista}\n\n${nextStepsClosingText(projectRoot, written, steps)}`;
             }
           } else {
-            textOut = groundUngroundedClaims(cleanText, steps, message, decision);
+            textOut = groundUngroundedClaims(cleanText, steps, message, decision, Number(opts.evidenceReads) || 0);
           }
 
           if (written.length > 0) textOut = await this.appendBeforeAfter(projectRoot, written, textOut, onProgress);
@@ -1230,4 +1231,4 @@ class ChatOrchestrator {
   }
 }
 
-module.exports = { ChatOrchestrator, SKILL_IDS, taskQueue };
+module.exports = { ChatOrchestrator, SKILL_IDS, taskQueue, groundUngroundedClaims, successfulDiskReads };
