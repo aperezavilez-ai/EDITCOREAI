@@ -5270,7 +5270,22 @@ authManager.on("session-changed", (session) => {
   for (const win of BrowserWindow.getAllWindows()) {
     try { win.webContents.send("auth:session-changed", session || { isAuthenticated: false, user: null }); } catch { /* ignore */ }
   }
+  if (session?.isAuthenticated) sendPresenceHeartbeat();
 });
+
+const PRESENCE_HEARTBEAT_MS = 2 * 60 * 1000;
+let presenceHeartbeatBusy = false;
+
+function sendPresenceHeartbeat() {
+  if (presenceHeartbeatBusy || !authManager.isAuthenticated()) return;
+  presenceHeartbeatBusy = true;
+  authManager.rpc("editcoreai_heartbeat", { p_version: app.getVersion() })
+    .catch(() => { /* ignore */ })
+    .finally(() => { presenceHeartbeatBusy = false; });
+}
+
+app.whenReady().then(() => setTimeout(sendPresenceHeartbeat, 15000));
+setInterval(sendPresenceHeartbeat, PRESENCE_HEARTBEAT_MS).unref?.();
 
 const CLOUD_PROVIDER_KEY = "editcore-cloud";
 const CLOUD_SESSION_KEY = "editcore-session";

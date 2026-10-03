@@ -610,11 +610,11 @@
 
   function syncAdminShortcuts() {
     const realAdmin = window.__editcoreRealSession?.user?.isAdmin === true;
-    const adminBtn = $("chatHomeAdminBtn");
-    const previewBtn = $("chatHomePreviewBtn");
     const banner = $("ecPreviewBanner");
-    if (adminBtn) adminBtn.hidden = !realAdmin || previewAsUser;
-    if (previewBtn) previewBtn.hidden = !realAdmin || previewAsUser;
+    for (const id of ["chatHomeAdminBtn", "chatHomePreviewBtn", "ideAdminBtn", "idePreviewBtn"]) {
+      const btn = $(id);
+      if (btn) btn.hidden = !realAdmin || previewAsUser;
+    }
     if (banner) banner.hidden = !(realAdmin && previewAsUser);
     document.body.classList.toggle("is-preview-as-user", realAdmin && previewAsUser);
   }
@@ -630,6 +630,7 @@
   }
 
   function openAdminPanel() {
+    if ((document.body.dataset.appMode || "chat") !== "chat") setMode("chat");
     openSettings("credits");
     setTimeout(() => $("settingsAdminMasterDashboard")?.scrollIntoView({ behavior: "smooth", block: "start" }), 150);
   }
@@ -1058,6 +1059,30 @@
     }
   }
 
+  const ONLINE_WINDOW_MS = 5 * 60 * 1000;
+
+  function timeAgo(iso) {
+    const mins = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 60000));
+    if (mins < 1) return "hace un momento";
+    if (mins < 60) return `hace ${mins} min`;
+    const hours = Math.round(mins / 60);
+    if (hours < 24) return `hace ${hours} h`;
+    const days = Math.round(hours / 24);
+    return days === 1 ? "hace 1 día" : `hace ${days} días`;
+  }
+
+  function isOnline(u) {
+    return Boolean(u.last_seen_at) && Date.now() - new Date(u.last_seen_at).getTime() < ONLINE_WINDOW_MS;
+  }
+
+  function userActivityText(u) {
+    const version = u.app_version ? ` · v${u.app_version}` : "";
+    if (isOnline(u)) return `🟢 Usando EditCoreAI ahora${version}`;
+    if (u.last_seen_at) return `Abrió la app ${timeAgo(u.last_seen_at)}${version}`;
+    if (u.last_sign_in_at) return `Inició sesión ${timeAgo(u.last_sign_in_at)}`;
+    return "Todavía no abre la app";
+  }
+
   async function renderAdminUsers() {
     const box = $("adminUsersList");
     if (!box || !window.editcoreCredits?.adminListUsers) return;
@@ -1071,13 +1096,27 @@
       box.appendChild(empty);
       return;
     }
+    const dayAgo = Date.now() - 86400000;
+    const summary = document.createElement("div");
+    summary.className = "ec-admin-users-summary";
+    summary.textContent = `🟢 ${users.filter(isOnline).length} usando ahora · ${users.filter((u) => u.last_seen_at && new Date(u.last_seen_at).getTime() > dayAgo).length} en las últimas 24 h · ${users.length} cuentas`;
+    box.appendChild(summary);
     for (const u of users) {
       const row = document.createElement("div");
       row.className = `ec-admin-user-row${u.status === "suspended" ? " is-suspended" : ""}`;
       const email = document.createElement("span");
       email.className = "ec-admin-user-email";
-      email.textContent = u.email;
-      email.title = u.last_used_at ? `Último uso: ${new Date(u.last_used_at).toLocaleString("es-MX")}` : "Sin consultas todavía";
+      const emailText = document.createElement("span");
+      emailText.textContent = u.email;
+      const activity = document.createElement("small");
+      activity.className = `ec-admin-user-activity${isOnline(u) ? " is-online" : ""}`;
+      activity.textContent = userActivityText(u);
+      email.append(emailText, activity);
+      email.title = [
+        `Cuenta creada: ${new Date(u.created_at).toLocaleString("es-MX")}`,
+        u.last_sign_in_at ? `Último inicio de sesión: ${new Date(u.last_sign_in_at).toLocaleString("es-MX")}` : "",
+        u.last_used_at ? `Última consulta a la IA: ${new Date(u.last_used_at).toLocaleString("es-MX")}` : "Sin consultas a la IA todavía",
+      ].filter(Boolean).join("\n");
       const role = document.createElement("span");
       role.textContent = u.role === "admin" ? "👑 admin" : (u.status === "suspended" ? "⛔ suspendido" : "usuario");
       const bal = document.createElement("span");
@@ -2639,6 +2678,8 @@
     $("chatHomeSettingsBtn")?.addEventListener("click", () => openSettings());
     $("chatHomeAdminBtn")?.addEventListener("click", () => openAdminPanel());
     $("chatHomePreviewBtn")?.addEventListener("click", () => void setPreviewAsUser(true));
+    $("ideAdminBtn")?.addEventListener("click", () => openAdminPanel());
+    $("idePreviewBtn")?.addEventListener("click", () => void setPreviewAsUser(true));
     $("ecPreviewExitBtn")?.addEventListener("click", () => void setPreviewAsUser(false));
     $("chatHomeContextBtn")?.addEventListener("click", (ev) => {
       ev.preventDefault();

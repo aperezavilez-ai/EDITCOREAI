@@ -289,6 +289,13 @@ body.welcome-open {
   background: transparent !important;
   box-shadow: none !important;
 }
+.app-toolbar .toolbar-admin-btn {
+  color: #d97706 !important;
+  font-weight: 600;
+}
+.app-toolbar .toolbar-admin-btn[hidden] {
+  display: none !important;
+}
 .app-toolbar .toolbar-connect-btn:hover,
 .app-toolbar .toolbar-publish-btn:hover {
   background: var(--ec-hover) !important;
