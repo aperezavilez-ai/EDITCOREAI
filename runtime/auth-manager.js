@@ -346,6 +346,24 @@ class AuthManager extends EventEmitter {
       .filter(Boolean);
   }
 
+  async _paymentsRequest(route, method = "GET") {
+    const token = await this.getAccessToken();
+    if (!token) throw new AuthError("NO_SESSION");
+    const res = await this._request(`/functions/v1/payments/${route}`, { method, token, ...(method === "POST" ? { body: {} } : {}) });
+    if (res.status === 401) throw new AuthError("SESSION_EXPIRED");
+    return res.data && typeof res.data === "object" ? res.data : { ok: false };
+  }
+
+  /** Precio de la recarga y si Mercado Pago está activo. */
+  async paymentOffer() {
+    return this._paymentsRequest("offer");
+  }
+
+  /** Crea el pago pendiente y devuelve el enlace de Mercado Pago. */
+  async createCheckout() {
+    return this._paymentsRequest("checkout", "POST");
+  }
+
   isAuthenticated() {
     this._ensureLoaded();
     return Boolean(this.session);

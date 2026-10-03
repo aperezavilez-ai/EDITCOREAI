@@ -5273,6 +5273,7 @@ authManager.on("session-changed", (session) => {
 });
 
 const CLOUD_PROVIDER_KEY = "editcore-cloud";
+const CLOUD_SESSION_KEY = "editcore-session";
 
 function notifyCloudBalance(event) {
   const { creditLedger } = require("./runtime/credit-ledger");
@@ -6708,13 +6709,14 @@ ipcMain.handle("agent:run", async (event, input = {}) => {
     }
   }
 
-  // Usuarios (no admin): la consulta va al servidor de EditCoreAI con su sesión; él cobra por tokens.
+  // Usuarios (no admin) y el admin en "Ver como usuario": la consulta va al servidor de EditCoreAI
+  // con su sesión; él cobra por tokens (al admin no le cobra).
   let cloudRoute = null;
   {
     const { creditLedger } = require("./runtime/credit-ledger");
     const access = await creditLedger.checkCanRun();
     if (!access.ok) return licenseBlockedRunResult(event, access);
-    if (access.role !== "admin") {
+    if (access.role !== "admin" || apiKey === CLOUD_SESSION_KEY) {
       const { authManager } = require("./runtime/auth-manager");
       const token = await authManager.getAccessToken();
       if (!token) return licenseBlockedRunResult(event, { code: "NO_SESSION" });
@@ -10954,6 +10956,28 @@ creditsIpc("credits:admin-set-status", (ledger, payload) => ledger.adminSetStatu
 creditsIpc("credits:cloud-models", async () => {
   const { authManager } = require("./runtime/auth-manager");
   return { ok: true, models: await authManager.listCloudModels(), baseUrl: authManager.aiProxyBaseUrl() };
+});
+function isMercadoPagoCheckoutUrl(value) {
+  try {
+    const url = new URL(String(value || ""));
+    return url.protocol === "https:" && /(^|\.)mercadopago\.com(\.[a-z]{2})?$|(^|\.)mercadolibre\.com$/i.test(url.hostname);
+  } catch {
+    return false;
+  }
+}
+creditsIpc("credits:admin-payments", (ledger) => ledger.adminPayments());
+creditsIpc("credits:admin-set-topup", (ledger, payload) => ledger.adminSetTopup(payload || {}));
+creditsIpc("credits:topup-offer", async () => {
+  const { authManager } = require("./runtime/auth-manager");
+  return authManager.paymentOffer();
+});
+creditsIpc("credits:checkout", async () => {
+  const { authManager } = require("./runtime/auth-manager");
+  const res = await authManager.createCheckout();
+  if (!res?.ok) return { ok: false, error: res?.error?.message || "No se pudo iniciar el pago.", code: res?.error?.code || "" };
+  if (!isMercadoPagoCheckoutUrl(res.url)) return { ok: false, error: "Enlace de pago inválido." };
+  await shell.openExternal(res.url);
+  return { ok: true, amount: res.amount, currency: res.currency, creditUsd: res.creditUsd };
 });
 
 // Role Policy Guard handlers

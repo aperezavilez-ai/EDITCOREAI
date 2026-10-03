@@ -12,8 +12,22 @@ const { parseEnvFile } = require("../runtime/editcore-cloud-config");
 const root = path.join(__dirname, "..");
 const local = parseEnvFile(path.join(root, ".env.local"));
 const env = { ...process.env, ...parseEnvFile(path.join(root, "supabase", ".env")) };
-for (const key of ["EDITCOREAI_GOOGLE_CLIENT_ID", "EDITCOREAI_GOOGLE_SECRET", "EDITCOREAI_MEAI_API_KEY"]) {
+const LOCAL_KEYS = [
+  "EDITCOREAI_GOOGLE_CLIENT_ID",
+  "EDITCOREAI_GOOGLE_SECRET",
+  "EDITCOREAI_MEAI_API_KEY",
+  "EDITCOREAI_MP_ACCESS_TOKEN",
+  "EDITCOREAI_MP_WEBHOOK_SECRET",
+  "EDITCOREAI_CLOUD_PUBLIC_URL",
+];
+for (const key of LOCAL_KEYS) {
   if (local[key] && !env[key]) env[key] = local[key];
+}
+if (!env.EDITCOREAI_MP_ACCESS_TOKEN) {
+  console.warn("Aviso: falta EDITCOREAI_MP_ACCESS_TOKEN en .env.local; las recargas con Mercado Pago quedan desactivadas.");
+}
+for (const key of ["EDITCOREAI_MP_ACCESS_TOKEN", "EDITCOREAI_MP_WEBHOOK_SECRET", "EDITCOREAI_CLOUD_PUBLIC_URL"]) {
+  if (!env[key]) env[key] = "";
 }
 if (!env.EDITCOREAI_GOOGLE_CLIENT_ID || !env.EDITCOREAI_GOOGLE_SECRET) {
   console.warn("Aviso: faltan EDITCOREAI_GOOGLE_CLIENT_ID / EDITCOREAI_GOOGLE_SECRET en .env.local; el inicio con Google no funcionará.");

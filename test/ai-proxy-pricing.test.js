@@ -103,7 +103,7 @@ test("La app desvía las consultas de usuarios al servidor y no se cobra sola", 
   const main = fs.readFileSync(path.join(ROOT, "main.js"), "utf8");
   const ledger = fs.readFileSync(path.join(ROOT, "runtime/credit-ledger.js"), "utf8");
   assert.match(main, /creditLedger\.checkCanRun\(\)/);
-  assert.match(main, /if \(access\.role !== "admin"\)[\s\S]{0,400}aiProxyBaseUrl\(\)/);
+  assert.match(main, /if \(access\.role !== "admin"[^)]*\)[\s\S]{0,400}aiProxyBaseUrl\(\)/);
   assert.match(main, /fallbackProfiles: cloudRoute \? \[\] :/);
   assert.doesNotMatch(ledger, /editcoreai_consume_credits/);
   const fn = fs.readFileSync(path.join(ROOT, "supabase/functions/ai-proxy/index.ts"), "utf8");

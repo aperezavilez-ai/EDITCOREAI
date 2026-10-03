@@ -14,6 +14,10 @@
     <link rel="stylesheet" href="./editor-inline-edit.css" />
   </head>
   <body data-app-mode="chat">
+    <div id="ecPreviewBanner" class="ec-preview-banner" role="status" hidden>
+      <span>👁 Estás viendo EditCoreAI como un usuario normal. Saldo de ejemplo $20; tus consultas no se cobran.</span>
+      <button type="button" id="ecPreviewExitBtn" class="ec-preview-exit">Volver a administrador</button>
+    </div>
     <!-- CHAT AGENT HOME (arranque). IDE existente se abre con el botón IDE. -->
     <section id="chatHomeShell" class="chat-home-shell" aria-label="EditCoreAI Chat">
       <header class="chat-home-top">
@@ -47,6 +51,8 @@
               </div>
               <div class="ec-usage-bar"><div class="ec-usage-bar-fill" id="chatHomeUsageFill"></div></div>
             </div>
+            <button type="button" class="chat-home-settings-btn chat-home-admin-btn" id="chatHomeAdminBtn" title="Panel de administración: usuarios, saldo, códigos y pagos" hidden>🛡 Administración</button>
+            <button type="button" class="chat-home-settings-btn" id="chatHomePreviewBtn" title="Mira EditCoreAI tal como lo ve un usuario normal" hidden>👁 Ver como usuario</button>
             <button type="button" class="chat-home-settings-btn" id="chatHomeSettingsBtn" title="Configuración">⚙ Configuración</button>
           </div>
         </aside>
@@ -423,6 +429,19 @@
                     <button type="button" class="ec-btn-action" id="adminGrantBtn">Aplicar</button>
                     <div id="adminGrantResult" class="ec-status-msg" hidden></div>
                   </div>
+                </div>
+
+                <div class="ec-admin-tool">
+                  <h4>Pagos con Mercado Pago</h4>
+                  <div class="ec-metric-sub" id="adminMpStatus">Comprobando Mercado Pago…</div>
+                  <div class="ec-admin-row">
+                    <input type="number" min="1" step="0.01" id="adminTopupPrice" class="ec-styled-input" placeholder="Precio que paga el usuario (MXN)" title="Precio que paga el usuario en pesos" />
+                    <input type="number" min="1" step="0.01" id="adminTopupCredit" class="ec-styled-input" placeholder="Saldo que recibe (USD)" title="Dólares de saldo que recibe por esa recarga" />
+                    <button type="button" class="ec-btn-action" id="adminTopupSaveBtn">Guardar precio</button>
+                  </div>
+                  <div id="adminTopupResult" class="ec-status-msg" hidden></div>
+                  <div class="ec-metric-sub" id="adminMpTotals"></div>
+                  <div class="ec-admin-users" id="adminPaymentsList"></div>
                 </div>
 
                 <div class="ec-admin-tool">

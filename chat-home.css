@@ -536,6 +536,37 @@ html[data-theme="azul"] .chat-home-new-btn {
 }
 
 .chat-home-settings-btn:hover { background: var(--ch-hover); }
+.chat-home-settings-btn[hidden] { display: none; }
+.chat-home-admin-btn { color: var(--ch-accent, #7c9cff); }
+
+.ec-preview-banner {
+  position: fixed;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 9000;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 8px 6px 14px;
+  border-radius: 0 0 10px 10px;
+  background: #f5a524;
+  color: #1b1300;
+  font-size: 12px;
+  font-weight: 600;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+}
+.ec-preview-banner[hidden] { display: none; }
+.ec-preview-exit {
+  border: 0;
+  border-radius: 6px;
+  padding: 5px 10px;
+  background: #1b1300;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
 
 .chat-home-main {
   flex: 1;

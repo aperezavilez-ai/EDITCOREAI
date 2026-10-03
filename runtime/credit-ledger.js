@@ -17,6 +17,8 @@ const CREDIT_ERRORS = {
   ALREADY_REDEEMED: "Ya canjeaste este código con tu cuenta.",
   TOO_MANY_ATTEMPTS: "Demasiados intentos fallidos. Espera una hora antes de volver a intentar.",
   CANNOT_CHANGE_SELF: "No puedes cambiar el estado de tu propia cuenta.",
+  INVALID_PRICE: "El precio debe ser mayor que 0.",
+  INVALID_CREDIT: "El saldo de la recarga debe ser mayor que 0.",
 };
 
 function failure(error) {
@@ -161,6 +163,25 @@ class CreditLedger extends EventEmitter {
       return fromServer(await this.auth.rpc("editcoreai_admin_set_status", {
         p_email: String(email || "").trim(),
         p_status: status === "suspended" ? "suspended" : "active",
+      }));
+    } catch (error) {
+      return failure(error);
+    }
+  }
+
+  async adminPayments() {
+    try {
+      return { ok: true, success: true, payments: await this.auth.rpc("editcoreai_admin_payments") };
+    } catch (error) {
+      return failure(error);
+    }
+  }
+
+  async adminSetTopup({ price, creditUsd = null } = {}) {
+    try {
+      return fromServer(await this.auth.rpc("editcoreai_admin_set_topup", {
+        p_price: Number(price),
+        p_credit_usd: creditUsd === null || creditUsd === "" ? null : Number(creditUsd),
       }));
     } catch (error) {
       return failure(error);

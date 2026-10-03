@@ -654,6 +654,10 @@ contextBridge.exposeInMainWorld("editcoreCredits", {
   adminGrant: (payload) => ipcRenderer.invoke("credits:admin-grant", payload),
   adminSetStatus: (payload) => ipcRenderer.invoke("credits:admin-set-status", payload),
   cloudModels: () => ipcRenderer.invoke("credits:cloud-models"),
+  adminPayments: () => ipcRenderer.invoke("credits:admin-payments"),
+  adminSetTopup: (payload) => ipcRenderer.invoke("credits:admin-set-topup", payload),
+  topupOffer: () => ipcRenderer.invoke("credits:topup-offer"),
+  checkout: () => ipcRenderer.invoke("credits:checkout"),
   onBalanceChanged: (callback) => {
     const listener = (_event, view) => callback(view);
     ipcRenderer.on("credits:balance-changed", listener);

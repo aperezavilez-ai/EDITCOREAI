@@ -587,13 +587,63 @@
     $("modelPickerBtn")?.click();
   }
 
+  // "Ver como usuario": solo cambia lo que muestra la app; el servidor sigue sabiendo que es el admin
+  // (no se le cobra) y las consultas pasan por el mismo servidor que usan los usuarios.
+  const PREVIEW_BALANCE_USD = 20;
+  let previewAsUser = false;
+
+  function viewSessionFor(realSession) {
+    if (!realSession || !previewAsUser || realSession.user?.isAdmin !== true) return realSession;
+    return {
+      ...realSession,
+      previewAsUser: true,
+      user: {
+        ...realSession.user,
+        isAdmin: false,
+        role: "user",
+        is_unlimited: false,
+        credits_balance: PREVIEW_BALANCE_USD,
+        topup_base: PREVIEW_BALANCE_USD,
+      },
+    };
+  }
+
+  function syncAdminShortcuts() {
+    const realAdmin = window.__editcoreRealSession?.user?.isAdmin === true;
+    const adminBtn = $("chatHomeAdminBtn");
+    const previewBtn = $("chatHomePreviewBtn");
+    const banner = $("ecPreviewBanner");
+    if (adminBtn) adminBtn.hidden = !realAdmin || previewAsUser;
+    if (previewBtn) previewBtn.hidden = !realAdmin || previewAsUser;
+    if (banner) banner.hidden = !(realAdmin && previewAsUser);
+    document.body.classList.toggle("is-preview-as-user", realAdmin && previewAsUser);
+  }
+
+  async function setPreviewAsUser(on) {
+    previewAsUser = Boolean(on) && window.__editcoreRealSession?.user?.isAdmin === true;
+    window.__editcoreSession = viewSessionFor(window.__editcoreRealSession);
+    syncAdminShortcuts();
+    closeSettings();
+    $("providersDialog")?.close?.();
+    await refreshCreditsAndProfileUI();
+    syncModelPill();
+  }
+
+  function openAdminPanel() {
+    openSettings("credits");
+    setTimeout(() => $("settingsAdminMasterDashboard")?.scrollIntoView({ behavior: "smooth", block: "start" }), 150);
+  }
+
   async function refreshCreditsAndProfileUI() {
     try {
       let balance = { balance: 0, role: "user", name: "", email: "", isUnlimited: false, status: "unknown" };
       if (window.editcoreAuth?.getSession) {
         try {
-          const authData = await window.editcoreAuth.getSession({ refresh: true });
-          window.__editcoreSession = authData?.isAuthenticated ? authData : null;
+          const realSession = await window.editcoreAuth.getSession({ refresh: true });
+          window.__editcoreRealSession = realSession?.isAuthenticated ? realSession : null;
+          const authData = viewSessionFor(window.__editcoreRealSession);
+          window.__editcoreSession = authData;
+          syncAdminShortcuts();
           if (authData?.user) {
             balance.name = authData.user.name || authData.user.email || "";
             balance.email = authData.user.email || "";
@@ -746,8 +796,8 @@
     if (window.editcoreCredits?.getBalance) {
       try {
         const bal = await window.editcoreCredits.getBalance();
-        isAdm = bal.ok !== false && (bal.role === "admin" || bal.isUnlimited);
-        balance = Number(bal.balance || 0);
+        isAdm = bal.ok !== false && (bal.role === "admin" || bal.isUnlimited) && !previewAsUser;
+        balance = previewAsUser ? PREVIEW_BALANCE_USD : Number(bal.balance || 0);
         suspended = bal.status === "suspended" || reason === "ACCOUNT_SUSPENDED";
       } catch {}
     }
@@ -764,19 +814,94 @@
       if (iconEl) iconEl.textContent = "💎";
       if (titleEl) titleEl.textContent = "Saldo y recargas";
       if (descEl) descEl.textContent = "Tu cuenta de administrador no tiene límite de uso. El saldo de los usuarios se gestiona en Configuración › Saldo.";
-    } else if (reason === "out_of_credits" || reason === "OUT_OF_CREDITS" || balance <= 0) {
-      if (iconEl) iconEl.textContent = "⚠️";
-      if (titleEl) titleEl.textContent = "Tu saldo se agotó";
-      if (descEl) descEl.innerHTML = "Tu saldo llegó a <strong>$0.00</strong>. Para seguir usando la IA de EditCoreAI, recarga saldo: paga al administrador y canjea el código que te dé en Configuración › Saldo.";
     } else {
-      if (iconEl) iconEl.textContent = "💳";
-      if (titleEl) titleEl.textContent = "Recargar saldo";
-      if (descEl) descEl.innerHTML = `Tu saldo disponible es de <strong>${fmtUsd(balance)}</strong>. Para recargar, paga al administrador y canjea el código que te dé en Configuración › Saldo.`;
+      const offer = await syncTopupCard();
+      const how = offer?.enabled
+        ? "Recarga con Mercado Pago o canjea un código de recarga."
+        : "Paga al administrador y canjea el código que te dé.";
+      if (reason === "out_of_credits" || reason === "OUT_OF_CREDITS" || balance <= 0) {
+        if (iconEl) iconEl.textContent = "⚠️";
+        if (titleEl) titleEl.textContent = "Tu saldo se agotó";
+        if (descEl) descEl.innerHTML = `Tu saldo llegó a <strong>$0.00</strong>. Para seguir usando la IA de EditCoreAI, recarga saldo. ${how}`;
+      } else {
+        if (iconEl) iconEl.textContent = "💳";
+        if (titleEl) titleEl.textContent = "Recargar saldo";
+        if (descEl) descEl.innerHTML = `Tu saldo disponible es de <strong>${fmtUsd(balance)}</strong>. ${how}`;
+      }
     }
 
     modal.hidden = false;
     modal.removeAttribute("hidden");
     modal.setAttribute("aria-hidden", "false");
+  }
+
+  let topupOfferCache = { at: 0, value: null };
+
+  async function loadTopupOffer({ force = false } = {}) {
+    if (!force && topupOfferCache.value && Date.now() - topupOfferCache.at < 60_000) return topupOfferCache.value;
+    try {
+      const offer = await window.editcoreCredits?.topupOffer?.();
+      topupOfferCache = { at: Date.now(), value: offer?.ok ? offer : null };
+    } catch {
+      topupOfferCache = { at: Date.now(), value: null };
+    }
+    return topupOfferCache.value;
+  }
+
+  const fmtLocal = (amount, currency) =>
+    `$${Number(amount || 0).toLocaleString("es-MX", { maximumFractionDigits: 2 })} ${currency || ""}`.trim();
+
+  async function syncTopupCard() {
+    const offer = await loadTopupOffer();
+    const card = document.querySelector("#outOfCreditsModal .ec-credits-pack-card");
+    if (!card) return offer;
+    const creditsEl = card.querySelector(".ec-pack-credits");
+    const priceEl = card.querySelector(".ec-pack-price");
+    const btn = card.querySelector(".ec-pack-btn");
+    const creditUsd = Number(offer?.credit_usd || 20);
+    if (creditsEl) creditsEl.textContent = `${fmtUsd(creditUsd)} de saldo`;
+    if (offer?.enabled) {
+      if (priceEl) priceEl.textContent = fmtLocal(offer.price, offer.currency);
+      if (btn) btn.textContent = "Pagar con Mercado Pago";
+    } else {
+      if (priceEl) priceEl.textContent = `${fmtUsd(creditUsd)} USD`;
+      if (btn) btn.textContent = "¿Cómo recargo?";
+    }
+    return offer;
+  }
+
+  let checkoutWatch = null;
+
+  // Después de abrir Mercado Pago, revisa el saldo hasta que llegue la recarga (máx. 15 min).
+  function watchForTopup(startBalance, statusEl) {
+    clearInterval(checkoutWatch);
+    const until = Date.now() + 15 * 60_000;
+    checkoutWatch = setInterval(async () => {
+      if (Date.now() > until) return clearInterval(checkoutWatch);
+      const bal = await window.editcoreCredits?.getBalance?.().catch(() => null);
+      if (!bal || bal.ok === false || !(Number(bal.balance) > startBalance + 0.000001)) return;
+      clearInterval(checkoutWatch);
+      showStatus(statusEl, true, `¡Recarga acreditada! Tu saldo ahora es ${fmtUsd(bal.balance)}.`);
+      await refreshCreditsAndProfileUI();
+      setTimeout(closeOutOfCreditsModal, 2500);
+    }, 5000);
+  }
+
+  async function startCheckout(statusEl, btn) {
+    if (btn) btn.disabled = true;
+    showStatus(statusEl, true, "Abriendo Mercado Pago…");
+    try {
+      const before = await window.editcoreCredits?.getBalance?.().catch(() => null);
+      const res = await window.editcoreCredits?.checkout?.();
+      if (!res?.ok) {
+        showStatus(statusEl, false, res?.error || "No se pudo iniciar el pago.");
+        return;
+      }
+      showStatus(statusEl, true, `Se abrió Mercado Pago en tu navegador (${fmtLocal(res.amount, res.currency)}). Cuando termines de pagar, tu saldo aparece aquí solo.`);
+      watchForTopup(Number(before?.balance || 0), statusEl);
+    } finally {
+      if (btn) btn.disabled = false;
+    }
   }
 
   function closeOutOfCreditsModal() {
@@ -854,7 +979,58 @@
     set("adminVouchersActive", `Códigos vigentes: ${fmtNum(o.vouchers_active)}`);
     set("adminConsumedToday", fmtUsd(o.credits_consumed_today));
     set("adminConsumedSub", `Hoy (${fmtNum(o.requests_today)} consultas) · Te costó ${fmtUsd(o.provider_cost_today)} · Margen ${fmtNum(o.markup || 2)}x · Total cobrado: ${fmtUsd(o.credits_consumed_total)}`);
-    await renderAdminUsers();
+    await Promise.all([renderAdminUsers(), renderAdminPayments()]);
+  }
+
+  const PAYMENT_STATUS = { approved: "✅ pagado", pending: "⏳ pendiente", rejected: "❌ rechazado", cancelled: "✖ cancelado" };
+
+  async function renderAdminPayments() {
+    const credits = window.editcoreCredits;
+    if (!credits?.adminPayments) return;
+    const [res, offer] = await Promise.all([credits.adminPayments(), loadTopupOffer({ force: true })]);
+    const statusEl = $("adminMpStatus");
+    if (statusEl) {
+      statusEl.textContent = offer?.enabled
+        ? "🟢 Mercado Pago conectado: los usuarios pagan y el saldo se carga solo."
+        : "🔴 Mercado Pago no está conectado todavía (falta el token en el servidor). Los usuarios ven la recarga manual.";
+    }
+    if (!res?.ok) return;
+    const p = res.payments || {};
+    const o = p.offer || {};
+    const price = $("adminTopupPrice");
+    const creditUsd = $("adminTopupCredit");
+    if (price && document.activeElement !== price) price.value = o.price ?? "";
+    if (creditUsd && document.activeElement !== creditUsd) creditUsd.value = o.credit_usd ?? "";
+    const cur = o.currency || "MXN";
+    const totals = $("adminMpTotals");
+    if (totals) totals.textContent = `Cobrado con Mercado Pago hoy: ${fmtLocal(p.approved_today, cur)} · Total: ${fmtLocal(p.approved_total, cur)}`;
+    const box = $("adminPaymentsList");
+    if (!box) return;
+    box.replaceChildren();
+    const rows = Array.isArray(p.recent) ? p.recent : [];
+    if (!rows.length) {
+      const empty = document.createElement("div");
+      empty.className = "ec-admin-user-row";
+      empty.textContent = "Todavía no hay pagos.";
+      box.appendChild(empty);
+      return;
+    }
+    for (const r of rows) {
+      const row = document.createElement("div");
+      row.className = "ec-admin-user-row";
+      const email = document.createElement("span");
+      email.className = "ec-admin-user-email";
+      email.textContent = r.email;
+      email.title = `${new Date(r.created_at).toLocaleString("es-MX")}${r.mp_payment_id ? ` · Pago MP ${r.mp_payment_id}` : ""}`;
+      const amount = document.createElement("span");
+      amount.textContent = fmtLocal(r.amount_local, r.currency);
+      const credit = document.createElement("span");
+      credit.textContent = `+${fmtUsd(r.credit_usd)}`;
+      const status = document.createElement("span");
+      status.textContent = PAYMENT_STATUS[r.status] || r.status;
+      row.append(email, amount, credit, status);
+      box.appendChild(row);
+    }
   }
 
   async function renderAdminUsers() {
@@ -904,6 +1080,18 @@
 
   function bindAdminPanel() {
     $("adminRefreshBtn")?.addEventListener("click", () => void refreshAdminPanel());
+    $("adminTopupSaveBtn")?.addEventListener("click", async () => {
+      const out = $("adminTopupResult");
+      const price = Number($("adminTopupPrice")?.value || 0);
+      const creditUsd = Number($("adminTopupCredit")?.value || 0);
+      if (!(price > 0) || !(creditUsd > 0)) return showStatus(out, false, "Escribe el precio en pesos y los dólares de saldo que recibe el usuario.");
+      const res = await window.editcoreCredits?.adminSetTopup?.({ price, creditUsd });
+      if (!res?.ok) return showStatus(out, false, res?.error || "No se pudo guardar.");
+      const o = res.offer || {};
+      showStatus(out, true, `Guardado: el usuario paga ${fmtLocal(o.price, o.currency)} y recibe ${fmtUsd(o.credit_usd)} de saldo.`);
+      topupOfferCache = { at: 0, value: null };
+      await renderAdminPayments();
+    });
     let searchTimer = null;
     $("adminUserSearch")?.addEventListener("input", () => {
       clearTimeout(searchTimer);
@@ -2413,6 +2601,9 @@
       triggerMic();
     });
     $("chatHomeSettingsBtn")?.addEventListener("click", () => openSettings());
+    $("chatHomeAdminBtn")?.addEventListener("click", () => openAdminPanel());
+    $("chatHomePreviewBtn")?.addEventListener("click", () => void setPreviewAsUser(true));
+    $("ecPreviewExitBtn")?.addEventListener("click", () => void setPreviewAsUser(false));
     $("chatHomeContextBtn")?.addEventListener("click", (ev) => {
       ev.preventDefault();
       ev.stopPropagation();
@@ -2538,19 +2729,16 @@
       });
     });
 
-    // Compra de paquetes: el cobro en línea aún no está conectado; los créditos solo los acredita el servidor.
+    // Recarga: con Mercado Pago activo abre el pago; si no, explica la recarga manual.
     document.querySelectorAll(".ec-pack-btn").forEach((btn) => {
-      btn.addEventListener("click", () => {
+      btn.addEventListener("click", async () => {
         const statusEl = $("outOfCreditsMsg");
-        const text = "Para recargar $20, paga al administrador de EditCoreAI; él te dará un código que canjeas aquí.";
-        if (statusEl) {
-          statusEl.hidden = false;
-          statusEl.removeAttribute("hidden");
-          statusEl.className = "ec-status-msg ec-tag-info";
-          statusEl.textContent = text;
-        } else {
-          alert(text);
+        const offer = await loadTopupOffer();
+        if (offer?.enabled) {
+          await startCheckout(statusEl, btn);
+          return;
         }
+        showStatus(statusEl, true, "Para recargar, paga al administrador de EditCoreAI; él te dará un código que canjeas aquí.");
       });
     });
 
@@ -2946,7 +3134,7 @@
     });
 
     window.editcoreCredits?.onBalanceChanged?.((view = {}) => {
-      if (view?.ok === false) return;
+      if (view?.ok === false || previewAsUser) return;
       renderUsageMeters({
         balance: view.balance,
         topupBase: view.topupBase,

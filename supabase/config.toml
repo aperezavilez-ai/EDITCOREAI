@@ -399,9 +399,16 @@ deno_version = 2
 
 [edge_runtime.secrets]
 MEAI_API_KEY = "env(EDITCOREAI_MEAI_API_KEY)"
+MP_ACCESS_TOKEN = "env(EDITCOREAI_MP_ACCESS_TOKEN)"
+MP_WEBHOOK_SECRET = "env(EDITCOREAI_MP_WEBHOOK_SECRET)"
+PUBLIC_URL = "env(EDITCOREAI_CLOUD_PUBLIC_URL)"
 
 [functions.ai-proxy]
 # ai-proxy valida la sesión del usuario contra /auth/v1/user (sirve con firmas HS256 y ES256).
+verify_jwt = false
+
+[functions.payments]
+# El aviso de Mercado Pago llega sin sesión; offer y checkout validan la sesión contra /auth/v1/user.
 verify_jwt = false
 
 [analytics]
