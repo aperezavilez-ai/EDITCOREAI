@@ -1,3 +1,19 @@
+# RELEASE v4.2.7
+
+## Administración desde la app oficial, pagos con Mercado Pago y actividad de usuarios
+
+### Nuevo
+- Botones «Administración» y «Ver como usuario» (solo el administrador), también en la barra de la vista de proyectos.
+- «Ver como usuario»: muestra EditCoreAI exactamente como lo ve un cliente (sin proveedores, saldo de ejemplo), con una franja para volver a administrador.
+- Recargas con Mercado Pago: el cliente paga con el link oficial y el administrador ve los pagos y ajusta precio, crédito y link desde el panel. Con el token de Mercado Pago configurado, el saldo se acredita solo.
+- Actividad de usuarios en el panel: quién está usando EditCoreAI ahora, cuándo la abrió por última vez y con qué versión.
+- Descarga oficial desde www.editcore.mx/download (siempre la versión más nueva).
+
+### Build
+- `EDITCOREAI.exe` (4.2.7.0) y `release/EDITCOREAI-Setup.exe` (4.2.7), construidos desde un árbol limpio en el commit publicado.
+
+---
+
 # RELEASE v4.2.6
 
 ## EditCoreAI multiusuario: cuentas con Google y saldo prepago
