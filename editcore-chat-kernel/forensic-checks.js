@@ -891,6 +891,22 @@ function formatForensicMarkdown(result, { maxFindings = 80 } = {}) {
   return out.join("\n");
 }
 
+const REPEATED_HEADING = /^\s*(?:#{1,6}\s*|\*\*)?\s*(?:[^\p{L}\s]+\s*)?(chequeos reales ejecutados|errores verificados|advertencias verificadas)\s*(?:\(\d+\))?\s*:?\s*(?:\*\*)?\s*$/iu;
+const REPEATED_BODY = /^\s*(?:$|\||[-*+]\s|\d+[.)]\s|_|ningun|0\s+(?:errores|advertencias)|sin (?:errores|advertencias)|chequeos ejecutados)/i;
+
+function stripRepeatedForensic(text = "") {
+  const lines = String(text || "").split("\n");
+  const out = [];
+  let skipping = false;
+  for (const line of lines) {
+    if (REPEATED_HEADING.test(line)) { skipping = true; continue; }
+    if (skipping && REPEATED_BODY.test(line) && !/^\s*#/.test(line)) continue;
+    skipping = false;
+    out.push(line);
+  }
+  return out.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+}
+
 function formatForensicPromptBlock(result, { maxFindings = 80 } = {}) {
   if (!result) return "";
   const lines = result.findings.slice(0, maxFindings).map((f) => `- [${f.severity.toUpperCase()}] ${location(f) || "(proyecto)"} — ${String(f.message).split("\n")[0]} (evidencia: ${f.evidence})`);
@@ -901,7 +917,7 @@ function formatForensicPromptBlock(result, { maxFindings = 80 } = {}) {
     ...(lines.length ? lines : ["- Ningún hallazgo en los chequeos ejecutados."]),
     result.findings.length > maxFindings ? `- … y ${result.findings.length - maxFindings} más (ver informe).` : "",
     (result.notRun || []).length ? `No ejecutado: ${result.notRun.join(", ")} (no afirmes nada sobre eso como verificado).` : "",
-    "REGLAS: lista TODOS los hallazgos verificados en la sección de verificados, sin quitar ni suavizar. Cualquier otra observación tuya va en una sección aparte de HIPÓTESIS (no verificadas). No contradigas un chequeo que pasó.",
+    "REGLAS: la tabla de chequeos y la lista de hallazgos verificados YA se muestran al usuario arriba de tu respuesta: NO las copies ni repitas sus resultados. En tu sección de errores verificados prioriza CADA hallazgo (sin quitar ni suavizar ninguno) con causa y arreglo; si no hay hallazgos, una sola línea. Cualquier otra observación tuya va en una sección aparte de HIPÓTESIS (no verificadas). No contradigas un chequeo que pasó.",
   ].filter(Boolean).join("\n");
 }
 
@@ -934,6 +950,7 @@ module.exports = {
   loadForensic,
   formatForensicMarkdown,
   formatForensicPromptBlock,
+  stripRepeatedForensic,
   formatComparisonMarkdown,
   runShell,
 };

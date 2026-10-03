@@ -1,3 +1,16 @@
+# RELEASE v4.2.4
+
+## Reporte de análisis sin secciones duplicadas
+
+### Corregido
+- La tabla "Chequeos reales ejecutados" y las listas de errores y advertencias verificados aparecen una sola vez, arriba del reporte. El modelo ya no las copia al final y, si lo hiciera, EditCore las quita.
+- El reporte ya no dice que los tests "no se ejecutaron" cuando el análisis sí los corrió.
+
+### Build
+- `EDITCOREAI.exe` (4.2.4.0) y `release/EDITCOREAI-Setup.exe` (4.2.4), construidos desde un árbol limpio en el commit publicado.
+
+---
+
 # RELEASE v4.2.3
 
 ## Análisis sin falsos errores, caché del proveedor completa y puntos del árbol

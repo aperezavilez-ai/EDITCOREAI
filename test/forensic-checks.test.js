@@ -132,6 +132,46 @@ test("sin falsos positivos: lazy protegido con require.resolve y docs que listan
   assert.equal(docs[0].line, 5);
 }));
 
+test("el reporte del modelo no repite la tabla de chequeos ni los verificados que ya van arriba", () => {
+  const modelText = [
+    "## 📊 Resumen ejecutivo",
+    "- Proyecto Electron.",
+    "",
+    "## ⚠️ Errores verificados: prioridad y causa",
+    "Sin errores ni advertencias verificados.",
+    "",
+    "## 📁 Evidencia real",
+    "| Archivo | Líneas |",
+    "|---|---|",
+    "| main.js | 1-74 |",
+    "",
+    "## 🧪 Chequeos reales ejecutados",
+    "| Chequeo | Resultado | Detalle |",
+    "|---|---|---|",
+    "| Tests | ✅ pasa | 897 tests |",
+    "",
+    "### ❌ Errores verificados",
+    "- **0 errores** detectados por los chequeos ejecutados.",
+    "",
+    "**⚠️ Advertencias verificadas (0)**",
+    "Ninguna.",
+    "_Excluido por configuración del proyecto: `x`._",
+    "",
+    "¿Querés que profundice en algún módulo?",
+  ].join("\n");
+  const out = fc.stripRepeatedForensic(modelText);
+  assert.doesNotMatch(out, /Chequeos reales ejecutados|897 tests|0 errores|Advertencias verificadas|Excluido por/);
+  assert.match(out, /## ⚠️ Errores verificados: prioridad y causa\nSin errores ni advertencias verificados\./);
+  assert.match(out, /\| main\.js \| 1-74 \|/);
+  assert.match(out, /¿Querés que profundice en algún módulo\?$/);
+  assert.equal(fc.stripRepeatedForensic("## Resumen\n- a"), "## Resumen\n- a");
+
+  const orch = fs.readFileSync(path.join(__dirname, "..", "editcore-chat-kernel", "orchestrator.js"), "utf8");
+  assert.match(orch, /\$\{verifiedMd\}\\n\\n---\\n\\n\$\{forensic\.stripRepeatedForensic\(res\.text\)\}/);
+  assert.doesNotMatch(orch, /En este modo no se ejecutan tests ni builds/);
+  assert.doesNotMatch(fc.formatForensicPromptBlock({ checks: [], findings: [], counts: { error: 0, warning: 0 } }), /lista TODOS los hallazgos/);
+});
+
 test("respaldos y copias viejas se excluyen y se informan", () => withProject({
   "package.json": JSON.stringify({ name: "demo" }),
   "src/app.js": "module.exports = require('./util');\n",

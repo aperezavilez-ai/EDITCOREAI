@@ -186,7 +186,7 @@ const ANALYSIS_MODE_PROMPT = [
   "## ⚙️ Funcionalidad principal",
   "   - Que hace el proyecto hoy, con evidencia de archivos leidos.",
   "## ⚠️ Errores verificados: prioridad y causa",
-  "   - Los errores de HECHOS VERIFICADOS ordenados por impacto, con causa probable y arreglo (archivo:linea). Si no hay errores verificados, dilo.",
+  "   - Una fila por hallazgo de HECHOS VERIFICADOS ordenada por impacto: archivo:linea, prioridad, causa probable y arreglo. NO repitas la tabla de chequeos ni sus resultados (ya se muestran arriba). Si no hay hallazgos, escribe solo: \"Sin errores ni advertencias verificados.\"",
   "## 🔎 Hipótesis (no verificadas)",
   "   - Riesgos que ves al leer codigo pero que ningun chequeo confirmo. Marcalos como hipotesis, nunca como hechos.",
   "## 🎯 Recomendaciones",
@@ -200,8 +200,9 @@ const ANALYSIS_MODE_PROMPT = [
   "- Los extractos y lecturas son PARCIALES por presupuesto. Que un extracto termine a mitad de una funcion NO es un hallazgo: PROHIBIDO reportar un archivo como 'truncado' o 'incompleto' por eso. La integridad esta en el encabezado del extracto (lineas totales, bytes, sintaxis): solo hay archivo roto si la sintaxis dice ERROR.",
   "- Para ver mas de un archivo usa read_file con startLine/endLine (el resultado trae totalLines y endLine).",
   "- Cada hallazgo cita archivo y linea que leiste. Lo que no pudiste comprobar va como 'no verificado', nunca como 'no existe' ni 'no hay evidencia'. Antes de afirmar que algo falta, buscalo con search_files.",
-  "- En este modo no se ejecutan tests ni builds: no afirmes que pasan ni que no se ejecutaron; di 'no verificado en este analisis'.",
-  "- Los datos que salen de documentos del proyecto (ROADMAP, ANALISIS_*.md, informes, changelogs) se atribuyen: \"segun `archivo.md`\". NO los presentes como verificados por vos: en este modo no ejecutas tests ni builds.",
+  "- Tests, typecheck y build cuentan como ejecutados SOLO si aparecen en HECHOS VERIFICADOS (con su resultado real). Si no aparecen ahí, no afirmes que pasan: di 'no verificado en este analisis'.",
+  "- Los datos que salen de documentos del proyecto (ROADMAP, ANALISIS_*.md, informes, changelogs) se atribuyen: \"segun `archivo.md`\". NO los presentes como verificados por vos.",
+  "- NO agregues secciones ni tablas 'Chequeos reales ejecutados', 'Errores verificados' o 'Advertencias verificadas': EditCore ya las muestra arriba de tu reporte.",
   "- Si un documento tiene cifras distintas en varias secciones (ej. 19/19, 30/30, 46/46 tests), usa la mas reciente y menciona la discrepancia.",
   "- Usa tablas cuando listes varios hallazgos o archivos.",
   "- Si no hay evidencia suficiente, dilo explicitamente.",
@@ -813,7 +814,7 @@ class ChatOrchestrator {
           images: taskImages,
           verifiedShown: Boolean(verifiedMd),
         });
-        if (verifiedMd && res && typeof res.text === "string") res.text = `${verifiedMd}\n\n---\n\n${res.text}`;
+        if (verifiedMd && res && typeof res.text === "string") res.text = `${verifiedMd}\n\n---\n\n${forensic.stripRepeatedForensic(res.text)}`;
         return res;
       }
       return { kind: "ANALYZE", text: verifiedMd ? `${verifiedMd}\n\n---\n\n${out.report}` : out.report, steps: out.steps };
