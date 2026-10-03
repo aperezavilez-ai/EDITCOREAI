@@ -44,3 +44,4 @@
 - URL pública: `https://supabase.gafcore.com` · Kong local: `http://127.0.0.1:54321` · Postgres: `127.0.0.1:54322` · Studio: `http://localhost:54323`.
 - La anon key y la service_role viven en `.env.local` (ignorado por git). Nunca las escribas en archivos versionados ni en el cliente.
 - Cada proyecto: `project-infra.json` con su schema dedicado y migraciones en `supabase/migrations/`.
+- EditCoreAI (cuentas, créditos, licencias) usa su **propio** servidor Supabase, separado de todos los proyectos: proyecto CLI `editcoreai`, API `http://127.0.0.1:55321` (público `https://api-editcoreai.gafcore.com`), Postgres `55322`, Studio `55323`. Arranque: `npm run cuentas:start`. Nunca lo conectes a taxidriv, calili ni otro proyecto.

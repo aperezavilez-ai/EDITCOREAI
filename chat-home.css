@@ -2164,6 +2164,123 @@ html[data-theme="azul"] .diff-decision-card {
   justify-content: center;
 }
 
+.ec-auth-google-hint {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--ec-text-muted, #52525b);
+  margin: 0 0 6px;
+  text-align: center;
+}
+
+.ec-auth-google-btn {
+  gap: 10px;
+  height: 44px;
+}
+
+.ec-auth-google-btn[disabled] {
+  opacity: 0.7;
+  cursor: progress;
+}
+
+.ec-auth-google-g {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #ffffff;
+  color: #4285f4;
+  font-weight: 800;
+  font-size: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ec-auth-cancel-btn {
+  width: 100%;
+  height: 34px;
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.ec-auth-cancel-btn[hidden] {
+  display: none !important;
+}
+
+.ec-admin-tools {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.ec-admin-tool {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  padding: 12px;
+  margin-top: 12px;
+}
+
+.ec-admin-tools .ec-admin-tool {
+  margin-top: 0;
+}
+
+.ec-admin-tool h4 {
+  margin: 0;
+  font-size: 13px;
+  color: #e2e8f0;
+}
+
+.ec-admin-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.ec-admin-row > input {
+  flex: 1 1 120px;
+  min-width: 0;
+}
+
+.ec-admin-code {
+  font-family: Consolas, "Cascadia Mono", monospace;
+  font-size: 15px;
+  letter-spacing: 1px;
+  user-select: all;
+}
+
+.ec-admin-users {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 320px;
+  overflow: auto;
+}
+
+.ec-admin-user-row {
+  display: grid;
+  grid-template-columns: 1fr auto auto auto;
+  gap: 10px;
+  align-items: center;
+  font-size: 12px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.ec-admin-user-row.is-suspended {
+  opacity: 0.6;
+}
+
+.ec-admin-user-email {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .ec-settings-logout-wrap {
   margin-top: auto;
   margin-bottom: 8px;

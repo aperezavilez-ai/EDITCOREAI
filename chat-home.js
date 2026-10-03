@@ -589,21 +589,21 @@
 
   async function refreshCreditsAndProfileUI() {
     try {
-      let balance = { balance: Infinity, role: "admin", name: "Alfonso Perez Avilez", email: "aperezavilez@gmail.com", isSuperAdmin: true };
+      let balance = { balance: 0, role: "user", name: "", email: "", isUnlimited: false, status: "unknown" };
       if (window.editcoreAuth?.getSession) {
         try {
-          const authData = await window.editcoreAuth.getSession();
+          const authData = await window.editcoreAuth.getSession({ refresh: true });
+          window.__editcoreSession = authData?.isAuthenticated ? authData : null;
           if (authData?.user) {
-            balance.name = authData.user.name || balance.name;
-            balance.email = authData.user.email || balance.email;
-            balance.role = authData.user.role || balance.role;
-            balance.isSuperAdmin = Boolean(authData.user.isSuperAdmin || authData.user.role === "admin");
+            balance.name = authData.user.name || authData.user.email || "";
+            balance.email = authData.user.email || "";
+            balance.role = authData.user.isAdmin ? "admin" : "user";
+            balance.balance = Number(authData.user.credits_balance || 0);
+            balance.isUnlimited = Boolean(authData.user.is_unlimited);
+            balance.status = authData.user.status || "unknown";
+            balance.avatarUrl = authData.user.avatarUrl || "";
           }
         } catch {}
-      }
-      if (window.editcoreCredits?.getBalance) {
-        const cred = await window.editcoreCredits.getBalance();
-        if (cred) balance = { ...balance, ...cred };
       }
       const avatar = $("settingsUserAvatar");
       const nameEl = $("settingsUserName");
@@ -616,21 +616,23 @@
       const profileEmailInput = $("settingsProfileEmail");
 
       if (avatar) {
-        const initials = (balance.name || "AP").split(" ").map(w => w[0]).slice(0, 2).join("").toUpperCase();
-        avatar.textContent = initials || "AP";
+        const initials = (balance.name || "?").split(/[\s@.]+/).filter(Boolean).map(w => w[0]).slice(0, 2).join("").toUpperCase();
+        avatar.textContent = initials || "?";
       }
-      if (nameEl) nameEl.textContent = balance.name || "Alfonso Perez Avilez";
-      if (emailEl) emailEl.textContent = balance.email || "aperezavilez@gmail.com";
-      if (profileNameInput) profileNameInput.value = balance.name || "Alfonso Perez Avilez";
-      if (profileEmailInput) profileEmailInput.value = balance.email || "aperezavilez@gmail.com";
+      if (nameEl) nameEl.textContent = balance.name || "Sin sesión";
+      if (emailEl) emailEl.textContent = balance.email || "";
+      if (profileNameInput) profileNameInput.value = balance.name || "";
+      if (profileEmailInput) profileEmailInput.value = balance.email || "";
 
-      const isAdm = balance.role === "admin" || balance.isSuperAdmin;
-      if (roleEl) roleEl.textContent = isAdm ? "👑 Administrador Total" : (balance.role === "auditor" ? "🛡️ Auditor de Calidad" : "💻 Desarrollador");
-      
-      const balStr = isAdm || balance.balance === Infinity || balance.balance === "unlimited" ? "∞ Ilimitado" : `${balance.balance} créditos`;
-      if (creditsBadge) creditsBadge.textContent = isAdm ? "∞" : `${balance.balance}`;
-      if (creditsBigNum) creditsBigNum.textContent = balStr;
-      if (creditsPlanTag) creditsPlanTag.textContent = isAdm ? "Plan Administrador Maestro · Acceso Vitalicio" : "Plan Prepago ME AI · Solo Modelos Oficiales";
+      const isAdm = balance.role === "admin";
+      const unlimited = isAdm || balance.isUnlimited;
+      const suspended = balance.status === "suspended";
+      if (roleEl) roleEl.textContent = suspended ? "⛔ Cuenta suspendida" : (isAdm ? "👑 Administrador" : (balance.email ? "💻 Usuario" : ""));
+
+      const balStr = unlimited ? "∞ Ilimitado" : `${balance.balance} créditos`;
+      if (creditsBadge) creditsBadge.textContent = unlimited ? "∞" : `${balance.balance}`;
+      if (creditsBigNum) creditsBigNum.textContent = balance.email ? balStr : "—";
+      if (creditsPlanTag) creditsPlanTag.textContent = suspended ? "Cuenta suspendida" : (isAdm ? "Administrador · sin cargo por consulta" : (unlimited ? "Plan ilimitado" : "Plan prepago · 1 crédito por consulta"));
 
       // Administrador Maestro vs Usuario Estándar:
       const buyCreditsBtn = $("settingsBuyCreditsBtn");
@@ -644,49 +646,12 @@
         if (creditsBannerCta) creditsBannerCta.style.display = "none";
         if (creditsUsdNum) creditsUsdNum.hidden = true;
 
-        // Mostrar y actualizar Dashboard Maestro exclusivamente DENTRO de Configuración
+        // Panel de administración: datos reales del servidor de cuentas
         if (adminMasterDashboard) {
           adminMasterDashboard.hidden = false;
           adminMasterDashboard.removeAttribute("hidden");
         }
-
-        try {
-          if (window.editcoreCredits?.getMasterLedger) {
-            const master = await window.editcoreCredits.getMasterLedger();
-            if (master) {
-              const remUsd = Number(master.remainingUsd ?? 8000).toLocaleString("en-US", { style: "currency", currency: "USD" });
-              const remCredits = Number(master.remainingCredits ?? 160000).toLocaleString("en-US", { maximumFractionDigits: 1 });
-              const remTokens = Number(master.remainingTokens ?? 1600000000);
-
-              // Modal de Configuración (Marcadores del Administrador dentro de Configuración)
-              const modalUsd = $("adminMasterUsd");
-              const modalCred = $("adminMasterCredits");
-              const modalTok = $("adminMasterTokens");
-              const modalConsUsd = $("adminMasterConsumedUsd");
-              const modalConsCred = $("adminMasterConsumedCredits");
-              const modalConsTok = $("adminMasterConsumedTokens");
-              const modalPct = $("adminMasterPct");
-              const modalFill = $("adminMasterProgressFill");
-
-              if (modalUsd) modalUsd.textContent = remUsd;
-              if (modalCred) modalCred.textContent = remCredits;
-              if (modalTok) modalTok.textContent = remTokens.toLocaleString();
-
-              const consUsd = Number(master.consumedUsd || 0);
-              const consTok = Number(master.consumedTokens || 0);
-              const consCred = (consUsd * 1.5) / 0.05;
-              const pct = Math.min(100, Math.max(0, (consUsd / (master.totalUsd || 8000)) * 100));
-
-              if (modalConsUsd) modalConsUsd.textContent = `Consumido: $${consUsd.toFixed(4)} USD`;
-              if (modalConsCred) modalConsCred.textContent = `Consumido: ${consCred.toFixed(2)} cred`;
-              if (modalConsTok) modalConsTok.textContent = `Consumido: ${consTok.toLocaleString()} tokens`;
-              if (modalPct) modalPct.textContent = `${pct.toFixed(2)}% consumido`;
-              if (modalFill) modalFill.style.width = `${pct.toFixed(2)}%`;
-            }
-          }
-        } catch (mErr) {
-          console.warn("[MasterLedger] Error loading stats:", mErr);
-        }
+        void refreshAdminPanel();
 
       } else {
         // Usuario Normal: mostrar compra de créditos y marcador personal en dólares y créditos
@@ -775,13 +740,15 @@
     const modal = $("outOfCreditsModal");
     if (!modal) return;
 
-    let isAdm = true;
-    let balance = Infinity;
+    let isAdm = false;
+    let balance = 0;
+    let suspended = false;
     if (window.editcoreCredits?.getBalance) {
       try {
         const bal = await window.editcoreCredits.getBalance();
-        isAdm = bal.role === "admin" || bal.isSuperAdmin || bal.balance === Infinity || bal.isUnlimited;
-        balance = bal.balance;
+        isAdm = bal.ok !== false && (bal.role === "admin" || bal.isUnlimited);
+        balance = Number(bal.balance || 0);
+        suspended = bal.status === "suspended" || reason === "ACCOUNT_SUSPENDED";
       } catch {}
     }
 
@@ -789,11 +756,15 @@
     const descEl = modal.querySelector("p");
     const iconEl = modal.querySelector(".ec-credits-lock-icon");
 
-    if (isAdm) {
+    if (suspended) {
+      if (iconEl) iconEl.textContent = "⛔";
+      if (titleEl) titleEl.textContent = "Cuenta suspendida";
+      if (descEl) descEl.textContent = "Tu cuenta está suspendida. Contacta al administrador de EditCoreAI.";
+    } else if (isAdm) {
       if (iconEl) iconEl.textContent = "💎";
       if (titleEl) titleEl.textContent = "Recarga y Gestión de Créditos";
-      if (descEl) descEl.innerHTML = "Tu cuenta de <strong>Administrador Maestro</strong> cuenta con <strong>Saldo Ilimitado (∞)</strong> permanente. Puedes seleccionar un paquete para probar pagos reales con Mercado Pago o Stripe:";
-    } else if (reason === "out_of_credits" || balance === 0) {
+      if (descEl) descEl.textContent = "Tu cuenta de administrador no paga por consulta. Los códigos y créditos de los usuarios se gestionan en Configuración › Créditos.";
+    } else if (reason === "out_of_credits" || reason === "OUT_OF_CREDITS" || balance <= 0) {
       if (iconEl) iconEl.textContent = "⚠️";
       if (titleEl) titleEl.textContent = "¡Créditos de IA Agotados!";
       if (descEl) descEl.innerHTML = "Tu saldo actual ha llegado a <strong>0 créditos</strong>. Para continuar utilizando los modelos de inteligencia artificial y agentes de EditCoreAI, añade más créditos a tu cuenta.";
@@ -814,6 +785,116 @@
     modal.hidden = true;
     modal.setAttribute("hidden", "");
     modal.setAttribute("aria-hidden", "true");
+  }
+
+  function showStatus(el, ok, text) {
+    if (!el) return;
+    el.hidden = false;
+    el.removeAttribute("hidden");
+    el.className = `ec-status-msg ${ok ? "ec-tag-success" : "ec-tag-danger"}`;
+    el.textContent = text;
+  }
+
+  const fmtNum = (n) => Number(n || 0).toLocaleString("es-MX", { maximumFractionDigits: 2 });
+
+  async function refreshAdminPanel() {
+    const credits = window.editcoreCredits;
+    if (!credits?.adminOverview) return;
+    const res = await credits.adminOverview();
+    if (!res?.ok) return;
+    const o = res.overview || {};
+    const set = (id, text) => { const el = $(id); if (el) el.textContent = text; };
+    set("adminUsersTotal", fmtNum(o.users_total));
+    set("adminUsersSub", `Activos: ${fmtNum(o.users_active)} · Suspendidos: ${fmtNum(o.users_suspended)}`);
+    set("adminCreditsCirculation", fmtNum(o.credits_in_circulation));
+    set("adminVouchersActive", `Códigos vigentes: ${fmtNum(o.vouchers_active)}`);
+    set("adminConsumedToday", fmtNum(o.credits_consumed_today));
+    set("adminConsumedSub", `Hoy (${fmtNum(o.requests_today)} consultas) · Total: ${fmtNum(o.credits_consumed_total)}`);
+    await renderAdminUsers();
+  }
+
+  async function renderAdminUsers() {
+    const box = $("adminUsersList");
+    if (!box || !window.editcoreCredits?.adminListUsers) return;
+    const res = await window.editcoreCredits.adminListUsers($("adminUserSearch")?.value || "");
+    box.replaceChildren();
+    const users = res?.users || [];
+    if (!users.length) {
+      const empty = document.createElement("div");
+      empty.className = "ec-admin-user-row";
+      empty.textContent = res?.ok === false ? (res.error || "No se pudo cargar la lista.") : "Sin usuarios.";
+      box.appendChild(empty);
+      return;
+    }
+    for (const u of users) {
+      const row = document.createElement("div");
+      row.className = `ec-admin-user-row${u.status === "suspended" ? " is-suspended" : ""}`;
+      const email = document.createElement("span");
+      email.className = "ec-admin-user-email";
+      email.textContent = u.email;
+      email.title = u.last_used_at ? `Último uso: ${new Date(u.last_used_at).toLocaleString("es-MX")}` : "Sin consultas todavía";
+      const role = document.createElement("span");
+      role.textContent = u.role === "admin" ? "👑 admin" : (u.status === "suspended" ? "⛔ suspendido" : "usuario");
+      const bal = document.createElement("span");
+      bal.textContent = u.role === "admin" || u.is_unlimited ? "∞" : `${fmtNum(u.credits_balance)} cr`;
+      const action = document.createElement("button");
+      action.type = "button";
+      action.className = "ec-btn-action";
+      if (u.role === "admin") {
+        action.disabled = true;
+        action.textContent = "—";
+      } else {
+        action.textContent = u.status === "suspended" ? "Reactivar" : "Suspender";
+        action.addEventListener("click", async () => {
+          const next = u.status === "suspended" ? "active" : "suspended";
+          if (next === "suspended" && !confirm(`¿Suspender a ${u.email}? No podrá usar EditCoreAI hasta que lo reactives.`)) return;
+          const r = await window.editcoreCredits.adminSetStatus({ email: u.email, status: next });
+          if (!r?.ok) alert(r?.error || "No se pudo cambiar el estado.");
+          await refreshAdminPanel();
+        });
+      }
+      row.append(email, role, bal, action);
+      box.appendChild(row);
+    }
+  }
+
+  function bindAdminPanel() {
+    $("adminRefreshBtn")?.addEventListener("click", () => void refreshAdminPanel());
+    let searchTimer = null;
+    $("adminUserSearch")?.addEventListener("input", () => {
+      clearTimeout(searchTimer);
+      searchTimer = setTimeout(() => void renderAdminUsers(), 300);
+    });
+    $("adminVoucherCreateBtn")?.addEventListener("click", async () => {
+      const out = $("adminVoucherResult");
+      const creditsVal = Number($("adminVoucherCredits")?.value || 0);
+      if (!(creditsVal > 0)) return showStatus(out, false, "Indica cuántos créditos da el código.");
+      const res = await window.editcoreCredits?.adminCreateVoucher?.({
+        credits: creditsVal,
+        maxUses: Number($("adminVoucherUses")?.value || 1),
+        expiresInDays: Number($("adminVoucherDays")?.value || 0),
+        note: $("adminVoucherNote")?.value || "",
+      });
+      if (!res?.ok) return showStatus(out, false, res?.error || "No se pudo crear el código.");
+      showStatus(out, true, "");
+      out.textContent = "Código creado (cópialo ahora, no se vuelve a mostrar): ";
+      const code = document.createElement("span");
+      code.className = "ec-admin-code";
+      code.textContent = res.code;
+      out.appendChild(code);
+      try { await navigator.clipboard.writeText(res.code); out.appendChild(document.createTextNode(" · copiado")); } catch {}
+      await refreshAdminPanel();
+    });
+    $("adminGrantBtn")?.addEventListener("click", async () => {
+      const out = $("adminGrantResult");
+      const email = String($("adminGrantEmail")?.value || "").trim();
+      const amount = Number($("adminGrantAmount")?.value || 0);
+      if (!email || !amount) return showStatus(out, false, "Escribe el correo y la cantidad.");
+      const res = await window.editcoreCredits?.adminGrant?.({ email, amount, note: $("adminGrantNote")?.value || "" });
+      if (!res?.ok) return showStatus(out, false, res?.error || "No se pudo aplicar.");
+      showStatus(out, true, `Listo. Saldo de ${email}: ${fmtNum(res.account?.credits_balance)} créditos.`);
+      await refreshAdminPanel();
+    });
   }
 
   function openSettings(panel = "general") {
@@ -1901,26 +1982,6 @@
     const hasAttachments = Boolean(window.EditCoreAttachments?.list?.()?.length);
     if (!text && !hasAttachments) return;
 
-    // Verificar saldo de créditos antes de enviar
-    try {
-      if (window.editcoreCredits?.getBalance) {
-        const bal = await window.editcoreCredits.getBalance();
-        if (bal && bal.balance === 0 && bal.role !== "admin" && !bal.isSuperAdmin) {
-          showOutOfCreditsModal();
-          return;
-        }
-      }
-      if (window.editcoreCredits?.deduct) {
-        const res = await window.editcoreCredits.deduct(null, 1, "Consulta de IA");
-        if (res && res.success === false && res.code === "OUT_OF_CREDITS") {
-          showOutOfCreditsModal();
-          return;
-        }
-      }
-    } catch (e) {
-      console.warn("Credit check error:", e);
-    }
-
     touchActiveFromPrompt(text || "Adjunto");
     if (homePrompt) homePrompt.value = "";
     if (idePrompt) idePrompt.value = "";
@@ -2370,13 +2431,15 @@
       const statusEl = $("settingsVoucherStatus");
       if (!code) return;
       try {
-        const res = await window.editcoreCredits?.redeem?.(null, code);
+        const res = await window.editcoreCredits?.redeem?.(code);
         if (statusEl) {
           statusEl.hidden = false;
           statusEl.removeAttribute("hidden");
           if (res?.success) {
             statusEl.className = "ec-status-msg ec-tag-success";
-            statusEl.textContent = `¡Código canjeado con éxito! Saldo actual: ${res.balance === Infinity ? "∞ Ilimitado" : res.balance + " créditos"}`;
+            statusEl.textContent = `¡Código canjeado! Se agregaron ${res.credits_added} créditos. Saldo actual: ${res.isUnlimited ? "∞ Ilimitado" : res.balance + " créditos"}`;
+            const input = $("settingsVoucherInput");
+            if (input) input.value = "";
             await refreshCreditsAndProfileUI();
           } else {
             statusEl.className = "ec-status-msg ec-tag-danger";
@@ -2398,13 +2461,13 @@
       const statusEl = $("outOfCreditsMsg");
       if (!code) return;
       try {
-        const res = await window.editcoreCredits?.redeem?.(null, code);
+        const res = await window.editcoreCredits?.redeem?.(code);
         if (statusEl) {
           statusEl.hidden = false;
           statusEl.removeAttribute("hidden");
           if (res?.success) {
             statusEl.className = "ec-status-msg ec-tag-success";
-            statusEl.textContent = `¡Desbloqueado! Se agregaron tus créditos.`;
+            statusEl.textContent = `¡Desbloqueado! Se agregaron ${res.credits_added} créditos.`;
             await refreshCreditsAndProfileUI();
             setTimeout(() => closeOutOfCreditsModal(), 1200);
           } else {
@@ -2430,28 +2493,18 @@
       });
     });
 
-    // Compra de Packs de Créditos con Pasarela Real
+    // Compra de paquetes: el cobro en línea aún no está conectado; los créditos solo los acredita el servidor.
     document.querySelectorAll(".ec-pack-btn").forEach((btn) => {
-      btn.addEventListener("click", async () => {
-        const credits = parseInt(btn.getAttribute("data-pack") || "100", 10);
-        const selectedGwInput = document.querySelector('input[name="creditPaymentGateway"]:checked');
-        const gateway = selectedGwInput ? selectedGwInput.value : "mercadopago";
-        const gwName = gateway === "stripe" ? "Stripe Checkout" : "Mercado Pago";
-
-        try {
-          // Generar orden de pago
-          const orderRes = await window.editcoreCredits?.createOrder?.(null, credits, gateway);
-          const order = orderRes?.order;
-
-          // Acreditar saldo tras confirmación
-          const res = await window.editcoreCredits?.add?.(null, credits, `Pago exitoso vía ${gwName} (Orden ${order?.orderId || "directa"})`);
-          if (res?.success) {
-            alert(`¡Pago procesado con éxito vía ${gwName}!\n\nSe han acreditado ${credits} créditos a tu cuenta de EditCoreAI.`);
-            await refreshCreditsAndProfileUI();
-            closeOutOfCreditsModal();
-          }
-        } catch (e) {
-          alert(`Error al procesar pago con ${gwName}: ` + e.message);
+      btn.addEventListener("click", () => {
+        const statusEl = $("outOfCreditsMsg");
+        const text = "La compra en línea estará disponible pronto. Mientras tanto, pide un código de recarga al administrador de EditCoreAI y canjéalo aquí.";
+        if (statusEl) {
+          statusEl.hidden = false;
+          statusEl.removeAttribute("hidden");
+          statusEl.className = "ec-status-msg ec-tag-info";
+          statusEl.textContent = text;
+        } else {
+          alert(text);
         }
       });
     });
@@ -2464,22 +2517,7 @@
       closeOutOfCreditsModal();
     });
 
-    // Guardar Perfil de Usuario
-    $("settingsSaveProfileBtn")?.addEventListener("click", async () => {
-      const name = $("settingsProfileName")?.value?.trim();
-      const email = $("settingsProfileEmail")?.value?.trim();
-      if (!name || !email) {
-        alert("Por favor completa nombre y correo.");
-        return;
-      }
-      try {
-        await window.editcoreCredits?.updateProfile?.(null, { name, email });
-        await refreshCreditsAndProfileUI();
-        alert("¡Perfil guardado correctamente!");
-      } catch (err) {
-        alert("Error al guardar perfil: " + err.message);
-      }
-    });
+    bindAdminPanel();
 
     // Cerrar Sesión desde Perfil
     $("settingsLogoutBtn")?.addEventListener("click", async () => {
@@ -2802,114 +2840,83 @@
   }
 
   function setupAuthPortal() {
-    const tabLogin = $("authTabLogin");
-    const tabReg = $("authTabRegister");
-    const formLogin = $("authLoginForm");
-    const formReg = $("authRegisterForm");
+    const googleBtn = $("authGoogleBtn");
+    const googleLabel = $("authGoogleBtnLabel");
+    const cancelBtn = $("authGoogleCancelBtn");
     const loginStatus = $("authLoginStatus");
-    const regStatus = $("authRegStatus");
+    const setStatus = (kind, text) => {
+      if (!loginStatus) return;
+      loginStatus.hidden = !text;
+      if (text) loginStatus.removeAttribute("hidden");
+      loginStatus.className = `ec-status-msg ec-tag-${kind}`;
+      loginStatus.textContent = text || "";
+    };
+    const setBusy = (busy) => {
+      if (googleBtn) googleBtn.disabled = busy;
+      if (googleLabel) googleLabel.textContent = busy ? "Esperando a Google en tu navegador…" : "Continuar con Google";
+      if (cancelBtn) cancelBtn.hidden = !busy;
+    };
 
-    tabLogin?.addEventListener("click", () => {
-      tabLogin.classList.add("is-active");
-      tabReg?.classList.remove("is-active");
-      formLogin?.classList.remove("is-hidden");
-      if (formLogin) formLogin.hidden = false;
-      formReg?.classList.add("is-hidden");
-      if (formReg) formReg.hidden = true;
-    });
-
-    tabReg?.addEventListener("click", () => {
-      tabReg.classList.add("is-active");
-      tabLogin?.classList.remove("is-active");
-      formReg?.classList.remove("is-hidden");
-      if (formReg) formReg.hidden = false;
-      formLogin?.classList.add("is-hidden");
-      if (formLogin) formLogin.hidden = true;
-    });
-
-    formLogin?.addEventListener("submit", async (ev) => {
-      ev.preventDefault();
-      const email = $("authLoginEmail")?.value?.trim();
-      const password = $("authLoginPassword")?.value || "";
-      const remember = $("authLoginRemember")?.checked ?? true;
-      if (loginStatus) {
-        loginStatus.hidden = false;
-        loginStatus.className = "ec-status-msg ec-tag-info";
-        loginStatus.textContent = "Verificando credenciales...";
+    const applySession = (sessionData) => {
+      if (!sessionData?.isAuthenticated) {
+        if (sessionData?.configured === false) setStatus("danger", "El servidor de cuentas no está configurado en esta instalación.");
+        showAuthPortal();
+        return false;
       }
+      if (sessionData.user?.status === "suspended") {
+        setStatus("danger", "Tu cuenta está suspendida. Contacta al administrador de EditCoreAI.");
+        showAuthPortal();
+        return false;
+      }
+      hideAuthPortal();
+      return true;
+    };
+
+    googleBtn?.addEventListener("click", async () => {
+      if (!window.editcoreAuth?.loginWithGoogle) return;
+      setBusy(true);
+      setStatus("info", "Se abrió Google en tu navegador. Elige tu cuenta y vuelve aquí.");
       try {
-        let res = { success: true };
-        if (window.editcoreAuth?.login) {
-          res = await window.editcoreAuth.login({ email, password, rememberMe: remember });
-        }
-        if (res?.success) {
-          if (loginStatus) {
-            loginStatus.className = "ec-status-msg ec-tag-success";
-            loginStatus.textContent = "¡Sesión iniciada con éxito!";
-          }
+        const res = await window.editcoreAuth.loginWithGoogle();
+        if (res?.success && applySession(res.session)) {
+          setStatus("success", "¡Sesión iniciada!");
           await refreshCreditsAndProfileUI();
-          setTimeout(() => hideAuthPortal(), 400);
-        } else {
-          if (loginStatus) {
-            loginStatus.className = "ec-status-msg ec-tag-danger";
-            loginStatus.textContent = res?.error || "Error al iniciar sesión.";
-          }
+        } else if (!res?.success) {
+          setStatus(res?.code === "LOGIN_CANCELLED" ? "info" : "danger", res?.error || "No se pudo iniciar sesión.");
         }
       } catch (err) {
-        if (loginStatus) {
-          loginStatus.className = "ec-status-msg ec-tag-danger";
-          loginStatus.textContent = err.message || "Error al conectar.";
-        }
+        setStatus("danger", err?.message || "No se pudo iniciar sesión.");
+      } finally {
+        setBusy(false);
       }
     });
 
-    formReg?.addEventListener("submit", async (ev) => {
-      ev.preventDefault();
-      const name = $("authRegName")?.value?.trim();
-      const email = $("authRegEmail")?.value?.trim();
-      const password = $("authRegPassword")?.value || "";
-      const role = $("authRegRole")?.value || "developer";
-      if (regStatus) {
-        regStatus.hidden = false;
-        regStatus.className = "ec-status-msg ec-tag-info";
-        regStatus.textContent = "Creando cuenta de usuario...";
-      }
-      try {
-        let res = { success: true };
-        if (window.editcoreAuth?.register) {
-          res = await window.editcoreAuth.register({ name, email, password, role });
-        }
-        if (res?.success) {
-          if (regStatus) {
-            regStatus.className = "ec-status-msg ec-tag-success";
-            regStatus.textContent = "¡Cuenta creada e iniciada con éxito!";
-          }
-          await refreshCreditsAndProfileUI();
-          setTimeout(() => hideAuthPortal(), 400);
-        } else {
-          if (regStatus) {
-            regStatus.className = "ec-status-msg ec-tag-danger";
-            regStatus.textContent = res?.error || "Error al registrar cuenta.";
-          }
-        }
-      } catch (err) {
-        if (regStatus) {
-          regStatus.className = "ec-status-msg ec-tag-danger";
-          regStatus.textContent = err.message || "Error al crear cuenta.";
-        }
+    cancelBtn?.addEventListener("click", () => {
+      void window.editcoreAuth?.cancelLogin?.();
+    });
+
+    window.editcoreAuth?.onSessionChanged?.((sessionData) => {
+      if (!applySession(sessionData)) setStatus("info", "Tu sesión terminó. Vuelve a iniciar sesión con Google.");
+      void refreshCreditsAndProfileUI();
+    });
+
+    window.editcoreAuth?.onBlocked?.(({ code } = {}) => {
+      if (code === "NO_SESSION" || code === "SESSION_EXPIRED") {
+        setStatus("info", "Inicia sesión con Google para seguir usando EditCoreAI.");
+        showAuthPortal();
+      } else if (code === "OUT_OF_CREDITS" || code === "ACCOUNT_SUSPENDED") {
+        void showOutOfCreditsModal(code);
       }
     });
 
-    // Validar sesión inicial
+    // Sesión obligatoria: sin sesión válida la app queda cubierta por esta pantalla.
+    showAuthPortal();
     if (window.editcoreAuth?.getSession) {
-      window.editcoreAuth.getSession().then((sessionData) => {
-        if (!sessionData?.isAuthenticated) {
-          showAuthPortal();
-        } else {
-          hideAuthPortal();
-        }
+      window.editcoreAuth.getSession({ refresh: true }).then((sessionData) => {
+        if (applySession(sessionData)) void refreshCreditsAndProfileUI();
       }).catch(() => {
-        hideAuthPortal();
+        setStatus("danger", "No se pudo comprobar tu sesión. Inténtalo de nuevo.");
+        showAuthPortal();
       });
     }
   }

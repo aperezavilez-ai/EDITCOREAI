@@ -2,7 +2,9 @@
   "name": "editcoreai",
   "version": "4.2.5",
   "editcoreForensic": {
-    "skip": ["runtime/golden-templates"]
+    "skip": [
+      "runtime/golden-templates"
+    ]
   },
   "description": "EditCoreAI — IDE con agente (MEAI/APICREDITS)",
   "author": "EditCoreAI",
@@ -28,7 +30,11 @@
     "test:runtime": "node --test runtime/*.test.js",
     "check": "node --check main.js && node --check preload.js && node --check renderer.js && node --check project-analysis.js && node --check runtime/editcore-claude-adapter.js && node --check runtime/action-registry.js && node --check runtime/ai-core.js && node --check runtime/task-manager.js && node --check runtime/workspace-api.js && node --check runtime/tool-dispatcher.js",
     "dist:win": "node scripts/build-windows.js",
-    "release:win": "electron-builder --win nsis --x64 --publish always"
+    "release:win": "electron-builder --win nsis --x64 --publish always",
+    "cuentas:start": "node scripts/cuentas-start.js",
+    "cuentas:restart": "node scripts/cuentas-start.js --restart",
+    "cuentas:admin": "node scripts/cuentas-hacer-admin.js",
+    "cuentas:config-exe": "node scripts/write-cloud-config.js"
   },
   "dependencies": {
     "axios": "^1.20.0",
@@ -92,6 +98,7 @@
       "!resources/app.asar",
       "!test/**",
       "!scripts/**",
+      "!supabase/**",
       "!phase*-results/**",
       "!scratch/**",
       "!gafcore-chat-engine/**",

@@ -176,11 +176,11 @@
           </div>
 
           <div class="ec-settings-user-profile" id="settingsUserProfileCard">
-            <div class="ec-user-avatar-circle" id="settingsUserAvatar">AP</div>
+            <div class="ec-user-avatar-circle" id="settingsUserAvatar">?</div>
             <div class="ec-user-meta">
-              <div class="ec-user-display-name" id="settingsUserName">Alfonso Perez Avilez</div>
-              <div class="ec-user-email-addr" id="settingsUserEmail">aperezavilez@gmail.com</div>
-              <div class="ec-user-role-badge" id="settingsUserRole">👑 Administrador Total</div>
+              <div class="ec-user-display-name" id="settingsUserName">Sin sesión</div>
+              <div class="ec-user-email-addr" id="settingsUserEmail"></div>
+              <div class="ec-user-role-badge" id="settingsUserRole"></div>
             </div>
           </div>
         </aside>
@@ -370,37 +370,60 @@
             <!-- PANE: Créditos y Facturación -->
             <div class="ec-settings-pane is-hidden" id="settingsPaneCredits" data-pane="credits" hidden>
               
-              <!-- Dashboard Maestro (Exclusivo Administrador) -->
+              <!-- Panel de administración (solo cuentas con rol admin en el servidor) -->
               <div id="settingsAdminMasterDashboard" class="ec-master-dashboard-card" hidden>
                 <div class="ec-master-card-head">
-                  <div class="ec-master-badge">👑 Cuenta Maestra · EditCoreAI Central</div>
-                  <div class="ec-master-updated" id="adminMasterUpdated">En vivo</div>
+                  <div class="ec-master-badge">👑 Administración de EditCoreAI</div>
+                  <button type="button" class="ec-btn-action" id="adminRefreshBtn">Actualizar</button>
                 </div>
                 <div class="ec-master-metrics-grid">
                   <div class="ec-metric-box">
-                    <span class="ec-metric-title">💵 Fondo Maestro en USD</span>
-                    <div class="ec-metric-number text-emerald" id="adminMasterUsd">$8,000.00</div>
-                    <span class="ec-metric-sub" id="adminMasterConsumedUsd">Consumido: $0.0000</span>
+                    <span class="ec-metric-title">👥 Usuarios</span>
+                    <div class="ec-metric-number text-emerald" id="adminUsersTotal">—</div>
+                    <span class="ec-metric-sub" id="adminUsersSub">Activos: — · Suspendidos: —</span>
                   </div>
                   <div class="ec-metric-box">
-                    <span class="ec-metric-title">⚡ Reserva Global de Créditos</span>
-                    <div class="ec-metric-number text-indigo" id="adminMasterCredits">160,000.00</div>
-                    <span class="ec-metric-sub" id="adminMasterConsumedCredits">Consumido: 0.00 cred</span>
+                    <span class="ec-metric-title">⚡ Créditos en manos de usuarios</span>
+                    <div class="ec-metric-number text-indigo" id="adminCreditsCirculation">—</div>
+                    <span class="ec-metric-sub" id="adminVouchersActive">Códigos vigentes: —</span>
                   </div>
                   <div class="ec-metric-box">
-                    <span class="ec-metric-title">🔢 Reserva Global de Tokens</span>
-                    <div class="ec-metric-number text-cyan" id="adminMasterTokens">1,600,000,000</div>
-                    <span class="ec-metric-sub" id="adminMasterConsumedTokens">Consumido: 0 tokens</span>
+                    <span class="ec-metric-title">📈 Consumo</span>
+                    <div class="ec-metric-number text-cyan" id="adminConsumedToday">—</div>
+                    <span class="ec-metric-sub" id="adminConsumedSub">Hoy · Total: —</span>
                   </div>
                 </div>
-                <div class="ec-master-bar-wrap">
-                  <div class="ec-master-bar-label">
-                    <span>Deducción y Uso del Fondo Maestro</span>
-                    <span id="adminMasterPct">0% consumido</span>
+
+                <div class="ec-admin-tools">
+                  <div class="ec-admin-tool">
+                    <h4>Crear código de recarga</h4>
+                    <div class="ec-admin-row">
+                      <input type="number" min="1" id="adminVoucherCredits" class="ec-styled-input" placeholder="Créditos" />
+                      <input type="number" min="1" id="adminVoucherUses" class="ec-styled-input" placeholder="Usos (1)" />
+                      <input type="number" min="0" id="adminVoucherDays" class="ec-styled-input" placeholder="Días de vigencia (0 = sin fin)" />
+                    </div>
+                    <input type="text" id="adminVoucherNote" class="ec-styled-input" placeholder="Nota (para quién es)" />
+                    <button type="button" class="ec-btn-action" id="adminVoucherCreateBtn">Crear código</button>
+                    <div id="adminVoucherResult" class="ec-status-msg" hidden></div>
                   </div>
-                  <div class="ec-progress-track">
-                    <div class="ec-progress-fill" id="adminMasterProgressFill" style="width: 0%;"></div>
+                  <div class="ec-admin-tool">
+                    <h4>Dar o quitar créditos</h4>
+                    <div class="ec-admin-row">
+                      <input type="email" id="adminGrantEmail" class="ec-styled-input" placeholder="correo@gmail.com" />
+                      <input type="number" id="adminGrantAmount" class="ec-styled-input" placeholder="Cantidad (negativa para quitar)" />
+                    </div>
+                    <input type="text" id="adminGrantNote" class="ec-styled-input" placeholder="Motivo (ej. pago recibido)" />
+                    <button type="button" class="ec-btn-action" id="adminGrantBtn">Aplicar</button>
+                    <div id="adminGrantResult" class="ec-status-msg" hidden></div>
                   </div>
+                </div>
+
+                <div class="ec-admin-tool">
+                  <h4>Usuarios</h4>
+                  <div class="ec-admin-row">
+                    <input type="text" id="adminUserSearch" class="ec-styled-input" placeholder="Buscar por correo" />
+                  </div>
+                  <div class="ec-admin-users" id="adminUsersList"></div>
                 </div>
               </div>
 
@@ -409,10 +432,10 @@
                 <div class="ec-credits-banner-main">
                   <span class="ec-credits-caption">Saldo Disponible</span>
                   <div style="display:flex;align-items:baseline;gap:12px;margin:4px 0;">
-                    <div class="ec-credits-big-num" id="settingsCreditsBigNum">∞ Ilimitado</div>
+                    <div class="ec-credits-big-num" id="settingsCreditsBigNum">—</div>
                     <div class="ec-credits-usd-num" id="settingsCreditsUsdNum" style="font-size:18px;font-weight:700;color:#059669;" hidden>($0.00 USD)</div>
                   </div>
-                  <div class="ec-credits-plan-tag" id="settingsCreditsPlanTag">Plan Administrador Maestro · Acceso Vitalicio</div>
+                  <div class="ec-credits-plan-tag" id="settingsCreditsPlanTag"></div>
                 </div>
                 <div class="ec-credits-banner-cta" id="settingsCreditsBannerCta">
                   <button type="button" id="settingsBuyCreditsBtn" class="ec-btn-gold">💳 Recargar Crédito</button>
@@ -425,7 +448,7 @@
                   <p>Ingresa un código promocional para añadir saldo inmediatamente.</p>
                 </div>
                 <div class="ec-voucher-redeem-row">
-                  <input type="text" id="settingsVoucherInput" class="ec-styled-input" placeholder="Ej: EDITCORE100, PROMO2026, ADMINVIP" />
+                  <input type="text" id="settingsVoucherInput" class="ec-styled-input" placeholder="Escribe el código que te dieron" autocomplete="off" />
                   <button type="button" id="settingsVoucherBtn" class="ec-btn-action">Canjear</button>
                 </div>
                 <div id="settingsVoucherStatus" class="ec-status-msg" hidden></div>
@@ -434,18 +457,17 @@
               <div class="ec-settings-group-card">
                 <div class="ec-group-info">
                   <h4>Cuenta y Titular</h4>
-                  <p>Nombre y correo asociado a los proyectos y facturación.</p>
+                  <p>Datos de tu cuenta de Google. Para cambiarlos, cámbialos en Google y vuelve a iniciar sesión.</p>
                 </div>
                 <div class="ec-profile-edit-box">
                   <div class="ec-input-field">
                     <label>Nombre Completo:</label>
-                    <input type="text" id="settingsProfileName" class="ec-styled-input" value="Alfonso Perez Avilez" />
+                    <input type="text" id="settingsProfileName" class="ec-styled-input" value="" readonly />
                   </div>
                   <div class="ec-input-field">
                     <label>Correo Electrónico:</label>
-                    <input type="email" id="settingsProfileEmail" class="ec-styled-input" value="aperezavilez@gmail.com" />
+                    <input type="email" id="settingsProfileEmail" class="ec-styled-input" value="" readonly />
                   </div>
-                  <button type="button" id="settingsSaveProfileBtn" class="ec-btn-secondary">Guardar Perfil</button>
                 </div>
               </div>
             </div>
@@ -490,56 +512,15 @@
           <p>Plataforma Autónoma de Desarrollo, Arquitectura e Inteligencia Artificial</p>
         </div>
 
-        <div class="ec-auth-tabs">
-          <button type="button" class="ec-auth-tab is-active" id="authTabLogin" data-auth-tab="login">Iniciar Sesión</button>
-          <button type="button" class="ec-auth-tab" id="authTabRegister" data-auth-tab="register">Crear Cuenta</button>
-        </div>
-
-        <!-- Formulario de Login -->
-        <form id="authLoginForm" class="ec-auth-form">
-          <div class="ec-input-field">
-            <label for="authLoginEmail">Correo Electrónico:</label>
-            <input type="email" id="authLoginEmail" class="ec-styled-input" placeholder="aperezavilez@gmail.com" value="aperezavilez@gmail.com" required />
-          </div>
-          <div class="ec-input-field">
-            <label for="authLoginPassword">Contraseña / Token Maestro:</label>
-            <input type="password" id="authLoginPassword" class="ec-styled-input" placeholder="Ingresa tu contraseña o deja vacío para acceso local" />
-          </div>
-          <div class="ec-auth-options-row">
-            <label class="ec-auth-remember">
-              <input type="checkbox" id="authLoginRemember" checked />
-              <span>Mantener sesión iniciada en este equipo</span>
-            </label>
-          </div>
+        <div class="ec-auth-form" id="authGoogleBox">
+          <p class="ec-auth-google-hint">Inicia sesión o crea tu cuenta con tu correo de Google. EditCoreAI nunca ve tu contraseña: se escribe solo en la página de Google.</p>
+          <button type="button" id="authGoogleBtn" class="ec-btn-primary ec-auth-submit-btn ec-auth-google-btn">
+            <span class="ec-auth-google-g" aria-hidden="true">G</span>
+            <span id="authGoogleBtnLabel">Continuar con Google</span>
+          </button>
+          <button type="button" id="authGoogleCancelBtn" class="ec-btn-secondary ec-auth-cancel-btn" hidden>Cancelar</button>
           <div id="authLoginStatus" class="ec-status-msg" hidden></div>
-          <button type="submit" id="authLoginSubmitBtn" class="ec-btn-primary ec-auth-submit-btn">🚀 Iniciar Sesión</button>
-        </form>
-
-        <!-- Formulario de Registro -->
-        <form id="authRegisterForm" class="ec-auth-form is-hidden" hidden>
-          <div class="ec-input-field">
-            <label for="authRegName">Nombre Completo:</label>
-            <input type="text" id="authRegName" class="ec-styled-input" placeholder="Tu Nombre" required />
-          </div>
-          <div class="ec-input-field">
-            <label for="authRegEmail">Correo Electrónico:</label>
-            <input type="email" id="authRegEmail" class="ec-styled-input" placeholder="tu@correo.com" required />
-          </div>
-          <div class="ec-input-field">
-            <label for="authRegPassword">Contraseña:</label>
-            <input type="password" id="authRegPassword" class="ec-styled-input" placeholder="Mínimo 6 caracteres" />
-          </div>
-          <div class="ec-input-field">
-            <label for="authRegRole">Rol en la Plataforma:</label>
-            <select id="authRegRole" class="ec-styled-select">
-              <option value="developer" selected>Desarrollador (Developer)</option>
-              <option value="auditor">Auditor de Calidad (Auditor)</option>
-              <option value="admin">Administrador (Admin)</option>
-            </select>
-          </div>
-          <div id="authRegStatus" class="ec-status-msg" hidden></div>
-          <button type="submit" id="authRegisterSubmitBtn" class="ec-btn-primary ec-auth-submit-btn">✨ Registrar y Acceder</button>
-        </form>
+        </div>
       </div>
     </div>
 
@@ -587,7 +568,7 @@
         <div class="ec-credits-voucher-section">
           <h4>¿Tienes un cupón o código de recarga?</h4>
           <div class="ec-voucher-input-row">
-            <input type="text" id="outOfCreditsVoucherInput" class="ec-styled-input" placeholder="Ej: EDITCORE100, PROMO2026, ADMINVIP" />
+            <input type="text" id="outOfCreditsVoucherInput" class="ec-styled-input" placeholder="Escribe el código que te dieron" autocomplete="off" />
             <button type="button" id="outOfCreditsRedeemBtn" class="ec-btn-action">Canjear y Desbloquear</button>
           </div>
           <div id="outOfCreditsMsg" class="ec-status-msg" hidden></div>

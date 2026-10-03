@@ -9,14 +9,14 @@ const path = require("node:path");
 class RolePolicyGuard {
   constructor(options = {}) {
     this.coreRoot = path.resolve(options.editcoreRoot || options.coreRoot || process.cwd());
-    this.adminEmail = "aperezavilez@gmail.com";
   }
 
   /**
    * Verifica si un usuario tiene permiso para acceder o modificar una ruta específica.
+   * El rol debe venir del servidor de cuentas (nunca del correo ni del renderer).
    */
   canAccessPath(user = {}, targetPath = "", operation = "read") {
-    const role = user.role || (String(user.email || "").toLowerCase() === this.adminEmail.toLowerCase() ? "admin" : "user");
+    const role = user.role === "admin" ? "admin" : "user";
 
     // Administrador Total tiene acceso absoluto e irrestricto
     if (role === "admin") {

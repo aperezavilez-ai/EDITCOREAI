@@ -1,435 +1,165 @@
 "use strict";
 
-const fs = require("node:fs");
-const path = require("node:path");
-const os = require("node:os");
+// Créditos de EditCoreAI. El saldo, los cobros, los códigos de recarga y la administración
+// viven en el servidor de cuentas (funciones public.editcoreai_*); este módulo solo las llama
+// con la sesión del usuario. Si el servidor no responde, no se permite ejecutar (nunca saldo infinito).
+
 const { EventEmitter } = require("node:events");
+const { authManager: defaultAuth } = require("./auth-manager");
 
-const CREDITS_FILE_PATH = path.join(os.homedir(), ".editcore", "credits.json");
-const SUPABASE_URL = process.env.SUPABASE_URL || "https://supabase.gafcore.com/editcore-ai";
-const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY ||
-  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNzg5ODQ5MzMyLCJleHAiOjIxMDUyMDkzMzJ9.3LsN9Eis_cCkPT9sWJQwM9RmreAqM8-7Io0Uv2RqkdQ";
-const ADMIN_EMAIL = "aperezavilez@gmail.com";
+const RUN_COST_CREDITS = 1;
 
-/**
- * Gestor de créditos de EditCoreAI.
- * Fuente de verdad: Supabase GafCore (online).
- * Fallback: SQLite-like JSON local (offline).
- * Ambas plataformas (Desktop + Web) leen el mismo saldo de Supabase.
- */
+const CREDIT_ERRORS = {
+  OUT_OF_CREDITS: "No tienes créditos suficientes. Canjea un código de recarga o pide créditos al administrador.",
+  ACCOUNT_SUSPENDED: "Tu cuenta está suspendida. Contacta al administrador.",
+  INVALID_CODE: "El código no es válido.",
+  EXPIRED: "El código ya expiró.",
+  USED_UP: "Este código ya se usó por completo.",
+  ALREADY_REDEEMED: "Ya canjeaste este código con tu cuenta.",
+  TOO_MANY_ATTEMPTS: "Demasiados intentos fallidos. Espera una hora antes de volver a intentar.",
+  CANNOT_CHANGE_SELF: "No puedes cambiar el estado de tu propia cuenta.",
+};
+
+function failure(error) {
+  const code = String(error?.code || "SERVER");
+  return { ok: false, success: false, code, error: CREDIT_ERRORS[code] || error?.message || code };
+}
+
+function fromServer(data) {
+  if (data && data.ok === false) {
+    const code = String(data.error || "SERVER");
+    return { ok: false, success: false, code, error: CREDIT_ERRORS[code] || code, account: data.account || null };
+  }
+  return { ok: true, success: true, ...(data || {}) };
+}
+
+function balanceView(account = {}) {
+  const unlimited = Boolean(account.is_unlimited) || account.role === "admin";
+  const balance = Number(account.credits_balance || 0);
+  const active = account.status === "active";
+  return {
+    balance,
+    isUnlimited: unlimited,
+    role: account.role === "admin" ? "admin" : "user",
+    status: account.status || "unknown",
+    email: account.email || "",
+    canExecute: active && (unlimited || balance >= RUN_COST_CREDITS),
+  };
+}
+
 class CreditLedger extends EventEmitter {
   constructor(options = {}) {
     super();
-    this.options = options;
-    this.storagePath = options.storagePath || CREDITS_FILE_PATH;
-    this._supabaseToken = null; // JWT del usuario actual (set vía setUserSession)
-    this._currentUserId = null;
-    this._currentUserEmail = null;
-
-    const defBal = options.defaultCredits !== undefined
-      ? options.defaultCredits
-      : (options.defaultUserBalance !== undefined ? options.defaultUserBalance : 25);
-
-    this.state = {
-      defaultUserBalance: defBal,
-      adminEmail: ADMIN_EMAIL,
-      adminName: "Alfonso Perez Avilez",
-      users: {},
-      transactions: [],
-    };
-    this._load();
+    this.auth = options.auth || defaultAuth;
   }
 
-  // ─── Persistencia local (fallback offline) ─────────────────────────────────
-
-  _ensureDir() {
-    const dir = path.dirname(this.storagePath);
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-  }
-
-  _load() {
+  async getBalance() {
     try {
-      if (fs.existsSync(this.storagePath)) {
-        const raw = fs.readFileSync(this.storagePath, "utf8");
-        const parsed = JSON.parse(raw);
-        this.state = { ...this.state, ...parsed };
-      }
-    } catch { /* usar estado predeterminado */ }
-
-    // Asegurar cuenta de administrador con créditos ilimitados
-    if (!this.state.users[this.state.adminEmail]) {
-      this.state.users[this.state.adminEmail] = {
-        userId: this.state.adminEmail,
-        name: this.state.adminName,
-        email: this.state.adminEmail,
-        role: "admin",
-        balance: Infinity,
-        isUnlimited: true,
-        createdAt: new Date().toISOString(),
-      };
+      const account = await this.auth.refreshAccount();
+      return { ok: true, success: true, ...balanceView(account) };
+    } catch (error) {
+      return { ...failure(error), balance: 0, isUnlimited: false, canExecute: false };
     }
   }
 
-  _save() {
+  async chargeRun({ model = "", description = "Consulta de IA", amount = RUN_COST_CREDITS } = {}) {
+    if (!this.auth.isAuthenticated()) return failure({ code: "NO_SESSION", message: "Inicia sesión con Google para usar EditCoreAI." });
     try {
-      this._ensureDir();
-      const serializableUsers = {};
-      for (const [id, u] of Object.entries(this.state.users)) {
-        serializableUsers[id] = { ...u, balance: u.balance === Infinity ? "Infinity" : u.balance };
-      }
-      fs.writeFileSync(
-        this.storagePath,
-        JSON.stringify({ ...this.state, users: serializableUsers }, null, 2),
-        "utf8"
-      );
-    } catch { /* fallback en memoria */ }
+      const res = fromServer(await this.auth.rpc("editcoreai_consume_credits", {
+        p_amount: amount,
+        p_model: String(model || "").slice(0, 120) || null,
+        p_tokens_in: 0,
+        p_tokens_out: 0,
+        p_description: String(description || "").slice(0, 300) || null,
+      }));
+      if (res.account) this.auth.account = res.account;
+      if (res.ok) this.emit("balance-changed", balanceView(res.account));
+      return { ...res, ...(res.account ? balanceView(res.account) : {}) };
+    } catch (error) {
+      return failure(error);
+    }
   }
 
-  // ─── Sesión Supabase (la app principal llama esto al hacer login) ──────────
-
-  /**
-   * Registra la sesión activa del usuario para sincronizar con Supabase.
-   * @param {string} userId UUID del usuario en Supabase
-   * @param {string} userEmail correo del usuario
-   * @param {string} accessToken JWT de la sesión (supabase.auth.session().access_token)
-   */
-  setUserSession(userId, userEmail, accessToken) {
-    this._currentUserId = userId;
-    this._currentUserEmail = userEmail ? String(userEmail).toLowerCase() : null;
-    this._supabaseToken = accessToken || null;
-  }
-
-  clearSession() {
-    this._currentUserId = null;
-    this._currentUserEmail = null;
-    this._supabaseToken = null;
-  }
-
-  // ─── Supabase REST helpers ─────────────────────────────────────────────────
-
-  async _supabaseGet(path) {
-    if (!this._supabaseToken) return null;
+  async redeemVoucher(code) {
+    const clean = String(code || "").trim();
+    if (!clean) return failure({ code: "INVALID_CODE" });
     try {
-      const res = await fetch(`${SUPABASE_URL}/rest/v1${path}`, {
-        headers: {
-          "apikey": SUPABASE_ANON_KEY,
-          "Authorization": `Bearer ${this._supabaseToken}`,
-          "Content-Type": "application/json",
-        },
-      });
-      if (!res.ok) return null;
-      const text = await res.text();
-      try { return JSON.parse(text); } catch { return null; }
-    } catch { return null; }
+      const res = fromServer(await this.auth.rpc("editcoreai_redeem_voucher", { p_code: clean }));
+      if (res.account) {
+        this.auth.account = res.account;
+        this.emit("balance-changed", balanceView(res.account));
+      }
+      return { ...res, ...(res.account ? balanceView(res.account) : {}) };
+    } catch (error) {
+      return failure(error);
+    }
   }
 
-  async _supabasePatch(path, body) {
-    if (!this._supabaseToken) return false;
+  async listTransactions(limit = 20) {
     try {
-      const res = await fetch(`${SUPABASE_URL}/rest/v1${path}`, {
-        method: "PATCH",
-        headers: {
-          "apikey": SUPABASE_ANON_KEY,
-          "Authorization": `Bearer ${this._supabaseToken}`,
-          "Content-Type": "application/json",
-          "Prefer": "return=minimal",
-        },
-        body: JSON.stringify(body),
-      });
-      return res.ok;
-    } catch { return false; }
+      const rows = await this.auth.rpc("editcoreai_my_transactions", { p_limit: Number(limit) || 20 });
+      return { ok: true, success: true, transactions: Array.isArray(rows) ? rows : [] };
+    } catch (error) {
+      return { ...failure(error), transactions: [] };
+    }
   }
 
-  async _supabasePost(path, body) {
-    if (!this._supabaseToken) return null;
+  async adminOverview() {
     try {
-      const res = await fetch(`${SUPABASE_URL}/rest/v1${path}`, {
-        method: "POST",
-        headers: {
-          "apikey": SUPABASE_ANON_KEY,
-          "Authorization": `Bearer ${this._supabaseToken}`,
-          "Content-Type": "application/json",
-          "Prefer": "return=representation",
-        },
-        body: JSON.stringify(body),
-      });
-      const text = await res.text();
-      try { return JSON.parse(text); } catch { return null; }
-    } catch { return null; }
+      return { ok: true, success: true, overview: await this.auth.rpc("editcoreai_admin_overview") };
+    } catch (error) {
+      return failure(error);
+    }
   }
 
-  // ─── API principal ─────────────────────────────────────────────────────────
-
-  /**
-   * Obtiene el perfil del usuario. Primero intenta Supabase, luego fallback local.
-   */
-  async getBalanceAsync(userId) {
-    const id = String(userId || this._currentUserId || this.state.adminEmail).toLowerCase();
-
-    // Admin siempre ilimitado
-    if (id === ADMIN_EMAIL || id === "admin") {
-      return { userId: id, balance: Infinity, isUnlimited: true, role: "admin", canExecute: true };
+  async adminListUsers(search = "") {
+    try {
+      const rows = await this.auth.rpc("editcoreai_admin_list_users", { p_search: String(search || "") || null, p_limit: 200 });
+      return { ok: true, success: true, users: Array.isArray(rows) ? rows : [] };
+    } catch (error) {
+      return { ...failure(error), users: [] };
     }
-
-    // Intentar Supabase si hay sesión activa
-    if (this._supabaseToken && this._currentUserId) {
-      const data = await this._supabaseGet(
-        `/profiles?id=eq.${this._currentUserId}&select=id,email,credits_balance,is_unlimited,role`
-      );
-      if (data && data.length > 0) {
-        const profile = data[0];
-        const isUnlimited = profile.is_unlimited || profile.email === ADMIN_EMAIL;
-        const balance = isUnlimited ? Infinity : parseFloat(profile.credits_balance || 0);
-
-        // Actualizar cache local
-        this.state.users[id] = {
-          ...this.state.users[id],
-          userId: id,
-          email: profile.email,
-          role: profile.role || "user",
-          balance,
-          isUnlimited,
-          _syncedAt: Date.now(),
-        };
-        this._save();
-
-        return {
-          userId: id,
-          balance,
-          isUnlimited,
-          role: profile.role || "user",
-          canExecute: isUnlimited || balance > 0,
-          source: "supabase",
-        };
-      }
-    }
-
-    // Fallback local
-    const user = this.getUser(id);
-    return {
-      userId: user.userId,
-      balance: user.balance,
-      isUnlimited: user.isUnlimited,
-      role: user.role,
-      canExecute: user.isUnlimited || user.balance > 0,
-      source: "local",
-    };
   }
 
-  /**
-   * Versión síncrona (para compatibilidad con código existente).
-   * Usa cache local. Llama getBalanceAsync() para datos actualizados de Supabase.
-   */
-  getUser(userId = this.state.adminEmail) {
-    const id = String(userId || this.state.adminEmail).toLowerCase();
-    if (!this.state.users[id]) {
-      const isAdmin = id === this.state.adminEmail.toLowerCase() || id === "admin";
-      this.state.users[id] = {
-        userId: id,
-        name: isAdmin ? this.state.adminName : `Usuario ${id.split("@")[0] || id}`,
-        email: isAdmin ? this.state.adminEmail : id,
-        role: isAdmin ? "admin" : "user",
-        balance: isAdmin ? Infinity : this.state.defaultUserBalance,
-        isUnlimited: isAdmin,
-        createdAt: new Date().toISOString(),
-      };
-      this._save();
+  async adminCreateVoucher({ credits, maxUses = 1, expiresInDays = 0, note = "", code = "" } = {}) {
+    const days = Number(expiresInDays) || 0;
+    try {
+      return fromServer(await this.auth.rpc("editcoreai_admin_create_voucher", {
+        p_credits: Number(credits),
+        p_max_uses: Math.max(1, parseInt(maxUses, 10) || 1),
+        p_expires_at: days > 0 ? new Date(Date.now() + days * 86400000).toISOString() : null,
+        p_note: String(note || "").slice(0, 300) || null,
+        p_code: String(code || "").trim() || null,
+      }));
+    } catch (error) {
+      return failure(error);
     }
-    const user = this.state.users[id];
-    const isAdmin = user.role === "admin" || id === this.state.adminEmail.toLowerCase() || id === "admin";
-    return {
-      userId: user.userId,
-      name: user.name,
-      email: user.email,
-      role: isAdmin ? "admin" : user.role,
-      balance: isAdmin ? Infinity : Number(user.balance || 0),
-      isUnlimited: isAdmin || user.isUnlimited === true,
-      isSuperAdmin: isAdmin,
-      avatarUrl: user.avatarUrl || null,
-    };
   }
 
-  getBalance(userId = this.state.adminEmail) {
-    const user = this.getUser(userId);
-    return {
-      userId: user.userId,
-      role: user.role,
-      balance: user.balance,
-      isUnlimited: user.isUnlimited,
-      canExecute: user.isUnlimited || user.balance > 0,
-    };
+  async adminGrantCredits({ email, amount, note = "" } = {}) {
+    try {
+      return fromServer(await this.auth.rpc("editcoreai_admin_grant_credits", {
+        p_email: String(email || "").trim(),
+        p_amount: Number(amount),
+        p_note: String(note || "").slice(0, 300) || null,
+      }));
+    } catch (error) {
+      return failure(error);
+    }
   }
 
-  redeemCode(userId, code) {
-    const res = this.redeemVoucher(userId, code);
-    return {
-      success: res.ok,
-      balance: res.newBalance !== undefined ? res.newBalance : this.getUser(userId).balance,
-      error: res.error,
-      message: res.message,
-    };
+  async adminSetStatus({ email, status } = {}) {
+    try {
+      return fromServer(await this.auth.rpc("editcoreai_admin_set_status", {
+        p_email: String(email || "").trim(),
+        p_status: status === "suspended" ? "suspended" : "active",
+      }));
+    } catch (error) {
+      return failure(error);
+    }
   }
 
-  /**
-   * Descuenta créditos. Sincroniza con Supabase si hay sesión activa.
-   */
-  async deductCreditsAsync(userId = this.state.adminEmail, amount = 1, meta = {}) {
-    const id = String(userId || this.state.adminEmail).toLowerCase();
-    const user = this.getUser(id);
-
-    if (user.role === "admin" || user.isUnlimited || id === ADMIN_EMAIL) {
-      return { ok: true, success: true, balance: Infinity, isUnlimited: true, deducted: 0 };
-    }
-
-    const toDeduct = Math.max(0.1, Number(amount || 1));
-    const balanceData = await this.getBalanceAsync(id);
-    const current = balanceData.balance;
-
-    if (current <= 0 || current < toDeduct) {
-      this.emit("credits:depleted", { userId: id, balance: current });
-      return {
-        ok: false,
-        success: false,
-        code: "OUT_OF_CREDITS",
-        error: "OUT_OF_CREDITS",
-        message: "Saldo de créditos agotado. Recarga para continuar usando EditCoreAI.",
-        balance: current,
-        required: toDeduct,
-      };
-    }
-
-    const newBalance = Math.max(0, current - toDeduct);
-
-    // Actualizar Supabase si hay sesión
-    if (this._supabaseToken && this._currentUserId) {
-      await this._supabasePatch(`/profiles?id=eq.${this._currentUserId}`, {
-        credits_balance: newBalance,
-        updated_at: new Date().toISOString(),
-      });
-      // Registrar en ledger Supabase
-      await this._supabasePost("/credit_transactions", {
-        user_id: this._currentUserId,
-        amount: -toDeduct,
-        type: "usage_ai",
-        model_used: meta.model || "unknown",
-        tokens_input: meta.tokensIn || 0,
-        tokens_output: meta.tokensOut || 0,
-        description: meta.description || `Uso de ${meta.model || "modelo"} en EditCoreAI Desktop`,
-        created_at: new Date().toISOString(),
-      });
-    }
-
-    // Actualizar cache local
-    if (this.state.users[id]) {
-      this.state.users[id].balance = newBalance;
-      this._save();
-    }
-
-    this.emit("credits:deducted", { userId: id, deducted: toDeduct, newBalance });
-    return { ok: true, success: true, balance: newBalance, deducted: toDeduct, isUnlimited: false };
-  }
-
-  /**
-   * Versión síncrona de deductCredits (compatibilidad con código existente).
-   */
-  deductCredits(userId = this.state.adminEmail, amount = 1) {
-    const user = this.getUser(userId);
-    if (user.role === "admin" || user.isUnlimited) {
-      return { ok: true, success: true, balance: Infinity, isUnlimited: true, deducted: 0 };
-    }
-    const current = Number(user.balance || 0);
-    const toDeduct = Math.max(1, Number(amount || 1));
-    if (current <= 0 || current < toDeduct) {
-      this.emit("credits:depleted", { userId: user.userId, balance: current });
-      return {
-        ok: false, success: false,
-        code: "OUT_OF_CREDITS", error: "OUT_OF_CREDITS",
-        message: "Saldo de créditos agotado. Añade más créditos para continuar.",
-        balance: current, required: toDeduct,
-      };
-    }
-    const newBalance = current - toDeduct;
-    this.state.users[user.userId].balance = newBalance;
-    this._save();
-    // Disparar sync async en background sin bloquear
-    if (this._supabaseToken) {
-      this.deductCreditsAsync(userId, amount).catch(() => {});
-    }
-    this.emit("credits:deducted", { userId: user.userId, deducted: toDeduct, newBalance });
-    return { ok: true, success: true, balance: newBalance, deducted: toDeduct, isUnlimited: false };
-  }
-
-  /**
-   * Añade créditos. Sincroniza con Supabase si hay sesión.
-   */
-  async addCreditsAsync(userId, amount, reference = "manual_recharge") {
-    const user = this.getUser(userId);
-    const addedAmount = Math.max(0, Number(amount || 0));
-
-    if (user.role !== "admin") {
-      // Obtener saldo actualizado de Supabase
-      const balanceData = await this.getBalanceAsync(userId);
-      const current = balanceData.source === "supabase" ? balanceData.balance : Number(user.balance || 0);
-      const newBalance = current + addedAmount;
-
-      if (this._supabaseToken && this._currentUserId) {
-        await this._supabasePatch(`/profiles?id=eq.${this._currentUserId}`, {
-          credits_balance: newBalance,
-          total_credits_purchased: newBalance, // simplificado
-          updated_at: new Date().toISOString(),
-        });
-        await this._supabasePost("/credit_transactions", {
-          user_id: this._currentUserId,
-          amount: addedAmount,
-          type: "purchase",
-          description: reference,
-          created_at: new Date().toISOString(),
-        });
-      }
-
-      if (this.state.users[user.userId]) {
-        this.state.users[user.userId].balance = newBalance;
-        this._save();
-      }
-    }
-
-    this.emit("credits:added", { userId: user.userId, amount: addedAmount });
-    return {
-      ok: true, success: true,
-      userId: user.userId,
-      added: addedAmount,
-      balance: this.getUser(userId).balance,
-      newBalance: this.getUser(userId).balance,
-    };
-  }
-
-  addCredits(userId, amount, reference = "manual_recharge") {
-    const user = this.getUser(userId);
-    const addedAmount = Math.max(0, Number(amount || 0));
-    if (user.role !== "admin") {
-      const current = Number(user.balance || 0);
-      this.state.users[user.userId].balance = current + addedAmount;
-    }
-    const transaction = {
-      id: `tx_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
-      userId: user.userId, amount: addedAmount, reference,
-      timestamp: new Date().toISOString(),
-    };
-    this.state.transactions.push(transaction);
-    this._save();
-    // Sync async en background
-    if (this._supabaseToken) {
-      this.addCreditsAsync(userId, amount, reference).catch(() => {});
-    }
-    this.emit("credits:added", { userId: user.userId, amount: addedAmount, transaction });
-    return { ok: true, success: true, userId: user.userId, added: addedAmount,
-      balance: this.getUser(userId).balance, newBalance: this.getUser(userId).balance, transaction };
-  }
-
-  /**
-   * Cálculo de créditos por tokens consumidos.
-   * Fuente de verdad única para Desktop y Web.
-   */
+  // Tarifa de referencia por tokens (para la fase de cobro en servidor por consumo real).
   calculateUsageCredits(model = "claude-sonnet-4-6", inputTokens = 0, outputTokens = 0) {
     const m = String(model || "").toLowerCase();
     let inRatePer1M = 3.0;
@@ -462,195 +192,8 @@ class CreditLedger extends EventEmitter {
       { id: "pack_1500", credits: 1500, priceUsd: 50, priceLabel: "$50 USD", title: "1500 Créditos", tag: "Élite", bonus: "+50% extra" },
     ];
   }
-
-  createPaymentOrder(userId, packCredits, gateway = "mercadopago") {
-    const user = this.getUser(userId);
-    const credits = parseInt(packCredits, 10) || 100;
-    const pack = this.getPacks().find((p) => p.credits === credits) || {
-      id: `pack_${credits}`, credits, priceUsd: Math.round(credits * 0.05),
-      priceLabel: `$${Math.round(credits * 0.05)} USD`,
-    };
-    const orderId = `ord_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
-    const gw = String(gateway || "mercadopago").toLowerCase();
-    const order = {
-      orderId, userId: user.userId, userEmail: user.email,
-      credits: pack.credits, amountUsd: pack.priceUsd, gateway: gw,
-      status: "pending", createdAt: new Date().toISOString(),
-      checkoutUrl: gw === "stripe"
-        ? `https://checkout.stripe.com/pay/${orderId}?client_reference_id=${encodeURIComponent(user.userId)}&credits=${pack.credits}`
-        : `https://www.mercadopago.com.mx/checkout/v1/redirect?pref_id=${orderId}&credits=${pack.credits}`,
-    };
-    this.emit("payment:order-created", order);
-    return { ok: true, success: true, order };
-  }
-
-  processWebhookPayment({ gateway, orderId, userId, credits, amountPaid, status } = {}) {
-    if (status !== "approved" && status !== "succeeded" && status !== "completed") {
-      return { ok: false, error: "PAYMENT_NOT_APPROVED" };
-    }
-    const creds = parseInt(credits, 10) || 100;
-    return this.addCredits(userId, creds, `payment_${gateway || "gateway"}_${orderId || Date.now()}`);
-  }
-
-  redeemVoucher(userId, voucherCode) {
-    const code = String(voucherCode || "").trim().toUpperCase();
-    const VOUCHERS = {
-      "EDITCORE100": 100, "EDITCORE500": 500, "PROMO2026": 250, "ADMINVIP": 5000,
-    };
-    if (!VOUCHERS[code]) {
-      return { ok: false, error: "INVALID_VOUCHER", message: "Código de recarga inválido o expirado." };
-    }
-    const user = this.getUser(userId);
-    if (!this.state.users[user.userId].redeemedCodes) {
-      this.state.users[user.userId].redeemedCodes = [];
-    }
-    if (this.state.users[user.userId].redeemedCodes.includes(code)) {
-      return { ok: false, error: "CODE_ALREADY_USED", message: "Este código ya ha sido canjeado por tu cuenta." };
-    }
-    this.state.users[user.userId].redeemedCodes.push(code);
-    return this.addCredits(userId, VOUCHERS[code], `voucher_${code}`);
-  }
-
-  updateProfile(userId, { name, avatarUrl } = {}) {
-    const user = this.getUser(userId);
-    if (name) this.state.users[user.userId].name = name;
-    if (avatarUrl !== undefined) this.state.users[user.userId].avatarUrl = avatarUrl;
-    this._save();
-    return this.getUser(userId);
-  }
-
-  listUsers() {
-    return Object.values(this.state.users).map((u) => ({
-      userId: u.userId, name: u.name, email: u.email, role: u.role,
-      balance: u.role === "admin" ? Infinity : Number(u.balance || 0),
-      isUnlimited: u.role === "admin" || u.isUnlimited === true,
-      avatarUrl: u.avatarUrl || null,
-    }));
-  }
-
-  // ─── Master Ledger ($8,000 USD, Créditos y Tokens Globales) ───────────────
-  async getMasterLedgerAsync() {
-    let ledger = {
-      adminEmail: ADMIN_EMAIL,
-      totalUsd: 8000.0,
-      totalCredits: 160000.0,
-      totalTokens: 1600000000,
-      consumedUsd: 0.0,
-      consumedTokens: 0,
-      remainingUsd: 8000.0,
-      remainingCredits: 160000.0,
-      remainingTokens: 1600000000,
-    };
-
-    if (this._supabaseToken) {
-      const data = await this._supabaseGet(`/master_ledger?select=*&limit=1`);
-      if (data && data.length > 0) {
-        const row = data[0];
-        const totUsd = Number(row.total_usd || 8000);
-        const totCred = Number(row.total_credits || 160000);
-        const totTok = Number(row.total_tokens || 1600000000);
-        const consUsd = Number(row.consumed_usd || 0);
-        const consTok = Number(row.consumed_tokens || 0);
-        const consCred = (consUsd * 1.5) / 0.05;
-
-        ledger = {
-          id: row.id,
-          adminEmail: row.admin_email || ADMIN_EMAIL,
-          totalUsd: totUsd,
-          totalCredits: totCred,
-          totalTokens: totTok,
-          consumedUsd: consUsd,
-          consumedTokens: consTok,
-          consumedCredits: consCred,
-          remainingUsd: Math.max(0, totUsd - consUsd),
-          remainingCredits: Math.max(0, totCred - consCred),
-          remainingTokens: Math.max(0, totTok - consTok),
-          updatedAt: row.updated_at,
-          source: "supabase",
-        };
-        return ledger;
-      }
-    }
-
-    // Fallback local desde estado
-    const local = this.state.masterLedger || {};
-    const totUsd = Number(local.totalUsd || 8000);
-    const totCred = Number(local.totalCredits || 160000);
-    const totTok = Number(local.totalTokens || 1600000000);
-    const consUsd = Number(local.consumedUsd || 0);
-    const consTok = Number(local.consumedTokens || 0);
-    const consCred = (consUsd * 1.5) / 0.05;
-
-    return {
-      adminEmail: ADMIN_EMAIL,
-      totalUsd: totUsd,
-      totalCredits: totCred,
-      totalTokens: totTok,
-      consumedUsd: consUsd,
-      consumedTokens: consTok,
-      consumedCredits: consCred,
-      remainingUsd: Math.max(0, totUsd - consUsd),
-      remainingCredits: Math.max(0, totCred - consCred),
-      remainingTokens: Math.max(0, totTok - consTok),
-      source: "local",
-    };
-  }
-
-  getMasterLedger() {
-    const local = this.state.masterLedger || {
-      totalUsd: 8000.0,
-      totalCredits: 160000.0,
-      totalTokens: 1600000000,
-      consumedUsd: 0.0,
-      consumedTokens: 0,
-    };
-    const totUsd = Number(local.totalUsd || 8000);
-    const totCred = Number(local.totalCredits || 160000);
-    const totTok = Number(local.totalTokens || 1600000000);
-    const consUsd = Number(local.consumedUsd || 0);
-    const consTok = Number(local.consumedTokens || 0);
-    const consCred = (consUsd * 1.5) / 0.05;
-
-    return {
-      adminEmail: ADMIN_EMAIL,
-      totalUsd: totUsd,
-      totalCredits: totCred,
-      totalTokens: totTok,
-      consumedUsd: consUsd,
-      consumedTokens: consTok,
-      consumedCredits: consCred,
-      remainingUsd: Math.max(0, totUsd - consUsd),
-      remainingCredits: Math.max(0, totCred - consCred),
-      remainingTokens: Math.max(0, totTok - consTok),
-    };
-  }
-
-  async deductMasterUsageAsync(costUsd = 0, tokensUsed = 0) {
-    if (!this.state.masterLedger) {
-      this.state.masterLedger = { totalUsd: 8000, totalCredits: 160000, totalTokens: 1600000000, consumedUsd: 0, consumedTokens: 0 };
-    }
-    this.state.masterLedger.consumedUsd = (Number(this.state.masterLedger.consumedUsd || 0) + Number(costUsd || 0));
-    this.state.masterLedger.consumedTokens = (Number(this.state.masterLedger.consumedTokens || 0) + Number(tokensUsed || 0));
-    this._save();
-
-    if (this._supabaseToken) {
-      const data = await this._supabaseGet(`/master_ledger?select=*&limit=1`);
-      if (data && data.length > 0) {
-        const row = data[0];
-        const newConsUsd = Number(row.consumed_usd || 0) + Number(costUsd || 0);
-        const newConsTok = Number(row.consumed_tokens || 0) + Number(tokensUsed || 0);
-        await this._supabasePatch(`/master_ledger?id=eq.${row.id}`, {
-          consumed_usd: newConsUsd,
-          consumed_tokens: newConsTok,
-          updated_at: new Date().toISOString(),
-        });
-      }
-    }
-    this.emit("master-ledger:updated", this.getMasterLedger());
-    return this.getMasterLedger();
-  }
 }
 
 const creditLedgerInstance = new CreditLedger();
 
-module.exports = { CreditLedger, creditLedger: creditLedgerInstance };
+module.exports = { CreditLedger, creditLedger: creditLedgerInstance, RUN_COST_CREDITS, CREDIT_ERRORS, balanceView };

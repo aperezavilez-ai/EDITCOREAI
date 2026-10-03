@@ -643,26 +643,36 @@ contextBridge.exposeInMainWorld("editcoreRemoteEnv", {
 });
 
 contextBridge.exposeInMainWorld("editcoreCredits", {
-  getBalance: (userId) => ipcRenderer.invoke("credits:get-balance", userId),
-  deduct: (userId, amount, description) => ipcRenderer.invoke("credits:deduct", userId, amount, description),
-  add: (userId, amount, description) => ipcRenderer.invoke("credits:add", userId, amount, description),
-  redeem: (userId, code) => ipcRenderer.invoke("credits:redeem", userId, code),
-  updateProfile: (userId, profile) => ipcRenderer.invoke("credits:update-profile", userId, profile),
-  listUsers: () => ipcRenderer.invoke("credits:list-users"),
+  getBalance: () => ipcRenderer.invoke("credits:get-balance"),
+  redeem: (code) => ipcRenderer.invoke("credits:redeem", code),
+  transactions: (limit) => ipcRenderer.invoke("credits:transactions", limit),
   getPacks: () => ipcRenderer.invoke("credits:get-packs"),
-  createOrder: (userId, packCredits, gateway) => ipcRenderer.invoke("credits:create-order", userId, packCredits, gateway),
   calculateUsage: (model, inputTokens, outputTokens) => ipcRenderer.invoke("credits:calculate-usage", model, inputTokens, outputTokens),
-  getMasterLedger: () => ipcRenderer.invoke("credits:get-master-ledger"),
-  deductMasterUsage: (costUsd, tokensUsed) => ipcRenderer.invoke("credits:deduct-master-usage", costUsd, tokensUsed),
+  adminOverview: () => ipcRenderer.invoke("credits:admin-overview"),
+  adminListUsers: (search) => ipcRenderer.invoke("credits:admin-list-users", search),
+  adminCreateVoucher: (payload) => ipcRenderer.invoke("credits:admin-create-voucher", payload),
+  adminGrant: (payload) => ipcRenderer.invoke("credits:admin-grant", payload),
+  adminSetStatus: (payload) => ipcRenderer.invoke("credits:admin-set-status", payload),
 });
 
 contextBridge.exposeInMainWorld("editcoreAuth", {
   checkAccess: (userId, targetPath, operation) => ipcRenderer.invoke("auth:check-access", userId, targetPath, operation),
-  getSession: () => ipcRenderer.invoke("auth:get-session"),
-  login: (credentials) => ipcRenderer.invoke("auth:login", credentials),
-  register: (data) => ipcRenderer.invoke("auth:register", data),
+  getSession: (options) => ipcRenderer.invoke("auth:get-session", options || {}),
+  loginWithGoogle: () => ipcRenderer.invoke("auth:login-google"),
+  cancelLogin: () => ipcRenderer.invoke("auth:cancel-login"),
   logout: () => ipcRenderer.invoke("auth:logout"),
-  updateProfile: (data) => ipcRenderer.invoke("auth:update-profile", data),
+  onSessionChanged: (callback) => {
+    if (typeof callback !== "function") return () => {};
+    const listener = (_event, payload) => callback(payload);
+    ipcRenderer.on("auth:session-changed", listener);
+    return () => ipcRenderer.removeListener("auth:session-changed", listener);
+  },
+  onBlocked: (callback) => {
+    if (typeof callback !== "function") return () => {};
+    const listener = (_event, payload) => callback(payload);
+    ipcRenderer.on("license:blocked", listener);
+    return () => ipcRenderer.removeListener("license:blocked", listener);
+  },
 });
 
 contextBridge.exposeInMainWorld("editcoreI18n", {

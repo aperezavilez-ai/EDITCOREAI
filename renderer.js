@@ -2147,15 +2147,7 @@ function mapProfileToModelOption(profile, customProvidersByKey) {
 }
 
 function isCurrentUserAdmin() {
-  try {
-    const auth = loadJson("editcore-auth-session", null);
-    if (auth?.user) {
-      return Boolean(auth.user.isSuperAdmin || auth.user.role === "admin" || auth.user.email === "aperezavilez@gmail.com");
-    }
-    return true;
-  } catch {
-    return true;
-  }
+  return window.__editcoreSession?.user?.isAdmin === true;
 }
 
 function catalogChatModelOptions() {

@@ -5242,37 +5242,48 @@ ipcMain.handle("permissions:set", async (event, mode) => {
   return next;
 });
 
-ipcMain.handle("auth:get-session", async () => {
-  return authManager.getCurrentSession();
-});
-
-ipcMain.handle("auth:login", async (_event, payload = {}) => {
+ipcMain.handle("auth:get-session", async (_event, options = {}) => {
   try {
-    return authManager.login(payload);
+    return await authManager.getCurrentSession({ refresh: Boolean(options?.refresh) });
   } catch (error) {
-    return { success: false, error: error?.message || String(error) };
+    return { isAuthenticated: false, user: null, error: error?.message || String(error) };
   }
 });
 
-ipcMain.handle("auth:register", async (_event, payload = {}) => {
+ipcMain.handle("auth:login-google", async () => {
   try {
-    return authManager.register(payload);
+    const session = await authManager.loginWithGoogle();
+    try { mainWindow?.focus?.(); } catch { /* ignore */ }
+    return { success: true, session };
   } catch (error) {
-    return { success: false, error: error?.message || String(error) };
+    return { success: false, code: error?.code || "SERVER", error: error?.message || String(error) };
   }
 });
+
+ipcMain.handle("auth:cancel-login", async () => authManager.cancelLogin());
 
 ipcMain.handle("auth:logout", async () => {
   return authManager.logout();
 });
 
-ipcMain.handle("auth:update-profile", async (_event, payload = {}) => {
-  try {
-    return authManager.updateProfile(payload);
-  } catch (error) {
-    return { success: false, error: error?.message || String(error) };
+authManager.on("session-changed", (session) => {
+  for (const win of BrowserWindow.getAllWindows()) {
+    try { win.webContents.send("auth:session-changed", session || { isAuthenticated: false, user: null }); } catch { /* ignore */ }
   }
 });
+
+function licenseBlockedRunResult(event, charge = {}) {
+  const code = String(charge.code || "NO_SESSION");
+  try { event?.sender?.send?.("license:blocked", { code, message: charge.error || "" }); } catch { /* ignore */ }
+  return {
+    text: `🔒 ${charge.error || "Inicia sesión con Google para usar EditCoreAI."}`,
+    steps: [],
+    usage: { confirmed_input_tokens: 0, confirmed_output_tokens: 0, local_response: true },
+    report: { completed: false, toolCount: 0, changedFiles: [], stopReason: code, kernel: true },
+    kernel: true,
+    licenseBlocked: code,
+  };
+}
 
 
 ipcMain.handle("window:status", () => windowStatus());
@@ -6512,6 +6523,14 @@ ipcMain.handle("agent:plan", async (event, input = {}) => {
     activePlanRuns.delete(planRunKeyValue);
     throw new Error("Faltan datos para analizar la tarea.");
   }
+  {
+    const planSession = await authManager.getCurrentSession();
+    if (!planSession.isAuthenticated || planSession.user?.status === "suspended") {
+      activePlanRuns.delete(planRunKeyValue);
+      licenseBlockedRunResult(event, { code: planSession.isAuthenticated ? "ACCOUNT_SUSPENDED" : "NO_SESSION" });
+      throw new Error(planSession.isAuthenticated ? "Tu cuenta está suspendida. Contacta al administrador." : "Inicia sesión con Google para usar EditCoreAI.");
+    }
+  }
   const rootPath = assertProjectRoot(String(input.projectRoot || "").trim());
   let taskId = String(input.taskId || "").trim();
   try {
@@ -6680,6 +6699,12 @@ ipcMain.handle("agent:run", async (event, input = {}) => {
 
   if (!apiKey) throw new Error("Falta API key.");
   if (!model) throw new Error("Falta modelo.");
+
+  {
+    const { creditLedger } = require("./runtime/credit-ledger");
+    const charge = await creditLedger.chargeRun({ model, description: "Consulta de IA" });
+    if (!charge.ok) return licenseBlockedRunResult(event, charge);
+  }
 
   // Preferir núcleo multi-agente salvo bypass explícito al adapter legado.
   if (input.useLegacyAdapter !== true) {
@@ -10880,113 +10905,38 @@ ipcMain.handle("remoteEnv:get-status", async (_event, containerId) => {
   }
 });
 
-// Credit Ledger handlers
-ipcMain.handle("credits:get-balance", async (_event, userId) => {
-  try {
-    const { creditLedger } = require("./runtime/credit-ledger");
-    return creditLedger.getBalance(userId);
-  } catch (error) {
-    return { balance: Infinity, isUnlimited: true, canExecute: true };
-  }
-});
+// Créditos: todo lo decide el servidor de cuentas; ante cualquier fallo no se permite ejecutar.
+function creditsIpc(channel, handler) {
+  ipcMain.handle(channel, async (_event, ...args) => {
+    try {
+      const { creditLedger } = require("./runtime/credit-ledger");
+      return await handler(creditLedger, ...args);
+    } catch (error) {
+      return { ok: false, success: false, canExecute: false, error: error?.message || String(error) };
+    }
+  });
+}
 
-ipcMain.handle("credits:deduct", async (_event, userId, amount) => {
-  try {
-    const { creditLedger } = require("./runtime/credit-ledger");
-    return creditLedger.deductCredits(userId, amount);
-  } catch (error) {
-    return { ok: true, balance: Infinity };
-  }
-});
-
-ipcMain.handle("credits:add", async (_event, userId, amount, reference) => {
-  try {
-    const { creditLedger } = require("./runtime/credit-ledger");
-    return creditLedger.addCredits(userId, amount, reference);
-  } catch (error) {
-    return { ok: false, error: error.message };
-  }
-});
-
-ipcMain.handle("credits:redeem", async (_event, userId, code) => {
-  try {
-    const { creditLedger } = require("./runtime/credit-ledger");
-    return creditLedger.redeemVoucher(userId, code);
-  } catch (error) {
-    return { ok: false, error: error.message };
-  }
-});
-
-ipcMain.handle("credits:update-profile", async (_event, userId, data) => {
-  try {
-    const { creditLedger } = require("./runtime/credit-ledger");
-    return creditLedger.updateProfile(userId, data);
-  } catch (error) {
-    return { ok: false, error: error.message };
-  }
-});
-
-ipcMain.handle("credits:get-packs", async () => {
-  try {
-    const { creditLedger } = require("./runtime/credit-ledger");
-    return creditLedger.getPacks();
-  } catch (error) {
-    return [];
-  }
-});
-
-ipcMain.handle("credits:create-order", async (_event, userId, packCredits, gateway) => {
-  try {
-    const { creditLedger } = require("./runtime/credit-ledger");
-    return creditLedger.createPaymentOrder(userId, packCredits, gateway);
-  } catch (error) {
-    return { ok: false, error: error.message };
-  }
-});
-
-ipcMain.handle("credits:calculate-usage", async (_event, model, inputTokens, outputTokens) => {
-  try {
-    const { creditLedger } = require("./runtime/credit-ledger");
-    return creditLedger.calculateUsageCredits(model, inputTokens, outputTokens);
-  } catch (error) {
-    return { credits: 1 };
-  }
-});
-
-ipcMain.handle("credits:list-users", async () => {
-  try {
-    const { creditLedger } = require("./runtime/credit-ledger");
-    return creditLedger.listUsers();
-  } catch (error) {
-    return [];
-  }
-});
-
-ipcMain.handle("credits:get-master-ledger", async () => {
-  try {
-    const { creditLedger } = require("./runtime/credit-ledger");
-    return await creditLedger.getMasterLedgerAsync();
-  } catch (error) {
-    return { totalUsd: 8000, totalCredits: 160000, totalTokens: 1600000000, consumedUsd: 0, consumedTokens: 0, remainingUsd: 8000, remainingCredits: 160000, remainingTokens: 1600000000 };
-  }
-});
-
-ipcMain.handle("credits:deduct-master-usage", async (_event, costUsd, tokensUsed) => {
-  try {
-    const { creditLedger } = require("./runtime/credit-ledger");
-    return await creditLedger.deductMasterUsageAsync(costUsd, tokensUsed);
-  } catch (error) {
-    return { ok: false, error: error.message };
-  }
-});
+creditsIpc("credits:get-balance", (ledger) => ledger.getBalance());
+creditsIpc("credits:redeem", (ledger, code) => ledger.redeemVoucher(code));
+creditsIpc("credits:transactions", (ledger, limit) => ledger.listTransactions(limit));
+creditsIpc("credits:get-packs", (ledger) => ledger.getPacks());
+creditsIpc("credits:calculate-usage", (ledger, model, inputTokens, outputTokens) => ledger.calculateUsageCredits(model, inputTokens, outputTokens));
+creditsIpc("credits:admin-overview", (ledger) => ledger.adminOverview());
+creditsIpc("credits:admin-list-users", (ledger, search) => ledger.adminListUsers(search));
+creditsIpc("credits:admin-create-voucher", (ledger, payload) => ledger.adminCreateVoucher(payload || {}));
+creditsIpc("credits:admin-grant", (ledger, payload) => ledger.adminGrantCredits(payload || {}));
+creditsIpc("credits:admin-set-status", (ledger, payload) => ledger.adminSetStatus(payload || {}));
 
 // Role Policy Guard handlers
-ipcMain.handle("auth:check-access", async (_event, user, targetPath) => {
+ipcMain.handle("auth:check-access", async (_event, _userFromRenderer, targetPath) => {
   try {
     const { rolePolicyGuard } = require("./runtime/role-policy-guard");
-    return rolePolicyGuard.canAccessPath(user, targetPath);
+    const current = await authManager.getCurrentSession();
+    if (!current.isAuthenticated) return { allowed: false, code: "NO_SESSION", message: "Inicia sesión con Google para usar EditCoreAI." };
+    return rolePolicyGuard.canAccessPath({ role: current.user?.isAdmin ? "admin" : "user" }, targetPath);
   } catch (error) {
-    return { allowed: true };
+    return { allowed: false, error: error?.message || String(error) };
   }
 });
 

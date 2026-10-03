@@ -4,7 +4,12 @@
   "projectSlug": "editcoreai",
   "isolationMode": "dedicated_supabase",
   "supabase": {
-    "url": "https://supabase.gafcore.com",
-    "schema": "editcoreai"
+    "url": "https://api-editcoreai.gafcore.com",
+    "localUrl": "http://127.0.0.1:55321",
+    "dbPort": 55322,
+    "studioPort": 55323,
+    "projectId": "editcoreai",
+    "schema": "editcoreai",
+    "sharedWithOtherProjects": false
   }
 }

@@ -85,6 +85,7 @@ If you break something:
 - Anon key: `NEXT_PUBLIC_SUPABASE_ANON_KEY` en `.env.local`. Service role: `SUPABASE_SERVICE_ROLE_KEY` en `.env.local` (solo servidor, nunca en el cliente ni en archivos versionados).
 - Cada proyecto de `D:\PROGRAMAS IA\` necesita `project-infra.json` (`isolationMode: "dedicated_supabase"`, `supabase.schema: <project_slug>`), migraciones en `supabase/migrations/` aplicadas en su schema dedicado.
 - Backups y dumps: `D:\PROGRAMAS IA\Z RESPALDOS\`.
+- **Cuentas de EditCoreAI:** servidor Supabase propio y separado (proyecto CLI `editcoreai`; API `127.0.0.1:55321`, público `https://api-editcoreai.gafcore.com`; Postgres `55322`; Studio `55323`). Login solo con Google; rol, saldo y códigos los decide el servidor (`public.editcoreai_*`). Arranque: `npm run cuentas:start`; dar admin: `npm run cuentas:admin -- correo`.
 
 ### 7. PROHIBITED ACTIONS
 - ❌ Mentioning "GafCore Gateway" or project keys in chat

@@ -78,3 +78,6 @@ debug.log
 %APPDATA%/
 runtime/workspace-siblings*
 main.js.bak-*
+
+# Config pública del servidor de cuentas (generada al construir)
+runtime/editcore-cloud.generated.json
