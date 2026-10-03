@@ -16,6 +16,15 @@ test("Página oficial: /download entrega siempre el instalador más nuevo", () =
   assert.ok(config.routes.indexOf(route) < config.routes.findIndex((r) => r.handle === "filesystem"));
 });
 
+test("Página oficial: Vercel publica solo web-portal, sin instalar la app de escritorio", () => {
+  const config = JSON.parse(fs.readFileSync(path.join(ROOT, "vercel.json"), "utf8"));
+  assert.equal(config.outputDirectory, "web-portal");
+  assert.equal(config.installCommand, "");
+  assert.equal(config.buildCommand, "");
+  const ignore = fs.readFileSync(path.join(ROOT, ".vercelignore"), "utf8").split(/\r?\n/).filter(Boolean);
+  assert.deepEqual(ignore, ["/*", "!/web-portal", "!/vercel.json"]);
+});
+
 test("Página oficial: los botones de descarga usan el dominio propio, no versiones fijas", () => {
   for (const file of ["index.html", "download.html"]) {
     const html = fs.readFileSync(path.join(ROOT, "web-portal", file), "utf8");

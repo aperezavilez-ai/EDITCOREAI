@@ -1,9 +1,9 @@
 {
   "version": 2,
-  "public": true,
+  "framework": null,
   "outputDirectory": "web-portal",
-  "buildCommand": null,
-  "installCommand": null,
+  "buildCommand": "",
+  "installCommand": "",
   "cleanUrls": true,
   "headers": [
     {
