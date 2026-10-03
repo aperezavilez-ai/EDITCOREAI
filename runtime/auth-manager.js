@@ -330,6 +330,22 @@ class AuthManager extends EventEmitter {
     return this.account;
   }
 
+  // Consultas de IA de usuarios: van a la función ai-proxy del servidor con el token de la sesión.
+  aiProxyBaseUrl() {
+    return `${this.config.url}/functions/v1/ai-proxy/v1`;
+  }
+
+  async listCloudModels() {
+    const token = await this.getAccessToken();
+    if (!token) throw new AuthError("NO_SESSION");
+    const res = await this._request("/functions/v1/ai-proxy/v1/models", { token });
+    if (res.status === 401) throw new AuthError("SESSION_EXPIRED");
+    if (!res.ok) throw new AuthError("SERVER", String(res.data?.error?.message || res.status));
+    return (Array.isArray(res.data?.data) ? res.data.data : [])
+      .map((entry) => String(entry?.id || "").trim())
+      .filter(Boolean);
+  }
+
   isAuthenticated() {
     this._ensureLoaded();
     return Boolean(this.session);
@@ -352,6 +368,7 @@ class AuthManager extends EventEmitter {
         status: acc.status || "unknown",
         plan: acc.plan || "free",
         credits_balance: Number(acc.credits_balance || 0),
+        topup_base: Number(acc.topup_base || 0),
         is_unlimited: Boolean(acc.is_unlimited),
       },
       ...extra,

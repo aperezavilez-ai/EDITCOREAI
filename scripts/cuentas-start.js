@@ -11,12 +11,16 @@ const { parseEnvFile } = require("../runtime/editcore-cloud-config");
 
 const root = path.join(__dirname, "..");
 const local = parseEnvFile(path.join(root, ".env.local"));
-const env = { ...process.env };
-for (const key of ["EDITCOREAI_GOOGLE_CLIENT_ID", "EDITCOREAI_GOOGLE_SECRET"]) {
+const env = { ...process.env, ...parseEnvFile(path.join(root, "supabase", ".env")) };
+for (const key of ["EDITCOREAI_GOOGLE_CLIENT_ID", "EDITCOREAI_GOOGLE_SECRET", "EDITCOREAI_MEAI_API_KEY"]) {
   if (local[key] && !env[key]) env[key] = local[key];
 }
 if (!env.EDITCOREAI_GOOGLE_CLIENT_ID || !env.EDITCOREAI_GOOGLE_SECRET) {
   console.warn("Aviso: faltan EDITCOREAI_GOOGLE_CLIENT_ID / EDITCOREAI_GOOGLE_SECRET en .env.local; el inicio con Google no funcionará.");
+}
+if (!env.EDITCOREAI_MEAI_API_KEY) {
+  env.EDITCOREAI_MEAI_API_KEY = "";
+  console.warn("Aviso: falta EDITCOREAI_MEAI_API_KEY en .env.local; los usuarios no podrán usar la IA (ai-proxy sin clave).");
 }
 
 const run = (args) => spawnSync("npx", ["supabase", ...args], { cwd: root, env, stdio: "inherit", shell: true });

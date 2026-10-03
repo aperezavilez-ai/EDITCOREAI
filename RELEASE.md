@@ -1,3 +1,22 @@
+# RELEASE v4.2.6
+
+## EditCoreAI multiusuario: cuentas con Google y saldo prepago
+
+### Nuevo
+- Entrada obligatoria con Google. Las cuentas, el rol y el saldo viven en el servidor propio de EditCoreAI; la app no puede cambiarlos.
+- Saldo prepago: cada usuario recarga saldo (pago manual del administrador o código de recarga) y se va descontando según los tokens que usa la IA. Barra de consumo en el chat y en Ajustes → Saldo y uso. Sin saldo, la IA se bloquea hasta recargar.
+- Los usuarios solo ven los modelos para elegir (o Auto). No ven proveedores, ni sus nombres, ni el panel de configuración. El administrador tiene acceso total y uso ilimitado.
+- Panel de administración: saldo de los usuarios, cobrado hoy, costo y margen, códigos de recarga y ajustes de saldo.
+
+### Seguridad
+- Las claves de fábrica del servidor de cuentas se cambiaron por claves propias. Hay que volver a entrar con Google una vez.
+- La clave del proveedor de IA vive solo en el servidor; la app de los usuarios nunca la recibe.
+
+### Build
+- `EDITCOREAI.exe` (4.2.6.0) y `release/EDITCOREAI-Setup.exe` (4.2.6), construidos desde un árbol limpio en el commit publicado.
+
+---
+
 # RELEASE v4.2.5
 
 ## Sin avisos falsos de "no se basa en lecturas del disco"

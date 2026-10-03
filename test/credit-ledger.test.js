@@ -3,7 +3,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 
-const { CreditLedger, RUN_COST_CREDITS } = require("../runtime/credit-ledger");
+const { CreditLedger, usageMeter } = require("../runtime/credit-ledger");
 const { AuthError } = require("../runtime/auth-manager");
 
 function fakeAuth(handlers = {}, { authenticated = true } = {}) {
@@ -26,36 +26,41 @@ function fakeAuth(handlers = {}, { authenticated = true } = {}) {
 
 const account = (extra = {}) => ({ email: "ana@gmail.com", role: "user", status: "active", credits_balance: 5, is_unlimited: false, ...extra });
 
-test("Cobrar una consulta sin sesión se bloquea", async () => {
+test("Consultar sin sesión se bloquea", async () => {
   const ledger = new CreditLedger({ auth: fakeAuth({}, { authenticated: false }) });
-  const res = await ledger.chargeRun({ model: "x" });
+  const res = await ledger.checkCanRun();
   assert.equal(res.ok, false);
   assert.equal(res.code, "NO_SESSION");
 });
 
-test("Cobrar una consulta descuenta en el servidor", async () => {
-  const auth = fakeAuth({ editcoreai_consume_credits: () => ({ ok: true, deducted: 1, account: account({ credits_balance: 4 }) }) });
+test("Con saldo se permite consultar y el cliente nunca se descuenta solo", async () => {
+  const auth = fakeAuth();
   const ledger = new CreditLedger({ auth });
-  const res = await ledger.chargeRun({ model: "claude-sonnet-4-6" });
+  const res = await ledger.checkCanRun();
   assert.equal(res.ok, true);
-  assert.equal(res.balance, 4);
-  assert.equal(auth.calls[0].fn, "editcoreai_consume_credits");
-  assert.equal(auth.calls[0].args.p_amount, RUN_COST_CREDITS);
-  assert.equal(auth.calls[0].args.p_model, "claude-sonnet-4-6");
+  assert.equal(res.balance, 5);
+  assert.equal(auth.calls.some((c) => c.fn === "editcoreai_consume_credits"), false);
 });
 
 test("Sin saldo o con cuenta suspendida no se ejecuta", async () => {
-  const out = new CreditLedger({ auth: fakeAuth({ editcoreai_consume_credits: () => ({ ok: false, error: "OUT_OF_CREDITS", account: account({ credits_balance: 0 }) }) }) });
-  const r1 = await out.chargeRun();
+  const out = new CreditLedger({ auth: fakeAuth({ refreshAccount: () => account({ credits_balance: 0, topup_base: 20 }) }) });
+  const r1 = await out.checkCanRun();
   assert.equal(r1.ok, false);
   assert.equal(r1.code, "OUT_OF_CREDITS");
-  assert.match(r1.error, /créditos/);
+  assert.match(r1.error, /saldo/);
   assert.equal(r1.canExecute, false);
+  assert.equal(r1.usedPercent, 100);
 
-  const susp = new CreditLedger({ auth: fakeAuth({ editcoreai_consume_credits: () => ({ ok: false, error: "ACCOUNT_SUSPENDED", account: account({ status: "suspended" }) }) }) });
-  const r2 = await susp.chargeRun();
+  const susp = new CreditLedger({ auth: fakeAuth({ refreshAccount: () => account({ status: "suspended" }) }) });
+  const r2 = await susp.checkCanRun();
   assert.equal(r2.ok, false);
   assert.equal(r2.code, "ACCOUNT_SUSPENDED");
+});
+
+test("La barra de uso se calcula desde la última recarga", () => {
+  assert.deepEqual(usageMeter({ credits_balance: 15, topup_base: 20 }), { balance: 15, topupBase: 20, used: 5, usedPercent: 25 });
+  assert.equal(usageMeter({ credits_balance: 0, topup_base: 0 }).usedPercent, 100);
+  assert.equal(usageMeter({ credits_balance: 30, topup_base: 20 }).usedPercent, 0);
 });
 
 test("Si el servidor no responde nunca hay saldo infinito", async () => {
@@ -66,8 +71,9 @@ test("Si el servidor no responde nunca hay saldo infinito", async () => {
   assert.equal(bal.isUnlimited, false);
   assert.notEqual(bal.balance, Infinity);
 
-  const charge = await ledger.chargeRun();
-  assert.equal(charge.ok, false);
+  const check = await ledger.checkCanRun();
+  assert.equal(check.ok, false);
+  assert.equal(check.canExecute, false);
 });
 
 test("El saldo y el rol vienen del servidor", async () => {

@@ -40,6 +40,13 @@
           </nav>
           <div id="chatHomeThreadList" class="chat-home-thread-list" role="list"></div>
           <div class="chat-home-sidebar-foot">
+            <div class="ec-usage-meter chat-home-usage" id="chatHomeUsage" hidden>
+              <div class="ec-usage-meter-head">
+                <span id="chatHomeUsageLabel">Saldo</span>
+                <span id="chatHomeUsagePct">0% usado</span>
+              </div>
+              <div class="ec-usage-bar"><div class="ec-usage-bar-fill" id="chatHomeUsageFill"></div></div>
+            </div>
             <button type="button" class="chat-home-settings-btn" id="chatHomeSettingsBtn" title="Configuración">⚙ Configuración</button>
           </div>
         </aside>
@@ -71,7 +78,7 @@
               <textarea id="chatHomePrompt" rows="2" placeholder="Pide a EditCore crear, depurar, explorar…" spellcheck="false"></textarea>
               <div class="chat-home-composer-row">
                 <button type="button" id="chatHomePlusBtn" class="chat-home-icon-btn" title="Adjuntar imagen, PDF, Word, Excel…">+</button>
-                <button type="button" id="chatHomeModelPill" class="chat-home-model-pill" title="Elegir modelo">Auto · ME AI ▾</button>
+                <button type="button" id="chatHomeModelPill" class="chat-home-model-pill" title="Elegir modelo">Auto ▾</button>
                 <span class="chat-home-composer-spacer" aria-hidden="true"></span>
                 <button type="button" id="chatHomeMicBtn" class="chat-home-mic-btn" title="Micrófono / dictado" aria-label="Micrófono">
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 14a3 3 0 0 0 3-3V7a3 3 0 1 0-6 0v4a3 3 0 0 0 3 3Z" stroke="currentColor" stroke-width="1.7"/><path d="M19 11a7 7 0 0 1-14 0M12 18v3" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
@@ -150,7 +157,7 @@
             </button>
             <button type="button" class="ec-settings-nav-item" data-settings-tab="credits">
               <span class="ec-settings-nav-icon">💳</span>
-              <span class="ec-settings-nav-label">Créditos y Facturación</span>
+              <span class="ec-settings-nav-label">Saldo y uso</span>
               <span class="ec-settings-pill-badge" id="settingsCreditsBadge">∞</span>
             </button>
             <button type="button" class="ec-settings-nav-item" data-settings-tab="customizations">
@@ -383,12 +390,12 @@
                     <span class="ec-metric-sub" id="adminUsersSub">Activos: — · Suspendidos: —</span>
                   </div>
                   <div class="ec-metric-box">
-                    <span class="ec-metric-title">⚡ Créditos en manos de usuarios</span>
+                    <span class="ec-metric-title">⚡ Saldo en manos de usuarios</span>
                     <div class="ec-metric-number text-indigo" id="adminCreditsCirculation">—</div>
                     <span class="ec-metric-sub" id="adminVouchersActive">Códigos vigentes: —</span>
                   </div>
                   <div class="ec-metric-box">
-                    <span class="ec-metric-title">📈 Consumo</span>
+                    <span class="ec-metric-title">📈 Cobrado hoy</span>
                     <div class="ec-metric-number text-cyan" id="adminConsumedToday">—</div>
                     <span class="ec-metric-sub" id="adminConsumedSub">Hoy · Total: —</span>
                   </div>
@@ -398,7 +405,7 @@
                   <div class="ec-admin-tool">
                     <h4>Crear código de recarga</h4>
                     <div class="ec-admin-row">
-                      <input type="number" min="1" id="adminVoucherCredits" class="ec-styled-input" placeholder="Créditos" />
+                      <input type="number" min="1" step="0.01" id="adminVoucherCredits" class="ec-styled-input" placeholder="Dólares de saldo (ej. 20)" />
                       <input type="number" min="1" id="adminVoucherUses" class="ec-styled-input" placeholder="Usos (1)" />
                       <input type="number" min="0" id="adminVoucherDays" class="ec-styled-input" placeholder="Días de vigencia (0 = sin fin)" />
                     </div>
@@ -407,10 +414,10 @@
                     <div id="adminVoucherResult" class="ec-status-msg" hidden></div>
                   </div>
                   <div class="ec-admin-tool">
-                    <h4>Dar o quitar créditos</h4>
+                    <h4>Dar o quitar saldo (dólares)</h4>
                     <div class="ec-admin-row">
                       <input type="email" id="adminGrantEmail" class="ec-styled-input" placeholder="correo@gmail.com" />
-                      <input type="number" id="adminGrantAmount" class="ec-styled-input" placeholder="Cantidad (negativa para quitar)" />
+                      <input type="number" step="0.01" id="adminGrantAmount" class="ec-styled-input" placeholder="Dólares, ej. 20 (negativo para quitar)" />
                     </div>
                     <input type="text" id="adminGrantNote" class="ec-styled-input" placeholder="Motivo (ej. pago recibido)" />
                     <button type="button" class="ec-btn-action" id="adminGrantBtn">Aplicar</button>
@@ -436,6 +443,13 @@
                     <div class="ec-credits-usd-num" id="settingsCreditsUsdNum" style="font-size:18px;font-weight:700;color:#059669;" hidden>($0.00 USD)</div>
                   </div>
                   <div class="ec-credits-plan-tag" id="settingsCreditsPlanTag"></div>
+                  <div class="ec-usage-meter" id="settingsUsageMeter" hidden>
+                    <div class="ec-usage-meter-head">
+                      <span id="settingsUsageText">$0.00 de $0.00 usado</span>
+                      <span id="settingsUsagePct">0% usado</span>
+                    </div>
+                    <div class="ec-usage-bar"><div class="ec-usage-bar-fill" id="settingsUsageFill"></div></div>
+                  </div>
                 </div>
                 <div class="ec-credits-banner-cta" id="settingsCreditsBannerCta">
                   <button type="button" id="settingsBuyCreditsBtn" class="ec-btn-gold">💳 Recargar Crédito</button>
@@ -529,39 +543,15 @@
       <div class="ec-credits-lock-card" role="dialog" aria-modal="true" aria-labelledby="outOfCreditsTitle">
         <button type="button" id="outOfCreditsCloseBtn" class="ec-credits-lock-close" aria-label="Cerrar">×</button>
         <div class="ec-credits-lock-icon">⚠️</div>
-        <h2 id="outOfCreditsTitle">¡Créditos de IA Agotados!</h2>
-        <p>Tu saldo actual ha llegado a <strong>0 créditos</strong>. Para continuar utilizando los modelos de inteligencia artificial y agentes de EditCoreAI, añade más créditos a tu cuenta.</p>
-        
-        <div class="ec-payment-gateways-selector" role="radiogroup" aria-label="Método de Pago">
-          <label class="ec-gateway-option is-active">
-            <input type="radio" name="creditPaymentGateway" value="mercadopago" checked />
-            <span class="ec-gw-badge">🔷 Mercado Pago</span>
-            <span class="ec-gw-desc">OXXO, SPEI, Tarjetas México y LatAm</span>
-          </label>
-          <label class="ec-gateway-option">
-            <input type="radio" name="creditPaymentGateway" value="stripe" />
-            <span class="ec-gw-badge">💳 Stripe Checkout</span>
-            <span class="ec-gw-desc">Tarjetas Internacionales, Apple Pay, Google Pay</span>
-          </label>
-        </div>
+        <h2 id="outOfCreditsTitle">Tu saldo se agotó</h2>
+        <p>Tu saldo llegó a <strong>$0.00</strong>. Para seguir usando la IA de EditCoreAI, recarga saldo.</p>
 
         <div class="ec-credits-packs-grid">
-          <div class="ec-credits-pack-card" data-pack-credits="100">
-            <span class="ec-pack-credits">100 Créditos</span>
-            <span class="ec-pack-price">$5 USD</span>
-            <button type="button" class="ec-pack-btn" data-pack="100">Comprar Pack</button>
-          </div>
-          <div class="ec-credits-pack-card is-featured" data-pack-credits="500">
-            <div class="ec-pack-tag">Más Popular · +25% Bonus</div>
-            <span class="ec-pack-credits">500 Créditos</span>
+          <div class="ec-credits-pack-card is-featured" data-pack-credits="20">
+            <div class="ec-pack-tag">Acceso EditCoreAI</div>
+            <span class="ec-pack-credits">$20 de saldo</span>
             <span class="ec-pack-price">$20 USD</span>
-            <button type="button" class="ec-pack-btn is-featured" data-pack="500">Comprar Pack</button>
-          </div>
-          <div class="ec-credits-pack-card" data-pack-credits="1500">
-            <div class="ec-pack-tag" style="background:#10b981;color:#fff;">Élite · +50% Bonus</div>
-            <span class="ec-pack-credits">1500 Créditos</span>
-            <span class="ec-pack-price">$50 USD</span>
-            <button type="button" class="ec-pack-btn" data-pack="1500">Comprar Pack</button>
+            <button type="button" class="ec-pack-btn is-featured" data-pack="20">¿Cómo recargo?</button>
           </div>
         </div>
 
@@ -991,7 +981,7 @@
             <div class="inspector-model-row" id="inspectorModelSelectRow">
               <div class="inspector-model-selector-group">
                 <label for="inspectorProviderSelect">Proveedor directo:</label>
-                <select id="inspectorProviderSelect" title="Selecciona ME AI Cloud o APICredits (conexion directa)"></select>
+                <select id="inspectorProviderSelect" title="Selecciona el modelo de conexión directa"></select>
               </div>
               <div class="inspector-model-selector-group">
                 <label for="inspectorModelSelect">Modelo:</label>
@@ -1051,7 +1041,7 @@
           <header class="dlg-head">
             <div>
               <h2>Conexiones</h2>
-              <p>Bóveda segura. Conecta GitHub, Vercel, Supabase propio y SSH. Los modelos de IA se configuran en <strong>Modelos</strong> (ME AI / APICredits).</p>
+              <p>Bóveda segura. Conecta GitHub, Vercel, Supabase propio y SSH. Los modelos de IA los administra el administrador de EditCoreAI.</p>
             </div>
             <button id="closeConnectionsBtn" type="button" class="dlg-close">✕</button>
           </header>

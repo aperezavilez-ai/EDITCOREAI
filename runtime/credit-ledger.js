@@ -1,16 +1,15 @@
 "use strict";
 
-// Créditos de EditCoreAI. El saldo, los cobros, los códigos de recarga y la administración
-// viven en el servidor de cuentas (funciones public.editcoreai_*); este módulo solo las llama
-// con la sesión del usuario. Si el servidor no responde, no se permite ejecutar (nunca saldo infinito).
+// Saldo de EditCoreAI en dólares. El saldo, los códigos de recarga y la administración viven en el
+// servidor de cuentas (funciones public.editcoreai_*); el cobro por tokens lo hace solo el servidor
+// (función ai-proxy). Si el servidor no responde, no se permite ejecutar (nunca saldo infinito).
 
 const { EventEmitter } = require("node:events");
 const { authManager: defaultAuth } = require("./auth-manager");
 
-const RUN_COST_CREDITS = 1;
-
 const CREDIT_ERRORS = {
-  OUT_OF_CREDITS: "No tienes créditos suficientes. Canjea un código de recarga o pide créditos al administrador.",
+  NO_SESSION: "Inicia sesión con Google para usar EditCoreAI.",
+  OUT_OF_CREDITS: "Tu saldo se agotó. Recarga para seguir usando la IA de EditCoreAI.",
   ACCOUNT_SUSPENDED: "Tu cuenta está suspendida. Contacta al administrador.",
   INVALID_CODE: "El código no es válido.",
   EXPIRED: "El código ya expiró.",
@@ -33,17 +32,28 @@ function fromServer(data) {
   return { ok: true, success: true, ...(data || {}) };
 }
 
+function usageMeter(account = {}) {
+  const balance = Math.max(0, Number(account.credits_balance || 0));
+  const topupBase = Math.max(balance, Number(account.topup_base || 0));
+  const used = Math.max(0, topupBase - balance);
+  const usedPercent = topupBase > 0 ? Math.min(100, (used / topupBase) * 100) : (balance > 0 ? 0 : 100);
+  return { balance, topupBase, used, usedPercent };
+}
+
 function balanceView(account = {}) {
   const unlimited = Boolean(account.is_unlimited) || account.role === "admin";
-  const balance = Number(account.credits_balance || 0);
+  const meter = usageMeter(account);
   const active = account.status === "active";
   return {
-    balance,
+    balance: meter.balance,
+    topupBase: meter.topupBase,
+    used: meter.used,
+    usedPercent: unlimited ? 0 : meter.usedPercent,
     isUnlimited: unlimited,
     role: account.role === "admin" ? "admin" : "user",
     status: account.status || "unknown",
     email: account.email || "",
-    canExecute: active && (unlimited || balance >= RUN_COST_CREDITS),
+    canExecute: active && (unlimited || meter.balance > 0),
   };
 }
 
@@ -62,22 +72,20 @@ class CreditLedger extends EventEmitter {
     }
   }
 
-  async chargeRun({ model = "", description = "Consulta de IA", amount = RUN_COST_CREDITS } = {}) {
-    if (!this.auth.isAuthenticated()) return failure({ code: "NO_SESSION", message: "Inicia sesión con Google para usar EditCoreAI." });
+  // Antes de cada consulta: cuenta activa y saldo mayor que cero (o ilimitada).
+  // El descuento real lo hace el servidor al terminar la respuesta, según los tokens usados.
+  async checkCanRun() {
+    if (!this.auth.isAuthenticated()) return failure({ code: "NO_SESSION" });
+    let account;
     try {
-      const res = fromServer(await this.auth.rpc("editcoreai_consume_credits", {
-        p_amount: amount,
-        p_model: String(model || "").slice(0, 120) || null,
-        p_tokens_in: 0,
-        p_tokens_out: 0,
-        p_description: String(description || "").slice(0, 300) || null,
-      }));
-      if (res.account) this.auth.account = res.account;
-      if (res.ok) this.emit("balance-changed", balanceView(res.account));
-      return { ...res, ...(res.account ? balanceView(res.account) : {}) };
+      account = await this.auth.refreshAccount();
     } catch (error) {
-      return failure(error);
+      return { ...failure(error), canExecute: false };
     }
+    const view = balanceView(account || {});
+    if (view.status !== "active") return { ...failure({ code: "ACCOUNT_SUSPENDED" }), ...view };
+    if (!view.canExecute) return { ...failure({ code: "OUT_OF_CREDITS" }), ...view };
+    return { ok: true, success: true, ...view };
   }
 
   async redeemVoucher(code) {
@@ -187,13 +195,11 @@ class CreditLedger extends EventEmitter {
 
   getPacks() {
     return [
-      { id: "pack_100", credits: 100, priceUsd: 5, priceLabel: "$5 USD", title: "100 Créditos", tag: "Básico", bonus: "" },
-      { id: "pack_500", credits: 500, priceUsd: 20, priceLabel: "$20 USD", title: "500 Créditos", tag: "Más Popular", bonus: "+25% extra" },
-      { id: "pack_1500", credits: 1500, priceUsd: 50, priceLabel: "$50 USD", title: "1500 Créditos", tag: "Élite", bonus: "+50% extra" },
+      { id: "recarga_20", credits: 20, priceUsd: 20, priceLabel: "$20 USD", title: "$20 de saldo", tag: "Acceso", bonus: "" },
     ];
   }
 }
 
 const creditLedgerInstance = new CreditLedger();
 
-module.exports = { CreditLedger, creditLedger: creditLedgerInstance, RUN_COST_CREDITS, CREDIT_ERRORS, balanceView };
+module.exports = { CreditLedger, creditLedger: creditLedgerInstance, CREDIT_ERRORS, balanceView, usageMeter };

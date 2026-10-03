@@ -6,7 +6,7 @@ EditCore actualiza este archivo tras cambios. No pedirlo al usuario. No pegar co
 
 ## Proceso
 - Fase: implementacion
-- Estado: 4.2.5 — el análisis ya no dice "no se basa en lecturas del disco" cuando el analista sí leyó archivos. 4.2.4 — el reporte de análisis muestra la tabla de chequeos y los verificados una sola vez. 4.2.3 — el análisis ya no reporta falsos errores (0 hallazgos en EditCoreAI), la caché del proveedor cubre todo el bucle de herramientas y se muestra (leído / escrito), y vuelven los puntos del árbol en análisis y correcciones. 4.2.2 — la estrategia "glob" de reintentos de listado vuelve a funcionar (fs.glob nativo). 4.2.1 — el chat ya no puede dejar EditCoreAI sin abrir: si edita su propio código y el arranque queda roto, revierte ese turno solo. 4.2.0 — métricas reales de uso y caché del chat (antes siempre en cero). 4.1.9 — limpieza total: 607 archivos sin uso eliminados (agent-core, skills duplicadas, módulos sin cargar, paneles huérfanos, copia espejo `resources/ui-overlay`); el instalador vuelve a arrancar (main.js ya no carga `scripts/` al inicio). 4.1.8 — modo forense real: cada análisis corre chequeos deterministas (sintaxis, imports, conflictos, env, referencias, git; en modo a fondo también tests, typecheck y build) y separa errores VERIFICADOS de hipótesis; el verificador nunca da OK sin comprobar; cada corrección se re-verifica antes/después.
+- Estado: 4.2.6 — EditCoreAI multiusuario: entrada obligatoria con Google, cuentas y saldo prepago en el servidor propio de EditCoreAI (cobro por tokens reales con margen x2 y barra de consumo), los usuarios solo ven los modelos y nunca los proveedores. 4.2.5 — el análisis ya no dice "no se basa en lecturas del disco" cuando el analista sí leyó archivos. 4.2.4 — el reporte de análisis muestra la tabla de chequeos y los verificados una sola vez. 4.2.3 — el análisis ya no reporta falsos errores (0 hallazgos en EditCoreAI), la caché del proveedor cubre todo el bucle de herramientas y se muestra (leído / escrito), y vuelven los puntos del árbol en análisis y correcciones. 4.2.2 — la estrategia "glob" de reintentos de listado vuelve a funcionar (fs.glob nativo). 4.2.1 — el chat ya no puede dejar EditCoreAI sin abrir: si edita su propio código y el arranque queda roto, revierte ese turno solo. 4.2.0 — métricas reales de uso y caché del chat (antes siempre en cero). 4.1.9 — limpieza total: 607 archivos sin uso eliminados (agent-core, skills duplicadas, módulos sin cargar, paneles huérfanos, copia espejo `resources/ui-overlay`); el instalador vuelve a arrancar (main.js ya no carga `scripts/` al inicio). 4.1.8 — modo forense real: cada análisis corre chequeos deterministas (sintaxis, imports, conflictos, env, referencias, git; en modo a fondo también tests, typecheck y build) y separa errores VERIFICADOS de hipótesis; el verificador nunca da OK sin comprobar; cada corrección se re-verifica antes/después.
 - Actualizado: 2026-10-02
 - Preview: desconocido — usa el preview del IDE, no inventes puertos
 
@@ -15,9 +15,9 @@ EditCore actualiza este archivo tras cambios. No pedirlo al usuario. No pegar co
 - preload.js — contextBridge (un bloque por namespace)
 - renderer.js — UI del IDE
 - chat-home.js / chat-home.css — shell Chat Home
-- package.json — scripts de test, empaquetado Windows, deploy; version 4.2.5
+- package.json — scripts de test, empaquetado Windows, deploy; version 4.2.6
 - ARQUITECTURA-SISTEMA.md — arquitectura general
-- EDITCORE-MANIFEST.md — manifiesto del producto (version producto 4.2.5)
+- EDITCORE-MANIFEST.md — manifiesto del producto (version producto 4.2.6)
 - AGENTS.md — reglas operativas del agente
 
 ### editcore-chat-kernel/
@@ -102,7 +102,16 @@ EditCore actualiza este archivo tras cambios. No pedirlo al usuario. No pegar co
 - **Memoria semántica (2026-10-02)**: `vector-memory.js` + `embeddings.js` (fallback local determinista). `memory.js` y `global-memory.js` indexan notas, archivos y soluciones de error en background sin bloquear el flujo del orquestador. Búsqueda con `searchSemantic()` y `promptBlockSemantic()`.
 - **Métricas de rendimiento (2026-10-02)**: `model-router.js` y `tools.js` registran latencia y éxito/fallo por modelo y por tool. Persistencia en `.editcore/model-router-stats.json`. Consulta con `getModelStats()` / `getToolStats()`.
 - **Mensajería dirigida entre agentes (2026-10-02)**: `agent-bus.js` expone `postMessage` / `readMessages` / `messagesPromptBlock` para comunicación explícita entre subagentes.
-- **Versionado (2026-10-02)**: `package.json` es la fuente de verdad de la versión (`4.2.5`). El `buildVersion` de `electron-builder` (`4.2.5.0`) sigue el esquema Windows `MAJOR.MINOR.PATCH.BUILD`. `EDITCORE-MANIFEST.md` refleja la misma versión de producto. Cada parte va de 0 a 9, nunca 10: después de 4.1.9 sigue 4.2.0 y después de 4.9.9 sigue 5.0.0 (lo verifica el gate de pre-empaquetado).
+- **Versionado (2026-10-02)**: `package.json` es la fuente de verdad de la versión (`4.2.6`). El `buildVersion` de `electron-builder` (`4.2.6.0`) sigue el esquema Windows `MAJOR.MINOR.PATCH.BUILD`. `EDITCORE-MANIFEST.md` refleja la misma versión de producto. Cada parte va de 0 a 9, nunca 10: después de 4.1.9 sigue 4.2.0 y después de 4.9.9 sigue 5.0.0 (lo verifica el gate de pre-empaquetado).
+
+## Cambios recientes (2026-10-03)
+- Release v4.2.6 (franquicia, fase 1 + saldo prepago):
+  - Cuentas: servidor Supabase propio de EditCoreAI (proyecto CLI `editcoreai`, API `127.0.0.1:55321`, público `https://api-editcoreai.gafcore.com`), separado de los demás proyectos. Entrada solo con Google; rol, saldo y códigos los decide el servidor (`public.editcoreai_*`). Panel de administración para el administrador.
+  - Modelos por rol: los usuarios solo ven los modelos (sin nombres de proveedor, sin panel de proveedores, Auto incluido); el administrador conserva acceso total.
+  - Saldo prepago (pago manual, recarga de $20 o código): cada consulta de un usuario pasa por la función `supabase/functions/ai-proxy`, que valida la sesión, usa la clave del proveedor guardada en el servidor (`EDITCOREAI_MEAI_API_KEY` en `.env.local`, secreto del edge runtime) y cobra los tokens reales con margen x2 (`editcoreai.settings.markup`). Sin saldo, la consulta se bloquea. El administrador es ilimitado. Barra de consumo en el chat y en Ajustes → Saldo y uso.
+  - La función solo ofrece los modelos a los que la clave tiene acceso, quita de las respuestas los datos internos del proveedor y responde 503 (no 502, que Cloudflare reemplaza por su página) cuando el proveedor falla.
+  - Seguridad: las claves de fábrica del servidor de cuentas se cambiaron por claves propias (`scripts/cuentas-rotar-claves.js`: respaldo, verificación y vuelta atrás automática). anon y service_role van firmadas ES256 con la clave de `supabase/signing_keys.json` (ignorado por git).
+  - Pendiente: el autocompletado del editor y la reparación desde el inspector todavía no pasan por el proxy (solo chat y agente).
 
 ## Cambios recientes (2026-10-02)
 - Release v4.2.5: confirmado en la app 4.2.4 que la tabla de chequeos sale una sola vez. Ese mismo reporte mostraba "⚠️ Este análisis no se basa en lecturas del disco" aunque el analista había leído los archivos de la evidencia: `groundUngroundedClaims` solo contaba las lecturas del modelo, y cuando el modelo no necesita leer más (1 llamada) el contador quedaba en 0. Ahora el ANALYZE pasa `evidenceReads` (lecturas exitosas del analista) y el aviso solo sale si nadie leyó el disco. `groundUngroundedClaims` y `successfulDiskReads` se exportan para el test. Suite 899/899.

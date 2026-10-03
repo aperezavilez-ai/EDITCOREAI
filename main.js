@@ -5272,8 +5272,19 @@ authManager.on("session-changed", (session) => {
   }
 });
 
+const CLOUD_PROVIDER_KEY = "editcore-cloud";
+
+function notifyCloudBalance(event) {
+  const { creditLedger } = require("./runtime/credit-ledger");
+  creditLedger.getBalance()
+    .then((view) => { try { event?.sender?.send?.("credits:balance-changed", view); } catch { /* ignore */ } })
+    .catch(() => { /* ignore */ });
+}
+
 function licenseBlockedRunResult(event, charge = {}) {
   const code = String(charge.code || "NO_SESSION");
+  const { CREDIT_ERRORS } = require("./runtime/credit-ledger");
+  charge = { ...charge, error: charge.error || CREDIT_ERRORS[code] || "" };
   try { event?.sender?.send?.("license:blocked", { code, message: charge.error || "" }); } catch { /* ignore */ }
   return {
     text: `🔒 ${charge.error || "Inicia sesión con Google para usar EditCoreAI."}`,
@@ -6697,17 +6708,29 @@ ipcMain.handle("agent:run", async (event, input = {}) => {
     }
   }
 
+  // Usuarios (no admin): la consulta va al servidor de EditCoreAI con su sesión; él cobra por tokens.
+  let cloudRoute = null;
+  {
+    const { creditLedger } = require("./runtime/credit-ledger");
+    const access = await creditLedger.checkCanRun();
+    if (!access.ok) return licenseBlockedRunResult(event, access);
+    if (access.role !== "admin") {
+      const { authManager } = require("./runtime/auth-manager");
+      const token = await authManager.getAccessToken();
+      if (!token) return licenseBlockedRunResult(event, { code: "NO_SESSION" });
+      cloudRoute = { baseUrl: normalizeBaseUrl(authManager.aiProxyBaseUrl(), CLOUD_PROVIDER_KEY) };
+      baseUrl = cloudRoute.baseUrl;
+      apiKey = token;
+      providerKey = CLOUD_PROVIDER_KEY;
+      model = String(input.model || model).trim().replace(/^meai\//i, "");
+    }
+  }
+
   if (!apiKey) throw new Error("Falta API key.");
   if (!model) throw new Error("Falta modelo.");
 
-  {
-    const { creditLedger } = require("./runtime/credit-ledger");
-    const charge = await creditLedger.chargeRun({ model, description: "Consulta de IA" });
-    if (!charge.ok) return licenseBlockedRunResult(event, charge);
-  }
-
   // Preferir núcleo multi-agente salvo bypass explícito al adapter legado.
-  if (input.useLegacyAdapter !== true) {
+  if (input.useLegacyAdapter !== true || cloudRoute) {
     const privacy = readPrivacyMode(readSecureState());
     const cloudGate = assertCloudAllowed(privacy, String(input.providerKey || input.provider || ""));
     if (!cloudGate.ok && !/local|ollama|lm/i.test(String(baseUrl || ""))) {
@@ -6772,7 +6795,7 @@ ipcMain.handle("agent:run", async (event, input = {}) => {
       const out = await handleChatKernel({
         message: task,
         skillsPrompt,
-        fallbackProfiles: fallbackProviderProfiles({ providerKey, baseUrl, model, apiKey }),
+        fallbackProfiles: cloudRoute ? [] : fallbackProviderProfiles({ providerKey, baseUrl, model, apiKey }),
         history: Array.isArray(input.history) ? input.history : (Array.isArray(input.messages) ? input.messages : []),
         threadId: input.chatId || input.threadId || input.conversationId || input.runId || "",
         chatId: input.chatId || input.threadId || "",
@@ -6896,6 +6919,7 @@ ipcMain.handle("agent:run", async (event, input = {}) => {
       throw new Error(typeof toUserFacingError === "function" ? toUserFacingError(error) : String(error?.message || error));
     } finally {
       if (activeAgentRuns.get(runKey) === runState) activeAgentRuns.delete(runKey);
+      if (cloudRoute) notifyCloudBalance(event);
     }
   }
 
@@ -10927,6 +10951,10 @@ creditsIpc("credits:admin-list-users", (ledger, search) => ledger.adminListUsers
 creditsIpc("credits:admin-create-voucher", (ledger, payload) => ledger.adminCreateVoucher(payload || {}));
 creditsIpc("credits:admin-grant", (ledger, payload) => ledger.adminGrantCredits(payload || {}));
 creditsIpc("credits:admin-set-status", (ledger, payload) => ledger.adminSetStatus(payload || {}));
+creditsIpc("credits:cloud-models", async () => {
+  const { authManager } = require("./runtime/auth-manager");
+  return { ok: true, models: await authManager.listCloudModels(), baseUrl: authManager.aiProxyBaseUrl() };
+});
 
 // Role Policy Guard handlers
 ipcMain.handle("auth:check-access", async (_event, _userFromRenderer, targetPath) => {

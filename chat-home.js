@@ -63,7 +63,7 @@
       tabApplication: "Aplicación",
       tabAppearance: "Apariencia",
       tabModels: "Modelos",
-      tabCredits: "Créditos y Facturación",
+      tabCredits: "Saldo y uso",
       tabCustomizations: "Personalizaciones",
       tabBrowser: "Navegador",
       langCardTitle: "Idioma de la Interfaz",
@@ -100,7 +100,7 @@
       tabApplication: "Application",
       tabAppearance: "Appearance",
       tabModels: "Models",
-      tabCredits: "Credits & Billing",
+      tabCredits: "Balance & usage",
       tabCustomizations: "Customizations",
       tabBrowser: "Browser",
       langCardTitle: "Interface Language",
@@ -572,7 +572,7 @@
     const label = String(
       $("modelPickerLabel")?.textContent
       || document.querySelector("#model option:checked")?.textContent
-      || "Auto · ME AI"
+      || "Auto"
     ).trim();
     if (pill) pill.textContent = `${label.slice(0, 34)} ▾`;
   }
@@ -599,6 +599,7 @@
             balance.email = authData.user.email || "";
             balance.role = authData.user.isAdmin ? "admin" : "user";
             balance.balance = Number(authData.user.credits_balance || 0);
+            balance.topupBase = Number(authData.user.topup_base || 0);
             balance.isUnlimited = Boolean(authData.user.is_unlimited);
             balance.status = authData.user.status || "unknown";
             balance.avatarUrl = authData.user.avatarUrl || "";
@@ -629,10 +630,11 @@
       const suspended = balance.status === "suspended";
       if (roleEl) roleEl.textContent = suspended ? "⛔ Cuenta suspendida" : (isAdm ? "👑 Administrador" : (balance.email ? "💻 Usuario" : ""));
 
-      const balStr = unlimited ? "∞ Ilimitado" : `${balance.balance} créditos`;
-      if (creditsBadge) creditsBadge.textContent = unlimited ? "∞" : `${balance.balance}`;
+      const balStr = unlimited ? "∞ Ilimitado" : fmtUsd(balance.balance);
+      if (creditsBadge) creditsBadge.textContent = unlimited ? "∞" : fmtUsd(balance.balance);
       if (creditsBigNum) creditsBigNum.textContent = balance.email ? balStr : "—";
-      if (creditsPlanTag) creditsPlanTag.textContent = suspended ? "Cuenta suspendida" : (isAdm ? "Administrador · sin cargo por consulta" : (unlimited ? "Plan ilimitado" : "Plan prepago · 1 crédito por consulta"));
+      if (creditsPlanTag) creditsPlanTag.textContent = suspended ? "Cuenta suspendida" : (isAdm ? "Administrador · sin límite de uso" : (unlimited ? "Plan ilimitado" : "Saldo prepago · se descuenta según el uso de la IA"));
+      renderUsageMeters({ ...balance, unlimited, signedIn: Boolean(balance.email) });
 
       // Administrador Maestro vs Usuario Estándar:
       const buyCreditsBtn = $("settingsBuyCreditsBtn");
@@ -658,14 +660,7 @@
         if (buyCreditsBtn) buyCreditsBtn.style.display = "";
         if (creditsBannerCta) creditsBannerCta.style.display = "";
         if (adminMasterDashboard) adminMasterDashboard.hidden = true;
-
-        if (creditsUsdNum) {
-          creditsUsdNum.hidden = false;
-          creditsUsdNum.removeAttribute("hidden");
-          const bal = Number(balance.balance || 0);
-          const usdEq = (bal * 0.05).toFixed(2);
-          creditsUsdNum.textContent = `($${usdEq} USD)`;
-        }
+        if (creditsUsdNum) creditsUsdNum.hidden = true;
       }
 
       // RBAC: Ocultar o blindar configuración de proveedores si no es administrador
@@ -677,6 +672,11 @@
           modelsNavTab.style.display = "";
         }
       }
+      ["providersBtn", "settingsOpenModelsDialogBtn"].forEach((id) => {
+        const el = $(id);
+        if (el) el.style.display = isAdm ? "" : "none";
+      });
+      window.EditCoreModels?.refreshForRole?.();
 
       const projBox = $("settingsProjectsList");
       if (projBox) {
@@ -762,16 +762,16 @@
       if (descEl) descEl.textContent = "Tu cuenta está suspendida. Contacta al administrador de EditCoreAI.";
     } else if (isAdm) {
       if (iconEl) iconEl.textContent = "💎";
-      if (titleEl) titleEl.textContent = "Recarga y Gestión de Créditos";
-      if (descEl) descEl.textContent = "Tu cuenta de administrador no paga por consulta. Los códigos y créditos de los usuarios se gestionan en Configuración › Créditos.";
+      if (titleEl) titleEl.textContent = "Saldo y recargas";
+      if (descEl) descEl.textContent = "Tu cuenta de administrador no tiene límite de uso. El saldo de los usuarios se gestiona en Configuración › Saldo.";
     } else if (reason === "out_of_credits" || reason === "OUT_OF_CREDITS" || balance <= 0) {
       if (iconEl) iconEl.textContent = "⚠️";
-      if (titleEl) titleEl.textContent = "¡Créditos de IA Agotados!";
-      if (descEl) descEl.innerHTML = "Tu saldo actual ha llegado a <strong>0 créditos</strong>. Para continuar utilizando los modelos de inteligencia artificial y agentes de EditCoreAI, añade más créditos a tu cuenta.";
+      if (titleEl) titleEl.textContent = "Tu saldo se agotó";
+      if (descEl) descEl.innerHTML = "Tu saldo llegó a <strong>$0.00</strong>. Para seguir usando la IA de EditCoreAI, recarga saldo: paga al administrador y canjea el código que te dé en Configuración › Saldo.";
     } else {
       if (iconEl) iconEl.textContent = "💳";
-      if (titleEl) titleEl.textContent = "Añadir Créditos a tu Cuenta";
-      if (descEl) descEl.innerHTML = `Tu saldo disponible es de <strong>${balance} créditos</strong>. Selecciona un paquete a continuación:`;
+      if (titleEl) titleEl.textContent = "Recargar saldo";
+      if (descEl) descEl.innerHTML = `Tu saldo disponible es de <strong>${fmtUsd(balance)}</strong>. Para recargar, paga al administrador y canjea el código que te dé en Configuración › Saldo.`;
     }
 
     modal.hidden = false;
@@ -797,6 +797,50 @@
 
   const fmtNum = (n) => Number(n || 0).toLocaleString("es-MX", { maximumFractionDigits: 2 });
 
+  function fmtUsd(n) {
+    return `$${Number(n || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  }
+
+  // Barra de uso estilo Cursor: cuánto se gastó desde la última recarga.
+  function renderUsageMeters({ balance = 0, topupBase = 0, unlimited = false, signedIn = false } = {}) {
+    const bal = Math.max(0, Number(balance) || 0);
+    const base = Math.max(bal, Number(topupBase) || 0);
+    const used = Math.max(0, base - bal);
+    const pct = base > 0 ? Math.min(100, (used / base) * 100) : (bal > 0 ? 0 : 100);
+    const pctText = `${Math.round(pct)}% usado`;
+    const level = pct >= 90 ? "is-critical" : (pct >= 70 ? "is-warning" : "");
+    const meters = [
+      { box: "settingsUsageMeter", fill: "settingsUsageFill", text: "settingsUsageText", pct: "settingsUsagePct" },
+      { box: "chatHomeUsage", fill: "chatHomeUsageFill", text: "chatHomeUsageLabel", pct: "chatHomeUsagePct" },
+    ];
+    for (const m of meters) {
+      const box = $(m.box);
+      if (!box) continue;
+      box.hidden = !signedIn;
+      box.classList.toggle("is-unlimited", unlimited);
+      box.classList.remove("is-warning", "is-critical");
+      if (level && !unlimited) box.classList.add(level);
+      const fill = $(m.fill);
+      const textEl = $(m.text);
+      const pctEl = $(m.pct);
+      if (unlimited) {
+        if (fill) fill.style.width = "0%";
+        if (textEl) textEl.textContent = "Uso ilimitado";
+        if (pctEl) pctEl.textContent = "∞";
+        box.title = "Cuenta de administrador: sin límite de uso";
+        continue;
+      }
+      if (fill) fill.style.width = `${pct.toFixed(1)}%`;
+      if (textEl) {
+        textEl.textContent = m.box === "chatHomeUsage"
+          ? `Saldo ${fmtUsd(bal)}`
+          : `${fmtUsd(used)} de ${fmtUsd(base)} usado · quedan ${fmtUsd(bal)}`;
+      }
+      if (pctEl) pctEl.textContent = pctText;
+      box.title = `${fmtUsd(used)} de ${fmtUsd(base)} usado · quedan ${fmtUsd(bal)}`;
+    }
+  }
+
   async function refreshAdminPanel() {
     const credits = window.editcoreCredits;
     if (!credits?.adminOverview) return;
@@ -806,10 +850,10 @@
     const set = (id, text) => { const el = $(id); if (el) el.textContent = text; };
     set("adminUsersTotal", fmtNum(o.users_total));
     set("adminUsersSub", `Activos: ${fmtNum(o.users_active)} · Suspendidos: ${fmtNum(o.users_suspended)}`);
-    set("adminCreditsCirculation", fmtNum(o.credits_in_circulation));
+    set("adminCreditsCirculation", fmtUsd(o.credits_in_circulation));
     set("adminVouchersActive", `Códigos vigentes: ${fmtNum(o.vouchers_active)}`);
-    set("adminConsumedToday", fmtNum(o.credits_consumed_today));
-    set("adminConsumedSub", `Hoy (${fmtNum(o.requests_today)} consultas) · Total: ${fmtNum(o.credits_consumed_total)}`);
+    set("adminConsumedToday", fmtUsd(o.credits_consumed_today));
+    set("adminConsumedSub", `Hoy (${fmtNum(o.requests_today)} consultas) · Te costó ${fmtUsd(o.provider_cost_today)} · Margen ${fmtNum(o.markup || 2)}x · Total cobrado: ${fmtUsd(o.credits_consumed_total)}`);
     await renderAdminUsers();
   }
 
@@ -836,7 +880,7 @@
       const role = document.createElement("span");
       role.textContent = u.role === "admin" ? "👑 admin" : (u.status === "suspended" ? "⛔ suspendido" : "usuario");
       const bal = document.createElement("span");
-      bal.textContent = u.role === "admin" || u.is_unlimited ? "∞" : `${fmtNum(u.credits_balance)} cr`;
+      bal.textContent = u.role === "admin" || u.is_unlimited ? "∞" : fmtUsd(u.credits_balance);
       const action = document.createElement("button");
       action.type = "button";
       action.className = "ec-btn-action";
@@ -868,7 +912,7 @@
     $("adminVoucherCreateBtn")?.addEventListener("click", async () => {
       const out = $("adminVoucherResult");
       const creditsVal = Number($("adminVoucherCredits")?.value || 0);
-      if (!(creditsVal > 0)) return showStatus(out, false, "Indica cuántos créditos da el código.");
+      if (!(creditsVal > 0)) return showStatus(out, false, "Indica cuántos dólares de saldo da el código.");
       const res = await window.editcoreCredits?.adminCreateVoucher?.({
         credits: creditsVal,
         maxUses: Number($("adminVoucherUses")?.value || 1),
@@ -892,7 +936,7 @@
       if (!email || !amount) return showStatus(out, false, "Escribe el correo y la cantidad.");
       const res = await window.editcoreCredits?.adminGrant?.({ email, amount, note: $("adminGrantNote")?.value || "" });
       if (!res?.ok) return showStatus(out, false, res?.error || "No se pudo aplicar.");
-      showStatus(out, true, `Listo. Saldo de ${email}: ${fmtNum(res.account?.credits_balance)} créditos.`);
+      showStatus(out, true, `Listo. Saldo de ${email}: ${fmtUsd(res.account?.credits_balance)}.`);
       await refreshAdminPanel();
     });
   }
@@ -919,13 +963,14 @@
     if (tabKey === "main") normalized = "general";
     if (tabKey === "theme") normalized = "appearance";
     if (tabKey === "permissions") normalized = "general";
+    if (normalized === "models" && window.__editcoreSession?.user?.isAdmin !== true) normalized = "general";
 
     const titleMap = {
       general: { title: "General", sub: "Configuración general y preferencias de EditCoreAI" },
       application: { title: "Aplicación", sub: "Control de acceso, auto-guardado y privacidad" },
       appearance: { title: "Apariencia", sub: "Personalización de temas visuales y contrastes" },
       models: { title: "Modelos", sub: "Proveedores de IA, enrutador inteligente y endpoints" },
-      credits: { title: "Créditos y Facturación", sub: "Saldo disponible, recargas y canje de cupones" },
+      credits: { title: "Saldo y uso", sub: "Saldo disponible, consumo y canje de códigos de recarga" },
       customizations: { title: "Personalizaciones", sub: "Habilidades y directrices personalizadas" },
       browser: { title: "Navegador", sub: "Previsualización en vivo e inspector integrado" },
     };
@@ -2437,7 +2482,7 @@
           statusEl.removeAttribute("hidden");
           if (res?.success) {
             statusEl.className = "ec-status-msg ec-tag-success";
-            statusEl.textContent = `¡Código canjeado! Se agregaron ${res.credits_added} créditos. Saldo actual: ${res.isUnlimited ? "∞ Ilimitado" : res.balance + " créditos"}`;
+            statusEl.textContent = `¡Código canjeado! Se agregaron ${fmtUsd(res.credits_added)}. Saldo actual: ${res.isUnlimited ? "∞ Ilimitado" : fmtUsd(res.balance)}`;
             const input = $("settingsVoucherInput");
             if (input) input.value = "";
             await refreshCreditsAndProfileUI();
@@ -2467,7 +2512,7 @@
           statusEl.removeAttribute("hidden");
           if (res?.success) {
             statusEl.className = "ec-status-msg ec-tag-success";
-            statusEl.textContent = `¡Desbloqueado! Se agregaron ${res.credits_added} créditos.`;
+            statusEl.textContent = `¡Desbloqueado! Se agregaron ${fmtUsd(res.credits_added)} de saldo.`;
             await refreshCreditsAndProfileUI();
             setTimeout(() => closeOutOfCreditsModal(), 1200);
           } else {
@@ -2497,7 +2542,7 @@
     document.querySelectorAll(".ec-pack-btn").forEach((btn) => {
       btn.addEventListener("click", () => {
         const statusEl = $("outOfCreditsMsg");
-        const text = "La compra en línea estará disponible pronto. Mientras tanto, pide un código de recarga al administrador de EditCoreAI y canjéalo aquí.";
+        const text = "Para recargar $20, paga al administrador de EditCoreAI; él te dará un código que canjeas aquí.";
         if (statusEl) {
           statusEl.hidden = false;
           statusEl.removeAttribute("hidden");
@@ -2898,6 +2943,20 @@
     window.editcoreAuth?.onSessionChanged?.((sessionData) => {
       if (!applySession(sessionData)) setStatus("info", "Tu sesión terminó. Vuelve a iniciar sesión con Google.");
       void refreshCreditsAndProfileUI();
+    });
+
+    window.editcoreCredits?.onBalanceChanged?.((view = {}) => {
+      if (view?.ok === false) return;
+      renderUsageMeters({
+        balance: view.balance,
+        topupBase: view.topupBase,
+        unlimited: Boolean(view.isUnlimited),
+        signedIn: true,
+      });
+      const badge = $("settingsCreditsBadge");
+      if (badge) badge.textContent = view.isUnlimited ? "∞" : fmtUsd(view.balance);
+      const big = $("settingsCreditsBigNum");
+      if (big) big.textContent = view.isUnlimited ? "∞ Ilimitado" : fmtUsd(view.balance);
     });
 
     window.editcoreAuth?.onBlocked?.(({ code } = {}) => {

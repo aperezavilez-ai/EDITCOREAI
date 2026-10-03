@@ -1342,6 +1342,10 @@ async function saveProviders() {
 }
 
 function openProviders() {
+  if (!isCurrentUserAdmin()) {
+    $("status").textContent = "La configuración de modelos es solo para el administrador";
+    return;
+  }
   renderDialogAfterOpen($("providersDialog"), () => {
     renderCustomProviders();
     loadProviders();
@@ -1442,10 +1446,50 @@ function ensureDefaultProviderProfiles(profiles = []) {
 }
 
 function loadProviderProfiles() {
+  if (isCloudUser()) return cloudProviderProfiles();
   const raw = loadJson("editcore-provider-profiles", []);
   return ensureDefaultProviderProfiles(raw);
 }
-async function saveProviderProfiles(profiles) { await saveSecureJson("editcore-provider-profiles", profiles); }
+async function saveProviderProfiles(profiles) {
+  if (isCloudUser()) return;
+  await saveSecureJson("editcore-provider-profiles", profiles);
+}
+
+// Usuarios (no admin): sus modelos vienen del servidor de EditCoreAI; las consultas las desvía
+// el proceso principal al servidor con la sesión, así que aquí no hay ninguna clave real.
+const CLOUD_SESSION_API_KEY = "editcore-session";
+let cloudModelState = { ids: [], baseUrl: "" };
+
+function isCloudUser() {
+  return window.__editcoreSession !== undefined && !isCurrentUserAdmin();
+}
+
+function cloudProviderProfiles() {
+  return cloudModelState.ids.map((model) => ({
+    id: `cloud:${model}`,
+    providerKey: "meai",
+    providerName: "EditCoreAI",
+    baseUrl: cloudModelState.baseUrl,
+    apiKey: CLOUD_SESSION_API_KEY,
+    model,
+    status: "active",
+    catalogConfirmed: true,
+    chatVerified: true,
+    toolOK: true,
+    agentToolOK: true,
+  }));
+}
+
+async function loadCloudModels() {
+  if (!window.editcoreCredits?.cloudModels || !window.__editcoreSession) {
+    cloudModelState = { ids: [], baseUrl: "" };
+    return;
+  }
+  const res = await window.editcoreCredits.cloudModels().catch(() => null);
+  if (res?.ok && Array.isArray(res.models)) {
+    cloudModelState = { ids: res.models, baseUrl: String(res.baseUrl || "") };
+  }
+}
 
 function providerKeyForEndpoint(url) {
   const value = String(url || "").toLowerCase();
@@ -1594,6 +1638,12 @@ function verifiedProfileForModel(providerKey, model) {
 }
 
 function currentAutoProviderScope() {
+  const scope = rawAutoProviderScope();
+  if (scope && !isCurrentUserAdmin()) return "meai";
+  return scope;
+}
+
+function rawAutoProviderScope() {
   const selectedOption = $("chatModelSelect")?.selectedOptions?.[0];
   if (selectedOption && AutoModel.isAutoModelSelection(selectedOption)) {
     return AutoModel.parseAutoSelectionScope(selectedOption);
@@ -1652,6 +1702,7 @@ async function quarantineModelForAuto(job = {}, message = "") {
 }
 
 async function handleProviderFailureForAuto(message, job = {}) {
+  if (isCloudUser()) return;
   // Timeouts / 503 temporales: NO cuarentenar 20 min (mataba APICredits con saldo).
   const shouldQuarantine = typeof AutoModel?.shouldQuarantineModelForAuto === "function"
     ? AutoModel.shouldQuarantineModelForAuto(message)
@@ -1669,7 +1720,9 @@ function resolveActiveChatProfile(context = {}) {
     return AutoModel.resolveAutoModelProfile(options, profiles, {
       ...context,
       profiles,
-      autoProviderScope: context.autoProviderScope ?? currentAutoProviderScope(),
+      autoProviderScope: isCurrentUserAdmin()
+        ? (context.autoProviderScope ?? currentAutoProviderScope())
+        : "meai",
       requireAgentTools: context.requireAgentTools === true
         || Boolean(context.isAgent && context.usesProjectTools),
       capabilities: cachedModelCapabilities,
@@ -1752,15 +1805,25 @@ function updateModelPickerLabel() {
   const label = $("modelPickerLabel");
   if (!label) return;
   if (isChatModelAutoMode()) {
-    label.textContent = AutoModel.formatAutoLabel(currentAutoProviderScope());
+    label.textContent = autoLabelForRole();
     return;
   }
   const option = $("chatModelSelect")?.selectedOptions?.[0];
   if (!option || AutoModel.isAutoModelSelection(option) || option.dataset?.configure === "1") {
-    label.textContent = AutoModel.formatAutoLabel(currentAutoProviderScope());
+    label.textContent = autoLabelForRole();
     return;
   }
-  label.textContent = AutoModel.formatChatModelLabel(option.dataset.model || "", option.dataset.providerKey || "") || "Modelo";
+  label.textContent = modelNameForDisplay(option.dataset.model || "", option.dataset.providerKey || "") || "Modelo";
+}
+
+function autoLabelForRole() {
+  return isCurrentUserAdmin() ? AutoModel.formatAutoLabel(currentAutoProviderScope()) : "Auto";
+}
+
+function modelNameForDisplay(model, providerKey) {
+  const label = AutoModel.formatChatModelLabel(model, providerKey);
+  if (isCurrentUserAdmin()) return label;
+  return String(label || "").replace(/^(?:meai|apicredits)\//i, "");
 }
 
 function positionFloatingMenu(menu, anchor, { align = "right", gap = 8 } = {}) {
@@ -1924,11 +1987,14 @@ function renderModelPickerMenu() {
   searchWrap.appendChild(searchInput);
   menu.appendChild(searchWrap);
 
-  const autoScopes = [
-    { scope: "all", title: "Auto", hint: "ME AI Cloud + APICredits juntos." },
-    { scope: "meai", title: "Auto · ME AI", hint: "Solo modelos ME AI Cloud." },
-    { scope: "apicredits", title: "Auto · APICredits", hint: "Solo modelos APICredits." },
-  ];
+  const isAdmin = isCurrentUserAdmin();
+  const autoScopes = isAdmin
+    ? [
+      { scope: "all", title: "Auto", hint: "ME AI Cloud + APICredits juntos." },
+      { scope: "meai", title: "Auto · ME AI", hint: "Solo modelos ME AI Cloud." },
+      { scope: "apicredits", title: "Auto · APICredits", hint: "Solo modelos APICredits." },
+    ]
+    : [{ scope: "meai", title: "Auto", hint: "EditCoreAI elige el mejor modelo para cada tarea." }];
   autoScopes.forEach(({ scope, title, hint }) => {
     const autoRow = document.createElement("div");
     autoRow.className = "model-picker-auto-row";
@@ -1966,7 +2032,9 @@ function renderModelPickerMenu() {
 
     const scroll = document.createElement("div");
     scroll.className = "model-picker-scroll";
-    const catalog = catalogChatModelOptions();
+    const catalog = isAdmin
+      ? catalogChatModelOptions()
+      : catalogChatModelOptions().filter((entry) => entry.enabled);
     const normalizedSearch = searchTerm.trim().toLowerCase();
     const filtered = !normalizedSearch
       ? catalog
@@ -1983,7 +2051,7 @@ function renderModelPickerMenu() {
       empty.className = "model-picker-empty";
       empty.textContent = catalog.length
         ? "Ningún modelo coincide con la búsqueda"
-        : "Verifica un modelo en Administrar modelos…";
+        : (isAdmin ? "Verifica un modelo en Administrar modelos…" : "No hay modelos disponibles por ahora");
       scroll.appendChild(empty);
     } else {
       let lastGroup = "";
@@ -2044,13 +2112,14 @@ function renderModelPickerMenu() {
           });
         });
 
-        row.append(pick, toggle);
+        if (isAdmin) row.append(pick, toggle);
+        else row.append(pick);
         scroll.appendChild(row);
       });
     }
 
     menu.appendChild(scroll);
-    if (isCurrentUserAdmin()) {
+    if (isAdmin) {
       const footer = document.createElement("div");
       footer.className = "model-picker-footer";
       const manageBtn = document.createElement("button");
@@ -2150,15 +2219,24 @@ function isCurrentUserAdmin() {
   return window.__editcoreSession?.user?.isAdmin === true;
 }
 
+const USER_MODEL_GROUP_LABEL = "Modelos";
+
+function isUserVisibleModelOption(entry) {
+  return String(entry?.modelProviderGroup || entry?.providerKey || "").replace(/^custom:/, "").toLowerCase() === "meai";
+}
+
+// Usuarios no admin: solo modelos ME AI y sin nombres de proveedor.
+function filterModelOptionsForRole(options) {
+  if (isCurrentUserAdmin()) return options;
+  return options
+    .filter(isUserVisibleModelOption)
+    .map((entry) => ({ ...entry, providerLabel: USER_MODEL_GROUP_LABEL }));
+}
+
 function catalogChatModelOptions() {
-  const isAdmin = isCurrentUserAdmin();
   const customProvidersByKey = new Map(loadCustomProviders().map((provider) => [`custom:${provider.id}`, provider]));
   const profiles = loadProviderProfiles().filter((profile) => {
     if (!profile || !profile.model) return false;
-    // Si el usuario no es admin, solo permitir modelos oficiales de ME AI
-    if (!isAdmin && profile.providerKey !== "meai" && profile.providerKey !== "custom:gafcore-gateway") {
-      return false;
-    }
     const effectiveKey = profile.apiKey || resolveProviderApiKey(profile.providerKey, "");
     return Boolean(effectiveKey) || PRIMARY_PROVIDER_KEYS.includes(profile.providerKey);
   });
@@ -2176,14 +2254,14 @@ function catalogChatModelOptions() {
       }
     }
   }
-  return [...uniqueByModel.values()]
+  return filterModelOptionsForRole([...uniqueByModel.values()]
     .map((profile) => mapProfileToModelOption(profile, customProvidersByKey))
     .sort((a, b) => {
       const gatewayRank = (entry) => entry.providerKey === "custom:gafcore-gateway" ? 0 : 1;
       return gatewayRank(a) - gatewayRank(b)
         || a.providerLabel.localeCompare(b.providerLabel, undefined, { sensitivity: "base" })
         || a.model.localeCompare(b.model, undefined, { sensitivity: "base", numeric: true });
-    });
+    }));
 }
 
 async function setChatModelEnabled(entry, enabled) {
@@ -2235,7 +2313,7 @@ async function setChatModelEnabled(entry, enabled) {
 function verifiedChatModelOptions() {
   const verifiedProfiles = loadProviderProfiles().filter((profile) => ["active", "enabled"].includes(profile.status) && profile.model && profile.apiKey);
   const customProvidersByKey = new Map(loadCustomProviders().map((provider) => [`custom:${provider.id}`, provider]));
-  return verifiedProfiles
+  return filterModelOptionsForRole(verifiedProfiles
     .filter((profile) => {
       const isLegacyClaude = /^claude-(?:3-|3\.|3_)/i.test(profile.model);
       if (!isLegacyClaude) return true;
@@ -2248,7 +2326,7 @@ function verifiedChatModelOptions() {
       return gatewayRank(a) - gatewayRank(b)
         || a.providerLabel.localeCompare(b.providerLabel, undefined, { sensitivity: "base" })
         || a.model.localeCompare(b.model, undefined, { sensitivity: "base", numeric: true });
-    });
+    }));
 }
 
 async function syncCustomProviderProfiles(provider) {
@@ -6955,6 +7033,18 @@ function updateStatus() {
   updateModelPickerLabel();
   const providerLabel = getProviderLabel();
   const selectedOption = $("chatModelSelect")?.selectedOptions?.[0];
+  if (!isCurrentUserAdmin()) {
+    const isAuto = AutoModel.isAutoModelSelection(selectedOption) || state.modelSelectionAuto;
+    const resolved = isAuto && state.lastAutoResolvedModel
+      ? ` → ${modelNameForDisplay(state.lastAutoResolvedModel, "custom:gafcore-gateway")}`
+      : "";
+    const shown = isAuto
+      ? `Auto${resolved}`
+      : modelNameForDisplay(selectedOption?.dataset.model?.trim() || "", selectedOption?.dataset.providerKey || "");
+    $("status").textContent = `EditCoreAI · ${shown || "Auto"}`;
+    updateSavings();
+    return;
+  }
   if (AutoModel.isAutoModelSelection(selectedOption) || state.modelSelectionAuto) {
     const scope = currentAutoProviderScope();
     const resolved = state.lastAutoResolvedModel
@@ -9461,7 +9551,9 @@ function activeModelConfigForInspector(requireTools = false) {
       providerProfileId: chatProfile.id,
     };
   }
-  throw new Error("Inspector Nativo (Modo Local): configura un modelo directo en Modelos (ME AI / APICredits) para chat o reparación asistida. El escaneo local no requiere API.");
+  throw new Error(isCurrentUserAdmin()
+    ? "Inspector Nativo (Modo Local): configura un modelo directo en Modelos (ME AI / APICredits) para chat o reparación asistida. El escaneo local no requiere API."
+    : "Inspector Nativo (Modo Local): no hay un modelo disponible para chat o reparación asistida. El escaneo local no requiere API.");
 }
 
 function populateInspectorModelSelect() {
@@ -9491,17 +9583,19 @@ function populateInspectorModelSelect() {
   );
 
   const providerMap = new Map();
+  const isAdmin = isCurrentUserAdmin();
   for (const p of activeProfiles) {
     let hostname = "";
     try { hostname = new URL(p.baseUrl).hostname.replace("www.", ""); } catch {}
     const upstream = String(p.model).split("/", 1)[0].toLowerCase();
+    if (!isAdmin && String(p.providerKey || "").replace(/^custom:/, "").toLowerCase() !== "meai") continue;
     const key = p.providerKey || upstream || hostname || p.id;
     const upstreamLabel = ({ meai: "ME AI Cloud", apicredits: "APICredits" }[upstream]
       || ({ meai: "ME AI Cloud", apicredits: "APICredits" }[String(p.providerKey || "").replace(/^custom:/, "")] )
       || p.providerName
       || upstream
       || "Proveedor local");
-    const label = `Directo · ${upstreamLabel}`;
+    const label = isAdmin ? `Directo · ${upstreamLabel}` : USER_MODEL_GROUP_LABEL;
     if (!providerMap.has(key)) providerMap.set(key, { label, key, profiles: [] });
     providerMap.get(key).profiles.push(p);
   }
@@ -15791,8 +15885,9 @@ function setChatModelOptions(_models = [], selected = "", selectedProviderKey = 
     || selected === AutoModel.AUTO_MODEL_SELECTION
     || String(selected || "").startsWith(`${AutoModel.AUTO_MODEL_SELECTION}:`);
 
+  const isAdmin = isCurrentUserAdmin();
   // Auto (ambos proveedores) siempre primero.
-  {
+  if (isAdmin) {
     const allAuto = document.createElement("option");
     allAuto.value = AutoModel.autoSelectionValue("all");
     allAuto.textContent = AutoModel.formatAutoLabel("all");
@@ -15815,10 +15910,12 @@ function setChatModelOptions(_models = [], selected = "", selectedProviderKey = 
     if (scopedAuto && AutoModel.isScopedAutoProvider(scopedAuto)) {
       const autoOption = document.createElement("option");
       autoOption.value = AutoModel.autoSelectionValue(scopedAuto);
-      autoOption.textContent = AutoModel.formatAutoLabel(scopedAuto);
+      autoOption.textContent = isAdmin ? AutoModel.formatAutoLabel(scopedAuto) : "Auto";
       autoOption.dataset.auto = "1";
       autoOption.dataset.autoScope = scopedAuto;
-      autoOption.title = `EditCoreAI elige automáticamente solo entre modelos ${AutoModel.AUTO_SCOPE_LABELS[scopedAuto] || scopedAuto}`;
+      autoOption.title = isAdmin
+        ? `EditCoreAI elige automáticamente solo entre modelos ${AutoModel.AUTO_SCOPE_LABELS[scopedAuto] || scopedAuto}`
+        : "EditCoreAI elige el mejor modelo para cada tarea";
       group.appendChild(autoOption);
     }
     providerOptions.forEach((entry) => {
@@ -15836,11 +15933,13 @@ function setChatModelOptions(_models = [], selected = "", selectedProviderKey = 
     select.appendChild(group);
   });
 
-  const configureOption = document.createElement("option");
-  configureOption.value = CONFIGURE_MODELS_SELECTION;
-  configureOption.textContent = "Configurar modelos…";
-  configureOption.dataset.configure = "1";
-  select.appendChild(configureOption);
+  if (isAdmin) {
+    const configureOption = document.createElement("option");
+    configureOption.value = CONFIGURE_MODELS_SELECTION;
+    configureOption.textContent = "Configurar modelos…";
+    configureOption.dataset.configure = "1";
+    select.appendChild(configureOption);
+  }
 
   select.disabled = false;
   select.title = wantAuto ? "Auto: elige el mejor modelo verificado por tarea" : "Modelo activo";
@@ -16210,6 +16309,13 @@ window.EditCoreModels = {
   closePicker: () => setModelPickerOpen(false),
   isOpen: () => !$("modelPickerMenu")?.classList.contains("hidden"),
   openProviders: () => openProviders(),
+  refreshForRole: async () => {
+    if (!isCurrentUserAdmin()) $("providersDialog")?.close?.();
+    if (isCloudUser()) await loadCloudModels();
+    syncChatModelFromConfig();
+    updateStatus();
+    if ($("modelPickerMenu") && !$("modelPickerMenu").classList.contains("hidden")) renderModelPickerMenu();
+  },
   autoDetectAndVerify: (providerId, opts) => autoDetectAndVerifyCustomProvider(providerId, opts),
 };
 window.EditCoreTheme = {

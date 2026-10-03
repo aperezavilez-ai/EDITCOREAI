@@ -153,6 +153,12 @@ max_indexes = 5
 # [storage.vector.buckets.documents-openai]
 
 [auth]
+jwt_secret = "env(SUPABASE_AUTH_JWT_SECRET)"
+anon_key = "env(SUPABASE_AUTH_ANON_KEY)"
+service_role_key = "env(SUPABASE_AUTH_SERVICE_ROLE_KEY)"
+publishable_key = "env(SUPABASE_AUTH_PUBLISHABLE_KEY)"
+secret_key = "env(SUPABASE_AUTH_SECRET_KEY)"
+signing_keys_path = "./signing_keys.json"
 enabled = true
 # The base URL of your website. Used as an allow-list for redirects and for constructing URLs used
 # in emails.
@@ -335,7 +341,7 @@ skip_nonce_check = false
 email_optional = false
 
 [auth.external.google]
-enabled = false
+enabled = true
 client_id = "env(EDITCOREAI_GOOGLE_CLIENT_ID)"
 secret = "env(EDITCOREAI_GOOGLE_SECRET)"
 redirect_uri = ""
@@ -381,7 +387,7 @@ authorization_url_path = "/oauth/consent"
 allow_dynamic_registration = false
 
 [edge_runtime]
-enabled = false
+enabled = true
 # Supported request policies: `oneshot`, `per_worker`.
 # `per_worker` (default) — enables hot reload during local development.
 # `oneshot` — fallback mode if hot reload causes issues (e.g. in large repos or with symlinks).
@@ -391,8 +397,12 @@ inspector_port = 8083
 # The Deno major version to use.
 deno_version = 2
 
-# [edge_runtime.secrets]
-# secret_key = "env(SECRET_VALUE)"
+[edge_runtime.secrets]
+MEAI_API_KEY = "env(EDITCOREAI_MEAI_API_KEY)"
+
+[functions.ai-proxy]
+# ai-proxy valida la sesión del usuario contra /auth/v1/user (sirve con firmas HS256 y ES256).
+verify_jwt = false
 
 [analytics]
 enabled = false

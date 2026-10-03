@@ -653,6 +653,12 @@ contextBridge.exposeInMainWorld("editcoreCredits", {
   adminCreateVoucher: (payload) => ipcRenderer.invoke("credits:admin-create-voucher", payload),
   adminGrant: (payload) => ipcRenderer.invoke("credits:admin-grant", payload),
   adminSetStatus: (payload) => ipcRenderer.invoke("credits:admin-set-status", payload),
+  cloudModels: () => ipcRenderer.invoke("credits:cloud-models"),
+  onBalanceChanged: (callback) => {
+    const listener = (_event, view) => callback(view);
+    ipcRenderer.on("credits:balance-changed", listener);
+    return () => ipcRenderer.removeListener("credits:balance-changed", listener);
+  },
 });
 
 contextBridge.exposeInMainWorld("editcoreAuth", {

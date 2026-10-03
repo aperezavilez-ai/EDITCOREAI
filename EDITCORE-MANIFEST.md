@@ -1,6 +1,6 @@
 # EDITCOREAI — MANIFESTO DE AUTOCONOCIMIENTO
 
-Versión producto: **4.2.5**. Este archivo es la fuente de verdad que el agente debe leer (vía system prompt) para saber qué es EDITCOREAI, qué puede hacer y qué no debe re-escanear.
+Versión producto: **4.2.6**. Este archivo es la fuente de verdad que el agente debe leer (vía system prompt) para saber qué es EDITCOREAI, qué puede hacer y qué no debe re-escanear.
 
 ## Qué es
 IDE de escritorio Electron con agente embebido: chat, preview web, explorador, publicar (GitHub/Vercel/Supabase) y alimentación AI vía **ME AI / APICredits**.

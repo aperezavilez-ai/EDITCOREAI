@@ -2448,6 +2448,63 @@ html[data-theme="azul"] .diff-decision-card {
   transition: width 0.3s ease;
 }
 
+/* Barra de uso del saldo (estilo Cursor) */
+.ec-usage-meter {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.ec-usage-meter[hidden] {
+  display: none;
+}
+
+.ec-usage-meter-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+  opacity: 0.85;
+}
+
+.ec-usage-bar {
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(127, 127, 127, 0.22);
+  overflow: hidden;
+}
+
+.ec-usage-bar-fill {
+  height: 100%;
+  width: 0%;
+  border-radius: 999px;
+  background: #6366f1;
+  transition: width 0.4s ease;
+}
+
+.ec-usage-meter.is-warning .ec-usage-bar-fill {
+  background: #f59e0b;
+}
+
+.ec-usage-meter.is-critical .ec-usage-bar-fill {
+  background: #ef4444;
+}
+
+.ec-usage-meter.is-unlimited .ec-usage-bar {
+  display: none;
+}
+
+.chat-home-usage {
+  margin: 0 0 6px;
+  padding: 0 4px;
+  font-size: 11px;
+}
+
+.chat-home-usage .ec-usage-meter-head {
+  font-size: 11px;
+}
+
 
 
 
