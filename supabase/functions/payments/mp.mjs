@@ -63,7 +63,7 @@ export async function verifySignature({ secret, signature, requestId, dataId }) 
 export function isMercadoPagoCheckoutUrl(value) {
   try {
     const url = new URL(String(value || ""));
-    return url.protocol === "https:" && /(^|\.)mercadopago\.com(\.[a-z]{2})?$|(^|\.)mercadolibre\.com$/i.test(url.hostname);
+    return url.protocol === "https:" && /(^|\.)mercadopago\.com(\.[a-z]{2})?$|(^|\.)mercadolibre\.com$|^mpago\.(la|li)$/i.test(url.hostname);
   } catch {
     return false;
   }

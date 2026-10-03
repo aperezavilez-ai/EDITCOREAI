@@ -19,6 +19,8 @@ const CREDIT_ERRORS = {
   CANNOT_CHANGE_SELF: "No puedes cambiar el estado de tu propia cuenta.",
   INVALID_PRICE: "El precio debe ser mayor que 0.",
   INVALID_CREDIT: "El saldo de la recarga debe ser mayor que 0.",
+  INVALID_LINK: "El link debe ser un link de pago de Mercado Pago (https://mpago.la/…).",
+  INVALID_CONTACT: "El contacto es demasiado largo (máximo 120 caracteres).",
 };
 
 function failure(error) {
@@ -172,6 +174,17 @@ class CreditLedger extends EventEmitter {
   async adminPayments() {
     try {
       return { ok: true, success: true, payments: await this.auth.rpc("editcoreai_admin_payments") };
+    } catch (error) {
+      return failure(error);
+    }
+  }
+
+  async adminSetPaymentLink({ link = "", contact = "" } = {}) {
+    try {
+      return fromServer(await this.auth.rpc("editcoreai_admin_set_payment_link", {
+        p_link: String(link || "").trim(),
+        p_contact: String(contact || "").trim().slice(0, 120),
+      }));
     } catch (error) {
       return failure(error);
     }

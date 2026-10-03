@@ -10960,13 +10960,21 @@ creditsIpc("credits:cloud-models", async () => {
 function isMercadoPagoCheckoutUrl(value) {
   try {
     const url = new URL(String(value || ""));
-    return url.protocol === "https:" && /(^|\.)mercadopago\.com(\.[a-z]{2})?$|(^|\.)mercadolibre\.com$/i.test(url.hostname);
+    return url.protocol === "https:" && /(^|\.)mercadopago\.com(\.[a-z]{2})?$|(^|\.)mercadolibre\.com$|^mpago\.(la|li)$/i.test(url.hostname);
   } catch {
     return false;
   }
 }
 creditsIpc("credits:admin-payments", (ledger) => ledger.adminPayments());
 creditsIpc("credits:admin-set-topup", (ledger, payload) => ledger.adminSetTopup(payload || {}));
+creditsIpc("credits:admin-set-payment-link", (ledger, payload) => ledger.adminSetPaymentLink(payload || {}));
+creditsIpc("credits:open-payment-link", async () => {
+  const { authManager } = require("./runtime/auth-manager");
+  const offer = await authManager.paymentOffer();
+  if (!offer?.ok || !isMercadoPagoCheckoutUrl(offer.payment_link)) return { ok: false, error: "No hay link de pago configurado." };
+  await shell.openExternal(offer.payment_link);
+  return { ok: true, amount: offer.price, currency: offer.currency, contact: offer.contact || "" };
+});
 creditsIpc("credits:topup-offer", async () => {
   const { authManager } = require("./runtime/auth-manager");
   return authManager.paymentOffer();

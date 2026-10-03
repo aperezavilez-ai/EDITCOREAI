@@ -58,6 +58,8 @@ test("Mercado Pago: la app solo abre enlaces https de Mercado Pago", async () =>
   assert.equal(isMercadoPagoCheckoutUrl("http://www.mercadopago.com.mx/checkout"), false);
   assert.equal(isMercadoPagoCheckoutUrl("https://mercadopago.com.mx.evil.com/x"), false);
   assert.equal(isMercadoPagoCheckoutUrl("javascript:alert(1)"), false);
+  assert.equal(isMercadoPagoCheckoutUrl("https://mpago.la/2HM7vGJ"), true);
+  assert.equal(isMercadoPagoCheckoutUrl("https://mpago.la.evil.com/2HM7vGJ"), false);
   const main = fs.readFileSync(path.join(ROOT, "main.js"), "utf8");
   assert.match(main, /if \(!isMercadoPagoCheckoutUrl\(res\.url\)\)[\s\S]{0,120}shell\.openExternal\(res\.url\)/);
 });
@@ -70,6 +72,15 @@ test("Mercado Pago: el token solo vive en el servidor y el pago se confirma con 
   assert.match(fn, /editcoreai_payment_settle/);
   const toml = fs.readFileSync(path.join(ROOT, "supabase/config.toml"), "utf8");
   assert.match(toml, /MP_ACCESS_TOKEN = "env\(EDITCOREAI_MP_ACCESS_TOKEN\)"/);
+});
+
+test("Link fijo: sin token se usa el link guardado en el servidor, validado antes de abrirlo", () => {
+  const fn = fs.readFileSync(path.join(ROOT, "supabase/functions/payments/index.ts"), "utf8");
+  assert.match(fn, /const mode = auto \? "auto" : link \? "link" : "manual";/);
+  const main = fs.readFileSync(path.join(ROOT, "main.js"), "utf8");
+  assert.match(main, /if \(!offer\?\.ok \|\| !isMercadoPagoCheckoutUrl\(offer\.payment_link\)\)[\s\S]{0,120}shell\.openExternal\(offer\.payment_link\)/);
+  const sql = fs.readFileSync(path.join(ROOT, "supabase/migrations/20261003170000_editcoreai_payment_link.sql"), "utf8");
+  assert.match(sql, /editcoreai\.require_admin\(\)/);
 });
 
 test("Ver como usuario: las consultas del admin en esa vista pasan por el servidor de usuarios", () => {

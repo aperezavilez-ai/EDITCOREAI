@@ -53,7 +53,11 @@ async function requireUser(req: Request) {
 async function handleOffer(req: Request) {
   if (!(await requireUser(req))) return fail(401, "NO_SESSION");
   const offer = await serviceRpc("editcoreai_payment_offer", {});
-  return json(200, { ok: true, enabled: Boolean(MP_TOKEN && PUBLIC_URL), ...offer });
+  const auto = Boolean(MP_TOKEN && PUBLIC_URL);
+  const link = isMercadoPagoCheckoutUrl(offer?.payment_link) ? offer.payment_link : "";
+  // auto: link único por compra y saldo automático · link: link fijo, el admin carga el saldo · manual: código.
+  const mode = auto ? "auto" : link ? "link" : "manual";
+  return json(200, { ok: true, enabled: auto, mode, ...offer, payment_link: link });
 }
 
 async function handleCheckout(req: Request) {

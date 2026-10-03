@@ -440,6 +440,12 @@
                     <button type="button" class="ec-btn-action" id="adminTopupSaveBtn">Guardar precio</button>
                   </div>
                   <div id="adminTopupResult" class="ec-status-msg" hidden></div>
+                  <div class="ec-admin-row">
+                    <input type="url" id="adminPayLink" class="ec-styled-input" placeholder="Tu link de pago (https://mpago.la/…)" title="Link de pago de Mercado Pago con el mismo monto que el precio" />
+                    <input type="text" id="adminPayContact" class="ec-styled-input" placeholder="Dónde te mandan el comprobante (ej. WhatsApp 55…)" maxlength="120" />
+                    <button type="button" class="ec-btn-action" id="adminPayLinkSaveBtn">Guardar link</button>
+                  </div>
+                  <div id="adminPayLinkResult" class="ec-status-msg" hidden></div>
                   <div class="ec-metric-sub" id="adminMpTotals"></div>
                   <div class="ec-admin-users" id="adminPaymentsList"></div>
                 </div>

@@ -816,7 +816,7 @@
       if (descEl) descEl.textContent = "Tu cuenta de administrador no tiene límite de uso. El saldo de los usuarios se gestiona en Configuración › Saldo.";
     } else {
       const offer = await syncTopupCard();
-      const how = offer?.enabled
+      const how = offer?.mode === "auto" || offer?.mode === "link"
         ? "Recarga con Mercado Pago o canjea un código de recarga."
         : "Paga al administrador y canjea el código que te dé.";
       if (reason === "out_of_credits" || reason === "OUT_OF_CREDITS" || balance <= 0) {
@@ -860,7 +860,7 @@
     const btn = card.querySelector(".ec-pack-btn");
     const creditUsd = Number(offer?.credit_usd || 20);
     if (creditsEl) creditsEl.textContent = `${fmtUsd(creditUsd)} de saldo`;
-    if (offer?.enabled) {
+    if (offer?.mode === "auto" || offer?.mode === "link") {
       if (priceEl) priceEl.textContent = fmtLocal(offer.price, offer.currency);
       if (btn) btn.textContent = "Pagar con Mercado Pago";
     } else {
@@ -885,6 +885,25 @@
       await refreshCreditsAndProfileUI();
       setTimeout(closeOutOfCreditsModal, 2500);
     }, 5000);
+  }
+
+  // Link fijo: Mercado Pago no avisa quién pagó; el usuario manda su comprobante y el admin carga el saldo.
+  async function startLinkPayment(statusEl, btn) {
+    if (btn) btn.disabled = true;
+    try {
+      const before = await window.editcoreCredits?.getBalance?.().catch(() => null);
+      const res = await window.editcoreCredits?.openPaymentLink?.();
+      if (!res?.ok) {
+        showStatus(statusEl, false, res?.error || "No se pudo abrir el pago.");
+        return;
+      }
+      const email = window.__editcoreSession?.user?.email || "el correo de tu cuenta";
+      const to = res.contact ? `a ${res.contact}` : "al administrador de EditCoreAI";
+      showStatus(statusEl, true, `Se abrió Mercado Pago en tu navegador (${fmtLocal(res.amount, res.currency)}). Después de pagar, envía tu comprobante ${to} junto con tu correo ${email}. Tu saldo aparece aquí en cuanto se confirme.`);
+      watchForTopup(Number(before?.balance || 0), statusEl);
+    } finally {
+      if (btn) btn.disabled = false;
+    }
   }
 
   async function startCheckout(statusEl, btn) {
@@ -990,10 +1009,16 @@
     const [res, offer] = await Promise.all([credits.adminPayments(), loadTopupOffer({ force: true })]);
     const statusEl = $("adminMpStatus");
     if (statusEl) {
-      statusEl.textContent = offer?.enabled
-        ? "🟢 Mercado Pago conectado: los usuarios pagan y el saldo se carga solo."
-        : "🔴 Mercado Pago no está conectado todavía (falta el token en el servidor). Los usuarios ven la recarga manual.";
+      statusEl.textContent = offer?.mode === "auto"
+        ? "🟢 Cobro automático: cada usuario paga con su propio link y el saldo se carga solo."
+        : offer?.mode === "link"
+          ? "🟡 Link de pago fijo: el usuario paga con tu link y te manda su comprobante; tú cargas el saldo en «Dar o quitar saldo»."
+          : "🔴 Sin Mercado Pago: pon tu link de pago abajo (o el token en el servidor para el cobro automático).";
     }
+    const linkInput = $("adminPayLink");
+    const contactInput = $("adminPayContact");
+    if (linkInput && document.activeElement !== linkInput) linkInput.value = offer?.payment_link || "";
+    if (contactInput && document.activeElement !== contactInput) contactInput.value = offer?.contact || "";
     if (!res?.ok) return;
     const p = res.payments || {};
     const o = p.offer || {};
@@ -1080,6 +1105,17 @@
 
   function bindAdminPanel() {
     $("adminRefreshBtn")?.addEventListener("click", () => void refreshAdminPanel());
+    $("adminPayLinkSaveBtn")?.addEventListener("click", async () => {
+      const out = $("adminPayLinkResult");
+      const res = await window.editcoreCredits?.adminSetPaymentLink?.({
+        link: $("adminPayLink")?.value || "",
+        contact: $("adminPayContact")?.value || "",
+      });
+      if (!res?.ok) return showStatus(out, false, res?.error || "No se pudo guardar.");
+      showStatus(out, true, res.offer?.payment_link ? "Link guardado: los usuarios ya lo ven en «Pagar con Mercado Pago»." : "Link quitado.");
+      topupOfferCache = { at: 0, value: null };
+      await renderAdminPayments();
+    });
     $("adminTopupSaveBtn")?.addEventListener("click", async () => {
       const out = $("adminTopupResult");
       const price = Number($("adminTopupPrice")?.value || 0);
@@ -2734,8 +2770,12 @@
       btn.addEventListener("click", async () => {
         const statusEl = $("outOfCreditsMsg");
         const offer = await loadTopupOffer();
-        if (offer?.enabled) {
+        if (offer?.mode === "auto") {
           await startCheckout(statusEl, btn);
+          return;
+        }
+        if (offer?.mode === "link") {
+          await startLinkPayment(statusEl, btn);
           return;
         }
         showStatus(statusEl, true, "Para recargar, paga al administrador de EditCoreAI; él te dará un código que canjeas aquí.");
