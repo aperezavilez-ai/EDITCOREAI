@@ -2457,6 +2457,17 @@ html[data-theme="azul"] .diff-decision-card {
   margin-bottom: 14px;
 }
 
+.ec-settings-modal-card:has(#settingsPaneCredits:not([hidden]) #settingsAdminMasterDashboard:not([hidden])) {
+  width: calc(100vw - 32px);
+  height: calc(100vh - 32px);
+}
+
+#settingsAdminMasterDashboard,
+#settingsAdminMasterDashboard .mx-card {
+  width: 100%;
+  box-sizing: border-box;
+}
+
 /* Saldo global de ME AI (panel de administración) */
 .mx-card {
   --mx-border: rgba(148, 163, 184, 0.16);

@@ -204,6 +204,12 @@ test("Costo real: compras en yuanes × tipo de cambio ÷ dólares de panel recib
   assert.ok(Math.abs((500 * 0.148808) / 21000 - 0.00354305) < 1e-8);
 });
 
+test("Panel de administración ocupa todo el ancho de la ventana", () => {
+  const css = fs.readFileSync(path.join(ROOT, "chat-home.css"), "utf8");
+  assert.match(css, /\.ec-settings-modal-card:has\(#settingsPaneCredits:not\(\[hidden\]\) #settingsAdminMasterDashboard:not\(\[hidden\]\)\) \{\s*width: calc\(100vw - 32px\);/);
+  assert.match(css, /#settingsAdminMasterDashboard \.mx-card \{\s*width: 100%;/);
+});
+
 test("Streaming: limpia cada bloque data aunque llegue partido en trozos", async () => {
   const { SseScrubber } = await loadPricing();
   const sse = new SseScrubber("glm-5.1");

@@ -1,3 +1,14 @@
+# RELEASE v4.3.1
+
+## Panel de administración a todo lo ancho
+
+- Con la administración abierta, la ventana de Configuración ocupa toda la pantalla y la tarjeta «Saldo global de ME AI» (saldo, dinero real, días que alcanza, consumo y precios) se estira al ancho completo en lugar de quedar angosta.
+- Incluye todo lo de la versión 4.3.0.
+
+### Archivos
+
+- `EDITCOREAI.exe` (4.3.1.0) y `release/EDITCOREAI-Setup.exe` (4.3.1), construidos desde un árbol limpio en el commit publicado.
+
 # RELEASE v4.3.0
 
 ## Saldo global de ME AI en Administración y cobro con el costo real
