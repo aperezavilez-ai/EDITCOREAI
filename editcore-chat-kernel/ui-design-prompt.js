@@ -1,7 +1,7 @@
 "use strict";
 
 /**
- * Prompt de diseño UI contemporánea (Lovable/Cursor style).
+ * Prompt de diseño UI contemporánea (estilo moderno).
  */
 
 function uiDesignSystemPrompt() {

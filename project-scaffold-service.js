@@ -57,7 +57,7 @@ const TEMPLATE_CATALOG = Object.freeze([
     requirements: ["Node.js 20+", "npm"],
   },
   {
-    id: "lovable-web", name: "Web App profesional", group: "Profesional",
+    id: "web-pro", name: "Web App profesional", group: "Profesional",
     description: "React, Vite, TypeScript, Tailwind CSS, componentes UI accesibles y assets temáticos.",
     source: "builtin", install: true, verifyScripts: ["build"], visualVerify: true,
     requirements: ["Node.js 20+", "npm"],
@@ -356,7 +356,7 @@ class ProjectScaffoldService {
         report.commands.push(await runProcess("docker", ["info", "--format", "{{.ServerVersion}}"], { signal: options.signal, onOutput: options.onOutput }));
       }
       fs.mkdirSync(projectRoot, { recursive: true });
-      if (template.id === "pro-web-app" || template.id === "lovable-web") {
+      if (template.id === "pro-web-app" || template.id === "web-pro") {
         progress(18, "files", "Generando aplicacion web profesional");
         scaffoldGreenfieldApp(projectRoot, {
           prompt: input.description || input.prompt || input.name || "",

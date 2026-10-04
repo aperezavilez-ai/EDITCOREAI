@@ -36,7 +36,7 @@ function buildProjectTemplate(input = {}) {
   const name = String(input.name || "").trim();
   const template = String(input.template || "blank").toLowerCase();
   if (!/^[a-z0-9][a-z0-9 _.-]{1,79}$/i.test(name)) throw new Error("Nombre de proyecto invalido.");
-  if (!["blank", "web", "node", "react", "soundonemusic", "pro-web-app", "lovable-web"].includes(template)) throw new Error("Plantilla no permitida.");
+  if (!["blank", "web", "node", "react", "soundonemusic", "pro-web-app", "web-pro"].includes(template)) throw new Error("Plantilla no permitida.");
   const files = template === "blank"
     ? { "README.md": `# ${name}\n\nProyecto vacio creado con EDITCOREAI.\n` }
     : {

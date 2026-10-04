@@ -1,6 +1,6 @@
 ---
 name: project-templates
-description: Elige plantilla EDITCOREAI (blank, react, lovable-web, next-saas, etc.) cuando el usuario pide crear un stack. No uses UI de plantillas.
+description: Elige plantilla EDITCOREAI (blank, react, web-pro, next-saas, etc.) cuando el usuario pide crear un stack. No uses UI de plantillas.
 ---
 
 # Project templates (agente)
@@ -9,7 +9,7 @@ Cuando el usuario pida crear un proyecto o stack:
 
 1. Inferir plantilla:
    - SaaS Next / Next.js + Stripe/Postgres → `next-saas`
-   - React + Vite + Supabase / shadcn / app web profesional → `lovable-web`
+   - React + Vite + Supabase / shadcn / app web profesional → `web-pro`
    - React + Vite simple → `react`
    - Open SaaS / Wasp → `open-saas`
    - Suno / lyrics → `soundonemusic`

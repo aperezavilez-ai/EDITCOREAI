@@ -199,7 +199,7 @@ test("Paso8: deploy/publish solo bajo pedido explicito", () => {
 test("Paso9: scaffold state machine resume", () => {
   const root = tmpDir("ec-p9-");
   fs.mkdirSync(root, { recursive: true });
-  const s1 = writeScaffoldState(root, { template: "lovable-web", stage: "created", incomplete: true });
+  const s1 = writeScaffoldState(root, { template: "web-pro", stage: "created", incomplete: true });
   assert.equal(s1.incomplete, true);
   assert.equal(isScaffoldIncomplete(root), true);
   assert.equal(nextScaffoldStage(root), "files");

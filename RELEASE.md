@@ -3,7 +3,8 @@
 ## La vista «Ver como usuario» ya se puede cerrar
 
 ### Corregido
-- La franja naranja de «Ver como usuario» no se cerraba: estaba encima de la zona que sirve para arrastrar la ventana y el botón «Volver a administrador» no recibía el clic. Ahora funciona, y la tecla Esc también vuelve a administrador.
+- La franja naranja de «Ver como usuario» tapaba los botones y no se podía cerrar. Se quitó: ahora aparece el botón «✕ Salir de vista usuario» en la barra superior (vista de proyectos) y en la barra lateral del chat, y la tecla Esc también vuelve a administrador. Una línea naranja delgada arriba indica que estás en la vista de usuario.
+- Se quitaron del código y de las guías del agente las referencias a marcas de terceros.
 
 ### Build
 - `EDITCOREAI.exe` (4.2.8.0) y `release/EDITCOREAI-Setup.exe` (4.2.8), construidos desde un árbol limpio en el commit publicado.

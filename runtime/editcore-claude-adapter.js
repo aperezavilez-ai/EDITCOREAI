@@ -1071,7 +1071,7 @@ class EditCoreClaudeAdapter {
           allowWrite: input.allowWrite === true,
           analysisMode: input.analysisMode === true,
           steps,
-          lovableOneShot: input.runProfile?.lovableOneShot === true || input.orchestratorPlan?.lovableOneShot === true,
+          uiOneShot: input.runProfile?.uiOneShot === true || input.orchestratorPlan?.uiOneShot === true,
         })) {
           if (this.verifiedCloseArmed) {
             completed = true;
@@ -1844,8 +1844,8 @@ class EditCoreClaudeAdapter {
             }
             finalText = execReport.text;
           }
-          const lovableOneShot = input.runProfile?.lovableOneShot === true || input.orchestratorPlan?.lovableOneShot === true;
-          if (completed && lovableOneShot) {
+          const uiOneShot = input.runProfile?.uiOneShot === true || input.orchestratorPlan?.uiOneShot === true;
+          if (completed && uiOneShot) {
             const gate = evaluateOneShotFromSteps(steps);
             if (!gate.ok) {
               completed = false;
@@ -2415,8 +2415,8 @@ class EditCoreClaudeAdapter {
           if (requiresMutation) {
             const execReport = buildExecutionEvidenceReport(finalText || this.evidenceFinalText(input, steps), steps, input.projectRoot || "", this.executionEvidenceOptions(input));
             if (execReport.ok) {
-              const lovableOneShot = input.runProfile?.lovableOneShot === true || input.orchestratorPlan?.lovableOneShot === true;
-              if (lovableOneShot) {
+              const uiOneShot = input.runProfile?.uiOneShot === true || input.orchestratorPlan?.uiOneShot === true;
+              if (uiOneShot) {
                 const gate = evaluateOneShotFromSteps(steps);
                 if (!gate.ok) {
                   completed = false;
@@ -3456,8 +3456,8 @@ class EditCoreClaudeAdapter {
     if (input.analysisMode !== true && input.allowWrite === true && requiresMutation) {
       if (!buildExecutionEvidenceReport("", steps, input.projectRoot || "", this.executionEvidenceOptions(input)).ok) return false;
     }
-    const lovableOneShot = input.runProfile?.lovableOneShot === true || input.orchestratorPlan?.lovableOneShot === true;
-    if (lovableOneShot) {
+    const uiOneShot = input.runProfile?.uiOneShot === true || input.orchestratorPlan?.uiOneShot === true;
+    if (uiOneShot) {
       return evaluateOneShotFromSteps(steps).ok;
     }
     return true;

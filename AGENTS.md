@@ -106,7 +106,7 @@ Know your own architecture:
 - `runtime/project-bootstrap.js` - inicializa proyectos nuevos desde cero
 - `runtime/cloud-vault-bridge.js` - credenciales desde safeStorage
 - `service-harness.js` - cliente HTTP unificado para APIs externas
-- `runtime/fullstack-deploy.js` - pipeline deploy estilo Lovable
+- `runtime/fullstack-deploy.js` - pipeline de publicación en un clic
 - `runtime/git-manager.js` - operaciones git incluyendo push a GitHub
 
 Read [ARQUITECTURA-SISTEMA.md](ARQUITECTURA-SISTEMA.md) for complete details.

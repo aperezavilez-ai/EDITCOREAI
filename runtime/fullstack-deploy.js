@@ -1,7 +1,7 @@
 "use strict";
 
 /**
- * Pipeline unificado estilo Lovable:
+ * Pipeline unificado de publicación:
  * - mode=full: GitHub → Vercel → Supabase → Push/Deploy → infra
  * - mode=update: solo commit/push/redeploy (Actualizar publicación)
  */

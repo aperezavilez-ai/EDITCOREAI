@@ -23,10 +23,9 @@ const TEMPLATE_RULES = Object.freeze([
     ),
   },
   {
-    id: "lovable-web",
+    id: "web-pro",
     score: (t) => (
       (/\b(react|vite)\b/i.test(t) && /\b(supabase|shadcn)\b/i.test(t) ? 95 : 0)
-      + (/\blovable\b/i.test(t) ? 100 : 0)
       + (/\bweb\s+app\s+profesional\b/i.test(t) ? 80 : 0)
       + (/\breact\b/i.test(t) && /\bvite\b/i.test(t) && /\b(supabase|formularios?)\b/i.test(t) ? 90 : 0)
     ),
@@ -65,7 +64,7 @@ const TEMPLATE_LABELS = Object.freeze({
   web: "Web HTML",
   node: "Node.js",
   react: "React + Vite",
-  "lovable-web": "Web App profesional (React/Vite/Supabase)",
+  "web-pro": "Web App profesional (React/Vite/Supabase)",
   "enterprise-erp-base": "Enterprise ERP (RBAC + multi-tenant + schema-first)",
   "next-saas": "SaaS Next.js",
   "open-saas": "Open SaaS (Wasp)",
@@ -87,7 +86,7 @@ function resolveTemplateIntent(prompt = "", options = {}) {
     if (/\b(crea|crear|monta|genera)\b/i.test(text)
       && /\b(app|web|landing|dashboard|saas)\b/i.test(text)
       && /\b(profesional|moderna|pulida|shadcn|tailwind)\b/i.test(text)) {
-      return { id: "lovable-web", confidence: 0.6, source: "heuristic" };
+      return { id: "web-pro", confidence: 0.6, source: "heuristic" };
     }
     return { id: "blank", confidence: 0.2, source: "default" };
   }

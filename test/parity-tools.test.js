@@ -107,7 +107,7 @@ test("MCP stdio real lista e invoca echo", async () => {
   }
 });
 
-test("greenfield premium menciona lovable-web e inspect_browser", () => {
+test("greenfield premium menciona web-pro e inspect_browser", () => {
   const plan = resolveUnifiedAgentPlan({
     prompt: "CREA EL PROYECTO AHORA una app web profesional con UI pulida",
     requestedAgent: true,
@@ -116,7 +116,7 @@ test("greenfield premium menciona lovable-web e inspect_browser", () => {
     permissionMode: "full",
   });
   assert.equal(plan.mode, MODES.EXECUTE);
-  assert.match(plan.runProfile.orchestrationBlock, /lovable-web|frontend-design|inspect_browser/i);
+  assert.match(plan.runProfile.orchestrationBlock, /web-pro|frontend-design|inspect_browser/i);
 });
 
 test("inspect_browser solo permite localhost", () => {
@@ -345,7 +345,7 @@ test("run_parallel_explore fusiona evidencia solo lectura", async () => {
   }
 });
 
-test("lovable one-shot activa pipeline y tools", () => {
+test("one-shot de UI activa pipeline y tools", () => {
   const plan = resolveUnifiedAgentPlan({
     prompt: "CREA EL PROYECTO AHORA una landing moderna de reservas con UI pulida",
     requestedAgent: true,
@@ -355,8 +355,8 @@ test("lovable one-shot activa pipeline y tools", () => {
   });
   assert.equal(plan.mode, MODES.EXECUTE);
   assert.equal(plan.greenfieldCreate, true);
-  assert.equal(plan.lovableOneShot, true);
-  assert.match(plan.runProfile.orchestrationBlock, /PIPELINE LOVABLE ONE-SHOT/i);
+  assert.equal(plan.uiOneShot, true);
+  assert.match(plan.runProfile.orchestrationBlock, /PIPELINE ONE-SHOT DE UI/i);
   assert.match(plan.runProfile.orchestrationBlock, /CHECKLIST DE CIERRE/i);
   assert.ok(plan.allowedTools.includes("inspect_browser"));
   assert.ok(plan.allowedTools.includes("generate_image"));

@@ -1,7 +1,7 @@
 # Keeping a project visually consistent across sessions
 
 A single well-designed screen is easy. What makes a multi-screen project look
-professionally designed (the Lovable/v0 effect) is that every screen draws
+professionally designed (the v0 effect) is that every screen draws
 from the *same* small set of decisions instead of reinventing them each time.
 
 ## The rule

@@ -22,13 +22,20 @@ test("Actividad: solo usuarios con sesión registran latido y solo el admin ve l
   assert.match(sql, /editcoreai_admin_list_users[\s\S]*editcoreai\.require_admin\(\)[\s\S]*a\.last_seen_at, a\.app_version/);
 });
 
-test("Ver como usuario: la franja recibe clics (fuera de la zona de arrastre) y Esc también sale", () => {
+test("Ver como usuario: sin franja que tape botones; se sale con un botón en la barra o con Esc", () => {
+  const html = read("index.html");
+  assert.doesNotMatch(html, /ecPreviewBanner/);
+  assert.match(html, /<button id="ideExitPreviewBtn"[^>]*hidden>✕ Salir de vista usuario<\/button>/);
+  assert.match(html, /id="chatHomeExitPreviewBtn"[^>]*hidden>✕ Salir de vista usuario<\/button>/);
   const css = read("chat-home.css");
-  const banner = css.match(/\.ec-preview-banner \{[^}]*\}/)?.[0] || "";
-  const exit = css.match(/\.ec-preview-exit \{[^}]*\}/)?.[0] || "";
-  assert.match(banner, /-webkit-app-region: no-drag;/);
-  assert.match(exit, /-webkit-app-region: no-drag;/);
-  assert.match(read("chat-home.js"), /ev\.key === "Escape" && previewAsUser[^\n]*setPreviewAsUser\(false\)/);
+  const line = css.match(/body\.is-preview-as-user::before \{[^}]*\}/)?.[0] || "";
+  assert.match(line, /height: 3px;/);
+  assert.match(line, /pointer-events: none;/);
+  assert.match(css.match(/\.app-toolbar \.ec-preview-exit-btn \{[^}]*\}/)?.[0] || "", /-webkit-app-region: no-drag;/);
+  const home = read("chat-home.js");
+  assert.match(home, /\["chatHomeExitPreviewBtn", "ideExitPreviewBtn"\][\s\S]{0,120}btn\.hidden = !\(realAdmin && previewAsUser\);/);
+  assert.match(home, /\$\("ideExitPreviewBtn"\)\?\.addEventListener\("click", \(\) => void setPreviewAsUser\(false\)\);/);
+  assert.match(home, /ev\.key === "Escape" && previewAsUser[^\n]*setPreviewAsUser\(false\)/);
 });
 
 test("Admin: Administración y Ver como usuario también existen en la vista de proyectos, ocultos por defecto", () => {

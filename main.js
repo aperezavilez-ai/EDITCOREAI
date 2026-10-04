@@ -2323,7 +2323,7 @@ function searchProject(rootPath, query) {
   const raw = String(query || "");
   const hits = searchProjectLiteral(rootPath, raw);
   if (hits.length) return hits;
-  // La busqueda es literal: si el modelo mando escapes de regex ("lovable\.dev")
+  // La busqueda es literal: si el modelo mando escapes de regex ("ejemplo\.com")
   // y no hubo resultados, reintenta sin escapes para no inducir bucles de
   // busquedas repetidas con 0 coincidencias.
   if (/\\[.*+?()\[\]{}|^$\\]/.test(raw)) {
@@ -2941,7 +2941,7 @@ const dependencyReport = await ensureProjectDependencies(runtimeRoot, pkg, manag
 });
   const script = pkg.scripts.dev ? "dev" : "start";
   const dependencies = { ...(pkg.dependencies || {}), ...(pkg.devDependencies || {}) };
-  const expectedPort = dependencies["@lovable.dev/vite-tanstack-config"] ? 8080
+  const expectedPort = Object.keys(dependencies).some((name) => /\/vite-tanstack-config$/.test(name)) ? 8080
     : fs.readdirSync(runtimeRoot).some((name) => /^next\.config\./i.test(name)) ? 3000
       : fs.readdirSync(runtimeRoot).some((name) => /^astro\.config\./i.test(name)) ? 4321
         : fs.existsSync(path.join(runtimeRoot, "angular.json")) ? 4200 : 5173;
@@ -7705,7 +7705,7 @@ ipcMain.handle("agent:run", async (event, input = {}) => {
       dispatcher.register({
         name: "create_project",
         write: true,
-        description: "Crea un proyecto desde plantilla. template: blank|web|node|react|lovable-web|next-saas|open-saas|soundonemusic|auto. Si omites template, EditCore infiere del prompt (SaaS Next→next-saas, React+Vite+Supabase→lovable-web).",
+        description: "Crea un proyecto desde plantilla. template: blank|web|node|react|web-pro|next-saas|open-saas|soundonemusic|auto. Si omites template, EditCore infiere del prompt (SaaS Next→next-saas, React+Vite+Supabase→web-pro).",
         execute: async (toolInput) => createProjectInside(rootPath, { ...toolInput, prompt: toolInput.prompt || input?.prompt }, { signal: runController.signal, prompt: input?.prompt }),
       });
       dispatcher.register({
@@ -8729,7 +8729,7 @@ function registerAgentWriteTools(dispatcher, rootPath, canWrite, runController, 
   dispatcher.register({
     name: "create_project",
     write: true,
-    description: "Crea proyecto desde plantilla (blank|web|node|react|lovable-web|next-saas|open-saas|soundonemusic|auto).",
+    description: "Crea proyecto desde plantilla (blank|web|node|react|web-pro|next-saas|open-saas|soundonemusic|auto).",
     execute: async (toolInput) => createProjectInside(rootPath, { ...toolInput, prompt: toolInput.prompt || prompt }, { signal: runController.signal, prompt }),
   });
 }

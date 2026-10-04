@@ -4,7 +4,7 @@
 
 A Claude skill that writes the accurate prompts for any AI tool. Zero tokens or credits wasted. Full context and memory retention. No re-prompting your way to an answer you should have gotten on attempt one.
 
-**Works with:** Claude, ChatGPT, Gemini, o1/o3, MiniMax, Cursor, Claude Code, GitHub Copilot, Windsurf, Bolt, v0, Lovable, Devin, Perplexity, Midjourney, DALL-E, Stable Diffusion, ComfyUI, Sora, Runway, ElevenLabs, Zapier, Make, and any AI tool you throw at it.
+**Works with:** Claude, ChatGPT, Gemini, o1/o3, MiniMax, Cursor, Claude Code, GitHub Copilot, Windsurf, Bolt, v0, Devin, Perplexity, Midjourney, DALL-E, Stable Diffusion, ComfyUI, Sora, Runway, ElevenLabs, Zapier, Make, and any AI tool you throw at it.
 
 ---
 
@@ -214,7 +214,7 @@ Prompt Master includes specific profiles for 20+ tools. For anything not on the 
 | **Cline (formerly Claude Dev)** | Agentic IDE | File scope, approval gates, stop conditions, task breakdown |
 | **GitHub Copilot** | Autocomplete AI | Exact function contract as docstring |
 | **Antigravity** | Agentic IDE | Task-based prompting, Artifact verification, autonomy level |
-| **Bolt / v0 / Lovable** | Full-stack generator | Stack spec, version, what NOT to scaffold |
+| **Bolt / v0** | Full-stack generator | Stack spec, version, what NOT to scaffold |
 | **Figma Make** | Full-stack generator | Component name references, frame-to-code scope |
 | **Google Stitch** | Full-stack generator | Interface goal over implementation, Material Design 3 spec |
 | **Devin / SWE-agent** | Autonomous agent | Starting state, target state, stop conditions |

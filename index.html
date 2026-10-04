@@ -14,10 +14,6 @@
     <link rel="stylesheet" href="./editor-inline-edit.css" />
   </head>
   <body data-app-mode="chat">
-    <div id="ecPreviewBanner" class="ec-preview-banner" role="status" hidden>
-      <span>👁 Estás viendo EditCoreAI como un usuario normal. Saldo de ejemplo $20; tus consultas no se cobran.</span>
-      <button type="button" id="ecPreviewExitBtn" class="ec-preview-exit" title="También puedes pulsar Esc">Volver a administrador</button>
-    </div>
     <!-- CHAT AGENT HOME (arranque). IDE existente se abre con el botón IDE. -->
     <section id="chatHomeShell" class="chat-home-shell" aria-label="EditCoreAI Chat">
       <header class="chat-home-top">
@@ -53,6 +49,7 @@
             </div>
             <button type="button" class="chat-home-settings-btn chat-home-admin-btn" id="chatHomeAdminBtn" title="Panel de administración: usuarios, saldo, códigos y pagos" hidden>🛡 Administración</button>
             <button type="button" class="chat-home-settings-btn" id="chatHomePreviewBtn" title="Mira EditCoreAI tal como lo ve un usuario normal" hidden>👁 Ver como usuario</button>
+            <button type="button" class="chat-home-settings-btn ec-preview-exit-btn" id="chatHomeExitPreviewBtn" title="Estás viendo la app como usuario (saldo de ejemplo, sin cobro). También puedes pulsar Esc." hidden>✕ Salir de vista usuario</button>
             <button type="button" class="chat-home-settings-btn" id="chatHomeSettingsBtn" title="Configuración">⚙ Configuración</button>
           </div>
         </aside>
@@ -663,6 +660,7 @@
           <button id="providersBtn" type="button" title="Proveedores y modelos de IA">Modelos</button>
           <button id="ideAdminBtn" type="button" class="toolbar-admin-btn" title="Panel de administración: usuarios, saldo, códigos y pagos" hidden>🛡 Administración</button>
           <button id="idePreviewBtn" type="button" class="toolbar-admin-btn" title="Ver EditCoreAI exactamente como lo ve un usuario normal" hidden>👁 Ver como usuario</button>
+          <button id="ideExitPreviewBtn" type="button" class="toolbar-admin-btn ec-preview-exit-btn" title="Estás viendo la app como usuario (saldo de ejemplo, sin cobro). También puedes pulsar Esc." hidden>✕ Salir de vista usuario</button>
         </div>
         <span class="toolbar-divider" aria-hidden="true"></span>
           <div class="toolbar-group" aria-label="Acciones">

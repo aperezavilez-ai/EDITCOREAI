@@ -46,21 +46,21 @@
     return browserRoot?.EditCoreCursorParity || null;
   })();
 
-  const LovableOneShot = (() => {
+  const UiOneShot = (() => {
     if (typeof require !== "undefined") {
-      try { return require("./lovable-oneshot"); } catch {
-        try { return require("../lovable-oneshot"); } catch { /* fallthrough */ }
+      try { return require("./ui-oneshot"); } catch {
+        try { return require("../ui-oneshot"); } catch { /* fallthrough */ }
       }
     }
     return {
-      isLovableOneShotRequest(prompt = "", { greenfieldCreate = false } = {}) {
+      isUiOneShotRequest(prompt = "", { greenfieldCreate = false } = {}) {
         if (!greenfieldCreate) return false;
-        return /\b(lovable|ui\s+pulida|app\s+web\s+profesional|landing|one[- ]?shot|moderna|premium)\b/i.test(String(prompt || ""));
+        return /\b(ui\s+pulida|app\s+web\s+profesional|landing|one[- ]?shot|moderna|premium)\b/i.test(String(prompt || ""));
       },
-      buildLovableOneShotBlock({ permissionFull = false } = {}) {
+      buildUiOneShotBlock({ permissionFull = false } = {}) {
         return {
           mode: "chat",
-          message: "Detecté una solicitud one-shot. Para ejecutar el pipeline Lovable necesito tu autorización explícita en este turno. Si querés, continuo con create_project + UI + preview.",
+          message: "Detecté una solicitud one-shot. Para ejecutar el pipeline one-shot necesito tu autorización explícita en este turno. Si querés, continuo con create_project + UI + preview.",
         };
       },
     };
@@ -282,7 +282,7 @@ const GREENFIELD_TOOL_ALLOWLIST = [
   "run_tdd_cycle", "run_test_repair_loop",
 ];
 
-const LOVABLE_ONESHOT_TOOL_ALLOWLIST = [
+const UI_ONESHOT_TOOL_ALLOWLIST = [
   ...GREENFIELD_TOOL_ALLOWLIST,
   "search", "semantic_search", "run_parallel_explore",
   "mcp_list_tools", "mcp_invoke",
@@ -459,9 +459,9 @@ function formatOrchestrationBlock(profile = {}) {
     if (profile.cursorParityMode) {
       const cursorBlock = CursorParity?.buildCursorParityOrchestrationBlock?.() || "Agente EditCore: investiga, corrige y verifica con herramientas.";
       if (profile.greenfieldCreate) {
-        const oneShotExtra = profile.lovableOneShot
+        const oneShotExtra = profile.uiOneShot
           ? (() => {
-              const block = LovableOneShot.buildLovableOneShotBlock({
+              const block = UiOneShot.buildUiOneShotBlock({
                 permissionFull: profile.permissionFull === true,
                 prompt: profile.prompt || "",
               });
@@ -471,7 +471,7 @@ function formatOrchestrationBlock(profile = {}) {
               return typeof block === "string" ? block : "";
             })()
           : "";
-        let templateLine = "- create_project template=lovable-web o react; brain_skill frontend-design para UI pulida.";
+        let templateLine = "- create_project template=web-pro o react; brain_skill frontend-design para UI pulida.";
         try {
           const { resolveTemplateIntent, describeTemplateChoice } = require("./template-intent");
           const choice = resolveTemplateIntent(profile.prompt || "");
@@ -513,9 +513,9 @@ function formatOrchestrationBlock(profile = {}) {
       ].filter(Boolean).join("\n");
     }
     if (profile.greenfieldCreate) {
-      const oneShotExtra = profile.lovableOneShot
+      const oneShotExtra = profile.uiOneShot
         ? (() => {
-            const block = LovableOneShot.buildLovableOneShotBlock({ permissionFull: profile.permissionFull === true });
+            const block = UiOneShot.buildUiOneShotBlock({ permissionFull: profile.permissionFull === true });
             if (block && typeof block === "object" && block.mode === "chat") {
               return block.message || "";
             }
@@ -527,7 +527,7 @@ function formatOrchestrationBlock(profile = {}) {
           "ORQUESTACION EDITCORE (CREACION GREENFIELD · ACCESO COMPLETO):",
           "- El usuario pidio CREAR un proyecto nuevo. Ejecuta AHORA con herramientas de escritura.",
           "- Escribe en la RAIZ visible del proyecto abierto (README.md, package.json, src/, public/).",
-          "- Si pide app web profesional/UI pulida: prefer create_project template=lovable-web o react; luego personaliza.",
+          "- Si pide app web profesional/UI pulida: prefer create_project template=web-pro o react; luego personaliza.",
           "- Si pide ERP/CRM/inventario/nomina/facturacion/multi-tenant: create_project template=enterprise-erp-base (schema-first).",
           "- SCHEMA-FIRST en ERP/CRM: (1) migraciones SQL validadas, (2) CRUD UI solo ligado al schema. Extiende con add_erp_module.",
           "- Carga brain_skill frontend-design antes de inventar UI.",
@@ -552,7 +552,7 @@ function formatOrchestrationBlock(profile = {}) {
         "ORQUESTACION EDITCORE (CREACION GREENFIELD):",
         "- El usuario pidio CREAR un proyecto nuevo. Ejecuta AHORA con herramientas de escritura.",
         "- Escribe en la RAIZ visible del proyecto abierto (README.md, package.json, src/, public/). NO metas el producto en .editcore salvo memoria interna.",
-        "- Si pide UI profesional: create_project template=react o lovable-web; aplica brain_skill frontend-design.",
+        "- Si pide UI profesional: create_project template=react o web-pro; aplica brain_skill frontend-design.",
         "- Usa write_file para cada archivo nuevo. create_project solo si necesitas plantilla base.",
         "- Tras package.json con script dev o start: run_command npm install y luego npm run dev (un comando por llamada, sin &&).",
         "- Luego inspect_preview/inspect_browser/browser_interact y corrige problemas visuales basicos.",
@@ -899,7 +899,7 @@ function resolveUnifiedAgentPlan(options = {}) {
     phase = PHASES.EXECUTE;
   }
 
-  const lovableOneShot = LovableOneShot.isLovableOneShotRequest(effectivePrompt, { greenfieldCreate });
+  const uiOneShot = UiOneShot.isUiOneShotRequest(effectivePrompt, { greenfieldCreate });
   // FOCO retirado: nunca acotar tools ni bootstrap por "solo archivo/carpeta".
   const scopedDiskFocus = false;
   const scopedFolderFocus = false;
@@ -912,7 +912,7 @@ function resolveUnifiedAgentPlan(options = {}) {
     [MODES.EXECUTE]: listOnly
       ? "Listando carpeta..."
       : greenfieldCreate
-      ? (lovableOneShot ? "Creando app (one-shot)..." : "Creando proyecto...")
+      ? (uiOneShot ? "Creando app (one-shot)..." : "Creando proyecto...")
       : projectOnboarding
         ? "Conectando servicios..."
         : "Ejecutando con herramientas...",
@@ -925,7 +925,7 @@ function resolveUnifiedAgentPlan(options = {}) {
     if (cursorParityMode && CursorParity?.CURSOR_PARITY_ALLOWLIST) {
       allowedTools = [...CursorParity.CURSOR_PARITY_ALLOWLIST];
     } else if (greenfieldCreate && !permissionFull) {
-      allowedTools = [...(lovableOneShot ? LOVABLE_ONESHOT_TOOL_ALLOWLIST : GREENFIELD_TOOL_ALLOWLIST)];
+      allowedTools = [...(uiOneShot ? UI_ONESHOT_TOOL_ALLOWLIST : GREENFIELD_TOOL_ALLOWLIST)];
     } else {
       allowedTools = [...TOOL_ALLOWLIST[MODES.EXECUTE]];
     }
@@ -950,7 +950,7 @@ function resolveUnifiedAgentPlan(options = {}) {
     projectOnboarding,
     analysisMode,
     cursorParityMode: listOnly || analysisMode ? false : cursorParityMode,
-    lovableOneShot,
+    uiOneShot,
     conversationOnly,
     listOnly,
     skipBootstrap: listOnly ? true : skipBootstrap,
@@ -963,7 +963,7 @@ function resolveUnifiedAgentPlan(options = {}) {
     statusLabel: statusLabels[mode] || "Procesando...",
     reason: listOnly
       ? reason
-      : (lovableOneShot && greenfieldCreate ? `${reason} · lovable one-shot` : reason),
+      : (uiOneShot && greenfieldCreate ? `${reason} · one-shot de UI` : reason),
     prompt: effectivePrompt,
   });
 
@@ -1050,7 +1050,7 @@ function resolveUnifiedAgentPlan(options = {}) {
     greenfieldCreate: mode === MODES.CHAT ? false : greenfieldCreate,
     projectOnboarding: mode === MODES.CHAT ? false : projectOnboarding,
     cursorParityMode: (mode === MODES.CHAT || listOnly) ? false : cursorParityMode,
-    lovableOneShot,
+    uiOneShot,
     conversationOnly,
     listOnly,
     statusLabel: runProfile.statusLabel,

@@ -5,7 +5,7 @@ const { classify, isFullAccess } = require("./editcore-chat-kernel/classify");
 
 const GENERATED_PROJECT_DIRS = new Set([
   ".git", ".next", ".nuxt", ".output", ".svelte-kit", ".turbo", ".vercel", ".wrangler",
-  ".tanstack", ".lovable", ".workspace", ".cache", "node_modules", "dist", "build", "coverage", "out",
+  ".tanstack", ".workspace", ".cache", "node_modules", "dist", "build", "coverage", "out",
 ]);
 
 const DISCOVERY_TOOLS = new Set([

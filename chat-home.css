@@ -539,38 +539,30 @@ html[data-theme="azul"] .chat-home-new-btn {
 .chat-home-settings-btn[hidden] { display: none; }
 .chat-home-admin-btn { color: var(--ch-accent, #7c9cff); }
 
-.ec-preview-banner {
+body.is-preview-as-user::before {
+  content: "";
   position: fixed;
-  top: 0;
-  left: 50%;
-  transform: translateX(-50%);
+  inset: 0 0 auto 0;
+  height: 3px;
   z-index: 9000;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 6px 8px 6px 14px;
-  border-radius: 0 0 10px 10px;
   background: #f5a524;
-  color: #1b1300;
-  font-size: 12px;
-  font-weight: 600;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
-  -webkit-app-region: no-drag;
-  app-region: no-drag;
+  pointer-events: none;
 }
-.ec-preview-banner[hidden] { display: none; }
-.ec-preview-exit {
+.ec-preview-exit-btn,
+.app-toolbar .ec-preview-exit-btn {
   -webkit-app-region: no-drag;
   app-region: no-drag;
-  border: 0;
+  background: #f5a524 !important;
+  color: #1b1300 !important;
+  font-weight: 700;
   border-radius: 6px;
-  padding: 5px 10px;
-  background: #1b1300;
-  color: #fff;
-  font-size: 12px;
-  font-weight: 600;
-  cursor: pointer;
 }
+.ec-preview-exit-btn:hover,
+.app-toolbar .ec-preview-exit-btn:hover {
+  background: #ffb93d !important;
+  color: #1b1300 !important;
+}
+.ec-preview-exit-btn[hidden] { display: none !important; }
 
 .chat-home-main {
   flex: 1;

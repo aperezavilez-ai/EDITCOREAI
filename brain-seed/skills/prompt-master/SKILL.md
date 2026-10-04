@@ -221,10 +221,10 @@ Current default is **Opus 4.8**. Opus 4.7 is still selectable — keep its notes
 
 ---
 
-**Bolt / v0 / Lovable / Figma Make / Google Stitch**
+**Bolt / v0 / Figma Make / Google Stitch**
 - Full-stack generators default to bloated boilerplate — scope it down explicitly
 - Always specify: stack, version, what NOT to scaffold, clear component boundaries
-- Lovable responds well to design-forward descriptions — include visual/UX intent
+- Design-first generators respond well to design-forward descriptions — include visual/UX intent
 - v0 is Vercel-native — specify if you need non-Next.js output
 - Bolt handles full-stack — be explicit about which parts are frontend vs backend vs database
 - Figma Make is design-to-code native — reference your Figma component names directly

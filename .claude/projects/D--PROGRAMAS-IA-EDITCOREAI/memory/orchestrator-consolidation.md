@@ -33,7 +33,7 @@ metadata:
 - `refineKernelDecision` ❌
 - `PHASES` ❌
 - `RESEARCH_TOOLS`, `CODE_INTEL_TOOLS`, `FILESYSTEM_EXPLORATION_TOOLS` ❌
-- `LOVABLE_ONESHOT_TOOL_ALLOWLIST`, `GREENFIELD_TOOL_ALLOWLIST` ❌
+- `UI_ONESHOT_TOOL_ALLOWLIST`, `GREENFIELD_TOOL_ALLOWLIST` ❌
 
 ### Strategy
 1. **Extend `editcore-chat-kernel/classify.js`** to include all missing exports from intent-orchestrator

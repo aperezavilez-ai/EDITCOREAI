@@ -82,9 +82,9 @@
     allowWrite = false,
     analysisMode = false,
     steps = [],
-    lovableOneShot = false,
+    uiOneShot = false,
   } = {}) {
-    if (!allowWrite || analysisMode === true || lovableOneShot === true) return false;
+    if (!allowWrite || analysisMode === true || uiOneShot === true) return false;
     if (isOperatorPublishRequest(prompt)) return false;
     const list = Array.isArray(steps) ? steps : [];
     return list.some(isAppMutationStep) && list.some(isClosingVerificationStep);

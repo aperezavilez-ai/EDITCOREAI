@@ -1,23 +1,23 @@
 "use strict";
 
 /**
- * Pipeline estilo Lovable: un solo turno de agente debe entregar UI usable.
+ * Pipeline one-shot de UI: un solo turno de agente debe entregar UI usable.
  * Solo afecta prompts de orquestacion; no escribe disco por si mismo.
  */
 
 function wantsPolishedUi(prompt = "") {
   const text = String(prompt || "");
-  return /\b(lovable|ui\s+pulida|interfaz\s+pulida|app\s+web\s+profesional|landing|one[- ]?shot|producci[oó]n|hermosa|bonita|moderna|premium|shadcn|tailwind|figma|pixel[- ]perfect|responsive)\b/i.test(text)
+  return /\b(ui\s+pulida|interfaz\s+pulida|app\s+web\s+profesional|landing|one[- ]?shot|producci[oó]n|hermosa|bonita|moderna|premium|shadcn|tailwind|figma|pixel[- ]perfect|responsive)\b/i.test(text)
     || /\b(crea|genera|construye|implementa)\b[\s\S]{0,80}\b(app|web|landing|dashboard|saas)\b/i.test(text);
 }
 
-function isLovableOneShotRequest(prompt = "", { greenfieldCreate = false } = {}) {
+function isUiOneShotRequest(prompt = "", { greenfieldCreate = false } = {}) {
   if (!greenfieldCreate) return false;
-  // Si el usuario pide Next SaaS / stack concreto distinto, no forzar lovable-web.
+  // Si el usuario pide Next SaaS / stack concreto distinto, no forzar web-pro.
   try {
     const { resolveTemplateIntent } = require("./template-intent");
     const choice = resolveTemplateIntent(prompt);
-    if (choice.id && choice.id !== "blank" && choice.id !== "lovable-web" && choice.id !== "react"
+    if (choice.id && choice.id !== "blank" && choice.id !== "web-pro" && choice.id !== "react"
       && Number(choice.confidence || 0) >= 0.7) {
       return false;
     }
@@ -27,8 +27,8 @@ function isLovableOneShotRequest(prompt = "", { greenfieldCreate = false } = {})
   return wantsPolishedUi(prompt);
 }
 
-function buildLovableOneShotBlock({ permissionFull = false, prompt = "" } = {}) {
-  let templateHint = "lovable-web (o react si lovable-web no aplica)";
+function buildUiOneShotBlock({ permissionFull = false, prompt = "" } = {}) {
+  let templateHint = "web-pro (o react si web-pro no aplica)";
   try {
     const { resolveTemplateIntent, describeTemplateChoice } = require("./template-intent");
     const choice = resolveTemplateIntent(prompt);
@@ -39,7 +39,7 @@ function buildLovableOneShotBlock({ permissionFull = false, prompt = "" } = {}) 
     // ignore
   }
   return [
-    "PIPELINE LOVABLE ONE-SHOT (obligatorio en este turno):",
+    "PIPELINE ONE-SHOT DE UI (obligatorio en este turno):",
     "- Entrega una app web usable en UN ciclo: plantilla + personalizacion + deps + preview.",
     "- Orden fijo:",
     "  1) brain_skill frontend-design (y project-templates si existe).",
@@ -68,6 +68,6 @@ function buildLovableOneShotBlock({ permissionFull = false, prompt = "" } = {}) 
 
 module.exports = {
   wantsPolishedUi,
-  isLovableOneShotRequest,
-  buildLovableOneShotBlock,
+  isUiOneShotRequest,
+  buildUiOneShotBlock,
 };

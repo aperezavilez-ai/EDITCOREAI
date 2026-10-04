@@ -610,12 +610,14 @@
 
   function syncAdminShortcuts() {
     const realAdmin = window.__editcoreRealSession?.user?.isAdmin === true;
-    const banner = $("ecPreviewBanner");
     for (const id of ["chatHomeAdminBtn", "chatHomePreviewBtn", "ideAdminBtn", "idePreviewBtn"]) {
       const btn = $(id);
       if (btn) btn.hidden = !realAdmin || previewAsUser;
     }
-    if (banner) banner.hidden = !(realAdmin && previewAsUser);
+    for (const id of ["chatHomeExitPreviewBtn", "ideExitPreviewBtn"]) {
+      const btn = $(id);
+      if (btn) btn.hidden = !(realAdmin && previewAsUser);
+    }
     document.body.classList.toggle("is-preview-as-user", realAdmin && previewAsUser);
   }
 
@@ -2680,7 +2682,8 @@
     $("chatHomePreviewBtn")?.addEventListener("click", () => void setPreviewAsUser(true));
     $("ideAdminBtn")?.addEventListener("click", () => openAdminPanel());
     $("idePreviewBtn")?.addEventListener("click", () => void setPreviewAsUser(true));
-    $("ecPreviewExitBtn")?.addEventListener("click", () => void setPreviewAsUser(false));
+    $("chatHomeExitPreviewBtn")?.addEventListener("click", () => void setPreviewAsUser(false));
+    $("ideExitPreviewBtn")?.addEventListener("click", () => void setPreviewAsUser(false));
     document.addEventListener("keydown", (ev) => {
       if (ev.key === "Escape" && previewAsUser && !document.querySelector("dialog[open]")) void setPreviewAsUser(false);
     });
