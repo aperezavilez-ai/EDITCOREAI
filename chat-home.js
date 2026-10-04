@@ -633,7 +633,6 @@
   }
 
   function openAdminPanel() {
-    if ((document.body.dataset.appMode || "chat") !== "chat") setMode("chat");
     openSettings("credits");
     setTimeout(() => $("settingsAdminMasterDashboard")?.scrollIntoView({ behavior: "smooth", block: "start" }), 150);
   }
@@ -2682,6 +2681,12 @@
     $("chatHomeAdminBtn")?.addEventListener("click", () => openAdminPanel());
     $("chatHomePreviewBtn")?.addEventListener("click", () => void setPreviewAsUser(true));
     $("ideAdminBtn")?.addEventListener("click", () => openAdminPanel());
+    $("ideSettingsBtn")?.addEventListener("click", () => {
+      const realAdmin = window.__editcoreRealSession?.user?.isAdmin === true;
+      const previewAsUser = window.__editcoreSession?.user?.isAdmin !== true;
+      if (realAdmin && !previewAsUser) openAdminPanel();
+      else openSettings("credits");
+    });
     $("idePreviewBtn")?.addEventListener("click", () => void setPreviewAsUser(true));
     $("chatHomeExitPreviewBtn")?.addEventListener("click", () => void setPreviewAsUser(false));
     $("ideExitPreviewBtn")?.addEventListener("click", () => void setPreviewAsUser(false));

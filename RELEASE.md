@@ -1,3 +1,24 @@
+# RELEASE v4.2.9
+
+## ME AI con una sola API, Publicar inteligente y engrane en el IDE
+
+### Nuevo
+- **ME AI con una sola API**: todos los modelos usan la clave de Claude Sonnet 4.6 (verificada: los 7 modelos responden). En Modelos ya no hay una clave por modelo y en el chat eliges «Auto» o un modelo de ME AI. APICredits queda oculto.
+- **Publicar**: gris mientras el proyecto no está conectado y azul cuando ya lo está; al pulsarlo sube los cambios a GitHub, Vercel y Supabase. El botón «Conectar» se quitó: para conectar un proyecto, pídelo en el chat («conecta este proyecto con GitHub, Vercel y Supabase»).
+- **Engrane ⚙ en el IDE**: el usuario ve su saldo y consumo, y el administrador abre Administración, sin salir del IDE.
+- **Conexiones por usuario**: cada usuario conecta sus propias cuentas; nunca ve las del administrador.
+
+### Corregido
+- El botón «Conectar» fallaba con un error interno (ya no existe y el error está corregido).
+- En el modo chat no se veía la barra de abajo.
+- El navegador interno mostraba avisos del proyecto como «Errores del preview»; ahora solo muestra errores reales.
+- Incluye lo de 4.2.8: «Ver como usuario» se cierra con «✕ Salir de vista usuario» o Esc.
+
+### Build
+- `EDITCOREAI.exe` (4.2.9.0) y `release/EDITCOREAI-Setup.exe` (4.2.9), construidos desde un árbol limpio en el commit publicado.
+
+---
+
 # RELEASE v4.2.8
 
 ## La vista «Ver como usuario» ya se puede cerrar

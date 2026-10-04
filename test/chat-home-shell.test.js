@@ -15,6 +15,15 @@ test("chat mode keeps the bottom status bar visible above the shell", () => {
   assert.match(css, /body\[data-app-mode="chat"\] #chatHomeShell \{\s*bottom: 22px;/);
 });
 
+test("el IDE tiene engrane: admin abre administración, usuario su saldo, sin salir del IDE", () => {
+  const html = fs.readFileSync(path.join(root, "index.html"), "utf8");
+  const js = fs.readFileSync(path.join(root, "chat-home.js"), "utf8");
+  assert.match(html, /id="ideSettingsBtn"[^>]*>⚙<\/button>/);
+  assert.match(js, /\$\("ideSettingsBtn"\)\?\.addEventListener\("click"[\s\S]*?openAdminPanel\(\);\s*else openSettings\("credits"\);/);
+  const adminFn = js.slice(js.indexOf("function openAdminPanel()"), js.indexOf("async function refreshCreditsAndProfileUI"));
+  assert.doesNotMatch(adminFn, /setMode\("chat"\)/);
+});
+
 test("chat-home shell exists in index.html", () => {
   const html = fs.readFileSync(path.join(root, "index.html"), "utf8");
   assert.match(html, /id="chatHomeShell"/);

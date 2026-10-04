@@ -69,7 +69,7 @@ test("administrador ve todos los modelos con sus proveedores", () => {
 test("las listas del chat y de Auto pasan por el filtro de rol", () => {
   assert.match(sliceFunction(rendererSrc, "function catalogChatModelOptions()"), /filterModelOptionsForRole\(/);
   assert.match(sliceFunction(rendererSrc, "function verifiedChatModelOptions()"), /filterModelOptionsForRole\(/);
-  assert.match(sliceFunction(rendererSrc, "function currentAutoProviderScope()"), /!isCurrentUserAdmin\(\)\) return "meai"/);
+  assert.match(sliceFunction(rendererSrc, "function currentAutoProviderScope()"), /!isCurrentUserAdmin\(\) \|\| PRIMARY_PROVIDER_KEYS\.length === 1\)\) return "meai"/);
   assert.match(sliceFunction(rendererSrc, "function resolveActiveChatProfile("), /isCurrentUserAdmin\(\)[\s\S]*: "meai"/);
 });
 
@@ -77,9 +77,9 @@ test("proveedores y 'Configurar modelos' solo para el administrador", () => {
   assert.match(sliceFunction(rendererSrc, "function openProviders()"), /if \(!isCurrentUserAdmin\(\)\)[\s\S]*return;/);
   const setOptions = sliceFunction(rendererSrc, "function setChatModelOptions(");
   assert.match(setOptions, /if \(isAdmin\) \{\s*const configureOption/);
-  assert.match(setOptions, /if \(isAdmin\) \{\s*const allAuto/);
+  assert.match(setOptions, /if \(isAdmin && PRIMARY_PROVIDER_KEYS\.length > 1\) \{\s*const allAuto/);
   const picker = sliceFunction(rendererSrc, "function renderModelPickerMenu()");
-  assert.match(picker, /: \[\{ scope: "meai", title: "Auto"/);
+  assert.match(picker, /const autoScopes = \[\{ scope: "meai", title: "Auto"/);
   assert.match(chatHomeSrc, /\["providersBtn", "settingsOpenModelsDialogBtn"\][\s\S]*isAdm \? "" : "none"/);
   assert.match(chatHomeSrc, /normalized === "models" && window\.__editcoreSession\?\.user\?\.isAdmin !== true/);
 });

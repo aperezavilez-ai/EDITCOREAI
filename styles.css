@@ -296,6 +296,11 @@ body.welcome-open {
 .app-toolbar .toolbar-admin-btn[hidden] {
   display: none !important;
 }
+.app-toolbar .toolbar-settings-btn {
+  font-size: 15px;
+  padding: 0 8px;
+  -webkit-app-region: no-drag;
+}
 .app-toolbar .toolbar-connect-btn:hover,
 .app-toolbar .toolbar-publish-btn:hover {
   background: var(--ec-hover) !important;
@@ -2915,6 +2920,10 @@ dialog .inspector-body { min-width:0; height:min(76vh, 760px); display:grid; gri
 .inspector-composer #inspectorPublishBtn:hover:not(:disabled) { background:#0d4f56; }
 /* Publish button: estilo unificado con la barra (solo texto) */
 .app-toolbar #publishBtn:disabled { opacity:.55; cursor:wait; }
+.app-toolbar #publishBtn.is-not-ready,
+.app-toolbar #publishBtn.is-not-ready:hover { color:#9ca3af !important; background:transparent !important; cursor:not-allowed; }
+.app-toolbar #publishBtn.is-ready { color:#fff !important; background:#2563eb !important; border-radius:4px !important; margin:0 4px; }
+.app-toolbar #publishBtn.is-ready:hover { color:#fff !important; background:#1d4ed8 !important; }
 #inspectorReportsPane { grid-template-rows:auto 1fr; gap:10px; }
 .inspector-summary { display:flex; flex-wrap:wrap; gap:6px; min-height:28px; }
 .inspector-chip { background:#eef7f6; border:1px solid #c9e8e4; border-radius:999px; padding:4px 8px; color:#17636b; font-size:11px; font-weight:800; }
@@ -3519,6 +3528,8 @@ html[data-theme=""] .toolbar-brand {
 .gateway-model-provider { margin:8px 0 0; padding:7px 2px 2px; border-top:1px solid #dbe5ea; color:#17202a; font-size:12px; font-weight:900; }
 .gateway-model-provider:first-child { margin-top:0; border-top:0; }
 .provider-profile { display:grid; grid-template-columns:minmax(100px,1fr) minmax(120px,1.2fr) auto; gap:7px; align-items:center; padding:8px; border:1px solid #dbe5ea; border-radius:7px; background:#fff; min-width:0; }
+.provider-profile.is-single-key { grid-template-columns:minmax(100px,1fr) auto; }
+.provider-profile input[hidden] { display:none; }
 .provider-profile input { min-width:0; width:100%; height:32px; padding:0 8px; border:1px solid #cbd3dc; border-radius:6px; box-sizing:border-box; }
 .provider-profile-status { font-size:10px; font-weight:700; color:#64748b; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .provider-profile-status.active { color:#16824b; }

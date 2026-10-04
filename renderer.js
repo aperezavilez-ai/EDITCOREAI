@@ -28,7 +28,10 @@ const PROVIDERS = {
   deepseek: { label: "DeepSeek",  baseUrl: "https://api.deepseek.com/v1", model: "deepseek-chat" },
   qwen:     { label: "Qwen",      baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1", model: "qwen-plus" },
 };
-const PRIMARY_PROVIDER_KEYS = ["meai", "apicredits"];
+// APICredits queda oculto: ME AI con una sola API key cubre todos los modelos.
+const PRIMARY_PROVIDER_KEYS = ["meai"];
+const HIDDEN_PROVIDER_KEYS = ["apicredits"];
+const SINGLE_KEY_PROVIDER_KEYS = ["meai"];
 
 const PROVIDER_MODELS = {
   openai: ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo"],
@@ -171,6 +174,7 @@ function isIgnorablePreviewConsoleMessage(message = "") {
     || /gl_surface|viz_main_impl|command_buffer/.test(text)
     || /passthrough is not supported|angle/.test(text)
     || /autofill\.cc|autofill_agent/.test(text)
+    || /allow-scripts and allow-same-origin.*sandbox/.test(text)
     // CORS / red del preview local → API remota: no es fallo de EditCoreAI ni del panel
     || /cors policy/.test(text)
     || /access-control-allow-origin/.test(text)
@@ -1469,11 +1473,22 @@ function ensureDefaultProviderProfiles(profiles = []) {
 function loadProviderProfiles() {
   if (isCloudUser()) return cloudProviderProfiles();
   const raw = loadJson("editcore-provider-profiles", []);
-  return ensureDefaultProviderProfiles(raw);
+  return ensureDefaultProviderProfiles(raw)
+    .filter((profile) => !isHiddenProviderProfile(profile))
+    .map((profile) => (SINGLE_KEY_PROVIDER_KEYS.includes(profile?.providerKey)
+      ? { ...profile, apiKey: resolveProviderApiKey(profile.providerKey, "") || profile.apiKey || "" }
+      : profile));
+}
+function isHiddenProviderProfile(profile) {
+  return Boolean(profile) && (HIDDEN_PROVIDER_KEYS.includes(profile.providerKey) || profile.status === "hidden");
 }
 async function saveProviderProfiles(profiles) {
   if (isCloudUser()) return;
-  await saveSecureJson("editcore-provider-profiles", profiles);
+  const hidden = loadJson("editcore-provider-profiles", []).filter(isHiddenProviderProfile);
+  await saveSecureJson("editcore-provider-profiles", [
+    ...profiles.filter((profile) => !isHiddenProviderProfile(profile)),
+    ...hidden,
+  ]);
 }
 
 // Usuarios (no admin): sus modelos vienen del servidor de EditCoreAI; las consultas las desvía
@@ -1592,15 +1607,21 @@ function renderProviderProfiles() {
         host.appendChild(row);
         return;
       }
+      const singleKey = SINGLE_KEY_PROVIDER_KEYS.includes(key);
       const api = document.createElement("input"); api.type = "password"; api.value = profile.apiKey || ""; api.placeholder = "API key del modelo";
+      if (singleKey) {
+        api.hidden = true;
+        row.classList.add("is-single-key");
+        model.title = "Usa la API key de arriba (una sola clave para todos los modelos)";
+      }
       const status = document.createElement("span"); status.className = `provider-profile-status ${profile.status || ""}`;
       status.textContent = profile.status === "active" ? "Funcional" : profile.status === "inactive" ? "No valida" : "Sin verificar";
       const actions = document.createElement("div"); actions.className = "provider-profile-actions";
       const save = document.createElement("button"); save.type = "button"; save.className = "profile-save"; save.textContent = "Guardar";
-      save.onclick = async () => { profile.model = model.value.trim(); profile.apiKey = api.value.trim(); profile.status = ""; await saveProviderProfiles(profiles); status.className = "provider-profile-status"; status.textContent = "Guardado · sin verificar"; };
+      save.onclick = async () => { profile.model = model.value.trim(); profile.apiKey = singleKey ? readProviderForm(key).apiKey : api.value.trim(); profile.status = ""; await saveProviderProfiles(profiles); status.className = "provider-profile-status"; status.textContent = "Guardado · sin verificar"; };
       const verify = document.createElement("button"); verify.type = "button"; verify.className = "profile-verify"; verify.textContent = "Verificar y activar";
       verify.onclick = async () => {
-        const parent = readProviderForm(key); profile.model = model.value.trim(); profile.apiKey = api.value.trim() || parent.apiKey;
+        const parent = readProviderForm(key); profile.model = model.value.trim(); profile.apiKey = singleKey ? parent.apiKey : (api.value.trim() || parent.apiKey);
         status.className = "provider-profile-status"; status.textContent = "Verificando…";
         try {
           const result = await window.editcoreProviders.test({ providerKey: key, baseUrl: parent.baseUrl, apiKey: profile.apiKey, model: profile.model });
@@ -1648,6 +1669,35 @@ function renderProviderProfiles() {
   });
 }
 
+async function verifyAllSingleKeyModels(key) {
+  const parent = readProviderForm(key);
+  const profiles = loadProviderProfiles();
+  const own = profiles.filter((profile) => profile.providerKey === key && profile.model);
+  let working = 0;
+  for (const [index, profile] of own.entries()) {
+    $("status").textContent = `Verificando ${profile.model} (${index + 1}/${own.length})…`;
+    profile.apiKey = parent.apiKey;
+    profile.baseUrl = parent.baseUrl;
+    profile.checkedAt = Date.now();
+    try {
+      const result = await window.editcoreProviders.test({ providerKey: key, baseUrl: parent.baseUrl, apiKey: parent.apiKey, model: profile.model });
+      const exact = String(result.model || "").toLowerCase() === String(profile.model).toLowerCase();
+      profile.status = exact ? "active" : "inactive";
+      profile.error = exact ? "" : `Esta API no respondió con ${profile.model}`;
+      profile.toolOK = result.toolOK === true;
+      if (exact) working += 1;
+    } catch (error) {
+      profile.status = "inactive";
+      profile.error = sanitizeProviderIpcError(error);
+    }
+  }
+  await saveProviderProfiles(profiles);
+  renderProviderProfiles();
+  renderProviderStatus(key);
+  $("status").textContent = `${PROVIDERS[key]?.label || key}: ${working} de ${own.length} modelos funcionando con una sola API`;
+  return { working, total: own.length };
+}
+
 function modelsForProvider(key) {
   const profiles = loadProviderProfiles().filter((profile) => profile.providerKey === key && profile.status === "active");
   return [...new Set(profiles.map((profile) => String(profile.model || "").trim()).filter(Boolean))];
@@ -1660,7 +1710,7 @@ function verifiedProfileForModel(providerKey, model) {
 
 function currentAutoProviderScope() {
   const scope = rawAutoProviderScope();
-  if (scope && !isCurrentUserAdmin()) return "meai";
+  if (scope && (!isCurrentUserAdmin() || PRIMARY_PROVIDER_KEYS.length === 1)) return "meai";
   return scope;
 }
 
@@ -2009,13 +2059,7 @@ function renderModelPickerMenu() {
   menu.appendChild(searchWrap);
 
   const isAdmin = isCurrentUserAdmin();
-  const autoScopes = isAdmin
-    ? [
-      { scope: "all", title: "Auto", hint: "ME AI Cloud + APICredits juntos." },
-      { scope: "meai", title: "Auto · ME AI", hint: "Solo modelos ME AI Cloud." },
-      { scope: "apicredits", title: "Auto · APICredits", hint: "Solo modelos APICredits." },
-    ]
-    : [{ scope: "meai", title: "Auto", hint: "EditCoreAI elige el mejor modelo para cada tarea." }];
+  const autoScopes = [{ scope: "meai", title: "Auto", hint: "EditCoreAI elige el mejor modelo de ME AI para cada tarea." }];
   autoScopes.forEach(({ scope, title, hint }) => {
     const autoRow = document.createElement("div");
     autoRow.className = "model-picker-auto-row";
@@ -15093,7 +15137,10 @@ $("providersDialog").addEventListener("click", (e) => {
   e.preventDefault();
   e.stopPropagation();
   verifyProvider(key)
-    .then((provider) => activateProvider(provider))
+    .then(async (provider) => {
+      if (SINGLE_KEY_PROVIDER_KEYS.includes(key)) await verifyAllSingleKeyModels(key);
+      return activateProvider(provider);
+    })
     .catch((error) => {
       $("status").textContent = `API no activada: ${sanitizeProviderIpcError(error)}`;
     });
@@ -15837,12 +15884,12 @@ $("previewWebview").addEventListener("did-fail-load", (event) => {
   void monitorPreviewHealth({ forceRecovery: true });
 });
 $("previewWebview").addEventListener("console-message", (event) => {
-  if (event.level >= 2 && previewExpectedUrl) {
+  // Nivel 3 = console.error / excepción. Los avisos (nivel 2) no son errores del proyecto.
+  if (event.level >= 3 && previewExpectedUrl) {
     const msg = normalizePreviewConsoleMessage(event.message || "error").slice(0, 180);
     if (isIgnorablePreviewConsoleMessage(msg)) return;
-    // Solo errores JS reales del proyecto (no red/CORS).
     $("status").textContent = `Navegador: ${msg}`;
-    pushPreviewRuntimeError(msg, event.level >= 3 ? "error" : "warning");
+    pushPreviewRuntimeError(msg, "error");
   }
 });
 
@@ -15907,8 +15954,7 @@ function setChatModelOptions(_models = [], selected = "", selectedProviderKey = 
     || String(selected || "").startsWith(`${AutoModel.AUTO_MODEL_SELECTION}:`);
 
   const isAdmin = isCurrentUserAdmin();
-  // Auto (ambos proveedores) siempre primero.
-  if (isAdmin) {
+  if (isAdmin && PRIMARY_PROVIDER_KEYS.length > 1) {
     const allAuto = document.createElement("option");
     allAuto.value = AutoModel.autoSelectionValue("all");
     allAuto.textContent = AutoModel.formatAutoLabel("all");
@@ -15931,7 +15977,7 @@ function setChatModelOptions(_models = [], selected = "", selectedProviderKey = 
     if (scopedAuto && AutoModel.isScopedAutoProvider(scopedAuto)) {
       const autoOption = document.createElement("option");
       autoOption.value = AutoModel.autoSelectionValue(scopedAuto);
-      autoOption.textContent = isAdmin ? AutoModel.formatAutoLabel(scopedAuto) : "Auto";
+      autoOption.textContent = isAdmin && PRIMARY_PROVIDER_KEYS.length > 1 ? AutoModel.formatAutoLabel(scopedAuto) : "Auto";
       autoOption.dataset.auto = "1";
       autoOption.dataset.autoScope = scopedAuto;
       autoOption.title = isAdmin
@@ -15969,7 +16015,7 @@ function setChatModelOptions(_models = [], selected = "", selectedProviderKey = 
     const scope = selectedAutoScope === null
       ? AutoModel.normalizeAutoProviderScope(config.autoProviderScope)
       : selectedAutoScope;
-    const effectiveScope = scope || "all";
+    const effectiveScope = PRIMARY_PROVIDER_KEYS.length > 1 ? (scope || "all") : PRIMARY_PROVIDER_KEYS[0];
     const autoValue = AutoModel.autoSelectionValue(effectiveScope);
     if (![...select.options].some((option) => option.value === autoValue)) {
       const fallback = [...select.options].find((option) => option.dataset?.auto === "1");
@@ -16005,17 +16051,45 @@ function syncChatModelFromConfig() {
   setChatModelOptions([], project?.model || config.model || record?.model || "", key, project?.providerProfileId || config.providerProfileId || "");
 }
 
-// Conectar / Publicar / Tema + Inspector health
-$("connectProjectBtn")?.addEventListener("click", () => {
-  onboardProjectFull().catch((err) => {
-    $("status").textContent = err?.message || String(err);
-  });
-});
-$("publishBtn")?.addEventListener("click", () => {
+// Publicar (gris hasta que el proyecto está conectado) / Tema + Inspector health
+const PUBLISH_NOT_READY_HINT = "Conecta primero el proyecto: escribe en el chat «conecta este proyecto con GitHub, Vercel y Supabase».";
+let publishReadyState = { root: "", ready: false, checkedAt: 0, busy: false };
+
+async function refreshPublishButtonState({ force = false } = {}) {
+  const btn = $("publishBtn");
+  if (!btn || publishReadyState.busy) return;
+  const root = String(state.projectRoot || "");
+  if (!force && root === publishReadyState.root && Date.now() - publishReadyState.checkedAt < 30_000) return;
+  publishReadyState.busy = true;
+  let ready = false;
+  try {
+    if (root && !isPreviewAsUser() && window.editcoreProject?.assessConnections) {
+      const assessment = await window.editcoreProject.assessConnections({ projectRoot: root }).catch(() => null);
+      ready = Boolean(assessment?.readyToPublish && assessment?.connections?.github?.configured);
+    }
+  } finally {
+    publishReadyState = { root, ready, checkedAt: Date.now(), busy: false };
+  }
+  btn.classList.toggle("is-ready", ready);
+  btn.classList.toggle("is-not-ready", !ready);
+  btn.setAttribute("aria-disabled", ready ? "false" : "true");
+  btn.title = ready
+    ? "Publicar: el agente sube los cambios a GitHub, Vercel y Supabase"
+    : PUBLISH_NOT_READY_HINT;
+}
+
+$("publishBtn")?.addEventListener("click", async () => {
+  await refreshPublishButtonState({ force: true });
+  if (!publishReadyState.ready) {
+    $("status").textContent = PUBLISH_NOT_READY_HINT;
+    appendMessage("assistant", PUBLISH_NOT_READY_HINT);
+    return;
+  }
   fullStackDeployOneClick({ mode: "full" }).catch((err) => {
     $("status").textContent = err?.message || String(err);
-  });
+  }).finally(() => refreshPublishButtonState({ force: true }));
 });
+setInterval(() => { refreshPublishButtonState(); }, 3000);
 $("themeCycleBtn")?.addEventListener("click", (event) => {
   event.stopPropagation();
   cycleEditCoreTheme();

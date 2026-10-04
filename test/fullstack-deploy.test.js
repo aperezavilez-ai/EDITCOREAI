@@ -46,7 +46,31 @@ test("IPC + preload expose fullstack deploy", () => {
   assert.match(preload, /fullStackDeploy/);
   assert.match(preload, /project:fullstack-progress/);
   assert.match(html, /id="publishBtn"/);
-  assert.match(html, /id="connectProjectBtn"/);
+  assert.doesNotMatch(html, /id="connectProjectBtn"/);
   assert.doesNotMatch(html, /id="updatePublishBtn"/);
   assert.doesNotMatch(html, /fullStackDeployBtn/);
+});
+
+test("Publicar: gris sin conexiones, azul cuando el proyecto está conectado", () => {
+  const renderer = fs.readFileSync(path.join(__dirname, "..", "renderer.js"), "utf8");
+  const css = fs.readFileSync(path.join(__dirname, "..", "styles.css"), "utf8");
+  const html = fs.readFileSync(path.join(__dirname, "..", "index.html"), "utf8");
+  assert.match(html, /id="publishBtn"[^>]*class="toolbar-publish-btn is-not-ready"/);
+  assert.match(renderer, /async function refreshPublishButtonState/);
+  assert.match(renderer, /assessment\?\.readyToPublish && assessment\?\.connections\?\.github\?\.configured/);
+  assert.match(css, /#publishBtn\.is-not-ready[\s\S]*?color:#9ca3af/);
+  assert.match(css, /#publishBtn\.is-ready \{[^}]*background:#2563eb/);
+});
+
+test("project:onboard importa onboardProject (sin ReferenceError)", () => {
+  const main = fs.readFileSync(path.join(__dirname, "..", "main.js"), "utf8");
+  const start = main.indexOf('ipcMain.handle("project:onboard"');
+  const handler = main.slice(start, main.indexOf("ipcMain.handle(", start + 10));
+  assert.match(handler, /const \{ onboardProject \} = require\("\.\/runtime\/project-onboarding"\)/);
+});
+
+test("el panel de errores del preview ignora avisos (solo nivel error)", () => {
+  const renderer = fs.readFileSync(path.join(__dirname, "..", "renderer.js"), "utf8");
+  assert.match(renderer, /if \(event\.level >= 3 && previewExpectedUrl\)/);
+  assert.doesNotMatch(renderer, /if \(event\.level >= 2 && previewExpectedUrl\)/);
 });

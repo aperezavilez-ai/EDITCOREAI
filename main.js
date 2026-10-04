@@ -3578,7 +3578,7 @@ function normalizeSecureState(value) {
       state[currentKey] = state[legacyKey];
     }
   }
-  return state;
+  return require("./runtime/meai-single-key").unifyMeaiSecureState(state).state;
 }
 
 function readSecureStateFile(filePath) {
@@ -3783,7 +3783,7 @@ function readSecureState() {
 
 function writeSecureState(value) {
   if (!safeStorage.isEncryptionAvailable()) throw new Error("El almacenamiento seguro de Windows no esta disponible.");
-  const normalized = value && typeof value === "object" ? value : {};
+  const normalized = require("./runtime/meai-single-key").unifyMeaiSecureState(value && typeof value === "object" ? value : {}).state;
   const payload = safeStorage.encryptString(JSON.stringify(normalized));
   const filePath = secureConfigPath();
   const tempPath = `${filePath}.${process.pid}.tmp`;
@@ -6078,6 +6078,7 @@ ipcMain.handle("project:onboard", async (event, input = {}) => {
       return { ok: false, cancelled: true, message: "Conexion cancelada." };
     }
   }
+  const { onboardProject } = require("./runtime/project-onboarding");
   return onboardProject(rootPath, readConnections(), {
     localProjectId: String(input.localProjectId || ""),
     projectName: String(input.projectName || path.basename(rootPath)),
@@ -9609,7 +9610,8 @@ function ensureDirectUpstreamProfiles() {
       const apicreditsKeys = readLocalKeysFile(path.join(toolsDir, ".apicredits-keys.local"));
       const meaiKeys = readLocalKeysFile(path.join(toolsDir, ".meai-keys.local"));
       const claudeApicredits = String(apicreditsKeys.claude || apicreditsKeys.claude_default || apicreditsKeys.apicredits || "").trim();
-      if (claudeApicredits.startsWith("sk-")) {
+      const { HIDDEN_PROVIDER_KEYS } = require("./runtime/meai-single-key");
+      if (claudeApicredits.startsWith("sk-") && !HIDDEN_PROVIDER_KEYS.includes("apicredits")) {
         for (const model of ["claude-fable-5", "claude-haiku-4-5"]) {
           upsertDirect({
             providerKey: "apicredits",
@@ -9620,9 +9622,11 @@ function ensureDirectUpstreamProfiles() {
           });
         }
       }
+      const meaiSingleKey = String(meaiKeys["claude-sonnet-4.6"] || meaiKeys.default || meaiKeys.meai || "").trim();
+      const meaiAlreadyConfigured = String(providers.meai?.apiKey || "").trim() !== "";
       for (const model of MEAI_GATEWAY_MODELS) {
-        const apiKey = String(meaiKeys[model] || meaiKeys.default || meaiKeys.meai || "").trim();
-        if (!apiKey.startsWith("sk-")) continue;
+        const apiKey = meaiSingleKey;
+        if (meaiAlreadyConfigured || !apiKey.startsWith("sk-")) continue;
         upsertDirect({
           providerKey: "meai",
           providerName: "ME AI Cloud",
