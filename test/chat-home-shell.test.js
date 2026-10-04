@@ -7,6 +7,14 @@ const path = require("node:path");
 
 const root = path.resolve(__dirname, "..");
 
+test("chat mode keeps the bottom status bar visible above the shell", () => {
+  const css = fs.readFileSync(path.join(root, "chat-home.css"), "utf8");
+  const hiddenBlock = css.slice(0, css.indexOf("display: none !important;"));
+  assert.doesNotMatch(hiddenBlock, /#appStatusBar/);
+  assert.match(css, /body\[data-app-mode="chat"\] #appStatusBar \{[^}]*position: fixed;[^}]*bottom: 0;/);
+  assert.match(css, /body\[data-app-mode="chat"\] #chatHomeShell \{\s*bottom: 22px;/);
+});
+
 test("chat-home shell exists in index.html", () => {
   const html = fs.readFileSync(path.join(root, "index.html"), "utf8");
   assert.match(html, /id="chatHomeShell"/);

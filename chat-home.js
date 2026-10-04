@@ -627,6 +627,7 @@
     syncAdminShortcuts();
     closeSettings();
     $("providersDialog")?.close?.();
+    $("connectionsDialog")?.close?.();
     await refreshCreditsAndProfileUI();
     syncModelPill();
   }

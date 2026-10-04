@@ -4180,10 +4180,10 @@ async function validateConnection(service) {
       hint = `${raw} — revisa el token GitHub (scopes repo,workflow) o regeneralo.`;
     }
     if (name === "selfsupabase" && /gafcore-gateway|404|ENOTFOUND/i.test(raw)) {
-      hint = `${raw} — no mezcles Gateway. Usa la URL del proyecto (ej. https://supabase.gafcore.com/taxidriv).`;
+      hint = `${raw} — usa la URL de tu proyecto de Supabase (ej. https://tu-servidor/tu-proyecto), no la de un proveedor de modelos.`;
     }
     if (name === "selfsupabase" && /401|403|JWT|Invalid API key|unauthorized/i.test(raw)) {
-      hint = `${raw} — API Key o URL de proyecto incorrecta. En GafCore suele ser https://supabase.gafcore.com/<proyecto> + SERVICE_ROLE del .env.`;
+      hint = `${raw} — API Key o URL de proyecto incorrecta. Revisa la URL de tu Supabase y la clave service_role de tu proyecto.`;
     }
     return { service: name, configured: true, ok: false, error: hint };
   }
@@ -5271,7 +5271,20 @@ authManager.on("session-changed", (session) => {
     try { win.webContents.send("auth:session-changed", session || { isAuthenticated: false, user: null }); } catch { /* ignore */ }
   }
   if (session?.isAuthenticated) sendPresenceHeartbeat();
+  syncAdminInfra();
 });
+
+function syncAdminInfra() {
+  const { setAdminInfra } = require("./runtime/platform-defaults");
+  if (!authManager.isAuthenticated()) {
+    setAdminInfra(false);
+    return;
+  }
+  const { creditLedger } = require("./runtime/credit-ledger");
+  creditLedger.checkCanRun()
+    .then((access) => setAdminInfra(access?.ok === true && access.role === "admin"))
+    .catch(() => setAdminInfra(false));
+}
 
 const PRESENCE_HEARTBEAT_MS = 2 * 60 * 1000;
 let presenceHeartbeatBusy = false;
@@ -5284,7 +5297,10 @@ function sendPresenceHeartbeat() {
     .finally(() => { presenceHeartbeatBusy = false; });
 }
 
-app.whenReady().then(() => setTimeout(sendPresenceHeartbeat, 15000));
+app.whenReady().then(() => setTimeout(() => {
+  sendPresenceHeartbeat();
+  syncAdminInfra();
+}, 15000));
 setInterval(sendPresenceHeartbeat, PRESENCE_HEARTBEAT_MS).unref?.();
 
 const CLOUD_PROVIDER_KEY = "editcore-cloud";
@@ -6731,6 +6747,7 @@ ipcMain.handle("agent:run", async (event, input = {}) => {
     const { creditLedger } = require("./runtime/credit-ledger");
     const access = await creditLedger.checkCanRun();
     if (!access.ok) return licenseBlockedRunResult(event, access);
+    require("./runtime/platform-defaults").setAdminInfra(access.role === "admin" && apiKey !== CLOUD_SESSION_KEY);
     if (access.role !== "admin" || apiKey === CLOUD_SESSION_KEY) {
       const { authManager } = require("./runtime/auth-manager");
       const token = await authManager.getAccessToken();

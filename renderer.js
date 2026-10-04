@@ -925,7 +925,7 @@ function displaySupabaseUrlForActiveProject(savedUrl = "", projectRoot = "") {
   const root = String(projectRoot || "").trim();
   const raw = String(savedUrl || "").trim().replace(/\/+$/, "");
   if (!raw) {
-    return root ? `https://supabase.gafcore.com/${gafcoreProjectSlugFromRoot(root)}` : "";
+    return root && isCurrentUserAdmin() ? `https://supabase.gafcore.com/${gafcoreProjectSlugFromRoot(root)}` : "";
   }
   if (!isGafcoreSupabaseUrl(raw)) return raw;
   const origin = vaultSafeSupabaseUrl(raw) || "https://supabase.gafcore.com";
@@ -933,8 +933,15 @@ function displaySupabaseUrlForActiveProject(savedUrl = "", projectRoot = "") {
   return `${origin}/${gafcoreProjectSlugFromRoot(root)}`;
 }
 
+function isPreviewAsUser() {
+  return window.__editcoreSession?.previewAsUser === true;
+}
+
 function loadConnections() {
-  const saved = loadJson("editcore-connections", {});
+  const preview = isPreviewAsUser();
+  const previewNote = $("connectionsPreviewNote");
+  if (previewNote) previewNote.hidden = !preview;
+  const saved = preview ? {} : loadJson("editcore-connections", {});
   const display = { ...saved };
   display.selfSupabaseUrl = displaySupabaseUrlForActiveProject(
     saved.selfSupabaseUrl,
@@ -982,6 +989,10 @@ function pathBasename(filePath = "") {
 }
 
 async function saveConnections() {
+  if (isPreviewAsUser()) {
+    $("status").textContent = "Vista de usuario: las conexiones no se guardan. Sal de la vista de usuario para editar las tuyas.";
+    return;
+  }
   // Recargar bóveda desde disco antes de fusionar, para no pisar secretos migrados.
   secureState = await window.editcoreSecureConfig.load().catch(() => secureState);
   const previous = { ...(loadJson("editcore-connections", {}) || {}) };
@@ -1031,7 +1042,9 @@ async function saveConnections() {
 }
 
 async function renderConnectionStatus(validate = false) {
-  const saved = loadJson("editcore-connections", {});
+  const preview = isPreviewAsUser();
+  if (preview) validate = false;
+  const saved = preview ? {} : loadJson("editcore-connections", {});
   const map = {
     github:      !!saved.githubToken,
     vercel:      !!saved.vercelToken,
@@ -1051,6 +1064,10 @@ async function renderConnectionStatus(validate = false) {
     badge.textContent = "en boveda";
     badge.classList.add("connected");
   });
+  if (preview) {
+    state.operatorConnectionsMemory = "";
+    return;
+  }
   if (!validate || !window.editcoreConnections?.validate) {
     if (window.editcoreConnections?.operatorMemory) {
       try {
@@ -1101,6 +1118,10 @@ async function renderConnectionStatus(validate = false) {
 }
 
 async function detectConnections() {
+  if (isPreviewAsUser()) {
+    $("status").textContent = "Vista de usuario: la detección de conexiones está desactivada.";
+    return;
+  }
   const button = $("detectConnectionsBtn");
   const previousText = button.textContent;
   button.disabled = true;

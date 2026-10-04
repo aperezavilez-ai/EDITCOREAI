@@ -76,7 +76,7 @@ function serviceSpec(service, connections) {
     if (!/^https:\/\//i.test(baseUrl)) throw new Error("La URL de Supabase debe usar HTTPS.");
     if (/gafcore-gateway/i.test(baseUrl)) {
       throw new Error(
-        "URL invalida: no uses un endpoint de modelos como URL de Supabase. Usa la URL del proyecto (ej. https://supabase.gafcore.com/tu-proyecto).",
+        "URL invalida: no uses un endpoint de modelos como URL de Supabase. Usa la URL de tu proyecto de Supabase (ej. https://tu-servidor/tu-proyecto).",
       );
     }
     return { baseUrl, headers: { apikey: apiKey, Authorization: `Bearer ${apiKey}` } };

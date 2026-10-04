@@ -80,7 +80,7 @@ function createCloudVaultBridge(deps = {}) {
     if (name === "supabase" || name === "selfsupabase") {
       const url = String(c.selfSupabaseUrl || "").trim();
       const key = String(c.selfSupabaseKey || "").trim();
-      if (!url || !key) throw new Error("Supabase GafCore no configurado en Conexiones (bóveda).");
+      if (!url || !key) throw new Error("Supabase no configurado en Conexiones (bóveda).");
       return { service: "supabase", url, key };
     }
     if (name === "gafcore" || name === "gateway") {

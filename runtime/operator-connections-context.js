@@ -7,6 +7,7 @@
 
 const fs = require("node:fs");
 const path = require("node:path");
+const { adminInfraEnabled, defaultSupabaseOrigin } = require("./platform-defaults");
 
 const GLOBAL_MEMORY_ID = "operator-connections-global";
 const PROJECT_MEMORY_PREFIX = "operator-connections:";
@@ -122,8 +123,8 @@ function projectOwnedSupabaseUrl(projectRoot = "", candidateUrl = "") {
   const slug = gafcoreProjectSlug(projectRoot);
   const raw = String(candidateUrl || "").trim().replace(/\/+$/, "");
   if (isGafcoreSupabaseUrl(raw) || !raw) {
-    const origin = gafcorePlatformOrigin(raw) || "https://supabase.gafcore.com";
-    return `${origin}/${slug}`;
+    const origin = gafcorePlatformOrigin(raw) || defaultSupabaseOrigin();
+    return origin ? `${origin}/${slug}` : "";
   }
   return raw;
 }
@@ -143,9 +144,7 @@ function resolveProjectSupabase(projectRoot = "", globalConnections = {}) {
   const root = String(projectRoot || "").trim();
   const globalKey = String(globalConnections.selfSupabaseKey || "").trim();
   const globalOrigin = gafcorePlatformOrigin(globalConnections.selfSupabaseUrl)
-    || (isGafcoreSupabaseUrl(globalConnections.selfSupabaseUrl)
-      ? "https://supabase.gafcore.com"
-      : String(globalConnections.selfSupabaseUrl || "").trim().replace(/\/+$/, ""));
+    || String(globalConnections.selfSupabaseUrl || "").trim().replace(/\/+$/, "");
   const ownSlug = root ? gafcoreProjectSlug(root) : "";
 
   if (!root) {
@@ -224,8 +223,9 @@ function resolveProjectSupabase(projectRoot = "", globalConnections = {}) {
   }
 
   // Bóveda: solo credencial de plataforma + URL propia de ESTE proyecto.
-  if (globalKey && (globalOrigin || isGafcoreSupabaseUrl(globalConnections.selfSupabaseUrl) || !globalConnections.selfSupabaseUrl)) {
-    const url = projectOwnedSupabaseUrl(root, globalOrigin || "https://supabase.gafcore.com");
+  const platformOrigin = globalOrigin || (adminInfraEnabled() ? defaultSupabaseOrigin() : "");
+  if (globalKey && platformOrigin) {
+    const url = projectOwnedSupabaseUrl(root, platformOrigin);
     return {
       url,
       key: globalKey,

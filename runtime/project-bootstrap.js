@@ -80,7 +80,18 @@ class ProjectBootstrap {
         // Crear repo en GitHub
         const creds = this.getVaultCredentials("github");
         if (creds?.githubToken) {
-          const repoName = `aperezavilez-ai/${slug}`;
+          let owner = "";
+          try {
+            const me = await fetch("https://api.github.com/user", {
+              headers: {
+                "Authorization": `Bearer ${creds.githubToken}`,
+                "Accept": "application/vnd.github+json",
+                "User-Agent": "EDITCOREAI-Bootstrap",
+              },
+            });
+            if (me.ok) owner = String((await me.json())?.login || "").trim();
+          } catch { /* gh usa la cuenta del token */ }
+          const repoName = owner ? `${owner}/${slug}` : slug;
           try {
             // Usar GitHub CLI si esta disponible
             execSync(`gh repo create ${repoName} --private --source=. --remote=origin --push`, {

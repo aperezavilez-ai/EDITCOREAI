@@ -13,6 +13,7 @@ const {
   gafcorePlatformOrigin,
   connectionsForProject,
 } = require("./operator-connections-context");
+const { defaultSupabaseOrigin } = require("./platform-defaults");
 
 function slugify(value = "") {
   return String(value || "")
@@ -174,8 +175,11 @@ async function createSupabaseProject(projectRoot, connections = {}, {
       gafcorePlatformOrigin(connections.selfSupabaseUrl || connections.supabaseUrl || "")
         || connections.selfSupabaseUrl
         || connections.supabaseUrl
-        || "https://supabase.gafcore.com",
+        || defaultSupabaseOrigin(),
     );
+    if (!intendedUrl && !useCloud) {
+      return { ok: false, message: "Conecta tu Supabase (URL y API Key) en Conexiones.", code: "SUPABASE_NOT_CONNECTED", steps };
+    }
     assertProjectConnectionTarget(root, {
       supabaseUrl: intendedUrl,
       supabaseProjectId: connections.supabaseProjectId || connections.gafcoreProjectId || gafcoreProjectSlug(root),
@@ -211,7 +215,7 @@ async function createSupabaseProject(projectRoot, connections = {}, {
       ...activeConnections,
       selfSupabaseUrl: projectOwnedSupabaseUrl(
         root,
-        gafcorePlatformOrigin(activeConnections.selfSupabaseUrl) || activeConnections.selfSupabaseUrl || "https://supabase.gafcore.com",
+        gafcorePlatformOrigin(activeConnections.selfSupabaseUrl) || activeConnections.selfSupabaseUrl || defaultSupabaseOrigin(),
       ),
     };
   }
