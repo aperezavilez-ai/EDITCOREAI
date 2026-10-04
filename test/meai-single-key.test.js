@@ -29,23 +29,24 @@ test("tras unificar, la clave del panel manda (el admin puede cambiarla)", () =>
   ]), "sk-nueva");
 });
 
-test("APICredits queda oculto sin borrarse y el chat pasa a Auto de ME AI", () => {
+test("APICredits sigue disponible para el administrador y vuelve con su status si estaba oculto", () => {
   const { state } = unifyMeaiSecureState({
     "editcore-providers": { meai: { apiKey: "sk-meai", singleKey: true } },
     "editcore-provider-profiles": [
-      { id: "apicredits:gpt-5.6-sol", providerKey: "apicredits", model: "gpt-5.6-sol", apiKey: "sk-ac", status: "active" },
+      { id: "apicredits:gpt-5.6-sol", providerKey: "apicredits", model: "gpt-5.6-sol", apiKey: "sk-ac", status: "hidden", hiddenStatus: "active" },
+      { id: "apicredits:gpt-5-mini", providerKey: "apicredits", model: "gpt-5-mini", apiKey: "sk-ac2", status: "active" },
     ],
-    "editcore-chat-config": { providerKey: "apicredits", model: "gpt-5.6-sol", apiKey: "sk-ac", modelSelectionMode: "manual" },
+    "editcore-chat-config": { providerKey: "apicredits", model: "gpt-5.6-sol", apiKey: "sk-ac", modelSelectionMode: "auto", autoProviderScope: "all" },
   });
-  const [ac] = state["editcore-provider-profiles"];
-  assert.equal(ac.status, "hidden");
-  assert.equal(ac.hiddenStatus, "active");
-  assert.equal(ac.apiKey, "sk-ac");
+  const [restored, kept] = state["editcore-provider-profiles"];
+  assert.equal(restored.status, "active");
+  assert.equal("hiddenStatus" in restored, false);
+  assert.equal(restored.apiKey, "sk-ac");
+  assert.equal(kept.status, "active");
   const chat = state["editcore-chat-config"];
-  assert.equal(chat.providerKey, "meai");
-  assert.equal(chat.apiKey, "sk-meai");
-  assert.equal(chat.modelSelectionMode, "auto");
-  assert.equal(chat.autoProviderScope, "meai");
+  assert.equal(chat.providerKey, "apicredits");
+  assert.equal(chat.apiKey, "sk-ac");
+  assert.equal(chat.autoProviderScope, "all");
 });
 
 test("el estado ya unificado no se reescribe", () => {
@@ -63,12 +64,12 @@ test("main aplica la regla al leer y al guardar la bóveda", () => {
   assert.match(main, /meaiAlreadyConfigured \|\| !apiKey\.startsWith\("sk-"\)/);
 });
 
-test("panel y chat: solo ME AI, sin clave por modelo, un solo Auto", () => {
+test("panel: ME AI con una sola clave y APICredits para el administrador", () => {
   const renderer = fs.readFileSync(path.join(root, "renderer.js"), "utf8");
-  assert.match(renderer, /const PRIMARY_PROVIDER_KEYS = \["meai"\];/);
+  assert.match(renderer, /const PRIMARY_PROVIDER_KEYS = \["meai", "apicredits"\];/);
+  assert.match(renderer, /const HIDDEN_PROVIDER_KEYS = \[\];/);
   assert.match(renderer, /const SINGLE_KEY_PROVIDER_KEYS = \["meai"\];/);
   assert.match(renderer, /api\.hidden = true;/);
   assert.match(renderer, /async function verifyAllSingleKeyModels\(key\)/);
-  assert.match(renderer, /const autoScopes = \[\{ scope: "meai", title: "Auto"/);
-  assert.doesNotMatch(renderer, /Auto · APICredits/);
+  assert.match(renderer, /const autoScopes = isAdmin\s*\? \[[\s\S]{0,300}scope: "apicredits", title: "Auto · APICredits"[\s\S]{0,200}: \[\{ scope: "meai", title: "Auto"/);
 });

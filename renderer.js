@@ -28,9 +28,10 @@ const PROVIDERS = {
   deepseek: { label: "DeepSeek",  baseUrl: "https://api.deepseek.com/v1", model: "deepseek-chat" },
   qwen:     { label: "Qwen",      baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1", model: "qwen-plus" },
 };
-// APICredits queda oculto: ME AI con una sola API key cubre todos los modelos.
-const PRIMARY_PROVIDER_KEYS = ["meai"];
-const HIDDEN_PROVIDER_KEYS = ["apicredits"];
+// ME AI usa una sola API key para todos sus modelos. APICredits solo lo ve el
+// administrador: filterModelOptionsForRole deja a los usuarios solo con ME AI.
+const PRIMARY_PROVIDER_KEYS = ["meai", "apicredits"];
+const HIDDEN_PROVIDER_KEYS = [];
 const SINGLE_KEY_PROVIDER_KEYS = ["meai"];
 
 const PROVIDER_MODELS = {
@@ -2064,7 +2065,13 @@ function renderModelPickerMenu() {
   menu.appendChild(searchWrap);
 
   const isAdmin = isCurrentUserAdmin();
-  const autoScopes = [{ scope: "meai", title: "Auto", hint: "EditCoreAI elige el mejor modelo de ME AI para cada tarea." }];
+  const autoScopes = isAdmin
+    ? [
+      { scope: "all", title: "Auto", hint: "ME AI Cloud + APICredits juntos." },
+      { scope: "meai", title: "Auto · ME AI", hint: "Solo modelos ME AI Cloud." },
+      { scope: "apicredits", title: "Auto · APICredits", hint: "Solo modelos APICredits." },
+    ]
+    : [{ scope: "meai", title: "Auto", hint: "EditCoreAI elige el mejor modelo para cada tarea." }];
   autoScopes.forEach(({ scope, title, hint }) => {
     const autoRow = document.createElement("div");
     autoRow.className = "model-picker-auto-row";

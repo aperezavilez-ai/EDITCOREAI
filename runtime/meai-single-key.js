@@ -1,12 +1,13 @@
 "use strict";
 
-// ME AI usa una sola API key para todos sus modelos. APICredits queda oculto
-// (sus perfiles se conservan con status "hidden" y hiddenStatus para poder
-// reactivarlo poniendo HIDDEN_PROVIDER_KEYS en []).
+// ME AI usa una sola API key para todos sus modelos. Un proveedor en
+// HIDDEN_PROVIDER_KEYS se oculta guardando su status en hiddenStatus; al sacarlo
+// de la lista, sus perfiles vuelven con el status que tenían. APICredits sigue
+// visible para el administrador; a los usuarios los filtra el rol en renderer.js.
 const MEAI_KEY = "meai";
 const MEAI_BASE_URL = "https://api.meai.cloud/v1";
 const MEAI_DEFAULT_MODEL = "claude-sonnet-4.6";
-const HIDDEN_PROVIDER_KEYS = ["apicredits"];
+const HIDDEN_PROVIDER_KEYS = [];
 const ACTIVE_STATUSES = new Set(["active", "enabled"]);
 
 const isSonnet46 = (model) => /^claude-sonnet-4[.-]6$/i.test(String(model || "").trim());
@@ -48,8 +49,12 @@ function unifyMeaiSecureState(input) {
   let profiles = rawProfiles.map((p) => {
     if (!p || typeof p !== "object") return p;
     if (p.providerKey === MEAI_KEY && apiKey && p.apiKey !== apiKey) return { ...p, apiKey };
-    if (HIDDEN_PROVIDER_KEYS.includes(p.providerKey) && p.status !== "hidden") {
-      return { ...p, hiddenStatus: p.status || "", status: "hidden" };
+    if (HIDDEN_PROVIDER_KEYS.includes(p.providerKey)) {
+      return p.status === "hidden" ? p : { ...p, hiddenStatus: p.status || "", status: "hidden" };
+    }
+    if (p.status === "hidden" && Object.prototype.hasOwnProperty.call(p, "hiddenStatus")) {
+      const { hiddenStatus, ...rest } = p;
+      return { ...rest, status: hiddenStatus || "" };
     }
     return p;
   });
@@ -77,7 +82,6 @@ function unifyMeaiSecureState(input) {
         autoProviderScope: MEAI_KEY,
       });
     }
-    if (next.modelSelectionMode === "auto" && next.autoProviderScope !== MEAI_KEY) next.autoProviderScope = MEAI_KEY;
     if (next.providerKey === MEAI_KEY && apiKey) next.apiKey = apiKey;
     state["editcore-chat-config"] = next;
   }

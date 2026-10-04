@@ -1,8 +1,9 @@
 # RELEASE v4.3.1
 
-## Panel de administración a todo lo ancho
+## Panel de administración a todo lo ancho y APICredits de vuelta para el administrador
 
 - Con la administración abierta, la ventana de Configuración ocupa toda la pantalla y la tarjeta «Saldo global de ME AI» (saldo, dinero real, días que alcanza, consumo y precios) se estira al ancho completo en lugar de quedar angosta.
+- APICredits vuelve al panel Modelos del administrador, con sus claves y modelos como estaban, y las opciones Auto, Auto · ME AI y Auto · APICredits. Los usuarios siguen viendo solo los modelos de ME AI, sin nombres de proveedor.
 - Incluye todo lo de la versión 4.3.0.
 
 ### Archivos

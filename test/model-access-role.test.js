@@ -79,7 +79,7 @@ test("proveedores y 'Configurar modelos' solo para el administrador", () => {
   assert.match(setOptions, /if \(isAdmin\) \{\s*const configureOption/);
   assert.match(setOptions, /if \(isAdmin && PRIMARY_PROVIDER_KEYS\.length > 1\) \{\s*const allAuto/);
   const picker = sliceFunction(rendererSrc, "function renderModelPickerMenu()");
-  assert.match(picker, /const autoScopes = \[\{ scope: "meai", title: "Auto"/);
+  assert.match(picker, /const autoScopes = isAdmin\s*\? \[[\s\S]*?\]\s*: \[\{ scope: "meai", title: "Auto"/);
   assert.match(chatHomeSrc, /\["providersBtn", "settingsOpenModelsDialogBtn"\][\s\S]*isAdm \? "" : "none"/);
   assert.match(chatHomeSrc, /normalized === "models" && window\.__editcoreSession\?\.user\?\.isAdmin !== true/);
 });
