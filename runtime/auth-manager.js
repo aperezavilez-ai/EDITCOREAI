@@ -346,6 +346,17 @@ class AuthManager extends EventEmitter {
       .filter(Boolean);
   }
 
+  /** Saldo global de ME AI en dólares de panel (solo administrador). */
+  async meaiBalance() {
+    const token = await this.getAccessToken();
+    if (!token) throw new AuthError("NO_SESSION");
+    const res = await this._request("/functions/v1/ai-proxy/v1/admin/meai-balance", { token });
+    if (res.status === 401) throw new AuthError("SESSION_EXPIRED");
+    if (res.status === 403) throw new AuthError("FORBIDDEN");
+    if (!res.ok) throw new AuthError("SERVER", String(res.data?.error?.message || res.status));
+    return res.data;
+  }
+
   async _paymentsRequest(route, method = "GET") {
     const token = await this.getAccessToken();
     if (!token) throw new AuthError("NO_SESSION");

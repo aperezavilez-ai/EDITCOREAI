@@ -386,6 +386,58 @@
                   <div class="ec-master-badge">👑 Administración de EditCoreAI</div>
                   <button type="button" class="ec-btn-action" id="adminRefreshBtn">Actualizar</button>
                 </div>
+                <div class="ec-meai-card" id="adminMeaiCard">
+                  <div class="ec-meai-head">
+                    <span class="ec-metric-title">🏦 Saldo global de ME AI (de aquí sale todo el consumo)</span>
+                    <span class="ec-metric-sub" id="adminMeaiUpdated">Leyendo…</span>
+                  </div>
+                  <div class="ec-meai-balance">
+                    <div class="ec-meai-figure">
+                      <div class="ec-meai-big" id="adminMeaiRemaining">—</div>
+                      <span class="ec-metric-sub">Quedan en el panel de ME AI</span>
+                    </div>
+                    <div class="ec-meai-figure">
+                      <div class="ec-meai-big text-emerald" id="adminMeaiRemainingReal">—</div>
+                      <span class="ec-metric-sub" id="adminMeaiRateText">Dinero real (panel × 0.02)</span>
+                    </div>
+                    <div class="ec-meai-figure">
+                      <div class="ec-meai-big" id="adminMeaiDaysLeft">—</div>
+                      <span class="ec-metric-sub" id="adminMeaiDaily">Días que alcanza (ritmo de 7 días)</span>
+                    </div>
+                  </div>
+                  <div class="ec-meai-bar" aria-hidden="true"><div class="ec-meai-bar-fill" id="adminMeaiBarFill"></div></div>
+                  <div class="ec-metric-sub" id="adminMeaiBarText">Gastado — de —</div>
+                  <div class="ec-meai-alert" id="adminMeaiAlert" hidden></div>
+                  <div class="ec-meai-actions">
+                    <button type="button" class="ec-btn-action" id="adminMeaiTopupToggle">➕ Registrar recarga</button>
+                    <button type="button" class="ec-btn-action" id="adminMeaiAdjustToggle">✏ Corregir saldo</button>
+                    <span class="ec-metric-sub" id="adminMeaiOffsetText"></span>
+                  </div>
+                  <div class="ec-meai-form" id="adminMeaiTopupForm" hidden>
+                    <span class="ec-metric-sub">Cuando compres saldo en ME AI, anótalo aquí: el saldo se actualiza solo desde ME AI y con lo que pagaste se recalcula cuánto vale en dinero real.</span>
+                    <div class="ec-admin-row">
+                      <input type="number" min="1" step="0.01" id="adminMeaiTopupPanel" class="ec-styled-input" placeholder="Panel recibido (ej. 10000)" title="Dólares de panel que te dio ME AI" />
+                      <input type="number" min="0" step="0.01" id="adminMeaiTopupReal" class="ec-styled-input" placeholder="Pagaste real (ej. 200)" title="Dólares reales que pagaste" />
+                      <input type="text" maxlength="200" id="adminMeaiTopupNote" class="ec-styled-input" placeholder="Nota (opcional)" />
+                    </div>
+                    <button type="button" class="ec-btn-action" id="adminMeaiTopupSave">Guardar recarga</button>
+                    <div class="ec-status-msg" id="adminMeaiTopupResult" hidden></div>
+                    <div class="ec-metric-sub" id="adminMeaiTopupList"></div>
+                  </div>
+                  <div class="ec-meai-form" id="adminMeaiAdjustForm" hidden>
+                    <span class="ec-metric-sub">Escribe el saldo que ves en tu panel de ME AI (en dólares de panel) si no coincide con el de aquí. Déjalo vacío y guarda para quitar la corrección.</span>
+                    <div class="ec-admin-row">
+                      <input type="number" min="0" step="0.01" id="adminMeaiAdjustValue" class="ec-styled-input" placeholder="Saldo en ME AI (ej. 6748.69)" />
+                    </div>
+                    <button type="button" class="ec-btn-action" id="adminMeaiAdjustSave">Guardar saldo</button>
+                    <div class="ec-status-msg" id="adminMeaiAdjustResult" hidden></div>
+                  </div>
+                  <div class="ec-meai-table" id="adminMeaiTable"></div>
+                  <details class="ec-meai-prices">
+                    <summary>Precios por millón de tokens (panel, real y lo que paga el usuario)</summary>
+                    <div class="ec-meai-table" id="adminMeaiPrices"></div>
+                  </details>
+                </div>
                 <div class="ec-master-metrics-grid">
                   <div class="ec-metric-box">
                     <span class="ec-metric-title">👥 Usuarios</span>

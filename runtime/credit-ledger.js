@@ -21,6 +21,8 @@ const CREDIT_ERRORS = {
   INVALID_CREDIT: "El saldo de la recarga debe ser mayor que 0.",
   INVALID_LINK: "El link debe ser un link de pago de Mercado Pago (https://mpago.la/…).",
   INVALID_CONTACT: "El contacto es demasiado largo (máximo 120 caracteres).",
+  INVALID_AMOUNT: "La cantidad no es válida.",
+  NO_READING: "Todavía no hay una lectura del saldo de ME AI; pulsa «Actualizar» e inténtalo de nuevo.",
 };
 
 function failure(error) {
@@ -119,6 +121,47 @@ class CreditLedger extends EventEmitter {
   async adminOverview() {
     try {
       return { ok: true, success: true, overview: await this.auth.rpc("editcoreai_admin_overview") };
+    } catch (error) {
+      return failure(error);
+    }
+  }
+
+  /** Saldo global de ME AI: lectura en vivo (la guarda el servidor) y el reparto por usuarios/admin. */
+  async adminMeaiBalance() {
+    let live = null;
+    let liveError = "";
+    try {
+      live = await this.auth.meaiBalance();
+    } catch (error) {
+      liveError = failure(error).error;
+    }
+    try {
+      const summary = await this.auth.rpc("editcoreai_admin_meai_summary");
+      return { ok: true, success: true, live, liveError, summary };
+    } catch (error) {
+      return { ...failure(error), live, liveError };
+    }
+  }
+
+  /** Registra una compra de saldo en ME AI (dólares de panel recibidos y dinero real pagado). */
+  async adminMeaiTopup({ panel, real, note = "" } = {}) {
+    try {
+      return fromServer(await this.auth.rpc("editcoreai_admin_meai_topup", {
+        p_panel: Number(panel),
+        p_real: Number(real),
+        p_note: String(note || "") || null,
+      }));
+    } catch (error) {
+      return failure(error);
+    }
+  }
+
+  /** Corrige el saldo global con lo que muestra ME AI; remaining null quita la corrección. */
+  async adminMeaiSetBalance({ remaining = null } = {}) {
+    try {
+      return fromServer(await this.auth.rpc("editcoreai_admin_meai_set_balance", {
+        p_remaining: remaining == null || remaining === "" ? null : Number(remaining),
+      }));
     } catch (error) {
       return failure(error);
     }

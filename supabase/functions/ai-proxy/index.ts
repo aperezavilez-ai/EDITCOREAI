@@ -1,13 +1,15 @@
 // ai-proxy: las consultas de IA de los usuarios de EditCoreAI pasan por aquí.
 // Usa la clave del administrador (secreto del servidor, nunca llega a la app), mide los tokens reales
-// de cada respuesta y cobra al usuario el costo del proveedor multiplicado por el margen configurado.
+// de cada respuesta y cobra al usuario el costo real (dólares de panel × panel_usd_rate) multiplicado por el margen configurado.
 // Rutas (compatibles con OpenAI): GET /ai-proxy/v1/models · POST /ai-proxy/v1/chat/completions
+// Solo administrador: GET /ai-proxy/v1/admin/meai-balance (saldo global de ME AI)
 
 import {
   allowedModelNames,
   indexPricing,
   isModelAllowed,
   normalizeModelName,
+  panelPricesPerMillion,
   providerCostUsd,
   readUsage,
   restrictToModels,
@@ -139,6 +141,55 @@ async function chargeUsage(uid: string, model: string, price: unknown, groupRati
   } catch (error) {
     console.error("cobro fallido", model, cost, String(error));
   }
+  maybeRecordSnapshot();
+}
+
+// Saldo global de ME AI en dólares de panel: límite (hard_limit_usd) menos lo gastado (total_usage viene en centavos).
+async function readMeaiBalance() {
+  const get = async (path: string) => {
+    const res = await fetch(`${UPSTREAM_BASE}${path}`, {
+      headers: { Authorization: `Bearer ${UPSTREAM_KEY}` },
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (!res.ok) throw new Error(`${path}: ${res.status}`);
+    return await res.json();
+  };
+  const [sub, usage] = await Promise.all([get("/dashboard/billing/subscription"), get("/dashboard/billing/usage")]);
+  const limit = Number(sub?.hard_limit_usd ?? sub?.system_hard_limit_usd);
+  const used = Number(usage?.total_usage) / 100;
+  if (!Number.isFinite(limit) || !Number.isFinite(used)) throw new Error("respuesta de saldo inválida");
+  return { limit: Math.round(limit * 10000) / 10000, used: Math.round(used * 10000) / 10000 };
+}
+
+let lastSnapshotAt = 0;
+const SNAPSHOT_EVERY_MS = 10 * 60 * 1000;
+
+async function recordMeaiSnapshot() {
+  const balance = await readMeaiBalance();
+  lastSnapshotAt = Date.now();
+  await serviceRpc("editcoreai_proxy_meai_snapshot", { p_limit: balance.limit, p_used: balance.used });
+  return balance;
+}
+
+function maybeRecordSnapshot() {
+  if (Date.now() - lastSnapshotAt < SNAPSHOT_EVERY_MS) return;
+  lastSnapshotAt = Date.now();
+  keepAlive(recordMeaiSnapshot().catch((error) => console.error("medidor ME AI", String(error))));
+}
+
+async function handleMeaiBalance() {
+  const [balance, prices] = await Promise.all([
+    recordMeaiSnapshot(),
+    loadPricing().then(panelPricesPerMillion).catch(() => []),
+  ]);
+  return new Response(JSON.stringify({
+    ok: true,
+    limit_panel: balance.limit,
+    used_panel: balance.used,
+    remaining_panel: Math.max(balance.limit - balance.used, 0),
+    taken_at: new Date().toISOString(),
+    prices,
+  }), { headers: { "content-type": "application/json" } });
 }
 
 async function handleModels(account: Record<string, unknown>) {
@@ -238,7 +289,8 @@ Deno.serve(async (req) => {
   const path = new URL(req.url).pathname.replace(/\/+$/, "");
   const isModels = req.method === "GET" && path.endsWith("/v1/models");
   const isChat = req.method === "POST" && path.endsWith("/v1/chat/completions");
-  if (!isModels && !isChat) return errorResponse(404, "BAD_REQUEST", "Ruta no encontrada.");
+  const isMeaiBalance = req.method === "GET" && path.endsWith("/v1/admin/meai-balance");
+  if (!isModels && !isChat && !isMeaiBalance) return errorResponse(404, "BAD_REQUEST", "Ruta no encontrada.");
   if (!UPSTREAM_KEY || !SERVICE_KEY || !SUPABASE_URL) return errorResponse(503, "NOT_CONFIGURED");
 
   const token = (req.headers.get("authorization") || "").replace(/^Bearer\s+/i, "").trim();
@@ -254,8 +306,10 @@ Deno.serve(async (req) => {
   if (account.status !== "active") return errorResponse(403, "ACCOUNT_SUSPENDED");
   const unlimited = account.is_unlimited === true || account.role === "admin";
   if (isChat && !unlimited && !(Number(account.credits_balance) > 0)) return errorResponse(402, "OUT_OF_CREDITS");
+  if (isMeaiBalance && account.role !== "admin") return errorResponse(403, "BAD_REQUEST", "Solo el administrador puede ver el saldo de ME AI.");
 
   try {
+    if (isMeaiBalance) return await handleMeaiBalance();
     return isModels ? await handleModels(account) : await handleChat(req, uid, account);
   } catch (error) {
     console.error("ai-proxy", String(error));

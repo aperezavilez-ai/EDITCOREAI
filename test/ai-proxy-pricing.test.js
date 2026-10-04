@@ -129,6 +129,66 @@ test("Solo se ofrecen los modelos a los que la clave tiene acceso", async () => 
   assert.equal(restrictToModels(pricing, []), pricing);
 });
 
+test("Tabla de precios por millón en dólares de panel (entrada y salida)", async () => {
+  const { indexPricing, panelPricesPerMillion } = await loadPricing();
+  const rows = panelPricesPerMillion(indexPricing(PAYLOAD, "default"));
+  assert.deepEqual(rows, [
+    { model: "qwen3.5", input: 4, output: 4 },
+    { model: "claude-opus-4.8", input: 6, output: 30 },
+  ]);
+});
+
+test("Saldo de ME AI: ruta solo para administrador y cobro con costo real × margen", () => {
+  const fn = fs.readFileSync(path.join(ROOT, "supabase/functions/ai-proxy/index.ts"), "utf8");
+  assert.match(fn, /\/v1\/admin\/meai-balance/);
+  assert.match(fn, /isMeaiBalance && account\.role !== "admin"/);
+  assert.match(fn, /\/dashboard\/billing\/subscription/);
+  assert.match(fn, /Number\(usage\?\.total_usage\) \/ 100/);
+  const sql = fs.readFileSync(path.join(ROOT, "supabase/migrations/20261004120000_editcoreai_meai_balance.sql"), "utf8");
+  assert.match(sql, /\('panel_usd_rate', '0\.02'::jsonb\)/);
+  assert.match(sql, /v_real := round\(v_cost \* editcoreai\.setting_numeric\('panel_usd_rate', 0\.02\), 6\)/);
+  assert.match(sql, /least\(round\(v_real \* editcoreai\.setting_numeric\('markup', 2\), 6\), acc\.credits_balance\)/);
+  assert.match(sql, /grant execute on function public\.editcoreai_proxy_meai_snapshot\(numeric, numeric\) to service_role/);
+  assert.match(sql, /editcoreai_admin_meai_summary\(\)[\s\S]{0,200}require_admin\(\)/);
+});
+
+test("Panel de administración: tarjeta de saldo de ME AI conectada de punta a punta", () => {
+  const html = fs.readFileSync(path.join(ROOT, "index.html"), "utf8");
+  const home = fs.readFileSync(path.join(ROOT, "chat-home.js"), "utf8");
+  const preload = fs.readFileSync(path.join(ROOT, "preload.js"), "utf8");
+  const main = fs.readFileSync(path.join(ROOT, "main.js"), "utf8");
+  const ledger = fs.readFileSync(path.join(ROOT, "runtime/credit-ledger.js"), "utf8");
+  const auth = fs.readFileSync(path.join(ROOT, "runtime/auth-manager.js"), "utf8");
+  for (const id of ["adminMeaiCard", "adminMeaiRemaining", "adminMeaiRemainingReal", "adminMeaiDaysLeft", "adminMeaiBarFill", "adminMeaiTable", "adminMeaiPrices"]) {
+    assert.match(html, new RegExp(`id="${id}"`), id);
+  }
+  assert.match(home, /renderMeaiCard\(\), renderAdminUsers\(\), renderAdminPayments\(\)/);
+  assert.match(preload, /adminMeaiBalance: \(\) => ipcRenderer\.invoke\("credits:admin-meai-balance"\)/);
+  assert.match(main, /creditsIpc\("credits:admin-meai-balance", \(ledger\) => ledger\.adminMeaiBalance\(\)\)/);
+  assert.match(ledger, /editcoreai_admin_meai_summary/);
+  assert.match(auth, /\/functions\/v1\/ai-proxy\/v1\/admin\/meai-balance/);
+});
+
+test("Saldo global: el administrador registra recargas y corrige el saldo", () => {
+  const html = fs.readFileSync(path.join(ROOT, "index.html"), "utf8");
+  const home = fs.readFileSync(path.join(ROOT, "chat-home.js"), "utf8");
+  const preload = fs.readFileSync(path.join(ROOT, "preload.js"), "utf8");
+  const main = fs.readFileSync(path.join(ROOT, "main.js"), "utf8");
+  for (const id of ["adminMeaiTopupToggle", "adminMeaiAdjustToggle", "adminMeaiTopupSave", "adminMeaiAdjustSave", "adminMeaiTopupPanel", "adminMeaiTopupReal", "adminMeaiAdjustValue"]) {
+    assert.match(html, new RegExp(`id="${id}"`), id);
+  }
+  assert.match(home, /adminMeaiTopup\?\.\(\{ panel, real/);
+  assert.match(home, /adminMeaiSetBalance\?\.\(\{ remaining:/);
+  assert.match(home, /Number\(live\.remaining_panel\) \+ offset/);
+  assert.match(preload, /adminMeaiTopup: \(payload\) => ipcRenderer\.invoke\("credits:admin-meai-topup", payload\)/);
+  assert.match(main, /creditsIpc\("credits:admin-meai-set-balance"/);
+  const sql = fs.readFileSync(path.join(ROOT, "supabase/migrations/20261004130000_editcoreai_meai_adjust.sql"), "utf8");
+  assert.match(sql, /editcoreai_admin_meai_topup\([\s\S]{0,300}require_admin\(\)/);
+  assert.match(sql, /editcoreai_admin_meai_set_balance\([\s\S]{0,300}require_admin\(\)/);
+  assert.match(sql, /sum\(real_usd\) \/ nullif\(sum\(panel_usd\), 0\)/);
+  assert.match(sql, /select 10000, 200, 'Compra inicial'/);
+});
+
 test("Streaming: limpia cada bloque data aunque llegue partido en trozos", async () => {
   const { SseScrubber } = await loadPricing();
   const sse = new SseScrubber("glm-5.1");

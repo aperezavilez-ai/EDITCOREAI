@@ -2457,6 +2457,141 @@ html[data-theme="azul"] .diff-decision-card {
   margin-bottom: 14px;
 }
 
+.ec-meai-card {
+  background: rgba(16, 185, 129, 0.07);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  border-radius: 12px;
+  padding: 14px;
+  margin-bottom: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ec-meai-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.ec-meai-head .ec-metric-title {
+  font-size: 12px;
+  color: #e2e8f0;
+}
+
+.ec-meai-balance {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+
+.ec-meai-figure {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.ec-meai-big {
+  font-size: 24px;
+  font-weight: 800;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.ec-meai-bar {
+  height: 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.1);
+  overflow: hidden;
+}
+
+.ec-meai-bar-fill {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, #10b981, #f59e0b 70%, #ef4444);
+  background-size: 100vw 100%;
+  transition: width 0.4s ease;
+}
+
+.ec-meai-alert {
+  font-size: 12px;
+  font-weight: 700;
+  color: #fecaca;
+  background: rgba(239, 68, 68, 0.18);
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  border-radius: 8px;
+  padding: 6px 10px;
+}
+
+.ec-meai-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.ec-meai-form {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.ec-meai-form[hidden] {
+  display: none;
+}
+
+.ec-meai-form .ec-btn-action {
+  align-self: flex-start;
+}
+
+.ec-meai-table {
+  display: grid;
+  grid-template-columns: minmax(150px, 1.3fr) repeat(3, 1fr);
+  font-size: 11px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.ec-meai-table > span {
+  padding: 5px 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  color: #e2e8f0;
+}
+
+.ec-meai-table > span.is-head {
+  font-family: inherit;
+  font-weight: 700;
+  color: #94a3b8;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.ec-meai-table > span.is-label {
+  font-family: inherit;
+  font-weight: 600;
+}
+
+.ec-meai-table > span.is-total {
+  font-weight: 800;
+  color: #fbbf24;
+}
+
+.ec-meai-table > span.is-profit {
+  color: #34d399;
+}
+
+.ec-meai-prices summary {
+  cursor: pointer;
+  font-size: 11px;
+  color: #94a3b8;
+  margin: 4px 0 6px;
+}
+
 .ec-metric-box {
   background: rgba(255, 255, 255, 0.05);
   border: 1px solid rgba(255, 255, 255, 0.08);

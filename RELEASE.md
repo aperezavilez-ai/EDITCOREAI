@@ -1,3 +1,22 @@
+# RELEASE v4.3.0
+
+## Saldo global de ME AI en Administración y cobro con el costo real
+
+### Nuevo
+- **Saldo global de ME AI** en Administración: cuánto queda en el panel de ME AI y cuánto es en dinero real (panel × 0.02), barra de gastado sobre el límite, cuántos días alcanza al ritmo de los últimos 7 días y alerta cuando queda poco.
+- **Consumo separado**: por hoy, 7 y 30 días se ve cuánto bajó el saldo de ME AI, cuánto gastaron los usuarios, cuánto el administrador, cuánto se cobró a los usuarios y la ganancia.
+- **Tabla de precios por modelo**: precio del panel, costo real y lo que paga el usuario.
+- Cada usuario de la lista muestra su consumo de los últimos 30 días.
+- **Botones para el saldo global**: «➕ Registrar recarga» (anotas cuánto saldo de panel compraste y cuánto pagaste; se recalcula el valor real) y «✏ Corregir saldo» (escribes el saldo que ves en ME AI si no coincide).
+
+### Corregido
+- El cobro a usuarios ahora usa el costo real de ME AI (panel × 0.02) multiplicado por el margen (2). Antes se calculaba con los dólares del panel y salía unas 100 veces más caro.
+
+### Build
+- `EDITCOREAI.exe` (4.3.0.0) y `release/EDITCOREAI-Setup.exe` (4.3.0), construidos desde un árbol limpio en el commit publicado.
+
+---
+
 # RELEASE v4.2.9
 
 ## ME AI con una sola API, Publicar inteligente y engrane en el IDE

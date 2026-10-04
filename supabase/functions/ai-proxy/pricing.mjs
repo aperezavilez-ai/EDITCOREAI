@@ -93,6 +93,20 @@ export function providerCostUsd(price, usage, groupRatio = 1) {
   return Math.round(cost * 1e6) / 1e6;
 }
 
+/** Precio por millón de tokens en dólares de panel (entrada y salida), un renglón por modelo. */
+export function panelPricesPerMillion(pricing) {
+  const names = dedupeModelNames([...pricing.models.keys()]);
+  return names.map((name) => {
+    const price = pricing.models.get(name);
+    const input = price.modelRatio * pricing.groupRatio * USD_PER_RATIO_TOKEN * 1_000_000;
+    return {
+      model: name,
+      input: Math.round(input * 1e4) / 1e4,
+      output: Math.round(input * price.completionRatio * 1e4) / 1e4,
+    };
+  }).sort((a, b) => a.input + a.output - (b.input + b.output) || a.model.localeCompare(b.model));
+}
+
 export function estimateTokens(text) {
   return Math.ceil(String(text || "").length / 4);
 }
