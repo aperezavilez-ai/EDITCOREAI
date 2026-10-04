@@ -61,3 +61,33 @@ test("Nunca se borra .next con el servidor del proyecto corriendo", async () => 
   assert.match(main, /rebuild: !pkg\?\.scripts\?\.dev,/);
   assert.equal((main.match(/serverRunning: isProjectServerRunning\(/g) || []).length, 4);
 });
+
+function injectedCacheErrorRegex() {
+  const renderer = fs.readFileSync(path.join(ROOT, "renderer.js"), "utf8");
+  const literal = renderer.match(/const cacheError = (\/.*\/i)\.test\(/)[1];
+  // El regex vive dentro de un template literal que se inyecta en el webview.
+  const injected = new Function("return `" + literal + "`;")();
+  return new Function(`return ${injected};`)();
+}
+
+test("Navegador: error de código no se repara ni recarga en bucle; caché dañada sí, con límite", () => {
+  const re = injectedCacheErrorRegex();
+  assert.equal(re.test("Module not found: Can't resolve '@/components/ChatInterface'"), false);
+  assert.equal(re.test("Failed to compile ./src/app/page.tsx"), false);
+  assert.equal(re.test("Error: ENOENT: no such file or directory, open 'D:\\P\\CALILI\\.next\\server\\app\\page.js'"), true);
+  assert.equal(re.test("Cannot find module './chunks/vendor-chunks/next.js'"), true);
+  assert.equal(re.test("ENOENT routes-manifest.json"), true);
+
+  const renderer = fs.readFileSync(path.join(ROOT, "renderer.js"), "utf8");
+  assert.match(renderer, /if \(snapshot\?\.serverError\) return snapshot\?\.cacheError \? "server-error" : "code-error";/);
+  assert.match(renderer, /if \(documentState === "code-error"\) \{\s*showProjectCodeErrorPage\(webview\);\s*return;/);
+  assert.match(renderer, /Date\.now\(\) - lastHeal < PREVIEW_CACHE_HEAL_COOLDOWN_MS/);
+  assert.match(renderer, /if \(heal\?\.ok && !heal\?\.skipped\) \{/);
+  assert.doesNotMatch(renderer, /heal\?\.ok \? "Caché de Next\.js regenerada exitosamente"/);
+  assert.match(renderer, /previewForcedRecoveries\.length >= 3/);
+});
+
+test("Navegador: un servidor vivo que tarda en compilar no se reinicia", () => {
+  const main = fs.readFileSync(path.join(ROOT, "main.js"), "utf8");
+  assert.match(main, /runtime\.child\.exitCode === null && !\(await portIsFree\(port\)\)\) \{\s*return \{ available: true, url: runtime\.url, pid: runtime\.child\.pid, warming: true \};/);
+});

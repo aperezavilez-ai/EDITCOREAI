@@ -40,7 +40,13 @@ if (!env.EDITCOREAI_MEAI_API_KEY) {
 const run = (args) => spawnSync("npx", ["supabase", ...args], { cwd: root, env, stdio: "inherit", shell: true });
 
 if (process.argv.includes("--restart")) run(["stop"]);
-const started = run(["start"]);
+let started = run(["start"]);
+if (started.status !== 0) {
+  // Studio y pg_meta (herramientas de desarrollo) a veces tardan más que el chequeo de salud
+  // con la máquina cargada, y el CLI apaga todo; las cuentas no dependen de ellos.
+  console.warn("Reintentando sin esperar el chequeo de salud de Studio/pg_meta…");
+  started = run(["start", "--ignore-health-check"]);
+}
 if (started.status !== 0) process.exit(started.status || 1);
 
 const closed = spawnSync(process.execPath, [path.join(__dirname, "supabase-cerrar-rutas-admin.js"), "supabase_kong_editcoreai"], { cwd: root, stdio: "inherit" });

@@ -1,6 +1,8 @@
 # RELEASE v4.3.1
 
-## Panel de administración a todo lo ancho y APICredits de vuelta para el administrador
+## Navegador del proyecto sin bucles, panel a todo lo ancho y APICredits para el administrador
+
+- Navegador del proyecto: ya no se queda en «Iniciando servidor del proyecto…» reiniciándose sin parar. Si el proyecto tiene un error en su código, el navegador muestra la página con el error (y el detalle en «Errores del preview») sin "reparar" ni recargar en bucle; cuando se corrige el código, la página se actualiza sola. La caché .next solo se repara si de verdad está dañada. Un servidor que tarda en compilar ya no se reinicia.
 
 - Con la administración abierta, la ventana de Configuración ocupa toda la pantalla y la tarjeta «Saldo global de ME AI» (saldo, dinero real, días que alcanza, consumo y precios) se estira al ancho completo en lugar de quedar angosta.
 - APICredits vuelve al panel Modelos del administrador, con sus claves y modelos como estaban, y las opciones Auto, Auto · ME AI y Auto · APICredits. Los usuarios siguen viendo solo los modelos de ME AI, sin nombres de proveedor.

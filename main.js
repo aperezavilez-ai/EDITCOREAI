@@ -5963,7 +5963,15 @@ ipcMain.handle("project:preview-health", async (event, rootPath) => {
     return { available: false, url: "", reason: "La configuracion del proyecto cambio; reiniciando preview." };
   }
   try {
-    if (!(await isHttpReady(runtime.url))) throw new Error("El preview no devolvio un documento HTML disponible.");
+    if (!(await isHttpReady(runtime.url))) {
+      // Next/Vite pueden tardar más que el sondeo HTTP mientras compilan: si el proceso
+      // sigue vivo y escuchando en su puerto, no se reinicia (reiniciar crea el bucle).
+      const port = Number(new URL(runtime.url).port || 0);
+      if (port && runtime.child.exitCode === null && !(await portIsFree(port))) {
+        return { available: true, url: runtime.url, pid: runtime.child.pid, warming: true };
+      }
+      throw new Error("El preview no devolvio un documento HTML disponible.");
+    }
     return { available: true, url: runtime.url, pid: runtime.child.pid };
   } catch (error) {
     logPreviewRuntime("Preview existente sin respuesta; reiniciando", error);

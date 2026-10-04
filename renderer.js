@@ -5263,6 +5263,7 @@ let previewHealthCheckPending = false;
 let previewRecoveryPromise = null;
 let previewRecoveryFailures = 0;
 let previewRecoveryBlockedUntil = 0;
+let previewForcedRecoveries = [];
 let previewDocumentValidationId = 0;
 let newWindowOpening = false;
 let previewNavigationHistory = [];
@@ -5378,6 +5379,7 @@ function resetPreview(message = "Iniciando navegador del proyecto...") {
   previewLastSuccessfulUrl = "";
   previewRecoveryFailures = 0;
   previewRecoveryBlockedUntil = 0;
+  previewForcedRecoveries = [];
   $("previewUrl").value = "";
   $("previewStatus").textContent = message;
   $("previewStatus").classList.remove("hidden");
@@ -5495,6 +5497,15 @@ async function monitorPreviewHealth({ forceRecovery = false } = {}) {
   const rootAtStart = String(state.projectRoot);
   const activeUrl = currentPreviewUrl($("previewWebview")) || $("previewUrl").value;
   if (isRemotePreviewUrl(activeUrl)) return;
+  if (forceRecovery) {
+    const now = Date.now();
+    previewForcedRecoveries = previewForcedRecoveries.filter((at) => now - at < 60_000);
+    if (previewForcedRecoveries.length >= 3) {
+      $("status").textContent = "El navegador del proyecto no responde; pulsa actualizar para reintentar";
+      return;
+    }
+    previewForcedRecoveries.push(now);
+  }
   previewHealthCheckPending = true;
   previewRecoveryPromise = (async () => { try {
     const health = await window.editcoreProject.previewHealth(rootAtStart);
@@ -5535,6 +5546,7 @@ async function renderedPreviewIsDocument(webview) {
         || normalizedText.includes("postgrest")
         || normalizedText.includes("application/vnd.pgrst");
       const serverError = /internal server error|application error|failed to compile|module not found|enoent|cannot find module/i.test(text + "\\n" + html);
+      const cacheError = /enoent[^\\n]{0,240}?[\\\\/]\\.next[\\\\/]|routes-manifest\\.json|pages-manifest\\.json|webpack-runtime|cannot find module '\\.\\/(?:chunks\\/)?(?:vendor-chunks\\/)?[\\w.-]+\\.js'/i.test(text + "\\n" + html);
       const nextShell = Boolean(
         document.getElementById("__next")
         || document.querySelector("[data-nextjs-scroll-focus-boundary], nextjs-portal, #__next-build-watcher")
@@ -5559,6 +5571,7 @@ async function renderedPreviewIsDocument(webview) {
         onlyPre,
         apiDocument,
         serverError,
+        cacheError,
         nextShell,
         viteShell,
         renderedElements,
@@ -5567,7 +5580,7 @@ async function renderedPreviewIsDocument(webview) {
     })()`);
     if (!/(?:^|;)\s*(?:text\/html|application\/xhtml\+xml)\b/i.test(String(snapshot?.contentType || ""))) return false;
     if (snapshot?.onlyPre && snapshot?.apiDocument) return "api";
-    if (snapshot?.serverError) return "server-error";
+    if (snapshot?.serverError) return snapshot?.cacheError ? "server-error" : "code-error";
     if (snapshot?.hasVisibleContent) return "ready";
     // Vite / Next.js: shell inicial vacio (#root / #app / #__next) sin paint aún → esperar compilación
     if (snapshot?.nextShell || snapshot?.viteShell) return "loading";
@@ -5575,6 +5588,17 @@ async function renderedPreviewIsDocument(webview) {
   } catch {
     return false;
   }
+}
+
+const PREVIEW_CACHE_HEAL_COOLDOWN_MS = 120_000;
+const previewCacheHealAt = new Map();
+
+// Error del código del proyecto: se deja ver la página (Next/Vite muestran el error exacto
+// y se recargan solos al corregir). Reparar o recargar aquí no lo arregla y crea un bucle.
+function showProjectCodeErrorPage(webview) {
+  if (webview) webview.dataset.previewReady = "1";
+  hidePreviewLoading();
+  $("status").textContent = "El proyecto tiene un error en su código · detalle en «Errores del preview»";
 }
 
 async function settlePreviewDocument() {
@@ -5592,7 +5616,7 @@ async function settlePreviewDocument() {
       await new Promise((resolve) => setTimeout(resolve, 350 + attempt * 150));
       if (validationId !== previewDocumentValidationId || navigationId !== previewNavigationId || !previewEventMatches(webview)) return;
       documentState = await renderedPreviewIsDocument(webview);
-      if (documentState === "ready" || documentState === "api" || documentState === "server-error" || documentState === false) break;
+      if (documentState === "ready" || documentState === "api" || documentState === "server-error" || documentState === "code-error" || documentState === false) break;
     }
   }
   if (validationId !== previewDocumentValidationId || navigationId !== previewNavigationId || !previewEventMatches(webview)) return;
@@ -5604,21 +5628,32 @@ async function settlePreviewDocument() {
     void monitorPreviewHealth({ forceRecovery: true });
     return;
   }
+  if (documentState === "code-error") {
+    showProjectCodeErrorPage(webview);
+    return;
+  }
   if (documentState === "server-error") {
-    webview.dataset.previewReady = "0";
-    showPreviewStatus("El servidor del proyecto respondio con error (posible caché .next). Reparando automáticamente...");
-    $("status").textContent = "Preview: error de servidor · auto-heal";
-    if (state.projectRoot && window.editcoreInspector?.localHeal) {
-      window.editcoreInspector.localHeal("project", state.projectRoot, `preview-heal-${Date.now()}`)
-        .then((heal) => {
-          const msg = heal?.uiMessage || (heal?.ok ? "Caché de Next.js regenerada exitosamente" : "Heal incompleto");
-          $("status").textContent = msg;
-          if (heal?.ok) refreshPreview().catch(() => undefined);
-        })
-        .catch(() => undefined);
-    } else {
-      void monitorPreviewHealth({ forceRecovery: true });
+    const root = normalizeProjectRoot(state.projectRoot);
+    const lastHeal = previewCacheHealAt.get(root) || 0;
+    if (!root || !window.editcoreInspector?.localHeal || Date.now() - lastHeal < PREVIEW_CACHE_HEAL_COOLDOWN_MS) {
+      showProjectCodeErrorPage(webview);
+      return;
     }
+    previewCacheHealAt.set(root, Date.now());
+    webview.dataset.previewReady = "0";
+    showPreviewStatus("La caché .next del proyecto está dañada. Reparando automáticamente...");
+    $("status").textContent = "Preview: reparando caché .next";
+    window.editcoreInspector.localHeal("project", state.projectRoot, `preview-heal-${Date.now()}`)
+      .then((heal) => {
+        if (normalizeProjectRoot(state.projectRoot) !== root) return;
+        if (heal?.ok && !heal?.skipped) {
+          $("status").textContent = heal.uiMessage || "Caché de Next.js regenerada";
+          refreshPreview().catch(() => undefined);
+          return;
+        }
+        showProjectCodeErrorPage(webview);
+      })
+      .catch(() => showProjectCodeErrorPage(webview));
     return;
   }
   if (documentState === "blank" || documentState === "loading") {
