@@ -174,19 +174,34 @@ test("Saldo global: el administrador registra recargas y corrige el saldo", () =
   const home = fs.readFileSync(path.join(ROOT, "chat-home.js"), "utf8");
   const preload = fs.readFileSync(path.join(ROOT, "preload.js"), "utf8");
   const main = fs.readFileSync(path.join(ROOT, "main.js"), "utf8");
-  for (const id of ["adminMeaiTopupToggle", "adminMeaiAdjustToggle", "adminMeaiTopupSave", "adminMeaiAdjustSave", "adminMeaiTopupPanel", "adminMeaiTopupReal", "adminMeaiAdjustValue"]) {
+  for (const id of ["adminMeaiTopupToggle", "adminMeaiAdjustToggle", "adminMeaiTopupSave", "adminMeaiAdjustSave", "adminMeaiTopupPanel",
+    "adminMeaiTopupAmount", "adminMeaiTopupCurrency", "adminMeaiTopupFx", "adminMeaiTopupPack", "adminMeaiMarkup", "adminMeaiMarkupSave", "adminMeaiAdjustValue"]) {
     assert.match(html, new RegExp(`id="${id}"`), id);
   }
-  assert.match(home, /adminMeaiTopup\?\.\(\{ panel, real/);
+  assert.match(html, /<option value="500\|21000">¥500 → 21,000 de panel<\/option>/);
+  assert.match(html, /<option value="200\|8000">¥200 → 8,000 de panel<\/option>/);
+  assert.match(home, /adminMeaiTopup\?\.\(\{ panel, amount, currency, fx/);
   assert.match(home, /adminMeaiSetBalance\?\.\(\{ remaining:/);
+  assert.match(home, /adminSetMarkup\?\.\(markup\)/);
   assert.match(home, /Number\(live\.remaining_panel\) \+ offset/);
+  assert.doesNotMatch(home, /panel × 0\.02|× 0\.02/);
   assert.match(preload, /adminMeaiTopup: \(payload\) => ipcRenderer\.invoke\("credits:admin-meai-topup", payload\)/);
+  assert.match(preload, /fxRate: \(currency\) => ipcRenderer\.invoke\("credits:fx-rate", currency\)/);
   assert.match(main, /creditsIpc\("credits:admin-meai-set-balance"/);
+  assert.match(main, /creditsIpc\("credits:admin-set-markup"/);
   const sql = fs.readFileSync(path.join(ROOT, "supabase/migrations/20261004130000_editcoreai_meai_adjust.sql"), "utf8");
-  assert.match(sql, /editcoreai_admin_meai_topup\([\s\S]{0,300}require_admin\(\)/);
   assert.match(sql, /editcoreai_admin_meai_set_balance\([\s\S]{0,300}require_admin\(\)/);
-  assert.match(sql, /sum\(real_usd\) \/ nullif\(sum\(panel_usd\), 0\)/);
-  assert.match(sql, /select 10000, 200, 'Compra inicial'/);
+});
+
+test("Costo real: compras en yuanes × tipo de cambio ÷ dólares de panel recibidos", () => {
+  const sql = fs.readFileSync(path.join(ROOT, "supabase/migrations/20261004140000_editcoreai_meai_yuan.sql"), "utf8");
+  assert.match(sql, /select 21000, round\(500 \* 0\.148808, 4\), 'Paquete ¥500 \(saldo actual\)', 'sistema', 'CNY', 500, 0\.148808/);
+  assert.match(sql, /round\(sum\(real_usd\) \/ nullif\(sum\(panel_usd\), 0\), 8\)/);
+  assert.match(sql, /values \(p_panel, round\(p_amount \* v_fx, 4\)/);
+  assert.match(sql, /editcoreai_admin_meai_topup\([\s\S]{0,400}require_admin\(\)/);
+  assert.match(sql, /editcoreai_admin_set_markup\([\s\S]{0,300}require_admin\(\)/);
+  assert.match(sql, /editcoreai_admin_meai_delete_topup\([\s\S]{0,300}require_admin\(\)/);
+  assert.ok(Math.abs((500 * 0.148808) / 21000 - 0.00354305) < 1e-8);
 });
 
 test("Streaming: limpia cada bloque data aunque llegue partido en trozos", async () => {

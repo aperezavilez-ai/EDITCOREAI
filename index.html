@@ -386,58 +386,134 @@
                   <div class="ec-master-badge">👑 Administración de EditCoreAI</div>
                   <button type="button" class="ec-btn-action" id="adminRefreshBtn">Actualizar</button>
                 </div>
-                <div class="ec-meai-card" id="adminMeaiCard">
-                  <div class="ec-meai-head">
-                    <span class="ec-metric-title">🏦 Saldo global de ME AI (de aquí sale todo el consumo)</span>
-                    <span class="ec-metric-sub" id="adminMeaiUpdated">Leyendo…</span>
-                  </div>
-                  <div class="ec-meai-balance">
-                    <div class="ec-meai-figure">
-                      <div class="ec-meai-big" id="adminMeaiRemaining">—</div>
-                      <span class="ec-metric-sub">Quedan en el panel de ME AI</span>
+                <section class="mx-card" id="adminMeaiCard" aria-labelledby="adminMeaiTitle">
+                  <header class="mx-head">
+                    <div class="mx-head-text">
+                      <h3 class="mx-title" id="adminMeaiTitle">Saldo global de ME AI</h3>
+                      <p class="mx-sub">Todo lo que consumen los usuarios y el administrador se descuenta de aquí.</p>
                     </div>
-                    <div class="ec-meai-figure">
-                      <div class="ec-meai-big text-emerald" id="adminMeaiRemainingReal">—</div>
-                      <span class="ec-metric-sub" id="adminMeaiRateText">Dinero real (panel × 0.02)</span>
+                    <div class="mx-head-actions">
+                      <span class="mx-updated" id="adminMeaiUpdated">Leyendo…</span>
+                      <button type="button" class="mx-btn mx-btn-primary" id="adminMeaiTopupToggle" aria-expanded="false" aria-controls="adminMeaiTopupForm">Registrar compra</button>
+                      <button type="button" class="mx-btn" id="adminMeaiAdjustToggle" aria-expanded="false" aria-controls="adminMeaiAdjustForm">Ajustes</button>
                     </div>
-                    <div class="ec-meai-figure">
-                      <div class="ec-meai-big" id="adminMeaiDaysLeft">—</div>
-                      <span class="ec-metric-sub" id="adminMeaiDaily">Días que alcanza (ritmo de 7 días)</span>
+                  </header>
+
+                  <div class="mx-kpis">
+                    <div class="mx-kpi">
+                      <span class="mx-kpi-label">Saldo en ME AI</span>
+                      <span class="mx-kpi-value" id="adminMeaiRemaining">—</span>
+                      <span class="mx-kpi-hint">dólares de panel</span>
+                    </div>
+                    <div class="mx-kpi mx-kpi-accent">
+                      <span class="mx-kpi-label">Vale en dinero real</span>
+                      <span class="mx-kpi-value" id="adminMeaiRemainingReal">—</span>
+                      <span class="mx-kpi-hint" id="adminMeaiRateText">—</span>
+                    </div>
+                    <div class="mx-kpi">
+                      <span class="mx-kpi-label">Alcanza para</span>
+                      <span class="mx-kpi-value" id="adminMeaiDaysLeft">—</span>
+                      <span class="mx-kpi-hint" id="adminMeaiDaily">—</span>
                     </div>
                   </div>
-                  <div class="ec-meai-bar" aria-hidden="true"><div class="ec-meai-bar-fill" id="adminMeaiBarFill"></div></div>
-                  <div class="ec-metric-sub" id="adminMeaiBarText">Gastado — de —</div>
-                  <div class="ec-meai-alert" id="adminMeaiAlert" hidden></div>
-                  <div class="ec-meai-actions">
-                    <button type="button" class="ec-btn-action" id="adminMeaiTopupToggle">➕ Registrar recarga</button>
-                    <button type="button" class="ec-btn-action" id="adminMeaiAdjustToggle">✏ Corregir saldo</button>
-                    <span class="ec-metric-sub" id="adminMeaiOffsetText"></span>
+
+                  <div class="mx-progress">
+                    <div class="mx-progress-track" aria-hidden="true"><div class="mx-progress-fill" id="adminMeaiBarFill"></div></div>
+                    <div class="mx-progress-legend" id="adminMeaiBarText">—</div>
                   </div>
-                  <div class="ec-meai-form" id="adminMeaiTopupForm" hidden>
-                    <span class="ec-metric-sub">Cuando compres saldo en ME AI, anótalo aquí: el saldo se actualiza solo desde ME AI y con lo que pagaste se recalcula cuánto vale en dinero real.</span>
-                    <div class="ec-admin-row">
-                      <input type="number" min="1" step="0.01" id="adminMeaiTopupPanel" class="ec-styled-input" placeholder="Panel recibido (ej. 10000)" title="Dólares de panel que te dio ME AI" />
-                      <input type="number" min="0" step="0.01" id="adminMeaiTopupReal" class="ec-styled-input" placeholder="Pagaste real (ej. 200)" title="Dólares reales que pagaste" />
-                      <input type="text" maxlength="200" id="adminMeaiTopupNote" class="ec-styled-input" placeholder="Nota (opcional)" />
+                  <div class="mx-alert" id="adminMeaiAlert" role="status" hidden></div>
+                  <div class="mx-note" id="adminMeaiOffsetText" hidden></div>
+
+                  <div class="mx-panel" id="adminMeaiTopupForm" hidden>
+                    <div class="mx-panel-head">
+                      <h4>Registrar compra en ME AI</h4>
+                      <p>El saldo se actualiza solo desde ME AI. Aquí anotas lo que pagaste para saber cuánto vale en dinero real.</p>
                     </div>
-                    <button type="button" class="ec-btn-action" id="adminMeaiTopupSave">Guardar recarga</button>
-                    <div class="ec-status-msg" id="adminMeaiTopupResult" hidden></div>
-                    <div class="ec-metric-sub" id="adminMeaiTopupList"></div>
-                  </div>
-                  <div class="ec-meai-form" id="adminMeaiAdjustForm" hidden>
-                    <span class="ec-metric-sub">Escribe el saldo que ves en tu panel de ME AI (en dólares de panel) si no coincide con el de aquí. Déjalo vacío y guarda para quitar la corrección.</span>
-                    <div class="ec-admin-row">
-                      <input type="number" min="0" step="0.01" id="adminMeaiAdjustValue" class="ec-styled-input" placeholder="Saldo en ME AI (ej. 6748.69)" />
+                    <div class="mx-fields">
+                      <label class="mx-field mx-field-wide">
+                        <span>Paquete</span>
+                        <select class="mx-input" id="adminMeaiTopupPack">
+                          <option value="500|21000">¥500 → 21,000 de panel</option>
+                          <option value="200|8000">¥200 → 8,000 de panel</option>
+                          <option value="100|3800">¥100 → 3,800 de panel</option>
+                          <option value="30|1000">¥30 → 1,000 de panel</option>
+                          <option value="10|300">¥10 → 300 de panel</option>
+                          <option value="">Otro monto</option>
+                        </select>
+                      </label>
+                      <label class="mx-field">
+                        <span>Pagaste</span>
+                        <input type="number" min="0" step="0.01" class="mx-input" id="adminMeaiTopupAmount" value="500" />
+                      </label>
+                      <label class="mx-field">
+                        <span>Moneda</span>
+                        <select class="mx-input" id="adminMeaiTopupCurrency">
+                          <option value="CNY">Yuanes (¥)</option>
+                          <option value="USD">Dólares (US$)</option>
+                          <option value="MXN">Pesos (MX$)</option>
+                        </select>
+                      </label>
+                      <label class="mx-field">
+                        <span>Panel recibido</span>
+                        <input type="number" min="1" step="0.01" class="mx-input" id="adminMeaiTopupPanel" value="21000" />
+                      </label>
+                      <label class="mx-field">
+                        <span id="adminMeaiTopupFxLabel">1 ¥ = US$</span>
+                        <input type="number" min="0" step="0.000001" class="mx-input" id="adminMeaiTopupFx" />
+                      </label>
+                      <label class="mx-field mx-field-wide">
+                        <span>Nota (opcional)</span>
+                        <input type="text" maxlength="200" class="mx-input" id="adminMeaiTopupNote" placeholder="Ej. compra del 4 de octubre" />
+                      </label>
                     </div>
-                    <button type="button" class="ec-btn-action" id="adminMeaiAdjustSave">Guardar saldo</button>
-                    <div class="ec-status-msg" id="adminMeaiAdjustResult" hidden></div>
+                    <div class="mx-preview" id="adminMeaiTopupPreview">—</div>
+                    <div class="mx-panel-actions">
+                      <button type="button" class="mx-btn mx-btn-primary" id="adminMeaiTopupSave">Guardar compra</button>
+                      <span class="ec-status-msg" id="adminMeaiTopupResult" hidden></span>
+                    </div>
+                    <div class="mx-history">
+                      <h5>Compras registradas</h5>
+                      <ul class="mx-history-list" id="adminMeaiTopupList"></ul>
+                    </div>
                   </div>
-                  <div class="ec-meai-table" id="adminMeaiTable"></div>
-                  <details class="ec-meai-prices">
-                    <summary>Precios por millón de tokens (panel, real y lo que paga el usuario)</summary>
-                    <div class="ec-meai-table" id="adminMeaiPrices"></div>
+
+                  <div class="mx-panel" id="adminMeaiAdjustForm" hidden>
+                    <div class="mx-panel-head">
+                      <h4>Ajustes</h4>
+                    </div>
+                    <div class="mx-setting">
+                      <div class="mx-setting-text">
+                        <strong>Margen de ganancia</strong>
+                        <span>El usuario paga el costo real multiplicado por este número.</span>
+                      </div>
+                      <div class="mx-setting-control">
+                        <input type="number" min="1" max="1000" step="0.1" class="mx-input" id="adminMeaiMarkup" />
+                        <button type="button" class="mx-btn" id="adminMeaiMarkupSave">Guardar</button>
+                      </div>
+                    </div>
+                    <div class="mx-setting">
+                      <div class="mx-setting-text">
+                        <strong>Corregir saldo</strong>
+                        <span>Escribe el saldo que ves en ME AI si no coincide. Vacío = usar lo que lee ME AI.</span>
+                      </div>
+                      <div class="mx-setting-control">
+                        <input type="number" min="0" step="0.01" class="mx-input" id="adminMeaiAdjustValue" placeholder="Ej. 6748.69" />
+                        <button type="button" class="mx-btn" id="adminMeaiAdjustSave">Guardar</button>
+                      </div>
+                    </div>
+                    <span class="ec-status-msg" id="adminMeaiAdjustResult" hidden></span>
+                  </div>
+
+                  <div class="mx-table-wrap">
+                    <table class="mx-table" id="adminMeaiTable"></table>
+                  </div>
+                  <details class="mx-details">
+                    <summary>Precios por millón de tokens</summary>
+                    <div class="mx-table-wrap">
+                      <table class="mx-table mx-table-prices" id="adminMeaiPrices"></table>
+                    </div>
                   </details>
-                </div>
+                </section>
                 <div class="ec-master-metrics-grid">
                   <div class="ec-metric-box">
                     <span class="ec-metric-title">👥 Usuarios</span>

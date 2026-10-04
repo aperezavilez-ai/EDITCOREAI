@@ -3,14 +3,16 @@
 ## Saldo global de ME AI en Administración y cobro con el costo real
 
 ### Nuevo
-- **Saldo global de ME AI** en Administración: cuánto queda en el panel de ME AI y cuánto es en dinero real (panel × 0.02), barra de gastado sobre el límite, cuántos días alcanza al ritmo de los últimos 7 días y alerta cuando queda poco.
+- **Saldo global de ME AI** en Administración: cuánto queda en el panel de ME AI y cuánto vale en dinero real (calculado con lo que pagas en yuanes y el tipo de cambio del día), barra de gastado sobre el límite, cuántos días alcanza al ritmo de los últimos 7 días y alerta cuando queda poco.
 - **Consumo separado**: por hoy, 7 y 30 días se ve cuánto bajó el saldo de ME AI, cuánto gastaron los usuarios, cuánto el administrador, cuánto se cobró a los usuarios y la ganancia.
 - **Tabla de precios por modelo**: precio del panel, costo real y lo que paga el usuario.
 - Cada usuario de la lista muestra su consumo de los últimos 30 días.
-- **Botones para el saldo global**: «➕ Registrar recarga» (anotas cuánto saldo de panel compraste y cuánto pagaste; se recalcula el valor real) y «✏ Corregir saldo» (escribes el saldo que ves en ME AI si no coincide).
+- **Registrar compra**: eliges el paquete (¥500 → 21,000, ¥200 → 8,000…), se toma el tipo de cambio del día y ves al momento cuánto te cuesta cada dólar de panel. Historial de compras con opción de borrar.
+- **Ajustes**: margen de ganancia y corrección del saldo si no coincide con ME AI.
+- Panel de saldo rediseñado: más claro y profesional.
 
 ### Corregido
-- El cobro a usuarios ahora usa el costo real de ME AI (panel × 0.02) multiplicado por el margen (2). Antes se calculaba con los dólares del panel y salía unas 100 veces más caro.
+- El cobro a usuarios ahora usa el costo real de ME AI multiplicado por el margen (2, editable en «Ajustes»). Antes se calculaba con los dólares del panel como si fueran dólares reales.
 - **Navegador interno sin errores falsos de `.next`**: EditCoreAI borraba la caché `.next` de los proyectos Next.js (y corría `next build`) mientras el servidor del proyecto estaba corriendo, lo que provocaba los errores «ENOENT … .next\cache\webpack … pack.gz». Ya nunca toca `.next` con el servidor encendido, y los avisos internos de caché de webpack ya no aparecen en «Errores del preview». Los errores reales del proyecto se siguen mostrando.
 
 ### Build

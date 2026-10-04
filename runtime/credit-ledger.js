@@ -23,6 +23,7 @@ const CREDIT_ERRORS = {
   INVALID_CONTACT: "El contacto es demasiado largo (máximo 120 caracteres).",
   INVALID_AMOUNT: "La cantidad no es válida.",
   NO_READING: "Todavía no hay una lectura del saldo de ME AI; pulsa «Actualizar» e inténtalo de nuevo.",
+  NOT_FOUND: "Ese registro ya no existe.",
 };
 
 function failure(error) {
@@ -143,16 +144,50 @@ class CreditLedger extends EventEmitter {
     }
   }
 
-  /** Registra una compra de saldo en ME AI (dólares de panel recibidos y dinero real pagado). */
-  async adminMeaiTopup({ panel, real, note = "" } = {}) {
+  /** Registra una compra en ME AI: dólares de panel recibidos, monto pagado, moneda y tipo de cambio a USD. */
+  async adminMeaiTopup({ panel, amount, currency = "CNY", fx = 1, note = "" } = {}) {
     try {
       return fromServer(await this.auth.rpc("editcoreai_admin_meai_topup", {
         p_panel: Number(panel),
-        p_real: Number(real),
+        p_amount: Number(amount),
+        p_currency: String(currency || "USD").toUpperCase(),
+        p_fx_usd: Number(fx),
         p_note: String(note || "") || null,
       }));
     } catch (error) {
       return failure(error);
+    }
+  }
+
+  async adminMeaiDeleteTopup(id) {
+    try {
+      return fromServer(await this.auth.rpc("editcoreai_admin_meai_delete_topup", { p_id: Number(id) }));
+    } catch (error) {
+      return failure(error);
+    }
+  }
+
+  async adminSetMarkup(markup) {
+    try {
+      return fromServer(await this.auth.rpc("editcoreai_admin_set_markup", { p_markup: Number(markup) }));
+    } catch (error) {
+      return failure(error);
+    }
+  }
+
+  /** Tipo de cambio del día: cuántos USD vale 1 unidad de la moneda. */
+  async fxRateUsd(currency = "CNY") {
+    const code = String(currency || "").toUpperCase();
+    if (code === "USD") return { ok: true, rate: 1 };
+    if (!/^[A-Z]{3}$/.test(code)) return { ok: false, error: "Moneda no válida." };
+    try {
+      const res = await fetch(`https://open.er-api.com/v6/latest/${code}`, { signal: AbortSignal.timeout(10_000) });
+      const data = await res.json();
+      const rate = Number(data?.rates?.USD);
+      if (!res.ok || !(rate > 0)) throw new Error("sin tipo de cambio");
+      return { ok: true, rate, at: data?.time_last_update_utc || "" };
+    } catch {
+      return { ok: false, error: "No se pudo obtener el tipo de cambio; escríbelo a mano." };
     }
   }
 

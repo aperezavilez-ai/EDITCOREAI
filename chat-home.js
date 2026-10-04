@@ -1006,26 +1006,94 @@
 
   function fmtUsdFine(n) {
     const v = Number(n || 0);
-    return `$${v.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: Math.abs(v) < 1 && v !== 0 ? 4 : 2 })}`;
+    const abs = Math.abs(v);
+    const digits = abs === 0 || abs >= 1 ? 2 : abs < 0.01 ? 5 : 4;
+    return `$${v.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: digits })}`;
   }
 
-  function fillMeaiTable(box, head, rows) {
-    box.replaceChildren();
-    const cell = (text, cls = "", title = "") => {
-      const span = document.createElement("span");
-      if (cls) span.className = cls;
-      if (title) span.title = title;
-      span.textContent = text;
-      box.appendChild(span);
-    };
-    for (const h of head) cell(h.text, "is-head", h.title || "");
+  const MEAI_CURRENCY_SYMBOL = { CNY: "¥", USD: "US$", MXN: "MX$" };
+  const meaiState = { rate: 0, markup: 2, cnyUsd: 0 };
+
+  function buildMeaiTable(table, columns, rows) {
+    table.replaceChildren();
+    const thead = document.createElement("thead");
+    const headRow = document.createElement("tr");
+    for (const col of columns) {
+      const th = document.createElement("th");
+      th.scope = "col";
+      th.textContent = col.text;
+      if (col.title) th.title = col.title;
+      headRow.appendChild(th);
+    }
+    thead.appendChild(headRow);
+    const tbody = document.createElement("tbody");
     for (const r of rows) {
-      cell(r.label, `is-label${r.cls ? ` ${r.cls}` : ""}`, r.title || "");
-      for (const v of r.values) cell(v, r.cls || "");
+      const tr = document.createElement("tr");
+      if (r.cls) tr.className = r.cls;
+      const label = document.createElement("td");
+      label.textContent = r.label;
+      if (r.title) label.title = r.title;
+      tr.appendChild(label);
+      for (const v of r.values) {
+        const td = document.createElement("td");
+        const main = document.createElement("span");
+        main.className = "mx-cell-main";
+        main.textContent = typeof v === "object" ? v.main : v;
+        td.appendChild(main);
+        if (typeof v === "object" && v.sub) {
+          const sub = document.createElement("span");
+          sub.className = "mx-cell-sub";
+          sub.textContent = v.sub;
+          td.appendChild(sub);
+        }
+        tr.appendChild(td);
+      }
+      tbody.appendChild(tr);
+    }
+    table.append(thead, tbody);
+  }
+
+  function renderMeaiTopups(rows) {
+    const list = $("adminMeaiTopupList");
+    if (!list) return;
+    list.replaceChildren();
+    if (!rows.length) {
+      const empty = document.createElement("li");
+      empty.className = "mx-history-empty";
+      empty.textContent = "Todavía no hay compras registradas.";
+      list.appendChild(empty);
+      return;
+    }
+    for (const t of rows) {
+      const li = document.createElement("li");
+      const date = document.createElement("span");
+      date.className = "mx-history-date";
+      date.textContent = new Date(t.created_at).toLocaleDateString("es-MX", { day: "numeric", month: "short", year: "numeric" });
+      const what = document.createElement("span");
+      const sym = MEAI_CURRENCY_SYMBOL[t.currency] || `${t.currency} `;
+      what.textContent = `${sym}${fmtNum(t.amount_local ?? t.real_usd)} → ${fmtNum(t.panel_usd)} de panel${t.note ? ` · ${t.note}` : ""}`;
+      const real = document.createElement("span");
+      real.className = "mx-history-real";
+      real.textContent = `${fmtUsd(t.real_usd)} USD`;
+      real.title = t.currency === "USD" ? "" : `Tipo de cambio: 1 ${sym} = US$${Number(t.fx_usd)}`;
+      const del = document.createElement("button");
+      del.type = "button";
+      del.className = "mx-btn mx-btn-icon";
+      del.textContent = "×";
+      del.title = "Borrar esta compra";
+      del.setAttribute("aria-label", "Borrar esta compra");
+      del.addEventListener("click", async () => {
+        if (!confirm("¿Borrar esta compra? El costo real se recalcula con las compras que queden.")) return;
+        const res = await window.editcoreCredits?.adminMeaiDeleteTopup?.(t.id);
+        if (!res?.ok) return showStatus($("adminMeaiTopupResult"), false, res?.error || "No se pudo borrar.");
+        await renderMeaiCard();
+      });
+      li.append(date, what, real, del);
+      list.appendChild(li);
     }
   }
 
-  // Saldo global de ME AI: ME AI descuenta en dólares de panel; panel × panel_usd_rate = dinero real.
+  // Saldo global de ME AI: ME AI descuenta en dólares de panel; el costo real de cada uno sale de las compras registradas.
   async function renderMeaiCard() {
     const credits = window.editcoreCredits;
     if (!credits?.adminMeaiBalance) return;
@@ -1036,21 +1104,24 @@
       return;
     }
     const s = res.summary || {};
-    const rate = Number(s.panel_usd_rate) || 0.02;
+    const rate = Number(s.panel_usd_rate) || 0;
     const markup = Number(s.markup) || 2;
+    Object.assign(meaiState, { rate, markup, cnyUsd: Number(s.cny_usd) || meaiState.cnyUsd });
+    const markupInput = $("adminMeaiMarkup");
+    if (markupInput && document.activeElement !== markupInput) markupInput.value = String(markup);
+    renderMeaiTopups(Array.isArray(s.topups) ? s.topups : []);
+    updateMeaiTopupPreview();
+
     const offset = Number(s.offset_panel) || 0;
     const live = res.live && res.live.ok !== false ? res.live : null;
     const latest = live
       ? { limit_panel: live.limit_panel, used_panel: live.used_panel, remaining_panel: Math.max(0, Number(live.remaining_panel) + offset), taken_at: live.taken_at }
       : s.latest;
-    set("adminMeaiOffsetText", offset
-      ? `Saldo corregido a mano: ${offset > 0 ? "+" : "−"}${fmtUsd(Math.abs(offset))} de panel sobre lo que lee ME AI`
-      : "");
-    const topupList = $("adminMeaiTopupList");
-    if (topupList) {
-      const rows = Array.isArray(s.topups) ? s.topups : [];
-      topupList.textContent = rows.length
-        ? `Recargas registradas (dinero real ÷ panel = ${rate}): ${rows.map((t) => `${new Date(t.created_at).toLocaleDateString("es-MX")} ${fmtUsd(t.panel_usd)} panel por ${fmtUsd(t.real_usd)}${t.note ? ` (${t.note})` : ""}`).join(" · ")}`
+    const offsetEl = $("adminMeaiOffsetText");
+    if (offsetEl) {
+      offsetEl.hidden = !offset;
+      offsetEl.textContent = offset
+        ? `Saldo corregido a mano: ${offset > 0 ? "+" : "−"}${fmtUsd(Math.abs(offset))} de panel sobre lo que lee ME AI.`
         : "";
     }
     if (!latest) {
@@ -1060,49 +1131,59 @@
     const limit = Number(latest.limit_panel) || 0;
     const used = Number(latest.used_panel) || 0;
     const remaining = Math.max(0, Number(latest.remaining_panel ?? limit - used) || 0);
-    const remainingReal = remaining * rate;
     set("adminMeaiRemaining", fmtUsd(remaining));
-    set("adminMeaiRemainingReal", fmtUsd(remainingReal));
-    set("adminMeaiRateText", `Dinero real (panel × ${rate})`);
+    set("adminMeaiRemainingReal", fmtUsd(remaining * rate));
+    set("adminMeaiRateText", `USD · 1 de panel = ${fmtUsdFine(rate)}`);
     set("adminMeaiUpdated", live
       ? `Actualizado ${new Date(latest.taken_at).toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" })}`
-      : `Último dato ${timeAgo(latest.taken_at)}${res.liveError ? ` · ME AI no respondió: ${res.liveError}` : ""}`);
+      : `Último dato ${timeAgo(latest.taken_at)}${res.liveError ? " · ME AI no respondió" : ""}`);
     const daysLeft = s.days_left == null ? null : Number(s.days_left);
-    set("adminMeaiDaysLeft", daysLeft == null ? "—" : `${fmtNum(daysLeft)} días`);
+    set("adminMeaiDaysLeft", daysLeft == null ? "—" : `${fmtNum(daysLeft)} ${daysLeft === 1 ? "día" : "días"}`);
     set("adminMeaiDaily", s.daily_panel
-      ? `Al ritmo de 7 días: ${fmtUsd(s.daily_panel)} de panel/día (${fmtUsdFine(Number(s.daily_panel) * rate)} reales)`
-      : "Se calcula después de unas horas de lecturas");
+      ? `Gasto diario: ${fmtUsd(s.daily_panel)} de panel (${fmtUsdFine(Number(s.daily_panel) * rate)} USD)`
+      : "Se calcula tras unas horas de uso");
     const pct = limit > 0 ? Math.min(100, (used / limit) * 100) : 0;
     const fill = $("adminMeaiBarFill");
-    if (fill) fill.style.width = `${pct.toFixed(1)}%`;
-    set("adminMeaiBarText", `Gastado ${fmtUsd(used)} de ${fmtUsd(limit)} del panel (${Math.round(pct)}%) · equivale a ${fmtUsd(used * rate)} de ${fmtUsd(limit * rate)} reales`);
+    if (fill) {
+      fill.style.width = `${pct.toFixed(1)}%`;
+      fill.classList.toggle("is-critical", pct >= 90);
+      fill.classList.toggle("is-warning", pct >= 75 && pct < 90);
+    }
+    set("adminMeaiBarText", `Usado ${fmtUsd(used)} de ${fmtUsd(limit)} de panel (${Math.round(pct)}%)`);
     const alertEl = $("adminMeaiAlert");
     if (alertEl) {
-      const low = remainingReal < 10 || (daysLeft != null && daysLeft < 7);
+      const low = (limit > 0 && remaining < limit * 0.1) || (daysLeft != null && daysLeft < 7);
       alertEl.hidden = !low;
       alertEl.textContent = low
-        ? `⚠ Saldo de ME AI bajo: quedan ${fmtUsd(remainingReal)} reales${daysLeft != null ? ` (unos ${fmtNum(daysLeft)} días)` : ""}. Recarga ME AI para que los usuarios no se queden sin IA.`
+        ? `Saldo bajo: quedan ${fmtUsd(remaining)} de panel${daysLeft != null ? `, unos ${fmtNum(daysLeft)} días` : ""}. Compra saldo en ME AI para que los usuarios no se queden sin IA.`
         : "";
     }
 
     const periods = [s.today || {}, s.week || {}, s.month || {}];
-    const both = (panel) => (panel == null ? "midiendo…" : `${fmtUsd(panel)} · ${fmtUsdFine(Number(panel) * rate)} real`);
-    const sinceTitle = (p) => (p.complete === false && p.since ? `Medido desde ${new Date(p.since).toLocaleString("es-MX")} (antes no había lecturas)` : "");
+    const money = (real, panel) => (panel == null
+      ? { main: "Midiendo…" }
+      : { main: fmtUsdFine(real), sub: `${fmtUsd(panel)} de panel` });
     const table = $("adminMeaiTable");
     if (table) {
-      fillMeaiTable(table, [
-        { text: "Consumo (panel · real)" },
-        ...["Hoy", "7 días", "30 días"].map((text, i) => ({ text: periods[i].complete === false ? `${text} *` : text, title: sinceTitle(periods[i]) })),
+      buildMeaiTable(table, [
+        { text: "Consumo (USD real · panel debajo)" },
+        ...["Hoy", "7 días", "30 días"].map((text, i) => ({
+          text: periods[i].complete === false ? `${text} *` : text,
+          title: periods[i].complete === false && periods[i].since ? `Medido desde ${new Date(periods[i].since).toLocaleString("es-MX")}` : "",
+        })),
       ], [
-        { label: "🏦 Bajó el saldo de ME AI", cls: "is-total", values: periods.map((p) => both(p.meai_panel)) },
-        { label: "👥 Usuarios", title: "Consultas de los usuarios que pasan por el servidor de EditCoreAI", values: periods.map((p) => both(p.users_panel)) },
+        { label: "Total descontado en ME AI", cls: "is-total", values: periods.map((p) => money(Number(p.meai_panel) * rate, p.meai_panel)) },
+        { label: "Usuarios", title: "Consultas de los usuarios (pasan por el servidor de EditCoreAI)", values: periods.map((p) => money(Number(p.users_panel) * rate, p.users_panel)) },
         {
-          label: "👑 Administrador",
-          title: "Tu uso desde el escritorio con la clave de ME AI (todo lo que no gastaron los usuarios)",
-          values: periods.map((p) => (p.admin_other_panel == null ? both(p.admin_proxy_panel || null) : both(Number(p.admin_other_panel) + Number(p.admin_proxy_panel || 0)))),
+          label: "Administrador",
+          title: "Tu uso desde el escritorio: todo lo que bajó ME AI y no fue de usuarios",
+          values: periods.map((p) => {
+            const panel = p.admin_other_panel == null ? null : Number(p.admin_other_panel) + Number(p.admin_proxy_panel || 0);
+            return money(Number(panel) * rate, panel);
+          }),
         },
-        { label: "💵 Cobrado a usuarios", values: periods.map((p) => fmtUsdFine(p.users_charged)) },
-        { label: "📈 Tu ganancia", cls: "is-profit", title: `Cobrado a usuarios menos lo que te costó en dinero real (margen ${markup}x)`, values: periods.map((p) => fmtUsdFine(p.users_profit)) },
+        { label: "Cobrado a usuarios", values: periods.map((p) => fmtUsdFine(p.users_charged)) },
+        { label: "Ganancia", cls: "is-profit", title: `Cobrado a usuarios menos su costo real (margen ×${markup})`, values: periods.map((p) => fmtUsdFine(p.users_profit)) },
         { label: "Consultas de usuarios", values: periods.map((p) => fmtNum(p.requests)) },
       ]);
     }
@@ -1111,16 +1192,55 @@
     const list = Array.isArray(live?.prices) ? live.prices : [];
     if (prices && list.length) {
       const pair = (a, b) => `${fmtUsdFine(a)} / ${fmtUsdFine(b)}`;
-      fillMeaiTable(prices, [
-        { text: "Modelo (entrada / salida)" },
-        { text: "Panel ME AI" },
-        { text: `Real (× ${rate})` },
-        { text: `Paga el usuario (× ${markup})` },
+      buildMeaiTable(prices, [
+        { text: "Modelo" },
+        { text: "Panel ME AI (entrada / salida)" },
+        { text: "Costo real USD" },
+        { text: `Paga el usuario (×${markup})` },
       ], list.map((m) => ({
         label: m.model,
         values: [pair(m.input, m.output), pair(m.input * rate, m.output * rate), pair(m.input * rate * markup, m.output * rate * markup)],
       })));
     }
+  }
+
+  function readMeaiTopupForm() {
+    const currency = $("adminMeaiTopupCurrency")?.value || "CNY";
+    const amount = Number($("adminMeaiTopupAmount")?.value);
+    const panel = Number($("adminMeaiTopupPanel")?.value);
+    const fx = currency === "USD" ? 1 : Number($("adminMeaiTopupFx")?.value);
+    return { currency, amount, panel, fx };
+  }
+
+  function updateMeaiTopupPreview() {
+    const out = $("adminMeaiTopupPreview");
+    if (!out) return;
+    const { currency, amount, panel, fx } = readMeaiTopupForm();
+    const sym = MEAI_CURRENCY_SYMBOL[currency] || currency;
+    if (!(amount >= 0) || !(panel > 0) || !(fx > 0)) {
+      out.textContent = "Completa el monto, el panel recibido y el tipo de cambio.";
+      return;
+    }
+    const real = amount * fx;
+    out.textContent = `${sym}${fmtNum(amount)} = ${fmtUsd(real)} USD · cada dólar de panel te cuesta ${fmtUsdFine(real / panel)} USD`;
+  }
+
+  async function loadMeaiFx(currency) {
+    const label = $("adminMeaiTopupFxLabel");
+    const input = $("adminMeaiTopupFx");
+    const sym = MEAI_CURRENCY_SYMBOL[currency] || currency;
+    if (label) label.textContent = `1 ${sym} = US$`;
+    if (!input) return;
+    input.disabled = currency === "USD";
+    if (currency === "USD") {
+      input.value = "1";
+      updateMeaiTopupPreview();
+      return;
+    }
+    const res = await window.editcoreCredits?.fxRate?.(currency);
+    if (res?.ok) input.value = String(Number(res.rate.toFixed(6)));
+    else if (currency === "CNY" && meaiState.cnyUsd) input.value = String(meaiState.cnyUsd);
+    updateMeaiTopupPreview();
   }
 
   const PAYMENT_STATUS = { approved: "✅ pagado", pending: "⏳ pendiente", rejected: "❌ rechazado", cancelled: "✖ cancelado" };
@@ -1273,25 +1393,68 @@
 
   function bindAdminPanel() {
     $("adminRefreshBtn")?.addEventListener("click", () => void refreshAdminPanel());
-    const toggleMeaiForm = (showId, hideId) => {
-      const show = $(showId);
-      const hide = $(hideId);
-      if (hide) hide.hidden = true;
-      if (show) show.hidden = !show.hidden;
+    const toggleMeaiPanel = (panelId, buttonId, otherPanelId, otherButtonId) => {
+      const panel = $(panelId);
+      if (!panel) return false;
+      const open = panel.hidden;
+      panel.hidden = !open;
+      $(buttonId)?.setAttribute("aria-expanded", String(open));
+      const other = $(otherPanelId);
+      if (other) other.hidden = true;
+      $(otherButtonId)?.setAttribute("aria-expanded", "false");
+      return open;
     };
-    $("adminMeaiTopupToggle")?.addEventListener("click", () => toggleMeaiForm("adminMeaiTopupForm", "adminMeaiAdjustForm"));
-    $("adminMeaiAdjustToggle")?.addEventListener("click", () => toggleMeaiForm("adminMeaiAdjustForm", "adminMeaiTopupForm"));
+    $("adminMeaiTopupToggle")?.addEventListener("click", () => {
+      const opened = toggleMeaiPanel("adminMeaiTopupForm", "adminMeaiTopupToggle", "adminMeaiAdjustForm", "adminMeaiAdjustToggle");
+      if (opened && !$("adminMeaiTopupFx")?.value) void loadMeaiFx($("adminMeaiTopupCurrency")?.value || "CNY");
+    });
+    $("adminMeaiAdjustToggle")?.addEventListener("click", () => {
+      toggleMeaiPanel("adminMeaiAdjustForm", "adminMeaiAdjustToggle", "adminMeaiTopupForm", "adminMeaiTopupToggle");
+    });
+    $("adminMeaiTopupPack")?.addEventListener("change", (event) => {
+      const [amount, panel] = String(event.target.value || "").split("|");
+      if (amount && panel) {
+        $("adminMeaiTopupAmount").value = amount;
+        $("adminMeaiTopupPanel").value = panel;
+        const currency = $("adminMeaiTopupCurrency");
+        if (currency && currency.value !== "CNY") {
+          currency.value = "CNY";
+          void loadMeaiFx("CNY");
+        }
+      }
+      updateMeaiTopupPreview();
+    });
+    $("adminMeaiTopupCurrency")?.addEventListener("change", (event) => {
+      const pack = $("adminMeaiTopupPack");
+      if (pack && event.target.value !== "CNY") pack.value = "";
+      void loadMeaiFx(event.target.value);
+    });
+    for (const id of ["adminMeaiTopupAmount", "adminMeaiTopupPanel", "adminMeaiTopupFx"]) {
+      $(id)?.addEventListener("input", () => {
+        if (id !== "adminMeaiTopupFx") { const pack = $("adminMeaiTopupPack"); if (pack) pack.value = ""; }
+        updateMeaiTopupPreview();
+      });
+    }
     $("adminMeaiTopupSave")?.addEventListener("click", async () => {
       const out = $("adminMeaiTopupResult");
-      const panel = Number($("adminMeaiTopupPanel")?.value || 0);
-      const real = Number($("adminMeaiTopupReal")?.value);
-      if (!(panel > 0) || !(real >= 0) || $("adminMeaiTopupReal")?.value === "") {
-        return showStatus(out, false, "Escribe los dólares de panel que te dieron y los dólares reales que pagaste.");
+      const { currency, amount, panel, fx } = readMeaiTopupForm();
+      if (!(panel > 0) || !(amount >= 0) || !(fx > 0)) {
+        return showStatus(out, false, "Completa el monto pagado, el panel recibido y el tipo de cambio.");
       }
-      const res = await window.editcoreCredits?.adminMeaiTopup?.({ panel, real, note: $("adminMeaiTopupNote")?.value || "" });
-      if (!res?.ok) return showStatus(out, false, res?.error || "No se pudo guardar la recarga.");
-      showStatus(out, true, `Recarga guardada. Ahora cada dólar de panel vale ${fmtUsdFine(res.panel_usd_rate)} reales.`);
-      for (const id of ["adminMeaiTopupPanel", "adminMeaiTopupReal", "adminMeaiTopupNote"]) { const el = $(id); if (el) el.value = ""; }
+      const res = await window.editcoreCredits?.adminMeaiTopup?.({ panel, amount, currency, fx, note: $("adminMeaiTopupNote")?.value || "" });
+      if (!res?.ok) return showStatus(out, false, res?.error || "No se pudo guardar la compra.");
+      showStatus(out, true, `Compra guardada. Cada dólar de panel cuesta ahora ${fmtUsdFine(res.panel_usd_rate)} USD (promedio de tus compras).`);
+      const note = $("adminMeaiTopupNote");
+      if (note) note.value = "";
+      await refreshAdminPanel();
+    });
+    $("adminMeaiMarkupSave")?.addEventListener("click", async () => {
+      const out = $("adminMeaiAdjustResult");
+      const markup = Number($("adminMeaiMarkup")?.value);
+      if (!(markup >= 1)) return showStatus(out, false, "El margen debe ser 1 o más (1 = sin ganancia).");
+      const res = await window.editcoreCredits?.adminSetMarkup?.(markup);
+      if (!res?.ok) return showStatus(out, false, res?.error || "No se pudo guardar el margen.");
+      showStatus(out, true, `Margen guardado: el usuario paga el costo real ×${fmtNum(res.markup)}.`);
       await refreshAdminPanel();
     });
     $("adminMeaiAdjustSave")?.addEventListener("click", async () => {
