@@ -2681,6 +2681,9 @@
     $("ideAdminBtn")?.addEventListener("click", () => openAdminPanel());
     $("idePreviewBtn")?.addEventListener("click", () => void setPreviewAsUser(true));
     $("ecPreviewExitBtn")?.addEventListener("click", () => void setPreviewAsUser(false));
+    document.addEventListener("keydown", (ev) => {
+      if (ev.key === "Escape" && previewAsUser && !document.querySelector("dialog[open]")) void setPreviewAsUser(false);
+    });
     $("chatHomeContextBtn")?.addEventListener("click", (ev) => {
       ev.preventDefault();
       ev.stopPropagation();

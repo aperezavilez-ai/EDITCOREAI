@@ -1,3 +1,15 @@
+# RELEASE v4.2.8
+
+## La vista «Ver como usuario» ya se puede cerrar
+
+### Corregido
+- La franja naranja de «Ver como usuario» no se cerraba: estaba encima de la zona que sirve para arrastrar la ventana y el botón «Volver a administrador» no recibía el clic. Ahora funciona, y la tecla Esc también vuelve a administrador.
+
+### Build
+- `EDITCOREAI.exe` (4.2.8.0) y `release/EDITCOREAI-Setup.exe` (4.2.8), construidos desde un árbol limpio en el commit publicado.
+
+---
+
 # RELEASE v4.2.7
 
 ## Administración desde la app oficial, pagos con Mercado Pago y actividad de usuarios

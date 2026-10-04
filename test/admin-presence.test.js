@@ -22,6 +22,15 @@ test("Actividad: solo usuarios con sesión registran latido y solo el admin ve l
   assert.match(sql, /editcoreai_admin_list_users[\s\S]*editcoreai\.require_admin\(\)[\s\S]*a\.last_seen_at, a\.app_version/);
 });
 
+test("Ver como usuario: la franja recibe clics (fuera de la zona de arrastre) y Esc también sale", () => {
+  const css = read("chat-home.css");
+  const banner = css.match(/\.ec-preview-banner \{[^}]*\}/)?.[0] || "";
+  const exit = css.match(/\.ec-preview-exit \{[^}]*\}/)?.[0] || "";
+  assert.match(banner, /-webkit-app-region: no-drag;/);
+  assert.match(exit, /-webkit-app-region: no-drag;/);
+  assert.match(read("chat-home.js"), /ev\.key === "Escape" && previewAsUser[^\n]*setPreviewAsUser\(false\)/);
+});
+
 test("Admin: Administración y Ver como usuario también existen en la vista de proyectos, ocultos por defecto", () => {
   const html = read("index.html");
   assert.match(html, /<button id="ideAdminBtn"[^>]*hidden>/);
