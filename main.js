@@ -2738,6 +2738,7 @@ async function maybeAutoHealPreview(projectRoot, issue) {
       const heal = await autoHealNextProject(projectRoot, {
         rebuild: true,
         force: true,
+        serverRunning: isProjectServerRunning(projectRoot),
         errorText: excerpt,
         command: "npx next build",
         onProgress: (p) => {
@@ -2830,6 +2831,14 @@ async function maybeAutoHealPreview(projectRoot, issue) {
   }
 }
 
+function isProjectServerRunning(projectRoot) {
+  const target = path.resolve(String(projectRoot || ""));
+  return [...previewProcesses.entries()].some(([root, entry]) => entry?.child
+    && entry.child.exitCode === null
+    && (path.resolve(entry.runtimeRoot || "") === target || path.resolve(root || "") === target
+      || target.startsWith(`${path.resolve(root || "")}${path.sep}`)));
+}
+
 async function startProjectPreview(rootPath, ownerId) {
   const safeRoot = assertProjectRoot(rootPath);
   const pendingStart = previewStartPromises.get(safeRoot);
@@ -2871,17 +2880,19 @@ async function startProjectPreviewNow(safeRoot, ownerId) {
   if (desktop) return startDesktopPreview(safeRoot, ownerId, desktop);
   if (!pkg?.scripts?.dev && !pkg?.scripts?.start) return { available: false, url: "", message: "El proyecto no define un script dev o start." };
 
-  // Preflight: si .next esta corrupto (routes-manifest / server), regenerar antes de abrir preview.
+  // Preflight: si .next esta corrupto (routes-manifest), limpiarlo antes de abrir preview.
+  // Nunca con el servidor del proyecto corriendo: borrar .next debajo de `next dev` provoca los ENOENT de webpack.
   try {
     const { detectNextCacheCorruption, autoHealNextProject } = require("./runtime/inspector-local-heal");
     const detection = detectNextCacheCorruption(runtimeRoot);
-    if (detection.isNext && detection.issues.some((issue) => issue.autoHeal || /ENOENT/i.test(issue.code || ""))) {
+    const serverRunning = isProjectServerRunning(runtimeRoot);
+    if (!serverRunning && detection.isNext && detection.issues.some((issue) => issue.autoHeal)) {
       emitPreviewDaemonEvent(safeRoot, {
         type: "preview-heal-start",
         issue: { summary: detection.issues[0]?.summary || "Caché .next corrupta", healStrategy: "next-cache-rebuild" },
       });
       const heal = await autoHealNextProject(runtimeRoot, {
-        rebuild: true,
+        rebuild: !pkg?.scripts?.dev,
         force: true,
         errorText: detection.issues.map((i) => i.summary).join("; "),
         command: "npx next build",
@@ -10048,6 +10059,7 @@ ipcMain.handle("inspector:local-heal", async (event, target, requestedRoot, runI
   };
   return autoHealNextProject(root, {
     rebuild: true,
+    serverRunning: isProjectServerRunning(root),
     onProgress: (p) => send(p),
   });
 });
@@ -10079,6 +10091,7 @@ ipcMain.handle("inspector:scan", async (event, target, requestedRoot, options) =
   if (target === "project" || options?.autoHeal === true) {
     heal = await autoHealNextProject(root, {
       rebuild: options?.rebuild !== false,
+      serverRunning: isProjectServerRunning(root),
       onProgress: send,
     });
   }
@@ -10106,6 +10119,7 @@ ipcMain.handle("inspector:diagnose", async (event, target, requestedRoot, runId 
     if (target === "project") {
       heal = await autoHealNextProject(root, {
         rebuild: true,
+        serverRunning: isProjectServerRunning(root),
         onProgress: (progress) => {
           try { event.sender.send("inspector:progress", { ...progress, runId: job.runId }); } catch { /* ignore */ }
         },

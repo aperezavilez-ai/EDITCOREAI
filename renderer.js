@@ -175,6 +175,11 @@ function isIgnorablePreviewConsoleMessage(message = "") {
     || /passthrough is not supported|angle/.test(text)
     || /autofill\.cc|autofill_agent/.test(text)
     || /allow-scripts and allow-same-origin.*sandbox/.test(text)
+    // Caché interna de Next/webpack (.next): la regenera el servidor de desarrollo, no es error del proyecto
+    || /^<w>/.test(text)
+    || /packfilecachestrategy/.test(text)
+    || /enoent[^\n]{0,200}?[\\/]\.next[\\/](?:cache|server|static|trace|types)\b/.test(text)
+    || /^\[?error: enoent[^\n]*\.pack(?:\.gz)?_?'/.test(text)
     // CORS / red del preview local → API remota: no es fallo de EditCoreAI ni del panel
     || /cors policy/.test(text)
     || /access-control-allow-origin/.test(text)

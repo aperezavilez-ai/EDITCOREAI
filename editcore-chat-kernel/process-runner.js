@@ -7,7 +7,7 @@
 
 const { spawn } = require("child_process");
 const path = require("path");
-const { detectDevLogIssue } = require("./dev-log-detector");
+const { detectDevLogIssue, stripDevCacheNoise } = require("./dev-log-detector");
 
 const DEFAULT_TIMEOUT_MS = 180_000;
 const MAX_CAPTURE = 12_000;
@@ -25,6 +25,8 @@ function isLongRunningCommand(command) {
 }
 
 function detectSevereIssue(chunk, bufferTail) {
+  chunk = stripDevCacheNoise(chunk);
+  bufferTail = stripDevCacheNoise(bufferTail);
   const text = `${chunk || ""}\n${bufferTail || ""}`;
   if (/gpu_ipc_service|gpu_channel_manager|ContextResult::kFatalFailure|shared context for virtualization/i.test(text)
     && !/Failed to compile|Module not found|EADDRINUSE|ELIFECYCLE/i.test(text)) {

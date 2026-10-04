@@ -11,6 +11,7 @@
 
 ### Corregido
 - El cobro a usuarios ahora usa el costo real de ME AI (panel × 0.02) multiplicado por el margen (2). Antes se calculaba con los dólares del panel y salía unas 100 veces más caro.
+- **Navegador interno sin errores falsos de `.next`**: EditCoreAI borraba la caché `.next` de los proyectos Next.js (y corría `next build`) mientras el servidor del proyecto estaba corriendo, lo que provocaba los errores «ENOENT … .next\cache\webpack … pack.gz». Ya nunca toca `.next` con el servidor encendido, y los avisos internos de caché de webpack ya no aparecen en «Errores del preview». Los errores reales del proyecto se siguen mostrando.
 
 ### Build
 - `EDITCOREAI.exe` (4.3.0.0) y `release/EDITCOREAI-Setup.exe` (4.3.0), construidos desde un árbol limpio en el commit publicado.

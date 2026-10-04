@@ -74,15 +74,8 @@ function detectNextCacheCorruption(projectRoot, { errorText = "" } = {}) {
     });
   }
 
-  if (fs.existsSync(nextDir) && !fs.existsSync(serverApp)) {
-    issues.push({
-      code: "ENOENT_NEXT_SERVER_APP",
-      summary: "ENOENT: .next/server/app",
-      detail: "Falta el árbol App Router en .next/server/app (caché incompleta).",
-      autoHeal: true,
-      skipRetryRead: true,
-    });
-  }
+  // `.next/server/app` no existe en desarrollo hasta compilar la primera página (ni en proyectos con
+  // carpeta pages/): su ausencia no es corrupción y no debe disparar el borrado de `.next`.
 
   // Pack temporales de webpack rotos
   const webpackCache = path.join(nextDir, "cache", "webpack");
@@ -118,10 +111,24 @@ async function autoHealNextProject(projectRoot, {
   force = false,
   errorText = "",
   command = "npx next build",
+  serverRunning = false,
 } = {}) {
   const root = path.resolve(projectRoot || "");
   const detection = detectNextCacheCorruption(root, { errorText });
   const learned = promptBlock("routes-manifest ENOENT next build .next/server", 4);
+
+  // Borrar `.next` debajo de un servidor de Next en marcha rompe su caché (ENOENT de webpack).
+  if (serverRunning) {
+    return {
+      ok: true,
+      skipped: true,
+      reason: "server-running",
+      uiMessage: "",
+      kernel: { processRunner: true, snapshot: true, globalMemory: true, vision: false },
+      learnedPrompt: learned || "",
+      issues: detection.issues || [],
+    };
+  }
 
   if (!detection.isNext) {
     return {
