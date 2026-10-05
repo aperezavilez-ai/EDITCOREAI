@@ -520,7 +520,107 @@
     }, { passive: true });
   });
 
-  function append(role, text, elapsedSeconds = null) {
+  // ── Adjuntos y Capturas de Pantalla ─────────────────────────────────────────
+  const attachedFiles = [];
+
+  function formatBytes(bytes) {
+    if (!bytes || bytes <= 0) return "0 B";
+    if (bytes < 1024) return bytes + " B";
+    if (bytes < 1024 * 1024) return Math.round(bytes / 1024) + " KB";
+    return (bytes / (1024 * 1024)).toFixed(1) + " MB";
+  }
+
+  function renderAttachmentChips() {
+    const list = $("chatHomeAttachmentList");
+    if (!list) return;
+    list.replaceChildren();
+    if (!attachedFiles.length) {
+      list.style.display = "none";
+      return;
+    }
+    list.style.display = "flex";
+    attachedFiles.forEach((item, idx) => {
+      const chip = document.createElement("div");
+      chip.className = "attachment-chip";
+      chip.style.cssText = "display:inline-flex;align-items:center;gap:6px;padding:4px 8px;border-radius:6px;background:var(--ch-surface,#f1f5f9);border:1px solid var(--ch-border,#cbd5e1);font-size:12px;max-width:240px;position:relative;";
+      
+      if (item.dataUrl && item.type.startsWith("image/")) {
+        const thumb = document.createElement("img");
+        thumb.src = item.dataUrl;
+        thumb.alt = item.name;
+        thumb.style.cssText = "width:22px;height:22px;object-fit:cover;border-radius:4px;border:1px solid #cbd5e1;";
+        chip.appendChild(thumb);
+      } else {
+        const icon = document.createElement("span");
+        icon.textContent = "📄";
+        chip.appendChild(icon);
+      }
+
+      const name = document.createElement("span");
+      name.textContent = item.name;
+      name.style.cssText = "overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500;font-size:11px;max-width:140px;";
+      name.title = `${item.name} (${formatBytes(item.size)})`;
+      chip.appendChild(name);
+
+      const del = document.createElement("button");
+      del.type = "button";
+      del.textContent = "×";
+      del.title = "Eliminar archivo adjunto";
+      del.style.cssText = "border:none;background:transparent;cursor:pointer;color:#64748b;font-weight:bold;font-size:14px;padding:0 2px;line-height:1;";
+      del.onmouseenter = () => { del.style.color = "#ef4444"; };
+      del.onmouseleave = () => { del.style.color = "#64748b"; };
+      del.onclick = (e) => {
+        e.stopPropagation();
+        attachedFiles.splice(idx, 1);
+        renderAttachmentChips();
+      };
+      chip.appendChild(del);
+      list.appendChild(chip);
+    });
+  }
+
+  async function addAttachmentFiles(files) {
+    if (!files || !files.length) return;
+    for (const file of Array.from(files)) {
+      const isImg = file.type.startsWith("image/");
+      const reader = new FileReader();
+      await new Promise((resolve) => {
+        if (isImg) {
+          reader.onload = () => {
+            attachedFiles.push({
+              name: file.name || "captura.png",
+              size: file.size,
+              type: file.type || "image/png",
+              dataUrl: reader.result,
+            });
+            resolve();
+          };
+          reader.readAsDataURL(file);
+        } else {
+          reader.onload = () => {
+            attachedFiles.push({
+              name: file.name,
+              size: file.size,
+              type: file.type || "text/plain",
+              text: typeof reader.result === "string" ? reader.result : "",
+            });
+            resolve();
+          };
+          reader.readAsText(file);
+        }
+      });
+    }
+    renderAttachmentChips();
+  }
+
+  window.EditCoreAttachments = {
+    openPicker: () => $("fileInput")?.click(),
+    addFiles: (files) => addAttachmentFiles(files),
+    clear: () => { attachedFiles.length = 0; renderAttachmentChips(); },
+    list: () => attachedFiles.slice(),
+  };
+
+  function append(role, text, elapsedSeconds = null, attachments = []) {
     const item = document.createElement("article");
     item.className = `msg ${role}`;
     const head = document.createElement("div");
@@ -528,7 +628,32 @@
     head.textContent = role === "user" ? "Tú" : `EditCoreAI${elapsedSeconds === null ? "" : ` ${formatElapsed(elapsedSeconds)}`}`;
     const body = document.createElement("div");
     body.className = "msg-body";
-    body.innerHTML = renderMarkdown(text, { fromUser: role === "user" });
+
+    if (Array.isArray(attachments) && attachments.length > 0) {
+      const attWrap = document.createElement("div");
+      attWrap.style.cssText = "display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px;";
+      for (const att of attachments) {
+        if (att.dataUrl && att.type.startsWith("image/")) {
+          const img = document.createElement("img");
+          img.src = att.dataUrl;
+          img.alt = att.name || "captura";
+          img.style.cssText = "max-width:180px;max-height:140px;border-radius:6px;border:1px solid #cbd5e1;object-fit:cover;cursor:pointer;";
+          img.onclick = () => window.open(att.dataUrl, "_blank");
+          attWrap.appendChild(img);
+        } else if (att.name) {
+          const fileChip = document.createElement("span");
+          fileChip.style.cssText = "display:inline-flex;align-items:center;gap:4px;padding:3px 8px;border-radius:4px;background:rgba(0,0,0,0.06);font-size:11px;font-family:monospace;";
+          fileChip.textContent = "📄 " + att.name;
+          attWrap.appendChild(fileChip);
+        }
+      }
+      body.appendChild(attWrap);
+    }
+
+    const textDiv = document.createElement("div");
+    textDiv.innerHTML = renderMarkdown(typeof text === "string" ? text : (Array.isArray(text) ? text.find(t => t.type === "text")?.text || "" : ""), { fromUser: role === "user" });
+    body.appendChild(textDiv);
+
     item.append(head, body);
     $("feed")?.appendChild(item);
     scrollToBottom(role === "user");
@@ -580,7 +705,9 @@
     if (!feed) return;
     feed.replaceChildren();
     for (const m of loadMessages(threadId)) {
-      if (m.role === "user" || m.role === "assistant") append(m.role, m.content, m.role === "assistant" && m.elapsed != null ? m.elapsed : null);
+      if (m.role === "user" || m.role === "assistant") {
+        append(m.role, m.content, m.role === "assistant" && m.elapsed != null ? m.elapsed : null, m.attachments || []);
+      }
     }
     if (current && current.threadId === threadId) {
       const t = appendThinking(current.reasoning ? "Razonando…" : "Pensando / razonando...");
@@ -630,18 +757,35 @@
   function buildMessages(history) {
     const persona = String(window.EDITCORE_WEB_PERSONA || "Eres EditCoreAI. Responde siempre en español, claro y directo.");
     const turns = history
-      .filter((m) => (m.role === "user" || m.role === "assistant") && !m.error && String(m.content || "").trim())
+      .filter((m) => (m.role === "user" || m.role === "assistant") && !m.error && (Array.isArray(m.content) || String(m.content || "").trim()))
       .slice(-HISTORY_TURNS)
-      .map((m) => ({ role: m.role, content: String(m.content) }));
+      .map((m) => {
+        if (m.role === "user" && Array.isArray(m.attachments) && m.attachments.length > 0) {
+          const parts = [{ type: "text", text: String(m.content || "") }];
+          for (const att of m.attachments) {
+            if (att.dataUrl && att.type.startsWith("image/")) {
+              parts.push({ type: "image_url", image_url: { url: att.dataUrl } });
+            } else if (att.text) {
+              parts[0].text += `\n\n[Adjunto: ${att.name}]\n${att.text}\n[Fin adjunto]`;
+            }
+          }
+          return { role: m.role, content: parts.length > 1 ? parts : parts[0].text };
+        }
+        return { role: m.role, content: m.content };
+      });
     return [{ role: "system", content: persona }, ...turns];
   }
 
   async function runTurn(prompt) {
     const threadId = activeThreadId();
     const history = loadMessages(threadId);
-    history.push({ role: "user", content: prompt, at: Date.now() });
+    const turnAttachments = attachedFiles.slice();
+    attachedFiles.length = 0;
+    renderAttachmentChips();
+
+    history.push({ role: "user", content: prompt, attachments: turnAttachments, at: Date.now() });
     saveMessages(threadId, history);
-    append("user", prompt);
+    append("user", prompt, null, turnAttachments);
 
     if (!getWebProjectName(threadId)) {
       const inferred = inferProjectName(prompt);
@@ -1049,13 +1193,22 @@
   if (typeof window.skipWaiting !== 'function') {
     window.skipWaiting = function() { return Promise.resolve(); };
   }
-  if (window.navigator && window.navigator.serviceWorker) {
-    try {
-      window.navigator.serviceWorker.register = function() {
-        return Promise.resolve({ scope: './', active: null, installing: null, waiting: null, update: function() { return Promise.resolve(); } });
-      };
-    } catch (_) {}
-  }
+  try {
+    Object.defineProperty(window.navigator, 'serviceWorker', {
+      get: function() {
+        return {
+          register: function() {
+            return Promise.resolve({ scope: './', active: null, installing: null, waiting: null, update: function() { return Promise.resolve(); } });
+          },
+          getRegistration: function() { return Promise.resolve(); },
+          getRegistrations: function() { return Promise.resolve([]); },
+          addEventListener: function() {},
+          removeEventListener: function() {}
+        };
+      },
+      configurable: true
+    });
+  } catch (_) {}
   window.addEventListener('error', function(e) {
     console.warn('[EditCore Preview Notice]', e.error || e.message);
     var body = document.body;
@@ -1377,6 +1530,92 @@
         ev.preventDefault();
         ev.stopImmediatePropagation();
         abortCurrent();
+      }
+    });
+
+    // Selector de archivos y capturas con botón +
+    $("chatHomePlusBtn")?.addEventListener("click", (e) => {
+      e.preventDefault();
+      $("fileInput")?.click();
+    });
+    $("fileInput")?.addEventListener("change", (e) => {
+      if (e.target.files?.length) {
+        void addAttachmentFiles(e.target.files);
+        e.target.value = "";
+      }
+    });
+
+    // Pegar capturas de pantalla desde el portapapeles (Ctrl+V)
+    const handlePasteAttach = (e) => {
+      const cd = e.clipboardData;
+      if (!cd) return;
+      const items = Array.from(cd.items || []);
+      const imgFiles = [];
+      for (const item of items) {
+        if (item.kind === "file" && item.type.startsWith("image/")) {
+          const f = item.getAsFile();
+          if (f) imgFiles.push(f);
+        }
+      }
+      if (imgFiles.length) {
+        e.preventDefault();
+        void addAttachmentFiles(imgFiles);
+      }
+    };
+    $("chatHomePrompt")?.addEventListener("paste", handlePasteAttach);
+    $("chatHomeComposer")?.addEventListener("paste", handlePasteAttach);
+
+    // Arrastrar y soltar archivos / capturas en el composer del chat
+    const composer = $("chatHomeComposer");
+    if (composer) {
+      composer.addEventListener("dragover", (e) => {
+        e.preventDefault();
+        composer.classList.add("drag-over");
+      });
+      composer.addEventListener("dragleave", () => composer.classList.remove("drag-over"));
+      composer.addEventListener("drop", (e) => {
+        e.preventDefault();
+        composer.classList.remove("drag-over");
+        if (e.dataTransfer?.files?.length) void addAttachmentFiles(e.dataTransfer.files);
+      });
+    }
+
+    // Dictado por voz / micrófono
+    $("chatHomeMicBtn")?.addEventListener("click", (e) => {
+      e.preventDefault();
+      const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SR) {
+        alert("El dictado por voz requiere Google Chrome o Microsoft Edge.");
+        return;
+      }
+      const btn = $("chatHomeMicBtn");
+      if (window.__ecSpeechRec) {
+        try { window.__ecSpeechRec.stop(); } catch (_) {}
+        window.__ecSpeechRec = null;
+        btn?.classList.remove("is-recording");
+        return;
+      }
+      try {
+        const rec = new SR();
+        rec.lang = "es-ES";
+        rec.continuous = false;
+        rec.interimResults = false;
+        rec.onstart = () => btn?.classList.add("is-recording");
+        rec.onresult = (ev) => {
+          const transcript = ev.results?.[0]?.[0]?.transcript || "";
+          const p = $("chatHomePrompt");
+          if (p && transcript) {
+            p.value = (p.value ? p.value + " " : "") + transcript;
+            p.focus();
+          }
+        };
+        rec.onerror = () => { btn?.classList.remove("is-recording"); window.__ecSpeechRec = null; };
+        rec.onend = () => { btn?.classList.remove("is-recording"); window.__ecSpeechRec = null; };
+        window.__ecSpeechRec = rec;
+        rec.start();
+      } catch (err) {
+        btn?.classList.remove("is-recording");
+        window.__ecSpeechRec = null;
       }
     });
 

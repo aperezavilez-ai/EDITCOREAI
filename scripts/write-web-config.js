@@ -239,6 +239,7 @@ function webAppHtml(chatMarkup) {
     ${chatMarkup}
 
     <main aria-hidden="true">
+      <input type="file" id="fileInput" multiple accept="image/*,.pdf,.txt,.md,.json,.js,.html,.css,.csv" hidden />
       <section id="feed" class="feed"></section>
       <span id="modelPickerLabel" hidden>Auto</span>
       <div id="modelPickerMenu" class="model-picker-menu hidden" role="listbox" aria-label="Modelos disponibles"></div>

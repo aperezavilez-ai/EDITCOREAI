@@ -289,9 +289,10 @@ test("web: canjear código usa el mismo servidor y la web no expone funciones de
   const { win, rpcCalls } = loadBridge({ accountData: { email: "luis@gmail.com", role: "user", status: "active", credits_balance: 1 } });
   await win.editcoreCredits.redeem("ABC-123");
   assert.equal(JSON.stringify(rpcCalls[0]), JSON.stringify({ fn: "editcoreai_redeem_voucher", args: { p_code: "ABC-123" } }));
-  for (const desktopOnly of ["editcoreUpdates", "editcoreWindow", "editcoreRecovery", "editcoreSkills", "EditCoreTerminal", "EditCoreDictation", "EditCoreAttachments", "openProjectFromDisk"]) {
+  for (const desktopOnly of ["editcoreUpdates", "editcoreWindow", "editcoreRecovery", "editcoreSkills", "EditCoreTerminal", "openProjectFromDisk"]) {
     assert.equal(win[desktopOnly], undefined, `${desktopOnly} no debe existir en la web`);
   }
+  assert.equal(typeof win.EditCoreAttachments?.openPicker, "function");
   assert.equal(typeof win.sendChatPrompt, "function");
   assert.equal(typeof win.EditCoreModels.openPicker, "function");
 });

@@ -10,12 +10,22 @@ body[data-app-mode="chat"] #chatHomeShell {
 #chatHomeIdeBtn,
 #chatHomeReloadAppBtn,
 #chatHomeNavFolder,
-#chatHomePlusBtn,
-#chatHomeMicBtn,
 #chatHomeFolderChip,
-#chatHomeAttachmentList,
 .ec-mention-popup {
   display: none !important;
+}
+
+/* Lista de adjuntos visible en la web para capturas e imágenes */
+.is-web #chatHomeAttachmentList {
+  display: flex !important;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px 12px;
+  min-height: 0;
+}
+.is-web #chatHomeAttachmentList:empty {
+  display: none !important;
+  padding: 0;
 }
 
 /* Botón de Descargar Proyecto en la barra superior */
