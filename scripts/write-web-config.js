@@ -126,7 +126,6 @@ function ideChatMarkup(indexHtml) {
                   <button type="button" id="webPreviewReloadBtn" title="Recargar vista previa" class="web-preview-icon-btn">🔄</button>
                   <button type="button" id="webPreviewMobileBtn" title="Alternar vista móvil (375px)" class="web-preview-icon-btn">📱 Móvil</button>
                   <button type="button" id="webPreviewExpandToggleBtn" title="Alternar entre panel derecho y expandido" class="web-preview-icon-btn">⇲ Expandir</button>
-                  <button type="button" id="webPreviewPopoutBtn" title="Abrir en pestaña nueva" class="web-preview-icon-btn">↗ Pestaña</button>
                 </div>
               </div>
               <div class="web-preview-viewport" id="webPreviewViewport">

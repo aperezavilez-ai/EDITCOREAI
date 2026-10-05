@@ -650,8 +650,9 @@
       body.appendChild(attWrap);
     }
 
+    if (Array.isArray(text)) text = text.find(t => t.type === "text")?.text || "";
     const textDiv = document.createElement("div");
-    textDiv.innerHTML = renderMarkdown(typeof text === "string" ? text : (Array.isArray(text) ? text.find(t => t.type === "text")?.text || "" : ""), { fromUser: role === "user" });
+    textDiv.innerHTML = renderMarkdown(text, { fromUser: role === "user" });
     body.appendChild(textDiv);
 
     item.append(head, body);
@@ -1209,6 +1210,22 @@
       configurable: true
     });
   } catch (_) {}
+  var _origDocAdd = document.addEventListener;
+  document.addEventListener = function(type, fn, opts) {
+    if (type === 'DOMContentLoaded' && (document.readyState === 'interactive' || document.readyState === 'complete')) {
+      setTimeout(fn, 1);
+      return;
+    }
+    return _origDocAdd.call(document, type, fn, opts);
+  };
+  var _origWinAdd = window.addEventListener;
+  window.addEventListener = function(type, fn, opts) {
+    if (type === 'load' && document.readyState === 'complete') {
+      setTimeout(fn, 1);
+      return;
+    }
+    return _origWinAdd.call(window, type, fn, opts);
+  };
   window.addEventListener('error', function(e) {
     console.warn('[EditCore Preview Notice]', e.error || e.message);
     var body = document.body;
@@ -1645,17 +1662,6 @@
     });
     $("webPreviewExpandToggleBtn")?.addEventListener("click", () => toggleContextExpand());
     $("webContextWidthToggleBtn")?.addEventListener("click", () => toggleContextExpand());
-
-    $("webPreviewPopoutBtn")?.addEventListener("click", () => {
-      const files = getWebProjectFiles(activeThreadId());
-      const compiled = buildPreviewHtml(files);
-      if (!compiled) {
-        alert("Sin código generado para abrir en pestaña nueva. Pide a EditCoreAI crear una web o app.");
-        return;
-      }
-      const blob = new Blob([compiled], { type: "text/html;charset=utf-8" });
-      window.open(URL.createObjectURL(blob), "_blank");
-    });
 
     // Restaurar preferencia de ancho si estaba expandido
     try {
