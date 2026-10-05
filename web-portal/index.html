@@ -579,7 +579,7 @@
           <span class="btn-hero-icon">🖥</span>
           <span>
             <strong>Descargar para Windows</strong>
-            <small>Instalador directo · Gratis</small>
+            <small>Versión <span class="js-app-version">4.3.4</span> · Instalador directo · Gratis</small>
           </span>
         </a>
       </div>
@@ -826,7 +826,7 @@
           <span class="btn-hero-icon">🖥</span>
           <span>
             <strong>Descargar para Windows</strong>
-            <small>App nativa · Instalador .exe</small>
+            <small>Versión <span class="js-app-version">4.3.4</span> · App nativa · Instalador .exe</small>
           </span>
         </a>
       </div>
@@ -912,5 +912,15 @@
     </div>
   </footer>
 
+  <script>
+    fetch("https://api.github.com/repos/aperezavilez-ai/EDITCOREAI/releases/latest")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((rel) => {
+        const v = String(rel?.tag_name || "").replace(/^v/i, "");
+        if (!/^\d+\.\d+\.\d+$/.test(v)) return;
+        document.querySelectorAll(".js-app-version").forEach((el) => { el.textContent = v; });
+      })
+      .catch(() => {});
+  </script>
 </body>
 </html>
