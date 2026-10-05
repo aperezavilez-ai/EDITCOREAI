@@ -111,6 +111,43 @@ export function estimateTokens(text) {
   return Math.ceil(String(text || "").length / 4);
 }
 
+// Reserva previa: tope de salida que se cobra por adelantado y mínimo que vale la pena responder.
+export const RESERVE_OUTPUT_TOKENS = 64000;
+export const LOW_BALANCE_OUTPUT_CAP = 8192;
+export const MIN_OUTPUT_TOKENS = 256;
+const IMAGE_TOKENS = 1600;
+
+/** Entrada estimada a la alta (3 caracteres por token); cada imagen cuenta como ~1600 tokens, no por su base64. */
+export function estimatePromptTokens(body) {
+  const b = body && typeof body === "object" ? body : {};
+  let images = 0;
+  const text = JSON.stringify([b.messages || "", b.tools || ""]).replace(/data:[^"\\]{1,80};base64,[A-Za-z0-9+/=]+/g, () => {
+    images += 1;
+    return "";
+  });
+  return Math.ceil(text.length / 3) + images * IMAGE_TOKENS;
+}
+
+/** Salida pedida por el cliente (max_tokens / max_completion_tokens), acotada al tope de reserva. */
+export function requestedOutputTokens(body) {
+  const n = Number(body?.max_completion_tokens ?? body?.max_tokens);
+  return Number.isFinite(n) && n > 0 ? Math.min(Math.floor(n), RESERVE_OUTPUT_TOKENS) : RESERVE_OUTPUT_TOKENS;
+}
+
+/** Costo máximo (dólares de panel) de una respuesta con esa entrada y ese tope de salida. */
+export function maxCostUsd(price, groupRatio, promptTokens, outputTokens) {
+  return providerCostUsd(price, { prompt_tokens: promptTokens, completion_tokens: outputTokens }, groupRatio);
+}
+
+/** Tokens de salida que alcanza a pagar un presupuesto en dólares de panel. */
+export function affordableOutputTokens(price, groupRatio, promptTokens, budgetPanel) {
+  if (!price) return 0;
+  const inputCost = maxCostUsd(price, groupRatio, promptTokens, 0);
+  const perOutput = price.completionRatio * price.modelRatio * groupRatio * USD_PER_RATIO_TOKEN;
+  if (!(perOutput > 0)) return budgetPanel >= inputCost ? RESERVE_OUTPUT_TOKENS : 0;
+  return Math.max(0, Math.floor((Number(budgetPanel) - inputCost) / perOutput));
+}
+
 const PROVIDER_NAME_PATTERN = /(?:https?:\/\/)?(?:api|cn)\.meai\.cloud\S*|\bme\s?ai(?:\s?cloud)?\b|\bmeai\b|\bapicredits\b/gi;
 
 export function sanitizeProviderText(text) {

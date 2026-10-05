@@ -220,3 +220,39 @@ test("Streaming: limpia cada bloque data aunque llegue partido en trozos", async
   assert.match(out, /"content":"ho"/);
   assert.ok(out.endsWith("data: [DONE]\n\n"));
 });
+
+test("Reserva: la entrada se estima a la alta y una imagen no cuenta por su base64", async () => {
+  const { estimatePromptTokens, requestedOutputTokens, RESERVE_OUTPUT_TOKENS } = await loadPricing();
+  const text = "x".repeat(3000);
+  assert.equal(estimatePromptTokens({ messages: [{ role: "user", content: text }] }) >= 1000, true);
+  const image = `data:image/png;base64,${"A".repeat(2_000_000)}`;
+  const withImage = estimatePromptTokens({ messages: [{ role: "user", content: [{ type: "image_url", image_url: { url: image } }] }] });
+  assert.ok(withImage < 5000, `imagen estimada en ${withImage} tokens`);
+  assert.equal(requestedOutputTokens({}), RESERVE_OUTPUT_TOKENS);
+  assert.equal(requestedOutputTokens({ max_tokens: 1000 }), 1000);
+  assert.equal(requestedOutputTokens({ max_completion_tokens: 10_000_000 }), RESERVE_OUTPUT_TOKENS);
+});
+
+test("Reserva: con poco saldo solo alcanza para pocos tokens de salida, nunca más", async () => {
+  const { indexPricing, affordableOutputTokens, maxCostUsd } = await loadPricing();
+  const pricing = indexPricing(PAYLOAD, "default");
+  const opus = pricing.models.get("claude-opus-4.8");
+  const budget = maxCostUsd(opus, pricing.groupRatio, 1000, 500);
+  const tokens = affordableOutputTokens(opus, pricing.groupRatio, 1000, budget);
+  assert.ok(Math.abs(tokens - 500) <= 1, `alcanza para ${tokens}`);
+  assert.ok(maxCostUsd(opus, pricing.groupRatio, 1000, tokens) <= budget + 1e-6);
+  assert.equal(affordableOutputTokens(opus, pricing.groupRatio, 1000, 0), 0);
+});
+
+test("Reserva: ai-proxy aparta el saldo antes de llamar al proveedor y lo libera si falla", () => {
+  const src = fs.readFileSync(path.join(ROOT, "supabase/functions/ai-proxy/index.ts"), "utf8");
+  const chat = src.slice(src.indexOf("async function handleChat("));
+  assert.ok(chat.indexOf("reserveCredits(") > 0 && chat.indexOf("reserveCredits(") < chat.indexOf("fetch(`${UPSTREAM_BASE}/chat/completions`"));
+  assert.match(chat, /if \(!reserved\.ok\) \{\s*release\(uid\);\s*return errorResponse\(402, "OUT_OF_CREDITS"\);/);
+  assert.equal((chat.match(/await releaseHold\(hold\);/g) || []).length, 2);
+  assert.equal((chat.match(/, hold\);/g) || []).length, 2);
+  const sql = fs.readFileSync(path.join(ROOT, "supabase/migrations/20261005130000_editcoreai_reservations.sql"), "utf8");
+  assert.match(sql, /v_available := acc\.credits_balance - v_held;/);
+  assert.match(sql, /grant execute on function public\.editcoreai_proxy_reserve\(uuid, numeric\) to service_role;/);
+  assert.doesNotMatch(sql, /editcoreai_proxy_reserve[^;]*to authenticated/);
+});

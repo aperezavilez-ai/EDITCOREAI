@@ -5,13 +5,19 @@
 // Solo administrador: GET /ai-proxy/v1/admin/meai-balance (saldo global de ME AI)
 
 import {
+  affordableOutputTokens,
   allowedModelNames,
+  estimatePromptTokens,
   indexPricing,
   isModelAllowed,
+  LOW_BALANCE_OUTPUT_CAP,
+  maxCostUsd,
+  MIN_OUTPUT_TOKENS,
   normalizeModelName,
   panelPricesPerMillion,
   providerCostUsd,
   readUsage,
+  requestedOutputTokens,
   restrictToModels,
   sanitizeProviderText,
   scrubProviderFields,
@@ -126,7 +132,37 @@ function keepAlive(promise: Promise<unknown>) {
   if (runtime?.waitUntil) runtime.waitUntil(promise);
 }
 
-async function chargeUsage(uid: string, model: string, price: unknown, groupRatio: number, usage: Record<string, unknown>) {
+async function releaseHold(hold: string | null) {
+  if (!hold) return;
+  try {
+    await serviceRpc("editcoreai_proxy_release", { p_reservation: hold });
+  } catch (error) {
+    console.error("reserva sin liberar", String(error));
+  }
+}
+
+// Reserva en la base el costo máximo de la respuesta antes de llamar al proveedor: con consultas en paralelo
+// o saldo bajo, nadie consume más de lo que tiene. Si no alcanza para el tope, se acorta la respuesta.
+async function reserveCredits(uid: string, price: unknown, groupRatio: number, body: Record<string, unknown>) {
+  const promptTokens = estimatePromptTokens(body);
+  const requested = requestedOutputTokens(body);
+  const first = await serviceRpc("editcoreai_proxy_reserve", {
+    p_user: uid,
+    p_provider_cost: maxCostUsd(price as never, groupRatio, promptTokens, requested),
+  });
+  if (first?.ok) return { ok: true, hold: first.reservation || null, outputCap: null as number | null };
+  const affordable = affordableOutputTokens(price as never, groupRatio, promptTokens, Number(first?.available_panel) || 0);
+  const outputCap = Math.min(requested, LOW_BALANCE_OUTPUT_CAP, affordable);
+  if (outputCap < MIN_OUTPUT_TOKENS) return { ok: false, hold: null, outputCap: null };
+  const second = await serviceRpc("editcoreai_proxy_reserve", {
+    p_user: uid,
+    p_provider_cost: maxCostUsd(price as never, groupRatio, promptTokens, outputCap),
+  });
+  if (!second?.ok) return { ok: false, hold: null, outputCap: null };
+  return { ok: true, hold: second.reservation || null, outputCap };
+}
+
+async function chargeUsage(uid: string, model: string, price: unknown, groupRatio: number, usage: Record<string, unknown>, hold: string | null = null) {
   const u = readUsage(usage);
   const cost = providerCostUsd(price as never, usage, groupRatio);
   try {
@@ -137,6 +173,7 @@ async function chargeUsage(uid: string, model: string, price: unknown, groupRati
       p_tokens_out: u.completionTokens,
       p_cached_tokens: u.cachedTokens,
       p_provider_cost: cost,
+      p_reservation: hold,
     });
   } catch (error) {
     console.error("cobro fallido", model, cost, String(error));
@@ -216,10 +253,29 @@ async function handleChat(req: Request, uid: string, account: Record<string, unk
   }
 
   if (!acquire(uid)) return errorResponse(429, "TOO_MANY_REQUESTS");
+  const unlimited = account.is_unlimited === true || account.role === "admin";
+  let hold: string | null = null;
+  let outputCap: number | null = null;
+  if (!unlimited) {
+    let reserved;
+    try {
+      reserved = await reserveCredits(uid, price, pricing.groupRatio, body);
+    } catch {
+      release(uid);
+      return errorResponse(503, "UPSTREAM", "El servidor de cuentas no respondió.");
+    }
+    if (!reserved.ok) {
+      release(uid);
+      return errorResponse(402, "OUT_OF_CREDITS");
+    }
+    hold = reserved.hold;
+    outputCap = reserved.outputCap;
+  }
   const wantStream = body.stream === true;
   const upstreamBody = {
     ...body,
     model,
+    ...(outputCap ? (body.max_completion_tokens != null ? { max_completion_tokens: outputCap } : { max_tokens: outputCap }) : {}),
     ...(wantStream ? { stream_options: { include_usage: true } } : {}),
   };
   const promptText = JSON.stringify(body.messages || "");
@@ -233,11 +289,13 @@ async function handleChat(req: Request, uid: string, account: Record<string, unk
       signal: req.signal,
     });
   } catch {
+    await releaseHold(hold);
     release(uid);
     return errorResponse(503, "UPSTREAM");
   }
 
   if (!upstream.ok) {
+    await releaseHold(hold);
     release(uid);
     const raw = await upstream.text().catch(() => "");
     let detail = "";
@@ -250,7 +308,7 @@ async function handleChat(req: Request, uid: string, account: Record<string, unk
   if (!wantStream) {
     const data = await upstream.json().catch(() => null);
     const outputChars = JSON.stringify(data?.choices || "").length;
-    await chargeUsage(uid, model, price, pricing.groupRatio, usageOrEstimate(data?.usage, promptText, outputChars));
+    await chargeUsage(uid, model, price, pricing.groupRatio, usageOrEstimate(data?.usage, promptText, outputChars), hold);
     release(uid);
     return new Response(JSON.stringify(scrubProviderFields(data, model)), { headers: { "content-type": "application/json" } });
   }
@@ -264,7 +322,7 @@ async function handleChat(req: Request, uid: string, account: Record<string, unk
     if (settled) return;
     settled = true;
     tracker.finish();
-    await chargeUsage(uid, model, price, pricing.groupRatio, usageOrEstimate(tracker.usage, promptText, tracker.outputChars));
+    await chargeUsage(uid, model, price, pricing.groupRatio, usageOrEstimate(tracker.usage, promptText, tracker.outputChars), hold);
     release(uid);
   };
   const passthrough = new TransformStream<Uint8Array, Uint8Array>({
