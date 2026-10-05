@@ -242,7 +242,43 @@ function abortReasonToError(signal, fallbackMessage) {
   return new Error(fallbackMessage);
 }
 
-async function readOpenAiStream(response, onTextDelta, signal) {
+/**
+ * Plazo por inactividad para una consulta al proveedor: corta solo si pasan idleMs sin recibir nada
+ * (los modelos que razonan, como Opus, pueden pensar minutos mandando datos sin texto visible).
+ * maxTotalMs es el tope absoluto. touch() reinicia el plazo; clear() libera los timers.
+ */
+function createIdleTimeout(idleMs, maxTotalMs = 0) {
+  const idle = Number(idleMs) || 0;
+  const total = Number(maxTotalMs) || 0;
+  if (idle <= 0 && total <= 0) return { signal: undefined, touch() {}, clear() {} };
+  const controller = new AbortController();
+  const timeoutError = (message) => {
+    const err = new Error(message);
+    err.name = "TimeoutError";
+    err.code = "PROVIDER_TIMEOUT";
+    return err;
+  };
+  let idleTimer = null;
+  const totalTimer = total > 0
+    ? setTimeout(() => controller.abort(timeoutError("PROVIDER_TIMEOUT")), total)
+    : null;
+  const touch = () => {
+    if (idle <= 0 || controller.signal.aborted) return;
+    if (idleTimer) clearTimeout(idleTimer);
+    idleTimer = setTimeout(() => controller.abort(timeoutError("PROVIDER_TIMEOUT")), idle);
+  };
+  touch();
+  return {
+    signal: controller.signal,
+    touch,
+    clear() {
+      if (idleTimer) clearTimeout(idleTimer);
+      if (totalTimer) clearTimeout(totalTimer);
+    },
+  };
+}
+
+async function readOpenAiStream(response, onTextDelta, signal, onActivity) {
   const reader = response.body?.getReader?.();
   if (!reader) return null;
   const decoder = new TextDecoder();
@@ -301,9 +337,11 @@ async function readOpenAiStream(response, onTextDelta, signal) {
         throw abortReasonToError(signal, "Solicitud cancelada.");
       }
       const item = await reader.read();
+      if (item.value?.length) { try { onActivity?.(); } catch { /* ignore */ } }
       done = item.done;
       consume(decoder.decode(item.value || new Uint8Array(), { stream: !done }), done);
     }
+    if (signal?.aborted) throw abortReasonToError(signal, "Solicitud cancelada.");
     if (pending) consume("\n", true);
     return { text, toolCalls: normalizeToolCallsOut([...toolCalls.values()].filter((call) => call.function.name)), usage: usage(streamUsage) };
   } finally {
@@ -311,7 +349,7 @@ async function readOpenAiStream(response, onTextDelta, signal) {
   }
 }
 
-async function readAnthropicStream(response, onTextDelta, signal) {
+async function readAnthropicStream(response, onTextDelta, signal, onActivity) {
   const reader = response.body?.getReader?.();
   if (!reader) return null;
   const decoder = new TextDecoder();
@@ -371,9 +409,11 @@ async function readAnthropicStream(response, onTextDelta, signal) {
         throw abortReasonToError(signal, "Solicitud cancelada.");
       }
       const item = await reader.read();
+      if (item.value?.length) { try { onActivity?.(); } catch { /* ignore */ } }
       done = item.done;
       consume(decoder.decode(item.value || new Uint8Array(), { stream: !done }), done);
     }
+    if (signal?.aborted) throw abortReasonToError(signal, "Solicitud cancelada.");
     if (pending) consume("\n", true);
     return {
       text,
@@ -410,7 +450,7 @@ function adapterFor(definition) {
         await parseProviderJsonOrThrow(response);
       }
       if (wantStream && contentType.includes("text/event-stream")) {
-        const streamed = await readOpenAiStream(response, input.onTextDelta, input.signal);
+        const streamed = await readOpenAiStream(response, input.onTextDelta, input.signal, input.onActivity);
         if (streamed) return { ...streamed, toolCalls: normalizeToolCallsOut(streamed.toolCalls) };
       }
       if (contentType.includes("text/html")) {
@@ -466,7 +506,7 @@ function adapterFor(definition) {
         throw err;
       }
       if (wantStream && contentType.includes("text/event-stream")) {
-        const streamed = await readAnthropicStream(response, input.onTextDelta, input.signal);
+        const streamed = await readAnthropicStream(response, input.onTextDelta, input.signal, input.onActivity);
         return streamed ? { ...streamed, toolCalls: normalizeToolCallsOut(streamed.toolCalls) } : streamed;
       }
       if (contentType.includes("text/html")) {
@@ -571,6 +611,7 @@ module.exports = {
   withCacheControl,
   normalizeToolCallsOut,
   readOpenAiStream,
+  createIdleTimeout,
   GATEWAY_TIMEOUT_USER_MESSAGE,
   DEFAULT_PROVIDER_TIMEOUT_MS,
   isGatewayHtmlBody,

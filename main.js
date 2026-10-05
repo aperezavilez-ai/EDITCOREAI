@@ -151,7 +151,8 @@ const { ensureProjectDependencies } = require("./project-dependencies");
 const { capturePreview } = require("./visual-preview-inspector");
 const { documentContext, normalizeDocuments } = require("./document-attachments");
 const { redactSensitive } = require("./security-utils");
-const { AiCore } = require("./runtime/ai-core");
+const { AiCore, createIdleTimeout } = require("./runtime/ai-core");
+const PROVIDER_MAX_TOTAL_MS = 10 * 60_000;
 const {
   withEliteCommunicationPolicy,
   stripEliteFiller,
@@ -3462,7 +3463,8 @@ async function callProvider({ baseUrl, apiKey, model, messages, providerKey = ""
     if (signal?.aborted) throw signal.reason || new Error("Solicitud cancelada.");
     const auditTimeoutMs = process.env.EDITCORE_PHASE1_AUDIT === "1" ? Number(process.env.EDITCORE_PHASE1_PROVIDER_TIMEOUT_MS) : 0;
     const effectiveTimeoutMs = auditTimeoutMs > 0 ? Math.min(Number(timeoutMs) || auditTimeoutMs, auditTimeoutMs) : Number(timeoutMs);
-    const timeout = effectiveTimeoutMs > 0 ? AbortSignal.timeout(effectiveTimeoutMs) : null;
+    const idleTimeout = createIdleTimeout(effectiveTimeoutMs, effectiveTimeoutMs > 0 ? Math.max(effectiveTimeoutMs, PROVIDER_MAX_TOTAL_MS) : 0);
+    const timeout = idleTimeout.signal || null;
     const requestSignal = signal && timeout ? AbortSignal.any([signal, timeout]) : signal || timeout || undefined;
     const trace = auditPhase1()?.request({
       ...(auditContext || {}),
@@ -3484,14 +3486,15 @@ async function callProvider({ baseUrl, apiKey, model, messages, providerKey = ""
     try {
       let result;
       try {
-        result = await runtimeAiCore.complete({ provider: providerId, apiKey: activeApiKey, model: activeModel, messages: safeMessages, tools: enableTools ? tools : [], temperature: resolveFactualTemperature(), signal: requestSignal, maxAttempts: 1, onTextDelta });
+        result = await runtimeAiCore.complete({ provider: providerId, apiKey: activeApiKey, model: activeModel, messages: safeMessages, tools: enableTools ? tools : [], temperature: resolveFactualTemperature(), signal: requestSignal, maxAttempts: 1, onTextDelta, onActivity: idleTimeout.touch });
       } catch (error) {
         if (!enableTools || !isProviderToolUnsupported(error)) throw error;
         const textProtocolMessages = [
           ...safeMessages,
           { role: "user", content: "El proveedor no acepto herramientas nativas. Continua usando el protocolo JSON textual de EditCore: responde SOLO con {\"type\":\"tool\",\"name\":\"...\",\"input\":{...}} o {\"type\":\"final\",\"text\":\"...\"}." },
         ];
-        result = await runtimeAiCore.complete({ provider: providerId, apiKey: activeApiKey, model: activeModel, messages: textProtocolMessages, tools: [], temperature: resolveFactualTemperature(), signal: requestSignal, maxAttempts: 1 });
+        idleTimeout.touch();
+        result = await runtimeAiCore.complete({ provider: providerId, apiKey: activeApiKey, model: activeModel, messages: textProtocolMessages, tools: [], temperature: resolveFactualTemperature(), signal: requestSignal, maxAttempts: 1, onActivity: idleTimeout.touch });
         result.decisionSource = "text_protocol_no_native_tools";
       }
       result.usage = { ...normalizeUsage(result.usage, estimatedRequestTokens, result.text), model: activeModel, request_input_tokens_estimate: estimatedRequestTokens, provider_host: new URL(endpoint).hostname, request_attempt: attempt };
@@ -3516,10 +3519,13 @@ async function callProvider({ baseUrl, apiKey, model, messages, providerKey = ""
       lastError = toUserFacingProviderError(error);
       if (signal?.aborted) throw lastError;
       if (attempt < attempts && isTransientProviderError(error)) {
+        idleTimeout.clear();
         await new Promise((resolve) => setTimeout(resolve, Math.min(1500 * attempt, 3000)));
         continue;
       }
       break;
+    } finally {
+      idleTimeout.clear();
     }
   }
   if (!(signal?.aborted)) recordModelCapability({ baseUrl: endpoint, model: activeModel, providerKey: activeProviderKey, ok: false, error: String(lastError?.message || lastError || "") });

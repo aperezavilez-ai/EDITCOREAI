@@ -20,9 +20,13 @@ test("Página oficial: Vercel publica solo web-portal, sin instalar la app de es
   const config = JSON.parse(fs.readFileSync(path.join(ROOT, "vercel.json"), "utf8"));
   assert.equal(config.outputDirectory, "web-portal");
   assert.equal(config.installCommand, "");
-  assert.equal(config.buildCommand, "");
+  assert.equal(config.buildCommand, "node scripts/write-web-config.js");
   const ignore = fs.readFileSync(path.join(ROOT, ".vercelignore"), "utf8").split(/\r?\n/).filter(Boolean);
-  assert.deepEqual(ignore, ["/*", "!/web-portal", "!/vercel.json"]);
+  assert.deepEqual(ignore, [
+    "/*", "!/web-portal", "!/vercel.json",
+    "!/scripts", "/scripts/*", "!/scripts/write-web-config.js",
+    "!/runtime", "/runtime/*", "!/runtime/elite-communication-policy.js",
+  ]);
 });
 
 test("Página oficial: los botones de descarga usan el dominio propio, no versiones fijas", () => {
