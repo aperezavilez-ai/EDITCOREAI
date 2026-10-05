@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 "use strict";
 
-// Publica web-portal (www.editcore.mx) en el proyecto Vercel "editcoreai" desde una copia temporal:
+// Normalmente la web se publica sola al subir a main (Vercel corre scripts/write-web-config.js con sus
+// variables de entorno). Este script es la vía manual:
+// publica web-portal (www.editcore.mx) en el proyecto Vercel "editcoreai" desde una copia temporal:
 // genera ahí js/cuentas-config.js con la dirección pública del servidor de cuentas y su clave anon
 // (de .env.local; ese archivo nunca entra en git) y vincula la copia, nunca la raíz del repo.
 // Uso: node scripts/deploy-web.js [--prepare-only]
@@ -10,18 +12,10 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const { spawnSync } = require("node:child_process");
-const { parseEnvFile, looksLikeServiceRole } = require("../runtime/editcore-cloud-config");
+const { parseEnvFile } = require("../runtime/editcore-cloud-config");
+const { cuentasConfigJs, writeWebConfig } = require("./write-web-config");
 
 const VERCEL_PROJECT = "editcoreai";
-
-function cuentasConfigJs(env) {
-  const url = String(env.EDITCOREAI_CLOUD_PUBLIC_URL || "").replace(/\/+$/, "");
-  const anonKey = String(env.EDITCOREAI_CLOUD_ANON_KEY || "").trim();
-  if (!/^https:\/\//.test(url)) throw new Error("Falta EDITCOREAI_CLOUD_PUBLIC_URL (https) en .env.local");
-  if (!anonKey) throw new Error("Falta EDITCOREAI_CLOUD_ANON_KEY en .env.local");
-  if (looksLikeServiceRole(anonKey)) throw new Error("EDITCOREAI_CLOUD_ANON_KEY es una service_role: no se publica");
-  return `window.EDITCOREAI_CUENTAS = ${JSON.stringify({ url, anonKey })};\n`;
-}
 
 function prepare(repoRoot, outDir, env) {
   fs.rmSync(outDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
@@ -29,8 +23,7 @@ function prepare(repoRoot, outDir, env) {
     recursive: true,
     filter: (src) => !/[\\/](\.vercel|node_modules|\.git)([\\/]|$)/.test(path.relative(repoRoot, src)),
   });
-  fs.mkdirSync(path.join(outDir, "js"), { recursive: true });
-  fs.writeFileSync(path.join(outDir, "js", "cuentas-config.js"), cuentasConfigJs(env), "utf8");
+  writeWebConfig(outDir, env);
   return outDir;
 }
 

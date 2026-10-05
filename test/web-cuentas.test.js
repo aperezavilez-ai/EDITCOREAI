@@ -164,6 +164,28 @@ test("web: la config pública se genera al publicar y nunca con service_role", (
   assert.match(fs.readFileSync(path.join(ROOT, ".gitignore"), "utf8"), /web-portal\/js\/cuentas-config\.js/);
 });
 
+test("web: los despliegues desde GitHub generan la config en el build de Vercel", () => {
+  const vercel = JSON.parse(fs.readFileSync(path.join(ROOT, "vercel.json"), "utf8"));
+  assert.equal(vercel.outputDirectory, "web-portal");
+  assert.equal(vercel.buildCommand, "node scripts/write-web-config.js");
+  const ignore = fs.readFileSync(path.join(ROOT, ".vercelignore"), "utf8").split(/\r?\n/);
+  assert.ok(ignore.includes("!/scripts/write-web-config.js"), "el script debe subir a Vercel");
+  assert.ok(ignore.includes("/scripts/*"), "el resto de scripts no sube");
+  const src = fs.readFileSync(path.join(ROOT, "scripts", "write-web-config.js"), "utf8");
+  const requires = [...src.matchAll(/require\("([^"]+)"\)/g)].map((m) => m[1]);
+  assert.ok(requires.every((r) => r.startsWith("node:")), "en Vercel solo existe este archivo: sin require locales");
+
+  const { writeWebConfig } = require("../scripts/write-web-config");
+  const dir = fs.mkdtempSync(path.join(require("node:os").tmpdir(), "ec-webcfg-"));
+  try {
+    const out = writeWebConfig(dir, { EDITCOREAI_CLOUD_PUBLIC_URL: "https://api.test", EDITCOREAI_CLOUD_ANON_KEY: ANON });
+    assert.match(fs.readFileSync(out, "utf8"), /^window\.EDITCOREAI_CUENTAS = /);
+    assert.throws(() => writeWebConfig(dir, {}), /EDITCOREAI_CLOUD_PUBLIC_URL/);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("web: el servidor de cuentas acepta volver a editcore.mx tras Google", () => {
   const toml = fs.readFileSync(path.join(ROOT, "supabase", "config.toml"), "utf8");
   const line = toml.split(/\r?\n/).find((l) => l.startsWith("additional_redirect_urls"));

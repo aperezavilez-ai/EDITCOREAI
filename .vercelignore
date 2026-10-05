@@ -1,3 +1,6 @@
 /*
 !/web-portal
 !/vercel.json
+!/scripts
+/scripts/*
+!/scripts/write-web-config.js

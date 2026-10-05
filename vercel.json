@@ -2,7 +2,7 @@
   "version": 2,
   "framework": null,
   "outputDirectory": "web-portal",
-  "buildCommand": "",
+  "buildCommand": "node scripts/write-web-config.js",
   "installCommand": "",
   "cleanUrls": true,
   "headers": [
