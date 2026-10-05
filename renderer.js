@@ -409,7 +409,7 @@ function userFacingError(message) {
     || /Tu modelo seleccionado se conserv/i.test(text)
     || /PROVIDER_TEMPORARILY_UNAVAILABLE/i.test(text)) {
     if (/saldo|balance|402/i.test(text)) {
-      return "El proveedor no tiene saldo disponible ahora. Revisa ME AI o APICredits e intenta de nuevo.";
+      return "El servicio de IA no tiene saldo disponible ahora. Intenta de nuevo en unos minutos.";
     }
     if (/401|403|api.?key|token|forbidden/i.test(text)) {
       return "No pude autenticar el modelo. Revisa la API key en Modelos e intenta de nuevo.";
@@ -985,11 +985,11 @@ async function renderGatewayProjectStatus() {
 }
 
 async function saveGafcoreAdminToken() {
-  throw new Error("Esta integración ya no está disponible. Configura ME AI o APICredits en Modelos.");
+  throw new Error("Esta integración ya no está disponible. Elige un modelo en el panel Modelos.");
 }
 
 async function connectGatewayProject() {
-  throw new Error("Esta integración ya no está disponible. Configura ME AI o APICredits en Modelos.");
+  throw new Error("Esta integración ya no está disponible. Elige un modelo en el panel Modelos.");
 }
 
 function pathBasename(filePath = "") {
@@ -7208,8 +7208,11 @@ function prepareChatProseForRender(text) {
   return value;
 }
 
-function renderMarkdown(text) {
-  const prepared = prepareChatProseForRender(text);
+function renderMarkdown(text, { fromUser = false } = {}) {
+  let prepared = prepareChatProseForRender(text);
+  if (!fromUser && typeof window.scrubAiProviderNames === "function") {
+    prepared = window.scrubAiProviderNames(prepared);
+  }
   // Use secure markdown renderer (loaded from renderer-markdown.js)
   if (typeof window.renderMarkdownSecure === "function") {
     return window.renderMarkdownSecure(prepared);
@@ -7237,7 +7240,7 @@ function append(role, text, usage, scroll = true, elapsedSeconds = null, images 
 
   const body = document.createElement("div");
   body.className = "msg-body";
-  body.innerHTML = renderMarkdown(repairMojibakeText(String(text || "")));
+  body.innerHTML = renderMarkdown(repairMojibakeText(String(text || "")), { fromUser: role === "user" });
 
   item.append(header, body);
 
@@ -9664,7 +9667,7 @@ function activeModelConfigForInspector(requireTools = false) {
     };
   }
   throw new Error(isCurrentUserAdmin()
-    ? "Inspector Nativo (Modo Local): configura un modelo directo en Modelos (ME AI / APICredits) para chat o reparación asistida. El escaneo local no requiere API."
+    ? "Inspector Nativo (Modo Local): configura un modelo directo en el panel Modelos para chat o reparación asistida. El escaneo local no requiere API."
     : "Inspector Nativo (Modo Local): no hay un modelo disponible para chat o reparación asistida. El escaneo local no requiere API.");
 }
 
@@ -9788,7 +9791,8 @@ function inspectorContextPrompt(snapshot) {
     ];
   return [
     "Eres Inspector Core AI, supervisor NATIVO LOCAL de EditCore. Responde SIEMPRE en español.",
-    "Modo: Inspector Nativo Autónomo Activo (Modo Local). Usa solo ME AI / APICredits.",
+    "Modo: Inspector Nativo Autónomo Activo (Modo Local). Usa solo los modelos del panel Modelos.",
+    "Nunca nombres a los proveedores ni intermediarios de IA: si preguntan, habla solo del modelo.",
     "Herramientas de kernel disponibles: process-runner (spawn/logs), vision-inspector (captura preview), global-memory (aprendizajes), snapshot (checkpoints/rollback).",
     "Eres un solo inspector visible para el usuario, pero internamente razonas como Planner, Debug, QA, Security, DevOps y Report Agent.",
     "Tu objetivo principal es diagnosticar EditCore: runtime, interfaz, APIs, modelos, agentes, colas, logs, herramientas y empaquetado.",
@@ -11191,7 +11195,13 @@ function isAppInfoQuestion(prompt = "") {
   const p = String(prompt || "").trim();
   if (!p || p.length > 240) return false;
   if (/\b(?:corrije|corrige|arregla|implementa|analiza|audita|modifica|crea\s+un)\b/i.test(p)) return false;
-  return /\b(?:para\s+qu[eé]\s+(?:sirve|funciona|es)|qu[eé]\s+(?:hace|es)(?:\s+esta\s+app)?|qui[eé]n\s+eres|c[oó]mo\s+te\s+llamas|ayuda)\b/i.test(p);
+  if (/^[¿¡\s]*ayuda[\s?!.]*$/i.test(p)) return true;
+  const self = "(?:esta\\s+(?:app|aplicaci[oó]n|herramienta|plataforma)|este\\s+(?:ide|programa|editor|asistente|agente)|editcore(?:\\s*ai)?)";
+  return new RegExp(
+    `(?:para\\s+qu[eé]\\s+(?:sirve|funciona|es)|qu[eé]\\s+(?:hace|es|eres))\\s+${self}(?=$|[^\\wáéíóúüñ])` +
+      `|(?:^|[^\\wáéíóúüñ])(?:qui[eé]n\\s+eres|qu[eé]\\s+eres|c[oó]mo\\s+te\\s+llamas|para\\s+qu[eé]\\s+sirves)(?=$|[^\\wáéíóúüñ])`,
+    "i"
+  ).test(p);
 }
 
 function localAppInfoAnswer(project = null) {
@@ -11202,7 +11212,7 @@ function localAppInfoAnswer(project = null) {
     "",
     "### Dependencias del operador",
     "- **Conexiones (bóveda):** GitHub (git), Vercel (deploy), Supabase (datos por proyecto), SSH.",
-    "- **Modelos:** ME AI y APICredits con tus API keys en el panel Modelos (Auto elige el mejor activo).",
+    "- **Modelos:** elige el modelo en el selector del chat (Auto elige el mejor disponible).",
     "",
     root
       ? `Ahora tienes abierto **${name}** (\`${root}\`). Para inspección: *analiza el proyecto*. Para cambios: dilo en concreto.`
@@ -13551,7 +13561,7 @@ function appendUserWithImages(text, images) {
 
   const body = document.createElement("div");
   body.className = "msg-body";
-  body.innerHTML = renderMarkdown(text);
+  body.innerHTML = renderMarkdown(text, { fromUser: true });
 
   item.append(header, body);
 

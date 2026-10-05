@@ -289,13 +289,28 @@
     return sanitized;
   }
 
+  // Las respuestas pueden nombrar modelos, nunca a los proveedores de IA.
+  const AI_PROVIDER_NAME = '(?:\\bM[Ee]\\s?AI(?:\\s+Cloud)?\\b|\\bmeai\\b|\\bAPI\\s?Credits\\b)';
+  const AI_PROVIDER_PAIR_RE = new RegExp(`${AI_PROVIDER_NAME}\\s*(?:\\/|\\+|,|\\by\\b|\\bo\\b|\\band\\b|\\bor\\b)\\s*${AI_PROVIDER_NAME}`, 'gi');
+  const AI_PROVIDER_RE = new RegExp(AI_PROVIDER_NAME, 'gi');
+
+  function scrubAiProviderNames(text) {
+    return String(text || '')
+      .replace(/https?:\/\/[^\s)]*(?:meai\.cloud|apicredits\.site)[^\s)]*/gi, '')
+      .replace(/\b(?:[\w-]+\.)*(?:meai\.cloud|apicredits\.site)\b/gi, '')
+      .replace(/\b(?:meai|apicredits)\/(?=[\w.-])/gi, '')
+      .replace(AI_PROVIDER_PAIR_RE, 'el servicio de IA')
+      .replace(AI_PROVIDER_RE, 'el servicio de IA');
+  }
+
   // Export to global window object and CommonJS
   if (typeof window !== 'undefined') {
     window.renderMarkdownSecure = renderMarkdownSecure;
     window.parseMarkdown = parseMarkdown;
+    window.scrubAiProviderNames = scrubAiProviderNames;
   }
   if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { renderMarkdownSecure, parseMarkdown, sanitizeHtml };
+    module.exports = { renderMarkdownSecure, parseMarkdown, sanitizeHtml, scrubAiProviderNames };
   }
 
 })();

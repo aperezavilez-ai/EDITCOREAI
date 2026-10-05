@@ -174,8 +174,8 @@ async function onboardProject(projectRoot, connections = {}, {
     ok: true,
     skipped: true,
     message: connectGateway
-      ? "Integración Gateway AI descontinuada. Configura ME AI o APICredits en Modelos."
-      : "Configura ME AI o APICredits en Modelos del IDE.",
+      ? "Integración Gateway AI descontinuada. Elige un modelo en el panel Modelos."
+      : "Elige un modelo en el panel Modelos del IDE.",
   });
 
   const checklist = {
@@ -202,7 +202,7 @@ async function onboardProject(projectRoot, connections = {}, {
     checklist,
     message: firstDeploy
       ? "Proyecto creado, conectado y publicado."
-      : "Proyecto onboarded: dependencias, Supabase, GitHub/Vercel. Configura ME AI o APICredits en Modelos.",
+      : "Proyecto onboarded: dependencias, Supabase, GitHub/Vercel. Elige un modelo en el panel Modelos.",
   };
 }
 

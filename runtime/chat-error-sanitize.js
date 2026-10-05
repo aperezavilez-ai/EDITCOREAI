@@ -5,6 +5,8 @@
  * Nunca dejar nombres/hostnames internos del proveedor en el chat.
  */
 
+const { scrubAiProviderNames } = require("../renderer-markdown");
+
 const TRANSIENT_PROVIDER_RE = /no est[aá] disponible|tard[oó] demasiado|PROVIDER_TEMPORARILY_UNAVAILABLE|temporarily unavailable|reintenta en \d+|502|503|504|408|425|429|timeout|timed?\s*out|ECONNRESET|ETIMEDOUT|ENOTFOUND|fetch failed|socket|overloaded|rate.?limit|try again|cloudflare|524|gateway time-?out|circuit.?breaker|POOL_EXHAUSTED|sin cuentas disponibles/i;
 
 const HARD_AUTH_RE = /401|403|invalid.?token|inv[aá]lid.?token|forbidden|api.?key|unauthorized|no est[aá] permitido|not allowed|permitido en la API|modelo .* no permitido|无效|令牌/i;
@@ -69,7 +71,7 @@ function sanitizeChatProviderError(errorOrMessage, { status } = {}) {
   }
 
   if (BILLING_RE.test(cleaned) || code === 402) {
-    return "El proveedor no tiene saldo disponible ahora. Revisa el saldo de ME AI o APICredits e intenta de nuevo.";
+    return "El servicio de IA no tiene saldo disponible ahora. Intenta de nuevo en unos minutos.";
   }
 
   if (HARD_AUTH_RE.test(cleaned) || [401, 403].includes(code)) {
@@ -89,7 +91,7 @@ function sanitizeChatProviderError(errorOrMessage, { status } = {}) {
     .replace(/https?:\/\/[^\s]+/gi, "")
     .replace(/\bvercel\.app\b/gi, "")
     .trim();
-  out = scrubInternalProviderNames(out);
+  out = scrubAiProviderNames(scrubInternalProviderNames(out));
   if (!out || /gafcore/i.test(out)) {
     return "No pude completar la respuesta. Intenta de nuevo.";
   }

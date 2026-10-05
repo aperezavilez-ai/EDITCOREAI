@@ -489,7 +489,8 @@
   };
 
   // ── Mensajes con el mismo DOM que el IDE (renderer.js append/appendThinking/appendStreaming) ──
-  function renderMarkdown(text) {
+  function renderMarkdown(text, { fromUser = false } = {}) {
+    if (!fromUser && typeof window.scrubAiProviderNames === "function") text = window.scrubAiProviderNames(text);
     if (typeof window.renderMarkdownSecure === "function") return window.renderMarkdownSecure(String(text || ""));
     const div = document.createElement("div");
     div.textContent = String(text || "");
@@ -527,7 +528,7 @@
     head.textContent = role === "user" ? "Tú" : `EditCoreAI${elapsedSeconds === null ? "" : ` ${formatElapsed(elapsedSeconds)}`}`;
     const body = document.createElement("div");
     body.className = "msg-body";
-    body.innerHTML = renderMarkdown(text);
+    body.innerHTML = renderMarkdown(text, { fromUser: role === "user" });
     item.append(head, body);
     $("feed")?.appendChild(item);
     scrollToBottom(role === "user");

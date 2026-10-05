@@ -85,7 +85,7 @@ const CLOUD_TOOLS_POLICY = [
   "- Solo GitHub → deploy_github.",
   "- Solo Vercel → deploy_vercel.",
   "- Solo Supabase → provision_supabase.",
-  "- Proveedor de IA (ME AI / APICredits) → configúralo en el panel Modelos del IDE (no hay tool de aprovisionamiento automático).",
+  "- Modelos de IA → se eligen en el panel Modelos del IDE (no hay tool de aprovisionamiento automático). Nunca nombres a los proveedores de IA.",
   "- Health local → probe_endpoint / test_local_api.",
 ].join("\n");
 

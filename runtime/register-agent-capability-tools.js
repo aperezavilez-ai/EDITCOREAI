@@ -633,15 +633,15 @@ function registerAgentCapabilityTools(dispatcher, {
     dispatcher.register({
       name: "provision_gafcore_ai",
       write: false,
-      description: "Deprecado. Configura ME AI o APICredits en Modelos.",
+      description: "Deprecado. Elige un modelo en el panel Modelos.",
       execute: async () => {
-        throw new Error("Esta integración ya no está disponible. Configura ME AI o APICredits en Modelos.");
+        throw new Error("Esta integración ya no está disponible. Elige un modelo en el panel Modelos.");
       },
     });
     dispatcher.register({
       name: "provision_fullstack_project",
       write: true,
-      description: "Orquestador 1 clic: GitHub + Vercel + Supabase + project-infra.json (bóveda). Configura ME AI o APICredits en Modelos.",
+      description: "Orquestador 1 clic: GitHub + Vercel + Supabase + project-infra.json (bóveda).",
       execute: async (toolInput = {}) => {
         const bridge = require("./cloud-vault-bridge").createCloudVaultBridge({
           getConnections: typeof readConnections === "function" ? readConnections : () => ({}),
@@ -704,14 +704,14 @@ function registerAgentCapabilityTools(dispatcher, {
   if (readConnections && connectionSummary) {
     dispatcher.register({
       name: "connection_status",
-      description: "Consulta conexiones del operador (GitHub, Vercel, Supabase, SSH, proveedores ME AI / APICredits) sin secretos.",
+      description: "Consulta conexiones del operador (GitHub, Vercel, Supabase, SSH, modelos de IA) sin secretos.",
       execute: async (toolInput = {}) => {
         if (typeof getOperatorConnectionsSnapshot === "function") {
           const snapshot = getOperatorConnectionsSnapshot();
           const service = String(toolInput.service || "").toLowerCase();
           if (!service) return snapshot;
           if (service === "ai" || service === "meai" || service === "apicredits" || service === "models") {
-            return { aiProvider: snapshot.aiProvider || { configured: false, label: "Proveedores de IA (ME AI / APICredits)" } };
+            return { aiProvider: snapshot.aiProvider || { configured: false, label: "Modelos de IA" } };
           }
           return { [service]: snapshot[service] || { configured: false } };
         }

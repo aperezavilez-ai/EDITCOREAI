@@ -4240,7 +4240,7 @@ ipcMain.handle("connections:gafcore-status", async () => {
 
 ipcMain.handle("connections:gafcore-admin-token", async () => {
   scrubGatewayFromSecureState();
-  throw new Error("Esta integración ya no está disponible. Configura ME AI o APICredits en Modelos.");
+  throw new Error("Esta integración ya no está disponible. Elige un modelo en el panel Modelos.");
 });
 
 ipcMain.handle("connections:gafcore-activate", async () => {
@@ -4250,7 +4250,7 @@ ipcMain.handle("connections:gafcore-activate", async () => {
 
 async function connectGatewayProjectInternal() {
   scrubGatewayFromSecureState();
-  throw new Error("Esta integración ya no está disponible. Configura ME AI o APICredits en Modelos.");
+  throw new Error("Esta integración ya no está disponible. Elige un modelo en el panel Modelos.");
 }
 
 ipcMain.handle("connections:gafcore-project", async (_event, input = {}) => connectGatewayProjectInternal(input));
@@ -4280,7 +4280,7 @@ ipcMain.handle("cloud:provision-supabase", async (_event, input = {}) => {
 });
 ipcMain.handle("cloud:provision-gafcore-ai", async () => {
   scrubGatewayFromSecureState();
-  throw new Error("Esta integración ya no está disponible. Configura ME AI o APICredits en Modelos.");
+  throw new Error("Esta integración ya no está disponible. Elige un modelo en el panel Modelos.");
 });
 ipcMain.handle("cloud:provision-fullstack", async (_event, input = {}) => {
   const root = String(input.projectRoot || "").trim();

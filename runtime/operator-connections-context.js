@@ -297,7 +297,7 @@ function buildSafeConnectionsSnapshot(options = {}) {
 
   const operatorNote =
       "EDITCOREAI = IDE + agente. Conexiones globales (bóveda): GitHub, Vercel, Supabase (URL por proyecto), SSH. "
-      + "Alimentación de IA: proveedores ME AI y APICredits configurados en Modelos (API keys propias). "
+      + "Modelos de IA: se eligen en el panel Modelos. Nunca nombres a los proveedores ni intermediarios de IA en tus respuestas; si preguntan, habla solo del modelo. "
       + "Con un proyecto abierto, el agente usa el .env de ESE proyecto, no la URL de otro. "
       + "No pidas tokens si ya estan en boveda o en el .env del proyecto activo.";
 
@@ -341,10 +341,10 @@ function buildSafeConnectionsSnapshot(options = {}) {
     },
     aiProvider: {
       configured: gatewayConfigured,
-      label: "Proveedores de IA (ME AI / APICredits)",
+      label: "Modelos de IA",
       projectId: gatewayLink?.projectId || undefined,
       projectName: gatewayLink?.projectName || undefined,
-      note: "Usa Modelos → ME AI / APICredits. No inventes nombres internos de infraestructura.",
+      note: "Usa el panel Modelos. No nombres proveedores ni infraestructura interna.",
     },
     projectLinks: projectManifest || null,
   };
@@ -366,7 +366,7 @@ function formatOperatorConnectionsMemory(snapshot = {}) {
     "### Capas",
     "1) EDITCOREAI (esta app): IDE, agente, preview, Publicar, Inspector, Cerebro.",
     "2) Conexiones bóveda: GitHub (git), Vercel (deploy), Supabase (DB por proyecto), SSH (servidor).",
-    "3) Modelos: ME AI y APICredits en el panel Modelos (API keys propias).",
+    "3) Modelos de IA: se eligen en el panel Modelos.",
     "",
     "### Estado actual",
     `- GitHub: ${statusLabel(s.github?.configured)}${s.github?.account ? ` (cuenta: ${s.github.account})` : ""} — commit/push / Publicar`,
@@ -377,8 +377,8 @@ function formatOperatorConnectionsMemory(snapshot = {}) {
         : " [boveda — URL propia por slug del proyecto abierto]"
     }`,
     `- Servidor SSH: ${statusLabel(s.server?.configured)}${s.server?.host ? ` (${s.server.host})` : ""}${s.server?.deployPath ? ` deploy=${s.server.deployPath}` : ""}`,
-    `- Proveedores de IA (ME AI / APICredits): ${statusLabel(ai.configured)}${ai.projectName ? ` proyecto=${ai.projectName}` : ""}`,
-    `  ${ai.note || "Usa Modelos → ME AI / APICredits."}`,
+    `- Modelos de IA: ${statusLabel(ai.configured)}${ai.projectName ? ` proyecto=${ai.projectName}` : ""}`,
+    `  ${ai.note || "Usa el panel Modelos."}`,
   ];
 
   const links = s.projectLinks;
@@ -395,7 +395,7 @@ function formatOperatorConnectionsMemory(snapshot = {}) {
     "",
     "Regla: si esta CONECTADO, asume credenciales en boveda/.env. No pidas pegar tokens. "
       + "Mutaciones externas (push/deploy/DB) → confirmacion. "
-      + "IA del proyecto = ME AI / APICredits en Modelos. Datos = Supabase del proyecto activo.",
+      + "IA del proyecto = modelos del panel Modelos (sin nombrar proveedores). Datos = Supabase del proyecto activo.",
   );
   return scrubInternalProviderNames(lines.filter(Boolean).join("\n"));
 }

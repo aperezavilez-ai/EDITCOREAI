@@ -506,7 +506,7 @@ function formatOrchestrationBlock(profile = {}) {
         "ORQUESTACION EDITCORE (ONBOARD PROYECTO NUEVO):",
         "- El usuario pidio aplicar dependencias y conectar servicios del operador.",
         "- Ejecuta onboard_project (una llamada) para: npm install, Supabase, GitHub, Vercel, sync envs y proveedor de IA.",
-      "- Las conexiones globales ya estan en EditCore (GitHub, Vercel, Supabase, proveedores ME AI / APICredits). NO pidas tokens ni uses Supabase Cloud.",
+      "- Las conexiones globales ya estan en EditCore (GitHub, Vercel, Supabase, modelos de IA). Nunca nombres a los proveedores de IA. NO pidas tokens ni uses Supabase Cloud.",
         "- Si aun no hay codigo/plantilla: create_project primero; luego onboard_project.",
         "- Informa el checklist devuelto (dependencias, supabase, github, vercel, aiProvider).",
         profile.reason ? `- Motivo: ${profile.reason}.` : "",
