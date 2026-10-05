@@ -1,3 +1,16 @@
+# RELEASE v4.3.3
+
+## Respuestas sin nombres de proveedores y preguntas que sí llegan a la IA
+
+- Las respuestas del chat (IDE y web) pueden decir qué modelo responde, pero nunca nombran a los proveedores de IA. Se quitaron sus nombres de las instrucciones que recibe la IA, de los mensajes de error y de la ayuda fija, y un filtro final los borra de cualquier respuesta. Lo que escribe el usuario no se toca, y los paneles Modelos y Administración del administrador siguen igual.
+- «¿Qué es calili?» o «¿qué hace esta función?» ya no devuelven la ayuda fija de EditCoreAI: van a la IA. La ayuda fija solo sale si preguntan por la app («¿qué es esta app?», «¿quién eres?», «ayuda»).
+- La web (www.editcore.mx/app) ahora es el mismo chat del IDE, armado con sus archivos, con acceso de administrador y de usuario.
+- Incluye todo lo de la versión 4.3.2.
+
+### Archivos
+
+- `EDITCOREAI.exe` (4.3.3.0) y `release/EDITCOREAI-Setup.exe` (4.3.3), construidos desde un árbol limpio en el commit publicado.
+
 # RELEASE v4.3.2
 
 ## Opus ya no se corta ni se cobra dos veces
