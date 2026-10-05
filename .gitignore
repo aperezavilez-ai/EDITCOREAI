@@ -82,3 +82,5 @@ main.js.bak-*
 # Config pública del servidor de cuentas (generada al construir)
 runtime/editcore-cloud.generated.json
 supabase/signing_keys.json
+
+web-portal/js/cuentas-config.js

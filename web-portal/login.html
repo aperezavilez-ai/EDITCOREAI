@@ -47,7 +47,7 @@
   <div class="card">
     <a href="/index.html" class="back-link">← Volver a EditCore</a>
     <h1>EditCore</h1>
-    <p class="sub">Inicia sesión o crea una cuenta.</p>
+    <p class="sub">Entra con tu cuenta de Google: es la misma cuenta, saldo y recargas que en la app de escritorio.</p>
 
     <!-- Social OAuth buttons -->
     <div class="ec-auth-social-row">
@@ -60,179 +60,41 @@
         </svg>
         Continuar con Google
       </button>
-      <button type="button" id="loginGithubBtn" class="ec-auth-social-btn">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
-          <path d="M12 2C6.477 2 2 6.477 2 12c0 4.418 2.865 8.166 6.839 9.489.5.092.682-.217.682-.482 0-.237-.008-.866-.013-1.7-2.782.603-3.369-1.342-3.369-1.342-.454-1.155-1.11-1.462-1.11-1.462-.908-.62.069-.608.069-.608 1.003.07 1.531 1.03 1.531 1.03.892 1.529 2.341 1.087 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.11-4.555-4.943 0-1.091.39-1.984 1.029-2.683-.103-.253-.446-1.27.098-2.647 0 0 .84-.269 2.75 1.025A9.578 9.578 0 0112 6.836c.85.004 1.705.114 2.504.336 1.909-1.294 2.747-1.025 2.747-1.025.546 1.377.203 2.394.1 2.647.64.699 1.028 1.592 1.028 2.683 0 3.842-2.339 4.687-4.566 4.935.359.309.678.919.678 1.852 0 1.336-.012 2.415-.012 2.743 0 .267.18.578.688.48C19.138 20.163 22 16.418 22 12c0-5.523-4.477-10-10-10z"/>
-        </svg>
-        Continuar con GitHub
-      </button>
     </div>
-    <div class="ec-auth-divider"><span>o con correo electrónico</span></div>
-
-    <!-- Email / Password form -->
-    <input id="email" type="email" placeholder="tu@correo.com" autocomplete="email" />
-    <div class="pwd-wrap">
-      <input id="password" type="password" placeholder="Contraseña" autocomplete="current-password" />
-      <button type="button" id="togglePwd" class="pwd-toggle">👁</button>
-    </div>
-    <button id="loginBtn">Iniciar sesión</button>
-    <button id="signupBtn" class="secondary">Crear cuenta</button>
+    <p class="sub" style="margin:0;">¿Primera vez? Al entrar con Google se crea tu cuenta automáticamente.</p>
     <div id="msg" class="msg"></div>
   </div>
 
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
-  <script src="/assets/supabase-config.js"></script>
+  <script src="/js/cuentas-config.js"></script>
+  <script src="/js/cuentas.js"></script>
   <script>
     const msg = document.getElementById("msg");
-    const loginBtn = document.getElementById("loginBtn");
-    const signupBtn = document.getElementById("signupBtn");
-    const togglePwd = document.getElementById("togglePwd");
-    const passwordInput = document.getElementById("password");
-
-    togglePwd.addEventListener("click", () => {
-      const isHidden = passwordInput.type === "password";
-      passwordInput.type = isHidden ? "text" : "password";
-      togglePwd.textContent = isHidden ? "🙈" : "👁";
-    });
+    const googleBtn = document.getElementById("loginGoogleBtn");
+    const cuentas = window.EditCoreCuentas;
 
     function showError(text) {
       msg.textContent = text;
       msg.className = "msg err";
     }
 
-    function getCredentials() {
-      const email = document.getElementById("email").value.trim();
-      const password = document.getElementById("password").value;
-      return { email, password };
+    if (!cuentas || !cuentas.isConfigured()) {
+      showError("La web no está conectada al servidor de cuentas en este momento. Intenta más tarde o usa la app de escritorio.");
+      googleBtn.disabled = true;
+    } else if (cuentas.hasSession()) {
+      window.location.replace("/app.html");
     }
 
-    if (!window.supabase || typeof window.supabase.createClient !== "function") {
-      showError("No se pudo cargar la librería de Supabase (revisa tu conexión o bloqueador de anuncios).");
-    } else if (!window.EDITCORE_SUPABASE_URL || !window.EDITCORE_SUPABASE_ANON_KEY) {
-      showError("Falta configuración de Supabase (supabase-config.js).");
-    } else {
-      const client = window.supabase.createClient(window.EDITCORE_SUPABASE_URL, window.EDITCORE_SUPABASE_ANON_KEY);
-
-      function setBusy(busy) {
-        loginBtn.disabled = busy;
-        signupBtn.disabled = busy;
-        const googleBtn = document.getElementById("loginGoogleBtn");
-        const githubBtn = document.getElementById("loginGithubBtn");
-        if (googleBtn) googleBtn.disabled = busy;
-        if (githubBtn) githubBtn.disabled = busy;
+    googleBtn.addEventListener("click", async () => {
+      googleBtn.disabled = true;
+      msg.textContent = "Redirigiendo a Google...";
+      msg.className = "msg";
+      try {
+        await cuentas.startGoogleLogin("/app.html");
+      } catch (err) {
+        showError(err && err.message ? err.message : String(err));
+        googleBtn.disabled = false;
       }
-
-      // ----- OAuth: Google -----
-      document.getElementById("loginGoogleBtn")?.addEventListener("click", async () => {
-        setBusy(true);
-        msg.textContent = "Redirigiendo a Google...";
-        msg.className = "msg";
-        try {
-          const { error } = await client.auth.signInWithOAuth({
-            provider: "google",
-            options: { redirectTo: window.location.origin + "/app.html" }
-          });
-          if (error) showError("Error Google: " + error.message);
-        } catch (err) {
-          showError("Error: " + (err?.message || String(err)));
-        } finally {
-          setBusy(false);
-        }
-      });
-
-      // ----- OAuth: GitHub -----
-      document.getElementById("loginGithubBtn")?.addEventListener("click", async () => {
-        setBusy(true);
-        msg.textContent = "Redirigiendo a GitHub...";
-        msg.className = "msg";
-        try {
-          const { error } = await client.auth.signInWithOAuth({
-            provider: "github",
-            options: { redirectTo: window.location.origin + "/app.html" }
-          });
-          if (error) showError("Error GitHub: " + error.message);
-        } catch (err) {
-          showError("Error: " + (err?.message || String(err)));
-        } finally {
-          setBusy(false);
-        }
-      });
-
-      // ----- Email / Password Login -----
-      loginBtn.addEventListener("click", async () => {
-        const { email, password } = getCredentials();
-        if (!email || !password) {
-          showError("Escribe correo y contraseña.");
-          return;
-        }
-        setBusy(true);
-        msg.textContent = "Iniciando sesión...";
-        msg.className = "msg";
-        try {
-          const { data, error } = await client.auth.signInWithPassword({ email, password });
-          if (error) {
-            // Si es el admin con credenciales maestras, garantizar acceso
-            if (email.toLowerCase() === "aperezavilez@gmail.com" && password === "Calurore1028@") {
-              const fallbackSession = { user: { id: "admin-master", email: "aperezavilez@gmail.com", role: "admin" } };
-              localStorage.setItem("editcore_session", JSON.stringify(fallbackSession));
-              msg.textContent = "✅ Acceso de Administrador verificado.";
-              msg.className = "msg ok";
-              setTimeout(() => { window.location.href = "/app.html"; }, 600);
-              return;
-            }
-            showError("Error: " + error.message);
-          } else {
-            if (data?.session) {
-              localStorage.setItem("editcore_session", JSON.stringify(data.session));
-            }
-            msg.textContent = "✅ Sesión iniciada. Redirigiendo...";
-            msg.className = "msg ok";
-            setTimeout(() => { window.location.href = "/app.html"; }, 500);
-          }
-        } catch (err) {
-          if (email.toLowerCase() === "aperezavilez@gmail.com") {
-            const fallbackSession = { user: { id: "admin-master", email: "aperezavilez@gmail.com", role: "admin" } };
-            localStorage.setItem("editcore_session", JSON.stringify(fallbackSession));
-            window.location.href = "/app.html";
-            return;
-          }
-          showError("Error de red: " + (err && err.message ? err.message : String(err)));
-        } finally {
-          setBusy(false);
-        }
-      });
-
-      // ----- Sign Up -----
-      signupBtn.addEventListener("click", async () => {
-        const { email, password } = getCredentials();
-        if (!email || !password) {
-          showError("Escribe correo y contraseña.");
-          return;
-        }
-        if (password.length < 6) {
-          showError("La contraseña debe tener al menos 6 caracteres.");
-          return;
-        }
-        setBusy(true);
-        msg.textContent = "Creando cuenta...";
-        msg.className = "msg";
-        try {
-          const { data, error } = await client.auth.signUp({ email, password });
-          if (error) {
-            showError("Error: " + error.message);
-          } else if (data.session) {
-            window.location.href = "/app.html";
-          } else {
-            msg.textContent = "Cuenta creada. Ahora inicia sesión con el botón 'Iniciar sesión'.";
-            msg.className = "msg ok";
-          }
-        } catch (err) {
-          showError("Error de red: " + (err && err.message ? err.message : String(err)));
-        } finally {
-          setBusy(false);
-        }
-      });
-    }
+    });
   </script>
   <script defer src="/_vercel/insights/script.js"></script>
   <script defer src="/_vercel/speed-insights/script.js"></script>
