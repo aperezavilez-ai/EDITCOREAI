@@ -7,3 +7,9 @@
 !/runtime
 /runtime/*
 !/runtime/elite-communication-policy.js
+!/runtime/credit-ledger.js
+!/index.html
+!/styles.css
+!/chat-home.css
+!/chat-home.js
+!/renderer-markdown.js

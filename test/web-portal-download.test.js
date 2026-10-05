@@ -26,6 +26,8 @@ test("Página oficial: Vercel publica solo web-portal, sin instalar la app de es
     "/*", "!/web-portal", "!/vercel.json",
     "!/scripts", "/scripts/*", "!/scripts/write-web-config.js",
     "!/runtime", "/runtime/*", "!/runtime/elite-communication-policy.js",
+    "!/runtime/credit-ledger.js",
+    "!/index.html", "!/styles.css", "!/chat-home.css", "!/chat-home.js", "!/renderer-markdown.js",
   ]);
 });
 

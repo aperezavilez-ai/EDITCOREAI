@@ -59,11 +59,82 @@ function webPersonaPrompt() {
   ].join("\n");
 }
 
+// /app es el chat del IDE: se arma en cada publicación con los mismos archivos de la app de escritorio
+// (index.html, chat-home.*, styles.css, renderer-markdown.js, runtime/credit-ledger.js) y web-bridge.js.
+const REPO_ROOT = path.join(__dirname, "..");
+const IDE_COPIES = [
+  ["styles.css", "ide/styles.css"],
+  ["chat-home.css", "ide/chat-home.css"],
+  ["chat-home.js", "ide/chat-home.js"],
+  ["renderer-markdown.js", "ide/renderer-markdown.js"],
+];
+const CHAT_START = '<section id="chatHomeShell"';
+const CHAT_END = '<section id="welcomeScreen"';
+
+function ideChatMarkup(indexHtml) {
+  const start = indexHtml.indexOf(CHAT_START);
+  const end = indexHtml.indexOf(CHAT_END);
+  if (start < 0 || end <= start) throw new Error("index.html del IDE no tiene el bloque del chat (chatHomeShell … welcomeScreen)");
+  return indexHtml.slice(start, end).replace(/(src|href)="\.\/assets\//g, '$1="/assets/').trimEnd();
+}
+
+function webCommonJs(source, moduleVar) {
+  return `(function (require, module, exports) {\n${source}\n})(window.__editcoreWebRequire, window.${moduleVar} = { exports: {} }, window.${moduleVar}.exports);\n`;
+}
+
+function webAppHtml(chatMarkup) {
+  return `<!doctype html>
+<!-- Generado por scripts/write-web-config.js desde index.html del IDE. No editar a mano. -->
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>EditCoreAI</title>
+    <link rel="icon" href="/assets/favicon.ico" />
+    <link rel="apple-touch-icon" href="/assets/apple-touch-icon.png" />
+    <link rel="stylesheet" href="/ide/styles.css" />
+    <link rel="stylesheet" href="/ide/chat-home.css" />
+    <link rel="stylesheet" href="/css/web-ide.css" />
+  </head>
+  <body data-app-mode="chat" class="is-web">
+    ${chatMarkup}
+
+    <main aria-hidden="true">
+      <section id="feed" class="feed"></section>
+      <span id="modelPickerLabel" hidden>Auto</span>
+      <div id="modelPickerMenu" class="model-picker-menu hidden" role="listbox" aria-label="Modelos disponibles"></div>
+    </main>
+
+    <script src="/js/cuentas-config.js"></script>
+    <script src="/js/editcore-persona.js"></script>
+    <script src="/js/cuentas.js"></script>
+    <script src="/ide/renderer-markdown.js"></script>
+    <script src="/js/web-bridge.js"></script>
+    <script src="/ide/credit-ledger.js"></script>
+    <script src="/ide/chat-home.js"></script>
+  </body>
+</html>
+`;
+}
+
+function writeWebIdeApp(webDir, repoRoot = REPO_ROOT) {
+  const ideDir = path.join(webDir, "ide");
+  fs.mkdirSync(ideDir, { recursive: true });
+  for (const [from, to] of IDE_COPIES) fs.copyFileSync(path.join(repoRoot, from), path.join(webDir, to));
+  const ledger = fs.readFileSync(path.join(repoRoot, "runtime", "credit-ledger.js"), "utf8");
+  fs.writeFileSync(path.join(ideDir, "credit-ledger.js"), webCommonJs(ledger, "__editcoreCreditLedgerModule"), "utf8");
+  const markup = ideChatMarkup(fs.readFileSync(path.join(repoRoot, "index.html"), "utf8"));
+  const out = path.join(webDir, "app.html");
+  fs.writeFileSync(out, webAppHtml(markup), "utf8");
+  return out;
+}
+
 function writeWebConfig(webDir, env) {
   const out = path.join(webDir, "js", "cuentas-config.js");
   fs.mkdirSync(path.dirname(out), { recursive: true });
   fs.writeFileSync(out, cuentasConfigJs(env), "utf8");
   fs.writeFileSync(path.join(webDir, "js", "editcore-persona.js"), `window.EDITCORE_WEB_PERSONA = ${JSON.stringify(webPersonaPrompt())};\n`, "utf8");
+  writeWebIdeApp(webDir);
   return out;
 }
 
@@ -79,4 +150,4 @@ if (require.main === module) {
   }
 }
 
-module.exports = { cuentasConfigJs, webPersonaPrompt, writeWebConfig };
+module.exports = { cuentasConfigJs, webPersonaPrompt, writeWebConfig, writeWebIdeApp, ideChatMarkup, webCommonJs };

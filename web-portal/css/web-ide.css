@@ -1,0 +1,44 @@
+/* Web (www.editcore.mx/app): el chat es el mismo del IDE; aquí solo se ocultan las funciones que necesitan
+   la app de escritorio (carpetas, vista IDE, actualizar, dictado, adjuntos, proyectos, skills, inspector). */
+
+body[data-app-mode="chat"] #chatHomeShell {
+  bottom: 0;
+}
+
+#chatHomeFolderBtn,
+#chatHomeIdeBtn,
+#chatHomeReloadAppBtn,
+#chatHomeNavFolder,
+#chatHomeContextDock,
+#chatHomeContextPanel,
+#chatHomePlusBtn,
+#chatHomeMicBtn,
+#chatHomeFolderChip,
+#chatHomeAttachmentList,
+.ec-mention-popup {
+  display: none !important;
+}
+
+/* La lista de la izquierda no tiene "Proyectos" (son carpetas locales): solo Conversaciones. */
+#chatHomeThreadList > .chat-home-section-label:first-child,
+#chatHomeThreadList > .chat-home-section-label:first-child + .chat-home-thread-empty,
+#chatHomeThreadList > .chat-home-section-label:first-child ~ .chat-home-project-group {
+  display: none !important;
+}
+
+/* Configuración: pestañas y tarjetas que actúan sobre la app instalada. */
+.ec-settings-nav-item[data-settings-tab="application"],
+.ec-settings-nav-item[data-settings-tab="models"],
+.ec-settings-nav-item[data-settings-tab="customizations"],
+.ec-settings-nav-item[data-settings-tab="browser"],
+.ec-settings-section-heading:has(+ #settingsProjectsList),
+#settingsProjectsList,
+.ec-settings-group-card:has(#settingsDeepIndexToggle),
+#chatHomeSettingsPerms {
+  display: none !important;
+}
+
+/* Botón enviar mientras responde: detener (como en el IDE). */
+#chatHomeSendBtn.is-busy {
+  font-size: 12px;
+}

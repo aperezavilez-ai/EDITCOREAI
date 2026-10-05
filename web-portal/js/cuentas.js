@@ -62,7 +62,12 @@
       access_token: token.access_token,
       refresh_token: token.refresh_token,
       expires_at: Number(token.expires_at) || now() + (Number(token.expires_in) || 3600),
-      user: { id: token.user?.id || "", email: token.user?.email || "" },
+      user: {
+        id: token.user?.id || "",
+        email: token.user?.email || "",
+        name: String(token.user?.user_metadata?.full_name || token.user?.user_metadata?.name || ""),
+        avatarUrl: String(token.user?.user_metadata?.avatar_url || token.user?.user_metadata?.picture || ""),
+      },
     };
     root.localStorage.setItem(SESSION_KEY, JSON.stringify(session));
     return session;
@@ -179,6 +184,24 @@
   }
 
   const isUnlimited = (acc) => Boolean(acc && (acc.role === "admin" || acc.is_unlimited === true));
+
+  // Igual que la app de escritorio: el servidor responde los errores conocidos con su código (OUT_OF_CREDITS, …).
+  async function rpc(fn, args = {}) {
+    const res = await authed(`/rest/v1/rpc/${fn}`, { method: "POST", body: args || {} });
+    if (!res.ok) {
+      const message = String(res.data?.message || res.data?.msg || "");
+      const known = /^[A-Z_]{4,}$/.test(message) ? message : "SERVER";
+      throw new CuentasError(known, message || ERRORS.SERVER, res.status);
+    }
+    return res.data;
+  }
+
+  async function meaiBalance() {
+    const res = await authed("/functions/v1/ai-proxy/v1/admin/meai-balance");
+    if (res.status === 403) throw new CuentasError("FORBIDDEN", "Solo el administrador puede ver el saldo de ME AI.", 403);
+    if (!res.ok) throw serverError(res);
+    return res.data;
+  }
 
   async function redeemVoucher(code) {
     const res = await authed("/rest/v1/rpc/editcoreai_redeem_voucher", { method: "POST", body: { p_code: String(code || "") } });
@@ -308,9 +331,12 @@
     completeLoginFromUrl,
     hasSession: () => Boolean(readSession()),
     sessionEmail: () => readSession()?.user?.email || "",
+    sessionUser: () => ({ ...(readSession()?.user || {}) }),
     getAccessToken,
     account,
     isUnlimited,
+    rpc,
+    meaiBalance,
     redeemVoucher,
     paymentOffer,
     createCheckout,

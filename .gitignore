@@ -85,3 +85,5 @@ supabase/signing_keys.json
 
 web-portal/js/cuentas-config.js
 web-portal/js/editcore-persona.js
+web-portal/app.html
+web-portal/ide/
