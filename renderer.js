@@ -5270,7 +5270,44 @@ let previewNavigationHistory = [];
 let previewHistoryIndex = -1;
 let previewHistoryNavigating = false;
 let previewLastSuccessfulUrl = "";
-const PREVIEW_PARTITION = "persist:editcore-browser";
+function projectPreviewPartition(rootPath) {
+  if (!rootPath) return "persist:editcore-browser-default";
+  let hash = 0;
+  const str = String(rootPath).toLowerCase().replace(/\\/g, "/");
+  for (let i = 0; i < str.length; i++) {
+    hash = ((hash << 5) - hash + str.charCodeAt(i)) | 0;
+  }
+  return `persist:preview-${Math.abs(hash).toString(36)}`;
+}
+const PREVIEW_PARTITION = projectPreviewPartition(state?.projectRoot || "");
+
+function ensurePreviewWebviewPartition(projectRoot) {
+  let webview = $("previewWebview");
+  if (!webview) return null;
+  const targetPartition = projectPreviewPartition(projectRoot);
+  const currentPartition = webview.getAttribute("partition");
+  if (currentPartition === targetPartition) {
+    if (typeof attachPreviewWebviewListeners === "function") {
+      attachPreviewWebviewListeners(webview);
+    }
+    return webview;
+  }
+  const parent = webview.parentElement;
+  if (!parent) return webview;
+  const replacement = document.createElement("webview");
+  replacement.id = "previewWebview";
+  replacement.className = webview.className;
+  replacement.setAttribute("partition", targetPartition);
+  replacement.setAttribute("allowpopups", "false");
+  replacement.setAttribute("webpreferences", "contextIsolation=yes, nodeIntegration=no, sandbox=yes, webSecurity=yes");
+  replacement.setAttribute("src", "about:blank");
+  replacement.dataset.previewReady = "0";
+  parent.replaceChild(replacement, webview);
+  if (typeof attachPreviewWebviewListeners === "function") {
+    attachPreviewWebviewListeners(replacement);
+  }
+  return replacement;
+}
 
 function normalizedPreviewUrl(value) {
   try {
@@ -5416,7 +5453,7 @@ async function openPreview({ forceReload = false } = {}) {
     showPreviewStatus("La vista previa solo permite URLs HTTP/HTTPS sin credenciales incrustadas.");
     return;
   }
-  const webview = $("previewWebview");
+  const webview = ensurePreviewWebviewPartition(state.projectRoot);
   if (!webview) {
     showPreviewStatus("No se encontro el navegador interno.");
     return;
@@ -5790,7 +5827,8 @@ async function refreshPreview() {
     try {
       if (stale) {
         const prev = new URL(stale.includes("://") ? stale : `http://127.0.0.1${stale.startsWith("/") ? stale : `/${stale}`}`);
-        if (prev.pathname && prev.pathname !== "/") {
+        const curr = new URL(url);
+        if (prev.origin === curr.origin && prev.pathname && prev.pathname !== "/") {
           url = `${url}${prev.pathname}${prev.search || ""}`;
         }
       }
@@ -5892,6 +5930,7 @@ async function selectProject(id, options = {}) {
   // Recuperar chat durable del disco del proyecto (.editcore/chats.json).
   await hydrateProjectChatsFromDisk(selected);
   const wasActiveProject = state.activeProjectId === id;
+  const previousProjectRoot = state.projectRoot;
   const selectionId = ++projectSelectionId;
   state.activeProjectId = id;
   state.projectRoot = selected.projectRoot;
@@ -5903,6 +5942,14 @@ async function selectProject(id, options = {}) {
   updateCloseProjectButton();
   syncPreviewChromeForTheme();
   if ($("connectionsDialog")?.open) loadConnections();
+
+  // Si cambiamos de proyecto en esta ventana, detener el preview del proyecto anterior
+  // y asegurar partición aislada para el nuevo proyecto.
+  if (previousProjectRoot && previousProjectRoot !== selected.projectRoot) {
+    try { window.editcoreProject?.stopPreview?.(previousProjectRoot); } catch { /* ignore */ }
+  }
+  ensurePreviewWebviewPartition(selected.projectRoot);
+
   // Preview solo en IDE: en Chat Home arrancar servidor frena UI y navegación.
   const wantPreview = options.preview !== false && document.body.dataset.appMode !== "chat";
   if (wantPreview) {
@@ -13704,7 +13751,7 @@ async function ensureDefaultModelSelectionMode() {
 
 async function boot() {
   performance.mark?.("editcore-boot-start");
-  try { $("previewWebview")?.setAttribute("partition", PREVIEW_PARTITION); } catch { /* ignore */ }
+  try { ensurePreviewWebviewPartition(state?.projectRoot || ""); } catch { /* ignore */ }
   // Quitar UI legacy Review/Stop/Done + follow-up si quedó en el DOM
   try {
     for (const el of document.querySelectorAll(".agent-followup-input, .agent-footer-stop, .agent-footer-btn")) {
@@ -15901,59 +15948,63 @@ window.addEventListener("resize", () => {
   window.EditCoreTerminal?.fit?.();
 });
 $("previewUrl").addEventListener("keydown", (e) => { if (e.key === "Enter") openPreview(); });
-$("previewWebview").addEventListener("did-start-loading", () => {
-  $("previewWebview").dataset.previewReady = "0";
-  clearPreviewRuntimeErrors();
-  if (previewExpectedUrl) showPreviewLoading("Cargando navegador del proyecto...");
-});
-$("previewWebview").addEventListener("dom-ready", () => {
-  schedulePreviewFit();
-  void settlePreviewDocument();
-});
-$("previewWebview").addEventListener("did-navigate", (event) => {
-  syncPreviewNavigation($("previewWebview"), event);
-  schedulePreviewFit();
-  void settlePreviewDocument();
-});
-$("previewWebview").addEventListener("did-navigate-in-page", (event) => {
-  syncPreviewNavigation($("previewWebview"), event);
-  void settlePreviewDocument();
-});
-$("previewWebview").addEventListener("did-finish-load", () => {
-  schedulePreviewFit();
-  void settlePreviewDocument();
-});
-$("previewWebview").addEventListener("did-stop-loading", () => {
-  syncPreviewNavigation($("previewWebview"));
-  void settlePreviewDocument();
-});
-$("previewWebview").addEventListener("did-fail-load", (event) => {
-  if (event.errorCode === -3 || !previewExpectedUrl) return;
-  const detail = [event.errorDescription, event.validatedURL].filter(Boolean).join(" · ");
-  pushPreviewRuntimeError(detail || "Fallo al cargar el preview", "error");
-  if (restoreLastSuccessfulPreview($("previewWebview"), event.validatedURL || previewExpectedUrl)) {
-    $("status").textContent = `No se pudo abrir la ruta solicitada. ${detail || "Se restauro la pagina anterior."}`;
-    void monitorPreviewHealth({ forceRecovery: true });
-    return;
-  }
-  showPreviewStatus(`No se pudo cargar ${$("previewUrl").value || "el proyecto"}. ${detail || "Revisa el servidor del proyecto."}`);
-  $("status").textContent = "El navegador no pudo cargar el proyecto";
-  void monitorPreviewHealth({ forceRecovery: true });
-});
-$("previewWebview").addEventListener("console-message", (event) => {
-  // Nivel 3 = console.error / excepción. Los avisos (nivel 2) no son errores del proyecto.
-  if (event.level >= 3 && previewExpectedUrl) {
-    const msg = normalizePreviewConsoleMessage(event.message || "error").slice(0, 180);
-    if (isIgnorablePreviewConsoleMessage(msg)) return;
-    $("status").textContent = `Navegador: ${msg}`;
-    pushPreviewRuntimeError(msg, "error");
-  }
-});
+function attachPreviewWebviewListeners(webview) {
+  if (!webview || webview._previewListenersAttached) return;
+  webview._previewListenersAttached = true;
 
-// Al navegar/recargar, vaciar basura acumulada del panel.
-$("previewWebview").addEventListener("did-start-loading", () => {
-  clearPreviewRuntimeErrors();
-});
+  webview.addEventListener("did-start-loading", () => {
+    webview.dataset.previewReady = "0";
+    clearPreviewRuntimeErrors();
+    if (previewExpectedUrl) showPreviewLoading("Cargando navegador del proyecto...");
+  });
+  webview.addEventListener("dom-ready", () => {
+    schedulePreviewFit();
+    void settlePreviewDocument();
+  });
+  webview.addEventListener("did-navigate", (event) => {
+    syncPreviewNavigation(webview, event);
+    schedulePreviewFit();
+    void settlePreviewDocument();
+  });
+  webview.addEventListener("did-navigate-in-page", (event) => {
+    syncPreviewNavigation(webview, event);
+    void settlePreviewDocument();
+  });
+  webview.addEventListener("did-finish-load", () => {
+    schedulePreviewFit();
+    void settlePreviewDocument();
+  });
+  webview.addEventListener("did-stop-loading", () => {
+    syncPreviewNavigation(webview);
+    void settlePreviewDocument();
+  });
+  webview.addEventListener("did-fail-load", (event) => {
+    if (event.errorCode === -3 || !previewExpectedUrl) return;
+    const detail = [event.errorDescription, event.validatedURL].filter(Boolean).join(" · ");
+    pushPreviewRuntimeError(detail || "Fallo al cargar el preview", "error");
+    if (restoreLastSuccessfulPreview(webview, event.validatedURL || previewExpectedUrl)) {
+      $("status").textContent = `No se pudo abrir la ruta solicitada. ${detail || "Se restauro la pagina anterior."}`;
+      void monitorPreviewHealth({ forceRecovery: true });
+      return;
+    }
+    showPreviewStatus(`No se pudo cargar ${$("previewUrl").value || "el proyecto"}. ${detail || "Revisa el servidor del proyecto."}`);
+    $("status").textContent = "El navegador no pudo cargar el proyecto";
+    void monitorPreviewHealth({ forceRecovery: true });
+  });
+  webview.addEventListener("console-message", (event) => {
+    // Nivel 3 = console.error / excepción. Los avisos (nivel 2) no son errores del proyecto.
+    if (event.level >= 3 && previewExpectedUrl) {
+      const msg = normalizePreviewConsoleMessage(event.message || "error").slice(0, 180);
+      if (isIgnorablePreviewConsoleMessage(msg)) return;
+      $("status").textContent = `Navegador: ${msg}`;
+      pushPreviewRuntimeError(msg, "error");
+    }
+  });
+}
+
+try {
+  attachPreviewWebviewListeners($("previewWebview"));
+} catch { /* ignore */ }
 $("previewUrl").addEventListener("change", () => {
   if (state.projectRoot) {
     localStorage.setItem(projectUrlKey(state.projectRoot), $("previewUrl").value.trim());

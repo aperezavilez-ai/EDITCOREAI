@@ -2952,17 +2952,27 @@ const dependencyReport = await ensureProjectDependencies(runtimeRoot, pkg, manag
   },
 });
   const script = pkg.scripts.dev ? "dev" : "start";
-  const dependencies = { ...(pkg.dependencies || {}), ...(pkg.devDependencies || {}) };
-  const expectedPort = Object.keys(dependencies).some((name) => /\/vite-tanstack-config$/.test(name)) ? 8080
-    : fs.readdirSync(runtimeRoot).some((name) => /^next\.config\./i.test(name)) ? 3000
-      : fs.readdirSync(runtimeRoot).some((name) => /^astro\.config\./i.test(name)) ? 4321
-        : fs.existsSync(path.join(runtimeRoot, "angular.json")) ? 4200 : 5173;
-  // Puerto propio por proyecto. Nunca reutilizar HTTP ajeno en 3000/5173/etc.
-  let assignedPort = expectedPort;
-  if (!(await portIsFree(expectedPort))) {
-    assignedPort = await findAvailablePort(stablePreviewPort(safeRoot), 1800);
-  }
+  // CADA proyecto tiene un puerto dedicado único e irrepetible derivado de su ruta física
+  // mediante stablePreviewPort(safeRoot) (rango 4100-5900).
+  // NUNCA usar puertos globales del sistema (3000, 5173, 8080, etc.) porque suelen
+  // estar ocupados por Docker, contenedores de cobro/caja o servicios del sistema.
+  const dedicatedBasePort = stablePreviewPort(safeRoot);
+  const assignedPort = await findAvailablePort(dedicatedBasePort, 200);
   const previewUrl = "http://127.0.0.1:" + assignedPort;
+
+  // Si esta misma ventana (ownerId) tenía otro preview abierto, desasociarlo y detenerlo
+  // para no dejar procesos zombies en segundo plano al cambiar de proyecto.
+  for (const [otherRoot, otherRuntime] of previewProcesses) {
+    if (otherRoot !== safeRoot && otherRuntime?.owners?.has(ownerId)) {
+      otherRuntime.owners.delete(ownerId);
+      if (!otherRuntime.owners.size) {
+        logPreviewRuntime(`Deteniendo preview anterior no utilizado: ${otherRoot}`);
+        stopPreviewRuntime(otherRuntime);
+        previewProcesses.delete(otherRoot);
+      }
+    }
+  }
+
   // A verified Next build is more reliable than a Vinext/Vite dev server for
   // projects whose dev toolchain is incompatible with the bundled Node runtime.
   const direct = builtNextPreviewLaunch(pkg, runtimeRoot, assignedPort)
@@ -2974,9 +2984,23 @@ const dependencyReport = await ensureProjectDependencies(runtimeRoot, pkg, manag
     path.join(runtimeRoot, "out"),
   ].find((candidate) => fs.existsSync(path.join(candidate, "index.html")));
   const deploymentFallbackUrl = inferDeploymentPreviewUrl(runtimeRoot);
+
+  // Argumentos explícitos para obligar a Next.js / Vite / Astro a escuchar en assignedPort
+  // incluso si se ejecutan a través de npm/pnpm/yarn/bun.
+  const isNext = fs.readdirSync(runtimeRoot).some((name) => /^next\.config\./i.test(name));
+  const isVite = fs.readdirSync(runtimeRoot).some((name) => /^vite\.config\./i.test(name));
+  const isAstro = fs.readdirSync(runtimeRoot).some((name) => /^astro\.config\./i.test(name));
+
+  const managerArgs = ["run", script];
+  if (isNext) {
+    managerArgs.push("--", "-p", String(assignedPort), "-H", "127.0.0.1");
+  } else if (isVite || isAstro) {
+    managerArgs.push("--", "--port", String(assignedPort), "--host", "127.0.0.1");
+  }
+
   const child = direct?.executable
     ? spawn(direct.executable, direct.args, { cwd: runtimeRoot, windowsHide: true, detached: false, stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, ...readProjectPreviewEnv(safeRoot, runtimeRoot), ...(direct?.env || {}), PORT: String(assignedPort), HOST: "127.0.0.1", BROWSER: "none", FORCE_COLOR: "0" } })
-    : spawn(manager, ["run", script], { cwd: runtimeRoot, shell: true, windowsHide: true, detached: false, stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, ...readProjectPreviewEnv(safeRoot, runtimeRoot), PORT: String(assignedPort), HOST: "127.0.0.1", BROWSER: "none", FORCE_COLOR: "0" } });
+    : spawn(manager, managerArgs, { cwd: runtimeRoot, shell: true, windowsHide: true, detached: false, stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, ...readProjectPreviewEnv(safeRoot, runtimeRoot), PORT: String(assignedPort), HOST: "127.0.0.1", BROWSER: "none", FORCE_COLOR: "0" } });
   const runtime = { child, script: direct?.label || manager + " run " + script, url: "", runtimeRoot, fingerprint: previewRuntimeFingerprint(safeRoot, runtimeRoot), dependencyReport, owners: new Set([ownerId]) };
   previewProcesses.set(safeRoot, runtime);
   runtime.logDetach = attachPreviewLogStream({
@@ -3023,7 +3047,7 @@ const dependencyReport = await ensureProjectDependencies(runtimeRoot, pkg, manag
       return { available: true, started: false, remote: true, fallback: true, pid: 0, script: remoteRuntime.script, url: remoteUrl, runtimeRoot, fallbackReason: remoteRuntime.fallbackReason };
     }
 
-    const staticPort = await findAvailablePort(expectedPort);
+    const staticPort = await findAvailablePort(assignedPort + 10, 100);
     const staticUrl = "http://127.0.0.1:" + staticPort;
     const launch = staticPreviewLaunch(staticRoot, staticPort, process.execPath, path.join(__dirname, "static-preview-server.js"));
     if (!launch) throw error;
@@ -3235,6 +3259,7 @@ async function detectListeningUrl(child, fallbackUrl, timeoutMs = PREVIEW_START_
   child.stdout?.on("data", onData);
   child.stderr?.on("data", onData);
   const attempts = Math.ceil(Math.max(1_000, Number(timeoutMs) || PREVIEW_START_TIMEOUT_MS) / 500);
+  const targetPort = fallbackUrl ? Number(new URL(fallbackUrl).port || 0) : 0;
   for (let attempt = 0; attempt < attempts; attempt++) {
     if (child.exitCode !== null) {
       if (/EADDRINUSE|address already in use/i.test(output)) {
@@ -3245,14 +3270,22 @@ async function detectListeningUrl(child, fallbackUrl, timeoutMs = PREVIEW_START_
         ? `El servidor del proyecto termino antes de publicar una URL.\n${tail}`
         : "El servidor del proyecto termino antes de publicar una URL. Revisa su script de desarrollo.");
     }
-    const matches = [...output.matchAll(/https?:\/\/(?:localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\]):\d+[^\s"'<>]*/gi)];
+    const matches = [...output.matchAll(/https?:\/\/(?:localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\]):(\d+)[^\s"'<>]*/gi)];
     for (const match of matches.reverse()) {
       try {
+        const foundPort = Number(match[1]);
+        if (targetPort && Math.abs(foundPort - targetPort) > 20) {
+          continue;
+        }
         const url = normalizePreviewUrl(match[0].replace(/[.,;)]+$/, ""));
         if (await isHttpReady(url)) return url;
       } catch { /* ignore bad match */ }
     }
-    if (await isHttpReady(fallbackUrl)) return fallbackUrl;
+    // Solo aceptar fallbackUrl si el proceso lleva al menos 1 segundo corriendo (attempt >= 2)
+    // y sigue vivo, evitando falsos positivos con procesos ajenos existentes.
+    if (attempt >= 2 && fallbackUrl && child.exitCode === null && (await isHttpReady(fallbackUrl))) {
+      return fallbackUrl;
+    }
     await new Promise((resolve) => setTimeout(resolve, 500));
   }
   const tail = output.trim().slice(-800);
