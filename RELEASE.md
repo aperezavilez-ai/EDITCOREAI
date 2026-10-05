@@ -1,3 +1,16 @@
+# RELEASE v4.3.4
+
+## Protección contra piratería y sobregiros
+
+- El servidor reserva el costo máximo antes de llamar al modelo: nadie gasta más saldo del que tiene, ni con varias consultas al mismo tiempo. Si el saldo no alcanza para una respuesta completa, se acorta; si no alcanza ni para lo mínimo, sale el aviso de recarga.
+- En la app instalada los usuarios solo pueden usar la IA del servidor de EditCoreAI (con su saldo). Poner otro proveedor queda bloqueado, y el servidor de cuentas ya no se cambia con variables de entorno.
+- El programa instalado está sellado: si alguien modifica sus archivos, no abre. Tampoco acepta depuradores (--inspect) ni NODE_OPTIONS.
+- Incluye todo lo de la versión 4.3.3.
+
+### Archivos
+
+- `EDITCOREAI.exe` (4.3.4.0) y `release/EDITCOREAI-Setup.exe` (4.3.4), construidos desde un árbol limpio en el commit publicado.
+
 # RELEASE v4.3.3
 
 ## Respuestas sin nombres de proveedores y preguntas que sí llegan a la IA
