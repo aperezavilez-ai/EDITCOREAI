@@ -54,9 +54,9 @@ function webPersonaPrompt() {
     "CONTEXTO: VERSIÓN WEB (www.editcore.mx) · SUITE DE DESARROLLO WEB",
     "- Eres EditCoreAI, el asistente y entorno de ingeniería de software en la nube.",
     "- En esta versión web, los usuarios pueden crear, diseñar y organizar proyectos completos: páginas web, aplicaciones interactivas, utilidades y scripts.",
-    "- Cuando el usuario pida crear un proyecto, web o app, nombra al inicio la carpeta del proyecto (ej. 📁 Proyecto: catalogo-productos) y genera los archivos completos y funcionales empezando siempre por index.html, seguido de styles.css y app.js.",
+    "- ACCIÓN INMEDIATA Y CÓDIGO DIRECTO: Cuando el usuario pida crear un proyecto, app o web, NO te quedes en preguntas previas ('¿te parece?', '¿arranco?'). Define de inmediato el nombre de la carpeta (ej. 📁 Proyecto: catalogo-ventas) y genera directamente los archivos completos y funcionales, empezando siempre por index.html, seguido de styles.css y app.js.",
     "- Cada bloque de código debe llevar su etiqueta de archivo en la primera línea (ej. <!-- filepath: index.html -->, /* filepath: styles.css */, // filepath: app.js).",
-    "- Informa con naturalidad que los archivos se crean en su carpeta del Panel de Archivos, que el usuario puede interactuar con su app en vivo en el Navegador Web (Preview) del panel derecho en tamaño escritorio, móvil o pantalla completa, y que puede descargar el proyecto completo en cualquier momento con el botón 'Descargar Proyecto (.zip)'.",
+    "- Informa con naturalidad que los archivos se crearon en la carpeta del panel derecho, que el usuario puede interactuar con la app en vivo en el Navegador Web (Preview) y que puede descargar el proyecto completo con el botón 'Descargar Proyecto (.zip)'.",
     "- Si el usuario cuenta con conexiones configuradas (GitHub, Vercel, Supabase), ofrécele sincronizar repositorios o publicar a producción.",
   ].join("\n");
 }
@@ -124,8 +124,7 @@ function ideChatMarkup(indexHtml) {
                 </div>
                 <div class="web-preview-actions">
                   <button type="button" id="webPreviewReloadBtn" title="Recargar vista previa" class="web-preview-icon-btn">🔄</button>
-                  <button type="button" id="webPreviewMobileBtn" title="Vista móvil (375px)" class="web-preview-icon-btn">📱 Móvil</button>
-                  <button type="button" id="webPreviewDesktopBtn" title="Vista escritorio (100% ancho)" class="web-preview-icon-btn is-active">💻 Escritorio</button>
+                  <button type="button" id="webPreviewMobileBtn" title="Alternar vista móvil (375px)" class="web-preview-icon-btn">📱 Móvil</button>
                   <button type="button" id="webPreviewExpandToggleBtn" title="Alternar entre panel derecho y expandido" class="web-preview-icon-btn">⇲ Expandir</button>
                   <button type="button" id="webPreviewPopoutBtn" title="Abrir en pestaña nueva" class="web-preview-icon-btn">↗ Pestaña</button>
                 </div>
@@ -133,7 +132,7 @@ function ideChatMarkup(indexHtml) {
               <div class="web-preview-viewport" id="webPreviewViewport">
                 <iframe id="webPreviewIframe" sandbox="allow-scripts allow-forms allow-modals" title="Vista previa del proyecto"></iframe>
                 <div id="webPreviewEmpty" class="web-preview-empty">
-                  <p>Pide a EditCoreAI crear una web o app para verla aquí en tiempo real.</p>
+                  <p>Pide a EditCoreAI crear una app o web para interactuar con ella aquí en tiempo real.</p>
                 </div>
               </div>
             </section>`;

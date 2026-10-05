@@ -275,3 +275,12 @@ body[data-app-mode="chat"] #chatHomeShell {
 #chatHomeSendBtn.is-busy {
   font-size: 12px;
 }
+
+/* Ocultar secciones de skills y tareas en web (solo aplican en el IDE de escritorio instalado) */
+.is-web #chatHomeCtxSecSkills,
+.is-web #chatHomeCtxSecTasks,
+.is-web .chat-home-context-tab[data-ctx-tab="tasks"],
+.is-web .chat-home-context-section:has(#chatHomeCtxSkills),
+.is-web .chat-home-context-section:has(#chatHomeCtxTasks) {
+  display: none !important;
+}

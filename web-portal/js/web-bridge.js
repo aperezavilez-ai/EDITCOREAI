@@ -1273,14 +1273,14 @@
     });
     $("webPreviewReloadBtn")?.addEventListener("click", () => renderWebPreview(activeThreadId()));
     $("webPreviewMobileBtn")?.addEventListener("click", () => {
-      $("webPreviewViewport")?.classList.add("is-mobile");
-      $("webPreviewMobileBtn")?.classList.add("is-active");
-      $("webPreviewDesktopBtn")?.classList.remove("is-active");
-    });
-    $("webPreviewDesktopBtn")?.addEventListener("click", () => {
-      $("webPreviewViewport")?.classList.remove("is-mobile");
-      $("webPreviewDesktopBtn")?.classList.add("is-active");
-      $("webPreviewMobileBtn")?.classList.remove("is-active");
+      const vp = $("webPreviewViewport");
+      const btn = $("webPreviewMobileBtn");
+      if (!vp) return;
+      const isMobile = vp.classList.toggle("is-mobile");
+      if (btn) {
+        btn.classList.toggle("is-active", isMobile);
+        btn.textContent = isMobile ? "📱 Ancho normal" : "📱 Móvil";
+      }
     });
     $("webPreviewExpandToggleBtn")?.addEventListener("click", () => toggleContextExpand());
     $("webContextWidthToggleBtn")?.addEventListener("click", () => toggleContextExpand());
