@@ -989,6 +989,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Preview</title>
   <style>
+    * { box-sizing: border-box; }
     body { font-family: system-ui, -apple-system, sans-serif; margin: 0; padding: 20px; background: #fff; color: #1e293b; }
     ${cssBlocks}
   </style>
@@ -1001,15 +1002,28 @@
     }
 
     let bundle = html;
-    if (cssBlocks && !bundle.includes("<style>") && !bundle.includes("styles.css")) {
-      bundle = bundle.includes("</head>")
-        ? bundle.replace("</head>", `<style>\n${cssBlocks}\n</style></head>`)
-        : `<style>\n${cssBlocks}\n</style>` + bundle;
+    // Inyectar o reemplazar CSS en el HTML
+    if (cssBlocks) {
+      const linkRegex = /<link[^>]+(?:href=["'][^"']*styles?\.css["']|rel=["']stylesheet["'][^>]*href=["'][^"']*styles?\.css["'])[^>]*>/gi;
+      if (linkRegex.test(bundle)) {
+        bundle = bundle.replace(linkRegex, `<style id="editcore-styles">\n${cssBlocks}\n</style>`);
+      } else if (bundle.includes("</head>")) {
+        bundle = bundle.replace("</head>", `<style id="editcore-styles">\n${cssBlocks}\n</style></head>`);
+      } else {
+        bundle = `<style id="editcore-styles">\n${cssBlocks}\n</style>` + bundle;
+      }
     }
-    if (jsBlocks && !bundle.includes("<script") && !bundle.includes("app.js")) {
-      bundle = bundle.includes("</body>")
-        ? bundle.replace("</body>", `<script>\n${jsBlocks}\n<\/script></body>`)
-        : bundle + `<script>\n${jsBlocks}\n<\/script>`;
+
+    // Inyectar o reemplazar JS en el HTML
+    if (jsBlocks) {
+      const scriptRegex = /<script[^>]+src=["'][^"']*app\.js["'][^>]*><\/script>/gi;
+      if (scriptRegex.test(bundle)) {
+        bundle = bundle.replace(scriptRegex, `<script id="editcore-app">\n${jsBlocks}\n<\/script>`);
+      } else if (bundle.includes("</body>")) {
+        bundle = bundle.replace("</body>", `<script id="editcore-app">\n${jsBlocks}\n<\/script></body>`);
+      } else {
+        bundle = bundle + `<script id="editcore-app">\n${jsBlocks}\n<\/script>`;
+      }
     }
     return bundle;
   }
@@ -1093,6 +1107,27 @@
     }
   }
 
+  function toggleContextExpand(forceState) {
+    const panel = $("chatHomeContextPanel");
+    if (!panel) return;
+    const isExpanded = typeof forceState === "boolean" ? forceState : !panel.classList.contains("is-expanded");
+    panel.classList.toggle("is-expanded", isExpanded);
+
+    const btnPreview = $("webPreviewExpandToggleBtn");
+    if (btnPreview) {
+      btnPreview.textContent = isExpanded ? "⇱ Regresar a la derecha" : "⇲ Expandir";
+      btnPreview.title = isExpanded ? "Regresar al panel derecho (380px)" : "Expandir a pantalla dividida (50%)";
+    }
+    const btnContext = $("webContextWidthToggleBtn");
+    if (btnContext) {
+      btnContext.textContent = isExpanded ? "⇱ Regresar" : "⇲ Expandir";
+      btnContext.title = isExpanded ? "Regresar al panel derecho (380px)" : "Expandir panel (50%)";
+    }
+    try {
+      localStorage.setItem("editcore-panel-expanded", isExpanded ? "true" : "false");
+    } catch { /* ignore */ }
+  }
+
   function switchContextTab(key) {
     const tabs = document.querySelectorAll(".chat-home-context-tab");
     tabs.forEach((tab) => {
@@ -1100,28 +1135,23 @@
       tab.classList.toggle("is-active", match);
       tab.setAttribute("aria-selected", match ? "true" : "false");
     });
-    const sections = {
-      session: $("chatHomeCtxSecSession"),
-      preview: $("chatHomeCtxSecPreview"),
-      files: $("chatHomeCtxSecSession"),
-      tasks: $("chatHomeCtxSecTasks"),
-    };
-    for (const [sKey, el] of Object.entries(sections)) {
-      if (el && sKey !== "files") el.hidden = (sKey !== key && (key !== "files" || sKey !== "session"));
-    }
+
+    const isPreview = (key === "preview");
+    const secSession = $("chatHomeCtxSecSession");
+    const secPreview = $("chatHomeCtxSecPreview");
+    const secTasks = $("chatHomeCtxSecTasks");
+
+    if (secSession) secSession.hidden = isPreview;
+    if (secPreview) secPreview.hidden = !isPreview;
+    if (secTasks) secTasks.hidden = true;
+
     const title = $("chatHomeContextTitle");
-    const labels = {
-      session: "Sesión del Proyecto",
-      preview: "Navegador Web en Vivo",
-      files: "Archivos Modificados",
-      tasks: "Tareas en Segundo Plano",
-    };
-    if (title) title.textContent = labels[key] || "Sesión";
+    if (title) title.textContent = isPreview ? "Navegador Web" : "Proyecto & Archivos";
+
     const panel = $("chatHomeContextPanel");
     if (panel) {
       panel.hidden = false;
       panel.setAttribute("aria-hidden", "false");
-      panel.classList.toggle("is-preview-active", key === "preview");
     }
   }
 
@@ -1232,7 +1262,7 @@
     $("webTopDownloadProjectBtn")?.addEventListener("click", () => downloadWebProjectZip(activeThreadId()));
     $("webSideDownloadBtn")?.addEventListener("click", () => downloadWebProjectZip(activeThreadId()));
 
-    // Controles del Previsualizador Web en Vivo (Soporte de tamaño real)
+    // Controles del Previsualizador Web en Vivo
     $("chatHomePreviewTabBtn")?.addEventListener("click", () => {
       switchContextTab("preview");
       renderWebPreview(activeThreadId());
@@ -1243,49 +1273,18 @@
     });
     $("webPreviewReloadBtn")?.addEventListener("click", () => renderWebPreview(activeThreadId()));
     $("webPreviewMobileBtn")?.addEventListener("click", () => {
-      $("webPreviewViewport")?.classList.remove("is-tablet", "is-desktop");
       $("webPreviewViewport")?.classList.add("is-mobile");
       $("webPreviewMobileBtn")?.classList.add("is-active");
-      $("webPreviewTabletBtn")?.classList.remove("is-active");
-      $("webPreviewDesktopBtn")?.classList.remove("is-active");
-    });
-    $("webPreviewTabletBtn")?.addEventListener("click", () => {
-      $("webPreviewViewport")?.classList.remove("is-mobile", "is-desktop");
-      $("webPreviewViewport")?.classList.add("is-tablet");
-      $("webPreviewTabletBtn")?.classList.add("is-active");
-      $("webPreviewMobileBtn")?.classList.remove("is-active");
       $("webPreviewDesktopBtn")?.classList.remove("is-active");
     });
     $("webPreviewDesktopBtn")?.addEventListener("click", () => {
-      $("webPreviewViewport")?.classList.remove("is-mobile", "is-tablet");
-      $("webPreviewViewport")?.classList.add("is-desktop");
+      $("webPreviewViewport")?.classList.remove("is-mobile");
       $("webPreviewDesktopBtn")?.classList.add("is-active");
       $("webPreviewMobileBtn")?.classList.remove("is-active");
-      $("webPreviewTabletBtn")?.classList.remove("is-active");
     });
-    $("webPreviewFullscreenBtn")?.addEventListener("click", () => {
-      const panel = $("chatHomeContextPanel");
-      if (!panel) return;
-      const isFull = panel.classList.toggle("is-fullscreen");
-      const btn = $("webPreviewFullscreenBtn");
-      if (btn) {
-        btn.textContent = isFull ? "🗗 Salir de pantalla completa" : "⛶ Tamaño real";
-        btn.classList.toggle("is-active", isFull);
-      }
-    });
-    document.addEventListener("keydown", (ev) => {
-      if (ev.key === "Escape") {
-        const panel = $("chatHomeContextPanel");
-        if (panel?.classList.contains("is-fullscreen")) {
-          panel.classList.remove("is-fullscreen");
-          const btn = $("webPreviewFullscreenBtn");
-          if (btn) {
-            btn.textContent = "⛶ Tamaño real";
-            btn.classList.remove("is-active");
-          }
-        }
-      }
-    });
+    $("webPreviewExpandToggleBtn")?.addEventListener("click", () => toggleContextExpand());
+    $("webContextWidthToggleBtn")?.addEventListener("click", () => toggleContextExpand());
+
     $("webPreviewPopoutBtn")?.addEventListener("click", () => {
       const files = getWebProjectFiles(activeThreadId());
       const compiled = buildPreviewHtml(files);
@@ -1296,6 +1295,13 @@
       const blob = new Blob([compiled], { type: "text/html;charset=utf-8" });
       window.open(URL.createObjectURL(blob), "_blank");
     });
+
+    // Restaurar preferencia de ancho si estaba expandido
+    try {
+      if (localStorage.getItem("editcore-panel-expanded") === "true") {
+        toggleContextExpand(true);
+      }
+    } catch { /* ignore */ }
 
     // Pestañas del panel derecho
     document.querySelectorAll(".chat-home-context-tab").forEach((tab) => {

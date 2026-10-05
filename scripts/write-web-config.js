@@ -103,25 +103,31 @@ function ideChatMarkup(indexHtml) {
                   <span class="chat-home-project-icon">📁</span>
                   <span id="chatHomeCtxFolder" class="chat-home-context-folder">Sin carpeta</span>
                 </div>
-                <button type="button" id="chatHomeOpenPreviewBtn" class="chat-home-preview-badge-btn" title="Abrir en Navegador Web">En vivo ↗</button>
+                <button type="button" id="chatHomeOpenPreviewBtn" class="chat-home-preview-badge-btn" title="Abrir en Navegador Web">Ver en Navegador ↗</button>
               </div>`
   );
 
-  // Inyectar visor interactivo del navegador web en el cuerpo del panel de sesión con soporte de tamaño real
+  // Inyectar botón de alternar tamaño en la cabecera del panel de sesión
+  markup = markup.replace(
+    '<strong id="chatHomeContextTitle">Sesión</strong>',
+    `<strong id="chatHomeContextTitle">Proyecto & Archivos</strong>
+            <button type="button" id="webContextWidthToggleBtn" class="web-preview-icon-btn" style="margin-left:auto;margin-right:6px;" title="Alternar ancho: Panel lateral derecho o Expandido">⇲ Expandir</button>`
+  );
+
+  // Inyectar visor interactivo del navegador web en el cuerpo del panel de sesión con controles claros
   const previewSectionMarkup = `
             <section class="chat-home-context-section" data-ctx="preview" id="chatHomeCtxSecPreview" hidden>
               <div class="web-preview-header">
                 <div class="web-preview-address">
                   <span class="web-preview-dot"></span>
-                  <span id="webPreviewUrlLabel">editcore://preview/app</span>
+                  <span id="webPreviewUrlLabel">editcore://proyecto/index.html</span>
                 </div>
                 <div class="web-preview-actions">
                   <button type="button" id="webPreviewReloadBtn" title="Recargar vista previa" class="web-preview-icon-btn">🔄</button>
                   <button type="button" id="webPreviewMobileBtn" title="Vista móvil (375px)" class="web-preview-icon-btn">📱 Móvil</button>
-                  <button type="button" id="webPreviewTabletBtn" title="Vista tablet (768px)" class="web-preview-icon-btn">📱 Tablet</button>
                   <button type="button" id="webPreviewDesktopBtn" title="Vista escritorio (100% ancho)" class="web-preview-icon-btn is-active">💻 Escritorio</button>
-                  <button type="button" id="webPreviewFullscreenBtn" title="Pantalla completa / Tamaño real (Esc para salir)" class="web-preview-icon-btn">⛶ Tamaño real</button>
-                  <button type="button" id="webPreviewPopoutBtn" title="Abrir en pestaña nueva" class="web-preview-icon-btn">↗</button>
+                  <button type="button" id="webPreviewExpandToggleBtn" title="Alternar entre panel derecho y expandido" class="web-preview-icon-btn">⇲ Expandir</button>
+                  <button type="button" id="webPreviewPopoutBtn" title="Abrir en pestaña nueva" class="web-preview-icon-btn">↗ Pestaña</button>
                 </div>
               </div>
               <div class="web-preview-viewport" id="webPreviewViewport">
