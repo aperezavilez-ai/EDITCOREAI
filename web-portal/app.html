@@ -2293,6 +2293,14 @@
       });
     });
 
+    // Enter envía; Shift+Enter hace salto de línea (igual que en el IDE).
+    input?.addEventListener("keydown", (e) => {
+      if (e.key !== "Enter" || e.shiftKey || e.isComposing || e.keyCode === 229) return;
+      e.preventDefault();
+      if (sendBtn.disabled || !input.value.trim()) return;
+      form.requestSubmit();
+    });
+
     // Enviar mensaje al API /api/chat
     form?.addEventListener("submit", async (e) => {
       e.preventDefault();

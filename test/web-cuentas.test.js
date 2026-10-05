@@ -201,6 +201,14 @@ test("web: el chat usa la misma voz de EditCoreAI que el IDE, sin prometer herra
   assert.match(app, /md\.render\(/);
 });
 
+test("web: Enter envía la consulta y Shift+Enter hace salto de línea", () => {
+  const app = fs.readFileSync(path.join(ROOT, "web-portal", "app.html"), "utf8");
+  const handler = app.match(/input\?\.addEventListener\("keydown"[\s\S]*?\n    \}\);/)?.[0] || "";
+  assert.match(handler, /e\.key !== "Enter" \|\| e\.shiftKey/);
+  assert.match(handler, /isComposing/);
+  assert.match(handler, /form\.requestSubmit\(\)/);
+});
+
 test("web: login sin contraseñas fijas ni accesos de respaldo", () => {
   const login = fs.readFileSync(path.join(ROOT, "web-portal", "login.html"), "utf8");
   assert.doesNotMatch(login, /admin-master|signInWithPassword|password\s*===/);
