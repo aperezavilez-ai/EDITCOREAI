@@ -126,6 +126,7 @@ async function callChatSingleAttempt({
   stream = true,
   onTextDelta = null,
 }) {
+  require("../runtime/platform-defaults").assertProviderAllowed(apiBaseUrl);
   const url = `${String(apiBaseUrl || "").replace(/\/$/, "")}/chat/completions`;
   const wantStream = stream !== false;
   const safeMessages = Array.isArray(messages) ? messages : [];

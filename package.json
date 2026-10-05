@@ -122,6 +122,14 @@
       "node_modules/node-pty/**",
       "ide/**"
     ],
+    "electronFuses": {
+      "runAsNode": true,
+      "enableNodeOptionsEnvironmentVariable": false,
+      "enableNodeCliInspectArguments": false,
+      "enableEmbeddedAsarIntegrityValidation": true,
+      "onlyLoadAppFromAsar": true,
+      "grantFileProtocolExtraPrivileges": true
+    },
     "extraResources": [
       {
         "from": "resources/rtk/rtk.exe",

@@ -44,8 +44,20 @@ function looksLikeServiceRole(key) {
   }
 }
 
+function isPackagedApp() {
+  if (!process.versions?.electron) return false;
+  try {
+    return require("electron").app?.isPackaged === true;
+  } catch {
+    return false;
+  }
+}
+
 function loadCloudConfig(options = {}) {
-  const env = options.env || process.env;
+  // En la app instalada el servidor de cuentas no se cambia con variables de entorno:
+  // apuntarla a un servidor falso permitiría fingir una cuenta de administrador.
+  const packaged = options.packaged ?? isPackagedApp();
+  const env = packaged ? {} : (options.env || process.env);
   const envFile = options.envFile === undefined ? path.join(__dirname, "..", ".env.local") : options.envFile;
   const generated = readGenerated(options.generatedFile || GENERATED_FILE);
   const local = envFile ? parseEnvFile(envFile) : {};
@@ -59,4 +71,4 @@ function loadCloudConfig(options = {}) {
   return { url, anonKey, configured: Boolean(url && anonKey) };
 }
 
-module.exports = { loadCloudConfig, parseEnvFile, looksLikeServiceRole, GENERATED_FILE, DEFAULT_PUBLIC_URL };
+module.exports = { loadCloudConfig, parseEnvFile, looksLikeServiceRole, isPackagedApp, GENERATED_FILE, DEFAULT_PUBLIC_URL };

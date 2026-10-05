@@ -571,6 +571,7 @@ class AiCore {
   async complete(input = {}) {
     const item = this.providers.get(String(input.provider || input.providerKey || "").toLowerCase());
     if (!item) throw new Error(`Proveedor no registrado: ${input.provider || input.providerKey || ""}`);
+    require("./platform-defaults").assertProviderAllowed(item.definition.baseUrl);
     const startedAt = Date.now();
     try {
       const result = await item.complete({
