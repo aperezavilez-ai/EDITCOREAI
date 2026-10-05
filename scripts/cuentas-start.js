@@ -49,5 +49,9 @@ if (started.status !== 0) {
 }
 if (started.status !== 0) process.exit(started.status || 1);
 
+// El CLI crea el contenedor de funciones (ai-proxy, payments) sin política de reinicio; tras reiniciar
+// Docker o la PC quedaría apagado mientras el resto vuelve solo.
+spawnSync("docker", ["update", "--restart", "unless-stopped", "supabase_edge_runtime_editcoreai"], { stdio: "ignore" });
+
 const closed = spawnSync(process.execPath, [path.join(__dirname, "supabase-cerrar-rutas-admin.js"), "supabase_kong_editcoreai"], { cwd: root, stdio: "inherit" });
 process.exit(closed.status || 0);
