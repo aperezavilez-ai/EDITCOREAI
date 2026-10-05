@@ -1,16 +1,15 @@
-/* Web (www.editcore.mx/app): el chat es el mismo del IDE; aquí solo se ocultan las funciones que necesitan
-   la app de escritorio (carpetas, vista IDE, actualizar, dictado, adjuntos, proyectos, skills, inspector). */
+/* Web (www.editcore.mx/app): Suite de desarrollo web interactiva con chat, preview en vivo,
+   descarga de proyectos en .ZIP y conexiones a GitHub, Vercel y Supabase. */
 
 body[data-app-mode="chat"] #chatHomeShell {
   bottom: 0;
 }
 
+/* Ocultar únicamente funciones que requieren binarios nativos del sistema de escritorio */
 #chatHomeFolderBtn,
 #chatHomeIdeBtn,
 #chatHomeReloadAppBtn,
 #chatHomeNavFolder,
-#chatHomeContextDock,
-#chatHomeContextPanel,
 #chatHomePlusBtn,
 #chatHomeMicBtn,
 #chatHomeFolderChip,
@@ -19,16 +18,151 @@ body[data-app-mode="chat"] #chatHomeShell {
   display: none !important;
 }
 
-/* La lista de la izquierda no tiene "Proyectos" (son carpetas locales): solo Conversaciones. */
+/* Botón de Descargar Proyecto en la barra superior */
+.chat-home-download-btn {
+  background: linear-gradient(135deg, #4f46e5, #4338ca);
+  color: #ffffff !important;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 6px 14px;
+  border-radius: 8px;
+  border: none;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  box-shadow: 0 1px 3px rgba(79, 70, 229, 0.25);
+  transition: all 0.15s ease;
+}
+.chat-home-download-btn:hover {
+  background: linear-gradient(135deg, #4338ca, #3730a3);
+  transform: translateY(-1px);
+  box-shadow: 0 3px 8px rgba(79, 70, 229, 0.35);
+}
+
+/* Botón de descarga en el panel derecho */
+.chat-home-zip-btn {
+  width: 100%;
+  margin-top: 14px;
+  padding: 10px 14px;
+  background: linear-gradient(135deg, #10b981, #059669);
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 700;
+  border-radius: 8px;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  box-shadow: 0 2px 4px rgba(16, 185, 129, 0.2);
+  transition: all 0.15s ease;
+}
+.chat-home-zip-btn:hover {
+  background: linear-gradient(135deg, #059669, #047857);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.35);
+}
+
+/* Previsualizador Web en Vivo (Iframe) */
+.web-preview-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px;
+  background: var(--ch-surface, #f8fafc);
+  border: 1px solid var(--ch-border, #e2e8f0);
+  border-radius: 8px 8px 0 0;
+  font-size: 11px;
+}
+.web-preview-address {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ch-text-muted, #64748b);
+  font-family: monospace;
+  font-size: 11px;
+  max-width: 170px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.web-preview-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #10b981;
+  display: inline-block;
+}
+.web-preview-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.web-preview-icon-btn {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  padding: 3px 6px;
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--ch-text, #1e293b);
+  transition: background 0.1s ease;
+}
+.web-preview-icon-btn:hover,
+.web-preview-icon-btn.is-active {
+  background: var(--ch-hover, #e2e8f0);
+  border-color: var(--ch-border, #cbd5e1);
+}
+.web-preview-viewport {
+  width: 100%;
+  height: 380px;
+  border: 1px solid var(--ch-border, #e2e8f0);
+  border-top: none;
+  border-radius: 0 0 8px 8px;
+  background: #ffffff;
+  overflow: hidden;
+  position: relative;
+  display: flex;
+  justify-content: center;
+  align-items: stretch;
+}
+.web-preview-viewport iframe {
+  width: 100%;
+  height: 100%;
+  border: none;
+  background: #ffffff;
+  transition: width 0.2s ease;
+}
+.web-preview-viewport.is-mobile iframe {
+  width: 375px;
+  box-shadow: 0 0 20px rgba(0, 0, 0, 0.1);
+  border-left: 1px solid #cbd5e1;
+  border-right: 1px solid #cbd5e1;
+}
+.web-preview-empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  color: var(--ch-text-muted, #94a3b8);
+  font-size: 12px;
+  padding: 20px;
+  pointer-events: none;
+}
+
+/* La lista de la izquierda no tiene "Proyectos" (son carpetas locales del disco): solo Conversaciones. */
 #chatHomeThreadList > .chat-home-section-label:first-child,
 #chatHomeThreadList > .chat-home-section-label:first-child + .chat-home-thread-empty,
 #chatHomeThreadList > .chat-home-section-label:first-child ~ .chat-home-project-group {
   display: none !important;
 }
 
-/* Configuración: pestañas y tarjetas que actúan sobre la app instalada. */
+/* Configuración: ocultar únicamente pestañas exclusivas de la app de escritorio instalada */
 .ec-settings-nav-item[data-settings-tab="application"],
-.ec-settings-nav-item[data-settings-tab="models"],
 .ec-settings-nav-item[data-settings-tab="customizations"],
 .ec-settings-nav-item[data-settings-tab="browser"],
 .ec-settings-section-heading:has(+ #settingsProjectsList),
@@ -36,6 +170,11 @@ body[data-app-mode="chat"] #chatHomeShell {
 .ec-settings-group-card:has(#settingsDeepIndexToggle),
 #chatHomeSettingsPerms {
   display: none !important;
+}
+
+/* Asegurar visibilidad de la pestaña de Conexiones */
+.ec-settings-nav-item[data-settings-tab="connections"] {
+  display: flex !important;
 }
 
 /* Botón enviar mientras responde: detener (como en el IDE). */

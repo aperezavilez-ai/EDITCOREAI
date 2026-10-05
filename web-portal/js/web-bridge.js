@@ -695,6 +695,11 @@
       } else if (activeThreadId() === threadId) {
         append("assistant", finalText, elapsed);
       }
+      try {
+        updateProjectFromTurn(threadId, finalText);
+      } catch (err) {
+        console.warn("[EditCore Web] Error al actualizar archivos de proyecto:", err);
+      }
     } catch (error) {
       const cancelled = error?.name === "AbortError";
       const code = String(error?.code || "");
@@ -734,11 +739,346 @@
     if (!current) void drain();
   };
 
+  // ─── SUITE WEB: ARCHIVOS VIRTUALES, PREVIEW EN VIVO Y DESCARGA ZIP ─────────
+  const PROJECT_FILES_PREFIX = "editcore-web-project-files:";
+
+  function getProjectFilesKey(threadId) {
+    const tid = threadId || activeThreadId() || "default";
+    return PROJECT_FILES_PREFIX + (currentUid() || "anon") + ":" + tid;
+  }
+
+  function getWebProjectFiles(threadId) {
+    try {
+      const raw = localStorage.getItem(getProjectFilesKey(threadId));
+      return raw ? JSON.parse(raw) : {};
+    } catch {
+      return {};
+    }
+  }
+
+  function saveWebProjectFiles(threadId, files) {
+    try {
+      localStorage.setItem(getProjectFilesKey(threadId), JSON.stringify(files || {}));
+    } catch { /* ignore */ }
+  }
+
+  function extractCodeBlocks(text) {
+    const regex = /```([a-zA-Z0-9_\-\.]+)?\s*(?:[#\/<*!]+\s*(?:filepath:|filename:|file:)?\s*([a-zA-Z0-9_\-\.\/]+))?\n([\s\S]*?)```/g;
+    const blocks = [];
+    let match;
+    while ((match = regex.exec(text)) !== null) {
+      const lang = (match[1] || "").toLowerCase().trim();
+      let filename = (match[2] || "").trim();
+      const code = match[3];
+      if (!filename) {
+        const firstLine = code.split("\n")[0].trim();
+        const fileMatch = firstLine.match(/^(?:<!--|\/\/|\/\*|#)\s*(?:filepath:|filename:|file:)?\s*([a-zA-Z0-9_\-\.\/]+\.[a-zA-Z0-9]+)/i);
+        if (fileMatch) {
+          filename = fileMatch[1];
+        } else if (lang === "html" || code.includes("<!DOCTYPE") || code.includes("<html")) {
+          filename = "index.html";
+        } else if (lang === "css" || (code.includes("{") && (code.includes("margin:") || code.includes("display:")))) {
+          filename = "styles.css";
+        } else if (lang === "js" || lang === "javascript") {
+          filename = "app.js";
+        } else if (lang === "json") {
+          filename = "package.json";
+        } else {
+          filename = `archivo_${blocks.length + 1}.${lang || "txt"}`;
+        }
+      }
+      blocks.push({ filename, code });
+    }
+    return blocks;
+  }
+
+  function updateProjectFromTurn(threadId, text) {
+    const blocks = extractCodeBlocks(text);
+    if (!blocks.length) return;
+    const files = getWebProjectFiles(threadId);
+    let changed = false;
+    for (const b of blocks) {
+      if (b.filename && b.code) {
+        files[b.filename] = b.code;
+        changed = true;
+      }
+    }
+    if (changed) {
+      saveWebProjectFiles(threadId, files);
+      refreshProjectFilesUI(threadId);
+      renderWebPreview(threadId);
+    }
+  }
+
+  function refreshProjectFilesUI(threadId) {
+    const files = getWebProjectFiles(threadId);
+    const list = $("chatHomeCtxFiles");
+    if (!list) return;
+    list.replaceChildren();
+    const entries = Object.entries(files);
+    if (!entries.length) {
+      const empty = document.createElement("li");
+      empty.className = "chat-home-context-empty";
+      empty.textContent = "Sin archivos generados todavía.";
+      list.appendChild(empty);
+      return;
+    }
+    for (const [filename, content] of entries) {
+      const li = document.createElement("li");
+      li.className = "chat-home-ctx-file-item";
+      li.style.cssText = "display:flex;align-items:center;justify-content:space-between;padding:6px 8px;border-radius:6px;background:var(--ch-surface,#f8fafc);margin-bottom:4px;cursor:pointer;font-size:12px;";
+      
+      const nameSpan = document.createElement("span");
+      nameSpan.textContent = "📄 " + filename;
+      nameSpan.style.cssText = "font-weight:600;font-family:monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;";
+      
+      const sizeSpan = document.createElement("span");
+      sizeSpan.textContent = `${Math.ceil((content.length || 0) / 1024)} KB`;
+      sizeSpan.style.cssText = "color:var(--ch-text-muted,#64748b);font-size:10px;margin-left:8px;";
+
+      li.appendChild(nameSpan);
+      li.appendChild(sizeSpan);
+      li.title = `Clic para previsualizar ${filename}`;
+      li.addEventListener("click", () => {
+        switchContextTab("preview");
+        renderWebPreview(threadId, filename);
+      });
+      list.appendChild(li);
+    }
+  }
+
+  function renderWebPreview(threadId, activeFile = "") {
+    const iframe = $("webPreviewIframe");
+    const emptyEl = $("webPreviewEmpty");
+    if (!iframe) return;
+    const files = getWebProjectFiles(threadId);
+    if (!Object.keys(files).length) {
+      iframe.srcdoc = "";
+      if (emptyEl) emptyEl.style.display = "flex";
+      return;
+    }
+    if (emptyEl) emptyEl.style.display = "none";
+
+    let html = files["index.html"] || files[activeFile] || "";
+    if (!html) {
+      const htmlCandidate = Object.keys(files).find((k) => k.endsWith(".html"));
+      if (htmlCandidate) html = files[htmlCandidate];
+    }
+
+    if (!html) {
+      const css = files["styles.css"] || files["style.css"] || "";
+      const js = files["app.js"] || files["main.js"] || files[activeFile] || "";
+      html = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Preview</title>
+  <style>${css}</style>
+</head>
+<body>
+  <div id="app"></div>
+  <script>${js}<\/script>
+</body>
+</html>`;
+    } else {
+      const css = files["styles.css"] || files["style.css"];
+      if (css && !html.includes("<style>") && !html.includes("styles.css")) {
+        html = html.replace("</head>", `<style>${css}</style></head>`);
+      }
+      const js = files["app.js"] || files["main.js"];
+      if (js && !html.includes("<script") && !html.includes("app.js")) {
+        html = html.replace("</body>", `<script>${js}<\/script></body>`);
+      }
+    }
+
+    iframe.srcdoc = html;
+    const urlLabel = $("webPreviewUrlLabel");
+    if (urlLabel) urlLabel.textContent = `editcore://preview/${activeFile || "index.html"}`;
+  }
+
+  function ensureJSZip() {
+    if (typeof window.JSZip !== "undefined") return Promise.resolve(window.JSZip);
+    return new Promise((resolve, reject) => {
+      const s = document.createElement("script");
+      s.src = "https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js";
+      s.onload = () => resolve(window.JSZip);
+      s.onerror = () => reject(new Error("No se pudo cargar el motor ZIP."));
+      document.head.appendChild(s);
+    });
+  }
+
+  async function downloadWebProjectZip(threadId) {
+    try {
+      await ensureJSZip();
+    } catch {
+      alert("No se pudo cargar el motor de compresión ZIP. Por favor revisa tu conexión a internet.");
+      return;
+    }
+    const files = getWebProjectFiles(threadId);
+    if (!Object.keys(files).length) {
+      alert("No hay archivos generados en esta conversación todavía. Pide a EditCoreAI que cree código primero.");
+      return;
+    }
+    const zip = new JSZip();
+    if (!files["package.json"]) {
+      zip.file("package.json", JSON.stringify({
+        name: "editcore-web-project",
+        version: "1.0.0",
+        private: true,
+        scripts: {
+          dev: "vite",
+          build: "vite build",
+          preview: "vite preview",
+        },
+        devDependencies: {
+          vite: "^5.4.0",
+        },
+      }, null, 2));
+    }
+    if (!files["README.md"]) {
+      zip.file("README.md", "# EditCoreAI Web Project\n\nProyecto exportado desde EditCoreAI Web (www.editcore.mx).\n\n## Puesta en marcha\n```bash\nnpm install\nnpm run dev\n```\n");
+    }
+    for (const [filename, content] of Object.entries(files)) {
+      zip.file(filename, content);
+    }
+    try {
+      const blob = await zip.generateAsync({ type: "blob" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `editcore-project-${Date.now().toString(36)}.zip`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      alert("Error generando el archivo ZIP: " + (err?.message || err));
+    }
+  }
+
+  function switchContextTab(key) {
+    const tabs = document.querySelectorAll(".chat-home-context-tab");
+    tabs.forEach((tab) => {
+      const match = tab.getAttribute("data-ctx-tab") === key;
+      tab.classList.toggle("is-active", match);
+      tab.setAttribute("aria-selected", match ? "true" : "false");
+    });
+    const sections = {
+      session: $("chatHomeCtxSecSession"),
+      preview: $("chatHomeCtxSecPreview"),
+      files: $("chatHomeCtxSecFiles"),
+      tasks: $("chatHomeCtxSecTasks"),
+    };
+    for (const [sKey, el] of Object.entries(sections)) {
+      if (el) el.hidden = (sKey !== key);
+    }
+    const title = $("chatHomeContextTitle");
+    const labels = {
+      session: "Sesión",
+      preview: "Navegador Web",
+      files: "Archivos Modificados",
+      tasks: "Tareas en Segundo Plano",
+    };
+    if (title) title.textContent = labels[key] || "Sesión";
+    const panel = $("chatHomeContextPanel");
+    if (panel) {
+      panel.hidden = false;
+      panel.setAttribute("aria-hidden", "false");
+    }
+  }
+
+  // ─── CONEXIONES DE USUARIO (GitHub, Vercel, Supabase) ──────────────────────
+  const CONNECTIONS_KEY = "editcore-web-user-connections";
+
+  function getWebConnections() {
+    try {
+      return JSON.parse(localStorage.getItem(CONNECTIONS_KEY) || "{}");
+    } catch {
+      return {};
+    }
+  }
+
+  function saveWebConnections(conns) {
+    try {
+      localStorage.setItem(CONNECTIONS_KEY, JSON.stringify(conns || {}));
+    } catch { /* ignore */ }
+  }
+
+  function initWebConnectionsUI() {
+    const conns = getWebConnections();
+    
+    // GitHub
+    const ghInput = $("webGithubTokenInput");
+    const ghTag = $("webGithubStatusTag");
+    if (ghInput && conns.githubToken) {
+      ghInput.value = conns.githubToken;
+      if (ghTag) {
+        ghTag.className = "ec-status-tag ec-tag-success";
+        ghTag.textContent = "Conectado";
+      }
+    }
+    $("webSaveGithubBtn")?.addEventListener("click", () => {
+      const val = String(ghInput?.value || "").trim();
+      conns.githubToken = val;
+      saveWebConnections(conns);
+      if (ghTag) {
+        ghTag.className = val ? "ec-status-tag ec-tag-success" : "ec-status-tag";
+        ghTag.textContent = val ? "Conectado" : "Sin conectar";
+      }
+      alert(val ? "Token de GitHub guardado exitosamente." : "Conexión de GitHub eliminada.");
+    });
+
+    // Vercel
+    const vInput = $("webVercelTokenInput");
+    const vTag = $("webVercelStatusTag");
+    if (vInput && conns.vercelToken) {
+      vInput.value = conns.vercelToken;
+      if (vTag) {
+        vTag.className = "ec-status-tag ec-tag-success";
+        vTag.textContent = "Conectado";
+      }
+    }
+    $("webSaveVercelBtn")?.addEventListener("click", () => {
+      const val = String(vInput?.value || "").trim();
+      conns.vercelToken = val;
+      saveWebConnections(conns);
+      if (vTag) {
+        vTag.className = val ? "ec-status-tag ec-tag-success" : "ec-status-tag";
+        vTag.textContent = val ? "Conectado" : "Sin conectar";
+      }
+      alert(val ? "Token de Vercel guardado exitosamente." : "Conexión de Vercel eliminada.");
+    });
+
+    // Supabase
+    const sUrlInput = $("webSupabaseUrlInput");
+    const sKeyInput = $("webSupabaseKeyInput");
+    const sTag = $("webSupabaseStatusTag");
+    if (sUrlInput && conns.supabaseUrl) sUrlInput.value = conns.supabaseUrl;
+    if (sKeyInput && conns.supabaseKey) sKeyInput.value = conns.supabaseKey;
+    if (sTag && conns.supabaseUrl && conns.supabaseKey) {
+      sTag.className = "ec-status-tag ec-tag-success";
+      sTag.textContent = "Conectado";
+    }
+    $("webSaveSupabaseBtn")?.addEventListener("click", () => {
+      const url = String(sUrlInput?.value || "").trim();
+      const key = String(sKeyInput?.value || "").trim();
+      conns.supabaseUrl = url;
+      conns.supabaseKey = key;
+      saveWebConnections(conns);
+      if (sTag) {
+        const ok = url && key;
+        sTag.className = ok ? "ec-status-tag ec-tag-success" : "ec-status-tag";
+        sTag.textContent = ok ? "Conectado" : "Sin conectar";
+      }
+      alert(url && key ? "Credenciales de Supabase guardadas." : "Conexión de Supabase actualizada.");
+    });
+  }
+
   // ── Arranque: cosas de la web que el IDE no necesita ─────────────────────────
   document.addEventListener("DOMContentLoaded", () => {
     const prompt = $("chatHomePrompt");
     if (prompt) {
-      prompt.placeholder = "Pregunta a EditCoreAI: código, errores, ideas…";
+      prompt.placeholder = "Pregunta a EditCoreAI: crea una app, una web, código…";
       // Sin "/" ni "@" del IDE (actúan sobre carpetas, git y archivos locales).
       prompt.addEventListener("input", (ev) => ev.stopImmediatePropagation());
     }
@@ -749,6 +1089,49 @@
         abortCurrent();
       }
     });
+
+    // Botones de descarga de proyecto ZIP
+    $("webTopDownloadProjectBtn")?.addEventListener("click", () => downloadWebProjectZip(activeThreadId()));
+    $("webSideDownloadBtn")?.addEventListener("click", () => downloadWebProjectZip(activeThreadId()));
+
+    // Controles del Previsualizador Web en Vivo
+    $("chatHomePreviewTabBtn")?.addEventListener("click", () => {
+      switchContextTab("preview");
+      renderWebPreview(activeThreadId());
+    });
+    $("webPreviewReloadBtn")?.addEventListener("click", () => renderWebPreview(activeThreadId()));
+    $("webPreviewMobileBtn")?.addEventListener("click", () => {
+      $("webPreviewViewport")?.classList.add("is-mobile");
+      $("webPreviewMobileBtn")?.classList.add("is-active");
+      $("webPreviewDesktopBtn")?.classList.remove("is-active");
+    });
+    $("webPreviewDesktopBtn")?.addEventListener("click", () => {
+      $("webPreviewViewport")?.classList.remove("is-mobile");
+      $("webPreviewDesktopBtn")?.classList.add("is-active");
+      $("webPreviewMobileBtn")?.classList.remove("is-active");
+    });
+    $("webPreviewPopoutBtn")?.addEventListener("click", () => {
+      const files = getWebProjectFiles(activeThreadId());
+      const html = files["index.html"] || Object.values(files)[0] || "";
+      if (!html) {
+        alert("Sin código generado para abrir en pestaña nueva.");
+        return;
+      }
+      const blob = new Blob([html], { type: "text/html" });
+      window.open(URL.createObjectURL(blob), "_blank");
+    });
+
+    // Pestañas del panel derecho
+    document.querySelectorAll(".chat-home-context-tab").forEach((tab) => {
+      tab.addEventListener("click", () => {
+        const key = tab.getAttribute("data-ctx-tab");
+        if (key) switchContextTab(key);
+      });
+    });
+
+    // Inicializar conexiones
+    initWebConnectionsUI();
+
     if (loginError) {
       const status = $("authLoginStatus");
       if (status) {
@@ -761,7 +1144,12 @@
     syncModelLabel();
     void ready.then(() => {
       if (C?.hasSession?.()) void loadModels();
-      setTimeout(() => renderThread(activeThreadId()), 0);
+      setTimeout(() => {
+        const tid = activeThreadId();
+        renderThread(tid);
+        refreshProjectFilesUI(tid);
+        renderWebPreview(tid);
+      }, 0);
     });
   });
 })();

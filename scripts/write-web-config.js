@@ -51,11 +51,12 @@ function webPersonaPrompt() {
   return [
     policy,
     "",
-    "CONTEXTO: VERSIÓN WEB (www.editcore.mx)",
-    "- Eres EditCoreAI, ingeniero de software senior. Este chat es la versión web: no tienes acceso a archivos, terminal, preview ni conexiones del IDE.",
-    "- Nunca digas que leíste, creaste, modificaste, ejecutaste o publicaste algo. Entrega el código completo para que el usuario lo copie.",
-    "- Si el pedido necesita trabajar dentro del proyecto (leer o cambiar archivos, ejecutar, publicar), explícalo y sugiere abrir EditCoreAI de escritorio.",
-    "- No inventes archivos, cambios ni verificaciones.",
+    "CONTEXTO: VERSIÓN WEB (www.editcore.mx) · SUITE DE DESARROLLO WEB",
+    "- Eres EditCoreAI, el asistente y entorno de ingeniería de software en la nube.",
+    "- En esta versión web, los usuarios pueden crear, diseñar y organizar proyectos completos: páginas web, aplicaciones interactivas, utilidades y scripts.",
+    "- Cuando crees o modifiques código, estructura tus respuestas etiquetando con claridad los archivos (ej. // filepath: index.html, // filepath: app.js, // filepath: styles.css).",
+    "- Informa con naturalidad que el código generado se sincroniza automáticamente con el Panel de Archivos, que el usuario puede previsualizar e interactuar con su app en vivo en el Navegador Web (Preview) del panel derecho, y que puede descargar el proyecto completo en cualquier momento con el botón 'Descargar Proyecto (.zip)'.",
+    "- Si el usuario cuenta con conexiones configuradas (GitHub, Vercel, Supabase), ofrécele sincronizar repositorios o publicar a producción.",
   ].join("\n");
 }
 
@@ -75,7 +76,125 @@ function ideChatMarkup(indexHtml) {
   const start = indexHtml.indexOf(CHAT_START);
   const end = indexHtml.indexOf(CHAT_END);
   if (start < 0 || end <= start) throw new Error("index.html del IDE no tiene el bloque del chat (chatHomeShell … welcomeScreen)");
-  return indexHtml.slice(start, end).replace(/(src|href)="\.\/assets\//g, '$1="/assets/').trimEnd();
+  let markup = indexHtml.slice(start, end).replace(/(src|href)="\.\/assets\//g, '$1="/assets/').trimEnd();
+
+  // Inyectar botón de Descargar Proyecto (.zip) en la barra superior
+  markup = markup.replace(
+    '<div class="chat-home-top-actions">',
+    `<div class="chat-home-top-actions">
+          <button id="webTopDownloadProjectBtn" type="button" class="chat-home-download-btn" title="Descargar proyecto completo con código fuente (.zip)">📥 Descargar Proyecto (.zip)</button>`
+  );
+
+  // Inyectar pestaña de Previsualizador Web en el panel de sesión
+  markup = markup.replace(
+    '<div class="chat-home-context-tabs" role="tablist" aria-label="Vistas de sesión">',
+    `<div class="chat-home-context-tabs" role="tablist" aria-label="Vistas de sesión">
+              <button type="button" id="chatHomePreviewTabBtn" class="chat-home-context-tab" data-ctx-tab="preview" title="Navegador Web / Previsualización en vivo" aria-selected="false">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="1.7"/><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" stroke="currentColor" stroke-width="1.7"/></svg>
+              </button>`
+  );
+
+  // Inyectar visor interactivo del navegador web en el cuerpo del panel de sesión
+  const previewSectionMarkup = `
+            <section class="chat-home-context-section" data-ctx="preview" id="chatHomeCtxSecPreview" hidden>
+              <div class="web-preview-header">
+                <div class="web-preview-address">
+                  <span class="web-preview-dot"></span>
+                  <span id="webPreviewUrlLabel">editcore://preview/app</span>
+                </div>
+                <div class="web-preview-actions">
+                  <button type="button" id="webPreviewReloadBtn" title="Recargar vista previa" class="web-preview-icon-btn">🔄</button>
+                  <button type="button" id="webPreviewMobileBtn" title="Vista móvil (375px)" class="web-preview-icon-btn">📱</button>
+                  <button type="button" id="webPreviewDesktopBtn" title="Vista escritorio" class="web-preview-icon-btn is-active">💻</button>
+                  <button type="button" id="webPreviewPopoutBtn" title="Abrir en pestaña nueva" class="web-preview-icon-btn">↗</button>
+                </div>
+              </div>
+              <div class="web-preview-viewport" id="webPreviewViewport">
+                <iframe id="webPreviewIframe" sandbox="allow-scripts allow-forms allow-modals" title="Vista previa del proyecto"></iframe>
+                <div id="webPreviewEmpty" class="web-preview-empty">
+                  <p>Pide a EditCoreAI crear una web o app para verla aquí en tiempo real.</p>
+                </div>
+              </div>
+            </section>`;
+
+  markup = markup.replace(
+    '<div class="chat-home-context-body">',
+    `<div class="chat-home-context-body">${previewSectionMarkup}`
+  );
+
+  // Inyectar botón de Descargar Proyecto (.zip) dentro de la sección de archivos del panel derecho
+  markup = markup.replace(
+    '<ul id="chatHomeCtxFiles" class="chat-home-context-list"></ul>',
+    `<ul id="chatHomeCtxFiles" class="chat-home-context-list"></ul>
+              <button type="button" id="webSideDownloadBtn" class="chat-home-zip-btn" title="Descargar código del proyecto generado (.zip)">📥 Descargar Proyecto (.zip)</button>`
+  );
+
+  // Inyectar pestaña de Conexiones en el menú de categorías de configuración
+  markup = markup.replace(
+    '<button type="button" class="ec-settings-nav-item" data-settings-tab="models">',
+    `<button type="button" class="ec-settings-nav-item" data-settings-tab="connections">
+              <span class="ec-settings-nav-icon">🔗</span>
+              <span class="ec-settings-nav-label">Conexiones</span>
+            </button>
+            <button type="button" class="ec-settings-nav-item" data-settings-tab="models">`
+  );
+
+  // Inyectar panel de Conexiones (GitHub, Vercel, Supabase) en el viewport de configuración
+  const connectionsPaneMarkup = `
+            <!-- PANE: Conexiones (GitHub, Vercel, Supabase) -->
+            <div class="ec-settings-pane is-hidden" id="settingsPaneConnections" data-pane="connections" hidden>
+              <div class="ec-settings-group-card" style="flex-direction:column;align-items:flex-start;gap:8px;">
+                <div style="display:flex;justify-content:space-between;width:100%;align-items:center;">
+                  <div class="ec-group-info">
+                    <h4>GitHub (Control de Versiones)</h4>
+                    <p>Sincroniza y crea repositorios en tu cuenta de GitHub.</p>
+                  </div>
+                  <span class="ec-status-tag" id="webGithubStatusTag">Sin conectar</span>
+                </div>
+                <div style="display:flex;gap:8px;width:100%;margin-top:6px;">
+                  <input type="password" id="webGithubTokenInput" class="ec-styled-input" placeholder="Personal Access Token (ghp_...)" />
+                  <button type="button" class="ec-btn-action" id="webSaveGithubBtn">Guardar</button>
+                </div>
+              </div>
+
+              <div class="ec-settings-group-card" style="flex-direction:column;align-items:flex-start;gap:8px;">
+                <div style="display:flex;justify-content:space-between;width:100%;align-items:center;">
+                  <div class="ec-group-info">
+                    <h4>Vercel (Despliegues en Vivo)</h4>
+                    <p>Publica tu proyecto web en producción con 1 clic en un dominio .vercel.app.</p>
+                  </div>
+                  <span class="ec-status-tag" id="webVercelStatusTag">Sin conectar</span>
+                </div>
+                <div style="display:flex;gap:8px;width:100%;margin-top:6px;">
+                  <input type="password" id="webVercelTokenInput" class="ec-styled-input" placeholder="Vercel Access Token o Deploy Hook" />
+                  <button type="button" class="ec-btn-action" id="webSaveVercelBtn">Guardar</button>
+                </div>
+              </div>
+
+              <div class="ec-settings-group-card" style="flex-direction:column;align-items:flex-start;gap:8px;">
+                <div style="display:flex;justify-content:space-between;width:100%;align-items:center;">
+                  <div class="ec-group-info">
+                    <h4>Supabase (Base de Datos & Auth)</h4>
+                    <p>Conexión a tu proyecto dedicado de PostgreSQL y autenticación.</p>
+                  </div>
+                  <span class="ec-status-tag" id="webSupabaseStatusTag">Sin conectar</span>
+                </div>
+                <div style="display:flex;gap:8px;width:100%;margin-top:6px;">
+                  <input type="text" id="webSupabaseUrlInput" class="ec-styled-input" placeholder="https://tu-proyecto.supabase.co" />
+                  <input type="password" id="webSupabaseKeyInput" class="ec-styled-input" placeholder="Anon Key o Service Role" />
+                  <button type="button" class="ec-btn-action" id="webSaveSupabaseBtn">Guardar</button>
+                </div>
+              </div>
+            </div>`;
+
+  markup = markup.replace(
+    '<div class="ec-settings-pane is-hidden" id="settingsPaneApplication"',
+    `${connectionsPaneMarkup}
+
+            <div class="ec-settings-pane is-hidden" id="settingsPaneApplication"`
+  );
+
+  return markup;
 }
 
 function webCommonJs(source, moduleVar) {
