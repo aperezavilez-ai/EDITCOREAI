@@ -590,7 +590,12 @@
     scrollToBottom(true);
   }
 
-  window.switchChatThread = async (id) => { renderThread(id); };
+  window.switchChatThread = async (id) => {
+    renderThread(id);
+    syncWebProjectFolder(id);
+    refreshProjectFilesUI(id);
+    renderWebPreview(id);
+  };
   window.closeChatThread = (id) => {
     if (current?.threadId === id) abortCurrent();
     const all = loadAllMessages();
@@ -638,6 +643,12 @@
     saveMessages(threadId, history);
     append("user", prompt);
 
+    if (!getWebProjectName(threadId)) {
+      const inferred = inferProjectName(prompt);
+      if (inferred) setWebProjectName(threadId, inferred);
+    }
+    syncWebProjectFolder(threadId);
+
     const startedAt = Date.now();
     const turn = { threadId, controller: new AbortController(), reasoning: false, thinking: appendThinking(), streamEl: null, body: null, text: "" };
     current = turn;
@@ -681,6 +692,9 @@
             turn.body = s.body;
           }
           paint();
+          if (full.includes("```") && (full.split("```").length % 2 === 1)) {
+            updateProjectFromTurn(threadId, full);
+          }
         },
       });
       turn.text = finalText;
@@ -697,6 +711,13 @@
       }
       try {
         updateProjectFromTurn(threadId, finalText);
+        syncWebProjectFolder(threadId);
+        const p = $("chatHomeContextPanel");
+        if (p && p.hidden) {
+          p.hidden = false;
+          p.setAttribute("aria-hidden", "false");
+          $("chatHomeContextDock")?.classList.add("is-active");
+        }
       } catch (err) {
         console.warn("[EditCore Web] Error al actualizar archivos de proyecto:", err);
       }
@@ -762,26 +783,117 @@
     } catch { /* ignore */ }
   }
 
+  function getWebProjectName(threadId) {
+    const tid = threadId || activeThreadId() || "default";
+    try {
+      const saved = localStorage.getItem("editcore-web-project-name:" + tid);
+      if (saved) return saved;
+      const files = getWebProjectFiles(tid);
+      if (Object.keys(files).length > 0) return "proyecto-web";
+      return "";
+    } catch {
+      return "";
+    }
+  }
+
+  function setWebProjectName(threadId, name) {
+    const tid = threadId || activeThreadId() || "default";
+    try {
+      if (name) localStorage.setItem("editcore-web-project-name:" + tid, name);
+    } catch { /* ignore */ }
+  }
+
+  function inferProjectName(prompt) {
+    const clean = String(prompt || "").toLowerCase();
+    const match = clean.match(/(?:crea(?:r)?|arma(?:r)?|diseña(?:r)?|genera(?:r)?)\s+(?:un(?:a)?\s+)?([a-z0-9áéíóúñ\-_ ]{3,35})/i);
+    if (match) {
+      const slug = match[1].trim()
+        .replace(/[áàä]/g, 'a').replace(/[éèë]/g, 'e').replace(/[íìï]/g, 'i').replace(/[óòö]/g, 'o').replace(/[úùü]/g, 'u').replace(/ñ/g, 'n')
+        .replace(/[^a-z0-9\- ]/g, '')
+        .trim()
+        .replace(/\s+/g, '-');
+      if (slug && slug.length >= 3) return slug;
+    }
+    return "proyecto-web";
+  }
+
+  function syncWebProjectFolder(threadId) {
+    const tid = threadId || activeThreadId();
+    const folderEl = $("chatHomeCtxFolder");
+    if (!folderEl) return;
+    const files = getWebProjectFiles(tid);
+    const count = Object.keys(files).length;
+    let projName = getWebProjectName(tid);
+    if (!projName && count > 0) {
+      projName = "proyecto-web";
+      setWebProjectName(tid, projName);
+    }
+    if (projName) {
+      folderEl.textContent = projName;
+      folderEl.title = `Carpeta del proyecto: ${projName} (${count} archivo${count !== 1 ? 's' : ''})`;
+      const card = $("chatHomeProjectCard");
+      if (card) card.style.borderColor = "var(--ec-accent, #1b6f79)";
+    } else {
+      folderEl.textContent = "Sin carpeta";
+    }
+  }
+
+  // Integración nativa con EditCoreSessionContext para que el IDE y chat-home no borren los archivos
+  window.EditCoreSessionContext = {
+    snapshot: async () => {
+      const tid = activeThreadId();
+      const files = getWebProjectFiles(tid);
+      const projName = getWebProjectName(tid) || "proyecto-web";
+      const filesChanged = Object.entries(files).map(([name, content]) => ({
+        title: name,
+        path: `${projName}/${name}`,
+        meta: `${Math.ceil((content.length || 0) / 1024)} KB`,
+        onClick: () => {
+          switchContextTab("preview");
+          renderWebPreview(tid, name);
+        },
+      }));
+      return {
+        filesChanged,
+        subagents: [],
+        artifacts: [],
+        uploads: [],
+        tasks: [],
+        skills: [],
+      };
+    },
+  };
+
   function extractCodeBlocks(text) {
-    const regex = /```([a-zA-Z0-9_\-\.]+)?\s*(?:[#\/<*!]+\s*(?:filepath:|filename:|file:)?\s*([a-zA-Z0-9_\-\.\/]+))?\n([\s\S]*?)```/g;
+    const regex = /```([a-zA-Z0-9_\-\.]+)?\s*([^\n]*)\n([\s\S]*?)```/g;
     const blocks = [];
     let match;
     while ((match = regex.exec(text)) !== null) {
       const lang = (match[1] || "").toLowerCase().trim();
-      let filename = (match[2] || "").trim();
+      const headerLine = (match[2] || "").trim();
       const code = match[3];
+      let filename = "";
+
+      // 1. Cabecera de la valla (ej. ```html index.html o ```html filepath: index.html)
+      const headerMatch = headerLine.match(/(?:filepath:|filename:|file:)?\s*([a-zA-Z0-9_\-\.\/]+\.[a-zA-Z0-9]+)/i);
+      if (headerMatch) filename = headerMatch[1];
+
+      // 2. Primer comentario del código
       if (!filename) {
         const firstLine = code.split("\n")[0].trim();
         const fileMatch = firstLine.match(/^(?:<!--|\/\/|\/\*|#)\s*(?:filepath:|filename:|file:)?\s*([a-zA-Z0-9_\-\.\/]+\.[a-zA-Z0-9]+)/i);
-        if (fileMatch) {
-          filename = fileMatch[1];
-        } else if (lang === "html" || code.includes("<!DOCTYPE") || code.includes("<html")) {
+        if (fileMatch) filename = fileMatch[1];
+      }
+
+      // 3. Inferencia inteligente
+      if (!filename) {
+        if (lang === "html" || code.includes("<!DOCTYPE") || code.includes("<html") || code.includes("<body")) {
           filename = "index.html";
-        } else if (lang === "css" || (code.includes("{") && (code.includes("margin:") || code.includes("display:")))) {
+        } else if (lang === "css" || (code.includes("{") && (code.includes("margin:") || code.includes("display:") || code.includes("background:") || code.includes("padding:")))) {
           filename = "styles.css";
-        } else if (lang === "js" || lang === "javascript") {
+        } else if (lang === "js" || lang === "javascript" || (code.includes("document.") || code.includes("addEventListener") || code.includes("function") || code.includes("const "))) {
           filename = "app.js";
-        } else if (lang === "json") {
+        } else if (lang === "json" || code.includes('"dependencies"') || code.includes('"scripts"')) {
           filename = "package.json";
         } else {
           filename = `archivo_${blocks.length + 1}.${lang || "txt"}`;
@@ -805,13 +917,16 @@
     }
     if (changed) {
       saveWebProjectFiles(threadId, files);
+      syncWebProjectFolder(threadId);
       refreshProjectFilesUI(threadId);
       renderWebPreview(threadId);
     }
   }
 
   function refreshProjectFilesUI(threadId) {
-    const files = getWebProjectFiles(threadId);
+    const tid = threadId || activeThreadId();
+    syncWebProjectFolder(tid);
+    const files = getWebProjectFiles(tid);
     const list = $("chatHomeCtxFiles");
     if (!list) return;
     list.replaceChildren();
@@ -826,25 +941,77 @@
     for (const [filename, content] of entries) {
       const li = document.createElement("li");
       li.className = "chat-home-ctx-file-item";
-      li.style.cssText = "display:flex;align-items:center;justify-content:space-between;padding:6px 8px;border-radius:6px;background:var(--ch-surface,#f8fafc);margin-bottom:4px;cursor:pointer;font-size:12px;";
-      
+      li.style.cssText = "display:flex;align-items:center;justify-content:space-between;padding:7px 10px;border-radius:6px;background:var(--ch-surface,#f8fafc);border:1px solid var(--ch-border,#e2e8f0);margin-bottom:6px;cursor:pointer;font-size:12px;transition:background 0.1s ease;";
+      li.onmouseenter = () => { li.style.background = "var(--ch-hover,#e2e8f0)"; };
+      li.onmouseleave = () => { li.style.background = "var(--ch-surface,#f8fafc)"; };
+
       const nameSpan = document.createElement("span");
-      nameSpan.textContent = "📄 " + filename;
+      const icon = filename.endsWith(".html") ? "🌐 " : (filename.endsWith(".css") ? "🎨 " : (filename.endsWith(".js") ? "⚡ " : "📄 "));
+      nameSpan.textContent = icon + filename;
       nameSpan.style.cssText = "font-weight:600;font-family:monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;";
-      
+
       const sizeSpan = document.createElement("span");
       sizeSpan.textContent = `${Math.ceil((content.length || 0) / 1024)} KB`;
-      sizeSpan.style.cssText = "color:var(--ch-text-muted,#64748b);font-size:10px;margin-left:8px;";
+      sizeSpan.style.cssText = "color:var(--ch-text-muted,#64748b);font-size:10px;margin-left:8px;font-family:monospace;";
 
       li.appendChild(nameSpan);
       li.appendChild(sizeSpan);
-      li.title = `Clic para previsualizar ${filename}`;
+      li.title = `Clic para abrir y previsualizar ${filename}`;
       li.addEventListener("click", () => {
         switchContextTab("preview");
-        renderWebPreview(threadId, filename);
+        renderWebPreview(tid, filename);
       });
       list.appendChild(li);
     }
+  }
+
+  function buildPreviewHtml(files, activeFile = "") {
+    if (!files || !Object.keys(files).length) return "";
+    let html = files["index.html"] || (activeFile && files[activeFile]?.includes("<html") ? files[activeFile] : "");
+    if (!html) {
+      const htmlKey = Object.keys(files).find((k) => k.endsWith(".html"));
+      if (htmlKey) html = files[htmlKey];
+    }
+    const cssBlocks = Object.entries(files)
+      .filter(([k]) => k.endsWith(".css"))
+      .map(([k, code]) => `/* ${k} */\n${code}`)
+      .join("\n\n");
+    const jsBlocks = Object.entries(files)
+      .filter(([k]) => k.endsWith(".js") && !k.includes("package") && !k.includes("config"))
+      .map(([k, code]) => `// ${k}\n${code}`)
+      .join("\n\n");
+
+    if (!html) {
+      return `<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Preview</title>
+  <style>
+    body { font-family: system-ui, -apple-system, sans-serif; margin: 0; padding: 20px; background: #fff; color: #1e293b; }
+    ${cssBlocks}
+  </style>
+</head>
+<body>
+  <div id="app"></div>
+  <script>${jsBlocks}<\/script>
+</body>
+</html>`;
+    }
+
+    let bundle = html;
+    if (cssBlocks && !bundle.includes("<style>") && !bundle.includes("styles.css")) {
+      bundle = bundle.includes("</head>")
+        ? bundle.replace("</head>", `<style>\n${cssBlocks}\n</style></head>`)
+        : `<style>\n${cssBlocks}\n</style>` + bundle;
+    }
+    if (jsBlocks && !bundle.includes("<script") && !bundle.includes("app.js")) {
+      bundle = bundle.includes("</body>")
+        ? bundle.replace("</body>", `<script>\n${jsBlocks}\n<\/script></body>`)
+        : bundle + `<script>\n${jsBlocks}\n<\/script>`;
+    }
+    return bundle;
   }
 
   function renderWebPreview(threadId, activeFile = "") {
@@ -858,42 +1025,11 @@
       return;
     }
     if (emptyEl) emptyEl.style.display = "none";
-
-    let html = files["index.html"] || files[activeFile] || "";
-    if (!html) {
-      const htmlCandidate = Object.keys(files).find((k) => k.endsWith(".html"));
-      if (htmlCandidate) html = files[htmlCandidate];
-    }
-
-    if (!html) {
-      const css = files["styles.css"] || files["style.css"] || "";
-      const js = files["app.js"] || files["main.js"] || files[activeFile] || "";
-      html = `<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <title>Preview</title>
-  <style>${css}</style>
-</head>
-<body>
-  <div id="app"></div>
-  <script>${js}<\/script>
-</body>
-</html>`;
-    } else {
-      const css = files["styles.css"] || files["style.css"];
-      if (css && !html.includes("<style>") && !html.includes("styles.css")) {
-        html = html.replace("</head>", `<style>${css}</style></head>`);
-      }
-      const js = files["app.js"] || files["main.js"];
-      if (js && !html.includes("<script") && !html.includes("app.js")) {
-        html = html.replace("</body>", `<script>${js}<\/script></body>`);
-      }
-    }
-
-    iframe.srcdoc = html;
+    const compiled = buildPreviewHtml(files, activeFile);
+    iframe.srcdoc = compiled;
     const urlLabel = $("webPreviewUrlLabel");
-    if (urlLabel) urlLabel.textContent = `editcore://preview/${activeFile || "index.html"}`;
+    const projName = getWebProjectName(threadId) || "app";
+    if (urlLabel) urlLabel.textContent = `editcore://${projName}/${activeFile || "index.html"}`;
   }
 
   function ensureJSZip() {
@@ -920,9 +1056,10 @@
       return;
     }
     const zip = new JSZip();
+    const projName = getWebProjectName(threadId) || "editcore-web-project";
     if (!files["package.json"]) {
       zip.file("package.json", JSON.stringify({
-        name: "editcore-web-project",
+        name: projName,
         version: "1.0.0",
         private: true,
         scripts: {
@@ -936,7 +1073,7 @@
       }, null, 2));
     }
     if (!files["README.md"]) {
-      zip.file("README.md", "# EditCoreAI Web Project\n\nProyecto exportado desde EditCoreAI Web (www.editcore.mx).\n\n## Puesta en marcha\n```bash\nnpm install\nnpm run dev\n```\n");
+      zip.file("README.md", `# ${projName}\n\nProyecto exportado desde EditCoreAI Web (www.editcore.mx).\n\n## Puesta en marcha\n\`\`\`bash\nnpm install\nnpm run dev\n\`\`\`\n`);
     }
     for (const [filename, content] of Object.entries(files)) {
       zip.file(filename, content);
@@ -946,7 +1083,7 @@
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `editcore-project-${Date.now().toString(36)}.zip`;
+      a.download = `${projName}-${Date.now().toString(36)}.zip`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -966,16 +1103,16 @@
     const sections = {
       session: $("chatHomeCtxSecSession"),
       preview: $("chatHomeCtxSecPreview"),
-      files: $("chatHomeCtxSecFiles"),
+      files: $("chatHomeCtxSecSession"),
       tasks: $("chatHomeCtxSecTasks"),
     };
     for (const [sKey, el] of Object.entries(sections)) {
-      if (el) el.hidden = (sKey !== key);
+      if (el && sKey !== "files") el.hidden = (sKey !== key && (key !== "files" || sKey !== "session"));
     }
     const title = $("chatHomeContextTitle");
     const labels = {
-      session: "Sesión",
-      preview: "Navegador Web",
+      session: "Sesión del Proyecto",
+      preview: "Navegador Web en Vivo",
       files: "Archivos Modificados",
       tasks: "Tareas en Segundo Plano",
     };
@@ -984,6 +1121,7 @@
     if (panel) {
       panel.hidden = false;
       panel.setAttribute("aria-hidden", "false");
+      panel.classList.toggle("is-preview-active", key === "preview");
     }
   }
 
@@ -1094,30 +1232,68 @@
     $("webTopDownloadProjectBtn")?.addEventListener("click", () => downloadWebProjectZip(activeThreadId()));
     $("webSideDownloadBtn")?.addEventListener("click", () => downloadWebProjectZip(activeThreadId()));
 
-    // Controles del Previsualizador Web en Vivo
+    // Controles del Previsualizador Web en Vivo (Soporte de tamaño real)
     $("chatHomePreviewTabBtn")?.addEventListener("click", () => {
+      switchContextTab("preview");
+      renderWebPreview(activeThreadId());
+    });
+    $("chatHomeOpenPreviewBtn")?.addEventListener("click", () => {
       switchContextTab("preview");
       renderWebPreview(activeThreadId());
     });
     $("webPreviewReloadBtn")?.addEventListener("click", () => renderWebPreview(activeThreadId()));
     $("webPreviewMobileBtn")?.addEventListener("click", () => {
+      $("webPreviewViewport")?.classList.remove("is-tablet", "is-desktop");
       $("webPreviewViewport")?.classList.add("is-mobile");
       $("webPreviewMobileBtn")?.classList.add("is-active");
+      $("webPreviewTabletBtn")?.classList.remove("is-active");
+      $("webPreviewDesktopBtn")?.classList.remove("is-active");
+    });
+    $("webPreviewTabletBtn")?.addEventListener("click", () => {
+      $("webPreviewViewport")?.classList.remove("is-mobile", "is-desktop");
+      $("webPreviewViewport")?.classList.add("is-tablet");
+      $("webPreviewTabletBtn")?.classList.add("is-active");
+      $("webPreviewMobileBtn")?.classList.remove("is-active");
       $("webPreviewDesktopBtn")?.classList.remove("is-active");
     });
     $("webPreviewDesktopBtn")?.addEventListener("click", () => {
-      $("webPreviewViewport")?.classList.remove("is-mobile");
+      $("webPreviewViewport")?.classList.remove("is-mobile", "is-tablet");
+      $("webPreviewViewport")?.classList.add("is-desktop");
       $("webPreviewDesktopBtn")?.classList.add("is-active");
       $("webPreviewMobileBtn")?.classList.remove("is-active");
+      $("webPreviewTabletBtn")?.classList.remove("is-active");
+    });
+    $("webPreviewFullscreenBtn")?.addEventListener("click", () => {
+      const panel = $("chatHomeContextPanel");
+      if (!panel) return;
+      const isFull = panel.classList.toggle("is-fullscreen");
+      const btn = $("webPreviewFullscreenBtn");
+      if (btn) {
+        btn.textContent = isFull ? "🗗 Salir de pantalla completa" : "⛶ Tamaño real";
+        btn.classList.toggle("is-active", isFull);
+      }
+    });
+    document.addEventListener("keydown", (ev) => {
+      if (ev.key === "Escape") {
+        const panel = $("chatHomeContextPanel");
+        if (panel?.classList.contains("is-fullscreen")) {
+          panel.classList.remove("is-fullscreen");
+          const btn = $("webPreviewFullscreenBtn");
+          if (btn) {
+            btn.textContent = "⛶ Tamaño real";
+            btn.classList.remove("is-active");
+          }
+        }
+      }
     });
     $("webPreviewPopoutBtn")?.addEventListener("click", () => {
       const files = getWebProjectFiles(activeThreadId());
-      const html = files["index.html"] || Object.values(files)[0] || "";
-      if (!html) {
-        alert("Sin código generado para abrir en pestaña nueva.");
+      const compiled = buildPreviewHtml(files);
+      if (!compiled) {
+        alert("Sin código generado para abrir en pestaña nueva. Pide a EditCoreAI crear una web o app.");
         return;
       }
-      const blob = new Blob([html], { type: "text/html" });
+      const blob = new Blob([compiled], { type: "text/html;charset=utf-8" });
       window.open(URL.createObjectURL(blob), "_blank");
     });
 
