@@ -15,6 +15,7 @@
     LOGIN_DENIED: "No se pudo completar el inicio de sesión con Google.",
     NETWORK: "No hay conexión con el servidor de EditCoreAI. Intenta de nuevo en un momento.",
     SERVER: "El servidor de EditCoreAI no respondió. Intenta de nuevo en un momento.",
+    STREAM_CUT: "La IA cortó la respuesta antes de terminar. Intenta de nuevo o elige otro modelo.",
   };
 
   class CuentasError extends Error {
@@ -204,7 +205,8 @@
   }
 
   // Respuesta en streaming (SSE compatible con OpenAI). onDelta recibe cada trozo de texto.
-  async function chat({ model, messages, onDelta, signal }) {
+  // Los modelos que razonan (Opus, etc.) mandan primero "reasoning" y después "content": onThinking avisa esa fase.
+  async function chat({ model, messages, onDelta, onThinking, signal }) {
     if (!isConfigured()) throw new CuentasError("NOT_CONFIGURED");
     const send = async (token) => {
       try {
@@ -240,27 +242,51 @@
     const decoder = new TextDecoder();
     let buffer = "";
     let full = "";
-    for (;;) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split(/\r?\n/);
-      buffer = lines.pop() || "";
-      for (const line of lines) {
-        const payload = line.startsWith("data:") ? line.slice(5).trim() : "";
-        if (!payload || payload === "[DONE]") continue;
-        let delta = "";
-        try {
-          delta = JSON.parse(payload)?.choices?.[0]?.delta?.content || "";
-        } catch {
-          delta = "";
-        }
-        if (delta) {
-          full += delta;
-          if (typeof onDelta === "function") onDelta(delta, full);
-        }
+    let thinking = "";
+    let finished = false;
+    const handle = (line) => {
+      const payload = line.startsWith("data:") ? line.slice(5).trim() : "";
+      if (!payload) return;
+      if (payload === "[DONE]") {
+        finished = true;
+        return;
       }
+      let choice = null;
+      try {
+        choice = JSON.parse(payload)?.choices?.[0] || null;
+      } catch {
+        choice = null;
+      }
+      if (!choice) return;
+      if (choice.finish_reason) finished = true;
+      const delta = choice.delta || {};
+      const reasoning = String(delta.reasoning || delta.reasoning_content || "");
+      if (reasoning) {
+        thinking += reasoning;
+        if (typeof onThinking === "function") onThinking(thinking);
+      }
+      const text = String(delta.content || "");
+      if (text) {
+        full += text;
+        if (typeof onDelta === "function") onDelta(text, full);
+      }
+    };
+    try {
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split(/\r?\n/);
+        buffer = lines.pop() || "";
+        for (const line of lines) handle(line);
+      }
+      if (buffer) handle(buffer);
+    } catch (error) {
+      if (error?.name === "AbortError") throw error;
+      finished = false;
     }
+    if (!full && (!finished || thinking)) throw new CuentasError("STREAM_CUT");
+    if (!finished) full += "\n\n⚠️ La conexión se cortó y la respuesta quedó incompleta.";
     return full;
   }
 

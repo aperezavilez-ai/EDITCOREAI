@@ -144,6 +144,63 @@ test("web: chat en streaming junta el texto y respeta saldo agotado", async () =
   await assert.rejects(broke.api.chat({ model: "m1", messages: [] }), (err) => err.code === "OUT_OF_CREDITS" && err.status === 402);
 });
 
+const sseResponse = (body) => new Response(body, { status: 200, headers: { "content-type": "text/event-stream" } });
+
+test("web: modelos que razonan (Opus) muestran el razonamiento y luego la respuesta", async () => {
+  const sse = [
+    'data: {"choices":[{"delta":{"reasoning":"Pienso"}}]}',
+    'data: {"choices":[{"delta":{"reasoning":" bien"}}]}',
+    'data: {"choices":[{"delta":{"content":"# Plan"}}]}',
+    'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}',
+    "data: [DONE]",
+    "",
+  ].join("\n\n");
+  const { win, api } = loadClient({ fetch: async () => sseResponse(sse) });
+  seedSession(win);
+  const thoughts = [];
+  const full = await api.chat({ model: "claude-opus-4.6", messages: [], onThinking: (t) => thoughts.push(t) });
+  assert.equal(full, "# Plan");
+  assert.deepEqual(thoughts, ["Pienso", "Pienso bien"]);
+});
+
+test("web: si la IA corta la respuesta durante el razonamiento se avisa en vez de quedar colgado", async () => {
+  const cut = 'data: {"choices":[{"delta":{"reasoning":"Pienso"}}]}\n\n';
+  const { win, api } = loadClient({ fetch: async () => sseResponse(cut) });
+  seedSession(win);
+  await assert.rejects(api.chat({ model: "claude-opus-4.6", messages: [] }), (err) => err.code === "STREAM_CUT");
+
+  const partial = 'data: {"choices":[{"delta":{"content":"Hola"}}]}\n\n';
+  const p = loadClient({ fetch: async () => sseResponse(partial) });
+  seedSession(p.win);
+  assert.match(await p.api.chat({ model: "m1", messages: [] }), /^Hola\n\n⚠️ La conexión se cortó/);
+});
+
+test("web: el markdown de la IA se ve con formato y nunca inyecta HTML", () => {
+  const md = require("../web-portal/js/markdown.js");
+  const html = md.render("## Título\n\nTexto **fuerte** y `código`.\n\n- uno\n- dos\n\n```js\nconst a = 1 < 2;\n```\n\n<img src=x onerror=alert(1)>");
+  assert.match(html, /<h2>Título<\/h2>/);
+  assert.match(html, /<strong>fuerte<\/strong>/);
+  assert.match(html, /<code>código<\/code>/);
+  assert.match(html, /<ul><li>uno<\/li><li>dos<\/li><\/ul>/);
+  assert.match(html, /<pre><span class="code-lang">js<\/span>.*<code>const a = 1 &lt; 2;<\/code><\/pre>/);
+  assert.doesNotMatch(html, /<img/);
+  assert.match(md.render("[x](javascript:alert(1))"), /^<p>\[x\]\(javascript:alert\(1\)\)<\/p>$/);
+  assert.match(md.render("| A | B |\n|---|---|\n| 1 | 2 |"), /<table><thead><tr><th>A<\/th><th>B<\/th><\/tr><\/thead><tbody><tr><td>1<\/td><td>2<\/td><\/tr><\/tbody><\/table>/);
+});
+
+test("web: el chat usa la misma voz de EditCoreAI que el IDE, sin prometer herramientas", () => {
+  const { webPersonaPrompt } = require("../scripts/write-web-config");
+  const persona = webPersonaPrompt();
+  assert.match(persona, /POLITICA_COMUNICACION_ELITE_V5/);
+  assert.match(persona, /PRIMERA FRASE = RESPUESTA/);
+  assert.match(persona, /VERSIÓN WEB/);
+  assert.doesNotMatch(persona, /run_e2e_pipeline|ROADMAP|\(tools\)/);
+  const app = fs.readFileSync(path.join(ROOT, "web-portal", "app.html"), "utf8");
+  assert.match(app, /window\.EDITCORE_WEB_PERSONA/);
+  assert.match(app, /onThinking:/);
+  assert.match(app, /md\.render\(/);
+});
+
 test("web: login sin contraseñas fijas ni accesos de respaldo", () => {
   const login = fs.readFileSync(path.join(ROOT, "web-portal", "login.html"), "utf8");
   assert.doesNotMatch(login, /admin-master|signInWithPassword|password\s*===/);
@@ -173,13 +230,17 @@ test("web: los despliegues desde GitHub generan la config en el build de Vercel"
   assert.ok(ignore.includes("/scripts/*"), "el resto de scripts no sube");
   const src = fs.readFileSync(path.join(ROOT, "scripts", "write-web-config.js"), "utf8");
   const requires = [...src.matchAll(/require\("([^"]+)"\)/g)].map((m) => m[1]);
-  assert.ok(requires.every((r) => r.startsWith("node:")), "en Vercel solo existe este archivo: sin require locales");
+  const local = requires.filter((r) => !r.startsWith("node:"));
+  assert.deepEqual(local, ["../runtime/elite-communication-policy.js"], "en Vercel solo sube este archivo local");
+  assert.ok(ignore.includes("!/runtime/elite-communication-policy.js"), "la política de comunicación debe subir a Vercel");
+  assert.ok(ignore.includes("/runtime/*"), "el resto de runtime no sube");
 
   const { writeWebConfig } = require("../scripts/write-web-config");
   const dir = fs.mkdtempSync(path.join(require("node:os").tmpdir(), "ec-webcfg-"));
   try {
     const out = writeWebConfig(dir, { EDITCOREAI_CLOUD_PUBLIC_URL: "https://api.test", EDITCOREAI_CLOUD_ANON_KEY: ANON });
     assert.match(fs.readFileSync(out, "utf8"), /^window\.EDITCOREAI_CUENTAS = /);
+    assert.match(fs.readFileSync(path.join(dir, "js", "editcore-persona.js"), "utf8"), /^window\.EDITCORE_WEB_PERSONA = /);
     assert.throws(() => writeWebConfig(dir, {}), /EDITCOREAI_CLOUD_PUBLIC_URL/);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });

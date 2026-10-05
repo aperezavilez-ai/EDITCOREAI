@@ -38,10 +38,32 @@ function cuentasConfigJs(env) {
   return `window.EDITCOREAI_CUENTAS = ${JSON.stringify({ url, anonKey })};\n`;
 }
 
+// La web no tiene archivos, terminal ni tools: de la política del IDE se quitan las secciones y líneas que las suponen.
+const IDE_ONLY_SECTIONS = /^(RAZONAMIENTO VISIBLE|E2E \/ REPORTE|ROADMAP-FIRST|OPERACIONES NUBE)/;
+const IDE_ONLY_LINES = /\(tools\)|tool_call|run_e2e|ROADMAP|tocaste archivos|proyecto está abierto/i;
+
+function webPersonaPrompt() {
+  const { ELITE_COMMUNICATION_POLICY } = require("../runtime/elite-communication-policy.js");
+  const policy = ELITE_COMMUNICATION_POLICY.split("\n\n")
+    .filter((block) => !IDE_ONLY_SECTIONS.test(block.trim()))
+    .map((block) => block.split("\n").filter((line) => !IDE_ONLY_LINES.test(line)).join("\n"))
+    .join("\n\n");
+  return [
+    policy,
+    "",
+    "CONTEXTO: VERSIÓN WEB (www.editcore.mx)",
+    "- Eres EditCoreAI, ingeniero de software senior. Este chat es la versión web: no tienes acceso a archivos, terminal, preview ni conexiones del IDE.",
+    "- Nunca digas que leíste, creaste, modificaste, ejecutaste o publicaste algo. Entrega el código completo para que el usuario lo copie.",
+    "- Si el pedido necesita trabajar dentro del proyecto (leer o cambiar archivos, ejecutar, publicar), explícalo y sugiere abrir EditCoreAI de escritorio.",
+    "- No inventes archivos, cambios ni verificaciones.",
+  ].join("\n");
+}
+
 function writeWebConfig(webDir, env) {
   const out = path.join(webDir, "js", "cuentas-config.js");
   fs.mkdirSync(path.dirname(out), { recursive: true });
   fs.writeFileSync(out, cuentasConfigJs(env), "utf8");
+  fs.writeFileSync(path.join(webDir, "js", "editcore-persona.js"), `window.EDITCORE_WEB_PERSONA = ${JSON.stringify(webPersonaPrompt())};\n`, "utf8");
   return out;
 }
 
@@ -57,4 +79,4 @@ if (require.main === module) {
   }
 }
 
-module.exports = { cuentasConfigJs, writeWebConfig };
+module.exports = { cuentasConfigJs, webPersonaPrompt, writeWebConfig };

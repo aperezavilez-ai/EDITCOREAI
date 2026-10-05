@@ -4,3 +4,6 @@
 !/scripts
 /scripts/*
 !/scripts/write-web-config.js
+!/runtime
+/runtime/*
+!/runtime/elite-communication-policy.js

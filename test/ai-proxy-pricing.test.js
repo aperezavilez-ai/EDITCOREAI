@@ -117,7 +117,7 @@ test("Respuestas: se quitan los datos internos del proveedor y queda el modelo p
     model: "meai/minimax-m2.7",
     provider: "x",
     choices: [{ message: { content: "hola", provider_metadata: { gateway: { cost: "0" } } } }],
-    usage: { prompt_tokens: 3 },
+    usage: { prompt_tokens: 3, gateway_cost: 0.0049, market_cost: 0.0049 },
   }, "minimax-m2.7");
   assert.deepEqual(clean, { model: "minimax-m2.7", choices: [{ message: { content: "hola" } }], usage: { prompt_tokens: 3 } });
 });

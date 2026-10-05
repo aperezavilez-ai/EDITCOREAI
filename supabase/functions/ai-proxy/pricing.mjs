@@ -117,7 +117,7 @@ export function sanitizeProviderText(text) {
   return String(text || "").replace(PROVIDER_NAME_PATTERN, "EditCoreAI").slice(0, 500);
 }
 
-const PROVIDER_FIELDS = new Set(["provider_metadata", "provider", "providerMetadata"]);
+const PROVIDER_FIELDS = new Set(["provider_metadata", "provider", "providerMetadata", "gateway_cost", "market_cost"]);
 
 /** Quita de la respuesta los datos internos del proveedor (costos, rutas) y deja el modelo pedido. */
 export function scrubProviderFields(value, model) {
