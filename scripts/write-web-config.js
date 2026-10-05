@@ -130,7 +130,7 @@ function ideChatMarkup(indexHtml) {
                 </div>
               </div>
               <div class="web-preview-viewport" id="webPreviewViewport">
-                <iframe id="webPreviewIframe" sandbox="allow-scripts allow-forms allow-modals" title="Vista previa del proyecto"></iframe>
+                <iframe id="webPreviewIframe" sandbox="allow-scripts allow-forms allow-modals allow-popups" title="Vista previa del proyecto"></iframe>
                 <div id="webPreviewEmpty" class="web-preview-empty">
                   <p>Pide a EditCoreAI crear una app o web para interactuar con ella aquí en tiempo real.</p>
                 </div>

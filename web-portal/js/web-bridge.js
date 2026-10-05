@@ -769,9 +769,27 @@
   }
 
   function getWebProjectFiles(threadId) {
+    const tid = threadId || activeThreadId() || "default";
     try {
-      const raw = localStorage.getItem(getProjectFilesKey(threadId));
-      return raw ? JSON.parse(raw) : {};
+      const raw = localStorage.getItem(getProjectFilesKey(tid));
+      let files = raw ? JSON.parse(raw) : null;
+      if (!files || !Object.keys(files).length) {
+        // Fallback resiliente: recuperar archivos desde los turnos guardados del chat
+        files = {};
+        const msgs = loadMessages(tid);
+        for (const m of msgs) {
+          if (m.role === "assistant" && m.content) {
+            const blocks = extractCodeBlocks(m.content);
+            for (const b of blocks) {
+              if (b.filename && b.code) files[b.filename] = b.code;
+            }
+          }
+        }
+        if (Object.keys(files).length) {
+          saveWebProjectFiles(tid, files);
+        }
+      }
+      return files || {};
     } catch {
       return {};
     }
@@ -972,22 +990,99 @@
       const htmlKey = Object.keys(files).find((k) => k.endsWith(".html"));
       if (htmlKey) html = files[htmlKey];
     }
-    const cssBlocks = Object.entries(files)
-      .filter(([k]) => k.endsWith(".css"))
-      .map(([k, code]) => `/* ${k} */\n${code}`)
-      .join("\n\n");
-    const jsBlocks = Object.entries(files)
-      .filter(([k]) => k.endsWith(".js") && !k.includes("package") && !k.includes("config"))
-      .map(([k, code]) => `// ${k}\n${code}`)
-      .join("\n\n");
+
+    const cssEntries = Object.entries(files).filter(([k]) => k.endsWith(".css"));
+    const jsEntries = Object.entries(files).filter(([k]) => {
+      const lower = k.toLowerCase();
+      return lower.endsWith(".js") &&
+        !lower.includes("package") &&
+        !lower.includes("config") &&
+        !lower.endsWith(".test.js") &&
+        !lower.endsWith(".spec.js") &&
+        lower !== "sw.js" &&
+        !lower.endsWith("/sw.js") &&
+        !lower.includes("service-worker") &&
+        !lower.includes(".worker.");
+    });
+
+    const shimScript = `<script id="editcore-preview-shim">
+(function() {
+  function createSafeStorage() {
+    var store = {};
+    return {
+      getItem: function(k) { return Object.prototype.hasOwnProperty.call(store, k) ? store[k] : null; },
+      setItem: function(k, v) { store[k] = String(v); },
+      removeItem: function(k) { delete store[k]; },
+      clear: function() { store = {}; },
+      key: function(i) { return Object.keys(store)[i] || null; },
+      get length() { return Object.keys(store).length; }
+    };
+  }
+  try {
+    window.localStorage && window.localStorage.getItem('_test');
+  } catch (e) {
+    var _ls = createSafeStorage();
+    try {
+      Object.defineProperty(window, 'localStorage', {
+        get: function() { return _ls; },
+        configurable: true,
+        enumerable: true
+      });
+    } catch (_) {
+      try { window.localStorage = _ls; } catch (__) {}
+    }
+  }
+  try {
+    window.sessionStorage && window.sessionStorage.getItem('_test');
+  } catch (e) {
+    var _ss = createSafeStorage();
+    try {
+      Object.defineProperty(window, 'sessionStorage', {
+        get: function() { return _ss; },
+        configurable: true,
+        enumerable: true
+      });
+    } catch (_) {
+      try { window.sessionStorage = _ss; } catch (__) {}
+    }
+  }
+  if (typeof window.skipWaiting !== 'function') {
+    window.skipWaiting = function() { return Promise.resolve(); };
+  }
+  if (window.navigator && window.navigator.serviceWorker) {
+    try {
+      window.navigator.serviceWorker.register = function() {
+        return Promise.resolve({ scope: './', active: null, installing: null, waiting: null, update: function() { return Promise.resolve(); } });
+      };
+    } catch (_) {}
+  }
+  window.addEventListener('error', function(e) {
+    console.warn('[EditCore Preview Notice]', e.error || e.message);
+    var body = document.body;
+    if (body && (!body.children.length || (body.children.length === 1 && document.getElementById('app') && !document.getElementById('app').innerHTML.trim()))) {
+      var banner = document.getElementById('editcore-error-banner');
+      if (!banner) {
+        banner = document.createElement('div');
+        banner.id = 'editcore-error-banner';
+        banner.style.cssText = 'margin:24px;padding:16px 20px;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;font-family:system-ui,sans-serif;color:#991b1b;';
+        banner.innerHTML = '<strong style="display:block;margin-bottom:6px;font-size:14px;">Aviso de ejecución en vista previa:</strong><span style="font-size:12px;opacity:0.9;">' + (e.message || 'Error en script del proyecto') + '</span>';
+        body.appendChild(banner);
+      }
+    }
+  });
+})();
+<\/script>`;
 
     if (!html) {
+      const cssBlocks = cssEntries.map(([k, code]) => `/* ${k} */\n${code}`).join("\n\n");
+      const jsBlocks = jsEntries.map(([k, code]) => `// ${k}\n${code}`).join("\n\n");
       return `<!DOCTYPE html>
 <html lang="es">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Preview</title>
+  ${shimScript}
   <style>
     * { box-sizing: border-box; }
     body { font-family: system-ui, -apple-system, sans-serif; margin: 0; padding: 20px; background: #fff; color: #1e293b; }
@@ -1002,29 +1097,56 @@
     }
 
     let bundle = html;
-    // Inyectar o reemplazar CSS en el HTML
-    if (cssBlocks) {
-      const linkRegex = /<link[^>]+(?:href=["'][^"']*styles?\.css["']|rel=["']stylesheet["'][^>]*href=["'][^"']*styles?\.css["'])[^>]*>/gi;
-      if (linkRegex.test(bundle)) {
-        bundle = bundle.replace(linkRegex, `<style id="editcore-styles">\n${cssBlocks}\n</style>`);
-      } else if (bundle.includes("</head>")) {
-        bundle = bundle.replace("</head>", `<style id="editcore-styles">\n${cssBlocks}\n</style></head>`);
+
+    // Inyectar el shim de almacenamiento al principio de head
+    if (bundle.includes("<head>")) {
+      bundle = bundle.replace("<head>", `<head>\n${shimScript}`);
+    } else if (bundle.includes("</title>")) {
+      bundle = bundle.replace("</title>", `</title>\n${shimScript}`);
+    } else {
+      bundle = shimScript + bundle;
+    }
+
+    // Reemplazar o inyectar estilos CSS
+    const injectedCss = new Set();
+    for (const [filename, code] of cssEntries) {
+      const base = filename.split("/").pop();
+      const rx = new RegExp(`<link[^>]+(?:href=["'][^"']*${base}["']|rel=["']stylesheet["'][^>]*href=["'][^"']*${base}["'])[^>]*>`, "gi");
+      if (rx.test(bundle)) {
+        bundle = bundle.replace(rx, `<style data-file="${filename}">\n${code}\n</style>`);
+        injectedCss.add(filename);
+      }
+    }
+    const remainingCss = cssEntries.filter(([k]) => !injectedCss.has(k)).map(([k, code]) => `/* ${k} */\n${code}`).join("\n\n");
+    if (remainingCss) {
+      const tag = `<style id="editcore-styles">\n${remainingCss}\n</style>`;
+      if (bundle.includes("</head>")) {
+        bundle = bundle.replace("</head>", `${tag}\n</head>`);
       } else {
-        bundle = `<style id="editcore-styles">\n${cssBlocks}\n</style>` + bundle;
+        bundle = tag + bundle;
       }
     }
 
-    // Inyectar o reemplazar JS en el HTML
-    if (jsBlocks) {
-      const scriptRegex = /<script[^>]+src=["'][^"']*app\.js["'][^>]*><\/script>/gi;
-      if (scriptRegex.test(bundle)) {
-        bundle = bundle.replace(scriptRegex, `<script id="editcore-app">\n${jsBlocks}\n<\/script>`);
-      } else if (bundle.includes("</body>")) {
-        bundle = bundle.replace("</body>", `<script id="editcore-app">\n${jsBlocks}\n<\/script></body>`);
-      } else {
-        bundle = bundle + `<script id="editcore-app">\n${jsBlocks}\n<\/script>`;
+    // Reemplazar o inyectar scripts JS
+    const injectedJs = new Set();
+    for (const [filename, code] of jsEntries) {
+      const base = filename.split("/").pop();
+      const rx = new RegExp(`<script[^>]+src=["'][^"']*${base}["'][^>]*>\\s*<\\/script>`, "gi");
+      if (rx.test(bundle)) {
+        bundle = bundle.replace(rx, `<script data-file="${filename}">\n${code}\n<\/script>`);
+        injectedJs.add(filename);
       }
     }
+    const remainingJs = jsEntries.filter(([k]) => !injectedJs.has(k)).map(([k, code]) => `// ${k}\n${code}`).join("\n\n");
+    if (remainingJs) {
+      const tag = `<script id="editcore-app">\n${remainingJs}\n<\/script>`;
+      if (bundle.includes("</body>")) {
+        bundle = bundle.replace("</body>", `${tag}\n</body>`);
+      } else {
+        bundle = bundle + tag;
+      }
+    }
+
     return bundle;
   }
 
