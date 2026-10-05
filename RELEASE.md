@@ -1,3 +1,16 @@
+# RELEASE v4.3.2
+
+## Opus ya no se corta ni se cobra dos veces
+
+- Las respuestas largas de los modelos que primero «piensan» (como Opus) ya no se cortan a los 3 minutos ni se repiten desde cero (lo que cobraba dos veces la misma pregunta). Ahora EditCoreAI espera mientras la IA siga mandando algo, aunque esté pensando, y solo corta si pasan 3 minutos sin recibir nada (tope total de 10 minutos).
+- Si una respuesta se corta o se detiene a la mitad, ya no se entrega como si estuviera completa: se avisa del corte.
+- El servidor de cuentas usa su propio túnel (`api-editcoreai.gafcore.com`), separado del de otros proyectos.
+- Incluye todo lo de la versión 4.3.1.
+
+### Archivos
+
+- `EDITCOREAI.exe` (4.3.2.0) y `release/EDITCOREAI-Setup.exe` (4.3.2), construidos desde un árbol limpio en el commit publicado.
+
 # RELEASE v4.3.1
 
 ## Navegador del proyecto sin bucles, panel a todo lo ancho y APICredits para el administrador
