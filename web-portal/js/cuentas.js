@@ -286,12 +286,16 @@
       const reasoning = String(delta.reasoning || delta.reasoning_content || "");
       if (reasoning) {
         thinking += reasoning;
-        if (typeof onThinking === "function") onThinking(thinking);
+        if (typeof onThinking === "function") {
+          try { onThinking(thinking); } catch (e) { console.warn("[Cuentas onThinking error]", e); }
+        }
       }
       const text = String(delta.content || "");
       if (text) {
         full += text;
-        if (typeof onDelta === "function") onDelta(text, full);
+        if (typeof onDelta === "function") {
+          try { onDelta(text, full); } catch (e) { console.warn("[Cuentas onDelta error]", e); }
+        }
       }
     };
     try {

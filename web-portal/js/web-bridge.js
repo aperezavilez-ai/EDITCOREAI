@@ -861,7 +861,11 @@
           }
           paint();
           if (full.includes("```") || full.includes("filepath:") || full.includes("<!DOCTYPE") || full.includes("<html")) {
-            updateProjectFromTurn(threadId, full);
+            try {
+              updateProjectFromTurn(threadId, full);
+            } catch (err) {
+              console.warn("[EditCore Web] Error al actualizar proyecto en delta:", err);
+            }
           }
         },
       });
@@ -1690,7 +1694,7 @@ if (document.readyState === "complete" || document.readyState === "interactive")
     const markerRegex = /(?:^|\n)(?:<!--|\/\/|\/\*|#|###|##|\*\*|--)?\s*(?:filepath:|filename:|file:)?\s*([a-zA-Z0-9_\-\.\/]+\.(?:html|htm|css|js|jsx|ts|tsx|json|svg|md|txt))(?:\s*(?:-->|\*\/|\*\*|--))?\s*(?:\n|$)/gi;
     const markers = [];
     let mm;
-    while ((mm = markerRe.exec(text)) !== null) {
+    while ((mm = markerRegex.exec(text)) !== null) {
       markers.push({ filename: mm[1], start: mm.index + mm[0].length, headerStart: mm.index });
     }
     for (let i = 0; i < markers.length; i++) {
