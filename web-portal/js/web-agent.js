@@ -38,12 +38,55 @@
     return list.find((m) => /claude-sonnet-4[.-]6/i.test(m)) || list.find((m) => /claude-sonnet/i.test(m)) || list[0] || wanted;
   }
 
+  // Marcas de caché (system, primer mensaje del usuario y el último user/tool): el proveedor relee ese prefijo
+  // a una fracción del precio en los pasos siguientes del mismo turno y en turnos seguidos.
+  function withCacheControl(messages) {
+    let rolling = -1;
+    for (let i = messages.length - 1; i > 1; i -= 1) {
+      const m = messages[i];
+      if ((m?.role === "user" || m?.role === "tool") && typeof m.content === "string" && m.content) { rolling = i; break; }
+    }
+    return messages.map((msg, idx) => {
+      if (typeof msg.content !== "string" || !msg.content) return msg;
+      if (msg.role === "system" || (msg.role === "user" && idx <= 1) || idx === rolling) {
+        return { ...msg, content: [{ type: "text", text: msg.content, cache_control: { type: "ephemeral" } }] };
+      }
+      return msg;
+    });
+  }
+
+  // Sin datos del servidor durante este tiempo se corta el intento (y se reintenta si aún no se mostró texto).
+  const IDLE_TIMEOUT_MS = 180000;
+
   // Llamada en streaming compatible con OpenAI, con herramientas. Devuelve texto, llamadas a herramientas y uso.
-  async function completion({ model, messages, tools, signal, onDelta }) {
+  async function completion({ model, messages, tools, signal: outerSignal, onDelta }) {
+    const idleCtl = new AbortController();
+    let idleTimer = null;
+    let idleFired = false;
+    const touch = () => {
+      clearTimeout(idleTimer);
+      idleTimer = setTimeout(() => { idleFired = true; idleCtl.abort(); }, IDLE_TIMEOUT_MS);
+    };
+    const onOuterAbort = () => idleCtl.abort();
+    if (outerSignal?.aborted) idleCtl.abort();
+    else outerSignal?.addEventListener?.("abort", onOuterAbort, { once: true });
+    touch();
+    try {
+      return await completionAttempt({ model, messages, tools, signal: idleCtl.signal, onDelta, touch, isIdle: () => idleFired && !outerSignal?.aborted });
+    } catch (error) {
+      if (idleFired && !outerSignal?.aborted) throw codeError("STREAM_CUT", "La IA dejó de responder. Intenta de nuevo o elige otro modelo.");
+      throw error;
+    } finally {
+      clearTimeout(idleTimer);
+      outerSignal?.removeEventListener?.("abort", onOuterAbort);
+    }
+  }
+
+  async function completionAttempt({ model, messages, tools, signal, onDelta, touch, isIdle }) {
     const send = async (token) => fetch(`${cloudBase()}/chat/completions`, {
       method: "POST",
       headers: { apikey: window.EDITCOREAI_CUENTAS?.anonKey || "", Authorization: `Bearer ${token}`, "content-type": "application/json" },
-      body: JSON.stringify({ model, messages, stream: true, stream_options: { include_usage: true }, ...(tools?.length ? { tools, tool_choice: "auto" } : {}) }),
+      body: JSON.stringify({ model, messages: withCacheControl(messages), stream: true, stream_options: { include_usage: true }, ...(tools?.length ? { tools, tool_choice: "auto" } : {}) }),
       signal,
     });
     let token = await C.getAccessToken();
@@ -103,6 +146,7 @@
       for (;;) {
         const { value, done } = await reader.read();
         if (done) break;
+        touch();
         buffer += decoder.decode(value, { stream: true });
         const lines = buffer.split(/\r?\n/);
         buffer = lines.pop() || "";
@@ -110,7 +154,11 @@
       }
       if (buffer) handle(buffer);
     } catch (error) {
-      if (error?.name === "AbortError") throw error;
+      if (error?.name === "AbortError") {
+        // Se colgó a mitad de una respuesta ya visible: se conserva el texto y se marca como cortada.
+        if (isIdle() && content.trim()) return { content, toolCalls: [], finish: "cut", usage };
+        throw error;
+      }
     }
     const toolCalls = calls.filter((c) => c && c.name).map((c, i) => ({ ...c, id: c.id || `call_${Date.now()}_${i}` }));
     if (!content.trim() && !toolCalls.length) throw codeError("STREAM_CUT", "La IA cortó la respuesta antes de terminar. Intenta de nuevo o elige otro modelo.");
@@ -137,8 +185,11 @@
     { name: "write_file", description: "Crea o reemplaza un archivo completo del proyecto.", parameters: { type: "object", properties: { path: { type: "string" }, content: { type: "string" } }, required: ["path", "content"] } },
     { name: "replace_in_file", description: "Reemplaza un fragmento exacto de un archivo (old_text debe existir tal cual).", parameters: { type: "object", properties: { path: { type: "string" }, old_text: { type: "string" }, new_text: { type: "string" } }, required: ["path", "old_text", "new_text"] } },
     { name: "delete_file", description: "Borra un archivo o carpeta del proyecto.", parameters: { type: "object", properties: { path: { type: "string" } }, required: ["path"] } },
+    { name: "check_connections", description: "Estado real de las conexiones (GitHub, Vercel, Supabase) y de la publicación del proyecto, con los pasos que faltan. No muestra tokens. Llámalo antes de guiar al usuario a conectar o publicar.", parameters: { type: "object", properties: {} } },
+    { name: "publish_project", description: "Publica el proyecto: sube todos los archivos a un repositorio privado de GitHub del usuario (lo crea si no existe) y, si Vercel está conectado, lo deja en vivo y devuelve la URL. Siempre pide confirmación al usuario.", parameters: { type: "object", properties: { repoName: { type: "string" } } } },
   ];
-  const toolDefs = (allowWrite) => TOOLS.filter((t) => allowWrite || !WRITE_TOOLS.has(t.name)).map((t) => ({ type: "function", function: t }));
+  const EXTERNAL_TOOLS = new Set(["publish_project"]);
+  const toolDefs = (allowWrite) => TOOLS.filter((t) => allowWrite || (!WRITE_TOOLS.has(t.name) && !EXTERNAL_TOOLS.has(t.name))).map((t) => ({ type: "function", function: t }));
 
   function unifiedDiff(before, after) {
     const lines = [];
@@ -160,6 +211,23 @@
     const root = ctx.root;
     const rel = (value) => fs.relFromAny(root, value);
     switch (name) {
+      case "check_connections": {
+        const a = await window.editcoreProject.assessConnections({ projectRoot: root });
+        const services = { github: Boolean(a.connections?.github?.configured), vercel: Boolean(a.connections?.vercel?.configured), supabase: Boolean(a.connections?.supabase?.configured) };
+        const nextSteps = [];
+        if (!services.github) nextSteps.push("Conectar GitHub: ⚙ Conexiones → GitHub → pegar un token de github.com/settings/tokens (permiso «repo»).");
+        if (!services.vercel) nextSteps.push("Conectar Vercel: ⚙ Conexiones → Vercel → pegar un token de vercel.com/account/tokens.");
+        if (services.github) nextSteps.push(a.liveUrl ? "Ya está publicado: publish_project sube los cambios nuevos." : "Publicar: llamar publish_project.");
+        return { ok: true, services, repo: a.remoteUrl || "", liveUrl: a.liveUrl || "", readyToPublish: a.readyToPublish, nextSteps };
+      }
+      case "publish_project": {
+        if (!ctx.allowWrite) throw new Error("Publicar requiere un modo con permiso de cambios.");
+        const project = root.split("/").pop();
+        const ok = await askApproval(ctx.runId, `El agente quiere publicar «${project}» en tu GitHub y dejarlo en vivo`, project, "");
+        if (!ok) throw new Error("Publicación cancelada por el usuario.");
+        const r = await window.editcoreProject.fullStackDeploy({ projectRoot: root, repoName: args.repoName || "", mode: "update" });
+        return { ok: r.ok, message: r.message, repo: r.remoteUrl || "", liveUrl: r.liveUrl || "", steps: (r.steps || []).map((s) => ({ step: s.step, ok: s.ok, skipped: Boolean(s.skipped), message: s.message })) };
+      }
       case "list_files": {
         const all = await fs.all(root);
         const base = rel(args.path || "");
@@ -213,20 +281,60 @@
     }
   }
 
-  function systemPrompt(input, projectName) {
+  // Lo que el agente web siempre sabe de sí mismo (texto fijo: se relee desde la caché del prompt).
+  const SELF_KNOWLEDGE = [
+    "=== QUIÉN ERES: EDITCOREAI WEB ===",
+    "- Eres el agente de EditCoreAI, un IDE con IA en español. Esta es la versión web (www.editcore.mx/app); también existe la app de escritorio para Windows, con terminal, npm y más herramientas, que se descarga desde la misma página.",
+    "- El usuario usa saldo prepago en dólares (recarga de 20 USD con Mercado Pago; regalo de bienvenida al registrarse). Cada consulta descuenta según el modelo elegido en Modelos («Auto» elige el más adecuado).",
+    "- Herramientas reales en esta versión: list_files, read_file, search_files, write_file, replace_in_file, delete_file, check_connections y publish_project. No inventes otras.",
+    "- Los proyectos se guardan en la cuenta del usuario, en este navegador. La memoria de la conversación es el historial de este chat.",
+    "- Conexiones (⚙ Conexiones): GitHub, Vercel y Supabase propio. Los tokens se guardan en la cuenta del usuario: nunca los pidas en el chat ni los muestres.",
+    "- Ahorro de tokens: el inicio del prompt se cachea entre pasos y turnos. No releas archivos que ya leíste en esta conversación.",
+    "=== FIN QUIÉN ERES ===",
+  ].join("\n");
+
+  const CONNECT_GUIDE = [
+    "=== GUÍA: CONECTAR Y PUBLICAR DE PRINCIPIO A FIN ===",
+    "El usuario quiere conectar servicios o publicar. Suele no ser técnico: llévalo paso a paso hasta que su proyecto quede en vivo con una URL. No lo dejes a medias.",
+    "1. Llama check_connections y muestra en una lista corta qué está listo (✅) y qué falta (⬜).",
+    "2. Si falta una cuenta, da UNA instrucción a la vez, con los clics exactos, y espera a que diga «listo»:",
+    "   - GitHub: crear cuenta en github.com si no tiene → foto de perfil → Settings → Developer settings → Personal access tokens → Tokens (classic) → Generate new token → marcar «repo» → Generate → copiar. En EditCoreAI: ⚙ Conexiones → GitHub → pegar → Guardar.",
+    "   - Vercel: crear cuenta en vercel.com (puede entrar con su cuenta de GitHub) → vercel.com/account/tokens → Create → copiar. En EditCoreAI: ⚙ Conexiones → Vercel → pegar → Guardar.",
+    "   - Supabase (solo si la app usa base de datos): ⚙ Conexiones → Supabase propio → URL y clave de su servidor. Nunca Supabase Cloud.",
+    "   Cuando diga «listo», vuelve a llamar check_connections para confirmarlo: no lo supongas.",
+    "3. Antes de publicar, revisa que index.html y sus archivos estén completos y sin errores evidentes.",
+    "4. Publica con publish_project (EditCoreAI pide la confirmación al usuario).",
+    "5. Cierra con la URL en vivo, el repositorio de GitHub y cómo publicar cambios después («dime “publica” y lo hago»).",
+    "Si un paso falla, explica la causa en palabras simples, corrige lo que se pueda y reintenta. Pide al usuario solo lo que únicamente él puede hacer: crear una cuenta o pegar un token.",
+    "=== FIN GUÍA ===",
+  ].join("\n");
+  const CONNECT_INTENT = /\b(github|vercel|supabase|netlify|publica\w*|publicar|deploy\w*|despleg\w*|desplieg\w*|conect\w*|hosting|dominio|en l[ií]nea|online|sube(lo)?)\b/i;
+
+  // El proveedor cachea por prefijo exacto: el system es fijo por proyecto y lo variable (guía, instrucciones
+  // extra) va dentro del mensaje del turno.
+  function systemMessage(projectName) {
     const policy = String(window.EditCoreEliteCommunication?.ELITE_COMMUNICATION_POLICY || window.ELITE_COMMUNICATION_POLICY || "");
-    return [
+    const stable = [
       policy,
       "",
       "CONTEXTO: EDITCOREAI WEB",
       `- Trabajas sobre el proyecto «${projectName}», guardado en la cuenta del usuario dentro de EditCoreAI web.`,
-      "- Herramientas: list_files, read_file, search_files, write_file, replace_in_file, delete_file. Úsalas: nunca pegues archivos completos en el chat.",
+      "- Usa las herramientas: nunca pegues archivos completos en el chat.",
       "- No hay terminal, npm ni servidor: construye apps web estáticas (HTML, CSS y JavaScript del navegador) que funcionen abriendo index.html. La vista previa del centro se actualiza sola al escribir archivos.",
       "- Antes de editar un archivo existente, léelo. Para cambios pequeños usa replace_in_file.",
       "- Al terminar, resume en 2 a 5 líneas qué hiciste y qué archivos tocaste.",
       "- Nunca nombres a los proveedores o intermediarios de IA de EditCoreAI.",
-      input.systemPrompt ? `\nINSTRUCCIONES ADICIONALES:\n${input.systemPrompt}` : "",
+      "",
+      SELF_KNOWLEDGE,
     ].join("\n");
+    return { role: "system", content: stable };
+  }
+
+  function turnContext(input) {
+    return [
+      CONNECT_INTENT.test(String(input.prompt || "")) ? CONNECT_GUIDE : "",
+      input.systemPrompt ? `INSTRUCCIONES ADICIONALES:\n${input.systemPrompt}` : "",
+    ].filter(Boolean).join("\n\n");
   }
 
   function imagesToParts(images = []) {
@@ -235,9 +343,10 @@
       return url ? { type: "image_url", image_url: { url } } : null;
     }).filter(Boolean);
   }
-  function userMessage(prompt, images, documents) {
+  function userMessage(prompt, images, documents, context = "") {
     const docs = (Array.isArray(documents) ? documents : []).map((d) => `\n\n[Archivo adjunto: ${d?.name || "documento"}]\n${String(d?.text || d?.content || "").slice(0, 40000)}`).join("");
-    const text = `${String(prompt || "")}${docs}`;
+    const head = context ? `=== CONTEXTO DE EDITCOREAI PARA ESTE TURNO (lo agrega el IDE, no el usuario) ===\n${context}\n=== FIN CONTEXTO ===\n\n` : "";
+    const text = `${head}${String(prompt || "")}${docs}`;
     const parts = imagesToParts(images);
     return parts.length ? { role: "user", content: [{ type: "text", text }, ...parts] } : { role: "user", content: text };
   }
@@ -264,7 +373,7 @@
     const ctx = { root, runId, allowWrite, permissionMode: input.permissionMode || "step", planAuthorized: input.planAuthorized === true || input.permissionMode === "full" };
     const projectName = root.split("/").pop();
     const model = await resolveModel(input.model);
-    const messages = [{ role: "system", content: systemPrompt(input, projectName) }, ...historyMessages(input.history), userMessage(input.prompt, input.images, input.documents)];
+    const messages = [systemMessage(projectName), ...historyMessages(input.history), userMessage(input.prompt, input.images, input.documents, turnContext(input))];
     const usage = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0, provider_calls: 0, model };
     const changed = new Set();
     const steps = [];
@@ -285,8 +394,8 @@
         addUsage(usage, res.usage);
         messages.push({ role: "assistant", content: res.content || null, ...(res.toolCalls.length ? { tool_calls: res.toolCalls.map((c) => ({ id: c.id, type: "function", function: { name: c.name, arguments: c.arguments || "{}" } })) } : {}) });
         if (!res.toolCalls.length) {
-          finalText = res.content;
           completed = res.finish !== "cut";
+          finalText = completed ? res.content : `${res.content}\n\n⚠️ La conexión se cortó y la respuesta quedó incompleta. Escribe «continúa» para seguir.`;
           break;
         }
         for (const call of res.toolCalls) {

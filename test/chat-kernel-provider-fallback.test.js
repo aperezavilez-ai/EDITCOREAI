@@ -46,7 +46,8 @@ test("buildMessageList agrega el contexto y omite turnos fallidos del historial"
   });
   assert.match(messages[0].content, /^SYS\n\nContexto del sistema:/);
   assert.ok(!messages.some((m) => /Algo falló durante la ejecución/.test(m.content)));
-  assert.equal(messages[messages.length - 1].content, "que hora es?");
+  assert.match(messages[messages.length - 1].content, /^\[Hora actual: .+ · ISO 2026-09-30T21:18:00\.000Z\]\nque hora es\?$/);
+  assert.doesNotMatch(messages[0].content, /21:18|ISO/, "el system no cambia de minuto a minuto (caché del prompt)");
 });
 
 test("callChat usa el perfil de respaldo cuando la clave principal da 401", async () => {

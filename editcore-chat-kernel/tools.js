@@ -185,8 +185,13 @@ function readFile(root, rel, maxChars = TOOL_RESULT_CAP, opts = {}) {
 }
 
 function writeFile(root, rel, content) {
-  const snap = snapshotBeforeWrite(root, rel, "write_file");
   const file = safe(root, rel);
+  try {
+    if (fs.existsSync(file) && fs.readFileSync(file, "utf8") === String(content ?? "")) {
+      return { ok: true, unchanged: true, path: rel, note: `${rel} ya tenía exactamente ese contenido: no hubo cambios.` };
+    }
+  } catch { /* si no se puede leer, se escribe normal */ }
+  const snap = snapshotBeforeWrite(root, rel, "write_file");
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(file, String(content ?? ""), "utf8");
   invalidateReadCache(file);
@@ -295,6 +300,9 @@ function replaceInFile(root, rel, oldText, newText) {
     };
   }
   const next = current.replace(located.match, () => String(newText ?? ""));
+  if (next === current) {
+    return { ok: false, soft: true, unchanged: true, path: rel, error: `El reemplazo no cambia nada en ${rel} (oldText y newText son iguales). No se escribió nada.`, hint: "Escribe en newText el código corregido, distinto del actual." };
+  }
 
   let syntaxCheck = null;
   let syntaxBefore = null;
@@ -1086,8 +1094,11 @@ async function execute(name, args, root, allowWrite, helpers = {}) {
       try { return await extraTools.screenshotPage(a.url, { viewport: a.viewport, fullPage: a.fullPage, helpers }); } catch (e) { return { ok: false, error: String(e?.message || e).slice(0, 300) }; }
     case "docker_ps":
       return extraTools.dockerPs({ all: a.all === true });
+    case "check_connections":
+      try { return await extraTools.checkConnections(root, helpers); } catch (e) { return { ok: false, error: String(e?.message || e).slice(0, 300) }; }
     case "publish_project":
     case "deploy_one_click":
+    case "connect_project":
       if (!allowWrite) return { ok: false, error: `${name} requiere modo ejecución` };
       try { return await extraTools.runExternalAction(name, a, root, helpers); } catch (e) { return { ok: false, error: String(e?.message || e).slice(0, 400) }; }
     case "list_brain":

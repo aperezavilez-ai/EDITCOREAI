@@ -34,17 +34,39 @@ function runtimeContextLine(now = new Date()) {
     + "Responde fecha u hora con este dato; no pidas al usuario ejecutar comandos para obtenerlas.";
 }
 
+// El system lleva solo el día: si cambiara cada minuto, el proveedor no podría reusar la caché del prompt entre turnos.
+function stableContextLine(now = new Date()) {
+  const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || "local";
+  const day = now.toLocaleDateString("es", { dateStyle: "full", timeZone });
+  const osName = process.platform === "win32" ? "Windows (PowerShell)" : process.platform;
+  return `Contexto del sistema: hoy es ${day} (zona ${timeZone}). Sistema operativo: ${osName}. `
+    + "La hora exacta va al inicio del último mensaje del usuario; responde fecha u hora con esos datos y no pidas al usuario ejecutar comandos para obtenerlas.";
+}
+
+function currentTimeLine(now = new Date()) {
+  const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || "local";
+  const time = now.toLocaleTimeString("es", { timeStyle: "short", timeZone });
+  return `[Hora actual: ${time} · ISO ${now.toISOString()}]`;
+}
+
 const FAILED_TURN_RE = /^Algo fall[oó] durante la ejecuci[oó]n:/;
 
-function buildMessageList({ system, userText, projectRoot, threadId, historyInput, query, now, images }) {
-  const messages = [{ role: "system", content: `${system}\n\n${runtimeContextLine(now)}` }];
+// El proveedor cachea por prefijo exacto: system (fijo) + historial se releen a una fracción del precio.
+// Lo que cambia en cada turno (turnContext, hora) va en el último mensaje, que nunca es parte del prefijo.
+function buildMessageList({ system, systemPrefix = "", turnContext = "", userText, projectRoot, threadId, historyInput, query, now, images }) {
+  const systemText = `${system}\n\n${stableContextLine(now)}`;
+  const messages = [{ role: "system", content: systemPrefix ? `${systemPrefix}\n\n${systemText}` : systemText }];
   const short = threadMemory.shortHistoryMessages(historyInput, projectRoot, threadId, query);
   for (const m of short) {
     if (m.role === "assistant" && FAILED_TURN_RE.test(String(m.content || ""))) continue;
     messages.push({ role: m.role, content: m.content });
   }
   const hasImages = Array.isArray(images) && images.length > 0;
-  messages.push({ role: "user", content: hasImages ? buildOpenAiImageContent(userText, images) : userText });
+  const context = String(turnContext || "").trim();
+  const timedText = context
+    ? `${currentTimeLine(now)}\n=== CONTEXTO DE EDITCOREAI PARA ESTE TURNO (lo agrega el IDE, no el usuario) ===\n${context}\n=== FIN CONTEXTO ===\n\n${userText}`
+    : `${currentTimeLine(now)}\n${userText}`;
+  messages.push({ role: "user", content: hasImages ? buildOpenAiImageContent(timedText, images) : timedText });
   return messages;
 }
 

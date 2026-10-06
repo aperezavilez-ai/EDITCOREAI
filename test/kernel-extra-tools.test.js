@@ -101,9 +101,9 @@ test("el chat recibe el Cerebro del proyecto como contexto y tiene las tools nue
   const orch = new ChatOrchestrator();
   const out = await orch.handle({ message: "hola, en que puerto corre postgres de facturacion?", projectRoot, apiBaseUrl: "http://127.0.0.1:9/v1", apiKey: "k", model: "m" });
   assert.equal(out.kind, "CHAT");
-  const system = calls[0].messages[0].content;
-  assert.match(system, /CEREBRO DEL PROYECTO/);
-  assert.match(system, /54322/);
+  const turn = calls[0].messages[calls[0].messages.length - 1].content;
+  assert.match(turn, /CEREBRO DEL PROYECTO/);
+  assert.match(turn, /54322/);
   const offered = calls[0].tools.map((t) => t.function?.name);
   for (const name of ["search_brain", "read_pdf", "screenshot_page", "docker_ps"]) assert.ok(offered.includes(name), name);
   assert.ok(!offered.includes("deploy_one_click"));

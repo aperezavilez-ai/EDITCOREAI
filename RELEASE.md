@@ -1,3 +1,37 @@
+# RELEASE v4.3.7
+
+## El agente hace lo que dice y termina lo que le pides
+
+- «corrige», «corregir», «arréglalos», «resuélvelos», «termina de corregir» ahora se entienden como orden de corregir. Antes «debes corregir los errores de tu reporte» repetía el análisis forense y «continúa arreglalos todos» iba al modo charla (sin herramientas), donde el modelo solo narraba cambios que nunca aplicó.
+- En modo paso a paso, tu orden explícita de corregir ya le da al agente las herramientas para editar archivos (antes solo podía describir los cambios). En modo solo lectura sigue sin poder escribir.
+- «continúa», «sí avanza», «sigue» retoman tu último pedido real, saltándose preguntas como «¿por qué te detienes?».
+- Si pediste corregir y el agente cierra sin haber cambiado ningún archivo, EditCoreAI le exige aplicar los cambios (o explicar con evidencia por qué no hacía falta).
+- Ya no se reemplazan respuestas válidas por «Decime qué hacer con esta evidencia» o «No completé la instrucción».
+- Si se acaban los pasos o el tiempo del turno, lo dice claro («la tarea no está terminada, escribe continúa») en vez de «Cambios aplicados».
+- Si en una charla el modelo afirma haber cambiado algo sin hacerlo, aparece un aviso. Las ediciones que no cambian nada ya no se cuentan como cambios (+0 −0).
+- El agente tiene prohibido inventar límites («se me acabaron los tokens»).
+
+## El chat ya no se queda sin responder
+
+- El servidor puede cortar una respuesta muy larga (el límite de 400 segundos cuenta desde que nace el proceso del servidor, que se reutiliza entre peticiones). Ahora la app lo detecta: si no se había mostrado nada reintenta sola, y si ya había texto lo conserva y avisa que puedes escribir «continúa».
+- Escritorio: el plazo con el modelo es por inactividad (5 minutos sin recibir nada), no un total de 5 minutos; una respuesta larga que sigue llegando ya no se corta. Si el modelo corta sin mandar nada, EditCoreAI reintenta solo; si ya mostró texto, no lo repite ni lo cobra dos veces.
+- Web: si la conexión se cuelga 3 minutos sin datos, se corta y se reintenta sola; si ya había texto, se conserva y avisa que quedó incompleta.
+
+## Menos gasto de saldo (caché del prompt)
+
+- El inicio de cada consulta (instrucciones fijas y herramientas) ahora es idéntico entre turnos, así que el proveedor lo relee desde caché a una fracción del precio. En pruebas reales con turnos distintos: 96 % del prompt leído de caché (antes 6 %). Lo que cambia en cada turno (roadmap, mapa, Cerebro, hora) va dentro del mensaje del turno.
+- La web también marca el prompt para caché.
+
+## El agente se conoce a sí mismo y guía hasta publicar
+
+- El agente (escritorio y web) siempre sabe qué es EditCoreAI, sus modos, herramientas, skills, memoria persistente y conexiones.
+- Al pedir «conecta con GitHub», «sube a Vercel», «publica» o «usa Supabase», el agente revisa qué está listo, guía paso a paso con los clics exactos para crear cada token, confirma cada paso y termina con el proyecto publicado y su URL. Nuevas herramientas: `check_connections` y `connect_project` (escritorio) y `check_connections` y `publish_project` (web); todo lo externo pide confirmación.
+- La red de agentes (explorador, analista, implementador, verificador) ahora sí influye: el rol elegido orienta al modelo, entiende pedidos en español, aprende qué paso sigue a cuál y se guarda en el perfil del usuario (antes podía fallar al guardar en la carpeta de instalación).
+
+### Archivos
+
+- `EDITCOREAI.exe` (4.3.7.0) y `release/EDITCOREAI-Setup.exe` (4.3.7), construidos desde un árbol limpio en el commit publicado.
+
 # RELEASE v4.3.6
 
 ## Saldo: regalo de bienvenida y recarga automática con Mercado Pago

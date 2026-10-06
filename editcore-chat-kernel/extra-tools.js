@@ -9,7 +9,7 @@ const { searchBrainDocs } = require("./brain-ingest");
 
 const execFileAsync = promisify(execFile);
 
-const EXTERNAL_ACTION_TOOLS = new Set(["publish_project", "deploy_one_click"]);
+const EXTERNAL_ACTION_TOOLS = new Set(["publish_project", "deploy_one_click", "connect_project"]);
 const DOCUMENT_TEXT_CAP = 12_000;
 const SCREENSHOT_VIEWPORTS = { desktop: { width: 1440, height: 900 }, mobile: { width: 390, height: 844 } };
 
@@ -111,9 +111,40 @@ async function searchBrain(root, query, helpers = {}, limit = 6) {
   return { ok: true, query: q, documents, memory, code, found: documents.length + memory.length + code.length };
 }
 
+// Estado de Conexiones y del proyecto, sin tokens, con el siguiente paso concreto para guiar al usuario.
+async function checkConnections(root, helpers = {}) {
+  const connections = typeof helpers.readConnections === "function" ? (helpers.readConnections() || {}) : {};
+  const { assessProjectConnections } = require("../runtime/project-connect");
+  const a = await assessProjectConnections(root, connections);
+  const services = {
+    github: Boolean(a.connections?.github?.configured),
+    vercel: Boolean(a.connections?.vercel?.configured),
+    supabase: Boolean(a.connections?.selfsupabase?.configured),
+    servidor_ssh: Boolean(a.connections?.server?.configured),
+  };
+  const pending = [];
+  if (!services.github) pending.push("Conectar GitHub: ⚙ Conexiones → GitHub → pegar un token de github.com/settings/tokens (permiso «repo»).");
+  if (!services.vercel) pending.push("Conectar Vercel: ⚙ Conexiones → Vercel → pegar un token de vercel.com/account/tokens.");
+  if (a.hasSupabase && !services.supabase) pending.push("Conectar Supabase: ⚙ Conexiones → Supabase propio (URL y clave del servidor).");
+  if (services.github && (!a.gitRoot || !a.remoteUrl)) pending.push("Crear/enlazar el repositorio en GitHub: llamar connect_project.");
+  if (services.github && a.remoteUrl && services.vercel) pending.push("Publicar: llamar publish_project.");
+  return {
+    ok: true,
+    project: path.basename(a.projectRoot),
+    services,
+    git: { repo: Boolean(a.gitRoot), branch: a.branch || "", remote: a.remoteUrl || "" },
+    vercelProject: a.linked?.vercel?.projectName || "",
+    supabaseInProject: a.hasSupabase,
+    readyToPublish: a.readyToPublish,
+    nextSteps: pending,
+  };
+}
+
 function externalActionPreview(name, args, root) {
   const lines = [];
-  if (name === "deploy_one_click") {
+  if (name === "connect_project") {
+    lines.push(`Conectar \`${path.basename(root)}\`: git init si falta, crear o enlazar el repositorio privado en GitHub${args.createVercel === false ? "" : ", crear el proyecto en Vercel"}${args.linkSupabase === false ? "" : " y escribir las variables de Supabase en .env.local"}.`);
+  } else if (name === "deploy_one_click") {
     const { detectProvider } = require("../runtime/deploy-one-click");
     lines.push(`Deploy de \`${path.basename(root)}\` a **${detectProvider(root, args.provider)}**${args.production === false ? " (preview)" : " (producción)"}.`);
   } else {
@@ -139,6 +170,17 @@ async function runExternalAction(name, args, root, helpers = {}) {
     const { deployOneClick } = require("../runtime/deploy-one-click");
     return deployOneClick(root, args, { connections });
   }
+  if (name === "connect_project") {
+    const { connectProject } = require("../runtime/project-connect");
+    const out = await connectProject(root, connections, {
+      createGithub: args.createGithub !== false,
+      createVercel: args.createVercel !== false,
+      linkSupabase: args.linkSupabase !== false,
+      repoName: String(args.repoName || ""),
+    });
+    const failed = (out.steps || []).find((s) => s.ok === false && !s.skipped);
+    return { ...out, failedStep: failed?.step || "", url: out.assessment?.remoteUrl || "" };
+  }
   const { publishProject } = require("../runtime/publish-pipeline");
   return publishProject(root, {
     mode: String(args.mode || "project"),
@@ -156,6 +198,8 @@ const EXTRA_DEFINITIONS = [
   { type: "function", function: { name: "docker_ps", description: "Lista los contenedores Docker (nombre, imagen, estado, puertos). all=true incluye los detenidos.", parameters: { type: "object", properties: { all: { type: "boolean" } } } } },
   { type: "function", function: { name: "search_brain", description: "Busca en el Cerebro del proyecto: documentos ingeridos (.editcore/rag), memoria y código indexado.", parameters: { type: "object", properties: { query: { type: "string" } }, required: ["query"] } } },
   { type: "function", function: { name: "deploy_one_click", description: "Deploy a Vercel o Netlify con los tokens de Conexiones. Siempre pide confirmación al usuario antes de ejecutarse.", parameters: { type: "object", properties: { provider: { type: "string", enum: ["vercel", "netlify"] }, production: { type: "boolean" } } } } },
+  { type: "function", function: { name: "check_connections", description: "Estado real de las conexiones (GitHub, Vercel, Supabase, servidor) y del repositorio del proyecto, con los siguientes pasos para dejarlo publicado. No muestra tokens. Llámalo antes de guiar al usuario a conectar o publicar.", parameters: { type: "object", properties: {} } } },
+  { type: "function", function: { name: "connect_project", description: "Conecta el proyecto con las cuentas de Conexiones: git init si falta, crea o enlaza el repositorio privado en GitHub, crea el proyecto en Vercel y escribe las variables de Supabase en .env.local. Siempre pide confirmación al usuario antes de ejecutarse.", parameters: { type: "object", properties: { repoName: { type: "string" }, createGithub: { type: "boolean" }, createVercel: { type: "boolean" }, linkSupabase: { type: "boolean" } } } } },
   { type: "function", function: { name: "publish_project", description: "Publica el proyecto: commit sin secretos, push de la rama actual, migraciones Supabase si aplican y deploy. Siempre pide confirmación al usuario antes de ejecutarse.", parameters: { type: "object", properties: { commitMessage: { type: "string" }, deploy: { type: "boolean" }, supabasePush: { type: "boolean" }, skipPush: { type: "boolean" } } } } },
 ];
 
@@ -166,6 +210,7 @@ module.exports = {
   screenshotPage,
   dockerPs,
   searchBrain,
+  checkConnections,
   runExternalAction,
   externalActionPreview,
 };

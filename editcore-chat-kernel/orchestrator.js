@@ -10,6 +10,7 @@ const {
   TOOL_ALLOWLIST,
   SUB_AGENTS,
   APPROVAL_RE,
+  isContinuePhrase,
 } = require("./classify");
 const { searchBrainDocs } = require("./brain-ingest");
 const { ChatSession } = require("./session");
@@ -51,6 +52,7 @@ const taskQueue = require("./task-queue");
 const threadCore = require("./thread-core");
 const { pickModel } = require("./model-router");
 const agentBus = require("./agent-bus");
+const { SELF_KNOWLEDGE_PROMPT, CONNECT_GUIDE_PROMPT, wantsConnectGuide } = require("./self-knowledge");
 
 let projectMapApi = null;
 try {
@@ -72,6 +74,7 @@ const DEFAULT_TOTAL_TIMEOUT_MS = 900_000; // 15 min (antes 10 min) — análisis
 const HEARTBEAT_INTERVAL_MS = 5_000;
 const ROADMAP_MIN_LENGTH = 500;
 const MAX_PROMISE_RETRIES = 3;
+const MAX_NO_WRITE_NUDGES = 2;
 const ANALYSIS_MAX_STEPS = 8;      // antes 2 — ahora el LLM tiene margen real
 const ANALYSIS_TIMEOUT_MS = 180_000; // 3 min por turno en análisis
 
@@ -121,7 +124,8 @@ const CAPABILITIES_PROMPT = [
   "- **clone_repo(url)**: clona un repositorio Git dentro del proyecto.",
   "- **ingest_to_brain(path|title+content) / list_brain / search_brain(query)**: gestiona y consulta el Cerebro RAG (con path ingesta una carpeta de documentacion).",
   "- **read_pdf(path)**: texto de PDF, Word o Excel. **screenshot_page(url)**: captura y texto de una web. **docker_ps**: contenedores Docker.",
-  "- **publish_project / deploy_one_click**: publicar y desplegar. EditCore pide confirmacion al usuario antes de ejecutarlos; llamalos una sola vez y espera.",
+  "- **check_connections**: estado de GitHub, Vercel, Supabase y del repositorio, con los pasos que faltan.",
+  "- **connect_project / publish_project / deploy_one_click**: conectar, publicar y desplegar. EditCore pide confirmacion al usuario antes de ejecutarlos; llamalos una sola vez y espera.",
   "Cuando necesites informacion externa (version de una libreria, API actual, error desconocido), usa `web_search` ANTES de responder con conocimiento desactualizado.",
   "=== FIN CAPACIDADES ===",
 ].join("\n");
@@ -129,7 +133,7 @@ const CAPABILITIES_PROMPT = [
 const CHAT_READ_TOOLS = new Set([
   "web_search", "web_scrape", "list_files", "read_file", "search_files",
   "list_skills", "list_brain", "git_status", "git_log", "git_diff",
-  "search_brain", "read_pdf", "screenshot_page", "docker_ps",
+  "search_brain", "read_pdf", "screenshot_page", "docker_ps", "check_connections",
 ]);
 const CHAT_MAX_STEPS = 6;
 const PENDING_EXTERNAL_TTL_MS = 10 * 60_000;
@@ -245,18 +249,21 @@ function formatAgentVisibleText(text = "") {
 }
 
 function userWantsDiskMutation(message = "") {
-  return /\b(?:crea(?:r|ción)?|genera(?:r)?|implementa(?:r)?|escrib[ie]|haz|arma|scaffold|nuevo\s+proyecto|app\b|muev\w*|copiar?|guarda(?:r)?|fix|corrige|añad[ie]|agrega)\b/i.test(String(message || ""));
+  return /\b(?:crea(?:r|ción)?|genera(?:r)?|implementa(?:r)?|escrib[ie]|haz|arma|scaffold|nuevo\s+proyecto|app\b|muev\w*|copiar?|guarda(?:r)?|fix|corrige|añad[ie]|agrega)\b/i.test(String(message || ""))
+    || FIX_INTENT_RE.test(String(message || ""));
 }
+
+const FIX_INTENT_RE = /\b(?:corr[eií][gj](?:e|ir)(?:me|lo|la|los|las)?|arregl(?:a|á|ar)(?:me|lo|la|los|las)?|repar(?:a|á|ar)(?:lo|la|los|las)?|solucion(?:a|á|ar)(?:lo|la|los|las)?|resu[eé]lve(?:lo|la|los|las)?|resolver(?:lo|la|los|las)?|fix(?:ea)?|implementa(?:r)?|agrega(?:r)?|añad[ei]r?)\b/i;
 
 function textClaimsDiskMutation(text = "") {
   const raw = String(text || "");
   if (/<!DOCTYPE\s+html>/i.test(raw)) return true;
-  return /\b(he\s+(?:creado|escrito|generado|movido|implementado|guardado)|cre[eé]\s+(?:la\s+)?(?:carpeta|archivo|proyecto)|escrib[ií]|mov[ií]|gener[eé]|implement[eé]|guard[eé]|finalic[eé]\s+(?:la\s+)?(?:creaci[oó]n|implementaci[oó]n))\b/i.test(raw);
+  return /(?:^|[^\wáéíóúñ])(he\s+(?:creado|escrito|generado|movido|implementado|guardado|corregido|arreglado|aplicado|modificado|actualizado|reemplazado)|cre[eé]\s+(?:la\s+)?(?:carpeta|archivo|proyecto)|escrib[ií]|mov[ií]|gener[eé]|implement[eé]|guard[eé]|correg[ií]|arregl[eé]|apliqu[eé]|modifiqu[eé]|actualic[eé]|reemplac[eé]|finalic[eé]\s+(?:la\s+)?(?:creaci[oó]n|implementaci[oó]n))(?![\wáéíóúñ])/i.test(raw);
 }
 
 function successfulWritePaths(steps = []) {
   return (Array.isArray(steps) ? steps : [])
-    .filter((s) => (s.name === "write_file" || s.name === "replace_in_file" || s.name === "scaffold_project") && s.ok !== false && s.result?.ok !== false)
+    .filter((s) => (s.name === "write_file" || s.name === "replace_in_file" || s.name === "scaffold_project") && s.ok !== false && s.result?.ok !== false && !s.result?.unchanged)
     .map((s) => s.input?.path || s.result?.path || s.result?.projectRoot)
     .filter(Boolean);
 }
@@ -273,7 +280,11 @@ function looksLikePromiseWithoutAction(text = "") {
 
 function repairDanglingOutput(text, steps = [], userMessage = "", decision = {}) {
   const value = String(text || "").trim();
-  const isTrulyBroken = !value || /[a-záéíóúñ]{1,3}$/i.test(value);
+  // Solo se considera cortada si está vacía o termina colgando ("…y revisé el", "Voy a"); una respuesta que
+  // termina en palabra sin punto ("corregí los errores", "- src/app.ts") es válida y se muestra tal cual.
+  const isTrulyBroken = !value
+    || /\s(?:y|o|de|del|la|el|los|las|en|con|para|por|que|a|al|un|una|se|lo|voy|ahora)$/i.test(value)
+    || (value.length < 25 && /[a-záéíóúñ]$/i.test(value));
   if (!isTrulyBroken) return formatAgentVisibleText(value);
 
   const written = successfulWritePaths(steps);
@@ -306,6 +317,12 @@ function successfulDiskReads(steps = []) {
 
 function groundUngroundedClaims(text, steps = [], userMessage = "", decision = {}, evidenceReads = 0) {
   if (decision?.kind === "LIST") return formatAgentVisibleText(String(text || "").trim());
+  if (decision?.kind === "CHAT" && textClaimsDiskMutation(text) && successfulWritePaths(steps).length === 0) {
+    return formatAgentVisibleText(
+      "> ⚠️ **En este turno no se modificó ningún archivo.** Lo que sigue es texto del modelo, no cambios aplicados. Pídeme «corrige …» para que lo aplique de verdad.\n\n" +
+      String(repairDanglingOutput(text, steps, userMessage, decision) || "")
+    );
+  }
   if (decision?.kind === "ANALYZE" && successfulDiskReads(steps) + evidenceReads === 0 && String(text || "").trim().length > 280) {
     return formatAgentVisibleText(
       "> ⚠️ **Este análisis no se basa en lecturas del disco:** en este turno no se ejecutó ninguna herramienta de lectura con éxito.\n\n" +
@@ -509,7 +526,7 @@ function buildBrainContextBlock(projectRoot, query) {
 }
 
 function formatExternalActionResult(name, result) {
-  const label = name === "deploy_one_click" ? "Deploy" : "Publicación";
+  const label = name === "deploy_one_click" ? "Deploy" : name === "connect_project" ? "Conexión del proyecto" : "Publicación";
   const url = result?.url || result?.deployUrl || result?.deploy?.url || "";
   const detail = String(result?.message || result?.error || "").slice(0, 600);
   if (result?.ok) {
@@ -585,13 +602,13 @@ class ChatOrchestrator {
     this.running = true;
     const step = { name, input: args, result: null, ok: false };
     try {
-      onProgress?.({ phase: "start", text: name === "deploy_one_click" ? "Desplegando…" : "Publicando…" });
+      onProgress?.({ phase: "start", text: name === "deploy_one_click" ? "Desplegando…" : name === "connect_project" ? "Conectando el proyecto…" : "Publicando…" });
       onProgress?.({ phase: "tool", stage: "running", name, input: args });
       const result = await tools.execute(name, args, projectRoot, true, { ...(helpers || {}), externalActionApproved: true });
       step.result = result;
       step.ok = result?.ok !== false;
       onProgress?.({ phase: "tool", stage: "done", name, input: args, result, ok: step.ok });
-      if (step.ok) {
+      if (step.ok && name !== "connect_project") {
         try {
           const sync = require("../runtime/roadmap-sync").createRoadmapSync();
           const url = result?.url || result?.deployUrl || "";
@@ -619,7 +636,8 @@ class ChatOrchestrator {
     const hasImages = taskImages.length > 0;
     const text = rawText.trim() || (hasImages ? "Analiza la imagen adjunta." : "");
     const textLower = text.toLowerCase();
-    const isApprovalText = APPROVAL_WORDS.has(textLower);
+    const isApprovalText = APPROVAL_WORDS.has(textLower) || isContinuePhrase(text);
+    const startsWithContinue = /^\s*(?:contin[uú]a|sigue|s[ií]guele|avanza|termina|procede|dale)\b/i.test(text);
 
     if (this.pendingExternal) {
       const pending = this.pendingExternal;
@@ -632,19 +650,25 @@ class ChatOrchestrator {
     const visionAsk = hasImages && /\b(?:imagen|foto|captura|screenshot|adjunt|overlay|error\s+visible|analiza\s+(?:esto|la|el))\b/i.test(text);
 
     let effectiveText = text;
-    if (isApprovalText) {
+    let resumedTask = "";
+    if (isApprovalText || startsWithContinue) {
       const hist = Array.isArray(history) ? history : Array.isArray(inputMessages) ? inputMessages : [];
-      const prevUserMsgs = hist.filter((m) => m && (m.role === "user" || m.sender === "user" || m.from === "user"));
-      for (let i = prevUserMsgs.length - 1; i >= 0; i--) {
-        const item = prevUserMsgs[i];
-        const prevText = typeof item.content === "string" ? item.content : item.text || (Array.isArray(item.content) ? item.content.map((c) => c.text || "").join(" ") : "");
-        const cleanPrev = String(prevText || "").trim();
-        if (cleanPrev && !APPROVAL_WORDS.has(cleanPrev.toLowerCase()) && cleanPrev.length > 5) {
-          effectiveText = `INSTRUCCIÓN AUTORIZADA DEL USUARIO: "${cleanPrev}". Procede con las modificaciones de código y verifica.`;
-          break;
-        }
+      const prevUserTexts = hist
+        .filter((m) => m && (m.role === "user" || m.sender === "user" || m.from === "user"))
+        .map((item) => String(typeof item.content === "string" ? item.content : item.text || (Array.isArray(item.content) ? item.content.map((c) => c.text || "").join(" ") : "")).trim())
+        .filter((t) => t.length > 5 && t !== text && !APPROVAL_WORDS.has(t.toLowerCase()) && !isContinuePhrase(t))
+        .slice(-8)
+        .reverse();
+      // Las preguntas sueltas ("¿por qué te detienes?") no son la tarea: se retoma el último pedido accionable.
+      resumedTask = prevUserTexts.find((t) => classify(t).kind !== "CHAT") || (isApprovalText ? prevUserTexts[0] || "" : "");
+      if (resumedTask) {
+        effectiveText = `INSTRUCCIÓN AUTORIZADA DEL USUARIO: "${resumedTask}". Procede con las modificaciones de código y verifica.`;
+        if (!isApprovalText) effectiveText += ` Ahora dice: "${text}".`;
       }
     }
+    const taskMessage = resumedTask
+      ? `${effectiveText}\nMensaje actual del usuario: "${text}". Retoma esa tarea donde quedó (revisa el historial y los errores pendientes) y termínala; no repitas lo que ya está hecho.`
+      : text;
 
     const fullAccess = isFullAccess({ allowWrite: inputAllowWrite, permissionMode, permissionFull, fullAccess: inputFullAccess, planAuthorizedExecution: inputPlanAuth, mode: permissionMode })
       || String(permissionMode || "").toLowerCase() === "full";
@@ -842,7 +866,7 @@ class ChatOrchestrator {
       this.pendingTask = null;
       const runner = runModelTaskFn || this.runModelTask.bind(this);
       return runner({
-        decision, message: text, projectRoot, apiBaseUrl, apiKey, model, memory, onProgress,
+        decision, message: taskMessage, projectRoot, apiBaseUrl, apiKey, model, memory, onProgress,
         allowWrite: true, planAuthorizedExecution: true, maxSteps: AUTHORIZED_MAX_STEPS,
         helpers, authorizedFromPending: true, fullAccess,
         permissionMode: fullAccess ? "full" : permissionMode, images: taskImages,
@@ -882,6 +906,10 @@ class ChatOrchestrator {
     const historyInput = Array.isArray(taskHistory) && taskHistory.length ? taskHistory : (Array.isArray(this._historyInput) ? this._historyInput : []);
 
     const accessFull = fullAccess === true || isFullAccess({ allowWrite, permissionMode, fullAccess, planAuthorizedExecution: authorizedFromPending });
+    // En modo paso a paso, la orden explícita del usuario ("corrige…") es la autorización: sin las tools de
+    // escritura el modelo solo podía describir los cambios. Solo lectura sigue sin poder escribir.
+    const readOnlyMode = /^(?:readonly|read-only|solo[\s-]?lectura)$/i.test(String(permissionMode || "").trim());
+    const orderedWrite = allowWrite === true && authorizedFromPending === true && !readOnlyMode;
 
     this.session.start(decision?.kind || "EXECUTE", projectRoot);
     this.abort = new AbortController();
@@ -892,6 +920,7 @@ class ChatOrchestrator {
     const globalTimeoutMs = Math.max(60_000, Number(opts.totalTimeoutMs) || DEFAULT_TOTAL_TIMEOUT_MS);
     const deadline = Date.now() + globalTimeoutMs;
     let promiseRetries = 0;
+    let noWriteNudges = 0;
 
     const toolHistory = new Map();
     const readCache = new Map();
@@ -917,20 +946,23 @@ class ChatOrchestrator {
     const visionHardRule = (Array.isArray(taskImages) && taskImages.length) ? "VISION: Hay imágenes adjuntas. Analizalas directamente en este turno." : "";
     const noConfirmBlock = (accessFull || authorizedFromPending) ? "ACCESO COMPLETO: Ejecutá herramientas de inmediato sin pedir confirmación previa." : "";
 
+    // El system lleva instrucciones (fijas por modo y proyecto, más las skills): el proveedor cachea por prefijo exacto,
+    // y los datos que cambian entre turnos (roadmap, mapa, Cerebro, conexiones, rol) van en turnContext, en el mensaje del turno.
     let system;
+    const turnContext = [];
     if (chatOnly || decision?.kind === "CHAT") {
       system = wrapSystemPrompt([
         "Sos EditCoreAI: asistente del IDE. Respondé siempre en español, claro y directo.",
         MARKDOWN_FORMAT_PROMPT, CHAT_TOOLS_PROMPT,
         `Proyecto abierto: ${projectRoot || "(ninguno)"}.`,
-        previewBlock, visionHardRule,
       ].filter(Boolean).join("\n\n"));
+      turnContext.push(previewBlock, visionHardRule);
     } else if (listOnlyMode) {
       system = wrapSystemPrompt([
         LIST_ONLY_PROMPT, MARKDOWN_FORMAT_PROMPT,
         `Proyecto: ${projectRoot || "(ninguno)"}.`,
-        previewBlock, visionHardRule,
       ].filter(Boolean).join("\n\n"));
+      turnContext.push(previewBlock, visionHardRule);
     } else if (analysisMode) {
       system = wrapSystemPrompt([
         "Sos EditCoreAI. Estas haciendo un analisis de proyecto.",
@@ -939,29 +971,32 @@ class ChatOrchestrator {
         CAPABILITIES_PROMPT,
         "Tenes acceso a `read_file`, `list_files`, `search_files`, `git_status`, `web_search` para profundizar el analisis.",
         "NO uses write_file / replace_in_file (modo solo lectura).",
-        opts.verifiedShown ? "La tabla de chequeos reales y la lista completa de hallazgos verificados YA se muestran al usuario arriba de tu respuesta. NO las copies: prioriza los errores verificados, explica la causa probable de cada uno citando archivo:línea y propone el arreglo. Tus observaciones propias van en la sección de hipótesis." : "",
         `Proyecto: ${projectRoot}.`,
-        previewBlock,
       ].filter(Boolean).join("\n\n"));
+      turnContext.push(
+        opts.verifiedShown ? "La tabla de chequeos reales y la lista completa de hallazgos verificados YA se muestran al usuario arriba de tu respuesta. NO las copies: prioriza los errores verificados, explica la causa probable de cada uno citando archivo:línea y propone el arreglo. Tus observaciones propias van en la sección de hipótesis." : "",
+        previewBlock,
+      );
     } else {
       system = wrapSystemPrompt([
-        roadmapFirstBlock,
         "Sos EditCoreAI. Hablá como un ingeniero senior al lado del usuario.",
         LEADERSHIP_PROMPT, LIVE_NARRATION_PROMPT, MARKDOWN_FORMAT_PROMPT, CAPABILITIES_PROMPT, noConfirmBlock,
         "REGLA CRÍTICA: no cierres un turno diciendo 'ahora leo X' o 'voy a revisar Y'. Si vas a leer algo, llamá la tool en el MISMO turno.",
+        "REGLA CRÍTICA: si el usuario pide corregir/arreglar, el trabajo son llamadas reales a replace_in_file/write_file, no texto. Nunca digas que aplicaste un cambio que no hiciste con una tool. Nunca inventes límites ('se me acabaron los tokens', 'se acabó mi turno'): mientras queden errores, sigue corrigiendo; si se agota el turno, EditCore se lo avisa al usuario. Cierra solo cuando terminaste o cuando necesites una decisión del usuario.",
         "Respondé siempre en español al usuario.",
-        previewBlock, visionHardRule, cognitiveBlock, connectionsBlock, pendingVerifiedBlock,
       ].filter(Boolean).join("\n\n"));
+      turnContext.push(roadmapFirstBlock, previewBlock, visionHardRule, cognitiveBlock, connectionsBlock, pendingVerifiedBlock);
     }
 
-    if (this._skillsPrompt) system = `${system}\n\n${this._skillsPrompt}`;
-    if (!listOnlyMode) {
-      const brainBlock = buildBrainContextBlock(projectRoot, this._currentUserText || message);
-      if (brainBlock) system = `${system}\n\n${brainBlock}`;
+    if (!listOnlyMode && !analysisMode && wantsConnectGuide(this._currentUserText || message)) turnContext.push(CONNECT_GUIDE_PROMPT);
+    if (!chatOnly && decision?.kind !== "CHAT" && !listOnlyMode && !analysisMode && this._ecRoutedAgent && typeof agentNetwork?.rolePrompt === "function") {
+      turnContext.push(agentNetwork.rolePrompt(this._ecRoutedAgent));
     }
+    if (this._skillsPrompt) system = `${system}\n\n${this._skillsPrompt}`;
+    if (!listOnlyMode) turnContext.push(buildBrainContextBlock(projectRoot, this._currentUserText || message));
 
     const userText = `Proyecto: ${projectRoot}\n${scopeUserMessage(message)}`;
-    const messages = threadCore.buildMessageList({ system, userText, projectRoot, threadId, historyInput, query: String(this._currentUserText || message || ""), images: taskImages });
+    const messages = threadCore.buildMessageList({ system, systemPrefix: listOnlyMode ? "" : SELF_KNOWLEDGE_PROMPT, turnContext: turnContext.filter(Boolean).join("\n\n"), userText, projectRoot, threadId, historyInput, query: String(this._currentUserText || message || ""), images: taskImages });
 
     const steps = [];
     const runMutations = [];
@@ -995,7 +1030,7 @@ class ChatOrchestrator {
       for (let i = 0; i < stepsLimit; i++) {
         if (Date.now() > deadline) {
           this.session.kill();
-          const partial = formatAgentVisibleText("## ⏱️ Tiempo agotado\n\nSe agotó el tiempo límite. Avance parcial registrado.");
+          const partial = formatAgentVisibleText("## ⏱️ Tiempo agotado\n\nSe agotó el tiempo límite de este turno y la tarea **no está terminada**. Avance parcial registrado: escribe **continúa** y sigo donde quedé.");
           rememberOut(partial); detachLongRunningStreams(steps);
           return { kind: decision?.kind || "CHAT", text: partial, steps, incomplete: true, threadId, usage: totalUsage };
         }
@@ -1010,7 +1045,7 @@ class ChatOrchestrator {
             ? tools.getToolDefinitions({ allowWrite: false, isFullAccess: false, isAnalysis: false })
               .filter((t) => CHAT_READ_TOOLS.has(t.function?.name || t.name))
             : [])
-          : tools.getToolDefinitions({ allowWrite: accessFull, isFullAccess: accessFull, isAnalysis: false })
+          : tools.getToolDefinitions({ allowWrite: accessFull || orderedWrite, isFullAccess: accessFull, isAnalysis: false })
             .filter((t) => !["preview_browser_interaction", "browser_page_action", "capture_preview_screenshot", "auto_scaffold_project", "clone_web_page", "images_to_code", "rollback_last_change"].includes(t.function?.name || t.name));
 
         let streamAccum = "";
@@ -1066,6 +1101,20 @@ class ChatOrchestrator {
             messages.push({ role: "assistant", content: cleanText || null });
             messages.push({ role: "user", content: `No cierres el turno. Ejecutá AHORA las tools que prometiste ("${cleanText.slice(-120)}").` });
             onProgress?.({ phase: "model", text: `Reintentando: promesa sin acción (${promiseRetries}/${MAX_PROMISE_RETRIES})` });
+            continue;
+          }
+
+          const fixWithoutWrites = !chatOnly && decision?.kind !== "CHAT" && !listOnlyMode && !analysisMode
+            && (accessFull || orderedWrite)
+            && FIX_INTENT_RE.test(`${this._currentUserText || ""} ${message || ""}`)
+            && successfulWritePaths(steps).length === 0
+            && noWriteNudges < MAX_NO_WRITE_NUDGES
+            && i < stepsLimit - 2;
+          if (fixWithoutWrites) {
+            noWriteNudges += 1;
+            messages.push({ role: "assistant", content: cleanText || null });
+            messages.push({ role: "user", content: "Todavía no modificaste ningún archivo y el usuario pidió corregir/implementar. No describas cambios ni digas que los aplicaste: aplícalos AHORA con replace_in_file o write_file (lee antes el archivo si hace falta). Solo si de verdad no hace falta cambiar nada, explica por qué con evidencia concreta (archivo:línea o salida de un comando)." });
+            onProgress?.({ phase: "model", text: `Sin cambios aplicados todavía: pidiendo que aplique las correcciones (${noWriteNudges}/${MAX_NO_WRITE_NUDGES})` });
             continue;
           }
 
@@ -1159,7 +1208,9 @@ class ChatOrchestrator {
           onProgress?.({ phase: "tool", stage: "running", name, input: args });
 
           let result;
-          if (name === "write_file" || name === "replace_in_file") {
+          if ((name === "write_file" || name === "replace_in_file") && readOnlyMode) {
+            result = { ok: false, error: "Modo solo lectura: no se modifican archivos. Pide al usuario que cambie el modo de permisos." };
+          } else if (name === "write_file" || name === "replace_in_file") {
             const impl = await runImplementer({ projectRoot, path: args.path, content: args.content, oldText: args.oldText, newText: args.newText, onProgress, threadId });
             result = impl.result || impl;
           } else {
@@ -1194,13 +1245,18 @@ class ChatOrchestrator {
       this.session.kill();
       const written = successfulWritePaths(steps);
       let textOut;
+      const pausedByLimit = !listOnlyMode && !(chatOnly || decision?.kind === "CHAT");
       if (listOnlyMode) textOut = formatListOnlyAnswer("", steps, message);
+      else if (pausedByLimit) {
+        const lista = written.length ? `Archivos modificados en este turno:\n\n${[...new Set(written)].map((p) => `- \`${p}\``).join("\n")}` : "En este turno todavía no se modificó ningún archivo.";
+        textOut = `## ⏸️ Pausa: llegué al límite de pasos de este turno\n\nLa tarea **no está terminada**. ${lista}\n\nEscribe **continúa** y sigo exactamente donde quedé, con los errores que falten.`;
+      }
       else if (written.length > 0) textOut = `## ✅ Archivos actualizados\n\n${written.map(p => `- \`${p}\``).join("\n")}\n\n${nextStepsClosingText(projectRoot, written, steps)}`;
       else textOut = `## ℹ️ Sin acciones registradas\n\n${nextStepsClosingText(projectRoot, [], steps)}`;
 
       if (written.length > 0) textOut = await this.appendBeforeAfter(projectRoot, written, textOut, onProgress);
       textOut = formatAgentVisibleText(textOut);
-      persistKernelRoadmap(projectRoot, { task: this._currentUserText || message, steps, kind: decision?.kind, text: textOut, completed: true });
+      persistKernelRoadmap(projectRoot, { task: this._currentUserText || message, steps, kind: decision?.kind, text: textOut, completed: !pausedByLimit });
       rememberOut(textOut); detachLongRunningStreams(steps);
       // [EDITCORE-ADD] Feedback de éxito (steps agotados pero sin excepción).
       try {
@@ -1209,7 +1265,7 @@ class ChatOrchestrator {
         }
       } catch (_) {}
       // [/EDITCORE-ADD]
-      return { kind: decision?.kind || "EXECUTE", text: textOut, steps, incomplete: false, threadId, usage: totalUsage };
+      return { kind: decision?.kind || "EXECUTE", text: textOut, steps, mutations: runMutations, incomplete: pausedByLimit, threadId, usage: totalUsage };
     } catch (err) {
       this.session.kill();
       let safeMsg = String(err?.message || err || "Error desconocido");

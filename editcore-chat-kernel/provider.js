@@ -8,7 +8,10 @@ const {
   createGatewayTimeoutError,
   parseProviderJsonOrThrow,
   withCacheControl,
+  createIdleTimeout,
 } = require("../runtime/ai-core");
+
+const PROVIDER_MAX_TOTAL_MS = 10 * 60_000;
 const { logProviderError } = require("../runtime/provider-error-log");
 const { modelSupportsVision } = require("../runtime/vision-intake");
 
@@ -145,9 +148,17 @@ async function callChatSingleAttempt({
     body.tool_choice = toolChoice || "auto";
   }
 
-  const timeoutSignal = Number(timeoutMs) > 0 ? AbortSignal.timeout(Number(timeoutMs)) : null;
-  const requestSignal = mergeAbortSignals(signal, timeoutSignal);
+  // Plazo por inactividad (no total): una respuesta larga que sigue llegando no se corta.
+  const idle = createIdleTimeout(Number(timeoutMs) || 0, Number(timeoutMs) > 0 ? Math.max(Number(timeoutMs), PROVIDER_MAX_TOTAL_MS) : 0);
+  const requestSignal = mergeAbortSignals(signal, idle.signal);
+  try {
+    return await sendChatRequest({ url, body, apiKey, wantStream, signal, requestSignal, onTextDelta, onActivity: idle.touch });
+  } finally {
+    idle.clear();
+  }
+}
 
+async function sendChatRequest({ url, body, apiKey, wantStream, signal, requestSignal, onTextDelta, onActivity }) {
   let res;
   try {
     res = await fetch(url, {
@@ -181,11 +192,14 @@ async function callChatSingleAttempt({
       await parseProviderJsonOrThrow(res);
     }
     if (wantStream && contentType.includes("text/event-stream")) {
-      const streamed = await readOpenAiStream(res, onTextDelta, requestSignal);
+      const streamed = await readOpenAiStream(res, onTextDelta, requestSignal, onActivity);
       const msg = {
         content: streamed?.text || "",
         tool_calls: streamed?.toolCalls || [],
       };
+      if (!String(msg.content).trim() && !msg.tool_calls.length) {
+        throw Object.assign(new Error("El proveedor cortó la respuesta sin enviar contenido."), { code: "EMPTY_PROVIDER_RESPONSE", status: 502 });
+      }
       return {
         text: msg.content || "",
         toolCalls: Array.isArray(msg.tool_calls) ? msg.tool_calls : [],
@@ -279,6 +293,7 @@ async function callChat({
         throw (abortReason || new Error("Operacion cancelada"));
       }
 
+      let streamedAny = false;
       try {
         const result = await callChatSingleAttempt({
           apiBaseUrl: currentProfile.apiBaseUrl,
@@ -290,7 +305,7 @@ async function callChat({
           toolChoice,
           timeoutMs,
           stream,
-          onTextDelta,
+          onTextDelta: onTextDelta ? (d) => { if (d) streamedAny = true; return onTextDelta(d); } : null,
         });
         return result;
       } catch (err) {
@@ -298,6 +313,8 @@ async function callChat({
         if (err?.code === "AGENT_STEER" || signal?.aborted) {
           throw err;
         }
+        // Lo ya mostrado no se repite con otro intento ni con otro perfil.
+        if (streamedAny) throw err;
         let host = "";
         try { host = new URL(currentProfile.apiBaseUrl).host; } catch { /* sin host */ }
         logProviderError({

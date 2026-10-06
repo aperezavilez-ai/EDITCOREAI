@@ -3508,6 +3508,10 @@ async function callProvider({ baseUrl, apiKey, model, messages, providerKey = ""
       attempt,
     });
     const estimatedRequestTokens = estimateTokens(safeMessages.map((message) => typeof message.content === "string" ? message.content : JSON.stringify(message.content)).join("\n"));
+    let streamedAny = false;
+    const trackedTextDelta = onTextDelta
+      ? (delta) => { if (delta) streamedAny = true; return onTextDelta(delta); }
+      : null;
     const ledgerRow = tokenLedger?.begin({
       ...(ledgerContext || {}),
       provider: new URL(endpoint).hostname,
@@ -3519,7 +3523,7 @@ async function callProvider({ baseUrl, apiKey, model, messages, providerKey = ""
     try {
       let result;
       try {
-        result = await runtimeAiCore.complete({ provider: providerId, apiKey: activeApiKey, model: activeModel, messages: safeMessages, tools: enableTools ? tools : [], temperature: resolveFactualTemperature(), signal: requestSignal, maxAttempts: 1, onTextDelta, onActivity: idleTimeout.touch });
+        result = await runtimeAiCore.complete({ provider: providerId, apiKey: activeApiKey, model: activeModel, messages: safeMessages, tools: enableTools ? tools : [], temperature: resolveFactualTemperature(), signal: requestSignal, maxAttempts: 1, onTextDelta: trackedTextDelta, onActivity: idleTimeout.touch });
       } catch (error) {
         if (!enableTools || !isProviderToolUnsupported(error)) throw error;
         const textProtocolMessages = [
@@ -3551,7 +3555,8 @@ async function callProvider({ baseUrl, apiKey, model, messages, providerKey = ""
       if (trace) auditPhase1()?.response(trace, { ok: false, error });
       lastError = toUserFacingProviderError(error);
       if (signal?.aborted) throw lastError;
-      if (attempt < attempts && isTransientProviderError(error)) {
+      // Reintentar solo si el usuario todavía no vio texto de este intento (sin duplicar ni cobrar dos veces lo mostrado).
+      if (attempt < attempts && !streamedAny && (isTransientProviderError(error) || error?.code === "EMPTY_PROVIDER_RESPONSE")) {
         idleTimeout.clear();
         await new Promise((resolve) => setTimeout(resolve, Math.min(1500 * attempt, 3000)));
         continue;
@@ -7344,7 +7349,7 @@ ipcMain.handle("agent:run", async (event, input = {}) => {
             timeoutMs: (runProfile.scopedDiskFocus === true || orchestratorPlan.scopedDiskFocus === true)
               ? 45_000
               : AGENT_PROVIDER_STEP_TIMEOUT_MS,
-            maxAttempts: 1,
+            maxAttempts: 2,
             enableTools,
             rawToolCalls: enableTools === true,
             allowProviderFallback: !(runProfile.scopedDiskFocus === true || orchestratorPlan.scopedDiskFocus === true),

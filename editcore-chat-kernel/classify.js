@@ -4,10 +4,16 @@
 
 const STOP_RE = /^\s*(?:alto|detente|cancela|cancelar|stop|para|basta|deten(?:te)?)\s*[.!?]?\s*$/i;
 const APPROVAL_RE = /^\s*(?:procede|continua|continúa|hazlo|autorizado|adelante|ejecuta|si|sí|confirmado|procedo|hazlo\s+ya|dale|va|ok)\s*[.!?]?\s*$/i;
+// Frases cortas que solo dicen "seguí" ("si avanza", "ok continua por favor", "termínalo").
+const CONTINUE_WORDS = new Set(["procede", "procedo", "continua", "continúa", "continuar", "continue", "sigue", "siguele", "síguele", "avanza", "avanzale", "avánzale", "adelante", "hazlo", "dale", "ejecuta", "ejecutalo", "ejecútalo", "autorizado", "confirmado", "confirmo", "si", "sí", "ok", "okay", "va", "ya", "termina", "terminalo", "termínalo", "acaba", "acabalo", "acábalo", "por", "favor", "porfa", "porfavor", "y", "pues", "bueno", "ahora", "todo"]);
+function isContinuePhrase(text = "") {
+  const words = String(text || "").toLowerCase().replace(/[.,;:!?¡¿]+/g, " ").trim().split(/\s+/).filter(Boolean);
+  return words.length > 0 && words.length <= 6 && words.every((w) => CONTINUE_WORDS.has(w));
+}
 const CHAT_INFO_RE = /\b(?:para\s+qu[eé]\s+(?:sirve|funciona|es)|qu[eé]\s+(?:hace|es)|qui[eé]n\s+eres|c[oó]mo\s+te\s+llamas|ayuda|hola|buenos\s+d[ií]as|buenas\s+tardes|buenas\s+noches)\b/i;
 
 // Verbos de cambio/escritura. Ganan sobre TASK_VERIFY_RE si el mensaje pide modificar.
-const TASK_FIX_RE = /\b(?:corrige|corrije|arregla|arreglá|implementa(?:r)?|aplica|aplicá|repara|repará|soluciona|solucioná|crea(?:r|ción)?|creá|genera(?:r)?|generá|escribe|escrib[ií]|modifica(?:r)?|modificá|refactoriza(?:r)?|actualiza(?:r)?|actualizá|audita(?:r)?|añade|añadí|agrega(?:r)?|agregá|cambia(?:r)?|cambiá|muev\w*|mov[eé]|copiar?|copiá|haz(?:me|lo|la|los|las)?|hacer|hac[eé](?:me|lo|la)?|cr[eé]a(?:me|lo|la)|gen[eé]ra(?:me|lo|la)|arr[eé]gla(?:me|lo|la)|corr[ií][gj]e(?:me|lo|la)|agr[eé]ga(?:me|lo|la)|arma|armá|scaffold|nuevo\s+proyecto|ejecuta(?:r)?|ejecutá|reemplaza(?:r)?|reemplazá|pon[eé]?|setea(?:r)?|borra(?:r)?|elimina(?:r)?|renombra(?:r)?|run_command|run|build|tsc|npx|npm)\b/i;
+const TASK_FIX_RE = /\b(?:corr[eií][gj](?:e|ir)(?:me|lo|la|los|las)?|arregl(?:a|á|ar)(?:me|lo|la|los|las)?|repar(?:a|á|ar)(?:lo|la|los|las)?|solucion(?:a|á|ar)(?:lo|la|los|las)?|resu[eé]lve(?:lo|la|los|las)?|resolver(?:lo|la|los|las)?|corrige|corrije|arregla|arreglá|implementa(?:r)?|aplica|aplicá|repara|repará|soluciona|solucioná|crea(?:r|ción)?|creá|genera(?:r)?|generá|escribe|escrib[ií]|modifica(?:r)?|modificá|refactoriza(?:r)?|actualiza(?:r)?|actualizá|audita(?:r)?|añade|añadí|agrega(?:r)?|agregá|cambia(?:r)?|cambiá|muev\w*|mov[eé]|copiar?|copiá|haz(?:me|lo|la|los|las)?|hacer|hac[eé](?:me|lo|la)?|cr[eé]a(?:me|lo|la)|gen[eé]ra(?:me|lo|la)|arr[eé]gla(?:me|lo|la)|corr[ií][gj]e(?:me|lo|la)|agr[eé]ga(?:me|lo|la)|arma|armá|scaffold|nuevo\s+proyecto|ejecuta(?:r)?|ejecutá|reemplaza(?:r)?|reemplazá|pon[eé]?|setea(?:r)?|borra(?:r)?|elimina(?:r)?|renombra(?:r)?|run_command|run|build|tsc|npx|npm)\b/i;
 
 const TASK_CLONE_RE = /\b(?:clona|clonar|copia\s+esta\s+p[aá]gina|replica(?:r)?\s+(?:esta\s+)?(?:web|p[aá]gina|sitio)|clone_web_page)\b/i;
 const HTTP_URL_RE = /https?:\/\/[^\s)>"']+/i;
@@ -58,7 +64,7 @@ function classify(message, opts = {}) {
   if (STOP_RE.test(text)) {
     return { kind: "STOP", label: "Parada", allowTools: false, allowWrite: false, background: false };
   }
-  if (APPROVAL_RE.test(text)) {
+  if (APPROVAL_RE.test(text) || isContinuePhrase(text)) {
     return { kind: "EXECUTE", label: "Ejecución autorizada", allowTools: true, allowWrite: true, background };
   }
   if (TASK_CLONE_RE.test(text) && HTTP_URL_RE.test(text)) {
@@ -300,6 +306,7 @@ module.exports = {
   resolveExecutionMode,
   isResumeIncompleteAnalysisRequest,
   isAnalysisOnlyRequest,
+  isContinuePhrase,
   extractListTarget,
   isFullAccess,
   MODES,
