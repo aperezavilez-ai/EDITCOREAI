@@ -268,6 +268,14 @@ class CreditLedger extends EventEmitter {
     }
   }
 
+  async adminSetSignupBonus({ usd } = {}) {
+    try {
+      return fromServer(await this.auth.rpc("editcoreai_admin_set_signup_bonus", { p_usd: Number(usd) }));
+    } catch (error) {
+      return failure(error);
+    }
+  }
+
   async adminSetTopup({ price, creditUsd = null } = {}) {
     try {
       return fromServer(await this.auth.rpc("editcoreai_admin_set_topup", {

@@ -157,9 +157,11 @@
       return false;
     }
   }
+  // Con "noopener" window.open siempre devuelve null aunque abra la pestaña; por eso se corta el opener a mano.
   function openPayment(url) {
-    const win = window.open(url, "_blank", "noopener");
-    if (!win) location.assign(url);
+    const win = window.open(url, "_blank");
+    if (!win) return location.assign(url);
+    try { win.opener = null; } catch { /* ignore */ }
   }
   async function notifyBalance() {
     try {
@@ -188,6 +190,7 @@
     adminPayments: safe(() => ledger().adminPayments()),
     adminSetTopup: safe((payload) => ledger().adminSetTopup(payload || {})),
     adminSetPaymentLink: safe((payload) => ledger().adminSetPaymentLink(payload || {})),
+    adminSetSignupBonus: safe((payload) => ledger().adminSetSignupBonus(payload || {})),
     cloudModels: safe(async () => ({ ok: true, models: await C.listModels(), baseUrl: `${String(window.EDITCOREAI_CUENTAS?.url || "").replace(/\/+$/, "")}/functions/v1/ai-proxy/v1` })),
     topupOffer: safe(() => C.paymentOffer()),
     checkout: safe(async () => {
@@ -731,5 +734,5 @@ document.addEventListener("click",function(e){var a=e.target&&e.target.closest&&
     });
   });
 
-  window.EditCoreWebBridge = { ready, notifyBalance, publicSession, previewUrlFor, createProject };
+  window.EditCoreWebBridge = { ready, notifyBalance, publicSession, previewUrlFor, createProject, kv: { get: kvGet, set: kvSet }, slugify };
 })();

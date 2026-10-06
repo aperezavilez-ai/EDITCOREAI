@@ -11071,6 +11071,7 @@ function isMercadoPagoCheckoutUrl(value) {
 creditsIpc("credits:admin-payments", (ledger) => ledger.adminPayments());
 creditsIpc("credits:admin-set-topup", (ledger, payload) => ledger.adminSetTopup(payload || {}));
 creditsIpc("credits:admin-set-payment-link", (ledger, payload) => ledger.adminSetPaymentLink(payload || {}));
+creditsIpc("credits:admin-set-signup-bonus", (ledger, payload) => ledger.adminSetSignupBonus(payload || {}));
 creditsIpc("credits:open-payment-link", async () => {
   const { authManager } = require("./runtime/auth-manager");
   const offer = await authManager.paymentOffer();

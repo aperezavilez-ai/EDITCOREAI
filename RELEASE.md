@@ -1,3 +1,19 @@
+# RELEASE v4.3.6
+
+## Saldo: regalo de bienvenida y recarga automática con Mercado Pago
+
+- Cada cuenta nueva recibe un regalo de bienvenida (2 dólares de saldo, ajustable en Administración › «Regalo por registro»). Se da una sola vez por correo, aunque la cuenta se borre y se vuelva a crear.
+- Cuando el saldo se acaba, se abre solo el aviso de recarga: 20 dólares de saldo por el precio configurado en pesos, pagados con Mercado Pago; el saldo se agrega solo en cuanto se confirma el pago.
+- Se arregló el botón «Pagar con Mercado Pago»: el servidor creaba el pago pero fallaba al guardar la referencia y mostraba «Mercado Pago no respondió». En la web, el pago ya no abre Mercado Pago dos veces ni reemplaza la pestaña del IDE.
+- Ya no hay códigos de recarga ni ajustes manuales de saldo: se quitaron «Crear código de recarga», «Dar o quitar saldo», el link de pago fijo y los campos para canjear códigos.
+- Un solo administrador: el servidor no permite una segunda cuenta de administrador.
+- En la web ya funcionan Conexiones (GitHub, Vercel y Supabase propio, guardadas en la cuenta del usuario) y Publicar (sube el proyecto a un repositorio privado de GitHub y lo deja en vivo con Vercel). SSH y «Detectar conexiones» siguen solo en la app de escritorio.
+- Incluye todo lo de la versión 4.3.5.
+
+### Archivos
+
+- `EDITCOREAI.exe` (4.3.6.0) y `release/EDITCOREAI-Setup.exe` (4.3.6), construidos desde un árbol limpio en el commit publicado.
+
 # RELEASE v4.3.5
 
 ## La web es el mismo IDE de escritorio

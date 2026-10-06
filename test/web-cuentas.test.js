@@ -353,7 +353,7 @@ test("web: /app es el IDE completo (mismo index.html y mismos scripts) en cada p
     assert.match(app, /<body[^>]*class="is-web"/);
     assert.match(app, /localStorage\.setItem\("editcore-app-mode","ide"\)/, "la web abre con el diseño del IDE aunque antes se usara solo el chat");
     const scripts = [...app.matchAll(/<script src="([^"]+)"/g)].map((m) => m[1]);
-    assert.deepEqual(scripts.slice(0, 6), ["/js/cuentas-config.js", "/js/cuentas.js", "/ide/preload-api.js", "/js/web-ide-bridge.js", "/js/web-agent.js", "/ide/credit-ledger.js"], "el puente web va antes que los scripts del IDE");
+    assert.deepEqual(scripts.slice(0, 7), ["/js/cuentas-config.js", "/js/cuentas.js", "/ide/preload-api.js", "/js/web-ide-bridge.js", "/js/web-agent.js", "/js/web-connections.js", "/ide/credit-ledger.js"], "el puente web va antes que los scripts del IDE");
     assert.ok(scripts.includes("/ide/renderer.js") && scripts.includes("/ide/chat-home.js"));
     for (const f of sources) {
       assert.ok(fs.readFileSync(path.join(dir, "ide", f)).equals(fs.readFileSync(path.join(ROOT, f))), `${f} debe ser idéntico al del IDE`);
@@ -365,8 +365,11 @@ test("web: /app es el IDE completo (mismo index.html y mismos scripts) en cada p
     fs.rmSync(dir, { recursive: true, force: true });
   }
   const css = fs.readFileSync(path.join(ROOT, "web-portal", "css", "web-ide-shell.css"), "utf8");
-  for (const id of ["terminalBtn", "connectionsBtn", "providersBtn", "publishBtn", "updatesBtn", "voiceBtn", "pickProjectBtn", "welcomeOpenBtn", "inspectBrowserBtn"]) {
+  for (const id of ["terminalBtn", "providersBtn", "updatesBtn", "voiceBtn", "pickProjectBtn", "welcomeOpenBtn", "inspectBrowserBtn", "detectConnectionsBtn"]) {
     assert.match(css, new RegExp(`body\\.is-web #${id}\\b`), `${id} es de escritorio y se oculta en la web`);
+  }
+  for (const id of ["connectionsBtn", "publishBtn", "newWindowBtn", "ideSettingsBtn"]) {
+    assert.doesNotMatch(css, new RegExp(`body\\.is-web #${id}\\b`), `${id} sí funciona en la web y se muestra`);
   }
   const ignore = fs.readFileSync(path.join(ROOT, ".vercelignore"), "utf8").split(/\r?\n/);
   for (const f of [...sources, "preload.js", "package.json", "runtime/credit-ledger.js"]) {

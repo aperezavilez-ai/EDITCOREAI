@@ -1,14 +1,17 @@
 /* EditCoreAI web: mismo IDE que la app de escritorio. Aquí solo se ocultan los botones que dependen de la
-   computadora (carpetas del disco, terminal, git local, ventanas, actualizaciones, dictado, Inspector…). */
+   computadora (carpetas del disco, terminal, SSH, actualizaciones, dictado, Inspector…). Conexiones y Publicar
+   sí funcionan en la web (js/web-connections.js). */
 
-body.is-web #connectionsBtn,
 body.is-web #providersBtn,
 body.is-web #terminalBtn,
 body.is-web #brainBtn,
 body.is-web #inspectorBtn,
 body.is-web #checkUpdatesMenuBtn,
 body.is-web #updatesBtn,
-body.is-web #publishBtn,
+body.is-web #detectConnectionsBtn,
+body.is-web #createSupabaseProjectBtn,
+body.is-web #connectionsDialog .conn-section:has([data-service="ssh"]),
+body.is-web .ec-settings-group-card:has(#settingsOpenModelsDialogBtn),
 body.is-web #chatReloadAppBtn,
 body.is-web #composerReloadAppBtn,
 body.is-web #voiceBtn,
@@ -30,7 +33,6 @@ body.is-web #tab-terminal,
 body.is-web [data-web-hidden],
 body.is-web #settingsUpdatesCard,
 body.is-web #settingsRecoveryCard,
-body.is-web .ec-settings-nav-item[data-settings-tab="models"],
 body.is-web .ec-settings-nav-item[data-settings-tab="customizations"],
 body.is-web .ec-settings-nav-item[data-settings-tab="browser"],
 body.is-web .toolbar-menu-label:has(+ #brainBtn),

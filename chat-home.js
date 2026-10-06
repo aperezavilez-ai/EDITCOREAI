@@ -688,6 +688,7 @@
       if (creditsBigNum) creditsBigNum.textContent = balance.email ? balStr : "—";
       if (creditsPlanTag) creditsPlanTag.textContent = suspended ? "Cuenta suspendida" : (isAdm ? "Administrador · sin límite de uso" : (unlimited ? "Plan ilimitado" : "Saldo prepago · se descuenta según el uso de la IA"));
       renderUsageMeters({ ...balance, unlimited, signedIn: Boolean(balance.email) });
+      promptTopupIfEmpty({ balance: balance.balance, unlimited, signedIn: Boolean(balance.email), suspended });
 
       // Administrador Maestro vs Usuario Estándar:
       const buyCreditsBtn = $("settingsBuyCreditsBtn");
@@ -819,9 +820,10 @@
       if (descEl) descEl.textContent = "Tu cuenta de administrador no tiene límite de uso. El saldo de los usuarios se gestiona en Configuración › Saldo.";
     } else {
       const offer = await syncTopupCard();
-      const how = offer?.mode === "auto" || offer?.mode === "link"
-        ? "Recarga con Mercado Pago o canjea un código de recarga."
-        : "Paga al administrador y canjea el código que te dé.";
+      const credit = fmtUsd(Number(offer?.credit_usd || 20));
+      const how = offer?.mode === "auto"
+        ? `Recarga ${credit} con Mercado Pago; el saldo se agrega solo en cuanto se confirma el pago.`
+        : "La recarga con Mercado Pago no está disponible en este momento. Inténtalo en unos minutos.";
       if (reason === "out_of_credits" || reason === "OUT_OF_CREDITS" || balance <= 0) {
         if (iconEl) iconEl.textContent = "⚠️";
         if (titleEl) titleEl.textContent = "Tu saldo se agotó";
@@ -836,6 +838,20 @@
     modal.hidden = false;
     modal.removeAttribute("hidden");
     modal.setAttribute("aria-hidden", "false");
+  }
+
+  let topupPrompted = false;
+
+  // Al acabarse el saldo (por ejemplo, el regalo de bienvenida) se ofrece la recarga sin esperar a que falle un mensaje.
+  function promptTopupIfEmpty({ balance = 0, unlimited = false, signedIn = false, suspended = false } = {}) {
+    const empty = signedIn && !unlimited && !suspended && !previewAsUser && Number(balance) < 0.01;
+    if (!empty) {
+      topupPrompted = false;
+      return;
+    }
+    if (topupPrompted) return;
+    topupPrompted = true;
+    void showOutOfCreditsModal("out_of_credits");
   }
 
   let topupOfferCache = { at: 0, value: null };
@@ -863,13 +879,8 @@
     const btn = card.querySelector(".ec-pack-btn");
     const creditUsd = Number(offer?.credit_usd || 20);
     if (creditsEl) creditsEl.textContent = `${fmtUsd(creditUsd)} de saldo`;
-    if (offer?.mode === "auto" || offer?.mode === "link") {
-      if (priceEl) priceEl.textContent = fmtLocal(offer.price, offer.currency);
-      if (btn) btn.textContent = "Pagar con Mercado Pago";
-    } else {
-      if (priceEl) priceEl.textContent = `${fmtUsd(creditUsd)} USD`;
-      if (btn) btn.textContent = "¿Cómo recargo?";
-    }
+    if (priceEl) priceEl.textContent = offer?.price ? fmtLocal(offer.price, offer.currency) : `${fmtUsd(creditUsd)} USD`;
+    if (btn) btn.textContent = "Pagar con Mercado Pago";
     return offer;
   }
 
@@ -888,25 +899,6 @@
       await refreshCreditsAndProfileUI();
       setTimeout(closeOutOfCreditsModal, 2500);
     }, 5000);
-  }
-
-  // Link fijo: Mercado Pago no avisa quién pagó; el usuario manda su comprobante y el admin carga el saldo.
-  async function startLinkPayment(statusEl, btn) {
-    if (btn) btn.disabled = true;
-    try {
-      const before = await window.editcoreCredits?.getBalance?.().catch(() => null);
-      const res = await window.editcoreCredits?.openPaymentLink?.();
-      if (!res?.ok) {
-        showStatus(statusEl, false, res?.error || "No se pudo abrir el pago.");
-        return;
-      }
-      const email = window.__editcoreSession?.user?.email || "el correo de tu cuenta";
-      const to = res.contact ? `a ${res.contact}` : "al administrador de EditCoreAI";
-      showStatus(statusEl, true, `Se abrió Mercado Pago en tu navegador (${fmtLocal(res.amount, res.currency)}). Después de pagar, envía tu comprobante ${to} junto con tu correo ${email}. Tu saldo aparece aquí en cuanto se confirme.`);
-      watchForTopup(Number(before?.balance || 0), statusEl);
-    } finally {
-      if (btn) btn.disabled = false;
-    }
   }
 
   async function startCheckout(statusEl, btn) {
@@ -998,7 +990,6 @@
     set("adminUsersTotal", fmtNum(o.users_total));
     set("adminUsersSub", `Activos: ${fmtNum(o.users_active)} · Suspendidos: ${fmtNum(o.users_suspended)}`);
     set("adminCreditsCirculation", fmtUsd(o.credits_in_circulation));
-    set("adminVouchersActive", `Códigos vigentes: ${fmtNum(o.vouchers_active)}`);
     set("adminConsumedToday", fmtUsd(o.credits_consumed_today));
     set("adminConsumedSub", `Hoy (${fmtNum(o.requests_today)} consultas) · Te costó ${fmtUsdFine(o.real_cost_today)} reales (${fmtUsd(o.provider_cost_today)} de panel) · Margen ${fmtNum(o.markup || 2)}x · Total cobrado: ${fmtUsd(o.credits_consumed_total)}`);
     await Promise.all([renderMeaiCard(), renderAdminUsers(), renderAdminPayments()]);
@@ -1254,16 +1245,14 @@
       statusEl.textContent = offer?.mode === "auto"
         ? "🟢 Cobro automático: cada usuario paga con su propio link y el saldo se carga solo."
         : offer?.mode === "link"
-          ? "🟡 Link de pago fijo: el usuario paga con tu link y te manda su comprobante; tú cargas el saldo en «Dar o quitar saldo»."
-          : "🔴 Sin Mercado Pago: pon tu link de pago abajo (o el token en el servidor para el cobro automático).";
+          ? "🟡 Cobro automático apagado: falta el token de Mercado Pago en el servidor; los pagos no se acreditan solos."
+          : "🔴 Sin Mercado Pago: falta el token de Mercado Pago en el servidor.";
     }
-    const linkInput = $("adminPayLink");
-    const contactInput = $("adminPayContact");
-    if (linkInput && document.activeElement !== linkInput) linkInput.value = offer?.payment_link || "";
-    if (contactInput && document.activeElement !== contactInput) contactInput.value = offer?.contact || "";
     if (!res?.ok) return;
     const p = res.payments || {};
     const o = p.offer || {};
+    const bonus = $("adminSignupBonus");
+    if (bonus && document.activeElement !== bonus) bonus.value = p.signup_bonus_usd ?? "";
     const price = $("adminTopupPrice");
     const creditUsd = $("adminTopupCredit");
     if (price && document.activeElement !== price) price.value = o.price ?? "";
@@ -1466,15 +1455,13 @@
       showStatus(out, true, raw === "" ? "Corrección quitada: se usa el saldo que lee ME AI." : `Saldo guardado: ${fmtUsd(Number(raw))} de panel.`);
       await refreshAdminPanel();
     });
-    $("adminPayLinkSaveBtn")?.addEventListener("click", async () => {
-      const out = $("adminPayLinkResult");
-      const res = await window.editcoreCredits?.adminSetPaymentLink?.({
-        link: $("adminPayLink")?.value || "",
-        contact: $("adminPayContact")?.value || "",
-      });
+    $("adminSignupBonusSaveBtn")?.addEventListener("click", async () => {
+      const out = $("adminSignupBonusResult");
+      const usd = Number($("adminSignupBonus")?.value);
+      if (!(usd >= 0 && usd <= 100)) return showStatus(out, false, "Escribe cuántos dólares regalas por registro (0 a 100).");
+      const res = await window.editcoreCredits?.adminSetSignupBonus?.({ usd });
       if (!res?.ok) return showStatus(out, false, res?.error || "No se pudo guardar.");
-      showStatus(out, true, res.offer?.payment_link ? "Link guardado: los usuarios ya lo ven en «Pagar con Mercado Pago»." : "Link quitado.");
-      topupOfferCache = { at: 0, value: null };
+      showStatus(out, true, usd > 0 ? `Guardado: cada cuenta nueva recibe ${fmtUsd(usd)} de regalo una sola vez.` : "Guardado: las cuentas nuevas ya no reciben regalo.");
       await renderAdminPayments();
     });
     $("adminTopupSaveBtn")?.addEventListener("click", async () => {
@@ -1493,36 +1480,6 @@
     $("adminUserSearch")?.addEventListener("input", () => {
       clearTimeout(searchTimer);
       searchTimer = setTimeout(() => void renderAdminUsers(), 300);
-    });
-    $("adminVoucherCreateBtn")?.addEventListener("click", async () => {
-      const out = $("adminVoucherResult");
-      const creditsVal = Number($("adminVoucherCredits")?.value || 0);
-      if (!(creditsVal > 0)) return showStatus(out, false, "Indica cuántos dólares de saldo da el código.");
-      const res = await window.editcoreCredits?.adminCreateVoucher?.({
-        credits: creditsVal,
-        maxUses: Number($("adminVoucherUses")?.value || 1),
-        expiresInDays: Number($("adminVoucherDays")?.value || 0),
-        note: $("adminVoucherNote")?.value || "",
-      });
-      if (!res?.ok) return showStatus(out, false, res?.error || "No se pudo crear el código.");
-      showStatus(out, true, "");
-      out.textContent = "Código creado (cópialo ahora, no se vuelve a mostrar): ";
-      const code = document.createElement("span");
-      code.className = "ec-admin-code";
-      code.textContent = res.code;
-      out.appendChild(code);
-      try { await navigator.clipboard.writeText(res.code); out.appendChild(document.createTextNode(" · copiado")); } catch {}
-      await refreshAdminPanel();
-    });
-    $("adminGrantBtn")?.addEventListener("click", async () => {
-      const out = $("adminGrantResult");
-      const email = String($("adminGrantEmail")?.value || "").trim();
-      const amount = Number($("adminGrantAmount")?.value || 0);
-      if (!email || !amount) return showStatus(out, false, "Escribe el correo y la cantidad.");
-      const res = await window.editcoreCredits?.adminGrant?.({ email, amount, note: $("adminGrantNote")?.value || "" });
-      if (!res?.ok) return showStatus(out, false, res?.error || "No se pudo aplicar.");
-      showStatus(out, true, `Listo. Saldo de ${email}: ${fmtUsd(res.account?.credits_balance)}.`);
-      await refreshAdminPanel();
     });
   }
 
@@ -3070,64 +3027,6 @@
       applyI18nLanguage(store.language || "es");
     }
 
-    // Canje de Cupones en Configuración
-    $("settingsVoucherBtn")?.addEventListener("click", async () => {
-      const code = $("settingsVoucherInput")?.value?.trim();
-      const statusEl = $("settingsVoucherStatus");
-      if (!code) return;
-      try {
-        const res = await window.editcoreCredits?.redeem?.(code);
-        if (statusEl) {
-          statusEl.hidden = false;
-          statusEl.removeAttribute("hidden");
-          if (res?.success) {
-            statusEl.className = "ec-status-msg ec-tag-success";
-            statusEl.textContent = `¡Código canjeado! Se agregaron ${fmtUsd(res.credits_added)}. Saldo actual: ${res.isUnlimited ? "∞ Ilimitado" : fmtUsd(res.balance)}`;
-            const input = $("settingsVoucherInput");
-            if (input) input.value = "";
-            await refreshCreditsAndProfileUI();
-          } else {
-            statusEl.className = "ec-status-msg ec-tag-danger";
-            statusEl.textContent = res?.error || "Código inválido o ya utilizado";
-          }
-        }
-      } catch (err) {
-        if (statusEl) {
-          statusEl.hidden = false;
-          statusEl.className = "ec-status-msg ec-tag-danger";
-          statusEl.textContent = "Error al canjear cupón: " + err.message;
-        }
-      }
-    });
-
-    // Canje de Cupones en Modal de Bloqueo
-    $("outOfCreditsRedeemBtn")?.addEventListener("click", async () => {
-      const code = $("outOfCreditsVoucherInput")?.value?.trim();
-      const statusEl = $("outOfCreditsMsg");
-      if (!code) return;
-      try {
-        const res = await window.editcoreCredits?.redeem?.(code);
-        if (statusEl) {
-          statusEl.hidden = false;
-          statusEl.removeAttribute("hidden");
-          if (res?.success) {
-            statusEl.className = "ec-status-msg ec-tag-success";
-            statusEl.textContent = `¡Desbloqueado! Se agregaron ${fmtUsd(res.credits_added)} de saldo.`;
-            await refreshCreditsAndProfileUI();
-            setTimeout(() => closeOutOfCreditsModal(), 1200);
-          } else {
-            statusEl.className = "ec-status-msg ec-tag-danger";
-            statusEl.textContent = res?.error || "Código inválido";
-          }
-        }
-      } catch (err) {
-        if (statusEl) {
-          statusEl.hidden = false;
-          statusEl.textContent = err.message;
-        }
-      }
-    });
-
     // Selección interactiva de Pasarela de Pago (Mercado Pago / Stripe)
     document.querySelectorAll(".ec-gateway-option").forEach((opt) => {
       opt.addEventListener("click", () => {
@@ -3138,7 +3037,7 @@
       });
     });
 
-    // Recarga: con Mercado Pago activo abre el pago; si no, explica la recarga manual.
+    // Recarga: con Mercado Pago activo abre el pago y el saldo se acredita solo.
     document.querySelectorAll(".ec-pack-btn").forEach((btn) => {
       btn.addEventListener("click", async () => {
         const statusEl = $("outOfCreditsMsg");
@@ -3147,11 +3046,7 @@
           await startCheckout(statusEl, btn);
           return;
         }
-        if (offer?.mode === "link") {
-          await startLinkPayment(statusEl, btn);
-          return;
-        }
-        showStatus(statusEl, true, "Para recargar, paga al administrador de EditCoreAI; él te dará un código que canjeas aquí.");
+        showStatus(statusEl, false, "La recarga con Mercado Pago no está disponible en este momento. Inténtalo en unos minutos.");
       });
     });
 
@@ -3558,6 +3453,7 @@
       if (badge) badge.textContent = view.isUnlimited ? "∞" : fmtUsd(view.balance);
       const big = $("settingsCreditsBigNum");
       if (big) big.textContent = view.isUnlimited ? "∞ Ilimitado" : fmtUsd(view.balance);
+      promptTopupIfEmpty({ balance: view.balance, unlimited: Boolean(view.isUnlimited), signedIn: true, suspended: view.status === "suspended" });
     });
 
     window.editcoreAuth?.onBlocked?.(({ code } = {}) => {

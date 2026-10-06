@@ -49,6 +49,7 @@ const WEB_HEAD_SCRIPTS = [
   "/ide/preload-api.js",
   "/js/web-ide-bridge.js",
   "/js/web-agent.js",
+  "/js/web-connections.js",
   "/ide/credit-ledger.js",
 ];
 

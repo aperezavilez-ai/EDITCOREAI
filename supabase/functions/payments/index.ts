@@ -42,7 +42,9 @@ async function serviceRpc(fn: string, args: Record<string, unknown>) {
     body: JSON.stringify(args),
   });
   if (!res.ok) throw new Error(`rpc ${fn}: ${res.status}`);
-  return await res.json();
+  // Las funciones que no devuelven nada responden 204 sin cuerpo.
+  const text = await res.text();
+  return text ? JSON.parse(text) : null;
 }
 
 async function requireUser(req: Request) {
