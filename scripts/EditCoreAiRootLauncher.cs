@@ -4,7 +4,6 @@
 // %LOCALAPPDATA%\EDITCOREAI\runtime: desde el HDD Electron tarda 45-90 s solo en arrancar.
 using System;
 using System.Diagnostics;
-using System.Drawing;
 using System.IO;
 using System.Reflection;
 using System.Runtime.InteropServices;
@@ -32,14 +31,23 @@ internal static class Program
 
         // Varios clics seguidos no deben lanzar varias copias mientras la primera arranca.
         bool firstLauncher;
+        Action refreshCache;
         using (var mutex = new Mutex(true, "Local\\EditCoreAI.RootLauncher", out firstLauncher))
         {
             if (!firstLauncher) return;
-            Launch();
+            refreshCache = Launch();
+        }
+        if (refreshCache == null) return;
+
+        // La copia rápida se actualiza en silencio con la app ya abierta; sirve desde el siguiente arranque.
+        bool cacheOwner;
+        using (var cacheMutex = new Mutex(true, "Local\\EditCoreAI.RuntimeCache", out cacheOwner))
+        {
+            if (cacheOwner) refreshCache();
         }
     }
 
-    private static void Launch()
+    private static Action Launch()
     {
         string root = AppDomain.CurrentDomain.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
         string dist = Path.Combine(root, "node_modules", "electron", "dist");
@@ -56,7 +64,7 @@ internal static class Program
                 "EditCoreAI",
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Error);
-            return;
+            return null;
         }
 
         if (!File.Exists(runtime))
@@ -66,10 +74,11 @@ internal static class Program
                 "EditCoreAI",
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Error);
-            return;
+            return null;
         }
 
-        runtime = CachedRuntime(dist, runtime);
+        Action refreshCache;
+        runtime = CachedRuntime(dist, runtime, out refreshCache);
 
         var psi = new ProcessStartInfo
         {
@@ -85,11 +94,13 @@ internal static class Program
         psi.EnvironmentVariables["ELECTRON_APP_USER_MODEL_ID"] = "com.editcoreai.app";
 
         Process.Start(psi);
+        return refreshCache;
     }
 
-    /// Devuelve el runtime copiado en LOCALAPPDATA (resincronizado si cambió); ante cualquier fallo, el original.
-    private static string CachedRuntime(string dist, string runtime)
+    /// Devuelve la copia en LOCALAPPDATA si está al día; si no, el original y en refreshCache la tarea que la resincroniza.
+    private static string CachedRuntime(string dist, string runtime, out Action refreshCache)
     {
+        refreshCache = null;
         try
         {
             string local = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
@@ -104,16 +115,23 @@ internal static class Program
 
             if (File.Exists(cached) && ReadText(stampPath) == stamp) return cached;
 
-            string staging = cacheDir + ".new";
-            using (var splash = ShowSplash())
+            refreshCache = () =>
             {
-                if (Directory.Exists(staging)) Directory.Delete(staging, true);
-                CopyDirectory(dist, staging);
-                File.WriteAllText(Path.Combine(staging, "runtime.stamp"), stamp);
-                if (Directory.Exists(cacheDir)) Directory.Delete(cacheDir, true);
-                Directory.Move(staging, cacheDir);
-            }
-            return File.Exists(cached) ? cached : runtime;
+                string staging = cacheDir + ".new";
+                try
+                {
+                    if (Directory.Exists(staging)) Directory.Delete(staging, true);
+                    CopyDirectory(dist, staging);
+                    File.WriteAllText(Path.Combine(staging, "runtime.stamp"), stamp);
+                    if (Directory.Exists(cacheDir)) Directory.Delete(cacheDir, true);
+                    Directory.Move(staging, cacheDir);
+                }
+                catch
+                {
+                    // Si la copia anterior está en uso, se reintenta en el siguiente arranque.
+                }
+            };
+            return runtime;
         }
         catch
         {
@@ -136,30 +154,6 @@ internal static class Program
         foreach (string file in Directory.GetFiles(source, "*", SearchOption.AllDirectories))
         {
             File.Copy(file, Path.Combine(target, file.Substring(source.Length + 1)), true);
-            Application.DoEvents();
         }
-    }
-
-    private static Form ShowSplash()
-    {
-        var form = new Form
-        {
-            Text = "EditCoreAI",
-            FormBorderStyle = FormBorderStyle.FixedToolWindow,
-            StartPosition = FormStartPosition.CenterScreen,
-            ClientSize = new Size(360, 70),
-            ControlBox = false,
-            TopMost = true,
-            ShowInTaskbar = true,
-        };
-        form.Controls.Add(new Label
-        {
-            Text = "Preparando EditCoreAI para un arranque rápido…\nSolo ocurre tras instalar o actualizar.",
-            Dock = DockStyle.Fill,
-            TextAlign = ContentAlignment.MiddleCenter,
-        });
-        form.Show();
-        Application.DoEvents();
-        return form;
     }
 }
