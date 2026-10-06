@@ -745,6 +745,10 @@
     renderThread(id);
     syncWebProjectFolder(id);
     refreshProjectFilesUI(id);
+    const threadFiles = getWebProjectFiles(id);
+    if (Object.keys(threadFiles).length > 0) {
+      switchContextTab("preview");
+    }
     renderWebPreview(id);
   };
   window.closeChatThread = (id) => {
@@ -883,7 +887,13 @@
       }
       try {
         updateProjectFromTurn(threadId, finalText);
+        const newFiles = getWebProjectFiles(threadId);
         syncWebProjectFolder(threadId);
+        // Si se generaron archivos, mostrar automáticamente el Navegador Web
+        if (Object.keys(newFiles).length > 0) {
+          switchContextTab("preview");
+          renderWebPreview(threadId);
+        }
         const p = $("chatHomeContextPanel");
         if (p && p.hidden) {
           p.hidden = false;
@@ -2349,7 +2359,15 @@ if (document.readyState === "complete" || document.readyState === "interactive")
         const tid = activeThreadId();
         renderThread(tid);
         refreshProjectFilesUI(tid);
-        renderWebPreview(tid);
+        syncWebProjectFolder(tid);
+        // Si hay archivos del proyecto, mostrar directamente el Navegador Web
+        const files = getWebProjectFiles(tid);
+        if (Object.keys(files).length > 0) {
+          switchContextTab("preview");
+          renderWebPreview(tid);
+        } else {
+          renderWebPreview(tid);
+        }
       }, 0);
     });
   });
