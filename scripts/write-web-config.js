@@ -2,12 +2,14 @@
 "use strict";
 
 // Escribe web-portal/js/cuentas-config.js (ignorado por git) con la dirección pública del servidor de cuentas
-// y su clave anon. En Vercel corre como buildCommand y toma las variables de entorno del proyecto; en local
-// las toma de .env.local. Si faltan, falla: así un despliegue roto no reemplaza al que funciona.
+// y su clave anon, y arma /app con el IDE completo. En Vercel corre como buildCommand y toma las variables de
+// entorno del proyecto; en local las toma de .env.local. Si faltan, falla: así un despliegue roto no reemplaza
+// al que funciona.
 // Uso: node scripts/write-web-config.js [carpeta_web]
 
 const fs = require("node:fs");
 const path = require("node:path");
+const vm = require("node:vm");
 
 function readEnvFile(file) {
   const out = {};
@@ -38,232 +40,93 @@ function cuentasConfigJs(env) {
   return `window.EDITCOREAI_CUENTAS = ${JSON.stringify({ url, anonKey })};\n`;
 }
 
-// La web no tiene archivos, terminal ni tools: de la política del IDE se quitan las secciones y líneas que las suponen.
-const IDE_ONLY_SECTIONS = /^(RAZONAMIENTO VISIBLE|E2E \/ REPORTE|ROADMAP-FIRST|OPERACIONES NUBE)/;
-const IDE_ONLY_LINES = /\(tools\)|tool_call|run_e2e|ROADMAP|tocaste archivos|proyecto está abierto/i;
+// /app es el IDE de escritorio tal cual: el mismo index.html con los mismos scripts y estilos, copiados en cada
+// publicación a web-portal/ide/. preload.js se sustituye por web-ide-bridge.js + web-agent.js.
+const REPO_ROOT = path.join(__dirname, "..");
+const WEB_HEAD_SCRIPTS = [
+  "/js/cuentas-config.js",
+  "/js/cuentas.js",
+  "/ide/preload-api.js",
+  "/js/web-ide-bridge.js",
+  "/js/web-agent.js",
+  "/ide/credit-ledger.js",
+];
 
-function webPersonaPrompt() {
-  const { ELITE_COMMUNICATION_POLICY } = require("../runtime/elite-communication-policy.js");
-  const policy = ELITE_COMMUNICATION_POLICY.split("\n\n")
-    .filter((block) => !IDE_ONLY_SECTIONS.test(block.trim()))
-    .map((block) => block.split("\n").filter((line) => !IDE_ONLY_LINES.test(line)).join("\n"))
-    .join("\n\n");
-  return [
-    policy,
-    "",
-    "CONTEXTO: VERSIÓN WEB (www.editcore.mx) · SUITE DE DESARROLLO WEB",
-    "- Eres EditCoreAI, el asistente y entorno de ingeniería de software en la nube.",
-    "- En esta versión web, los usuarios pueden crear, diseñar y organizar proyectos completos: páginas web, aplicaciones interactivas, utilidades y scripts.",
-    "- ACCIÓN INMEDIATA Y CÓDIGO DIRECTO: Cuando el usuario pida crear un proyecto, app, catálogo o web, NO te quedes en preguntas previas ('¿te parece?', '¿arranco?'). Define de inmediato el nombre de la carpeta (ej. 📁 Proyecto: catalogo-ventas) y genera directamente los archivos completos y funcionales en esa misma respuesta.",
-    "- FORMATO DE CÓDIGO OBLIGATORIO: Debes entregar SIEMPRE cada archivo envuelto en su bloque de código markdown con triple comilla invertida y el nombre del archivo en la apertura. Ejemplo: ```html index.html\\n<!DOCTYPE html>...\\n``` seguido de ```css styles.css\\n...\\n``` y ```javascript app.js\\n...\\n```. NUNCA escribas código plano suelto sin triple comilla invertida.",
-    "- Informa con naturalidad que los archivos se crearon en la carpeta del panel derecho, que el usuario puede interactuar con la app en vivo en el Navegador Web (Preview) y que puede descargar el proyecto completo con el botón 'Descargar Proyecto (.zip)'.",
-    "- Si el usuario cuenta con conexiones configuradas (GitHub, Vercel, Supabase), ofrécele sincronizar repositorios o publicar a producción.",
-  ].join("\n");
+// Archivos locales que carga index.html (scripts, estilos e imágenes), en orden.
+function ideSourceFiles(indexHtml) {
+  const files = [];
+  for (const m of String(indexHtml).matchAll(/\b(?:src|href)="\.\/([^"#?]+)"/g)) {
+    if (!files.includes(m[1])) files.push(m[1]);
+  }
+  return files;
 }
 
-// /app es el chat del IDE: se arma en cada publicación con los mismos archivos de la app de escritorio
-// (index.html, chat-home.*, styles.css, renderer-markdown.js, runtime/credit-ledger.js) y web-bridge.js.
-const REPO_ROOT = path.join(__dirname, "..");
-const IDE_COPIES = [
-  ["styles.css", "ide/styles.css"],
-  ["chat-home.css", "ide/chat-home.css"],
-  ["chat-home.js", "ide/chat-home.js"],
-  ["renderer-markdown.js", "ide/renderer-markdown.js"],
-];
-const CHAT_START = '<section id="chatHomeShell"';
-const CHAT_END = '<section id="welcomeScreen"';
+// Ejecuta preload.js con un Electron simulado para saber qué funciones expone cada espacio (window.editcore*).
+function preloadApi(preloadSource) {
+  const api = {};
+  const ipc = new Proxy({}, { get: () => () => undefined });
+  const electron = {
+    contextBridge: {
+      exposeInMainWorld(name, value) {
+        api[name] = value && typeof value === "object" ? Object.keys(value).filter((k) => typeof value[k] === "function") : [];
+      },
+    },
+    ipcRenderer: ipc,
+    webFrame: ipc,
+    webUtils: ipc,
+  };
+  const sandbox = {
+    require: (id) => (id === "electron" ? electron : require(id)),
+    process: { platform: "win32", env: {}, versions: {}, resourcesPath: "" },
+    __dirname: REPO_ROOT,
+    console: { log() {}, warn() {}, error() {}, info() {} },
+    setTimeout, clearTimeout, Promise, Error, JSON, Object, Array, String, Number, Boolean, Map, Set, Date, Symbol,
+  };
+  sandbox.globalThis = sandbox;
+  sandbox.window = sandbox;
+  vm.runInNewContext(`(function () {\n${preloadSource}\n})();`, sandbox, { filename: "preload.js" });
+  return api;
+}
 
-function ideChatMarkup(indexHtml) {
-  const start = indexHtml.indexOf(CHAT_START);
-  const end = indexHtml.indexOf(CHAT_END);
-  if (start < 0 || end <= start) throw new Error("index.html del IDE no tiene el bloque del chat (chatHomeShell … welcomeScreen)");
-  let markup = indexHtml.slice(start, end).replace(/(src|href)="\.\/assets\//g, '$1="/assets/').trimEnd();
-
-  // Inyectar botón de Descargar Proyecto (.zip) en la barra superior
-  markup = markup.replace(
-    '<div class="chat-home-top-actions">',
-    `<div class="chat-home-top-actions">
-          <button id="webTopDownloadProjectBtn" type="button" class="chat-home-download-btn" title="Descargar proyecto completo con código fuente (.zip)">📥 Descargar Proyecto (.zip)</button>`
-  );
-
-  // Inyectar pestaña de Previsualizador Web en el panel de sesión
-  markup = markup.replace(
-    '<div class="chat-home-context-tabs" role="tablist" aria-label="Vistas de sesión">',
-    `<div class="chat-home-context-tabs" role="tablist" aria-label="Vistas de sesión">
-              <button type="button" id="chatHomePreviewTabBtn" class="chat-home-context-tab" data-ctx-tab="preview" title="Navegador Web / Previsualización en vivo" aria-selected="false">
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="1.7"/><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" stroke="currentColor" stroke-width="1.7"/></svg>
-              </button>`
-  );
-
-  // Inyectar tarjeta interactiva de carpeta de proyecto en lugar del texto estático
-  markup = markup.replace(
-    '<p id="chatHomeCtxFolder" class="chat-home-context-folder">Sin carpeta</p>',
-    `<div class="chat-home-project-card" id="chatHomeProjectCard">
-                <div class="chat-home-project-info">
-                  <span class="chat-home-project-icon">📁</span>
-                  <span id="chatHomeCtxFolder" class="chat-home-context-folder">Sin carpeta</span>
-                </div>
-                <button type="button" id="chatHomeOpenPreviewBtn" class="chat-home-preview-badge-btn" title="Abrir en Navegador Web">Ver en Navegador ↗</button>
-              </div>`
-  );
-
-  // Inyectar botón de alternar tamaño en la cabecera del panel de sesión
-  markup = markup.replace(
-    '<strong id="chatHomeContextTitle">Sesión</strong>',
-    `<strong id="chatHomeContextTitle">Proyecto & Archivos</strong>
-            <button type="button" id="webContextWidthToggleBtn" class="web-preview-icon-btn" style="margin-left:auto;margin-right:6px;" title="Alternar ancho: Panel lateral derecho o Expandido">⇲ Expandir</button>`
-  );
-
-  // Inyectar visor interactivo del navegador web en el cuerpo del panel de sesión con controles claros
-  const previewSectionMarkup = `
-            <section class="chat-home-context-section" data-ctx="preview" id="chatHomeCtxSecPreview" hidden>
-              <div class="web-preview-header">
-                <div class="web-preview-address">
-                  <span class="web-preview-dot"></span>
-                  <span id="webPreviewUrlLabel">editcore://proyecto/index.html</span>
-                </div>
-                <div class="web-preview-actions">
-                  <button type="button" id="webPreviewReloadBtn" title="Recargar vista previa" class="web-preview-icon-btn">🔄</button>
-                  <button type="button" id="webPreviewMobileBtn" title="Alternar vista móvil (375px)" class="web-preview-icon-btn">📱 Móvil</button>
-                </div>
-              </div>
-              <div class="web-preview-viewport" id="webPreviewViewport">
-                <iframe id="webPreviewIframe" sandbox="allow-scripts allow-forms allow-modals allow-popups" title="Vista previa del proyecto"></iframe>
-                <div id="webPreviewEmpty" class="web-preview-empty">
-                  <p>Pide a EditCoreAI crear una app o web para interactuar con ella aquí en tiempo real.</p>
-                </div>
-              </div>
-            </section>`;
-
-  markup = markup.replace(
-    '<div class="chat-home-context-body">',
-    `<div class="chat-home-context-body">${previewSectionMarkup}`
-  );
-
-  // Inyectar botón de Descargar Proyecto (.zip) dentro de la sección de archivos del panel derecho
-  markup = markup.replace(
-    '<ul id="chatHomeCtxFiles" class="chat-home-context-list"></ul>',
-    `<ul id="chatHomeCtxFiles" class="chat-home-context-list"></ul>
-              <button type="button" id="webSideDownloadBtn" class="chat-home-zip-btn" title="Descargar código del proyecto generado (.zip)">📥 Descargar Proyecto (.zip)</button>`
-  );
-
-  // Inyectar pestaña de Conexiones en el menú de categorías de configuración
-  markup = markup.replace(
-    '<button type="button" class="ec-settings-nav-item" data-settings-tab="models">',
-    `<button type="button" class="ec-settings-nav-item" data-settings-tab="connections">
-              <span class="ec-settings-nav-icon">🔗</span>
-              <span class="ec-settings-nav-label">Conexiones</span>
-            </button>
-            <button type="button" class="ec-settings-nav-item" data-settings-tab="models">`
-  );
-
-  // Inyectar panel de Conexiones (GitHub, Vercel, Supabase) en el viewport de configuración
-  const connectionsPaneMarkup = `
-            <!-- PANE: Conexiones (GitHub, Vercel, Supabase) -->
-            <div class="ec-settings-pane is-hidden" id="settingsPaneConnections" data-pane="connections" hidden>
-              <div class="ec-settings-group-card" style="flex-direction:column;align-items:flex-start;gap:8px;">
-                <div style="display:flex;justify-content:space-between;width:100%;align-items:center;">
-                  <div class="ec-group-info">
-                    <h4>GitHub (Control de Versiones)</h4>
-                    <p>Sincroniza y crea repositorios en tu cuenta de GitHub.</p>
-                  </div>
-                  <span class="ec-status-tag" id="webGithubStatusTag">Sin conectar</span>
-                </div>
-                <div style="display:flex;gap:8px;width:100%;margin-top:6px;">
-                  <input type="password" id="webGithubTokenInput" class="ec-styled-input" placeholder="Personal Access Token (ghp_...)" />
-                  <button type="button" class="ec-btn-action" id="webSaveGithubBtn">Guardar</button>
-                </div>
-              </div>
-
-              <div class="ec-settings-group-card" style="flex-direction:column;align-items:flex-start;gap:8px;">
-                <div style="display:flex;justify-content:space-between;width:100%;align-items:center;">
-                  <div class="ec-group-info">
-                    <h4>Vercel (Despliegues en Vivo)</h4>
-                    <p>Publica tu proyecto web en producción con 1 clic en un dominio .vercel.app.</p>
-                  </div>
-                  <span class="ec-status-tag" id="webVercelStatusTag">Sin conectar</span>
-                </div>
-                <div style="display:flex;gap:8px;width:100%;margin-top:6px;">
-                  <input type="password" id="webVercelTokenInput" class="ec-styled-input" placeholder="Vercel Access Token o Deploy Hook" />
-                  <button type="button" class="ec-btn-action" id="webSaveVercelBtn">Guardar</button>
-                </div>
-              </div>
-
-              <div class="ec-settings-group-card" style="flex-direction:column;align-items:flex-start;gap:8px;">
-                <div style="display:flex;justify-content:space-between;width:100%;align-items:center;">
-                  <div class="ec-group-info">
-                    <h4>Supabase (Base de Datos & Auth)</h4>
-                    <p>Conexión a tu proyecto dedicado de PostgreSQL y autenticación.</p>
-                  </div>
-                  <span class="ec-status-tag" id="webSupabaseStatusTag">Sin conectar</span>
-                </div>
-                <div style="display:flex;gap:8px;width:100%;margin-top:6px;">
-                  <input type="text" id="webSupabaseUrlInput" class="ec-styled-input" placeholder="https://tu-proyecto.supabase.co" />
-                  <input type="password" id="webSupabaseKeyInput" class="ec-styled-input" placeholder="Anon Key o Service Role" />
-                  <button type="button" class="ec-btn-action" id="webSaveSupabaseBtn">Guardar</button>
-                </div>
-              </div>
-            </div>`;
-
-  markup = markup.replace(
-    '<div class="ec-settings-pane is-hidden" id="settingsPaneApplication"',
-    `${connectionsPaneMarkup}
-
-            <div class="ec-settings-pane is-hidden" id="settingsPaneApplication"`
-  );
-
-  return markup;
+function webAppHtml(indexHtml, version) {
+  let html = String(indexHtml)
+    .replace(/\s*<meta http-equiv="Content-Security-Policy"[^>]*>/, "")
+    .replace(/\b(src|href)="\.\//g, '$1="/ide/')
+    .replace(/<body\b([^>]*)>/, (tag, attrs) => (/class="/.test(attrs) ? tag.replace(/class="/, 'class="is-web ') : `<body${attrs} class="is-web">`));
+  const boot = [
+    "    <!-- Generado por scripts/write-web-config.js desde index.html del IDE. No editar a mano. -->",
+    `    <script>window.EDITCORE_WEB_VERSION=${JSON.stringify(String(version || ""))};try{if(!localStorage.getItem("editcore-app-mode"))localStorage.setItem("editcore-app-mode","ide")}catch(e){}</script>`,
+    ...WEB_HEAD_SCRIPTS.map((src) => `    <script src="${src}"></script>`),
+    '    <link rel="stylesheet" href="/css/web-ide-shell.css" />',
+  ].join("\n");
+  if (!html.includes("</head>")) throw new Error("index.html del IDE no tiene </head>");
+  return html.replace("</head>", `${boot}\n  </head>`);
 }
 
 function webCommonJs(source, moduleVar) {
   return `(function (require, module, exports) {\n${source}\n})(window.__editcoreWebRequire, window.${moduleVar} = { exports: {} }, window.${moduleVar}.exports);\n`;
 }
 
-function webAppHtml(chatMarkup) {
-  return `<!doctype html>
-<!-- Generado por scripts/write-web-config.js desde index.html del IDE. No editar a mano. -->
-<html lang="es">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>EditCoreAI</title>
-    <link rel="icon" href="/assets/favicon.ico" />
-    <link rel="apple-touch-icon" href="/assets/apple-touch-icon.png" />
-    <link rel="stylesheet" href="/ide/styles.css" />
-    <link rel="stylesheet" href="/ide/chat-home.css" />
-    <link rel="stylesheet" href="/css/web-ide.css" />
-  </head>
-  <body data-app-mode="chat" class="is-web">
-    ${chatMarkup}
-
-    <main aria-hidden="true">
-      <input type="file" id="fileInput" multiple accept="image/*,.pdf,.txt,.md,.json,.js,.html,.css,.csv" hidden />
-      <section id="feed" class="feed"></section>
-      <span id="modelPickerLabel" hidden>Auto</span>
-      <div id="modelPickerMenu" class="model-picker-menu hidden" role="listbox" aria-label="Modelos disponibles"></div>
-    </main>
-
-    <script src="/js/cuentas-config.js"></script>
-    <script src="/js/editcore-persona.js"></script>
-    <script src="/js/cuentas.js"></script>
-    <script src="/ide/renderer-markdown.js"></script>
-    <script src="/js/web-bridge.js"></script>
-    <script src="/ide/credit-ledger.js"></script>
-    <script src="/ide/chat-home.js"></script>
-  </body>
-</html>
-`;
-}
-
 function writeWebIdeApp(webDir, repoRoot = REPO_ROOT) {
   const ideDir = path.join(webDir, "ide");
+  fs.rmSync(ideDir, { recursive: true, force: true });
   fs.mkdirSync(ideDir, { recursive: true });
-  for (const [from, to] of IDE_COPIES) fs.copyFileSync(path.join(repoRoot, from), path.join(webDir, to));
+  const indexHtml = fs.readFileSync(path.join(repoRoot, "index.html"), "utf8");
+  for (const rel of ideSourceFiles(indexHtml)) {
+    const from = path.join(repoRoot, rel);
+    if (!fs.existsSync(from)) throw new Error(`index.html carga ${rel}, pero no existe`);
+    const to = path.join(ideDir, rel);
+    fs.mkdirSync(path.dirname(to), { recursive: true });
+    fs.copyFileSync(from, to);
+  }
   const ledger = fs.readFileSync(path.join(repoRoot, "runtime", "credit-ledger.js"), "utf8");
   fs.writeFileSync(path.join(ideDir, "credit-ledger.js"), webCommonJs(ledger, "__editcoreCreditLedgerModule"), "utf8");
-  const markup = ideChatMarkup(fs.readFileSync(path.join(repoRoot, "index.html"), "utf8"));
+  const api = preloadApi(fs.readFileSync(path.join(repoRoot, "preload.js"), "utf8"));
+  fs.writeFileSync(path.join(ideDir, "preload-api.js"), `window.__EDITCORE_PRELOAD_API = ${JSON.stringify(api)};\n`, "utf8");
+  let version = "";
+  try { version = JSON.parse(fs.readFileSync(path.join(repoRoot, "package.json"), "utf8")).version || ""; } catch { version = ""; }
   const out = path.join(webDir, "app.html");
-  fs.writeFileSync(out, webAppHtml(markup), "utf8");
+  fs.writeFileSync(out, webAppHtml(indexHtml, version), "utf8");
   return out;
 }
 
@@ -271,7 +134,6 @@ function writeWebConfig(webDir, env) {
   const out = path.join(webDir, "js", "cuentas-config.js");
   fs.mkdirSync(path.dirname(out), { recursive: true });
   fs.writeFileSync(out, cuentasConfigJs(env), "utf8");
-  fs.writeFileSync(path.join(webDir, "js", "editcore-persona.js"), `window.EDITCORE_WEB_PERSONA = ${JSON.stringify(webPersonaPrompt())};\n`, "utf8");
   writeWebIdeApp(webDir);
   return out;
 }
@@ -288,4 +150,4 @@ if (require.main === module) {
   }
 }
 
-module.exports = { cuentasConfigJs, webPersonaPrompt, writeWebConfig, writeWebIdeApp, ideChatMarkup, webCommonJs };
+module.exports = { cuentasConfigJs, writeWebConfig, writeWebIdeApp, webAppHtml, ideSourceFiles, preloadApi, webCommonJs };

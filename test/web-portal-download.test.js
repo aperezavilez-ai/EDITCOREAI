@@ -22,13 +22,12 @@ test("Página oficial: Vercel publica solo web-portal, sin instalar la app de es
   assert.equal(config.installCommand, "");
   assert.equal(config.buildCommand, "node scripts/write-web-config.js");
   const ignore = fs.readFileSync(path.join(ROOT, ".vercelignore"), "utf8").split(/\r?\n/).filter(Boolean);
-  assert.deepEqual(ignore, [
-    "/*", "!/web-portal", "!/vercel.json",
-    "!/scripts", "/scripts/*", "!/scripts/write-web-config.js",
-    "!/runtime", "/runtime/*", "!/runtime/elite-communication-policy.js",
-    "!/runtime/credit-ledger.js",
-    "!/index.html", "!/styles.css", "!/chat-home.css", "!/chat-home.js", "!/renderer-markdown.js",
-  ]);
+  assert.deepEqual(ignore.slice(0, 3), ["/*", "!/web-portal", "!/vercel.json"]);
+  for (const dir of ["scripts", "runtime", "ide", "assets"]) {
+    assert.ok(ignore.indexOf(`!/${dir}`) < ignore.indexOf(`/${dir}/*`), `${dir}: solo suben los archivos listados`);
+  }
+  assert.ok(ignore.includes("!/scripts/write-web-config.js"));
+  assert.ok(!ignore.some((l) => /node_modules|\.env|release|dist/.test(l) && l.startsWith("!")), "nunca sube dependencias, secretos ni instaladores");
 });
 
 test("Página oficial: los botones de descarga usan el dominio propio, no versiones fijas", () => {

@@ -1503,6 +1503,7 @@ const CLOUD_SESSION_API_KEY = "editcore-session";
 let cloudModelState = { ids: [], baseUrl: "" };
 
 function isCloudUser() {
+  if (window.EDITCORE_IS_WEB === true) return true;
   return window.__editcoreSession !== undefined && !isCurrentUserAdmin();
 }
 
@@ -3751,7 +3752,7 @@ function projectDisplayName(project) {
 }
 
 function projectCatalogParent() {
-  return "D:\\PROGRAMAS IA";
+  return window.EDITCORE_WEB_CATALOG || "D:\\PROGRAMAS IA";
 }
 
 async function loadProjectCatalogFromDisk() {
@@ -6238,7 +6239,7 @@ async function openNewProjectDialog() {
   $("newProjectDialogTitle").textContent = "Nuevo proyecto";
   $("newProjectDialogDescription").textContent = "Crea una carpeta en blanco. Si necesitas un stack concreto, pidelo al agente (las plantillas viven en el Cerebro).";
   $("newProjectName").value = "";
-  $("newProjectParent").value = loadJson("editcore-project-parent", "D:\\PROGRAMAS IA");
+  $("newProjectParent").value = window.EDITCORE_WEB_CATALOG || loadJson("editcore-project-parent", "D:\\PROGRAMAS IA");
   if ($("newProjectOnboardServices")) $("newProjectOnboardServices").checked = false;
   $("projectCreateProgress").classList.add("hidden");
   $("projectCreateProgress").dataset.state = "idle";

@@ -9,7 +9,8 @@ const crypto = require("node:crypto");
 
 const ROOT = path.join(__dirname, "..");
 const CLIENT = fs.readFileSync(path.join(ROOT, "web-portal", "js", "cuentas.js"), "utf8");
-const BRIDGE = fs.readFileSync(path.join(ROOT, "web-portal", "js", "web-bridge.js"), "utf8");
+const BRIDGE = fs.readFileSync(path.join(ROOT, "web-portal", "js", "web-ide-bridge.js"), "utf8");
+const AGENT = fs.readFileSync(path.join(ROOT, "web-portal", "js", "web-agent.js"), "utf8");
 const URL_BASE = "https://cuentas.test";
 const ANON = "anon-publica-de-pruebas-0123456789";
 
@@ -189,16 +190,16 @@ test("web: el markdown de la IA se ve con formato y nunca inyecta HTML", () => {
   assert.match(md.render("| A | B |\n|---|---|\n| 1 | 2 |"), /<table><thead><tr><th>A<\/th><th>B<\/th><\/tr><\/thead><tbody><tr><td>1<\/td><td>2<\/td><\/tr><\/tbody><\/table>/);
 });
 
-test("web: el chat usa la misma voz de EditCoreAI que el IDE, sin prometer herramientas", () => {
-  const { webPersonaPrompt } = require("../scripts/write-web-config");
-  const persona = webPersonaPrompt();
-  assert.match(persona, /POLITICA_COMUNICACION_ELITE_V5/);
-  assert.match(persona, /PRIMERA FRASE = RESPUESTA/);
-  assert.match(persona, /VERSIÓN WEB/);
-  assert.doesNotMatch(persona, /run_e2e_pipeline|ROADMAP|\(tools\)/);
-  assert.match(BRIDGE, /window\.EDITCORE_WEB_PERSONA/);
-  assert.match(BRIDGE, /onThinking:/);
-  assert.match(BRIDGE, /window\.renderMarkdownSecure/);
+test("web: el agente usa la misma voz de EditCoreAI que el IDE y trabaja con herramientas sobre el proyecto", () => {
+  assert.match(AGENT, /window\.EditCoreEliteCommunication\?\.ELITE_COMMUNICATION_POLICY/);
+  assert.match(AGENT, /CONTEXTO: EDITCOREAI WEB/);
+  assert.match(AGENT, /Nunca nombres a los proveedores/);
+  for (const tool of ["list_files", "read_file", "search_files", "write_file", "replace_in_file", "delete_file"]) {
+    assert.match(AGENT, new RegExp(`name: "${tool}"`), `falta la herramienta ${tool}`);
+  }
+  assert.match(AGENT, /phase: "narration_delta"/);
+  assert.match(AGENT, /phase: "tool", name: call\.name, input: args, stage: "done"/);
+  assert.match(AGENT, /phase: "final_report"/);
 });
 
 test("web: Enter envía la consulta y Shift+Enter hace salto de línea (mismo compositor del IDE)", () => {
@@ -213,12 +214,14 @@ test("web: login sin contraseñas fijas ni accesos de respaldo", () => {
   const login = fs.readFileSync(path.join(ROOT, "web-portal", "login.html"), "utf8");
   assert.doesNotMatch(login, /admin-master|signInWithPassword|password\s*===/);
   assert.match(login, /startGoogleLogin/);
-  assert.doesNotMatch(BRIDGE, /aperezavilez@gmail\.com/, "el rol lo decide el servidor, nunca un correo fijo");
-  assert.doesNotMatch(BRIDGE, /fetch\("\/api\/chat"/);
-  assert.match(BRIDGE, /C\.chat\(/);
+  for (const src of [BRIDGE, AGENT]) {
+    assert.doesNotMatch(src, /aperezavilez@gmail\.com/, "el rol lo decide el servidor, nunca un correo fijo");
+    assert.doesNotMatch(src, /\/api\/chat/);
+  }
+  assert.match(AGENT, /\/functions\/v1\/ai-proxy\/v1/);
 });
 
-function loadBridge({ accountData, session = true } = {}) {
+function loadBridge({ accountData, session = true, preloadApi = {} } = {}) {
   const ls = storage();
   if (session) {
     ls.setItem("editcoreai_web_session", JSON.stringify({ access_token: "a", refresh_token: "r", expires_at: 9e9, user: { id: "u1", email: "ana@gmail.com", name: "Ana" } }));
@@ -238,18 +241,24 @@ function loadBridge({ accountData, session = true } = {}) {
   const win = {
     EditCoreCuentas: cuentas,
     localStorage: ls,
-    location: { href: "https://www.editcore.mx/app.html", pathname: "/app.html", search: "" },
+    location: { href: "https://www.editcore.mx/app.html", pathname: "/app.html", search: "", origin: "https://www.editcore.mx" },
     addEventListener() {},
     dispatchEvent() {},
+    __EDITCORE_PRELOAD_API: preloadApi,
   };
   win.window = win;
+  class Document { createElement() { return {}; } }
   const context = {
     window: win,
-    document: { addEventListener() {}, getElementById: () => null, documentElement: { setAttribute() {}, getAttribute: () => "blanco" } },
+    document: { addEventListener() {}, getElementById: () => null, querySelectorAll: () => [], documentElement: { setAttribute() {}, getAttribute: () => "blanco", classList: { add() {} } } },
+    Document,
+    MutationObserver: class { observe() {} },
+    queueMicrotask,
     localStorage: ls,
     location: win.location,
     history: { replaceState() {} },
-    URL, Event: class { constructor(type) { this.type = type; } }, Promise, Error, JSON, Math, Number, String, Boolean, Array, Object, Map, Set, Date, setTimeout, clearTimeout,
+    URL, Event: class { constructor(type) { this.type = type; } }, CustomEvent: class { constructor(type, init) { this.type = type; this.detail = init?.detail; } },
+    Promise, Error, JSON, Math, Number, String, Boolean, Array, Object, Map, Set, Date, RegExp, setTimeout, clearTimeout, encodeURIComponent, decodeURIComponent,
   };
   vm.createContext(context);
   vm.runInContext(BRIDGE, context);
@@ -285,40 +294,82 @@ test("web: el administrador entra con su panel y el usuario sin él (lo decide e
   assert.equal(ns.user, null);
 });
 
-test("web: canjear código usa el mismo servidor y la web no expone funciones de escritorio", async () => {
-  const { win, rpcCalls } = loadBridge({ accountData: { email: "luis@gmail.com", role: "user", status: "active", credits_balance: 1 } });
+test("web: canjear código usa el mismo servidor y lo que es de escritorio responde «no disponible»", async () => {
+  const { win, rpcCalls } = loadBridge({
+    accountData: { email: "luis@gmail.com", role: "user", status: "active", credits_balance: 1 },
+    preloadApi: { editcoreUpdates: ["check"], editcorePty: ["create", "onData"], editcoreProject: ["pick", "onboard"] },
+  });
   await win.editcoreCredits.redeem("ABC-123");
   assert.equal(JSON.stringify(rpcCalls[0]), JSON.stringify({ fn: "editcoreai_redeem_voucher", args: { p_code: "ABC-123" } }));
-  for (const desktopOnly of ["editcoreUpdates", "editcoreWindow", "editcoreRecovery", "editcoreSkills", "EditCoreTerminal", "openProjectFromDisk"]) {
-    assert.equal(win[desktopOnly], undefined, `${desktopOnly} no debe existir en la web`);
-  }
-  assert.equal(typeof win.EditCoreAttachments?.openPicker, "function");
-  assert.equal(typeof win.sendChatPrompt, "function");
-  assert.equal(typeof win.EditCoreModels.openPicker, "function");
+  const update = await win.editcoreUpdates.check();
+  assert.equal(update.ok, false);
+  assert.equal(update.webUnavailable, true);
+  assert.match(update.error, /app de escritorio/);
+  assert.equal(typeof win.editcorePty.onData(() => {}), "function", "los on* devuelven una función para desuscribirse");
+  assert.equal((await win.editcoreProject.onboard()).webUnavailable, true);
+  assert.equal(await win.editcoreProject.pick(), null, "en la web no se abren carpetas del disco");
+  assert.equal(win.EDITCORE_IS_WEB, true);
+  assert.equal(win.EDITCORE_WEB_CATALOG, "/proyectos");
 });
 
-test("web: /app se arma con el chat del IDE (mismos archivos) en cada publicación", () => {
-  const { writeWebConfig } = require("../scripts/write-web-config");
+test("web: los proyectos y sus archivos viven en la cuenta (crear, listar, editar, renombrar, borrar y vista previa)", async () => {
+  const { win } = loadBridge({ accountData: { email: "luis@gmail.com", role: "user", status: "active", credits_balance: 1 } });
+  const P = win.editcoreProject;
+  const created = await P.create({ name: "Mi Tienda", parentPath: "/proyectos" });
+  assert.equal(created.root, "/proyectos/mi-tienda");
+  assert.equal((await P.create({ name: "Mi Tienda" })).root, "/proyectos/mi-tienda-2", "no pisa un proyecto con el mismo nombre");
+  assert.equal(JSON.stringify((await P.catalog()).map((p) => p.root).sort()), JSON.stringify(["/proyectos/mi-tienda", "/proyectos/mi-tienda-2"]));
+  const names = (await P.list(created.root, "")).map((e) => e.name).sort();
+  assert.equal(JSON.stringify(names), JSON.stringify(["app.js", "index.html", "styles.css"]));
+  await P.saveEditor({ projectRoot: created.root, path: "css/extra.css", content: "h1{color:red}" });
+  assert.equal((await P.readText({ projectRoot: created.root, path: "css/extra.css" })).content, "h1{color:red}");
+  assert.ok((await P.list(created.root, "")).some((e) => e.name === "css" && e.kind === "directory"));
+  await P.renameEntry({ projectRoot: created.root, from: "css/extra.css", to: "css/main.css" });
+  await assert.rejects(P.readText({ projectRoot: created.root, path: "css/extra.css" }));
+  await P.deleteEntry({ projectRoot: created.root, path: "css", recursive: true });
+  assert.ok(!(await P.list(created.root, "")).some((e) => e.name === "css"));
+  await assert.rejects(P.readText({ projectRoot: created.root, path: "../otro/index.html" }), "no sale de la carpeta del proyecto");
+  const preview = await P.startPreview(created.root);
+  assert.equal(preview.available, true);
+  assert.match(preview.url, /\/preview\/mi-tienda\/index\.html$/);
+});
+
+test("web: /app es el IDE completo (mismo index.html y mismos scripts) en cada publicación", () => {
+  const { writeWebConfig, ideSourceFiles } = require("../scripts/write-web-config");
+  const indexHtml = fs.readFileSync(path.join(ROOT, "index.html"), "utf8");
+  const sources = ideSourceFiles(indexHtml);
+  for (const f of ["renderer.js", "chat-home.js", "styles.css", "ide/editor-pane.js", "runtime/project-files-ui.js", "assets/editcore-logo.png"]) {
+    assert.ok(sources.includes(f), `index.html debe cargar ${f}`);
+  }
   const dir = fs.mkdtempSync(path.join(require("node:os").tmpdir(), "ec-webapp-"));
   try {
     writeWebConfig(dir, { EDITCOREAI_CLOUD_PUBLIC_URL: "https://api.test", EDITCOREAI_CLOUD_ANON_KEY: ANON });
     const app = fs.readFileSync(path.join(dir, "app.html"), "utf8");
-    for (const id of ["chatHomeShell", "chatHomeComposer", "chatHomeSettingsSheet", "settingsAdminMasterDashboard", "authPortalOverlay", "outOfCreditsModal", "chatHomeDialogModal", 'id="feed"', "modelPickerMenu"]) {
+    for (const id of ['id="welcomeScreen"', 'id="chatForm"', 'id="previewWebview"', 'id="fileList"', 'id="appStatusBar"', "chatHomeShell", "authPortalOverlay", "outOfCreditsModal", "settingsAdminMasterDashboard"]) {
       assert.ok(app.includes(id), `falta ${id} en /app`);
     }
-    assert.doesNotMatch(app, /id="welcomeScreen"|id="chatForm"/, "la vista IDE no se publica");
+    assert.doesNotMatch(app, /Content-Security-Policy/, "la CSP de escritorio (connect-src 'none') no aplica en la web");
+    assert.doesNotMatch(app, /(src|href)="\.\//, "todas las rutas apuntan a /ide/");
+    assert.match(app, /<body[^>]*class="is-web"/);
     const scripts = [...app.matchAll(/<script src="([^"]+)"/g)].map((m) => m[1]);
-    assert.deepEqual(scripts, ["/js/cuentas-config.js", "/js/editcore-persona.js", "/js/cuentas.js", "/ide/renderer-markdown.js", "/js/web-bridge.js", "/ide/credit-ledger.js", "/ide/chat-home.js"]);
-    for (const f of ["styles.css", "chat-home.css", "chat-home.js", "renderer-markdown.js"]) {
-      assert.equal(fs.readFileSync(path.join(dir, "ide", f), "utf8"), fs.readFileSync(path.join(ROOT, f), "utf8"), `${f} debe ser idéntico al del IDE`);
+    assert.deepEqual(scripts.slice(0, 6), ["/js/cuentas-config.js", "/js/cuentas.js", "/ide/preload-api.js", "/js/web-ide-bridge.js", "/js/web-agent.js", "/ide/credit-ledger.js"], "el puente web va antes que los scripts del IDE");
+    assert.ok(scripts.includes("/ide/renderer.js") && scripts.includes("/ide/chat-home.js"));
+    for (const f of sources) {
+      assert.ok(fs.readFileSync(path.join(dir, "ide", f)).equals(fs.readFileSync(path.join(ROOT, f))), `${f} debe ser idéntico al del IDE`);
     }
     assert.match(fs.readFileSync(path.join(dir, "ide", "credit-ledger.js"), "utf8"), /__editcoreWebRequire[\s\S]*__editcoreCreditLedgerModule/);
+    const api = JSON.parse(fs.readFileSync(path.join(dir, "ide", "preload-api.js"), "utf8").replace(/^window\.__EDITCORE_PRELOAD_API = /, "").replace(/;\s*$/, ""));
+    assert.ok(api.editcoreAgent.includes("run") && api.editcoreProject.includes("list") && api.editcorePty.includes("create"));
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
+  const css = fs.readFileSync(path.join(ROOT, "web-portal", "css", "web-ide-shell.css"), "utf8");
+  for (const id of ["terminalBtn", "connectionsBtn", "providersBtn", "publishBtn", "updatesBtn", "voiceBtn", "pickProjectBtn", "welcomeOpenBtn", "inspectBrowserBtn"]) {
+    assert.match(css, new RegExp(`body\\.is-web #${id}\\b`), `${id} es de escritorio y se oculta en la web`);
+  }
   const ignore = fs.readFileSync(path.join(ROOT, ".vercelignore"), "utf8").split(/\r?\n/);
-  for (const f of ["!/index.html", "!/styles.css", "!/chat-home.css", "!/chat-home.js", "!/renderer-markdown.js", "!/runtime/credit-ledger.js"]) {
-    assert.ok(ignore.includes(f), `${f} debe subir a Vercel para armar /app`);
+  for (const f of [...sources, "preload.js", "package.json", "runtime/credit-ledger.js"]) {
+    assert.ok(ignore.includes(`!/${f}`), `${f} debe subir a Vercel para armar /app`);
   }
   const gitignore = fs.readFileSync(path.join(ROOT, ".gitignore"), "utf8");
   assert.match(gitignore, /^web-portal\/app\.html$/m);
@@ -345,8 +396,7 @@ test("web: los despliegues desde GitHub generan la config en el build de Vercel"
   const src = fs.readFileSync(path.join(ROOT, "scripts", "write-web-config.js"), "utf8");
   const requires = [...src.matchAll(/require\("([^"]+)"\)/g)].map((m) => m[1]);
   const local = requires.filter((r) => !r.startsWith("node:"));
-  assert.deepEqual(local, ["../runtime/elite-communication-policy.js"], "en Vercel solo sube este archivo local");
-  assert.ok(ignore.includes("!/runtime/elite-communication-policy.js"), "la política de comunicación debe subir a Vercel");
+  assert.deepEqual(local, [], "el script no depende de otros módulos locales");
   assert.ok(ignore.includes("/runtime/*"), "el resto de runtime no sube");
 
   const { writeWebConfig } = require("../scripts/write-web-config");
@@ -354,7 +404,6 @@ test("web: los despliegues desde GitHub generan la config en el build de Vercel"
   try {
     const out = writeWebConfig(dir, { EDITCOREAI_CLOUD_PUBLIC_URL: "https://api.test", EDITCOREAI_CLOUD_ANON_KEY: ANON });
     assert.match(fs.readFileSync(out, "utf8"), /^window\.EDITCOREAI_CUENTAS = /);
-    assert.match(fs.readFileSync(path.join(dir, "js", "editcore-persona.js"), "utf8"), /^window\.EDITCORE_WEB_PERSONA = /);
     assert.throws(() => writeWebConfig(dir, {}), /EDITCOREAI_CLOUD_PUBLIC_URL/);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });

@@ -1,0 +1,54 @@
+/* EditCoreAI web: mismo IDE que la app de escritorio. Aquí solo se ocultan los botones que dependen de la
+   computadora (carpetas del disco, terminal, git local, ventanas, actualizaciones, dictado, Inspector…). */
+
+body.is-web #newWindowBtn,
+body.is-web #connectionsBtn,
+body.is-web #providersBtn,
+body.is-web #terminalBtn,
+body.is-web #brainBtn,
+body.is-web #inspectorBtn,
+body.is-web #checkUpdatesMenuBtn,
+body.is-web #updatesBtn,
+body.is-web #publishBtn,
+body.is-web #chatReloadAppBtn,
+body.is-web #composerReloadAppBtn,
+body.is-web #voiceBtn,
+body.is-web #chatHomeFolderBtn,
+body.is-web #chatHomeReloadAppBtn,
+body.is-web #chatHomeMicBtn,
+body.is-web #gotoDefBtn,
+body.is-web #inspectBrowserBtn,
+body.is-web #pickProjectBtn,
+body.is-web #welcomeOpenBtn,
+body.is-web #projectsOpenExistingBtn,
+body.is-web #projectsSaveCurrentBtn,
+body.is-web label[for="newProjectParent"],
+body.is-web .project-parent-row,
+body.is-web .project-onboard-checkbox,
+body.is-web #browserInspectPanel,
+body.is-web .viewer-logs-tab[data-tab="terminal"],
+body.is-web #tab-terminal,
+body.is-web [data-web-hidden],
+body.is-web #settingsUpdatesCard,
+body.is-web #settingsRecoveryCard,
+body.is-web .ec-settings-nav-item[data-settings-tab="models"],
+body.is-web .ec-settings-nav-item[data-settings-tab="customizations"],
+body.is-web .ec-settings-nav-item[data-settings-tab="browser"],
+body.is-web .toolbar-menu-label:has(+ #brainBtn),
+body.is-web #toolsMoreMenu hr:has(+ .toolbar-menu-label + #brainBtn),
+body.is-web .toolbar-menu-label:has(+ #checkUpdatesMenuBtn),
+body.is-web #toolsMoreMenu hr:has(+ .toolbar-menu-label + #checkUpdatesMenuBtn) {
+  display: none !important;
+}
+
+/* El <webview> de Electron se reemplaza por un iframe aislado dentro del mismo elemento. */
+body.is-web webview.preview-webview {
+  display: flex;
+}
+body.is-web webview .web-preview-frame {
+  flex: 1 1 auto;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: #fff;
+}

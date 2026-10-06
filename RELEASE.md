@@ -1,3 +1,17 @@
+# RELEASE v4.3.5
+
+## La web es el mismo IDE de escritorio
+
+- www.editcore.mx/app ahora carga el IDE completo, igual que la app: barra superior, chat a la izquierda, navegador (Web, Móvil y Código) al centro, archivos del proyecto a la derecha y barra de estado. Usa el mismo `index.html` y los mismos scripts del IDE, copiados en cada publicación.
+- Los proyectos de la web se guardan en la cuenta del usuario dentro de su navegador: crear, abrir, editar, renombrar y borrar archivos, con vista previa en vivo y el editor de código.
+- El agente de la web trabaja como el del IDE: lee y escribe los archivos del proyecto, pide permiso paso a paso con el cambio a la vista y termina con un resumen. Usa la IA del servidor con el saldo del usuario y reintenta solo si el proveedor corta la respuesta.
+- Se ocultan en la web los botones que solo funcionan en la computadora: terminal, conexiones, proveedores, publicar, abrir carpetas del disco, ventanas nuevas, actualizaciones, dictado, Inspector y Cerebro.
+- Incluye todo lo de la versión 4.3.4.
+
+### Archivos
+
+- `EDITCOREAI.exe` (4.3.5.0) y `release/EDITCOREAI-Setup.exe` (4.3.5), construidos desde un árbol limpio en el commit publicado.
+
 # RELEASE v4.3.4
 
 ## Protección contra piratería y sobregiros

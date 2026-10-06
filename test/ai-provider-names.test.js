@@ -9,7 +9,6 @@ const ROOT = path.join(__dirname, "..");
 const { scrubAiProviderNames } = require("../renderer-markdown");
 const { sanitizeChatProviderError } = require("../runtime/chat-error-sanitize");
 const { ELITE_COMMUNICATION_POLICY } = require("../runtime/elite-communication-policy");
-const { webPersonaPrompt } = require("../scripts/write-web-config");
 const PROVIDER_RE = /ME\s?AI|meai|API\s?Credits/i;
 
 test("las respuestas nunca muestran los proveedores de IA, sí los modelos", () => {
@@ -33,7 +32,9 @@ test("errores del chat sin nombres de proveedores", () => {
 
 test("la IA tiene la regla de no nombrar proveedores (IDE y web) y no recibe sus nombres", () => {
   assert.match(ELITE_COMMUNICATION_POLICY, /NUNCA nombres a los proveedores/);
-  assert.match(webPersonaPrompt(), /NUNCA nombres a los proveedores/);
+  const webAgent = fs.readFileSync(path.join(ROOT, "web-portal/js/web-agent.js"), "utf8");
+  assert.match(webAgent, /ELITE_COMMUNICATION_POLICY/, "la web usa la misma política que el IDE");
+  assert.match(webAgent, /Nunca nombres a los proveedores/);
   for (const file of [
     "runtime/elite-communication-policy.js",
     "runtime/operator-connections-context.js",
@@ -50,7 +51,6 @@ test("el IDE y la web filtran solo las respuestas, no lo que escribe el usuario"
   assert.match(renderer, /if \(!fromUser && typeof window\.scrubAiProviderNames === "function"\)/);
   assert.match(renderer, /renderMarkdown\(text, \{ fromUser: true \}\)/);
   assert.doesNotMatch(renderer.slice(renderer.indexOf("function localAppInfoAnswer("), renderer.indexOf("function isUserStopCommand(")), PROVIDER_RE);
-  const bridge = fs.readFileSync(path.join(ROOT, "web-portal/js/web-bridge.js"), "utf8");
-  assert.match(bridge, /if \(!fromUser && typeof window\.scrubAiProviderNames === "function"\)/);
-  assert.match(bridge, /renderMarkdown\(text, \{ fromUser: role === "user" \}\)/);
+  const { ideSourceFiles } = require("../scripts/write-web-config");
+  assert.ok(ideSourceFiles(fs.readFileSync(path.join(ROOT, "index.html"), "utf8")).includes("renderer.js"), "la web pinta el chat con el mismo renderer.js");
 });
