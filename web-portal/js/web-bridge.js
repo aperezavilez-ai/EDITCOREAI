@@ -837,7 +837,7 @@
             turn.body = s.body;
           }
           paint();
-          if (full.includes("```") && (full.split("```").length % 2 === 1)) {
+          if (full.includes("```") || full.includes("filepath:") || full.includes("<!DOCTYPE") || full.includes("<html")) {
             updateProjectFromTurn(threadId, full);
           }
         },
@@ -918,21 +918,24 @@
     try {
       const raw = localStorage.getItem(getProjectFilesKey(tid));
       let files = raw ? JSON.parse(raw) : null;
-      if (!files || !Object.keys(files).length) {
-        // Fallback resiliente: recuperar archivos desde los turnos guardados del chat
-        files = {};
-        const msgs = loadMessages(tid);
-        for (const m of msgs) {
-          if (m.role === "assistant" && m.content) {
-            const blocks = extractCodeBlocks(m.content);
-            for (const b of blocks) {
-              if (b.filename && b.code) files[b.filename] = b.code;
+      if (!files || typeof files !== "object") files = {};
+
+      // Siempre asegurar que todos los archivos generados en los mensajes del chat estén sincronizados
+      const msgs = loadMessages(tid);
+      let recovered = false;
+      for (const m of msgs) {
+        if (m.role === "assistant" && m.content) {
+          const blocks = extractCodeBlocks(m.content);
+          for (const b of blocks) {
+            if (b.filename && b.code && (!files[b.filename] || files[b.filename].length < b.code.length)) {
+              files[b.filename] = b.code;
+              recovered = true;
             }
           }
         }
-        if (Object.keys(files).length) {
-          saveWebProjectFiles(tid, files);
-        }
+      }
+      if (recovered || (!raw && Object.keys(files).length)) {
+        saveWebProjectFiles(tid, files);
       }
       return files || {};
     } catch {
@@ -1028,27 +1031,46 @@
   };
 
   function extractCodeBlocks(text) {
-    const regex = /```([a-zA-Z0-9_\-\.]+)?\s*([^\n]*)\n([\s\S]*?)```/g;
+    if (!text || typeof text !== "string") return [];
     const blocks = [];
+    const seenFiles = new Set();
+
+    function addBlock(filename, code) {
+      if (!filename || !code || !code.trim()) return;
+      filename = filename.trim().replace(/^['"`]|['"`]$/g, "");
+      const lower = filename.toLowerCase();
+      let cleanCode = code.trim();
+      cleanCode = cleanCode.replace(/^```[a-zA-Z0-9_\-\.]*\s*\n?/i, "").replace(/\n?```\s*$/i, "").trim();
+      const existing = blocks.find((b) => b.filename.toLowerCase() === lower);
+      if (existing) {
+        existing.code = cleanCode;
+      } else {
+        blocks.push({ filename, code: cleanCode });
+        seenFiles.add(lower);
+      }
+    }
+
+    // 1. Bloques delimitados por comillas invertidas (cerrados o abiertos durante streaming)
+    const fenceRegex = /```([a-zA-Z0-9_\-\.]+)?\s*([^\n]*)\n([\s\S]*?)(?:```|$)/g;
     let match;
-    while ((match = regex.exec(text)) !== null) {
+    while ((match = fenceRegex.exec(text)) !== null) {
       const lang = (match[1] || "").toLowerCase().trim();
       const headerLine = (match[2] || "").trim();
       const code = match[3];
       let filename = "";
 
-      // 1. Cabecera de la valla (ej. ```html index.html o ```html filepath: index.html)
+      // 1.1 Cabecera de la valla (ej. ```html index.html o ```html filepath: index.html)
       const headerMatch = headerLine.match(/(?:filepath:|filename:|file:)?\s*([a-zA-Z0-9_\-\.\/]+\.[a-zA-Z0-9]+)/i);
       if (headerMatch) filename = headerMatch[1];
 
-      // 2. Primer comentario del código
+      // 1.2 Primer comentario del código
       if (!filename) {
         const firstLine = code.split("\n")[0].trim();
         const fileMatch = firstLine.match(/^(?:<!--|\/\/|\/\*|#)\s*(?:filepath:|filename:|file:)?\s*([a-zA-Z0-9_\-\.\/]+\.[a-zA-Z0-9]+)/i);
         if (fileMatch) filename = fileMatch[1];
       }
 
-      // 3. Inferencia inteligente
+      // 1.3 Inferencia inteligente por lenguaje y sintaxis
       if (!filename) {
         if (lang === "html" || code.includes("<!DOCTYPE") || code.includes("<html") || code.includes("<body")) {
           filename = "index.html";
@@ -1058,12 +1080,37 @@
           filename = "app.js";
         } else if (lang === "json" || code.includes('"dependencies"') || code.includes('"scripts"')) {
           filename = "package.json";
-        } else {
-          filename = `archivo_${blocks.length + 1}.${lang || "txt"}`;
         }
       }
-      blocks.push({ filename, code });
+      if (filename) addBlock(filename, code);
     }
+
+    // 2. Archivos sin comillas invertidas (etiquetados con // filepath:, /* filepath: */, <!-- filepath: -->, etc.)
+    const markerRegex = /(?:^|\n)(?:<!--|\/\/|\/\*|#|###|##|\*\*|--)?\s*(?:filepath:|filename:|file:)?\s*([a-zA-Z0-9_\-\.\/]+\.(?:html|htm|css|js|jsx|ts|tsx|json|svg|md|txt))(?:\s*(?:-->|\*\/|\*\*|--))?\s*(?:\n|$)/gi;
+    const markers = [];
+    let mm;
+    while ((mm = markerRe.exec(text)) !== null) {
+      markers.push({ filename: mm[1], start: mm.index + mm[0].length, headerStart: mm.index });
+    }
+    for (let i = 0; i < markers.length; i++) {
+      const curr = markers[i];
+      const nextStart = (i + 1 < markers.length) ? markers[i + 1].headerStart : text.length;
+      const chunk = text.slice(curr.start, nextStart);
+      if (chunk && chunk.trim()) {
+        addBlock(curr.filename, chunk);
+      }
+    }
+
+    // 3. Respaldo para documentos HTML completos directos sin etiqueta
+    if (!seenFiles.has("index.html")) {
+      const docIdx = text.search(/<!DOCTYPE\s+html|<html/i);
+      if (docIdx !== -1) {
+        const endIdx = text.search(/<\/html>/i);
+        const htmlCode = endIdx !== -1 ? text.slice(docIdx, endIdx + 7) : text.slice(docIdx);
+        if (htmlCode && htmlCode.trim()) addBlock("index.html", htmlCode);
+      }
+    }
+
     return blocks;
   }
 
@@ -1268,6 +1315,10 @@
 
     let bundle = html;
 
+    if (!bundle.includes("<html") && !bundle.includes("<!DOCTYPE")) {
+      bundle = `<!DOCTYPE html>\n<html lang="es">\n<head>\n  <meta charset="utf-8">\n  <meta name="viewport" content="width=device-width, initial-scale=1">\n  <title>Preview</title>\n</head>\n<body>\n${bundle}\n</body>\n</html>`;
+    }
+
     // Inyectar el shim de almacenamiento al principio de head
     if (bundle.includes("<head>")) {
       bundle = bundle.replace("<head>", `<head>\n${shimScript}`);
@@ -1327,10 +1378,12 @@
     const files = getWebProjectFiles(threadId);
     if (!Object.keys(files).length) {
       iframe.srcdoc = "";
+      iframe.style.display = "none";
       if (emptyEl) emptyEl.style.display = "flex";
       return;
     }
     if (emptyEl) emptyEl.style.display = "none";
+    iframe.style.display = "block";
     const compiled = buildPreviewHtml(files, activeFile);
     iframe.srcdoc = compiled;
     const urlLabel = $("webPreviewUrlLabel");
@@ -1405,11 +1458,6 @@
     const isExpanded = typeof forceState === "boolean" ? forceState : !panel.classList.contains("is-expanded");
     panel.classList.toggle("is-expanded", isExpanded);
 
-    const btnPreview = $("webPreviewExpandToggleBtn");
-    if (btnPreview) {
-      btnPreview.textContent = isExpanded ? "⇱ Regresar a la derecha" : "⇲ Expandir";
-      btnPreview.title = isExpanded ? "Regresar al panel derecho (380px)" : "Expandir a pantalla dividida (50%)";
-    }
     const btnContext = $("webContextWidthToggleBtn");
     if (btnContext) {
       btnContext.textContent = isExpanded ? "⇱ Regresar" : "⇲ Expandir";
@@ -1660,7 +1708,6 @@
         btn.textContent = isMobile ? "📱 Ancho normal" : "📱 Móvil";
       }
     });
-    $("webPreviewExpandToggleBtn")?.addEventListener("click", () => toggleContextExpand());
     $("webContextWidthToggleBtn")?.addEventListener("click", () => toggleContextExpand());
 
     // Restaurar preferencia de ancho si estaba expandido

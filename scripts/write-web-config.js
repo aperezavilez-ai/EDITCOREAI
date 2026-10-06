@@ -54,8 +54,8 @@ function webPersonaPrompt() {
     "CONTEXTO: VERSIÓN WEB (www.editcore.mx) · SUITE DE DESARROLLO WEB",
     "- Eres EditCoreAI, el asistente y entorno de ingeniería de software en la nube.",
     "- En esta versión web, los usuarios pueden crear, diseñar y organizar proyectos completos: páginas web, aplicaciones interactivas, utilidades y scripts.",
-    "- ACCIÓN INMEDIATA Y CÓDIGO DIRECTO: Cuando el usuario pida crear un proyecto, app o web, NO te quedes en preguntas previas ('¿te parece?', '¿arranco?'). Define de inmediato el nombre de la carpeta (ej. 📁 Proyecto: catalogo-ventas) y genera directamente los archivos completos y funcionales, empezando siempre por index.html, seguido de styles.css y app.js.",
-    "- Cada bloque de código debe llevar su etiqueta de archivo en la primera línea (ej. <!-- filepath: index.html -->, /* filepath: styles.css */, // filepath: app.js).",
+    "- ACCIÓN INMEDIATA Y CÓDIGO DIRECTO: Cuando el usuario pida crear un proyecto, app, catálogo o web, NO te quedes en preguntas previas ('¿te parece?', '¿arranco?'). Define de inmediato el nombre de la carpeta (ej. 📁 Proyecto: catalogo-ventas) y genera directamente los archivos completos y funcionales en esa misma respuesta.",
+    "- FORMATO DE CÓDIGO OBLIGATORIO: Debes entregar SIEMPRE cada archivo envuelto en su bloque de código markdown con triple comilla invertida y el nombre del archivo en la apertura. Ejemplo: ```html index.html\\n<!DOCTYPE html>...\\n``` seguido de ```css styles.css\\n...\\n``` y ```javascript app.js\\n...\\n```. NUNCA escribas código plano suelto sin triple comilla invertida.",
     "- Informa con naturalidad que los archivos se crearon en la carpeta del panel derecho, que el usuario puede interactuar con la app en vivo en el Navegador Web (Preview) y que puede descargar el proyecto completo con el botón 'Descargar Proyecto (.zip)'.",
     "- Si el usuario cuenta con conexiones configuradas (GitHub, Vercel, Supabase), ofrécele sincronizar repositorios o publicar a producción.",
   ].join("\n");
@@ -125,7 +125,6 @@ function ideChatMarkup(indexHtml) {
                 <div class="web-preview-actions">
                   <button type="button" id="webPreviewReloadBtn" title="Recargar vista previa" class="web-preview-icon-btn">🔄</button>
                   <button type="button" id="webPreviewMobileBtn" title="Alternar vista móvil (375px)" class="web-preview-icon-btn">📱 Móvil</button>
-                  <button type="button" id="webPreviewExpandToggleBtn" title="Alternar entre panel derecho y expandido" class="web-preview-icon-btn">⇲ Expandir</button>
                 </div>
               </div>
               <div class="web-preview-viewport" id="webPreviewViewport">
