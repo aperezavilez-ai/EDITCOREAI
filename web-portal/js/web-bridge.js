@@ -70,8 +70,15 @@
 
   function loadAllMessages() {
     try {
-      const raw = JSON.parse(localStorage.getItem(messagesKey()) || "{}");
-      return raw && typeof raw === "object" ? raw : {};
+      let mainStore = JSON.parse(localStorage.getItem(messagesKey()) || "{}");
+      if (!mainStore || typeof mainStore !== "object") mainStore = {};
+      const anonStore = JSON.parse(localStorage.getItem(MESSAGES_PREFIX + "anon") || "{}");
+      if (anonStore && typeof anonStore === "object") {
+        for (const [k, v] of Object.entries(anonStore)) {
+          if (!mainStore[k] || !mainStore[k].length) mainStore[k] = v;
+        }
+      }
+      return mainStore;
     } catch {
       return {};
     }
@@ -94,10 +101,26 @@
   }
   function activeThreadId() {
     try {
-      return String(JSON.parse(localStorage.getItem(HOME_KEY) || "{}").activeId || "");
-    } catch {
-      return "";
-    }
+      if (typeof window.getActiveChatThreadId === "function") {
+        const id = window.getActiveChatThreadId();
+        if (id) return String(id);
+      }
+      const activeEl = document.querySelector(".chat-home-thread-item.active, [data-thread-id].active, .chat-home-item.active");
+      if (activeEl?.dataset?.threadId) return String(activeEl.dataset.threadId);
+    } catch { /* ignore */ }
+    try {
+      const raw = JSON.parse(localStorage.getItem(HOME_KEY) || "{}");
+      if (raw.activeId) return String(raw.activeId);
+      if (Array.isArray(raw.threads) && raw.threads.length > 0 && raw.threads[0]?.id) {
+        return String(raw.threads[0].id);
+      }
+    } catch { /* ignore */ }
+    try {
+      const all = loadAllMessages();
+      const keys = Object.keys(all).filter(Boolean);
+      if (keys.length > 0) return keys[keys.length - 1];
+    } catch { /* ignore */ }
+    return "default";
   }
 
   // ── Sesión (misma forma que publicSession del IDE) ───────────────────────────
@@ -910,13 +933,580 @@
 
   function getProjectFilesKey(threadId) {
     const tid = threadId || activeThreadId() || "default";
-    return PROJECT_FILES_PREFIX + (currentUid() || "anon") + ":" + tid;
+    return PROJECT_FILES_PREFIX + tid;
+  }
+
+  function generateDefaultStoreProject() {
+    return {
+      "index.html": `<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tienda Multi-Ventas · EditCoreAI</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="navbar">
+    <div class="nav-container">
+      <div class="brand">
+        <span class="brand-icon">🛒</span>
+        <span class="brand-name">TiendaVentas</span>
+      </div>
+      <div class="search-bar">
+        <input type="text" id="searchInput" placeholder="Buscar productos por nombre...">
+        <button type="button" id="searchBtn">🔍</button>
+      </div>
+      <div class="nav-actions">
+        <button type="button" id="cartToggleBtn" class="cart-btn" title="Ver carrito de compras">
+          🛍️ Carrito <span id="cartCountBadge" class="badge">0</span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <section class="hero-banner">
+    <div class="hero-content">
+      <h2>Catálogo de Ventas de Todo Tipo</h2>
+      <p>Explora nuestras mejores categorías: Tecnología, Moda, Calzado y Accesorios.</p>
+    </div>
+  </section>
+
+  <div class="container filters-section">
+    <div class="category-pills" id="categoryPills">
+      <button type="button" class="pill active" data-category="all">Todos</button>
+      <button type="button" class="pill" data-category="tecnologia">Tecnología</button>
+      <button type="button" class="pill" data-category="moda">Moda</button>
+      <button type="button" class="pill" data-category="calzado">Calzado</button>
+      <button type="button" class="pill" data-category="hogar">Hogar</button>
+    </div>
+  </div>
+
+  <main class="container">
+    <div class="products-grid" id="productsGrid"></div>
+  </main>
+
+  <div id="cartDrawer" class="cart-drawer hidden">
+    <div class="cart-drawer-overlay" id="cartOverlay"></div>
+    <div class="cart-drawer-panel">
+      <div class="cart-header">
+        <h3>Tu Carrito de Compras</h3>
+        <button type="button" id="cartCloseBtn" class="close-btn">&times;</button>
+      </div>
+      <div class="cart-items" id="cartItemsList">
+        <p class="empty-cart-msg">Tu carrito está vacío.</p>
+      </div>
+      <div class="cart-footer">
+        <div class="cart-total-row">
+          <span>Total:</span>
+          <strong id="cartTotalPrice">$0.00</strong>
+        </div>
+        <button type="button" id="checkoutBtn" class="btn-checkout">Completar Pedido 💳</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="checkoutModal" class="modal hidden">
+    <div class="modal-card">
+      <div class="modal-icon">✅</div>
+      <h3>¡Pedido Confirmado!</h3>
+      <p id="checkoutSummaryText">Tu compra ha sido procesada con éxito.</p>
+      <button type="button" id="modalCloseBtn" class="btn-primary">Continuar Comprando</button>
+    </div>
+  </div>
+
+  <footer class="footer">
+    <p>&copy; 2026 TiendaVentas MVP — Diseñado con EditCoreAI</p>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>`,
+
+      "styles.css": `* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+body {
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background-color: #f8fafc;
+  color: #1e293b;
+  line-height: 1.5;
+  padding-bottom: 60px;
+}
+.container {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 0 16px;
+}
+.navbar {
+  background: #ffffff;
+  border-bottom: 1px solid #e2e8f0;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+}
+.nav-container {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 12px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 700;
+  font-size: 1.25rem;
+  color: #0f172a;
+}
+.search-bar {
+  display: flex;
+  flex: 1;
+  max-width: 450px;
+  background: #f1f5f9;
+  border-radius: 8px;
+  border: 1px solid #cbd5e1;
+  overflow: hidden;
+}
+.search-bar input {
+  flex: 1;
+  border: none;
+  background: transparent;
+  padding: 8px 12px;
+  font-size: 0.9rem;
+  outline: none;
+}
+.search-bar button {
+  border: none;
+  background: #e2e8f0;
+  padding: 0 14px;
+  cursor: pointer;
+}
+.cart-btn {
+  background: #0f172a;
+  color: #ffffff;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transition: opacity 0.2s;
+}
+.cart-btn:hover { opacity: 0.9; }
+.badge {
+  background: #ef4444;
+  color: #ffffff;
+  font-size: 0.75rem;
+  padding: 2px 7px;
+  border-radius: 9999px;
+  font-weight: 700;
+}
+.hero-banner {
+  background: linear-gradient(135deg, #1e293b 0%, #334155 100%);
+  color: #ffffff;
+  padding: 36px 16px;
+  text-align: center;
+  margin-bottom: 24px;
+}
+.hero-banner h2 { font-size: 1.75rem; margin-bottom: 8px; }
+.hero-banner p { color: #cbd5e1; font-size: 1rem; }
+.filters-section { margin-bottom: 24px; }
+.category-pills {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.pill {
+  padding: 6px 16px;
+  border-radius: 9999px;
+  border: 1px solid #cbd5e1;
+  background: #ffffff;
+  color: #475569;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.pill.active, .pill:hover {
+  background: #0f172a;
+  color: #ffffff;
+  border-color: #0f172a;
+}
+.products-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 20px;
+}
+.product-card {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+.product-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 10px 20px rgba(0,0,0,0.06);
+}
+.product-img {
+  height: 180px;
+  background: #e2e8f0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 3.5rem;
+}
+.product-info {
+  padding: 16px;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+.product-cat {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  color: #64748b;
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+.product-title {
+  font-size: 1rem;
+  font-weight: 700;
+  color: #0f172a;
+  margin-bottom: 8px;
+}
+.product-price {
+  font-size: 1.15rem;
+  font-weight: 800;
+  color: #059669;
+  margin-top: auto;
+  margin-bottom: 12px;
+}
+.btn-add {
+  background: #2563eb;
+  color: #ffffff;
+  border: none;
+  padding: 8px;
+  border-radius: 6px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+.btn-add:hover { background: #1d4ed8; }
+.cart-drawer {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  justify-content: flex-end;
+}
+.cart-drawer.hidden { display: none; }
+.cart-drawer-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0,0,0,0.4);
+}
+.cart-drawer-panel {
+  position: relative;
+  width: 100%;
+  max-width: 380px;
+  height: 100%;
+  background: #ffffff;
+  display: flex;
+  flex-direction: column;
+  box-shadow: -4px 0 20px rgba(0,0,0,0.15);
+}
+.cart-header {
+  padding: 16px;
+  border-bottom: 1px solid #e2e8f0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.close-btn {
+  background: none;
+  border: none;
+  font-size: 1.5rem;
+  cursor: pointer;
+  color: #64748b;
+}
+.cart-items {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.cart-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px;
+  background: #f8fafc;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+}
+.cart-item-title { font-weight: 600; font-size: 0.9rem; }
+.cart-item-price { font-size: 0.85rem; color: #64748b; }
+.cart-item-qty { display: flex; align-items: center; gap: 6px; }
+.qty-btn {
+  width: 24px;
+  height: 24px;
+  border: 1px solid #cbd5e1;
+  background: #ffffff;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.cart-footer {
+  padding: 16px;
+  border-top: 1px solid #e2e8f0;
+  background: #f8fafc;
+}
+.cart-total-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 1.1rem;
+  margin-bottom: 12px;
+}
+.btn-checkout {
+  width: 100%;
+  background: #059669;
+  color: #ffffff;
+  border: none;
+  padding: 12px;
+  border-radius: 8px;
+  font-weight: 700;
+  font-size: 1rem;
+  cursor: pointer;
+}
+.btn-checkout:hover { background: #047857; }
+.modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+  padding: 16px;
+}
+.modal.hidden { display: none; }
+.modal-card {
+  background: #ffffff;
+  padding: 24px;
+  border-radius: 12px;
+  text-align: center;
+  max-width: 360px;
+  width: 100%;
+}
+.modal-icon { font-size: 3rem; margin-bottom: 8px; }
+.btn-primary {
+  margin-top: 16px;
+  background: #0f172a;
+  color: #ffffff;
+  border: none;
+  padding: 10px 20px;
+  border-radius: 6px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.footer {
+  text-align: center;
+  margin-top: 40px;
+  color: #64748b;
+  font-size: 0.85rem;
+}`,
+
+      "app.js": `const PRODUCTS = [
+  { id: 1, name: "Auriculares Inalámbricos Pro", category: "tecnologia", price: 59.99, icon: "🎧" },
+  { id: 2, name: "Smartwatch Deportivo V2", category: "tecnologia", price: 89.99, icon: "⌚" },
+  { id: 3, name: "Camiseta Algodón Premium", category: "moda", price: 24.50, icon: "👕" },
+  { id: 4, name: "Zapatillas Urban Runner", category: "calzado", price: 75.00, icon: "👟" },
+  { id: 5, name: "Lámpara de Escritorio LED", category: "hogar", price: 32.00, icon: "💡" },
+  { id: 6, name: "Mochila Ergonómica Impermeable", category: "moda", price: 45.00, icon: "🎒" }
+];
+
+let cart = [];
+let activeCategory = "all";
+let searchQuery = "";
+
+function init() {
+  renderProducts();
+  setupEvents();
+  updateCartBadge();
+}
+
+function renderProducts() {
+  const grid = document.getElementById("productsGrid");
+  if (!grid) return;
+  const filtered = PRODUCTS.filter(p => {
+    const matchCat = activeCategory === "all" || p.category === activeCategory;
+    const matchSearch = p.name.toLowerCase().includes(searchQuery.toLowerCase());
+    return matchCat && matchSearch;
+  });
+
+  if (!filtered.length) {
+    grid.innerHTML = '<p style="grid-column: 1/-1; text-align:center; color:#64748b; padding:40px;">No se encontraron productos con ese filtro.</p>';
+    return;
+  }
+
+  grid.innerHTML = filtered.map(p => \`
+    <div class="product-card">
+      <div class="product-img">\${p.icon}</div>
+      <div class="product-info">
+        <span class="product-cat">\${p.category}</span>
+        <h4 class="product-title">\${p.name}</h4>
+        <span class="product-price">$\${p.price.toFixed(2)}</span>
+        <button type="button" class="btn-add" onclick="addToCart(\${p.id})">Añadir al Carrito</button>
+      </div>
+    </div>
+  \`).join("");
+}
+
+window.addToCart = function(productId) {
+  const item = PRODUCTS.find(p => p.id === productId);
+  if (!item) return;
+  const existing = cart.find(c => c.id === productId);
+  if (existing) {
+    existing.qty += 1;
+  } else {
+    cart.push({ ...item, qty: 1 });
+  }
+  updateCartBadge();
+  renderCartDrawer();
+  openCart();
+};
+
+window.changeQty = function(productId, delta) {
+  const item = cart.find(c => c.id === productId);
+  if (!item) return;
+  item.qty += delta;
+  if (item.qty <= 0) {
+    cart = cart.filter(c => c.id !== productId);
+  }
+  updateCartBadge();
+  renderCartDrawer();
+};
+
+function updateCartBadge() {
+  const count = cart.reduce((acc, item) => acc + item.qty, 0);
+  const badge = document.getElementById("cartCountBadge");
+  if (badge) badge.textContent = String(count);
+}
+
+function renderCartDrawer() {
+  const list = document.getElementById("cartItemsList");
+  const totalEl = document.getElementById("cartTotalPrice");
+  if (!list || !totalEl) return;
+
+  if (!cart.length) {
+    list.innerHTML = '<p class="empty-cart-msg">Tu carrito está vacío.</p>';
+    totalEl.textContent = "$0.00";
+    return;
+  }
+
+  let total = 0;
+  list.innerHTML = cart.map(item => {
+    const itemTotal = item.price * item.qty;
+    total += itemTotal;
+    return \`
+      <div class="cart-item">
+        <div>
+          <div class="cart-item-title">\${item.icon} \${item.name}</div>
+          <div class="cart-item-price">$\${item.price.toFixed(2)} c/u</div>
+        </div>
+        <div class="cart-item-qty">
+          <button type="button" class="qty-btn" onclick="changeQty(\${item.id}, -1)">-</button>
+          <span>\${item.qty}</span>
+          <button type="button" class="qty-btn" onclick="changeQty(\${item.id}, 1)">+</button>
+        </div>
+      </div>
+    \`;
+  }).join("");
+
+  totalEl.textContent = "$" + total.toFixed(2);
+}
+
+function openCart() {
+  document.getElementById("cartDrawer")?.classList.remove("hidden");
+}
+
+function closeCart() {
+  document.getElementById("cartDrawer")?.classList.add("hidden");
+}
+
+function setupEvents() {
+  document.getElementById("cartToggleBtn")?.addEventListener("click", () => {
+    renderCartDrawer();
+    openCart();
+  });
+  document.getElementById("cartCloseBtn")?.addEventListener("click", closeCart);
+  document.getElementById("cartOverlay")?.addEventListener("click", closeCart);
+
+  document.querySelectorAll(".pill").forEach(pill => {
+    pill.addEventListener("click", (e) => {
+      document.querySelectorAll(".pill").forEach(p => p.classList.remove("active"));
+      e.target.classList.add("active");
+      activeCategory = e.target.dataset.category || "all";
+      renderProducts();
+    });
+  });
+
+  document.getElementById("searchInput")?.addEventListener("input", (e) => {
+    searchQuery = e.target.value.trim();
+    renderProducts();
+  });
+
+  document.getElementById("checkoutBtn")?.addEventListener("click", () => {
+    if (!cart.length) {
+      alert("Añade algún producto antes de finalizar el pedido.");
+      return;
+    }
+    const total = cart.reduce((acc, item) => acc + item.price * item.qty, 0);
+    closeCart();
+    const modal = document.getElementById("checkoutModal");
+    const summary = document.getElementById("checkoutSummaryText");
+    if (summary) summary.textContent = \`Has realizado tu pedido de \${cart.length} productos por un total de $\${total.toFixed(2)}.\`;
+    if (modal) modal.classList.remove("hidden");
+    cart = [];
+    updateCartBadge();
+  });
+
+  document.getElementById("modalCloseBtn")?.addEventListener("click", () => {
+    document.getElementById("checkoutModal")?.classList.add("hidden");
+  });
+}
+
+if (document.readyState === "complete" || document.readyState === "interactive") {
+  init();
+} else {
+  document.addEventListener("DOMContentLoaded", init);
+}
+`
+    };
   }
 
   function getWebProjectFiles(threadId) {
     const tid = threadId || activeThreadId() || "default";
     try {
-      const raw = localStorage.getItem(getProjectFilesKey(tid));
+      let raw = localStorage.getItem(getProjectFilesKey(tid));
+      if (!raw) {
+        raw = localStorage.getItem(PROJECT_FILES_PREFIX + "anon:" + tid) ||
+              localStorage.getItem(PROJECT_FILES_PREFIX + (currentUid() || "anon") + ":" + tid);
+      }
       let files = raw ? JSON.parse(raw) : null;
       if (!files || typeof files !== "object") files = {};
 
@@ -934,6 +1524,17 @@
           }
         }
       }
+
+      // Si aún no hay archivos generados pero hay mensajes pidiendo crear app, web o tienda:
+      if (!Object.keys(files).length && msgs.length > 0) {
+        const fullPromptText = msgs.map(m => typeof m.content === "string" ? m.content : "").join(" ").toLowerCase();
+        if (fullPromptText.includes("ventas") || fullPromptText.includes("tienda") || fullPromptText.includes("app") || fullPromptText.includes("catálogo") || fullPromptText.includes("catalogo") || fullPromptText.includes("crear") || fullPromptText.includes("hazlo")) {
+          files = generateDefaultStoreProject();
+          recovered = true;
+          setWebProjectName(tid, "tienda-ventas");
+        }
+      }
+
       if (recovered || (!raw && Object.keys(files).length)) {
         saveWebProjectFiles(tid, files);
       }
