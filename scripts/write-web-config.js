@@ -95,7 +95,7 @@ function webAppHtml(indexHtml, version) {
     .replace(/<body\b([^>]*)>/, (tag, attrs) => (/class="/.test(attrs) ? tag.replace(/class="/, 'class="is-web ') : `<body${attrs} class="is-web">`));
   const boot = [
     "    <!-- Generado por scripts/write-web-config.js desde index.html del IDE. No editar a mano. -->",
-    `    <script>window.EDITCORE_WEB_VERSION=${JSON.stringify(String(version || ""))};try{if(!localStorage.getItem("editcore-app-mode"))localStorage.setItem("editcore-app-mode","ide")}catch(e){}</script>`,
+    `    <script>window.EDITCORE_WEB_VERSION=${JSON.stringify(String(version || ""))};try{if(!localStorage.getItem("editcore-web-ide-layout")){localStorage.setItem("editcore-app-mode","ide");localStorage.setItem("editcore-web-ide-layout","1")}}catch(e){}</script>`,
     ...WEB_HEAD_SCRIPTS.map((src) => `    <script src="${src}"></script>`),
     '    <link rel="stylesheet" href="/css/web-ide-shell.css" />',
   ].join("\n");

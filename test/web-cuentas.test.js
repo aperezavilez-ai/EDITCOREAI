@@ -351,6 +351,7 @@ test("web: /app es el IDE completo (mismo index.html y mismos scripts) en cada p
     assert.doesNotMatch(app, /Content-Security-Policy/, "la CSP de escritorio (connect-src 'none') no aplica en la web");
     assert.doesNotMatch(app, /(src|href)="\.\//, "todas las rutas apuntan a /ide/");
     assert.match(app, /<body[^>]*class="is-web"/);
+    assert.match(app, /localStorage\.setItem\("editcore-app-mode","ide"\)/, "la web abre con el diseño del IDE aunque antes se usara solo el chat");
     const scripts = [...app.matchAll(/<script src="([^"]+)"/g)].map((m) => m[1]);
     assert.deepEqual(scripts.slice(0, 6), ["/js/cuentas-config.js", "/js/cuentas.js", "/ide/preload-api.js", "/js/web-ide-bridge.js", "/js/web-agent.js", "/ide/credit-ledger.js"], "el puente web va antes que los scripts del IDE");
     assert.ok(scripts.includes("/ide/renderer.js") && scripts.includes("/ide/chat-home.js"));
