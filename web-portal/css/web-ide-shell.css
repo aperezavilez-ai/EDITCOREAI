@@ -1,7 +1,6 @@
 /* EditCoreAI web: mismo IDE que la app de escritorio. Aquí solo se ocultan los botones que dependen de la
    computadora (carpetas del disco, terminal, git local, ventanas, actualizaciones, dictado, Inspector…). */
 
-body.is-web #newWindowBtn,
 body.is-web #connectionsBtn,
 body.is-web #providersBtn,
 body.is-web #terminalBtn,
@@ -39,6 +38,11 @@ body.is-web #toolsMoreMenu hr:has(+ .toolbar-menu-label + #brainBtn),
 body.is-web .toolbar-menu-label:has(+ #checkUpdatesMenuBtn),
 body.is-web #toolsMoreMenu hr:has(+ .toolbar-menu-label + #checkUpdatesMenuBtn) {
   display: none !important;
+}
+
+/* En el navegador no hay botones nativos de ventana a la derecha de la barra. */
+body.is-web .app-toolbar {
+  padding-right: 8px;
 }
 
 /* El <webview> de Electron se reemplaza por un iframe aislado dentro del mismo elemento. */

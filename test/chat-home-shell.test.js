@@ -19,6 +19,8 @@ test("el IDE tiene engrane: admin abre administración, usuario su saldo, sin sa
   const html = fs.readFileSync(path.join(root, "index.html"), "utf8");
   const js = fs.readFileSync(path.join(root, "chat-home.js"), "utf8");
   assert.match(html, /id="ideSettingsBtn"[^>]*>⚙<\/button>/);
+  assert.match(html, /id="openChatHomeBtn"[\s\S]*?<\/div>\s*<button id="ideSettingsBtn"[^>]*>⚙<\/button>\s*<\/nav>/, "el engrane va al final de la barra, a la derecha");
+  assert.match(fs.readFileSync(path.join(root, "styles.css"), "utf8"), /\.app-toolbar \.toolbar-settings-btn \{\s*margin-left: auto;/);
   assert.match(js, /\$\("ideSettingsBtn"\)\?\.addEventListener\("click"[\s\S]*?openAdminPanel\(\);\s*else openSettings\("credits"\);/);
   const adminFn = js.slice(js.indexOf("function openAdminPanel()"), js.indexOf("async function refreshCreditsAndProfileUI"));
   assert.doesNotMatch(adminFn, /setMode\("chat"\)/);

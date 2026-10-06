@@ -297,6 +297,7 @@ body.welcome-open {
   display: none !important;
 }
 .app-toolbar .toolbar-settings-btn {
+  margin-left: auto;
   font-size: 15px;
   padding: 0 8px;
   -webkit-app-region: no-drag;
