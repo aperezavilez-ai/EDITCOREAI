@@ -113,6 +113,24 @@ test("reemplazos y escrituras que no cambian nada no cuentan como cambios (+0 �
   assert.equal(identical.unchanged, true);
 });
 
+test("write_file acepta exports multilínea, configs y archivos vacíos; rechaza código truncado", () => {
+  const ok1 = tools.writeFile(projectRoot, "m.js", "function a() {}\nmodule.exports = {\n  a,\n};\n");
+  const ok2 = tools.writeFile(projectRoot, "vite.config.js", "export default {\n  plugins: [],\n};\n");
+  const ok3 = tools.writeFile(projectRoot, ".gitkeep", "");
+  for (const r of [ok1, ok2, ok3]) assert.equal(r.ok, true, r.error);
+  const cut = tools.writeFile(projectRoot, "t.js", "function a() {}\nmodule.exports = {");
+  assert.equal(cut.ok, false);
+});
+
+test("el contexto por tarea (pipeline, archivo abierto, reviews) va en el mensaje del turno, no en el system", async () => {
+  calls.length = 0;
+  scripted = [{ text: "Listo, revisé la landing.", toolCalls: [], usage: {} }];
+  await new ChatOrchestrator().handle({ message: "corrige el diseño de la landing page con hero y dashboard", projectRoot, apiBaseUrl: "http://127.0.0.1:9/v1", apiKey: "k", model: "m", skillsPrompt: "SKILLS FIJAS" });
+  const system = calls[0].messages[0].content;
+  assert.match(system, /SKILLS FIJAS/);
+  assert.doesNotMatch(system, /landing page con hero/);
+});
+
 test("al agotar los pasos avisa que la tarea no está terminada y que escriba «continúa»", async () => {
   calls.length = 0;
   fs.writeFileSync(path.join(projectRoot, "c.js"), "a\n");

@@ -33,6 +33,51 @@ try {
 } catch (_) { agentNetwork = null; }
 // [/EDITCORE-ADD]
 
+// [EDITCORE-STACK] Fases 1–5 — memoria, A2A, harness, disk, surface (opcional, no-op si falta)
+let _editcoreStackCache = new Map();
+async function getEditcoreStack(projectRoot) {
+  if (!projectRoot) return null;
+  const key = require("path").resolve(String(projectRoot));
+  if (_editcoreStackCache.has(key)) return _editcoreStackCache.get(key);
+  try {
+    const { getStack } = require("../runtime/editcore-stack");
+    const stack = await getStack(key);
+    _editcoreStackCache.set(key, stack);
+    return stack;
+  } catch (e) {
+    console.warn("[EDITCORE-STACK] no disponible:", e && e.message ? e.message : e);
+    return null;
+  }
+}
+// [/EDITCORE-STACK]
+
+// [EDITCORE-ELITE-UI] Fase 6 — política visual + pipeline de producto
+let eliteUiPolicy = null;
+let productPipeline = null;
+try {
+  eliteUiPolicy = require("../runtime/elite-ui-policy");
+} catch (_) { eliteUiPolicy = null; }
+try {
+  productPipeline = require("../runtime/product-pipeline");
+} catch (_) { productPipeline = null; }
+let agentCoordination = null;
+try {
+  agentCoordination = require("../runtime/agent-coordination");
+} catch (_) { agentCoordination = null; }
+let agentParallel = null;
+try {
+  agentParallel = require("../runtime/agent-parallel");
+} catch (_) { agentParallel = null; }
+let activeEditorContext = null;
+try {
+  activeEditorContext = require("../runtime/active-editor-context");
+} catch (_) { activeEditorContext = null; }
+let ideReviewQueue = null;
+try {
+  ideReviewQueue = require("../runtime/ide-review-queue");
+} catch (_) { ideReviewQueue = null; }
+// [/EDITCORE-ELITE-UI]
+
 let dispatchSpecialist = () => null;
 try {
   const _dispatcher = require("./subagents/dispatcher");
@@ -713,6 +758,102 @@ class ChatOrchestrator {
     this._fallbackProfiles = Array.isArray(input.fallbackProfiles) ? input.fallbackProfiles : [];
     this._skillsPrompt = String(input.skillsPrompt || "").trim();
     this._currentUserText = text;
+    // Lo que cambia por tarea (pipeline, coordinación, archivo abierto, reviews) va al mensaje del turno, no al system cacheado.
+    this._turnExtras = [];
+
+    // [EDITCORE-STACK] iniciar tarea / memoria / A2A
+    let _ecStack = null;
+    try {
+      _ecStack = await getEditcoreStack(projectRoot);
+      if (_ecStack) {
+        this._editcoreStack = _ecStack;
+        _ecStack.startTask(String(effectiveText || text || "").slice(0, 2000), {
+          threadId: threadId || "default",
+        });
+      }
+    } catch (e) {
+      console.warn("[EDITCORE-STACK] startTask:", e && e.message ? e.message : e);
+    }
+    // [/EDITCORE-STACK]
+
+    // [EDITCORE-ELITE-UI] preparar prompts de calidad visual / pipeline
+    try {
+      this._eliteUiExtra = "";
+      this._productPipelineExtra = "";
+      const taskText = String(effectiveText || text || "");
+      if (eliteUiPolicy && typeof eliteUiPolicy.isUiTask === "function" && eliteUiPolicy.isUiTask(taskText)) {
+        this._eliteUiExtra = eliteUiPolicy.eliteUiSystemPrompt();
+      }
+      if (productPipeline && typeof productPipeline.buildPipelinePrompt === "function") {
+        const pipe = productPipeline.buildPipelinePrompt(taskText);
+        if (pipe && pipe.active && pipe.prompt) {
+          this._productPipelineExtra = pipe.prompt;
+          this._productPipeline = pipe;
+        }
+      }
+      this._turnExtras.push(this._productPipelineExtra, this._eliteUiExtra);
+    } catch (e) {
+      console.warn("[EDITCORE-ELITE-UI]", e && e.message ? e.message : e);
+    }
+    // [/EDITCORE-ELITE-UI]
+
+    // [EDITCORE-COORD] agente activo + contexto anti-pisoteo
+    try {
+      if (agentCoordination && projectRoot) {
+        const coord = agentCoordination.getCoordination(projectRoot);
+        const roleName = "supervisor";
+        global.__editcoreCoord = {
+          threadId: threadId || "default",
+          agentRole: roleName,
+          projectRoot,
+        };
+        coord.setActiveAgent(threadId || "default", roleName, {
+          task: String(effectiveText || text || "").slice(0, 300),
+        });
+        this._turnExtras.push(coord.getCoordinationPrompt(threadId || "default"));
+      }
+    } catch (e) {
+      console.warn("[EDITCORE-COORD]", e && e.message ? e.message : e);
+    }
+    // [/EDITCORE-COORD]
+
+    // [EDITCORE-PARALLEL] Fase 8 — fan-out de jobs por scope
+    try {
+      this._parallelBatch = null;
+      if (agentParallel && projectRoot && typeof agentParallel.shouldUseParallel === "function") {
+        const taskText = String(effectiveText || text || "");
+        if (agentParallel.shouldUseParallel(taskText)) {
+          const batchRunner = agentParallel.createParallelBatch(projectRoot, {
+            threadId: threadId || "default",
+          });
+          batchRunner.createBatch(taskText);
+          this._parallelBatch = batchRunner;
+          this._turnExtras.push(batchRunner.getParallelPrompt());
+          const first = batchRunner.nextPendingJob();
+          if (first) {
+            batchRunner.beginJob(first.id);
+            this._turnExtras.push(batchRunner.getCurrentJobPrompt());
+          }
+        }
+      }
+    } catch (e) {
+      console.warn("[EDITCORE-PARALLEL]", e && e.message ? e.message : e);
+    }
+    // [/EDITCORE-PARALLEL]
+
+    // [EDITCORE-EDITOR-CTX] archivo activo + cola de review
+    try {
+      if (activeEditorContext) {
+        const ed = activeEditorContext.extractEditorContext(input || {});
+        this._turnExtras.push(activeEditorContext.buildActiveEditorPrompt(ed));
+      }
+      if (ideReviewQueue && projectRoot) {
+        this._turnExtras.push(ideReviewQueue.getReviewQueue(projectRoot).getPendingPrompt());
+      }
+    } catch (e) {
+      console.warn("[EDITCORE-EDITOR-CTX]", e && e.message ? e.message : e);
+    }
+    // [/EDITCORE-EDITOR-CTX]
 
     // [EDITCORE-ADD] Ruteo por red neuronal (opcional). Guarda el agente elegido para feedback.
     try {
@@ -994,6 +1135,7 @@ class ChatOrchestrator {
     }
     if (this._skillsPrompt) system = `${system}\n\n${this._skillsPrompt}`;
     if (!listOnlyMode) turnContext.push(buildBrainContextBlock(projectRoot, this._currentUserText || message));
+    if (!listOnlyMode && Array.isArray(this._turnExtras)) turnContext.push(...this._turnExtras.filter((x) => typeof x === "string" && x.trim()));
 
     const userText = `Proyecto: ${projectRoot}\n${scopeUserMessage(message)}`;
     const messages = threadCore.buildMessageList({ system, systemPrefix: listOnlyMode ? "" : SELF_KNOWLEDGE_PROMPT, turnContext: turnContext.filter(Boolean).join("\n\n"), userText, projectRoot, threadId, historyInput, query: String(this._currentUserText || message || ""), images: taskImages });
@@ -1265,6 +1407,19 @@ class ChatOrchestrator {
         }
       } catch (_) {}
       // [/EDITCORE-ADD]
+      // [EDITCORE-STACK] persistir memoria al cerrar turno
+      try {
+        if (this._editcoreStack) {
+          this._editcoreStack.complete(pausedByLimit ? "turno pausado por límite de pasos" : "turno completado");
+          await this._editcoreStack.save();
+        }
+      } catch (_) {}
+      // [/EDITCORE-STACK]
+      try {
+        if (agentCoordination && projectRoot) {
+          agentCoordination.getCoordination(projectRoot).releaseAllForThread(threadId || "default");
+        }
+      } catch (_) {}
       return { kind: decision?.kind || "EXECUTE", text: textOut, steps, mutations: runMutations, incomplete: pausedByLimit, threadId, usage: totalUsage };
     } catch (err) {
       this.session.kill();
@@ -1279,6 +1434,19 @@ class ChatOrchestrator {
         }
       } catch (_) {}
       // [/EDITCORE-ADD]
+      // [EDITCORE-STACK] guardar estado aunque falle el turno
+      try {
+        if (this._editcoreStack) {
+          this._editcoreStack.complete("turno con error");
+          await this._editcoreStack.save();
+        }
+      } catch (_) {}
+      // [/EDITCORE-STACK]
+      try {
+        if (agentCoordination && projectRoot) {
+          agentCoordination.getCoordination(projectRoot).releaseAllForThread(threadId || "default");
+        }
+      } catch (_) {}
       return { kind: "CHAT", text: errText, steps, threadId, usage: totalUsage };
     } finally {
       this.running = false; this.turnAbort = null;

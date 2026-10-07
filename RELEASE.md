@@ -1,3 +1,15 @@
+# RELEASE v4.3.8
+
+## Coordinación entre agentes, memoria por tarea y calidad visual
+
+- Los agentes se coordinan: cada archivo se bloquea mientras un agente lo escribe, para que dos chats no se pisen; la actividad queda registrada en el proyecto.
+- Memoria por tarea: cada turno guarda qué se pidió y cómo terminó (completado, pausado o con error).
+- Tareas grandes se dividen en trabajos por partes y el agente avanza uno a la vez.
+- El agente sabe qué archivo tienes abierto y qué cambios están pendientes de revisión; cada escritura queda en la cola para aceptar o rechazar.
+- Diseño visual: en tareas de interfaz, el agente sigue una política de calidad visual con lista de revisión.
+- El agente rechaza escribir código truncado (archivos cortados a la mitad o con «TODO: implementar el resto»).
+- Ahorro de saldo intacto: todo este contexto nuevo va en el mensaje del turno, así las instrucciones fijas siguen leyéndose desde caché.
+
 # RELEASE v4.3.7
 
 ## El agente hace lo que dice y termina lo que le pides

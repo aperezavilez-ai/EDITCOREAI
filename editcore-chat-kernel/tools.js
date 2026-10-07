@@ -186,19 +186,53 @@ function readFile(root, rel, maxChars = TOOL_RESULT_CAP, opts = {}) {
 
 function writeFile(root, rel, content) {
   const file = safe(root, rel);
+  const body = String(content ?? "");
+  // [EDITCORE-STACK] rechazar código incompleto / TODOs de implementación
   try {
-    if (fs.existsSync(file) && fs.readFileSync(file, "utf8") === String(content ?? "")) {
+    const { looksIncomplete } = require("../runtime/transactional-engine");
+    if (typeof looksIncomplete === "function" && body.trim() && looksIncomplete(body)) {
+      return {
+        ok: false,
+        error: `Contenido incompleto/truncado rechazado en ${rel}. No se permiten TODOs de implementación ni código a medias. Reescribe el archivo completo.`,
+      };
+    }
+  } catch { /* stack no instalado → continuar */ }
+  // [/EDITCORE-STACK]
+  // [EDITCORE-COORD] lock por archivo — evita que agentes se pisen
+  let _coord = null;
+  let _coordThread = "default";
+  let _coordAgent = "implementer";
+  try {
+    const { getCoordination } = require("../runtime/agent-coordination");
+    _coord = getCoordination(root);
+    const g = global.__editcoreCoord || {};
+    _coordThread = g.threadId || "default";
+    _coordAgent = g.agentRole || "implementer";
+    const lock = _coord.acquireLock(_coordThread, _coordAgent, rel, "write_file");
+    if (!lock.ok) {
+      return { ok: false, error: lock.error, locked: true };
+    }
+  } catch { /* coordinación no instalada → continuar */ }
+  // [/EDITCORE-COORD]
+  let _beforeForReview = "";
+  try {
+    if (fs.existsSync(file) && fs.statSync(file).isFile()) {
+      _beforeForReview = fs.readFileSync(file, "utf8");
+    }
+  } catch { _beforeForReview = ""; }
+  try {
+    if (_beforeForReview === body) {
       return { ok: true, unchanged: true, path: rel, note: `${rel} ya tenía exactamente ese contenido: no hubo cambios.` };
     }
   } catch { /* si no se puede leer, se escribe normal */ }
   const snap = snapshotBeforeWrite(root, rel, "write_file");
   fs.mkdirSync(path.dirname(file), { recursive: true });
-  fs.writeFileSync(file, String(content ?? ""), "utf8");
+  fs.writeFileSync(file, body, "utf8");
   invalidateReadCache(file);
   let syntaxCheck = null;
   try {
     const { validateSyntax } = require("../runtime/syntax-validator");
-    syntaxCheck = validateSyntax(rel, String(content ?? ""));
+    syntaxCheck = validateSyntax(rel, body);
   } catch {}
   const out = {
     ok: true,
@@ -217,6 +251,32 @@ function writeFile(root, rel, content) {
       summary: "archivo escrito (kernel)",
     });
   } catch { /* índice no debe bloquear escritura */ }
+  // [EDITCORE-COORD] registrar actividad
+  try {
+    if (typeof _coord !== "undefined" && _coord) {
+      _coord.recordActivity(_coordThread, {
+        type: "write",
+        agent: _coordAgent,
+        path: String(rel || "").replace(/\\/g, "/"),
+        op: "write_file",
+        note: "archivo escrito",
+      });
+    }
+  } catch { /* no bloquear */ }
+  // [/EDITCORE-COORD]
+  // [EDITCORE-REVIEW] cola unificada accept/reject (no toca @mentions)
+  try {
+    const unified = require("../runtime/unified-review");
+    unified.enqueueFromWrite(root, {
+      path: rel,
+      before: typeof _beforeForReview !== "undefined" ? _beforeForReview : "",
+      after: body,
+      backupPath: snap && snap.ok ? (snap.backupPath || snap.path || null) : null,
+      source: "agent",
+    });
+    out.reviewQueued = true;
+  } catch { /* no bloquear escritura */ }
+  // [/EDITCORE-REVIEW]
   return out;
 }
 

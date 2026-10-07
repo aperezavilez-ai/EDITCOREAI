@@ -1,24 +1,49 @@
 "use strict";
 
 /**
- * Prompt de diseño UI contemporánea (estilo moderno).
+ * Prompt de diseño UI — EditCoreAI (Fase 6: Elite)
+ * Archivo COMPLETO para reemplazar el existente.
  */
+
+const {
+  eliteUiSystemPrompt,
+  withEliteUiPolicy,
+  visualQaChecklist,
+  isUiTask,
+} = require("../runtime/elite-ui-policy");
 
 function uiDesignSystemPrompt() {
   return [
-    "## UI/UX FIRST (obligatorio al crear o modificar interfaces)",
-    "- Stack por defecto: Next.js App Router o Vite/React + TypeScript + Tailwind CSS + Lucide + Framer Motion + Radix/shadcn.",
-    "- Estética: tipografía expresiva (no Inter/Roboto/Arial por defecto), jerarquía clara, layouts responsive.",
-    "- Componentes: reutilizables, accesibles, sin HTML espagueti. Prefiere shadcn/ui patterns.",
-    "- No uses CSS inline masivo ni estilos genéricos 'AI purple gradient' salvo petición explícita.",
-    "- Tras cambios visuales, verifica coherencia (espaciado, contraste, jerarquía).",
+    eliteUiSystemPrompt(),
     "",
-    "## MOTION + ASSETS (obligatorio en web/PWA nuevas)",
-    "- Siempre implementa micro-interacciones (hover/focus/press) con Tailwind transition utilities o Framer Motion.",
-    "- Usa scroll suave en anclas y reveals on-scroll (whileInView / IntersectionObserver); respeta prefers-reduced-motion.",
-    "- Placeholders de assets responsive: aspect-ratio, object-cover, fallback a SVG/logo si la imagen falla; guarda generados en public/assets/.",
-    "- Si el usuario pide imagen/video y hay config: usa generate_image / generate_video; si no hay config, SVG/CSS/placeholder sin inventar URLs.",
+    "## UI/UX FIRST (implementación)",
+    "- Stack por defecto si el proyecto no impone otro: Next.js App Router o Vite/React + TypeScript + Tailwind + Lucide + Framer Motion + Radix/shadcn patterns.",
+    "- Estética: tipografía expresiva (no Inter/Roboto/Arial por defecto), jerarquía clara, layouts responsive.",
+    "- Componentes reutilizables y accesibles; sin HTML espagueti.",
+    "- Evita CSS inline masivo y el cliché 'AI purple gradient' salvo petición explícita.",
+    "- Tras cambios visuales: coherencia de espaciado, contraste y jerarquía.",
+    "",
+    "## MOTION + ASSETS",
+    "- Micro-interacciones (hover/focus/press) con Tailwind transitions o Framer Motion.",
+    "- Scroll suave y reveals on-scroll cuando aporte; respeta prefers-reduced-motion.",
+    "- Assets: aspect-ratio, object-cover, fallback SVG; no inventes URLs de imágenes.",
+    "",
+    visualQaChecklist(),
   ].join("\n");
 }
 
-module.exports = { uiDesignSystemPrompt };
+/**
+ * Inyecta elite UI solo cuando la tarea es visual (ahorra tokens en tareas no-UI).
+ */
+function uiDesignPromptForTask(userText = "") {
+  if (!isUiTask(userText) && !/(?:crea|haz|construye|diseña).{0,30}(?:web|app|landing|dashboard|ui)/i.test(String(userText || ""))) {
+    return "";
+  }
+  return uiDesignSystemPrompt();
+}
+
+module.exports = {
+  uiDesignSystemPrompt,
+  uiDesignPromptForTask,
+  withEliteUiPolicy,
+};
