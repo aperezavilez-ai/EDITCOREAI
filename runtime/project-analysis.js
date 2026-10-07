@@ -659,29 +659,35 @@
     if (shouldAnalyzePromptFirst(prompt) || isGreenfieldSpecPrompt(prompt)) return false;
     // Pedir propuesta/plan de correccion NO es autorizar ejecucion.
     if (isProposalFollowUp(prompt)) return false;
-    // "ANALIZA ... hallazgos a corregir" = reporte, no mutar ahora.
+    // "ANALIZA ... hallazgos a corregir" = reporte, no mutar ahora (a menos que pida explicitamente "y corrijelos/arreglalos").
+    const isDescriptiveFix = /\b(?:nada\s+que|algo\s+que|que|a|para|por|sin|posibles?\s+a?)\s+corregir\b/i.test(prompt)
+      && !/\b(?:y\s+)?(?:corr[eií][gj](?:e|alo|alos|ala|alas|eme|me)|arregl(?:a|á|alo|alos|ala|alas|ame)|repar(?:a|á|alo|alos|ala|alas|ame)|solucion(?:a|á|alo|alos|ala|alas|ame)|resu[eé]lve(?:lo|la|los|las|me)|aplica(?:r|lo|los|la|las)|modifica(?:r|lo|los|la|las)|modificaciones)\b/i.test(prompt);
+    const hasExplicitFixOrAction = !isDescriptiveFix && /\b(?:corr[eií][gj](?:e|ir|alo|alos|ala|alas|eme|me|as)?|arregl(?:a|á|ar|alo|alos|ala|alas|ame|as)?|repar(?:a|á|ar|alo|alos|ala|alas|ame|as)?|solucion(?:a|á|ar|alo|alos|ala|alas|ame|as)?|resu[eé]lve(?:lo|los|la|las|me)?|resolver(?:lo|los|la|las|me)?|aplic(?:a|á|ar|alo|alos|ala|alas|ame)?|modifica(?:r|lo|los|la|las)?|modificaciones)\b/i.test(prompt);
     if (isFreshAnalysisRequest(prompt)
       && /\b(?:reporte|hallazgos|diagn[oó]stico|an[aá]lisis)\b/i.test(prompt)
-      && !isAuthorization(prompt)) {
+      && !isAuthorization(prompt)
+      && !hasExplicitFixOrAction) {
       return false;
     }
-    if (/\b(?:hallazgos?\s+a\s+corregir|(?:a|para)\s+corregir)\b/i.test(prompt)
-      && /\b(?:analiza|reporte|hallazgos|diagn[oó]stico|an[aá]lisis)\b/i.test(prompt)
-      && !isAuthorization(prompt)) {
+    if (/\b(?:hallazgos?\s+a\s+corregir|(?:a|para|que|por|sin|nada\s+que)\s+corregir)\b/i.test(prompt)
+      && /\b(?:analiza|reporte|hallazgos|diagn[oó]stico|an[aá]lisis|rehaz)\b/i.test(prompt)
+      && !isAuthorization(prompt)
+      && !hasExplicitFixOrAction) {
       return false;
     }
 
     // 🔧 FIX v4: "quiero/necesito que hagas" + análisis/reporte/diagnóstico = NO es cambio.
     // Antes, "quiero que hagas un análisis del proyecto" se trataba como EXECUTE.
     if (/\b(?:quiero|necesito|podr[ií]as?)\s+que\s+(?:hagas|hag[aá]s|realices|prepares|elabores)\b/i.test(prompt)
-      && /\b(?:an[aá]lisis|reporte|diagn[oó]stico|hallazgos|auditor[ií]a|revisi[oó]n)\b/i.test(prompt)) {
+      && /\b(?:an[aá]lisis|reporte|diagn[oó]stico|hallazgos|auditor[ií]a|revisi[oó]n)\b/i.test(prompt)
+      && !hasExplicitFixOrAction) {
       return false;
     }
 
     if (isCloudOperateRequest(prompt)) return true;
-    return /\b(crea|crear|corrige|corrije|corregir|modifica|modificar|agrega|agregar|elimina|eliminar|instala|instalar|implementa|implementar|repara|reparar|actualiza|actualizar|cambia|cambiar|construye|construir|desarrolla|desarrollar|configura|configurar|haz|hacer|arregla|arreglar|soluciona|solucionar|resuelve|resolver|integra|integrar|conecta|conectar|restaura|restaurar|recupera|recuperar|termina|terminar|aplica|aplicar|quiero que hagas|necesito que hagas|publica|publicar|deploy|despliega|desplegar)\b/i.test(prompt)
+    return /\b(crea|crear|corrige|corrije|corregir|corrijelo|corrijelos|corrigelo|corrigelos|corrijelas|corrigelas|corrijeme|corrigeme|modifica|modificar|modificalo|modificalos|modificaciones|agrega|agregar|agregalo|agregalos|elimina|eliminar|eliminalo|eliminalos|instala|instalar|implementa|implementar|implementalo|implementalos|repara|reparar|reparalo|reparalos|reparala|reparalas|reparame|actualiza|actualizar|actualizalo|actualizalos|cambia|cambiar|cambialo|cambialos|construye|construir|desarrolla|desarrollar|configura|configurar|haz|hacer|hazlo|hazlos|hazla|hazlas|hazme|arregla|arreglar|arreglalo|arreglalos|arreglala|arreglalas|arreglame|soluciona|solucionar|solucionalo|solucionalos|solucionala|solucionalas|solucioname|resuelve|resolver|resuelvelo|resuelvelos|resuelvela|resuelvelas|resuelveme|integra|integrar|conecta|conectar|restaura|restaurar|recupera|recuperar|termina|terminar|terminalo|terminalos|aplica|aplicar|aplicalo|aplicalos|aplicala|aplicalas|aplicame|quiero que hagas|necesito que hagas|publica|publicar|deploy|despliega|desplegar)\b/i.test(prompt)
       || /\b(no puede|no puedo|no funciona|no responde|no modifica|no corrige|bloquead[oa]|error(?:es)?|fall[ao]|roto|rompe|permisos?|acceso)\b/i.test(prompt)
-        && /\b(corrige|corregir|arregla|arreglar|repara|reparar|soluciona|solucionar|haz|hacer|funcione|modifica|modificar)\b/i.test(prompt);
+        && /\b(corrige|corrije|corregir|corrijelo|corrijelos|corrigelo|corrigelos|arregla|arreglar|arreglalo|arreglalos|repara|reparar|reparalo|reparalos|soluciona|solucionar|solucionalo|solucionalos|resuelve|resolver|resuelvelo|resuelvelos|haz|hacer|hazlo|funcione|modifica|modificar|modificaciones)\b/i.test(prompt);
   }
 
   function isProposalFollowUp(value) {

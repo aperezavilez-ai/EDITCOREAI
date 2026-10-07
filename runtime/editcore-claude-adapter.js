@@ -4166,7 +4166,7 @@ REGLAS DURAS:
     }
 
     const promptText3220 = String(input.prompt || "");
-    const hasFixOrCreate3220 = /\b(?:crear?|crees?|corregir?|corrijas?|corrijelo|modifica|modifiques|escribir?|escribas?|arreglar?|arregles?|implementar?|implementes?|haz|hacer|funcionar|ejecutar?|ejecuta)\b/i.test(promptText3220);
+    const hasFixOrCreate3220 = /\b(?:crear?|crees?|corregir?|corrijas?|corrige|corrije|corrijelo|corrijelos|corrigelo|corrigelos|corrijelas|corrigelas|corrijeme|corrigeme|modifica|modifiques|modificalo|modificalos|modificaciones|escribir?|escribas?|escribe|arreglar?|arregles?|arregla|arreglalo|arreglalos|arreglala|arreglalas|arreglame|repara|reparar|reparalo|reparalos|reparala|reparalas|reparame|soluciona|solucionar|solucionalo|solucionalos|solucionala|solucionalas|solucioname|resuelve|resolver|resuelvelo|resuelvelos|resuelvela|resuelvelas|resuelveme|aplica|aplicar|aplicalo|aplicalos|aplicala|aplicalas|aplicame|implementar?|implementes?|implementa|implementalo|implementalos|haz|hacer|hazlo|hazlos|funcionar|ejecutar?|ejecuta)\b/i.test(promptText3220);
     const isCodeAudit = isAnalysisOnlyRequest(input.prompt) && !hasFixOrCreate3220;
     const visionImages = Array.isArray(input.images) ? input.images : [];
     const taskText = `Proyecto: ${input.projectRoot}

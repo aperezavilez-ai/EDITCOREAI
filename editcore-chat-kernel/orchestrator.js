@@ -244,7 +244,8 @@ const ANALYSIS_MODE_PROMPT = [
   "   - Lista de archivos que leiste con `read_file`.",
   "",
   "REGLAS DURAS:",
-  "- NO uses write_file / replace_in_file (modo solo lectura).",
+  "- NO uses write_file / replace_in_file en este turno (el objetivo de este turno es emitir el reporte/diagnóstico).",
+  "- NO digas nunca 'El IDE está en modo solo lectura' ni pidas cambiar permisos.",
   "- NO inventes. Si un archivo no lo leiste, no afirmes nada sobre el.",
   "- Los extractos y lecturas son PARCIALES por presupuesto. Que un extracto termine a mitad de una funcion NO es un hallazgo: PROHIBIDO reportar un archivo como 'truncado' o 'incompleto' por eso. La integridad esta en el encabezado del extracto (lineas totales, bytes, sintaxis): solo hay archivo roto si la sintaxis dice ERROR.",
   "- Para ver mas de un archivo usa read_file con startLine/endLine (el resultado trae totalLines y endLine).",
@@ -255,7 +256,7 @@ const ANALYSIS_MODE_PROMPT = [
   "- Si un documento tiene cifras distintas en varias secciones (ej. 19/19, 30/30, 46/46 tests), usa la mas reciente y menciona la discrepancia.",
   "- Usa tablas cuando listes varios hallazgos o archivos.",
   "- Si no hay evidencia suficiente, dilo explicitamente.",
-  "- CIERRE: Después de 📁 Evidencia real, agregá 1-2 líneas preguntando al usuario si quiere profundizar en algún módulo o pasar a implementar una mejora concreta.",
+  "- CIERRE: Después de 📁 Evidencia real, concluye preguntando: '¿Quieres que aplique estas correcciones? Responde **procede** o **corrígelos** y los aplico directamente en el proyecto.'",
   "=== FIN MODO ANALISIS ===",
 ].join("\n");
 
@@ -294,11 +295,11 @@ function formatAgentVisibleText(text = "") {
 }
 
 function userWantsDiskMutation(message = "") {
-  return /\b(?:crea(?:r|ción)?|genera(?:r)?|implementa(?:r)?|escrib[ie]|haz|arma|scaffold|nuevo\s+proyecto|app\b|muev\w*|copiar?|guarda(?:r)?|fix|corrige|añad[ie]|agrega)\b/i.test(String(message || ""))
+  return /\b(?:crea(?:r|ción)?|genera(?:r)?|implementa(?:r|lo|los|la|las)?|escrib[ie]|haz|hacer|hazlo|hazlos|arma|scaffold|nuevo\s+proyecto|app\b|muev\w*|copiar?|guarda(?:r)?|fix|corrige|corrije|corrijelo|corrijelos|corrigelo|corrigelos|arregla|arreglalo|arreglalos|repara|reparalo|reparalos|soluciona|solucionalo|solucionalos|aplica|aplicalo|aplicalos|modifica|modificar|modificalo|modificalos|modificaciones|añad[ie]|agrega|agregalo|agregalos)\b/i.test(String(message || ""))
     || FIX_INTENT_RE.test(String(message || ""));
 }
 
-const FIX_INTENT_RE = /\b(?:corr[eií][gj](?:e|ir)(?:me|lo|la|los|las)?|arregl(?:a|á|ar)(?:me|lo|la|los|las)?|repar(?:a|á|ar)(?:lo|la|los|las)?|solucion(?:a|á|ar)(?:lo|la|los|las)?|resu[eé]lve(?:lo|la|los|las)?|resolver(?:lo|la|los|las)?|fix(?:ea)?|implementa(?:r)?|agrega(?:r)?|añad[ei]r?)\b/i;
+const FIX_INTENT_RE = /\b(?:corr[eií][gj](?:e|ir|alo|alos|ala|alas|eme|me|as)?(?:me|lo|la|los|las)?|arregl(?:a|á|ar|alo|alos|ala|alas|ame|as)?(?:me|lo|la|los|las)?|repar(?:a|á|ar|alo|alos|ala|alas|ame|as)?(?:me|lo|la|los|las)?|solucion(?:a|á|ar|alo|alos|ala|alas|ame|as)?(?:me|lo|la|los|las)?|resu[eé]lve(?:lo|la|los|las|me)?|resolver(?:lo|la|los|las|me)?|fix(?:ea)?|implementa(?:r|lo|los|la|las)?|aplica(?:r|lo|los|la|las)?|modifica(?:r|lo|los|la|las)?|modificaciones|agrega(?:r|lo|los|la|las)?|añad[ei]r?)\b/i;
 
 function textClaimsDiskMutation(text = "") {
   const raw = String(text || "");
@@ -707,7 +708,7 @@ class ChatOrchestrator {
       // Las preguntas sueltas ("¿por qué te detienes?") no son la tarea: se retoma el último pedido accionable.
       resumedTask = prevUserTexts.find((t) => classify(t).kind !== "CHAT") || (isApprovalText ? prevUserTexts[0] || "" : "");
       if (resumedTask) {
-        effectiveText = `INSTRUCCIÓN AUTORIZADA DEL USUARIO: "${resumedTask}". Procede con las modificaciones de código y verifica.`;
+        effectiveText = `INSTRUCCIÓN AUTORIZADA DEL USUARIO: "${resumedTask}". Aplica las correcciones y modificaciones de código y verifica.`;
         if (!isApprovalText) effectiveText += ` Ahora dice: "${text}".`;
       }
     }
@@ -722,6 +723,10 @@ class ChatOrchestrator {
 
     let decision = classify(effectiveText, { allowWrite: fullAccess || inputAllowWrite === true, permissionMode: fullAccess ? "full" : permissionMode, fullAccess });
 
+    if (isApprovalText || startsWithContinue || /^INSTRUCCI[OÓ]N AUTORIZADA/i.test(effectiveText)) {
+      decision = { kind: "EXECUTE", label: fullAccess ? "Ejecución (Acceso completo)" : "Ejecución autorizada", allowTools: true, allowWrite: true, background: false };
+    }
+
     if (fullAccess) {
       decision.allowWrite = true;
       if (decision.kind === "CONFIRM" || isApprovalText) decision = { kind: "EXECUTE", label: "Ejecución (Acceso completo)", allowTools: true, allowWrite: true, background: false };
@@ -731,7 +736,7 @@ class ChatOrchestrator {
     if (decision.kind === "CHAT" && userWantsDiskMutation(effectiveText)) {
       decision = { kind: "EXECUTE", label: fullAccess ? "Ejecución (Acceso completo)" : "Construcción / Ejecución", allowTools: true, allowWrite: true, background: false };
     }
-    if (decision.kind === "CHAT" && /(?:^|[^\w])(?:analiz[aá]|analizar|an[aá]lisis|auditor[ií]a|diagn[oó]stico|diagnostica|revis[aá]|inspecciona|explora(?:r)?\s+el\s+proyecto)(?=\s|$|[.!,?¿¡:])/i.test(effectiveText)) {
+    if (decision.kind === "CHAT" && !userWantsDiskMutation(effectiveText) && /(?:^|[^\w])(?:analiz[aá]|analizar|an[aá]lisis|auditor[ií]a|diagn[oó]stico|diagnostica|revis[aá]|inspecciona|explora(?:r)?\s+el\s+proyecto)(?=\s|$|[.!,?¿¡:])/i.test(effectiveText)) {
       decision = { kind: "ANALYZE", label: "Análisis", allowTools: true, allowWrite: false, background: false };
     }
     if (hasImages && (decision.kind === "ANALYZE" || decision.kind === "ASK" || visionAsk)) {
@@ -1243,6 +1248,20 @@ class ChatOrchestrator {
             messages.push({ role: "assistant", content: cleanText || null });
             messages.push({ role: "user", content: `No cierres el turno. Ejecutá AHORA las tools que prometiste ("${cleanText.slice(-120)}").` });
             onProgress?.({ phase: "model", text: `Reintentando: promesa sin acción (${promiseRetries}/${MAX_PROMISE_RETRIES})` });
+            continue;
+          }
+
+          const textDiffWithoutWrite = !chatOnly && decision?.kind !== "CHAT" && !listOnlyMode && !analysisMode
+            && (accessFull || orderedWrite)
+            && /(?:---|\+\+\+|@@)\s+[ab]\/|```(?:diff|patch)/i.test(cleanText)
+            && successfulWritePaths(steps).length === 0
+            && noWriteNudges < MAX_NO_WRITE_NUDGES
+            && i < stepsLimit - 2;
+          if (textDiffWithoutWrite) {
+            noWriteNudges += 1;
+            messages.push({ role: "assistant", content: cleanText || null });
+            messages.push({ role: "user", content: "No muestres diffs en texto markdown. Tienes acceso completo para editar archivos: ejecuta los cambios DIRECTAMENTE llamando a la herramienta replace_in_file o write_file en este mismo turno." });
+            onProgress?.({ phase: "model", text: `Diff en texto detectado: pidiendo que aplique las herramientas de escritura (${noWriteNudges}/${MAX_NO_WRITE_NUDGES})` });
             continue;
           }
 

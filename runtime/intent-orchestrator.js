@@ -142,14 +142,16 @@
     if (/\bNO\s+MODIFIQUES?\b|\bNO\s+MODIFICAR\b|\bMODO:\s*DIAGN|\bDIAGN[OÓ]STICO\b.*\bNO\s+MODIFIC/i.test(text)) {
       return true;
     }
-    if (/\b(?:crear?|crees?|corregir?|corrijas?|modifica|modifiques|escribir?|escribas?|arreglar?|arregles?|implementar?|implementes?)\b/i.test(text)
-      && !/\bNO\s+MODIFIQUES?\b|\bNO\s+MODIFICAR\b/i.test(text)) {
+    const isDescriptiveFix = /\b(?:nada\s+que|algo\s+que|que|a|para|por|sin|posibles?\s+a?)\s+corregir\b/i.test(text)
+      && !/\b(?:y\s+)?(?:corr[eií][gj](?:e|alo|alos|ala|alas|eme|me)|arregl(?:a|á|alo|alos|ala|alas|ame)|repar(?:a|á|alo|alos|ala|alas|ame)|solucion(?:a|á|alo|alos|ala|alas|ame)|resu[eé]lve(?:lo|la|los|las|me)|aplica(?:r|lo|los|la|las)|modifica(?:r|lo|los|la|las)|modificaciones)\b/i.test(text);
+    const hasFixAction = !isDescriptiveFix && /\b(?:crear?|crees?|corregir?|corrijas?|corrige|corrije|corrijelo|corrijelos|corrigelo|corrigelos|corrijelas|corrigelas|corrijeme|corrigeme|modifica|modifiques|modificalo|modificalos|modificaciones|escribir?|escribas?|escribe|arreglar?|arregles?|arregla|arreglalo|arreglalos|arreglala|arreglalas|arreglame|repara|reparar|reparalo|reparalos|reparala|reparalas|reparame|soluciona|solucionar|solucionalo|solucionalos|solucionala|solucionalas|solucioname|resuelve|resolver|resuelvelo|resuelvelos|resuelvela|resuelvelas|resuelveme|aplica|aplicar|aplicalo|aplicalos|aplicala|aplicalas|aplicame|implementar?|implementes?|implementa|implementalo|implementalos|haz|hacer|hazlo|hazlos|funcionar|ejecutar?|ejecuta)\b/i.test(text);
+    if (hasFixAction && !/\bNO\s+MODIFIQUES?\b|\bNO\s+MODIFICAR\b/i.test(text)) {
       return false;
     }
     // Candado P0: analisis fresco + reporte/hallazgos = readonly (aunque diga "a corregir").
     if (isFreshAnalysisRequest?.(text)
       && /\b(?:reporte|hallazgos|diagn[oó]stico|an[aá]lisis|audita|diagnostica)\b/i.test(text)
-      && !/\b(?:crear?|crees?|corregir?|corrijas?|modifica|modifiques|escribir?|escribas?|arreglar?|arregles?|implementar?|implementes?)\b/i.test(text)) {
+      && !hasFixAction) {
       return true;
     }
     if (/\b(?:hallazgos?\s+a\s+corregir|(?:a|para)\s+corregir)\b/i.test(text)

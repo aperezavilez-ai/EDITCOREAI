@@ -149,3 +149,47 @@ test("al agotar los pasos avisa que la tarea no está terminada y que escriba «
   assert.match(out.text, /continúa/);
   assert.match(out.text, /c\.js/);
 });
+
+test("prompt mixto «analiza X y corrijelos» clasifica como EXECUTE con tools de escritura", async () => {
+  const prompt = "analiza ia restaurant quirurgicamentee en busca de errores y corrijelos";
+  assert.equal(classify(prompt).kind, "EXECUTE");
+  assert.equal(classify(prompt).allowWrite, true);
+
+  calls.length = 0;
+  scripted = [{ text: "Corregidos los errores encontrados en el proyecto.", toolCalls: [], usage: {} }];
+  const out = await new ChatOrchestrator().handle({
+    message: prompt,
+    projectRoot,
+    apiBaseUrl: "http://127.0.0.1:9/v1",
+    apiKey: "k",
+    model: "m",
+    permissionMode: "full",
+  });
+  assert.equal(out.kind, "EXECUTE");
+  assert.ok(calls.length > 0);
+  assert.ok(calls[0].tools.includes("replace_in_file"));
+  assert.ok(calls[0].tools.includes("write_file"));
+});
+
+test("«procede» tras un análisis ejecuta las modificaciones y no re-analiza en bucle", async () => {
+  const history = [
+    { role: "user", content: "analiza el proyecto en busca de errores" },
+    { role: "assistant", content: "## Hallazgos\n- src/App.tsx: error de sintaxis" },
+  ];
+  calls.length = 0;
+  scripted = [{ text: "Aplicando los arreglos autorizados.", toolCalls: [], usage: {} }];
+  const out = await new ChatOrchestrator().handle({
+    message: "procede",
+    history,
+    projectRoot,
+    apiBaseUrl: "http://127.0.0.1:9/v1",
+    apiKey: "k",
+    model: "m",
+    permissionMode: "full",
+  });
+  assert.equal(out.kind, "EXECUTE");
+  assert.ok(calls.length > 0);
+  assert.ok(calls[0].tools.includes("replace_in_file"));
+  assert.ok(calls[0].tools.includes("write_file"));
+});
+
