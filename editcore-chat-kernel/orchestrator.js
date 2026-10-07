@@ -1202,6 +1202,16 @@ class ChatOrchestrator {
 
         const hb = setInterval(() => { try { onProgress?.({ phase: "heartbeat", text: "Procesando…" }); } catch {} }, HEARTBEAT_INTERVAL_MS);
 
+        // Inyectar direcciones/consultas pendientes del usuario antes del turno del modelo
+        if (Array.isArray(this.steering) && this.steering.length > 0) {
+          const pendingSteer = this.steering.splice(0).map((s) => (typeof s === "object" ? s.instruction : s)).filter(Boolean);
+          if (pendingSteer.length > 0) {
+            const steerBlock = pendingSteer.join("\n\n");
+            messages.push({ role: "user", content: `INSTRUCCIÓN / CONSULTA DEL USUARIO MIENTRAS TRABAJABAS: "${steerBlock}". Responde o ajusta tu trabajo inmediatamente según esta consulta sin perder el avance de las herramientas ya ejecutadas ni romper la memoria del proyecto.` });
+            onProgress?.({ phase: "direction", text: `Recibida instrucción del usuario: ${pendingSteer[0].slice(0, 80)}…` });
+          }
+        }
+
         let turn;
         try {
           turn = await callChat({
@@ -1226,6 +1236,16 @@ class ChatOrchestrator {
               } catch {}
             },
           });
+        } catch (callErr) {
+          if (callErr?.code === "AGENT_STEER" || String(callErr?.message || "").includes("Nueva instruccion") || (Array.isArray(this.steering) && this.steering.length > 0)) {
+            // Reorientación sin romper el avance: capturar la nueva orden del usuario y continuar el bucle
+            const pendingSteer = (Array.isArray(this.steering) ? this.steering.splice(0) : []).map((s) => (typeof s === "object" ? s.instruction : s)).filter(Boolean);
+            const steerBlock = pendingSteer.length > 0 ? pendingSteer.join("\n\n") : "Continúa respondiendo a la última instrucción.";
+            messages.push({ role: "user", content: `INSTRUCCIÓN / CONSULTA DEL USUARIO MIENTRAS TRABAJABAS: "${steerBlock}". Responde o ajusta tu trabajo inmediatamente según esta consulta sin perder el avance de las herramientas ya ejecutadas ni romper la memoria del proyecto.` });
+            onProgress?.({ phase: "direction", text: `Reorientando agente: ${steerBlock.slice(0, 80)}…` });
+            continue;
+          }
+          throw callErr;
         } finally {
           clearInterval(hb); this.turnAbort = null;
         }

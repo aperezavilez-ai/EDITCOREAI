@@ -193,3 +193,29 @@ test("«procede» tras un análisis ejecuta las modificaciones y no re-analiza e
   assert.ok(calls[0].tools.includes("write_file"));
 });
 
+test("consulta o steer mientras el agente está pensando no rompe la sesión y se inyecta en el diálogo", async () => {
+  calls.length = 0;
+  const orch = new ChatOrchestrator();
+  scripted = [
+    { text: "Entendido, acelerando la respuesta a tu consulta.", toolCalls: [], usage: {} },
+  ];
+  orch.steering = [{ instruction: "llevas 10 min sin avanzar", at: Date.now() }];
+  const out = await orch.runModelTask({
+    decision: { kind: "EXECUTE", allowTools: true, allowWrite: true },
+    message: "analiza y arregla",
+    projectRoot,
+    apiBaseUrl: "http://127.0.0.1:9/v1",
+    apiKey: "k",
+    model: "m",
+    allowWrite: true,
+    maxSteps: 4,
+    helpers: {},
+  });
+  assert.ok(out);
+  assert.equal(out.kind, "EXECUTE");
+  assert.ok(calls.length > 0);
+  const lastCallMessages = calls[0].messages;
+  const hasInjectedSteer = lastCallMessages.some((m) => String(m.content).includes("llevas 10 min sin avanzar"));
+  assert.equal(hasInjectedSteer, true);
+});
+
