@@ -127,7 +127,12 @@ class AuthManager extends EventEmitter {
     try {
       if (!fs.existsSync(this.sessionPath)) return;
       const parsed = JSON.parse(store.decrypt(fs.readFileSync(this.sessionPath)));
-      if (parsed?.access_token && parsed?.refresh_token && parsed?.user?.id) this.session = parsed;
+      if (parsed?.access_token && parsed?.refresh_token && parsed?.user?.id) {
+        this.session = parsed;
+        if (parsed.account && typeof parsed.account === "object") {
+          this.account = parsed.account;
+        }
+      }
     } catch {
       this.session = null;
     }
@@ -142,6 +147,7 @@ class AuthManager extends EventEmitter {
       }
       if (!store) return;
       fs.mkdirSync(this.storageDir, { recursive: true });
+      if (this.account) this.session.account = this.account;
       fs.writeFileSync(this.sessionPath, store.encrypt(JSON.stringify(this.session)));
     } catch {
       /* la sesión sigue en memoria */
@@ -158,6 +164,7 @@ class AuthManager extends EventEmitter {
       refresh_token: t.refresh_token,
       expires_at: Number(t.expires_at) || nowSec + (Number(t.expires_in) || 3600),
       user,
+      account: this.account || this.session?.account || null,
     };
     this._persist();
   }
@@ -327,6 +334,10 @@ class AuthManager extends EventEmitter {
     const account = await this.rpc("editcoreai_my_account");
     this.account = account && typeof account === "object" ? account : null;
     this.accountFetchedAt = this._now();
+    if (this.session) {
+      this.session.account = this.account;
+      this._persist();
+    }
     return this.account;
   }
 

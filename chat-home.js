@@ -840,18 +840,9 @@
     modal.setAttribute("aria-hidden", "false");
   }
 
-  let topupPrompted = false;
-
-  // Al acabarse el saldo (por ejemplo, el regalo de bienvenida) se ofrece la recarga sin esperar a que falle un mensaje.
-  function promptTopupIfEmpty({ balance = 0, unlimited = false, signedIn = false, suspended = false } = {}) {
-    const empty = signedIn && !unlimited && !suspended && !previewAsUser && Number(balance) < 0.01;
-    if (!empty) {
-      topupPrompted = false;
-      return;
-    }
-    if (topupPrompted) return;
-    topupPrompted = true;
-    void showOutOfCreditsModal("out_of_credits");
+  // Solo abre el modal si el usuario lo solicita explícitamente o si la API bloquea la petición
+  function promptTopupIfEmpty() {
+    // Intencionalmente no-op para evitar modales invasivos al abrir proyectos o iniciar la app
   }
 
   let topupOfferCache = { at: 0, value: null };
