@@ -34,7 +34,8 @@
     "cuentas:start": "node scripts/cuentas-start.js",
     "cuentas:restart": "node scripts/cuentas-start.js --restart",
     "cuentas:admin": "node scripts/cuentas-hacer-admin.js",
-    "cuentas:config-exe": "node scripts/write-cloud-config.js"
+    "cuentas:config-exe": "node scripts/write-cloud-config.js",
+    "security:audit": "node scripts/security-audit.js"
   },
   "dependencies": {
     "axios": "^1.20.0",
