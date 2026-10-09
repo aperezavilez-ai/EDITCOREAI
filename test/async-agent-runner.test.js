@@ -54,12 +54,12 @@ test("AsyncAgentRunner: cancels queued and running tasks cleanly", () => {
 test("AsyncAgentRunner: lists tasks by project filter", () => {
   const runner = new AsyncAgentRunner();
 
-  runner.enqueueTask({ name: "Proj A Task", projectRoot: "/path/to/a" });
-  runner.enqueueTask({ name: "Proj B Task", projectRoot: "/path/to/b" });
+  runner.enqueueTask({ name: "Proj A Task", projectRoot: "proj-a" });
+  runner.enqueueTask({ name: "Proj B Task", projectRoot: "proj-b" });
   runner.enqueueTask({ name: "Global Task" });
 
-  const projAList = runner.listTasks("/path/to/a");
-  assert.strictEqual(projAList.length, 2); // /path/to/a + global
+  const projAList = runner.listTasks("proj-a");
+  assert.strictEqual(projAList.length, 2); // proj-a + global
   const allList = runner.listTasks();
   assert.strictEqual(allList.length, 3);
 });

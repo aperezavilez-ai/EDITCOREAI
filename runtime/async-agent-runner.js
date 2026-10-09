@@ -193,7 +193,7 @@ class AsyncAgentRunner extends EventEmitter {
   }
 
   _persistTaskState(task) {
-    if (!task.projectRoot) return;
+    if (!task.projectRoot || !fs.existsSync(task.projectRoot)) return;
     try {
       const dir = path.join(task.projectRoot, ".editcore", "async-tasks");
       if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
