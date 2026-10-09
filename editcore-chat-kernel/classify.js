@@ -3,14 +3,14 @@
 /** Portero: una sola decisión por mensaje. Acceso completo aware. */
 
 const STOP_RE = /^\s*(?:alto|detente|cancela|cancelar|stop|para|basta|deten(?:te)?)\s*[.!?]?\s*$/i;
-const APPROVAL_RE = /^\s*(?:procede|continua|continúa|hazlo|autorizado|adelante|ejecuta|si|sí|confirmado|procedo|hazlo\s+ya|dale|va|ok)\s*[.!?]?\s*$/i;
+const APPROVAL_RE = /^\s*(?:procede|continua|continúa|hazlo|autorizado|adelante|ejecuta|si|sí|confirmado|procedo|hazlo\s+ya|dale|va|ok|corrijelos|corrígelos|corrigelos|corrígelo|corrijelo|arregla|arreglalo)\s*[.!?]?\s*$/i;
 // Frases cortas que solo dicen "seguí" ("si avanza", "ok continua por favor", "termínalo").
-const CONTINUE_WORDS = new Set(["procede", "procedo", "continua", "continúa", "continuar", "continue", "sigue", "siguele", "síguele", "avanza", "avanzale", "avánzale", "adelante", "hazlo", "dale", "ejecuta", "ejecutalo", "ejecútalo", "autorizado", "confirmado", "confirmo", "si", "sí", "ok", "okay", "va", "ya", "termina", "terminalo", "termínalo", "acaba", "acabalo", "acábalo", "por", "favor", "porfa", "porfavor", "y", "pues", "bueno", "ahora", "todo"]);
+const CONTINUE_WORDS = new Set(["procede", "corrijelos", "corrígelos", "corrigelos", "corrijelo", "procedo", "continua", "continúa", "continuar", "continue", "sigue", "siguele", "síguele", "avanza", "avanzale", "avánzale", "adelante", "hazlo", "dale", "ejecuta", "ejecutalo", "ejecútalo", "autorizado", "confirmado", "confirmo", "si", "sí", "ok", "okay", "va", "ya", "termina", "terminalo", "termínalo", "acaba", "acabalo", "acábalo", "por", "favor", "porfa", "porfavor", "y", "pues", "bueno", "ahora", "todo"]);
 function isContinuePhrase(text = "") {
   const words = String(text || "").toLowerCase().replace(/[.,;:!?¡¿]+/g, " ").trim().split(/\s+/).filter(Boolean);
   return words.length > 0 && words.length <= 6 && words.every((w) => CONTINUE_WORDS.has(w));
 }
-const CHAT_INFO_RE = /\b(?:para\s+qu[eé]\s+(?:sirve|funciona|es)|qu[eé]\s+(?:hace|es)|qui[eé]n\s+eres|c[oó]mo\s+te\s+llamas|ayuda|hola|buenos\s+d[ií]as|buenas\s+tardes|buenas\s+noches)\b/i;
+const CHAT_INFO_RE = /\b(?:para\s+qu[eé]\s+(?:sirve|funciona|es)|qu[eé]\s+(?:hace|es|skills?|modelos?|herramientas?)|cu[aá]l\s+es|por\s*qu[eé]|qui[eé]n\s+eres|c[oó]mo\s+te\s+llamas|ayuda|hola|buenos\s+d[ií]as|buenas\s+tardes|buenas\s+noches|qued[oó]\s+(?:resuelto|resulto|corregido)|(?:quedaron|estan|están)\s+(?:resueltos|resultos|corregidos))\b/i;
 
 // Verbos de cambio/escritura. Ganan sobre TASK_VERIFY_RE si el mensaje pide modificar.
 const TASK_FIX_RE = /\b(?:corr[eií][gj](?:e|ir|alo|alos|ala|alas|eme|me|as)?(?:me|lo|la|los|las)?|arregl(?:a|á|ar|alo|alos|ala|alas|ame|as)?(?:me|lo|la|los|las)?|repar(?:a|á|ar|alo|alos|ala|alas|ame|as)?(?:me|lo|la|los|las)?|solucion(?:a|á|ar|alo|alos|ala|alas|ame|as)?(?:me|lo|la|los|las)?|resu[eé]lve(?:lo|la|los|las|me)?|resolver(?:lo|la|los|las|me)?|corrige|corrije|corrijelo|corrijelos|corrigelo|corrigelos|corrijelas|corrigelas|arregla|arreglá|arreglalo|arreglalos|arreglala|arreglalas|implementa(?:r|lo|los|la|las)?|aplica|aplicá|aplicalo|aplicalos|aplicala|aplicalas|repara|repará|reparalo|reparalos|soluciona|solucioná|solucionalo|solucionalos|crea(?:r|ción)?|creá|genera(?:r)?|generá|escribe|escrib[ií]|modifica(?:r|lo|los|la|las)?|modificá|modificaciones|modificaci[oó]n|refactoriza(?:r)?|actualiza(?:r|lo|los|la|las)?|actualizá|añade|añadí|agrega(?:r|lo|los|la|las)?|agregá|cambia(?:r|lo|los|la|las)?|cambiá|muev\w*|mov[eé]|copiar?|copiá|haz(?:me|lo|la|los|las)?|hacer|hac[eé](?:me|lo|la)?|cr[eé]a(?:me|lo|la)|gen[eé]ra(?:me|lo|la)|arr[eé]gla(?:me|lo|la)|corr[ií][gj]e(?:me|lo|la)|agr[eé]ga(?:me|lo|la)|arma|armá|scaffold|nuevo\s+proyecto|ejecuta(?:r|lo|los|la|las)?|ejecutá|reemplaza(?:r|lo|los|la|las)?|reemplazá|pon[eé]?|setea(?:r)?|borra(?:r)?|elimina(?:r|lo|los|la|las)?|renombra(?:r)?|run_command|run|build|tsc|npx|npm)\b/i;
@@ -45,12 +45,15 @@ const BACKGROUND_RE = /\b(?:segundo\s+plano|en\s+background|background|sin\s+esp
 const TASK_VERIFY_RE = /^\s*(?:verifica(?:r)?|verificá|typecheck|compila(?:r)?|compilá|corre?\s+los?\s+tests?|corre?\s+tsc|pasa?\s+el\s+linter|hac[eé]\s+build|build)\b/i;
 
 function isFullAccess(opts = {}) {
-  const mode = String(opts.permissionMode || opts.mode || "").toLowerCase().trim();
-  return opts.permissionFull === true
-    || opts.fullAccess === true
-    || mode === "full"
-    || mode === "acceso completo"
-    || mode === "acceso-completo";
+  const mode = String(opts.permissionMode || opts.mode || opts.permission || "").toLowerCase().trim();
+  if (["read", "readonly", "solo lectura", "solo-lectura", "chat"].includes(mode) || opts.allowWrite === false) {
+    return false;
+  }
+  if (opts.permissionFull === true || opts.fullAccess === true) return true;
+  if (["full", "acceso completo", "acceso-completo", "write", "escritura", "agent", "agente", "execute", "ejecucion", "ejecución"].includes(mode)) {
+    return true;
+  }
+  return false;
 }
 
 function classify(message, opts = {}) {
@@ -131,6 +134,32 @@ function classify(message, opts = {}) {
   if (CHAT_INFO_RE.test(text)) {
     return { kind: "CHAT", label: "Chat informativo", allowTools: false, allowWrite: false, background };
   }
+
+  // --- Fix: NO mandar trabajo a CHAT sin tools ---
+  // Antes el default era allowTools:false → el modelo decía "no tengo herramientas/permisos"
+  // en tareas largas o ambiguas ("termina X", "sigue con Y", "necesito que arregles Z").
+  const looksLikeWork = text.length >= 12
+    && !/^(hola|hi|hello|hey|gracias|thanks|ok|vale|bien)\b/i.test(text);
+  if (looksLikeWork) {
+    if (full) {
+      return {
+        kind: "EXECUTE",
+        label: "Ejecución (Acceso completo, default)",
+        allowTools: true,
+        allowWrite: true,
+        background,
+      };
+    }
+    const softFix = /\b(?:necesito|quiero|podr[ií]as?|puedes|ayúdame|ayudame|termina|completa|continua|continúa|sigue|haz|hacer|por\s+favor)\b/i.test(text);
+    return {
+      kind: softFix ? "EXECUTE" : "ASK",
+      label: softFix ? "Trabajo (inferido)" : "Consulta con tools",
+      allowTools: true,
+      allowWrite: softFix,
+      background,
+    };
+  }
+
   return { kind: "CHAT", label: "Chat", allowTools: false, allowWrite: false, background };
 }
 

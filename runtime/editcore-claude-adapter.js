@@ -3993,15 +3993,18 @@ COMO TRABAJAR (ESTILO CURSOR — TEXTO EN VIVO):
 7. tool_calls nativos. Reporte final en markdown.
 8. WORKSPACE: si el usuario pide cerrar este proyecto y abrir otra carpeta, USA switch_project (no digas que no puedes). Tambien puedes usar open_project / close_project por separado.
 
-SI ES TAREA DE ANÁLISIS/REPORTE/AUDITORIA:
+${input.analysisMode === true ? `SI ES TAREA DE ANÁLISIS/REPORTE/AUDITORIA:
 - Secciones: ## Qué sí funcionó | ## Qué falló / hallazgos | ## Qué falta para que funcione | ## Evidencia | ## Cómo lo corregiré
 - "Qué falta para que funcione": lista concreta (deps, .env, stubs, Docker, workers, endpoints) basada en disco.
 - Tras esas secciones: recomienda la correccion de mayor impacto (archivo + cambio).
 - PROHIBIDO pedir al usuario mas informacion del proyecto: tu lo lees.
 - PROHIBIDO "Verificacion completada con evidencia real..."
 - PROHIBIDO repetir el prompt del usuario como respuesta.
-- PROHIBIDO write_file/replace_in_file.
-- PROHIBIDO reiniciar el proyecto o decir que el path era incorrecto tras CONTINUA; reutiliza evidencia ya leida.
+- PROHIBIDO write_file/replace_in_file en este turno de solo lectura.
+- PROHIBIDO reiniciar el proyecto o decir que el path era incorrecto tras CONTINUA; reutiliza evidencia ya leida.` : `SI ES TAREA DE EJECUCIÓN / CONTINUACIÓN:
+- Tienes permisos de escritura activos (write_file, replace_in_file, run_command).
+- EJECUTA los cambios reales de inmediato con las herramientas de escritura.
+- PROHIBIDO decir que estás en modo solo lectura o pedir cambiar permisos cuando tienes permiso de escritura activo.`}
 
 CIERRE OBLIGATORIO — El modelo DEBE terminar cada respuesta con UNO de estos 3 encabezados de estado (nunca una respuesta abierta sin encabezado):
 

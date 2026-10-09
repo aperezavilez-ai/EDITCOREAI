@@ -1638,18 +1638,28 @@ main {
   background: var(--ec-hover, #edf7f6);
   color: var(--ec-accent, #1b6f79);
 }
-#permissionsBtn.danger {
-  color: #e53935;
+#permissionsBtn.danger,
+#permissionsBtn.full {
+  color: #10b981;
 }
-#permissionsBtn.danger:hover {
-  background: rgba(229, 57, 53, 0.1);
-  color: #d32f2f;
+#permissionsBtn.danger:hover,
+#permissionsBtn.full:hover {
+  background: rgba(16, 185, 129, 0.12);
+  color: #059669;
 }
 #permissionsBtn.readonly {
-  color: #8e24aa;
+  color: #ef4444;
 }
 #permissionsBtn.readonly:hover {
-  background: rgba(142, 36, 170, 0.1);
+  background: rgba(239, 68, 68, 0.12);
+  color: #dc2626;
+}
+#permissionsBtn.step {
+  color: #0284c7;
+}
+#permissionsBtn.step:hover {
+  background: rgba(2, 132, 199, 0.12);
+  color: #0369a1;
 }
 
 #attachBtn,

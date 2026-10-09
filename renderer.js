@@ -1979,8 +1979,9 @@ function renderPermissionButton(mode = "step") {
   const next = ["readonly", "step", "full"].includes(mode) ? mode : "step";
   btn.innerHTML = PERMISSION_ICONS[next] || PERMISSION_ICONS.step;
   btn.title = PERMISSION_TITLES[next] || "Permisos";
-  btn.setAttribute("aria-label", PERMISSION_TITLES[next] || "Permisos");
   btn.classList.toggle("danger", next === "full");
+  btn.classList.toggle("full", next === "full");
+  btn.classList.toggle("step", next === "step");
   btn.classList.toggle("readonly", next === "readonly");
   btn.dataset.permissionMode = next;
 }
