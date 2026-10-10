@@ -3,14 +3,14 @@
 /** Portero: una sola decisión por mensaje. Acceso completo aware. */
 
 const STOP_RE = /^\s*(?:alto|detente|cancela|cancelar|stop|para|basta|deten(?:te)?)\s*[.!?]?\s*$/i;
-const APPROVAL_RE = /^\s*(?:procede|continua|continúa|hazlo|autorizado|adelante|ejecuta|si|sí|confirmado|procedo|hazlo\s+ya|dale|va|ok|corrijelos|corrígelos|corrigelos|corrígelo|corrijelo|arregla|arreglalo)\s*[.!?]?\s*$/i;
+const APPROVAL_RE = /^\s*(?:procede|continua|continúa|hazlo|autorizado|adelante|ejecuta|si|sí|confirmado|procedo|hazlo\s+ya|dale|va|ok)\s*[.!?]?\s*$/i;
 // Frases cortas que solo dicen "seguí" ("si avanza", "ok continua por favor", "termínalo").
-const CONTINUE_WORDS = new Set(["procede", "corrijelos", "corrígelos", "corrigelos", "corrijelo", "procedo", "continua", "continúa", "continuar", "continue", "sigue", "siguele", "síguele", "avanza", "avanzale", "avánzale", "adelante", "hazlo", "dale", "ejecuta", "ejecutalo", "ejecútalo", "autorizado", "confirmado", "confirmo", "si", "sí", "ok", "okay", "va", "ya", "termina", "terminalo", "termínalo", "acaba", "acabalo", "acábalo", "por", "favor", "porfa", "porfavor", "y", "pues", "bueno", "ahora", "todo"]);
+const CONTINUE_WORDS = new Set(["procede", "procedo", "continua", "continúa", "continuar", "continue", "sigue", "siguele", "síguele", "avanza", "avanzale", "avánzale", "adelante", "hazlo", "dale", "ejecuta", "ejecutalo", "ejecútalo", "autorizado", "confirmado", "confirmo", "si", "sí", "ok", "okay", "va", "ya", "termina", "terminalo", "termínalo", "acaba", "acabalo", "acábalo", "por", "favor", "porfa", "porfavor", "y", "pues", "bueno", "ahora", "todo"]);
 function isContinuePhrase(text = "") {
   const words = String(text || "").toLowerCase().replace(/[.,;:!?¡¿]+/g, " ").trim().split(/\s+/).filter(Boolean);
   return words.length > 0 && words.length <= 6 && words.every((w) => CONTINUE_WORDS.has(w));
 }
-const CHAT_INFO_RE = /\b(?:para\s+qu[eé]\s+(?:sirve|funciona|es)|qu[eé]\s+(?:hace|es|skills?|modelos?|herramientas?)|cu[aá]l\s+es|por\s*qu[eé]|qui[eé]n\s+eres|c[oó]mo\s+te\s+llamas|ayuda|hola|buenos\s+d[ií]as|buenas\s+tardes|buenas\s+noches|qued[oó]\s+(?:resuelto|resulto|corregido)|(?:quedaron|estan|están)\s+(?:resueltos|resultos|corregidos))\b/i;
+const CHAT_INFO_RE = /\b(?:para\s+qu[eé]\s+(?:sirve|funciona|es)|qu[eé]\s+(?:hace|es)|qui[eé]n\s+eres|c[oó]mo\s+te\s+llamas|ayuda|hola|buenos\s+d[ií]as|buenas\s+tardes|buenas\s+noches)\b/i;
 
 // Verbos de cambio/escritura. Ganan sobre TASK_VERIFY_RE si el mensaje pide modificar.
 const TASK_FIX_RE = /\b(?:corr[eií][gj](?:e|ir|alo|alos|ala|alas|eme|me|as)?(?:me|lo|la|los|las)?|arregl(?:a|á|ar|alo|alos|ala|alas|ame|as)?(?:me|lo|la|los|las)?|repar(?:a|á|ar|alo|alos|ala|alas|ame|as)?(?:me|lo|la|los|las)?|solucion(?:a|á|ar|alo|alos|ala|alas|ame|as)?(?:me|lo|la|los|las)?|resu[eé]lve(?:lo|la|los|las|me)?|resolver(?:lo|la|los|las|me)?|corrige|corrije|corrijelo|corrijelos|corrigelo|corrigelos|corrijelas|corrigelas|arregla|arreglá|arreglalo|arreglalos|arreglala|arreglalas|implementa(?:r|lo|los|la|las)?|aplica|aplicá|aplicalo|aplicalos|aplicala|aplicalas|repara|repará|reparalo|reparalos|soluciona|solucioná|solucionalo|solucionalos|crea(?:r|ción)?|creá|genera(?:r)?|generá|escribe|escrib[ií]|modifica(?:r|lo|los|la|las)?|modificá|modificaciones|modificaci[oó]n|refactoriza(?:r)?|actualiza(?:r|lo|los|la|las)?|actualizá|añade|añadí|agrega(?:r|lo|los|la|las)?|agregá|cambia(?:r|lo|los|la|las)?|cambiá|muev\w*|mov[eé]|copiar?|copiá|haz(?:me|lo|la|los|las)?|hacer|hac[eé](?:me|lo|la)?|cr[eé]a(?:me|lo|la)|gen[eé]ra(?:me|lo|la)|arr[eé]gla(?:me|lo|la)|corr[ií][gj]e(?:me|lo|la)|agr[eé]ga(?:me|lo|la)|arma|armá|scaffold|nuevo\s+proyecto|ejecuta(?:r|lo|los|la|las)?|ejecutá|reemplaza(?:r|lo|los|la|las)?|reemplazá|pon[eé]?|setea(?:r)?|borra(?:r)?|elimina(?:r|lo|los|la|las)?|renombra(?:r)?|run_command|run|build|tsc|npx|npm)\b/i;
@@ -30,9 +30,12 @@ const DOCUMENT_OUTPUT_RE = /\b(?:pdf|word|docx|excel|xlsx|csv|archivo|documento)
 // "qué hay en X", "dame los archivos de X", "contenido de X", "explora X",
 // "dime qué hay en X", "cuántos archivos", "los archivos de X".
 // ============================================================
-const TASK_LIST_ONLY_RE = /(?:^|[^\w])(?:list(?:a|ar|ame|ado)?|enumer(?:a|ar|ame)|muestr(?:a|ame|e|ar)|mostr(?:a|ame|ar)|dame|dime|ense[ñn]ame|decime|ver|qu[eé]\s+hay\s+en|qu[eé]\s+contiene|contenido\s+(?:de|del?)|los\s+archivos\s+(?:de|del?|en)|las\s+carpetas\s+(?:de|del?|en)|cu[aá]ntos?\s+archivos?|cu[aá]ntas?\s+carpetas?|explora(?:r)?|inspecciona(?:r)?\s+(?:solo\s+)?(?:la\s+)?(?:carpeta|directorio)|ls\b|dir\b)(?=\s|$|[.!,?¿¡:])/i;
+const TASK_LIST_ONLY_RE = /(?:^|[^\w])(?:list(?:a|ar|ame|ado)?|enumer(?:a|ar|ame)|muestr(?:a|ame|e|ar)|muéstr(?:a|ame|e|ar)|mostr(?:a|ame|ar)|muéstr(?:a|ame)|dame|dime|ense[ñn]ame|decime|ver|qu[eé]\s+hay\s+en|qu[eé]\s+contiene|contenido\s+(?:de|del?)|los\s+archivos\s+(?:de|del?|en)|las\s+carpetas\s+(?:de|del?|en)|cu[aá]ntos?\s+archivos?|cu[aá]ntas?\s+carpetas?|explora(?:r)?|inspecciona(?:r)?\s+(?:solo\s+)?(?:la\s+)?(?:carpeta|directorio)|ls\b|dir\b)(?=\s|$|[.!,?¿¡:])/i;
 // Excluir de LIST-ONLY cuando pide explícitamente analizar/diagnosticar.
-const LIST_ONLY_EXCLUDE_RE = /\b(?:analiz[aá]|analizar|audita(?:r)?|diagnostica(?:r)?|revisa(?:r)?\s+errores|hallazgos|forense|profund(?:o|a|idad)|completo|completa|reporte|informe|evaluaci[oó]n)\b/i;
+const LIST_ONLY_EXCLUDE_RE = /\b(?:analiz[aá]|analizar|audita(?:r)?|diagnostica(?:r)?|revisa(?:r)?\s+errores|hallazgos|forense|profund(?:o|a|idad)|completo|completa|reporte|informe|evaluaci[oó]n|busca(?:r)?|buscar|encuentra|localiza|signIn|login|\bauth\b|check_connections|conect(?:a|ar|iones)?|publica(?:r)?|deploy|checklist|supabase|github|vercel|d[oó]nde\s+est[aá]|en\s+qu[eé]\s+archivo)\b/i;
+
+/** Solo LIST-ONLY si hay contexto de carpeta/listado real (evita que "dime" o "muestra" secuestre busquedas). */
+const LIST_FOLDER_CONTEXT_RE = /\b(?:carpeta|directorio|folder|archivos?\s+(?:de|del|en)|list(?:a|ar)|\bls\b|\bdir\b|estructura|contenido\s+(?:de|del)|qu[eé]\s+hay\s+en|explor(?:a|ar)|tree)\b/i;
 
 const TASK_LIST_RE = /\b(?:lista|listar|qu[eé]\s+contiene|qu[eé]\s+hay\s+en|contenido\s+de|muestra\s+(?:la\s+)?carpeta|explora|explorar|explorer|directorio|arbol|árbol)\b/i;
 const TASK_READ_RE = /\b(?:explica|explicar|lee|leer|describe|describ[eé]|resume|resumir|revisa|revisar|qu[eé]\s+hace|c[oó]mo\s+funciona|para\s+qu[eé]\s+sirve)\b/i;
@@ -45,14 +48,32 @@ const BACKGROUND_RE = /\b(?:segundo\s+plano|en\s+background|background|sin\s+esp
 const TASK_VERIFY_RE = /^\s*(?:verifica(?:r)?|verificá|typecheck|compila(?:r)?|compilá|corre?\s+los?\s+tests?|corre?\s+tsc|pasa?\s+el\s+linter|hac[eé]\s+build|build)\b/i;
 
 function isFullAccess(opts = {}) {
-  const mode = String(opts.permissionMode || opts.mode || opts.permission || "").toLowerCase().trim();
-  if (["read", "readonly", "solo lectura", "solo-lectura", "chat"].includes(mode) || opts.allowWrite === false) {
-    return false;
-  }
-  if (opts.permissionFull === true || opts.fullAccess === true) return true;
-  if (["full", "acceso completo", "acceso-completo", "write", "escritura", "agent", "agente", "execute", "ejecucion", "ejecución"].includes(mode)) {
+  // NO cambia el permiso del IDE: solo lee lo que la UI ya otorgó.
+  if (opts.permissionFull === true || opts.fullAccess === true || opts.allowWrite === true || opts.write === true) return true;
+  if (opts.isFullAccess === true || opts.accesoCompleto === true) return true;
+  if (opts.readOnly === true || opts.readonly === true || opts.soloLectura === true) return false;
+
+  const raw = [
+    opts.permissionMode, opts.mode, opts.permission, opts.accessMode,
+    opts.agentPermission, opts.permissions, opts.perm, opts.level,
+  ].filter((v) => v != null && v !== "").map((v) => String(v).toLowerCase().trim());
+
+  const joined = raw.join(" | ");
+  // Acceso completo / Agente con escritura (variantes UI EditCore)
+  if (/(?:acceso[\s_-]*completo|full[\s_-]*access|\bfull\b|\bwrite\b|escritura|\bagente\b|\bagent\b|\bexecute\b|ejecuci[oó]n)/i.test(joined)) {
+    if (/(?:solo[\s_-]*lectura|read[\s_-]*only|\breadonly\b|\bchat\b)/i.test(joined) && !/(?:acceso[\s_-]*completo|full[\s_-]*access|\bwrite\b)/i.test(joined)) {
+      return false;
+    }
     return true;
   }
+  if (/(?:solo[\s_-]*lectura|read[\s_-]*only|\breadonly\b)/i.test(joined)) return false;
+  // Nivel numérico o flags anidados
+  try {
+    if (Number(opts.permissionLevel) >= 2) return true;
+    if (opts.permissions && typeof opts.permissions === "object") {
+      if (opts.permissions.write === true || opts.permissions.full === true || opts.permissions.execute === true) return true;
+    }
+  } catch { /* ignore */ }
   return false;
 }
 
@@ -74,6 +95,16 @@ function classify(message, opts = {}) {
     return { kind: "EXECUTE", label: "Clonar web", allowTools: true, allowWrite: true, background };
   }
 
+
+  // Busqueda en codigo / conexiones: NUNCA LIST si pide modificar/arreglar
+  if (/\b(?:busca(?:r)?|buscar|encuentra|localiza|search_files|search_codebase|signIn|d[oó]nde\s+est[aá])\b/i.test(text) && !TASK_FIX_RE.test(text)) {
+    return { kind: "ASK", label: "Busqueda en codigo", allowTools: true, allowWrite: false, background };
+  }
+  if (/\b(?:check_connections|conect(?:a|ar|iones)?|checklist|publica(?:r)?\s+(?:el\s+)?proyecto|qu[eé]\s+falta.*(?:conect|public))\b/i.test(text)
+      || (/\b(?:github|vercel|supabase|gafcore)\b/i.test(text) && /\b(?:conect|public|deploy|checklist|falta)\b/i.test(text))) {
+    return { kind: "EXECUTE", label: "Conexiones / publicar", allowTools: true, allowWrite: true, background };
+  }
+
   // ============================================================
   // PRIORIDAD 1: LIST-ONLY explícito (gana sobre ANALYZE)
   // Ej: "lista los archivos de X", "muéstrame la carpeta Y", "qué hay en Z"
@@ -81,6 +112,7 @@ function classify(message, opts = {}) {
   // ============================================================
   if (
     TASK_LIST_ONLY_RE.test(text)
+    && LIST_FOLDER_CONTEXT_RE.test(text)
     && !LIST_ONLY_EXCLUDE_RE.test(text)
     && !ANALYSIS_NOUN_RE.test(text)
     && !TASK_FIX_RE.test(text.replace(GENERIC_REQUEST_VERB_RE, " "))
@@ -103,11 +135,12 @@ function classify(message, opts = {}) {
   const verifyMatch = TASK_VERIFY_RE.test(text);
 
   if (fixMatch) {
+    const isReadOnly = ["read", "readonly", "solo lectura", "solo-lectura", "chat"].includes(String(opts.permissionMode || "").toLowerCase().trim()) || (opts.allowWrite === false && opts.fullAccess !== true && opts.permissionFull !== true);
     return {
       kind: "EXECUTE",
       label: full ? "Ejecución (Acceso completo)" : "Construcción / Ejecución",
       allowTools: true,
-      allowWrite: true,
+      allowWrite: !isReadOnly,
       background,
     };
   }
@@ -131,8 +164,12 @@ function classify(message, opts = {}) {
   if (TASK_READ_RE.test(text) || PATHISH_RE.test(text)) {
     return { kind: "ASK", label: "Consulta", allowTools: true, allowWrite: false, background };
   }
-  if (CHAT_INFO_RE.test(text)) {
-    return { kind: "CHAT", label: "Chat informativo", allowTools: false, allowWrite: false, background };
+  const isQuestionOrChat = CHAT_INFO_RE.test(text)
+    || /\?$/i.test(text)
+    || /^(?:qu[eé]\s+(?:skills|es|hace|son|hay|opinas|diferencia|cambi[oó]|pasa)|cu[aá]l(?:es)?|c[oó]mo|por\s*qu[eé]|qui[eé]n(?:es)?|cu[aá]ndo|hay\b|ya\s+qued[oó]|qued[oó]|ya\s+quedaron|porque\s+se\s+te\s+acaba|es\s+posible)\b/i.test(text);
+
+  if (isQuestionOrChat) {
+    return { kind: "CHAT", label: "Chat", allowTools: false, allowWrite: false, background };
   }
 
   // --- Fix: NO mandar trabajo a CHAT sin tools ---

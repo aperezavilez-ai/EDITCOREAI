@@ -248,6 +248,27 @@ function getPendingPrompt(projectRoot) {
   }
 }
 
+
+function formatPendingMarkdown(projectRoot) {
+  try {
+    const { items, count } = list(projectRoot);
+    if (!count) return "## Review\n\nNo hay cambios pendientes de Accept/Reject.";
+    const lines = [
+      "## Review — cambios pendientes",
+      "",
+      "Puedes aceptar o rechazar desde la UI del IDE.",
+      "",
+    ];
+    for (const it of (items || []).slice(0, 20)) {
+      lines.push(`- \`${it.path}\` (${it.source || "queue"})${it.diffPreview ? " — hay diff" : ""}`);
+    }
+    if (count > 20) lines.push(`- … y ${count - 20} más`);
+    return lines.join("\n");
+  } catch (e) {
+    return "";
+  }
+}
+
 module.exports = {
   list,
   accept,
@@ -256,6 +277,8 @@ module.exports = {
   rejectAll,
   enqueueFromWrite,
   getPendingPrompt,
+  formatPendingMarkdown,
   listQueue,
   listCheckpoint,
 };
+

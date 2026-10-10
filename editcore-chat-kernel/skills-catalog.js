@@ -60,12 +60,13 @@ const SKILL_IDS = [
 ];
 
 const KIND_KEYWORDS = {
-  ANALYZE: ["analiza", "audit", "diagnost", "reporte", "hallazgo", "plan", "review"],
-  EXECUTE: ["corrige", "arregla", "implementa", "crea", "build", "fix", "debug", "error"],
+  ANALYZE: ["analiza", "audit", "diagnost", "reporte", "hallazgo", "plan", "review", "forense", "quirurg", "informe"],
+  EXECUTE: ["corrige", "corrije", "corrijelos", "arregla", "implementa", "crea", "build", "fix", "debug", "error", "aplica", "repara", "soluciona"],
   GIT: ["git", "commit", "push", "branch", "merge"],
-  DEPLOY: ["deploy", "vercel", "ci", "cd", "pipeline", "publica"],
+  DEPLOY: ["deploy", "vercel", "ci", "cd", "pipeline", "publica", "publicar", "gafcore"],
   LIST: ["lista", "carpeta", "estructura", "archivos"],
   ASK: ["como", "cómo", "qué", "que", "donde", "dónde"],
+  CONNECT: ["conectar", "conexion", "supabase", "github", "vercel", "schema"],
 };
 
 const SKILL_KEYWORD_MAP = {
@@ -98,6 +99,13 @@ const SKILL_KEYWORD_MAP = {
   "agent-model-selection": ["modelo", "model", "llm", "provider"],
   ponytail: ["ponytail", "deuda", "debt"],
   "ponytail-audit": ["ponytail", "audit"],
+  // EditCore / GAFCORE / stack del usuario (boost sin quitar skills previas)
+  "editcore-connect": ["conexion", "conectar", "supabase", "vercel", "gateway", "gafcore", "github", "publica", "deploy", "schema"],
+  "deep-project-analysis": ["analiza", "auditor", "diagnost", "proyecto", "reporte", "forense", "quirurgic", "quirúrgic", "hallazgos", "errores"],
+  "as-debugging-and-error-recovery": ["error", "bug", "corrige", "corrije", "corrijelos", "arregla", "falla", "debug", "tsc", "build", "login", "no funciona"],
+  "as-security-and-hardening": ["seguridad", "auth", "login", "jwt", "rls", "token", "password", "contraseña", "admin", "supabase"],
+  "as-frontend-ui-engineering": ["ui", "ux", "frontend", "componente", "layout", "tailwind", "css", "diseño", "dashboard", "landing", "react", "next"],
+  "as-ci-cd-and-automation": ["deploy", "ci", "cd", "pipeline", "vercel", "github actions", "publicar", "publica"],
 };
 
 function uniquePaths(list) {
@@ -267,16 +275,23 @@ function getValidLocalSkills(projectRoot) {
 }
 
 function scoreSkill(skill, message, kind) {
-  const text = String(message || "").toLowerCase();
+  const text = String(message || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
   const id = String(skill.id || "").toLowerCase();
   let score = 0;
+  let hits = 0;
 
   const mapped = SKILL_KEYWORD_MAP[skill.id] || SKILL_KEYWORD_MAP[id] || [];
   for (const kw of mapped) {
-    if (kw && text.includes(String(kw).toLowerCase())) score += 3;
+    const k = String(kw || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    if (k && text.includes(k)) {
+      score += 3;
+      hits += 1;
+    }
   }
+  // Varias keywords de la misma skill = más confianza
+  if (hits >= 2) score += 2;
+  if (hits >= 3) score += 2;
 
-  // tokens del id
   for (const token of id.split(/[-_]/g)) {
     if (token.length >= 3 && text.includes(token)) score += 1;
   }
@@ -286,7 +301,6 @@ function scoreSkill(skill, message, kind) {
     if (mapped.some((m) => String(m).toLowerCase().includes(kw))) score += 1;
   }
 
-  // Preferencias por kind (boost suave si está en el set clásico)
   const preferred = pickSkillsForKind(kind);
   if (preferred.includes(skill.id)) score += 2;
 
@@ -294,10 +308,11 @@ function scoreSkill(skill, message, kind) {
 }
 
 function pickSkillsForKind(kind) {
-  if (kind === "ANALYZE") return ["deep-project-analysis", "as-planning-and-task-breakdown", "as-code-review-and-quality"];
-  if (kind === "EXECUTE") return ["as-incremental-implementation", "as-debugging-and-error-recovery", "as-code-simplification", "as-frontend-ui-engineering"];
+  if (kind === "ANALYZE") return ["deep-project-analysis", "as-planning-and-task-breakdown", "as-code-review-and-quality", "editcore-self-diagnostics"];
+  if (kind === "EXECUTE") return ["as-incremental-implementation", "as-debugging-and-error-recovery", "as-code-simplification", "as-frontend-ui-engineering", "as-security-and-hardening"];
   if (kind === "GIT") return ["as-git-workflow-and-versioning"];
-  if (kind === "DEPLOY") return ["as-ci-cd-and-automation"];
+  if (kind === "DEPLOY") return ["as-ci-cd-and-automation", "editcore-connect"];
+  if (kind === "CONNECT") return ["editcore-connect", "as-security-and-hardening", "as-ci-cd-and-automation"];
   if (kind === "LIST" || kind === "ASK") return ["deep-project-analysis"];
   return [];
 }
@@ -319,6 +334,26 @@ function loadManifestBody(manifestPath, maxChars = MAX_SKILL_CHARS) {
  * Firma compatible: skillsPrompt(projectRoot, kind)
  * Extendida: skillsPrompt(projectRoot, kind, messageOrOpts)
  */
+/**
+ * Elige skills para el turno (ranking). Útil para el orquestador.
+ */
+function selectSkillsForTurn(projectRoot, kind, message, limit = MAX_SKILLS_IN_PROMPT) {
+  const valid = getValidLocalSkills(projectRoot);
+  if (!valid.length) return [];
+  const ranked = valid
+    .map((skill) => ({ skill, score: scoreSkill(skill, message, kind) }))
+    .sort((a, b) => b.score - a.score || a.skill.id.localeCompare(b.skill.id));
+  let selected = ranked.filter((r) => r.score > 0).slice(0, limit).map((r) => r.skill);
+  if (!selected.length) {
+    selected = pickSkillsForKind(kind)
+      .map((id) => valid.find((s) => s.id === id))
+      .filter(Boolean)
+      .slice(0, limit);
+  }
+  if (!selected.length) selected = valid.slice(0, Math.min(2, limit));
+  return selected.map((s) => ({ id: s.id, score: scoreSkill(s, message, kind), manifestPath: s.manifestPath }));
+}
+
 function skillsPrompt(projectRoot, kind, messageOrOpts) {
   const message = typeof messageOrOpts === "string"
     ? messageOrOpts
@@ -361,7 +396,9 @@ function skillsPrompt(projectRoot, kind, messageOrOpts) {
   const availableIds = valid.map((s) => s.id);
   const prompt = [
     `SKILLS VÁLIDAS EN DISCO (${availableIds.length}): ${availableIds.join(", ")}`,
-    `Inyectadas (${selected.length}/${MAX_SKILLS_IN_PROMPT}) por relevancia al mensaje. Carpetas sin manifiesto se descartan.`,
+    `Inyectadas (${selected.length}/${MAX_SKILLS_IN_PROMPT}) por relevancia al mensaje del usuario (kind=${kind || "n/a"}).`,
+    "Usa estas skills como guía de procedimiento. No inventes tools que no existan en EditCore.",
+    "Si la skill habla de deploy/conexión, combina con check_connections / connect_project según corresponda.",
     blocks.join("\n\n"),
   ].join("\n\n");
 
@@ -375,6 +412,8 @@ module.exports = {
   getValidLocalSkills,
   resolveSkillsRoots,
   pickSkillsForKind,
+  selectSkillsForTurn,
+  scoreSkill,
   skillsPrompt,
   // compat
   loadSkillBody: (projectRoot, id, maxChars = MAX_SKILL_CHARS) => {

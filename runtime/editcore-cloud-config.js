@@ -10,7 +10,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 const GENERATED_FILE = path.join(__dirname, "editcore-cloud.generated.json");
-const DEFAULT_PUBLIC_URL = "https://api-editcoreai.gafcore.com";
+const DEFAULT_PUBLIC_URL = "https://ycftycizdgkboojfdtkz.supabase.co";
 
 function parseEnvFile(filePath) {
   const out = {};

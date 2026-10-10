@@ -277,6 +277,13 @@ function writeFile(root, rel, content) {
     out.reviewQueued = true;
   } catch { /* no bloquear escritura */ }
   // [/EDITCORE-REVIEW]
+  // [EDITCORE-INDEX] mantener indice semantico al dia
+  try {
+    const { updateFileInIndex } = require("../runtime/codebase-indexer");
+    updateFileInIndex(root, rel, body);
+    out.indexUpdated = true;
+  } catch { /* no bloquear */ }
+  // [/EDITCORE-INDEX]
   return out;
 }
 
@@ -403,6 +410,24 @@ function replaceInFile(root, rel, oldText, newText) {
       summary: "parche aplicado (kernel)",
     });
   } catch { /* ignore */ }
+  // [EDITCORE-REVIEW] mismo flujo accept/reject que write_file
+  try {
+    const unified = require("../runtime/unified-review");
+    unified.enqueueFromWrite(root, {
+      path: rel,
+      before: current,
+      after: next,
+      backupPath: snap && snap.ok ? (snap.backupPath || snap.path || null) : null,
+      source: "agent",
+    });
+    out.reviewQueued = true;
+  } catch { /* no bloquear */ }
+  // [/EDITCORE-REVIEW]
+  try {
+    const { updateFileInIndex } = require("../runtime/codebase-indexer");
+    updateFileInIndex(root, rel, next);
+    out.indexUpdated = true;
+  } catch { /* no bloquear */ }
   return out;
 }
 
@@ -1010,8 +1035,24 @@ const DEFINITIONS = [
     type: "function",
     function: {
       name: "analyze_circular_dependencies",
-      description: "Analiza el árbol de dependencias e imports/requires en el proyecto o carpeta y detecta ciclos circulares recursivos.",
+      description: "Analiza el arbol de dependencias e imports/requires en el proyecto o carpeta y detecta ciclos circulares recursivos.",
       parameters: { type: "object", properties: { path: { type: "string" }, maxDepth: { type: "number" } } },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "search_codebase_semantic",
+      description: "Busqueda semantica tipo Cursor en el codigo del proyecto (indice local TF-IDF/BM25). Usala cuando no sepas la ruta exacta de un simbolo, funcion o feature.",
+      parameters: { type: "object", properties: { query: { type: "string" }, topK: { type: "number" } }, required: ["query"] },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "list_review_pending",
+      description: "Lista cambios del agente pendientes de Accept/Reject en la cola unificada de review del proyecto.",
+      parameters: { type: "object", properties: {} },
     },
   },
 ];
@@ -1195,7 +1236,34 @@ async function execute(name, args, root, allowWrite, helpers = {}) {
     case "search_codebase_semantic": {
       const { querySemanticCodebase } = require("../runtime/codebase-indexer");
       const results = querySemanticCodebase(root, a.query || "", a.topK || 6);
-      return { ok: true, results, count: results.length };
+      return {
+        ok: true,
+        results: results.map((r) => ({
+          file: r.file,
+          startLine: r.startLine,
+          endLine: r.endLine,
+          score: r.score,
+          preview: String(r.content || "").slice(0, 500),
+        })),
+        count: results.length,
+        note: results.length ? "Abre el archivo con read_file usando file + startLine." : "Sin hits; prueba search_files o otra query.",
+      };
+    }
+    case "list_review_pending": {
+      try {
+        const unified = require("../runtime/unified-review");
+        const listed = unified.list(root);
+        return {
+          ok: true,
+          count: listed.count || 0,
+          items: listed.items || [],
+          report: typeof unified.formatPendingMarkdown === "function"
+            ? unified.formatPendingMarkdown(root)
+            : undefined,
+        };
+      } catch (e) {
+        return { ok: false, error: String(e?.message || e).slice(0, 300) };
+      }
     }
     case "rollback_last_change":
       if (!allowWrite) return { ok: false, error: "Rollback requiere modo escritura" };

@@ -9,7 +9,7 @@ const path = require("node:path");
  */
 
 const INDEX_FILE = "codebase-index.json";
-const IGNORED_DIRS = new Set([".git", "node_modules", ".next", "dist", "build", "coverage", ".turbo", ".vercel", ".cache"]);
+const IGNORED_DIRS = new Set([".git", "node_modules", ".next", "dist", "build", "coverage", ".turbo", ".vercel", ".cache", ".editcore", ".cursor"]);
 const ALLOWED_EXTS = new Set([".js", ".jsx", ".ts", ".tsx", ".py", ".html", ".css", ".json", ".sql", ".md", ".php", ".go", ".rs", ".java"]);
 
 /**
@@ -164,7 +164,14 @@ function querySemanticCodebase(projectRoot = "", query = "", topK = 6) {
     }
   } catch { /* ignore */ }
 
-  if (!indexData || !Array.isArray(indexData.chunks) || !indexData.chunks.length) {
+  let stale = false;
+  try {
+    if (indexData?.updatedAt) {
+      const ageMs = Date.now() - new Date(indexData.updatedAt).getTime();
+      if (ageMs > 24 * 60 * 60 * 1000) stale = true; // > 24h
+    }
+  } catch { stale = false; }
+  if (!indexData || !Array.isArray(indexData.chunks) || !indexData.chunks.length || stale) {
     indexData = buildCodebaseIndex(root);
   }
 

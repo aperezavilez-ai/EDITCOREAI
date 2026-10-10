@@ -128,7 +128,7 @@ async function checkConnections(root, helpers = {}) {
   if (a.hasSupabase && !services.supabase) pending.push("Conectar Supabase: ⚙ Conexiones → Supabase propio (URL y clave del servidor).");
   if (services.github && (!a.gitRoot || !a.remoteUrl)) pending.push("Crear/enlazar el repositorio en GitHub: llamar connect_project.");
   if (services.github && a.remoteUrl && services.vercel) pending.push("Publicar: llamar publish_project.");
-  return {
+  const payload = {
     ok: true,
     project: path.basename(a.projectRoot),
     services,
@@ -138,6 +138,23 @@ async function checkConnections(root, helpers = {}) {
     readyToPublish: a.readyToPublish,
     nextSteps: pending,
   };
+  try {
+    const { formatConnectionsChecklist } = require("./self-knowledge");
+    payload.report = formatConnectionsChecklist(payload);
+  } catch {
+    const line = (ok, label) => (ok ? "✅ " : "⬜ ") + label;
+    payload.report = [
+      "## 🔗 Estado de conexiones — " + payload.project,
+      line(services.github, "GitHub"),
+      line(services.vercel, "Vercel"),
+      line(services.supabase, "Supabase propio"),
+      line(Boolean(a.gitRoot), "Git local"),
+      line(Boolean(a.remoteUrl), "Remote"),
+      line(Boolean(a.readyToPublish), "Listo para publicar"),
+      pending.length ? "Siguiente: " + pending[0] : "",
+    ].filter(Boolean).join("\n");
+  }
+  return payload;
 }
 
 function externalActionPreview(name, args, root) {
@@ -198,7 +215,7 @@ const EXTRA_DEFINITIONS = [
   { type: "function", function: { name: "docker_ps", description: "Lista los contenedores Docker (nombre, imagen, estado, puertos). all=true incluye los detenidos.", parameters: { type: "object", properties: { all: { type: "boolean" } } } } },
   { type: "function", function: { name: "search_brain", description: "Busca en el Cerebro del proyecto: documentos ingeridos (.editcore/rag), memoria y código indexado.", parameters: { type: "object", properties: { query: { type: "string" } }, required: ["query"] } } },
   { type: "function", function: { name: "deploy_one_click", description: "Deploy a Vercel o Netlify con los tokens de Conexiones. Siempre pide confirmación al usuario antes de ejecutarse.", parameters: { type: "object", properties: { provider: { type: "string", enum: ["vercel", "netlify"] }, production: { type: "boolean" } } } } },
-  { type: "function", function: { name: "check_connections", description: "Estado real de las conexiones (GitHub, Vercel, Supabase, servidor) y del repositorio del proyecto, con los siguientes pasos para dejarlo publicado. No muestra tokens. Llámalo antes de guiar al usuario a conectar o publicar.", parameters: { type: "object", properties: {} } } },
+  { type: "function", function: { name: "check_connections", description: "Estado real de conexiones (GitHub, Vercel, Supabase/GAFCORE, SSH) y del repo. Devuelve services, nextSteps y report (checklist markdown). No muestra tokens. Llamalo SIEMPRE antes de guiar a conectar o publicar.", parameters: { type: "object", properties: {} } } },
   { type: "function", function: { name: "connect_project", description: "Conecta el proyecto con las cuentas de Conexiones: git init si falta, crea o enlaza el repositorio privado en GitHub, crea el proyecto en Vercel y escribe las variables de Supabase en .env.local. Siempre pide confirmación al usuario antes de ejecutarse.", parameters: { type: "object", properties: { repoName: { type: "string" }, createGithub: { type: "boolean" }, createVercel: { type: "boolean" }, linkSupabase: { type: "boolean" } } } } },
   { type: "function", function: { name: "publish_project", description: "Publica el proyecto: commit sin secretos, push de la rama actual, migraciones Supabase si aplican y deploy. Siempre pide confirmación al usuario antes de ejecutarse.", parameters: { type: "object", properties: { commitMessage: { type: "string" }, deploy: { type: "boolean" }, supabasePush: { type: "boolean" }, skipPush: { type: "boolean" } } } } },
 ];

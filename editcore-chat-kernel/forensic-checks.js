@@ -217,18 +217,75 @@ function scanModuleSpecifiers(source = "") {
 const RESOLVE_EXTS = ["", ".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs", ".mts", ".cts", ".json", ".vue", ".svelte", ".node", ".css", ".scss", ".sass", ".less"];
 const INDEX_EXTS = [".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs", ".json", ".vue"];
 
+/** Existe como archivo, con tolerancia a mayúsculas en Windows. */
+function isFileLoose(p) {
+  if (isFile(p)) return true;
+  if (process.platform !== "win32") return false;
+  try {
+    const dir = path.dirname(p);
+    const want = path.basename(p).toLowerCase();
+    for (const name of fs.readdirSync(dir)) {
+      if (name.toLowerCase() === want && isFile(path.join(dir, name))) return true;
+    }
+  } catch { /* ignore */ }
+  return false;
+}
+
 function resolvesRelative(fromAbs, spec) {
   const clean = String(spec).split(/[?#]/)[0];
   const base = path.resolve(path.dirname(fromAbs), clean);
-  if (RESOLVE_EXTS.some((ext) => isFile(base + ext))) return true;
-  if (INDEX_EXTS.some((ext) => isFile(path.join(base, `index${ext}`)))) return true;
+  if (RESOLVE_EXTS.some((ext) => isFileLoose(base + ext))) return true;
+  if (INDEX_EXTS.some((ext) => isFileLoose(path.join(base, `index${ext}`)))) return true;
   const pkg = readJson(path.join(base, "package.json"));
-  if (pkg?.main && isFile(path.resolve(base, pkg.main))) return true;
+  if (pkg?.main && isFileLoose(path.resolve(base, pkg.main))) return true;
+  if (pkg?.exports) {
+    try {
+      const exp = pkg.exports;
+      const main = typeof exp === "string" ? exp : (exp["."] && (typeof exp["."] === "string" ? exp["."] : exp["."].import || exp["."].require));
+      if (main && isFileLoose(path.resolve(base, main))) return true;
+    } catch { /* ignore */ }
+  }
   if (/\.(m|c)?js$/.test(clean)) {
     const noExt = base.replace(/\.(m|c)?js$/, "");
-    if ([".ts", ".tsx", ".mts", ".cts"].some((ext) => isFile(noExt + ext))) return true;
+    if ([".ts", ".tsx", ".mts", ".cts", ".jsx"].some((ext) => isFileLoose(noExt + ext))) return true;
+  }
+  // Sin extensión: probar TS/JSX habituales
+  if (!path.extname(clean)) {
+    if ([".ts", ".tsx", ".jsx", ".mjs", ".cjs"].some((ext) => isFileLoose(base + ext))) return true;
   }
   return false;
+}
+
+/**
+ * Si el relativo falla, busca el mismo basename en el proyecto (máx. pocos hits)
+ * para el mensaje de ayuda (evita "falso positivo" cuando el módulo existe en otra ruta).
+ */
+function findAlternatePaths(root, fromAbs, spec, limit = 5) {
+  const clean = String(spec).split(/[?#]/)[0];
+  const baseName = path.basename(clean).replace(/\.(m|c)?jsx?$/, "");
+  if (!baseName || baseName === "." || baseName === "..") return [];
+  const hits = [];
+  const skip = new Set(["node_modules", "dist", "build", ".git", ".editcore"]);
+  (function walk(dir, depth) {
+    if (hits.length >= limit || depth > 6) return;
+    let entries = [];
+    try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
+    for (const e of entries) {
+      if (hits.length >= limit) break;
+      if (e.name.startsWith(".") || skip.has(e.name)) continue;
+      const abs = path.join(dir, e.name);
+      if (e.isDirectory()) walk(abs, depth + 1);
+      else if (e.isFile()) {
+        const n = e.name.replace(/\.(m|c)?jsx?$/i, "").replace(/\.tsx?$/i, "");
+        if (n.toLowerCase() === baseName.toLowerCase()) {
+          hits.push(rel(root, abs));
+        }
+      }
+    }
+  })(root, 0);
+  // no sugerir el mismo path fallido
+  const failed = path.resolve(path.dirname(fromAbs), clean);
+  return hits.filter((h) => path.resolve(root, h).toLowerCase() !== failed.toLowerCase());
 }
 
 function packageName(spec) {
@@ -469,7 +526,24 @@ function checkImports(root, files, ctx) {
       seen.add(spec);
       if (spec.startsWith(".")) {
         if (!resolvesRelative(file.abs, spec)) {
-          findings.push({ check: "imports", severity: "error", file: file.rel, line, key: `imports|${file.rel}|${spec}`, message: `Importa "${spec}" y ese archivo no existe.`, evidence: "resolución de ruta relativa en disco" });
+          const alts = findAlternatePaths(root, file.abs, spec, 4);
+          const resolvedTry = path.resolve(path.dirname(file.abs), String(spec).split(/[?#]/)[0]);
+          const tryRel = rel(root, resolvedTry);
+          let msg = `Importa "${spec}" y ese archivo no existe en la ruta resuelta (\`${tryRel}\`).`;
+          if (alts.length) {
+            msg += ` Existe un módulo con nombre similar en: ${alts.map((a) => "`" + a + "`").join(", ")}. Corrige la ruta relativa (cuenta bien los ../).`;
+          }
+          findings.push({
+            check: "imports",
+            severity: "error",
+            file: file.rel,
+            line,
+            key: `imports|${file.rel}|${spec}`,
+            message: msg,
+            evidence: "resolución de ruta relativa en disco",
+            resolvedTry: tryRel,
+            alternates: alts,
+          });
         }
         continue;
       }

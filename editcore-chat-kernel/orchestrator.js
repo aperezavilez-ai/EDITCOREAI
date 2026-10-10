@@ -12,10 +12,10 @@ const {
   APPROVAL_RE,
   isContinuePhrase,
 } = require("./classify");
-const { searchBrainDocs } = require("./brain-ingest");
+const { searchBrainDocs, ensureCoreProjectBrain, listBrainDocs } = require("./brain-ingest");
 const { ChatSession } = require("./session");
 const { PersistentMemory } = require("./memory");
-const { skillsPrompt, SKILL_IDS } = require("./skills-catalog");
+const { skillsPrompt, SKILL_IDS, selectSkillsForTurn } = require("./skills-catalog");
 const { runExplorer } = require("./subagents/explorer");
 const { runAnalyst } = require("./subagents/analyst");
 const { runImplementer } = require("./subagents/implementer");
@@ -113,15 +113,16 @@ try {
   projectRoadmapApi = null;
 }
 
-const DEFAULT_MAX_STEPS = 28;
-const AUTHORIZED_MAX_STEPS = 32;
-const DEFAULT_TOTAL_TIMEOUT_MS = 900_000; // 15 min (antes 10 min) — análisis profundo cabe holgado
+const DEFAULT_MAX_STEPS = 40;
+const AUTHORIZED_MAX_STEPS = 48;
+const DEFAULT_TOTAL_TIMEOUT_MS = 900_000; // 15 min — análisis profundo cabe holgado
 const HEARTBEAT_INTERVAL_MS = 5_000;
 const ROADMAP_MIN_LENGTH = 500;
 const MAX_PROMISE_RETRIES = 3;
 const MAX_NO_WRITE_NUDGES = 2;
-const ANALYSIS_MAX_STEPS = 8;      // antes 2 — ahora el LLM tiene margen real
-const ANALYSIS_TIMEOUT_MS = 180_000; // 3 min por turno en análisis
+// Análisis forense/quirúrgico necesita más lecturas: 8 era demasiado bajo → pausa prematura
+const ANALYSIS_MAX_STEPS = 24;
+const ANALYSIS_TIMEOUT_MS = 300_000; // 5 min por turno en análisis
 
 const LEADERSHIP_PROMPT = [
   "Protocolo obligatorio de cada orden: 1) Analiza la solicitud en 1-3 lineas. 2) Di que vas a hacer. 3) Ejecuta las tools EN ESTE TURNO. 4) Cierra con REPORTE: que hiciste, archivos/comandos reales, resultado, siguiente paso.",
@@ -129,7 +130,12 @@ const LEADERSHIP_PROMPT = [
   "Credenciales de GitHub, Vercel, Supabase, GafCore y servidor propio estan en la boveda: usa las tools de conexion, no pidas tokens al usuario.",
   "REGLA DURA: no digas que vas a hacer algo — hacelo en el mismo turno con la tool. Nunca cierres con 'Ahora leo X' sin haber llamado read_file(X).",
   "Si falla algo leve (oldText, git auxiliar, ruta ausente), releé contexto y reintentá. No detengas la sesión por eso.",
-].join("\n");
+  "Tras write_file/replace_in_file EditCore verifica solo (typecheck/sintaxis). No digas 'listo' si la verificación falló: reporta el error y corrige.",
+  "Si no sabes la ruta de un simbolo o feature, usa search_codebase_semantic o search_files ANTES de adivinar paths.",
+  "CIERRE: solo hechos y estado. PROHIBIDO terminar con menus, opciones, preguntas del tipo quieres que o pasamos a, o listas para elegir. Nada de recomendaciones abiertas al final.",
+  "Si piden BUSCAR en codigo (login, auth, signIn, donde esta X): OBLIGATORIO search_files o search_codebase_semantic. PROHIBIDO responder solo con list_files de la raiz.",
+  "Si piden conectar/publicar/checklist: OBLIGATORIO check_connections en este turno. PROHIBIDO list_files de la raiz como respuesta.",
+  "No ofrezcas publish_project ni revisiones extra salvo que el usuario lo pida explicitamente."].join("\n");
 
 const LIVE_NARRATION_PROMPT = [
   "Voz EditCoreAI. Primera frase = hallazgo o decisión.",
@@ -197,6 +203,9 @@ const CHAT_TOOLS_PROMPT = [
   "REGLAS:",
   "- Si la pregunta depende de datos que cambian (ultima version de algo, precios, noticias), llama `web_search` ANTES de responder. No respondas de memoria.",
   "- Si piden ver una carpeta o archivo del disco, usa `list_files` / `read_file` con la ruta indicada. NUNCA digas que no tenes acceso al disco.",
+  "- Buscar login/auth/codigo: usa `search_files` o `search_codebase_semantic`, NUNCA solo list_files de la raiz.",
+  "- Conectar/publicar: usa `check_connections`.",
+  "- Cierra sin menus ni preguntas de opciones.",
   "- Si preguntan que skills tenes, llama `list_skills` y responde con esa lista.",
   "- En este modo no escribis archivos ni ejecutas comandos; para cambios, el usuario debe pedir la tarea concreta.",
   "- Si el usuario dice que algo no esta bien, NO repitas tu respuesta anterior: pregunta que parte falla o revisa los datos con las herramientas.",
@@ -247,6 +256,8 @@ const ANALYSIS_MODE_PROMPT = [
   "- NO uses write_file / replace_in_file en este turno (el objetivo de este turno es emitir el reporte/diagnóstico).",
   "- NO digas nunca 'El IDE está en modo solo lectura' ni pidas cambiar permisos.",
   "- NO inventes. Si un archivo no lo leiste, no afirmes nada sobre el.",
+  "- PROHIBIDO presentar hipotesis como errores verificados. Si no esta en HECHOS VERIFICADOS ni en un read_file con archivo:linea, es hipotesis.",
+  "- Si no hay errores en HECHOS VERIFICADOS, la seccion de errores verificados debe decir solo: Sin errores ni advertencias verificados.",
   "- Los extractos y lecturas son PARCIALES por presupuesto. Que un extracto termine a mitad de una funcion NO es un hallazgo: PROHIBIDO reportar un archivo como 'truncado' o 'incompleto' por eso. La integridad esta en el encabezado del extracto (lineas totales, bytes, sintaxis): solo hay archivo roto si la sintaxis dice ERROR.",
   "- Para ver mas de un archivo usa read_file con startLine/endLine (el resultado trae totalLines y endLine).",
   "- Cada hallazgo cita archivo y linea que leiste. Lo que no pudiste comprobar va como 'no verificado', nunca como 'no existe' ni 'no hay evidencia'. Antes de afirmar que algo falta, buscalo con search_files.",
@@ -256,7 +267,7 @@ const ANALYSIS_MODE_PROMPT = [
   "- Si un documento tiene cifras distintas en varias secciones (ej. 19/19, 30/30, 46/46 tests), usa la mas reciente y menciona la discrepancia.",
   "- Usa tablas cuando listes varios hallazgos o archivos.",
   "- Si no hay evidencia suficiente, dilo explicitamente.",
-  "- CIERRE: Después de 📁 Evidencia real, concluye preguntando: '¿Quieres que aplique estas correcciones? Responde **procede** o **corrígelos** y los aplico directamente en el proyecto.'",
+  "- CIERRE: Después de 📁 Evidencia real, concluye preguntando: 'Si quieres que aplique correcciones SOLO de la seccion Errores verificados, responde **procede** o **corrijelos**. No aplico hipotesis hasta que las confirmes.'",
   "=== FIN MODO ANALISIS ===",
 ].join("\n");
 
@@ -281,6 +292,22 @@ function isRoadmapUsable(root) {
   } catch { return false; }
 }
 
+function stripOpenEndedClosings(text = "") {
+  let value = String(text || "");
+  const lines = value.split("\n");
+  while (lines.length) {
+    const last = (lines[lines.length - 1] || "").trim();
+    if (!last) { lines.pop(); continue; }
+    const isOffer =
+      (/^(?:\u00bf?quer[e\u00e9]s?|\u00bf?quieres?|\u00bf?deseas?|\u00bf?pasamos|\u00bf?seguimos|\u00bf?te\s+gustar|\u00bf?prefer)/i.test(last)
+        || /\b(?:quer[e\u00e9]s?|quieres?)\s+que\b/i.test(last))
+      && last.includes("?");
+    if (isOffer) { lines.pop(); continue; }
+    break;
+  }
+  return lines.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+}
+
 function formatAgentVisibleText(text = "") {
   let value = String(text || "");
   if (!value.trim()) return value;
@@ -291,6 +318,7 @@ function formatAgentVisibleText(text = "") {
       if (eliteCommunication?.ensureChatParagraphs) value = eliteCommunication.ensureChatParagraphs(value);
     }
   } catch { /* keep */ }
+  value = stripOpenEndedClosings(value);
   return String(value || "").replace(/\n{3,}/g, "\n\n").trim();
 }
 
@@ -313,6 +341,47 @@ function successfulWritePaths(steps = []) {
     .map((s) => s.input?.path || s.result?.path || s.result?.projectRoot)
     .filter(Boolean);
 }
+
+async function runPostWriteVerify(projectRoot, writtenPaths, onProgress) {
+  const paths = [...new Set((Array.isArray(writtenPaths) ? writtenPaths : []).map((p) => String(p || "").replace(/\\/g, "/").trim()).filter(Boolean))].slice(0, 3);
+  if (!paths.length || !projectRoot) return [];
+  const reports = [];
+  for (const rel of paths) {
+    try {
+      onProgress?.({ phase: "subagent", name: "verifier", text: `Verificando ${rel}…` });
+      const v = await runVerifier({
+        projectRoot,
+        path: rel,
+        onProgress,
+        timeoutMs: 45_000,
+        autoRollback: false,
+        incremental: true,
+        learn: true,
+      });
+      const note = String(v?.result?.note || v?.result?.error || "").slice(0, 280);
+      reports.push({
+        path: rel,
+        ok: v?.ok !== false && v?.result?.ok !== false,
+        softTimeout: v?.softTimeout === true,
+        note,
+      });
+    } catch (err) {
+      reports.push({ path: rel, ok: false, softTimeout: false, note: String(err?.message || err).slice(0, 200) });
+    }
+  }
+  return reports;
+}
+
+function formatVerifyBlock(reports = []) {
+  if (!Array.isArray(reports) || !reports.length) return "";
+  const lines = reports.map((r) => {
+    if (r.softTimeout) return `- \`${r.path}\`: ⏱️ verificación tardó (cambios **conservados**)`;
+    if (r.ok) return `- \`${r.path}\`: ✅ comprobación ligera OK`;
+    return `- \`${r.path}\`: ⚠️ ${r.note || "check no pasó (sin rollback)"}`;
+  });
+  return `\n\n## 🔍 Verificación post-escritura\n\n${lines.join("\n")}\n`;
+}
+
 
 function looksLikePromiseWithoutAction(text = "") {
   const raw = String(text || "").trim();
@@ -425,12 +494,22 @@ function buildConnectionsBlock(projectRoot) {
 }
 
 function nextStepsClosingText(projectRoot, writtenFiles = [], steps = []) {
-  if (writtenFiles.length > 0) return "Cambios aplicados. Decime la próxima tarea concreta.";
+  if (writtenFiles.length > 0) {
+    let reviewNote = "";
+    try {
+      const unified = require("../runtime/unified-review");
+      const listed = unified.list(projectRoot);
+      if (listed?.count > 0) {
+        reviewNote = ` Review pendiente: **${listed.count}** archivo(s).`;
+      }
+    } catch { /* ignore */ }
+    return "Cambios aplicados." + reviewNote;
+  }
   if (steps.length > 0) {
     const toolNames = [...new Set(steps.map((s) => s.name).filter(Boolean))].slice(0, 5).join(", ");
-    return `Ejecuté: ${toolNames}. Decime el siguiente paso concreto.`;
+    return "Herramientas usadas: " + toolNames + ".";
   }
-  return "Sin acciones ejecutadas en este turno. Reformulá la instrucción o indicá el archivo puntual.";
+  return "";
 }
 
 function ensureCognitiveMap(projectRoot) {
@@ -549,22 +628,49 @@ function detachLongRunningStreams(steps) {
   }
 }
 
+function wantsCodeSearch(text) {
+  return /\b(?:busca|buscar|encuentra|localiza|d[oó]nde\s+est[aá]|en\s+qu[eé]\s+archivo|signIn|signInWithPassword|\bauth\b|\blogin\b)\b/i.test(String(text || ""));
+}
+
+function wantsConnectionsCheck(text) {
+  return /\b(?:check_connections|conect(?:a|ar|iones)?|publica(?:r)?|deploy|checklist|github|vercel|qu[eé]\s+falta)\b/i.test(String(text || ""));
+}
+
 function maybeBlockRootListFiles(name, args, projectRoot, listOnly) {
   if (name !== "list_files") return null;
   if (listOnly === true) return null;
   const p = String(args?.path || "").trim();
-  if (p && p !== "." && p !== "./") return null;
-  if (!isRoadmapUsable(projectRoot)) return null;
-  return { ok: false, blocked: true, error: "Exploración de raíz bloqueada: el ROADMAP ya describe la estructura.", guidance: "Usa `## Mapa` del ROADMAP o `list_files('<subcarpeta>')`." };
+  if (p && p !== "." && p !== "./" && p !== "") return null;
+  return {
+    ok: false,
+    blocked: true,
+    error: "list_files de la raiz bloqueado en este modo. No sustituye busqueda ni check_connections.",
+    guidance: "Usa search_files, search_codebase_semantic, check_connections, o list_files('src').",
+  };
 }
 
 function buildBrainContextBlock(projectRoot, query) {
   if (!projectRoot || projectRoot === ".") return "";
+  // Auto-index docs clave si hace falta (no borra nada previo del RAG)
+  try { ensureCoreProjectBrain(projectRoot); } catch { /* no bloquear */ }
   let hits = [];
-  try { hits = searchBrainDocs(projectRoot, query, 3).filter((h) => h.score >= BRAIN_CONTEXT_MIN_SCORE); } catch { return ""; }
-  if (!hits.length) return "";
+  try { hits = searchBrainDocs(projectRoot, query, 5).filter((h) => h.score >= BRAIN_CONTEXT_MIN_SCORE); } catch { return ""; }
+  if (!hits.length) {
+    // Sin match por query: ofrecer títulos indexados para que el modelo sepa que hay cerebro
+    try {
+      const listed = listBrainDocs(projectRoot, 12);
+      const docs = listed?.documents || [];
+      if (!docs.length) return "";
+      return [
+        "=== CEREBRO DEL PROYECTO (indexado; sin hit exacto a la query) ===",
+        "Documentos disponibles: " + docs.map((d) => d.title || d.path).join(", "),
+        "Usa search_brain(query) si necesitas el contenido completo.",
+        "=== FIN CEREBRO ===",
+      ].join("\n");
+    } catch { return ""; }
+  }
   return [
-    "=== CEREBRO DEL PROYECTO (documentos que el usuario ingirio; pueden estar desactualizados) ===",
+    "=== CEREBRO DEL PROYECTO (auto-index + docs ingeridos; pueden estar desactualizados) ===",
     "Si los usas, citalos: \"segun <titulo>\". No los presentes como verificados.",
     ...hits.map((h) => `--- ${h.title} (${h.path}) ---\n${h.text.slice(0, 900)}`),
     "=== FIN CEREBRO ===",
@@ -706,7 +812,7 @@ class ChatOrchestrator {
         .slice(-8)
         .reverse();
       // Las preguntas sueltas ("¿por qué te detienes?") no son la tarea: se retoma el último pedido accionable.
-      resumedTask = prevUserTexts.find((t) => classify(t).kind !== "CHAT") || (isApprovalText ? prevUserTexts[0] || "" : "");
+      resumedTask = prevUserTexts.find((t) => classify(t).kind === "EXECUTE" || classify(t).kind === "ANALYZE") || prevUserTexts.find((t) => classify(t).kind !== "CHAT") || (isApprovalText ? prevUserTexts[0] || "" : "");
       if (resumedTask) {
         effectiveText = `INSTRUCCIÓN AUTORIZADA DEL USUARIO: "${resumedTask}". Aplica las correcciones y modificaciones de código y verifica.`;
         if (!isApprovalText) effectiveText += ` Ahora dice: "${text}".`;
@@ -721,7 +827,14 @@ class ChatOrchestrator {
 
     if (fullAccess) this.pendingTask = null;
 
-    let decision = classify(effectiveText, { allowWrite: fullAccess || inputAllowWrite === true, permissionMode: fullAccess ? "full" : permissionMode, fullAccess });
+    const isExplicitReadOnly = ["read", "readonly", "solo lectura", "solo-lectura", "chat"].includes(String(permissionMode || "").toLowerCase().trim()) || inputAllowWrite === false;
+    const defaultAllowWrite = fullAccess || !isExplicitReadOnly;
+
+    let decision = classify(effectiveText, {
+      allowWrite: inputAllowWrite !== undefined ? inputAllowWrite : defaultAllowWrite,
+      permissionMode: fullAccess ? "full" : permissionMode,
+      fullAccess,
+    });
 
     if (isApprovalText || startsWithContinue || /^INSTRUCCI[OÓ]N AUTORIZADA/i.test(effectiveText)) {
       decision = { kind: "EXECUTE", label: fullAccess ? "Ejecución (Acceso completo)" : "Ejecución autorizada", allowTools: true, allowWrite: true, background: false };
@@ -765,6 +878,21 @@ class ChatOrchestrator {
     this._currentUserText = text;
     // Lo que cambia por tarea (pipeline, coordinación, archivo abierto, reviews) va al mensaje del turno, no al system cacheado.
     this._turnExtras = [];
+    // Skills vivas: si no vinieron del caller, elegir por mensaje + kind (no quita skills ni catálogo)
+    if (!this._skillsPrompt) {
+      try {
+        const kindForSkills = String(decision?.kind || "EXECUTE");
+        this._skillsPrompt = skillsPrompt(projectRoot, kindForSkills, effectiveText || text || "");
+        const picked = typeof selectSkillsForTurn === "function"
+          ? selectSkillsForTurn(projectRoot, kindForSkills, effectiveText || text || "", 4)
+          : [];
+        if (Array.isArray(picked) && picked.length) {
+          this._turnExtras.push(`Skills activas este turno: ${picked.map((p) => p.id).join(", ")}`);
+        }
+      } catch (err) {
+        console.warn("[skills] carga diferida:", err && err.message ? err.message : err);
+      }
+    }
 
     // [EDITCORE-STACK] iniciar tarea / memoria / A2A
     let _ecStack = null;
@@ -1005,15 +1133,16 @@ class ChatOrchestrator {
       return { kind: "VERIFY", text: out?.ok ? `Verificación OK (\`${out?.result?.command || "comando"}\`).` : `Falló la verificación: ${String(out?.result?.error || out?.result?.stderr || "").slice(0, 600)}`, steps: out?.steps || [] };
     }
 
-    const wantsWrite = fullAccess || decision.allowWrite;
-    if (wantsWrite) {
+    if (decision.kind === "EXECUTE") {
       if (!apiKey) return { kind: "CHAT", text: "Me falta la API key para ejecutar cambios." };
-      onProgress?.({ phase: "start", text: "Ejecutando los cambios de forma autónoma…" });
+      const isReadOnly = ["read", "readonly", "solo lectura", "solo-lectura", "chat"].includes(String(permissionMode || "").toLowerCase().trim()) || inputAllowWrite === false;
+      const canWrite = (fullAccess || decision.allowWrite !== false) && !isReadOnly;
+      onProgress?.({ phase: "start", text: canWrite ? "Ejecutando los cambios de forma autónoma…" : "Modo solo lectura: revisando sin modificar archivos…" });
       this.pendingTask = null;
       const runner = runModelTaskFn || this.runModelTask.bind(this);
       return runner({
         decision, message: taskMessage, projectRoot, apiBaseUrl, apiKey, model, memory, onProgress,
-        allowWrite: true, planAuthorizedExecution: true, maxSteps: AUTHORIZED_MAX_STEPS,
+        allowWrite: canWrite, planAuthorizedExecution: canWrite, maxSteps: canWrite ? AUTHORIZED_MAX_STEPS : CHAT_MAX_STEPS,
         helpers, authorizedFromPending: true, fullAccess,
         permissionMode: fullAccess ? "full" : permissionMode, images: taskImages,
       });
@@ -1051,11 +1180,26 @@ class ChatOrchestrator {
     const threadId = threadCore.resolveThreadId({ threadId: taskThreadId || this._threadId, chatId: this._threadId });
     const historyInput = Array.isArray(taskHistory) && taskHistory.length ? taskHistory : (Array.isArray(this._historyInput) ? this._historyInput : []);
 
-    const accessFull = fullAccess === true || isFullAccess({ allowWrite, permissionMode, fullAccess, planAuthorizedExecution: authorizedFromPending });
-    // En modo paso a paso, la orden explícita del usuario ("corrige…") es la autorización: sin las tools de
-    // escritura el modelo solo podía describir los cambios. Solo lectura sigue sin poder escribir.
-    const readOnlyMode = /^(?:readonly|read-only|solo[\s-]?lectura)$/i.test(String(permissionMode || "").trim());
-    const orderedWrite = allowWrite === true && authorizedFromPending === true && !readOnlyMode;
+    // Respeta el permiso que YA eligió el usuario en la UI. Nunca lo "resetea".
+    const accessFull = fullAccess === true
+      || allowWrite === true
+      || isFullAccess({
+        ...(opts && typeof opts === "object" ? opts : {}),
+        allowWrite,
+        permissionMode,
+        fullAccess,
+        permissionFull: opts?.permissionFull,
+        mode: opts?.mode || permissionMode,
+        permission: opts?.permission,
+        accessMode: opts?.accessMode,
+        agentPermission: opts?.agentPermission,
+        permissions: opts?.permissions,
+        planAuthorizedExecution: authorizedFromPending,
+      });
+    // Solo lectura explícita. Acceso completo / Agente NUNCA es read-only.
+    const readOnlyMode = !accessFull && /^(?:readonly|read-only|solo[\s-]?lectura)$/i.test(String(permissionMode || "").trim());
+    // Con Acceso completo se puede escribir sin pedir "procede". En paso a paso hace falta autorización.
+    const orderedWrite = !readOnlyMode && (accessFull || (allowWrite === true && authorizedFromPending === true));
 
     this.session.start(decision?.kind || "EXECUTE", projectRoot);
     this.abort = new AbortController();
@@ -1090,7 +1234,9 @@ class ChatOrchestrator {
     const previewUrl = String(helpers?.previewUrl || "").trim();
     const previewBlock = previewUrl ? `PREVIEW ACTIVO DEL IDE: ${previewUrl}` : "";
     const visionHardRule = (Array.isArray(taskImages) && taskImages.length) ? "VISION: Hay imágenes adjuntas. Analizalas directamente en este turno." : "";
-    const noConfirmBlock = (accessFull || authorizedFromPending) ? "ACCESO COMPLETO: Ejecutá herramientas de inmediato sin pedir confirmación previa." : "";
+    const noConfirmBlock = (accessFull || authorizedFromPending)
+      ? "ACCESO COMPLETO YA OTORGADO EN EL IDE: está PROHIBIDO pedir activar permisos, Acceso completo, Procede o contraseñas solo para editar/ejecutar. Usá write_file, replace_in_file y run_command YA. No digas 'activa permisos de escritura'."
+      : "Modo con confirmación: si necesitás escribir, pedí una orden clara (corrige/procede) o que el usuario active Acceso completo en el IDE.";
 
     // El system lleva instrucciones (fijas por modo y proyecto, más las skills): el proveedor cachea por prefijo exacto,
     // y los datos que cambian entre turnos (roadmap, mapa, Cerebro, conexiones, rol) van en turnContext, en el mensaje del turno.
@@ -1134,11 +1280,19 @@ class ChatOrchestrator {
       turnContext.push(roadmapFirstBlock, previewBlock, visionHardRule, cognitiveBlock, connectionsBlock, pendingVerifiedBlock);
     }
 
-    if (!listOnlyMode && !analysisMode && wantsConnectGuide(this._currentUserText || message)) turnContext.push(CONNECT_GUIDE_PROMPT);
+    if (!listOnlyMode && wantsConnectGuide(this._currentUserText || message)) turnContext.push(CONNECT_GUIDE_PROMPT);
     if (!chatOnly && decision?.kind !== "CHAT" && !listOnlyMode && !analysisMode && this._ecRoutedAgent && typeof agentNetwork?.rolePrompt === "function") {
       turnContext.push(agentNetwork.rolePrompt(this._ecRoutedAgent));
     }
     if (this._skillsPrompt) system = `${system}\n\n${this._skillsPrompt}`;
+    if (!listOnlyMode && projectRoot) {
+      try {
+        const boot = ensureCoreProjectBrain(projectRoot);
+        if (boot && boot.ok && !boot.skipped && boot.count > 0) {
+          onProgress?.({ phase: "brain", text: `Cerebro: indexados ${boot.count} documentos clave del proyecto` });
+        }
+      } catch { /* no bloquear turno */ }
+    }
     if (!listOnlyMode) turnContext.push(buildBrainContextBlock(projectRoot, this._currentUserText || message));
     if (!listOnlyMode && Array.isArray(this._turnExtras)) turnContext.push(...this._turnExtras.filter((x) => typeof x === "string" && x.trim()));
 
@@ -1299,7 +1453,27 @@ class ChatOrchestrator {
             continue;
           }
 
-          // En ANALYSIS: si el reporte es muy corto, forzar un turno más.
+                    const userMsg = String(this._currentUserText || message || "");
+          if (!analysisMode && !listOnlyMode && wantsCodeSearch(userMsg) && i < stepsLimit - 2) {
+            const usedSearch = steps.some((s) => s.name === "search_files" || s.name === "search_codebase_semantic" || s.name === "search_brain");
+            if (!usedSearch) {
+              messages.push({ role: "assistant", content: cleanText || null });
+              messages.push({ role: "user", content: "No listes la raiz. Ejecuta AHORA search_codebase_semantic o search_files (auth/login/signIn) y reporta archivo + lineas. Cierra SIN menus ni opciones." });
+              onProgress?.({ phase: "model", text: "Forzando busqueda en codigo..." });
+              continue;
+            }
+          }
+          if (!analysisMode && !listOnlyMode && wantsConnectionsCheck(userMsg) && i < stepsLimit - 2) {
+            const usedConn = steps.some((s) => s.name === "check_connections");
+            if (!usedConn) {
+              messages.push({ role: "assistant", content: cleanText || null });
+              messages.push({ role: "user", content: "Ejecuta AHORA check_connections y muestra checklist. No uses list_files de la raiz. Cierra SIN preguntar opciones." });
+              onProgress?.({ phase: "model", text: "Forzando check_connections..." });
+              continue;
+            }
+          }
+
+// En ANALYSIS: si el reporte es muy corto, forzar un turno más.
           if (analysisMode && cleanText.trim().length < 400 && i < stepsLimit - 1 && !/##\s*(?:📊|🏗️|⚙️|⚠️|🎯|📁)/.test(cleanText)) {
             messages.push({ role: "assistant", content: cleanText || null });
             messages.push({ role: "user", content: "El reporte es demasiado corto. Necesito un análisis completo con las secciones obligatorias (📊 Resumen ejecutivo, 🏗️ Arquitectura, ⚙️ Funcionalidad, ⚠️ Hallazgos, 🎯 Recomendaciones, 📁 Evidencia). Si te falta contexto, usa read_file ANTES de cerrar." });
@@ -1324,7 +1498,13 @@ class ChatOrchestrator {
             textOut = groundUngroundedClaims(cleanText, steps, message, decision, Number(opts.evidenceReads) || 0);
           }
 
-          if (written.length > 0) textOut = await this.appendBeforeAfter(projectRoot, written, textOut, onProgress);
+          if (written.length > 0) {
+            textOut = await this.appendBeforeAfter(projectRoot, written, textOut, onProgress);
+            try {
+              const verifyReports = await runPostWriteVerify(projectRoot, written, onProgress);
+              textOut = String(textOut || "") + formatVerifyBlock(verifyReports);
+            } catch (_) { /* verify no debe tumbar el turno */ }
+          }
           textOut = formatAgentVisibleText(textOut);
           persistKernelRoadmap(projectRoot, { task: this._currentUserText || message, steps, kind: decision?.kind, text: textOut, completed: true });
           rememberOut(textOut); detachLongRunningStreams(steps);
@@ -1435,7 +1615,13 @@ class ChatOrchestrator {
       else if (written.length > 0) textOut = `## ✅ Archivos actualizados\n\n${written.map(p => `- \`${p}\``).join("\n")}\n\n${nextStepsClosingText(projectRoot, written, steps)}`;
       else textOut = `## ℹ️ Sin acciones registradas\n\n${nextStepsClosingText(projectRoot, [], steps)}`;
 
-      if (written.length > 0) textOut = await this.appendBeforeAfter(projectRoot, written, textOut, onProgress);
+      if (written.length > 0) {
+        textOut = await this.appendBeforeAfter(projectRoot, written, textOut, onProgress);
+        try {
+          const verifyReports = await runPostWriteVerify(projectRoot, written, onProgress);
+          textOut = String(textOut || "") + formatVerifyBlock(verifyReports);
+        } catch (_) { /* verify no debe tumbar el turno */ }
+      }
       textOut = formatAgentVisibleText(textOut);
       persistKernelRoadmap(projectRoot, { task: this._currentUserText || message, steps, kind: decision?.kind, text: textOut, completed: !pausedByLimit });
       rememberOut(textOut); detachLongRunningStreams(steps);

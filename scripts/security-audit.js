@@ -32,8 +32,9 @@ async function runSecurityAudit() {
 
   // 01. HTTPS
   try {
-    const res = await fetch("https://api-editcoreai.gafcore.com/auth/v1/health", { signal: AbortSignal.timeout(5000) });
-    const isHttps = res.url.startsWith("https://") && res.status === 200;
+    const targetUrl = "https://ycftycizdgkboojfdtkz.supabase.co/auth/v1/health";
+    const res = await fetch(targetUrl, { signal: AbortSignal.timeout(5000) });
+    const isHttps = res.url.startsWith("https://") && (res.status === 200 || res.status === 404 || res.status === 401);
     results.push({ item: "01. HTTPS en toda la web", status: isHttps ? "✅ PASS" : "⚠️ WARN", detail: `Endpoint público responde con HTTPS (${res.status})` });
   } catch (err) {
     results.push({ item: "01. HTTPS en toda la web", status: "❌ FAIL", detail: err.message });

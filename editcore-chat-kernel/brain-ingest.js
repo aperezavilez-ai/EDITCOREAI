@@ -210,11 +210,112 @@ async function ingestPathToBrain(projectRoot, absolutePath) {
   return { ok: ingested.length > 0, ingested: ingested.length, documents: ingested.slice(0, 40), failed: failed.slice(0, 10), truncated: files.length >= INGEST_MAX_FILES };
 }
 
+
+/** Archivos clave del proyecto que se indexan solos (sin borrar nada del cerebro existente). */
+const CORE_INGEST_RELATIVE = [
+  "package.json",
+  "README.md",
+  "README",
+  "AGENTS.md",
+  "CLAUDE.md",
+  "ROADMAP.md",
+  "DEPLOY.md",
+  "DEVELOPMENT.md",
+  "project-infra.json",
+  ".env.example",
+  "next.config.js",
+  "next.config.mjs",
+  "next.config.ts",
+  "vite.config.js",
+  "vite.config.ts",
+  "tsconfig.json",
+];
+
+/**
+ * Indexa docs/config clave del proyecto en .editcore/rag/ si aún no están
+ * (o si package.json cambió). No borra documentos previos del cerebro.
+ */
+function ensureCoreProjectBrain(projectRoot, opts = {}) {
+  if (!projectRoot) return { ok: false, skipped: true, reason: "no-root", files: [], count: 0 };
+  const root = path.resolve(String(projectRoot));
+  const dir = ragDir(root);
+  const markerPath = path.join(dir, "_core_ingest.json");
+  let pkgMtime = 0;
+  try {
+    pkgMtime = fs.statSync(path.join(root, "package.json")).mtimeMs || 0;
+  } catch { pkgMtime = 0; }
+
+  if (!opts.force) {
+    try {
+      if (fs.existsSync(markerPath)) {
+        const m = JSON.parse(fs.readFileSync(markerPath, "utf8")) || {};
+        if (m.pkgMtime === pkgMtime && Array.isArray(m.files) && m.files.length > 0) {
+          return { ok: true, skipped: true, files: m.files, count: m.files.length, note: "cerebro core ya indexado" };
+        }
+      }
+    } catch { /* reindex */ }
+  }
+
+  const ingested = [];
+  for (const rel of CORE_INGEST_RELATIVE) {
+    const full = path.join(root, rel);
+    try {
+      if (!fs.existsSync(full) || !fs.statSync(full).isFile()) continue;
+      const text = fs.readFileSync(full, "utf8").slice(0, INGEST_MAX_CHARS);
+      if (!text.trim()) continue;
+      const saved = saveToBrain(root, `core:${rel}`, text, {
+        source: full,
+        tags: ["core", "auto-ingest"],
+      });
+      if (saved.ok) ingested.push(saved.path);
+    } catch { /* siguiente */ }
+  }
+
+  try {
+    const roadmapDir = path.join(root, "ROADMAP");
+    if (fs.existsSync(roadmapDir) && fs.statSync(roadmapDir).isDirectory()) {
+      const mds = fs.readdirSync(roadmapDir).filter((f) => /\.md$/i.test(f)).slice(0, 5);
+      for (const f of mds) {
+        const full = path.join(roadmapDir, f);
+        try {
+          const text = fs.readFileSync(full, "utf8").slice(0, INGEST_MAX_CHARS);
+          if (!text.trim()) continue;
+          const saved = saveToBrain(root, `core:ROADMAP/${f}`, text, {
+            source: full,
+            tags: ["core", "auto-ingest", "roadmap"],
+          });
+          if (saved.ok) ingested.push(saved.path);
+        } catch { /* next */ }
+      }
+    }
+  } catch { /* ignore */ }
+
+  try {
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(
+      markerPath,
+      `${JSON.stringify({ updatedAt: new Date().toISOString(), pkgMtime, files: ingested }, null, 2)}\n`,
+      "utf8",
+    );
+  } catch { /* ignore marker errors */ }
+
+  return {
+    ok: ingested.length > 0,
+    skipped: false,
+    files: ingested,
+    count: ingested.length,
+    note: ingested.length ? `indexados ${ingested.length} docs clave` : "sin docs clave legibles",
+  };
+}
+
 module.exports = {
   saveToBrain,
   listBrainDocs,
   searchBrainDocs,
   ingestPathToBrain,
+  ensureCoreProjectBrain,
   ragDir,
   sanitizeTitle,
+  CORE_INGEST_RELATIVE,
 };
+

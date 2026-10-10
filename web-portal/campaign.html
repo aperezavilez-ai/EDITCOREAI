@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>EditCoreAI · Tu IDE con IA. Todo en uno.</title>
+  <meta name="description" content="EditCoreAI es el IDE de escritorio con IA integrada que reemplaza 6 herramientas separadas. Chat con IA, preview web, deploy en 1 clic, análisis forense, saldo prepago. Descárgalo gratis." />
+  <meta property="og:title" content="EditCoreAI · Crea. Construye. Escala sin límites." />
+  <meta property="og:description" content="IDE + IA + Deploy en una sola ventana. Sin suscripción fija. Saldo prepago." />
+  <meta property="og:image" content="./assets/editcore-logo-web.png" />
+  <meta property="og:url" content="https://www.editcore.mx/campaign" />
+  <meta property="og:type" content="website" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="EditCoreAI · IDE con IA integrada" />
+  <meta name="twitter:description" content="Deja de pagar $85/mes por 6 herramientas separadas. EditCoreAI lo integra todo con saldo prepago." />
+  <link rel="icon" type="image/png" href="./assets/logo.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" media="print" onload="this.media='all'" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #050714; --bg2: #090d1f; --bg3: #0f1629;
+      --card: rgba(255,255,255,0.04); --card-border: rgba(255,255,255,0.08);
+      --purple: #6366f1; --purple2: #8b5cf6; --cyan: #06b6d4;
+      --green: #10b981; --red: #ef4444;
+      --text: #f1f5f9; --text2: #94a3b8; --text3: #64748b;
+    }
+    html { scroll-behavior: smooth; }
+    body {
+      font-family: 'Inter', system-ui, sans-serif;
+      background: var(--bg); color: var(--text);
+      line-height: 1.6; overflow-x: hidden;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* NAV */
+    .nav { position: sticky; top: 0; z-index: 100; background: rgba(5,7,20,0.9); backdrop-filter: blur(20px); border-bottom: 1px solid rgba(255,255,255,0.06); }
+    .nav-inner { max-width: 1100px; margin: 0 auto; padding: 0 24px; height: 60px; display: flex; align-items: center; justify-content: space-between; }
+    .brand { display: flex; align-items: center; gap: 10px; text-decoration: none; }
+    .brand-icon { width: 32px; height: 32px; border-radius: 8px; background: linear-gradient(135deg, var(--purple), var(--cyan)); display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 900; color: #fff; font-family: monospace; }
+    .brand-name { font-size: 17px; font-weight: 800; color: var(--text); }
+    .brand-name span { color: var(--purple); }
+    .btn { display: inline-flex; align-items: center; gap: 8px; padding: 10px 22px; border-radius: 10px; font-size: 14px; font-weight: 700; cursor: pointer; border: none; transition: all 0.2s; text-decoration: none; }
+    .btn-primary { background: linear-gradient(135deg, var(--purple), var(--purple2)); color: #fff; box-shadow: 0 8px 30px rgba(99,102,241,0.35); }
+    .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 12px 40px rgba(99,102,241,0.5); }
+
+    /* HERO */
+    .hero { position: relative; overflow: hidden; padding: 80px 24px 60px; text-align: center; }
+    .hero-bg { position: absolute; inset: 0; z-index: 0; background: radial-gradient(ellipse 80% 50% at 50% -10%, rgba(99,102,241,0.2) 0%, transparent 70%), radial-gradient(ellipse 60% 40% at 80% 60%, rgba(6,182,212,0.12) 0%, transparent 60%); }
+    .hero-inner { position: relative; z-index: 1; max-width: 800px; margin: 0 auto; }
+    .hero-badge { display: inline-flex; align-items: center; gap: 8px; background: rgba(99,102,241,0.1); border: 1px solid rgba(99,102,241,0.25); border-radius: 100px; padding: 6px 16px; margin-bottom: 28px; font-size: 12px; font-weight: 600; color: #a5b4fc; }
+    .hero-badge-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--cyan); animation: pulse 2s infinite; }
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+    .hero h1 { font-size: clamp(32px, 5vw, 56px); font-weight: 900; line-height: 1.1; letter-spacing: -2px; margin-bottom: 20px; }
+    .gradient-text { background: linear-gradient(135deg, #a5b4fc, var(--cyan), #f0abfc); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+    .hero p { font-size: clamp(15px, 2vw, 18px); color: var(--text2); max-width: 600px; margin: 0 auto 36px; }
+    .hero-ctas { display: flex; justify-content: center; gap: 14px; flex-wrap: wrap; }
+
+    /* PAIN SECTION */
+    .pain { max-width: 900px; margin: 0 auto; padding: 80px 24px; }
+    .pain h2 { font-size: clamp(24px, 3vw, 36px); font-weight: 800; text-align: center; margin-bottom: 48px; letter-spacing: -1px; }
+    .pain-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 32px; }
+    @media (max-width: 640px) { .pain-grid { grid-template-columns: 1fr; } }
+    .pain-card { background: var(--card); border: 1px solid var(--card-border); border-radius: 16px; padding: 28px; }
+    .pain-card.bad { border-color: rgba(239,68,68,0.2); }
+    .pain-card.good { border-color: rgba(16,185,129,0.2); }
+    .pain-card h3 { font-size: 18px; font-weight: 700; margin-bottom: 16px; display: flex; align-items: center; gap: 10px; }
+    .pain-card.bad h3 { color: var(--red); }
+    .pain-card.good h3 { color: var(--green); }
+    .pain-card ul { list-style: none; }
+    .pain-card ul li { padding: 6px 0; font-size: 14px; color: var(--text2); display: flex; align-items: center; gap: 8px; }
+    .pain-card ul li::before { content: ''; width: 4px; height: 4px; border-radius: 50%; flex-shrink: 0; }
+    .pain-card.bad ul li::before { background: var(--red); }
+    .pain-card.good ul li::before { background: var(--green); }
+    .price-tag { font-size: 28px; font-weight: 900; margin-top: 16px; }
+    .pain-card.bad .price-tag { color: var(--red); }
+    .pain-card.good .price-tag { color: var(--green); }
+
+    /* FEATURES */
+    .features { background: var(--bg2); padding: 80px 24px; }
+    .features-inner { max-width: 900px; margin: 0 auto; }
+    .features h2 { font-size: clamp(24px, 3vw, 36px); font-weight: 800; text-align: center; margin-bottom: 48px; letter-spacing: -1px; }
+    .feat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; }
+    .feat-card { background: var(--card); border: 1px solid var(--card-border); border-radius: 14px; padding: 24px; transition: border-color 0.2s; }
+    .feat-card:hover { border-color: rgba(99,102,241,0.3); }
+    .feat-icon { font-size: 28px; margin-bottom: 12px; }
+    .feat-card h3 { font-size: 16px; font-weight: 700; margin-bottom: 8px; }
+    .feat-card p { font-size: 13px; color: var(--text2); line-height: 1.5; }
+
+    /* CTA */
+    .cta { padding: 80px 24px; text-align: center; }
+    .cta-inner { max-width: 600px; margin: 0 auto; }
+    .cta h2 { font-size: clamp(24px, 3.5vw, 40px); font-weight: 900; margin-bottom: 16px; letter-spacing: -1.5px; }
+    .cta p { color: var(--text2); margin-bottom: 32px; font-size: 16px; }
+    .cta .btn-primary { font-size: 16px; padding: 16px 32px; border-radius: 14px; }
+
+    /* FOOTER */
+    .footer { border-top: 1px solid var(--card-border); padding: 32px 24px; text-align: center; font-size: 13px; color: var(--text3); }
+    .footer a { color: var(--purple); text-decoration: none; }
+  </style>
+</head>
+<body>
+
+  <nav class="nav">
+    <div class="nav-inner">
+      <a href="/" class="brand">
+        <div class="brand-icon">EC</div>
+        <div class="brand-name">EditCore<span>AI</span></div>
+      </a>
+      <a href="https://www.editcore.mx/download" class="btn btn-primary">⬇ Descargar gratis</a>
+    </div>
+  </nav>
+
+  <section class="hero">
+    <div class="hero-bg"></div>
+    <div class="hero-inner">
+      <div class="hero-badge">
+        <span class="hero-badge-dot"></span>
+        Disponible para Windows · v4.3.2
+      </div>
+      <h1>Deja de pagar <span class="gradient-text">$85/mes</span> por 6 herramientas separadas</h1>
+      <p>EditCoreAI integra tu IDE, IA, preview, deploy y base de datos en una sola ventana. Sin suscripción fija. Saldo prepago: pagas lo que usas.</p>
+      <div class="hero-ctas">
+        <a href="https://www.editcore.mx/download" class="btn btn-primary">⬇ Descargar EditCoreAI gratis</a>
+        <a href="https://www.editcore.mx" class="btn" style="background: rgba(255,255,255,0.06); color: var(--text); border: 1px solid var(--card-border);">Ver más →</a>
+      </div>
+    </div>
+  </section>
+
+  <section class="pain">
+    <h2>¿Cuánto te cuesta tu stack actual?</h2>
+    <div class="pain-grid">
+      <div class="pain-card bad">
+        <h3>❌ Modelo Tradicional (Herramientas Fragmentadas)</h3>
+        <ul>
+          <li>Editor con IA (Suscripción fija): $20/mes</li>
+          <li>Asistentes de IA externos: $20/mes</li>
+          <li>Servicios de hosting y nube: $20/mes</li>
+          <li>Bases de datos externas: $25/mes</li>
+          <li>Configurar cada cuenta y saltar entre múltiples pestañas</li>
+          <li>Cobro mensual obligatorio uses o no la herramienta</li>
+        </ul>
+        <div class="price-tag">$85 USD/mes en cuotas fijas</div>
+      </div>
+      <div class="pain-card good">
+        <h3>✅ EditCoreAI · Todo en una sola ventana</h3>
+        <ul>
+          <li>IDE profesional + Agente IA + Terminal + Preview integrado</li>
+          <li>Conecta tus cuentas directas de GitHub, Vercel y Supabase</li>
+          <li>Publica en producción y aplica migraciones en 1 solo clic</li>
+          <li>Auditoría forense de código con evidencia real</li>
+          <li>100% en español nativo para desarrolladores de LATAM</li>
+          <li>Tú decides cuánto recargar: pagas solo los tokens que consumes</li>
+        </ul>
+        <div class="price-tag">$0 Cuotas Fijas · Saldo Prepago</div>
+      </div>
+    </div>
+  </section>
+
+  <section class="features">
+    <div class="features-inner">
+      <h2>Todo lo que necesitas en una ventana</h2>
+      <div class="feat-grid">
+        <div class="feat-card">
+          <div class="feat-icon">💬</div>
+          <h3>Chat con IA integrado</h3>
+          <p>La IA lee tus archivos, entiende tu proyecto completo y escribe código real. No pega código genérico.</p>
+        </div>
+        <div class="feat-card">
+          <div class="feat-icon">🌐</div>
+          <h3>Preview en tiempo real</h3>
+          <p>Navegador integrado con tabs Web, Móvil y Código. Sin abrir Chrome, sin localhost.</p>
+        </div>
+        <div class="feat-card">
+          <div class="feat-icon">🚀</div>
+          <h3>Publicar en 1 clic</h3>
+          <p>GitHub + Vercel + Supabase conectados. Pulsa "Publicar" y tu proyecto está en internet.</p>
+        </div>
+        <div class="feat-card">
+          <div class="feat-icon">🔍</div>
+          <h3>Análisis forense</h3>
+          <p>La IA analiza cada archivo, encuentra bugs reales con evidencia (archivo:línea) y los corrige.</p>
+        </div>
+        <div class="feat-card">
+          <div class="feat-icon">🧬</div>
+          <h3>Clone Web</h3>
+          <p>Pega una URL y EditCoreAI la recrea en React + Tailwind. Listo para editar y publicar.</p>
+        </div>
+        <div class="feat-card">
+          <div class="feat-icon">👥</div>
+          <h3>Multiusuario</h3>
+          <p>Login con Google, saldo prepago por usuario, panel de administración. Para equipos y empresas.</p>
+        </div>
+        <div class="feat-card">
+          <div class="feat-icon">🎨</div>
+          <h3>Generación de imágenes</h3>
+          <p>Genera logos, íconos y assets con IA sin salir del IDE. Se guardan directo en tu proyecto.</p>
+        </div>
+        <div class="feat-card">
+          <div class="feat-icon">🧠</div>
+          <h3>Cerebro RAG</h3>
+          <p>Memoria semántica de tu proyecto. La IA recuerda lo que hiciste y entiende el contexto completo.</p>
+        </div>
+        <div class="feat-card">
+          <div class="feat-icon">🇲🇽</div>
+          <h3>100% en español</h3>
+          <p>Interfaz, IA y documentación en español. Hecho para LATAM, sin traducciones mentales.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="cta">
+    <div class="cta-inner">
+      <h2>Empieza a crear <span class="gradient-text">ahora</span></h2>
+      <p>Descarga EditCoreAI gratis. Sin tarjeta, sin suscripción. Recarga saldo cuando lo necesites y paga solo lo que uses.</p>
+      <a href="https://www.editcore.mx/download" class="btn btn-primary">⬇ Descargar EditCoreAI para Windows</a>
+    </div>
+  </section>
+
+  <footer class="footer">
+    <p>EditCoreAI © 2026 · <a href="https://www.editcore.mx">www.editcore.mx</a></p>
+  </footer>
+
+</body>
+</html>
