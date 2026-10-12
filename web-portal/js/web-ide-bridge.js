@@ -112,6 +112,10 @@
       window.EditCoreWebAgent?.cancelAll?.();
       await C.logout();
       account = null;
+      if (typeof window !== "undefined" && window.location) {
+        window.location.href = "/";
+        return { ok: true };
+      }
       emitTo(sessionListeners, publicSession());
       return { ok: true };
     },

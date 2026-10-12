@@ -106,6 +106,10 @@ const SKILL_KEYWORD_MAP = {
   "as-security-and-hardening": ["seguridad", "auth", "login", "jwt", "rls", "token", "password", "contraseña", "admin", "supabase"],
   "as-frontend-ui-engineering": ["ui", "ux", "frontend", "componente", "layout", "tailwind", "css", "diseño", "dashboard", "landing", "react", "next"],
   "as-ci-cd-and-automation": ["deploy", "ci", "cd", "pipeline", "vercel", "github actions", "publicar", "publica"],
+  // Nuevas skills profesionales
+  "system-architect": ["arquitect", "solid", "patron", "diseño", "adr", "api", "rest", "graphql", "esquema", "modelo", "microservicio"],
+  "ai-agent-architect": ["agent", "agente", "ia", "autono", "react", "memory", "tool", "orquesta", "multi-agent", "llm"],
+  "film-director": ["film", "cine", "guion", "storyboard", "cinemat", "iluminac", "video", "prompts", "three-point", "plano"],
 };
 
 function uniquePaths(list) {

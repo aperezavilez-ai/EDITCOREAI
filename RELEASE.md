@@ -1,3 +1,14 @@
+# RELEASE v4.4.0
+
+## Redirección oficial al cerrar sesión, contraste total en chat y estabilidad web
+
+- **Redirección a la página oficial al cerrar sesión:** Al hacer clic en "Cerrar sesión" en la aplicación web, el usuario es redirigido inmediatamente a la página oficial principal (`https://editcore.mx`) en lugar de quedar en la pantalla modal de inicio de sesión de `/app`.
+- **Enlace de retorno en pantalla de autenticación:** En el cuadro de inicio de sesión de `/app`, se incluye un enlace visible para regresar a la página oficial.
+- **Alto contraste y legibilidad en el chat:** Los textos de los mensajes de usuario y burbujas de diálogo se adaptan con contraste perfecto en todos los temas (`blanco`, `gris`, `negro`, `azul`), impidiendo que el texto se vuelva invisible o difícil de leer.
+- **Apertura de proyectos web corregida:** Se solucionó el bloqueo de falso positivo de "núcleo protegido" que impedía abrir proyectos en el navegador web.
+- **Streaming directo y saldo en web:** Chat web conectado vía Streaming SSE (`text/event-stream`) con canalización en tiempo real y fallback automático hacia ME AI.
+- **Instalador limpio de Windows:** Generación y publicación del instalador nativo (`EDITCOREAI-Setup.exe`) v4.4.0 sin archivos residuales.
+
 # RELEASE v4.3.9
 
 ## Catálogo de modelos ME AI, protección del núcleo y cobros integrados

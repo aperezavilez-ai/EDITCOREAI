@@ -3061,6 +3061,10 @@
         console.warn("[Auth] Logout error", err);
       }
       closeSettings();
+      if (typeof window !== "undefined" && window.location?.protocol?.startsWith("http")) {
+        window.location.href = "/";
+        return;
+      }
       showAuthPortal();
     });
 
@@ -3428,7 +3432,13 @@
     });
 
     window.editcoreAuth?.onSessionChanged?.((sessionData) => {
-      if (!applySession(sessionData)) setStatus("info", "Tu sesión terminó. Vuelve a iniciar sesión con Google.");
+      if (!applySession(sessionData)) {
+        if (typeof window !== "undefined" && window.location?.protocol?.startsWith("http")) {
+          window.location.href = "/";
+          return;
+        }
+        setStatus("info", "Tu sesión terminó. Vuelve a iniciar sesión con Google.");
+      }
       void refreshCreditsAndProfileUI();
     });
 
@@ -3458,6 +3468,10 @@
 
     // Sesión obligatoria: sin sesión válida la app queda cubierta por esta pantalla.
     showAuthPortal();
+    if (typeof window !== "undefined" && window.location?.protocol?.startsWith("http")) {
+      const backLink = $("authBackToHomeLink");
+      if (backLink) backLink.hidden = false;
+    }
     if (window.editcoreAuth?.getSession) {
       window.editcoreAuth.getSession({ refresh: true }).then((sessionData) => {
         if (applySession(sessionData)) void refreshCreditsAndProfileUI();
