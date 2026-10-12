@@ -11063,7 +11063,15 @@ creditsIpc("credits:admin-grant", (ledger, payload) => ledger.adminGrantCredits(
 creditsIpc("credits:admin-set-status", (ledger, payload) => ledger.adminSetStatus(payload || {}));
 creditsIpc("credits:cloud-models", async () => {
   const { authManager } = require("./runtime/auth-manager");
-  return { ok: true, models: await authManager.listCloudModels(), baseUrl: authManager.aiProxyBaseUrl() };
+  try {
+    const list = await authManager.listCloudModels();
+    if (Array.isArray(list) && list.length > 0) {
+      return { ok: true, models: list, baseUrl: authManager.aiProxyBaseUrl() };
+    }
+  } catch {
+    /* fallback a modelos recomendados si la función en la nube no responde */
+  }
+  return { ok: true, models: [...MEAI_GATEWAY_MODELS], baseUrl: authManager.aiProxyBaseUrl() };
 });
 function isMercadoPagoCheckoutUrl(value) {
   try {

@@ -1500,7 +1500,7 @@ async function saveProviderProfiles(profiles) {
 // Usuarios (no admin): sus modelos vienen del servidor de EditCoreAI; las consultas las desvía
 // el proceso principal al servidor con la sesión, así que aquí no hay ninguna clave real.
 const CLOUD_SESSION_API_KEY = "editcore-session";
-let cloudModelState = { ids: [], baseUrl: "" };
+let cloudModelState = { ids: [...MEAI_PROVIDER_MODELS], baseUrl: "" };
 
 function isCloudUser() {
   if (window.EDITCORE_IS_WEB === true) return true;
@@ -1508,7 +1508,10 @@ function isCloudUser() {
 }
 
 function cloudProviderProfiles() {
-  return cloudModelState.ids.map((model) => ({
+  const models = Array.isArray(cloudModelState.ids) && cloudModelState.ids.length > 0
+    ? cloudModelState.ids
+    : MEAI_PROVIDER_MODELS;
+  return models.map((model) => ({
     id: `cloud:${model}`,
     providerKey: "meai",
     providerName: "EditCoreAI",
@@ -1524,13 +1527,15 @@ function cloudProviderProfiles() {
 }
 
 async function loadCloudModels() {
-  if (!window.editcoreCredits?.cloudModels || !window.__editcoreSession) {
-    cloudModelState = { ids: [], baseUrl: "" };
+  if (!window.editcoreCredits?.cloudModels) {
+    cloudModelState = { ids: [...MEAI_PROVIDER_MODELS], baseUrl: "" };
     return;
   }
   const res = await window.editcoreCredits.cloudModels().catch(() => null);
-  if (res?.ok && Array.isArray(res.models)) {
+  if (res?.ok && Array.isArray(res.models) && res.models.length > 0) {
     cloudModelState = { ids: res.models, baseUrl: String(res.baseUrl || "") };
+  } else {
+    cloudModelState = { ids: [...MEAI_PROVIDER_MODELS], baseUrl: String(res?.baseUrl || "") };
   }
 }
 

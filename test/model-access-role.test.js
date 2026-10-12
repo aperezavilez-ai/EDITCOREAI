@@ -83,3 +83,9 @@ test("proveedores y 'Configurar modelos' solo para el administrador", () => {
   assert.match(chatHomeSrc, /\["providersBtn", "settingsOpenModelsDialogBtn"\][\s\S]*isAdm \? "" : "none"/);
   assert.match(chatHomeSrc, /normalized === "models" && window\.__editcoreSession\?\.user\?\.isAdmin !== true/);
 });
+
+test("cloudProviderProfiles tiene fallback a MEAI_PROVIDER_MODELS para no dejar la vista de usuario vacía", () => {
+  assert.match(rendererSrc, /let cloudModelState = \{ ids: \[\.\.\.MEAI_PROVIDER_MODELS\], baseUrl: "" \};/);
+  assert.match(rendererSrc, /const models = Array\.isArray\(cloudModelState\.ids\) && cloudModelState\.ids\.length > 0\s*\?\s*cloudModelState\.ids\s*:\s*MEAI_PROVIDER_MODELS;/);
+});
+
