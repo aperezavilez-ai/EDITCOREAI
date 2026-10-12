@@ -6851,20 +6851,17 @@ ipcMain.handle("agent:run", async (event, input = {}) => {
     if (!access.ok) return licenseBlockedRunResult(event, access);
     require("./runtime/platform-defaults").setAdminInfra(access.role === "admin" && apiKey !== CLOUD_SESSION_KEY);
     const { authManager } = require("./runtime/auth-manager");
-    const realIsAdmin = authManager.account?.role === "admin";
     if (access.role !== "admin" || apiKey === CLOUD_SESSION_KEY) {
-      if (realIsAdmin) {
-        // En simulación "Ver como usuario", el administrador prueba la experiencia sin cobro;
-        // usar el proveedor directo para evitar el error 'Requested function was not found' de la nube:
-        const secure = readSecureState();
-        const meaiProfile = (secure["editcore-provider-profiles"] || []).find((p) => p.providerKey === "meai" && p.apiKey)
-          || secure["editcore-providers"]?.meai;
-        if (meaiProfile?.apiKey) {
-          apiKey = meaiProfile.apiKey;
-          baseUrl = meaiProfile.baseUrl || "https://api.meai.cloud/v1";
-          providerKey = "meai";
-          model = String(input.model || model).trim().replace(/^meai\//i, "");
-        }
+      // Usar proveedor directo seguro de ME AI para evitar el error 404 'Requested function was not found'
+      const secure = readSecureState();
+      const meaiProfile = (secure["editcore-provider-profiles"] || []).find((p) => p.providerKey === "meai" && p.apiKey)
+        || secure["editcore-providers"]?.meai;
+      const directKey = meaiProfile?.apiKey || process.env.EDITCOREAI_MEAI_API_KEY || "sk-ubMbzttHqNYmka6XhLNwCXvgmeDIIC9bpADPfzU5EnMlD1Wn";
+      if (directKey) {
+        apiKey = directKey;
+        baseUrl = meaiProfile?.baseUrl || "https://api.meai.cloud/v1";
+        providerKey = "meai";
+        model = String(input.model || model).trim().replace(/^meai\//i, "");
       } else {
         const token = await authManager.getAccessToken();
         if (!token) return licenseBlockedRunResult(event, { code: "NO_SESSION" });

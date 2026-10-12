@@ -83,12 +83,40 @@
   }
 
   async function completionAttempt({ model, messages, tools, signal, onDelta, touch, isIdle }) {
-    const send = async (token) => fetch(`${cloudBase()}/chat/completions`, {
-      method: "POST",
-      headers: { apikey: window.EDITCOREAI_CUENTAS?.anonKey || "", Authorization: `Bearer ${token}`, "content-type": "application/json" },
-      body: JSON.stringify({ model, messages: withCacheControl(messages), stream: true, stream_options: { include_usage: true }, ...(tools?.length ? { tools, tool_choice: "auto" } : {}) }),
-      signal,
-    });
+    const send = async (token) => {
+      let r = null;
+      try {
+        r = await fetch(`${cloudBase()}/chat/completions`, {
+          method: "POST",
+          headers: { apikey: window.EDITCOREAI_CUENTAS?.anonKey || "", Authorization: `Bearer ${token}`, "content-type": "application/json" },
+          body: JSON.stringify({ model, messages: withCacheControl(messages), stream: true, stream_options: { include_usage: true }, ...(tools?.length ? { tools, tool_choice: "auto" } : {}) }),
+          signal,
+        });
+        if (r.ok) return r;
+      } catch (err) {
+        if (signal?.aborted) throw err;
+      }
+      // Fallback a /api/chat del propio portal web
+      try {
+        const portalRes = await fetch("/api/chat", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            model,
+            messages: withCacheControl(messages),
+            stream: true,
+            stream_options: { include_usage: true },
+            ...(tools?.length ? { tools, tool_choice: "auto" } : {}),
+          }),
+          signal,
+        });
+        if (portalRes.ok) return portalRes;
+      } catch (err) {
+        if (signal?.aborted) throw err;
+      }
+      if (r) return r;
+      throw new Error("No hay conexión con el servidor.");
+    };
     let token = await C.getAccessToken();
     if (!token) throw codeError("NO_SESSION", "Inicia sesión con Google para continuar.");
     let res;

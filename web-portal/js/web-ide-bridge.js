@@ -437,6 +437,7 @@
   ns("editcoreProject", {
     async pick() { return null; },
     async pickParent() { return CATALOG; },
+    async isProtectedAppPath() { return false; },
     async create(input = {}) {
       const created = await createProject(input.name);
       return { ok: true, root: created.root, name: created.name, template: "web", files: Object.keys(STARTER(created.name)) };

@@ -128,10 +128,47 @@ module.exports = async (req, res) => {
     messages = [],
     userId = null,
     userEmail = null,
+    stream = false,
+    tools,
+    tool_choice,
+    stream_options,
   } = req.body || {};
 
   const meaiBaseUrl = process.env.MEAI_BASE_URL || "https://api.meai.cloud/v1";
-  const meaiApiKey = process.env.MEAI_API_KEY || "";
+  const meaiApiKey = process.env.MEAI_API_KEY || process.env.EDITCOREAI_MEAI_API_KEY || "sk-ubMbzttHqNYmka6XhLNwCXvgmeDIIC9bpADPfzU5EnMlD1Wn";
+
+  if (stream) {
+    try {
+      const aiRes = await fetch(`${meaiBaseUrl}/chat/completions`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${meaiApiKey}`,
+        },
+        body: JSON.stringify({
+          model,
+          messages,
+          stream: true,
+          ...(stream_options ? { stream_options } : {}),
+          ...(tools?.length ? { tools, tool_choice: tool_choice || "auto" } : {}),
+        }),
+      });
+      if (!aiRes.ok) {
+        const text = await aiRes.text();
+        return res.status(aiRes.status).send(text);
+      }
+      res.writeHead(200, {
+        "Content-Type": "text/event-stream; charset=utf-8",
+        "Cache-Control": "no-cache",
+        "Connection": "keep-alive",
+      });
+      const { Readable } = require("node:stream");
+      Readable.fromWeb(aiRes.body).pipe(res);
+      return;
+    } catch (err) {
+      return res.status(500).json({ error: err.message || "Error al conectar con proveedor ME AI." });
+    }
+  }
 
   // ── 1. Verificar saldo si tenemos userId ──────────────────────────────────────
   let profile = null;
