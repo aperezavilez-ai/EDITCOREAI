@@ -5626,10 +5626,45 @@ ipcMain.handle("provider:test", async (_event, input = {}) => {
   throw new Error(`La clave no tiene un modelo de chat utilizable. ${failures.slice(0, 3).join(" | ")}`);
 });
 
+function isAppProtectedPath(targetPath) {
+  if (!targetPath) return false;
+  try {
+    const candidate = path.resolve(String(targetPath));
+    const candNorm = candidate.toLowerCase();
+    if (app && app.isPackaged) {
+      const appPath = path.resolve(app.getAppPath()).toLowerCase();
+      const exeDir = path.resolve(path.dirname(process.execPath)).toLowerCase();
+      const resourcesPath = process.resourcesPath ? path.resolve(process.resourcesPath).toLowerCase() : "";
+      if (candNorm === appPath || candNorm.startsWith(appPath + path.sep)) return true;
+      if (candNorm === exeDir || candNorm.startsWith(exeDir + path.sep)) return true;
+      if (resourcesPath && (candNorm === resourcesPath || candNorm.startsWith(resourcesPath + path.sep))) return true;
+    }
+    if (fs.existsSync(path.join(candidate, "resources", "app.asar")) ||
+        fs.existsSync(path.join(candidate, "app.asar")) ||
+        /(?:^|[\\/])resources[\\/]app(?:\.asar)?(?:[\\/]|$)/i.test(candidate)) {
+      return true;
+    }
+  } catch {}
+  return false;
+}
+
+ipcMain.handle("project:is-protected", async (_event, targetPath) => {
+  return isAppProtectedPath(targetPath);
+});
+
 ipcMain.handle("project:pick", async () => {
   const result = await dialog.showOpenDialog({ properties: ["openDirectory"], title: "Abrir proyecto" });
   if (result.canceled || !result.filePaths[0]) return null;
-  return result.filePaths[0];
+  const chosen = result.filePaths[0];
+  if (isAppProtectedPath(chosen)) {
+    dialog.showMessageBoxSync({
+      type: "warning",
+      title: "Proyecto no permitido",
+      message: "Esta carpeta pertenece al núcleo protegido de EditCoreAI y no puede abrirse ni modificarse como proyecto.",
+    });
+    return null;
+  }
+  return chosen;
 });
 
 ipcMain.handle("project:pick-parent", async () => {
@@ -5640,6 +5675,9 @@ ipcMain.handle("project:pick-parent", async () => {
 
 ipcMain.handle("project:save", async (_event, input = {}) => {
   const root = assertProjectRoot(String(input.root || "").trim());
+  if (isAppProtectedPath(root)) {
+    throw new Error("Esta carpeta pertenece al núcleo protegido de EditCoreAI y no puede ser modificada.");
+  }
   const metadataDir = resolveProjectPath(root, ".editcore");
   const target = resolveProjectPath(root, ".editcore/project.json");
   fs.mkdirSync(metadataDir, { recursive: true });

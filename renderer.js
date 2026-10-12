@@ -5000,6 +5000,10 @@ async function renderProjectFiles(relativePath = "") {
 async function pickProject() {
   const picked = await window.editcoreProject.pick();
   if (!picked) return;
+  if (await window.editcoreProject?.isProtectedAppPath?.(picked)) {
+    alert("Esta carpeta pertenece al núcleo protegido de EditCoreAI y no puede abrirse como proyecto.");
+    return;
+  }
   const project = projectForRoot(picked);
   await selectProject(project.id);
   localStorage.setItem("editcore-project-root", picked);
@@ -5932,6 +5936,9 @@ async function selectProject(id, options = {}) {
   if (!selected?.projectRoot) throw new Error("Selecciona una carpeta de proyecto valida.");
   if (normalizeProjectRoot(selected.projectRoot) === normalizeProjectRoot(projectCatalogParent())) {
     throw new Error("Selecciona un proyecto por su nombre; la carpeta que contiene todos los proyectos no puede abrirse como proyecto.");
+  }
+  if (selected?.projectRoot && await window.editcoreProject?.isProtectedAppPath?.(selected.projectRoot)) {
+    throw new Error("Esta carpeta pertenece al núcleo protegido de EditCoreAI y no puede abrirse como proyecto.");
   }
   hideWelcomeScreen();
   // Recuperar chat durable del disco del proyecto (.editcore/chats.json).

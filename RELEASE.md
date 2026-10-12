@@ -1,3 +1,12 @@
+# RELEASE v4.3.9
+
+## Catálogo de modelos ME AI, protección del núcleo y cobros integrados
+
+- **Modelos en vista de usuario:** El selector de modelos en modo usuario ahora muestra siempre el catálogo completo de modelos recomendados de ME AI (`claude-sonnet-4.6`, `claude-opus-4.8`, `claude-haiku-4-5`, `qwen3.6-plus`, `glm-5`, `deepseek-v4-pro`, `kimi-k2.6`) sin requerir llamada a la nube y con selección individual o modo Auto, manteniendo ocultos los proveedores y claves.
+- **Protección de núcleo de EditCoreAI:** La app ahora protege sus propios archivos y binarios de instalación. EditCoreAI no puede ser abierto ni modificado como proyecto por usuarios finales, impidiendo manipulación de su código y recursos.
+- **Cobros con Mercado Pago:** Verificación y soporte de pagos con pasarela Mercado Pago y links de recarga directa vinculados a Supabase.
+- **Estabilidad de roles y navegación:** Botones persistentes de Administración, Vista de usuario y retorno rápido mediante tecla Esc o botón en barra de herramientas.
+
 # RELEASE v4.3.8
 
 ## Coordinación entre agentes, memoria por tarea y calidad visual

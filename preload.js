@@ -21,6 +21,7 @@ contextBridge.exposeInMainWorld("editcoreChat", {
 contextBridge.exposeInMainWorld("editcoreProject", {
   pick: () => ipcRenderer.invoke("project:pick"),
   pickParent: () => ipcRenderer.invoke("project:pick-parent"),
+  isProtectedAppPath: (targetPath) => ipcRenderer.invoke("project:is-protected", targetPath),
   create: (input) => ipcRenderer.invoke("project:create", input),
   save: (input) => ipcRenderer.invoke("project:save", input),
   saveChanges: (input) => ipcRenderer.invoke("project:save-changes", input),
