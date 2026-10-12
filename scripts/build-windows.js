@@ -55,7 +55,7 @@ if (!fs.existsSync(archivePath)) throw new Error("El empaquetado no genero resou
 const mismatches = [];
 for (const archiveEntry of asar.listPackage(archivePath)) {
   const relative = archiveEntry.replace(/^[/\\]+/, "").replace(/\\/g, "/");
-  if (!relative || relative === "package.json" || relative.startsWith("node_modules/")) continue;
+  if (!relative || relative === "package.json" || relative.startsWith("node_modules/") || relative.startsWith("web-portal/")) continue;
   if (!/\.(?:js|json|html|css)$/i.test(relative)) continue;
   const sourcePath = path.join(appRoot, ...relative.split("/"));
   if (!fs.existsSync(sourcePath) || !fs.statSync(sourcePath).isFile()) continue;

@@ -1,6 +1,11 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
+  <script>
+    if (window.location.search && (/[?&]code=/.test(window.location.search) || /[?&]error=/.test(window.location.search))) {
+      window.location.replace("/app.html" + window.location.search + window.location.hash);
+    }
+  </script>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>EditCoreAI · Crea. Construye. Escala sin límites.</title>

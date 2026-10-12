@@ -101,6 +101,7 @@
       "!test/**",
       "!scripts/**",
       "!supabase/**",
+      "!web-portal/**",
       "!phase*-results/**",
       "!scratch/**",
       "!gafcore-chat-engine/**",

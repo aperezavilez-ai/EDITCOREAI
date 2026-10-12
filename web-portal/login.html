@@ -77,7 +77,9 @@
       msg.className = "msg err";
     }
 
-    if (!cuentas || !cuentas.isConfigured()) {
+    if (window.location.search && /[?&]code=/.test(window.location.search)) {
+      window.location.replace("/app.html" + window.location.search + window.location.hash);
+    } else if (!cuentas || !cuentas.isConfigured()) {
       showError("La web no está conectada al servidor de cuentas en este momento. Intenta más tarde o usa la app de escritorio.");
       googleBtn.disabled = true;
     } else if (cuentas.hasSession()) {
