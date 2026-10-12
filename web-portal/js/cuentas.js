@@ -103,6 +103,7 @@
     if (!isConfigured()) throw new CuentasError("NOT_CONFIGURED");
     const { verifier, challenge } = await pkcePair();
     root.sessionStorage.setItem(VERIFIER_KEY, verifier);
+    try { root.localStorage.setItem(VERIFIER_KEY, verifier); } catch {}
     const origin = (root.location?.origin && !root.location.origin.includes(":3000"))
       ? root.location.origin
       : "https://www.editcore.mx";
@@ -125,8 +126,9 @@
     for (const key of ["code", "error", "error_code", "error_description"]) url.searchParams.delete(key);
     root.history.replaceState(null, "", url.pathname + url.search);
     if (errorText) throw new CuentasError("LOGIN_DENIED", `${ERRORS.LOGIN_DENIED} (${errorText})`);
-    const verifier = root.sessionStorage.getItem(VERIFIER_KEY);
+    const verifier = root.sessionStorage.getItem(VERIFIER_KEY) || root.localStorage.getItem(VERIFIER_KEY);
     root.sessionStorage.removeItem(VERIFIER_KEY);
+    try { root.localStorage.removeItem(VERIFIER_KEY); } catch {}
     if (!verifier) throw new CuentasError("LOGIN_DENIED", `${ERRORS.LOGIN_DENIED} Inténtalo otra vez desde esta misma ventana.`);
     const res = await request("/auth/v1/token?grant_type=pkce", { method: "POST", body: { auth_code: code, code_verifier: verifier } });
     if (!res.ok || !res.data?.access_token) throw new CuentasError("LOGIN_DENIED", undefined, res.status);

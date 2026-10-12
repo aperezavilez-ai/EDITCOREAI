@@ -38,35 +38,6 @@
       ]
     }
   ],
-  "routes": [
-    {
-      "src": "/api/chat",
-      "dest": "/api/chat.js"
-    },
-    {
-      "src": "/api/create-checkout",
-      "dest": "/api/create-checkout.js"
-    },
-    {
-      "src": "/api/webhook-stripe",
-      "dest": "/api/webhook-stripe.js"
-    },
-    {
-      "src": "/api/webhook-mercadopago",
-      "dest": "/api/webhook-mercadopago.js"
-    },
-    {
-      "src": "/download",
-      "dest": "https://github.com/aperezavilez-ai/EDITCOREAI/releases/latest/download/EDITCOREAI-Setup.exe"
-    },
-    {
-      "handle": "filesystem"
-    },
-    {
-      "src": "/(.*)",
-      "dest": "/index.html"
-    }
-  ],
   "framework": null,
   "buildCommand": null,
   "outputDirectory": ".",
