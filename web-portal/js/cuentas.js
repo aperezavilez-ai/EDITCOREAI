@@ -103,9 +103,12 @@
     if (!isConfigured()) throw new CuentasError("NOT_CONFIGURED");
     const { verifier, challenge } = await pkcePair();
     root.sessionStorage.setItem(VERIFIER_KEY, verifier);
+    const origin = (root.location?.origin && !root.location.origin.includes(":3000"))
+      ? root.location.origin
+      : "https://www.editcore.mx";
     const params = new URLSearchParams({
       provider: "google",
-      redirect_to: root.location.origin + returnPath,
+      redirect_to: origin + returnPath,
       code_challenge: challenge,
       code_challenge_method: "s256",
     });

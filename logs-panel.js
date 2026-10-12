@@ -143,11 +143,21 @@
     originalLog.apply(console, args);
   };
 
+  function isIgnorableLog(str) {
+    if (!str) return true;
+    const lower = String(str).toLowerCase();
+    return lower.includes("unexpected error while loading url") ||
+      lower.includes("net::err_aborted") ||
+      lower.includes("net::err_connection_refused");
+  }
+
   console.warn = function (...args) {
     const message = args.map((arg) =>
       typeof arg === "object" ? JSON.stringify(arg, null, 2) : String(arg)
     ).join(" ");
-    appendLog("warn", message);
+    if (!isIgnorableLog(message)) {
+      appendLog("warn", message);
+    }
     originalWarn.apply(console, args);
   };
 
@@ -155,7 +165,9 @@
     const message = args.map((arg) =>
       typeof arg === "object" ? JSON.stringify(arg, null, 2) : String(arg)
     ).join(" ");
-    appendLog("error", message);
+    if (!isIgnorableLog(message)) {
+      appendLog("error", message);
+    }
     originalError.apply(console, args);
   };
 

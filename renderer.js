@@ -198,6 +198,7 @@ function isIgnorablePreviewConsoleMessage(message = "") {
     || /networkerror when attempting to fetch/.test(text)
     || /the fetch has been aborted/.test(text)
     // Ruido del propio EDITCOREAI (desktop), no del preview web del usuario
+    || /unexpected error while loading url/.test(text)
     || /cannot find module ['"]?main\.js['"]?/.test(text)
     || /cannot find module ['"]?preload\.js['"]?/.test(text)
     || /\bmain\.js\s+error:/.test(text)
