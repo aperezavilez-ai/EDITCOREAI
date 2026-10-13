@@ -432,9 +432,10 @@ function successfulDiskReads(steps = []) {
 
 function groundUngroundedClaims(text, steps = [], userMessage = "", decision = {}, evidenceReads = 0) {
   if (decision?.kind === "LIST") return formatAgentVisibleText(String(text || "").trim());
-  if (decision?.kind === "CHAT" && textClaimsDiskMutation(text) && successfulWritePaths(steps).length === 0) {
+  const written = successfulWritePaths(steps);
+  if (written.length === 0 && textClaimsDiskMutation(text)) {
     return formatAgentVisibleText(
-      "> ⚠️ **En este turno no se modificó ningún archivo.** Lo que sigue es texto del modelo, no cambios aplicados. Pídeme «corrige …» para que lo aplique de verdad.\n\n" +
+      "> ⚠️ **En este turno no se modificó ningún archivo en disco.** Lo que sigue es explicación del modelo, no cambios aplicados.\n\n" +
       String(repairDanglingOutput(text, steps, userMessage, decision) || "")
     );
   }
@@ -445,14 +446,10 @@ function groundUngroundedClaims(text, steps = [], userMessage = "", decision = {
     );
   }
   if (decision?.kind === "ANALYZE" || decision?.kind === "ASK" || decision?.kind === "CHAT" || decision?.allowWrite === false
-    || /\b(?:sin\s+modificar|solo\s+(?:analiza|reporte|diagn[oó]stico)|reporte|an[aá]lisis|auditor[ií]a|explica|resumen)\b/i.test(userMessage)) {
+    || /\b(?:sin\s+modificar|solo\s+(?:analiza|reporte|diagn[oó]stico)|reporte|an[aá]lisis|auditor[ií]a|resumen)\b/i.test(userMessage)) {
     return repairDanglingOutput(text, steps, userMessage, decision);
   }
-  const written = successfulWritePaths(steps);
   if (written.length > 0) return repairDanglingOutput(text, steps, userMessage, decision);
-  if (textClaimsDiskMutation(text) && userWantsDiskMutation(userMessage)) {
-    return formatAgentVisibleText("## ⚠️ Sin cambios reales\n\nNo pude comprobar creación ni escritura real en disco en este turno.\n\nIndica la carpeta de destino y pedime de nuevo que lo cree con tools.");
-  }
   return repairDanglingOutput(text, steps, userMessage, decision);
 }
 
@@ -1351,7 +1348,15 @@ class ChatOrchestrator {
 
     const routed = pickModel({ requested: model, kind: decision?.kind || "CHAT", hasTools: !(chatOnly || decision?.kind === "CHAT") });
     const routedModel = String(routed.model || model || "").trim();
-    const rememberOut = (textOut) => { try { threadCore.rememberExchange(projectRoot, threadId, this._currentUserText || message, textOut); } catch { /* ignore */ } };
+    const rememberOut = (textOut, extra = {}) => {
+      try {
+        threadCore.rememberExchange(projectRoot, threadId, this._currentUserText || message, textOut, {
+          steps,
+          written: successfulWritePaths(steps),
+          ...extra,
+        });
+      } catch { /* ignore */ }
+    };
 
     // Timeout por turno: 3 min en análisis, default en el resto.
     const turnTimeoutMs = analysisMode ? ANALYSIS_TIMEOUT_MS : undefined;

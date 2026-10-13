@@ -1057,6 +1057,35 @@ const DEFINITIONS = [
       parameters: { type: "object", properties: {} },
     },
   },
+  {
+    type: "function",
+    function: {
+      name: "graphify_project",
+      description: "Ejecuta Graphify para mapear la arquitectura completa del proyecto en un grafo de conocimiento interactivo con dependencias, God Nodes y comunidades. Genera graphify-out/graph.json, graphify-out/GRAPH_REPORT.md y graphify-out/graph.html.",
+      parameters: {
+        type: "object",
+        properties: {
+          path: { type: "string", description: "Ruta del proyecto (por defecto '.')." },
+        },
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "invoke_subagent",
+      description: "Despacha un subagente especializado autónomo para una tarea puntual (explorer, implementer, analyst, verifier, security, database, ui_ux, devops).",
+      parameters: {
+        type: "object",
+        properties: {
+          role: { type: "string", enum: ["explorer", "implementer", "analyst", "verifier", "security", "database", "ui_ux", "devops"], description: "Rol asignado al subagente." },
+          task: { type: "string", description: "Objetivo o instrucción detallada para el subagente." },
+          target: { type: "string", description: "Archivo o ruta a explorar/modificar." },
+        },
+        required: ["role", "task"],
+      },
+    },
+  },
 ];
 
 function resolveListPath(root, requested) {
@@ -1274,6 +1303,23 @@ async function execute(name, args, root, allowWrite, helpers = {}) {
       return listSnapshots(root);
     case "analyze_circular_dependencies":
       return detectCircularDependencies(root, a);
+    case "graphify_project": {
+      const { buildProjectGraph } = require("./graphify-runner");
+      return await buildProjectGraph(safe(root, a.path || "."), a);
+    }
+    case "invoke_subagent": {
+      const { runSubagent } = require("../runtime/subagent-runner");
+      const subRole = String(a.role || "explorer").toLowerCase();
+      if ((subRole === "implementer" || subRole === "writer") && !allowWrite) {
+        return { ok: false, error: "Subagente implementer requiere modo escritura/ejecución" };
+      }
+      return await runSubagent(root, {
+        role: subRole,
+        task: a.task,
+        target: a.target,
+        query: a.task,
+      }, helpers);
+    }
     default:
       return { ok: false, error: `Herramienta desconocida: ${name}` };
   }

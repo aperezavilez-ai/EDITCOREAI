@@ -78,11 +78,38 @@ function buildMessageList({ system, systemPrefix = "", turnContext = "", userTex
   return messages;
 }
 
-function rememberExchange(projectRoot, threadId, userText, assistantText) {
+function rememberExchange(projectRoot, threadId, userText, assistantText, meta = {}) {
   const turns = [];
   if (userText) turns.push({ role: "user", content: String(userText), at: Date.now() });
   if (assistantText) turns.push({ role: "assistant", content: String(assistantText).slice(0, 6_000), at: Date.now() });
   if (turns.length) threadMemory.appendTurns(projectRoot, threadId, turns);
+
+  if (projectRoot) {
+    try {
+      const written = Array.isArray(meta.written) ? meta.written : [];
+      if (written.length) {
+        const state = threadMemory.loadProjectState(projectRoot);
+        const existing = new Set((state.files || []).map((f) => (typeof f === "string" ? f : f?.rel || f?.path)));
+        for (const file of written) {
+          if (!existing.has(file)) {
+            state.files.push({ rel: file, action: "modified", at: Date.now() });
+          }
+        }
+        threadMemory.saveProjectState(projectRoot, state);
+      }
+      const rawUser = String(userText || "").trim();
+      if (rawUser && rawUser.length > 5 && !/^(?:contin[uú]a|sigue|ok|si|dale|procede)\b/i.test(rawUser)) {
+        threadMemory.noteWorkingOn(projectRoot, rawUser.slice(0, 300), threadId);
+      }
+      const rawAssistant = String(assistantText || "").trim();
+      if (rawAssistant && rawAssistant.length > 25) {
+        const firstLine = rawAssistant.split("\n").map((l) => l.trim()).find((l) => l && !l.startsWith("#") && !l.startsWith(">")) || "";
+        if (firstLine && firstLine.length > 15) {
+          threadMemory.noteDecision(projectRoot, firstLine.slice(0, 250));
+        }
+      }
+    } catch { /* ignore */ }
+  }
 }
 
 function subagentContext({ projectRoot, threadId, task, extra = "" }) {

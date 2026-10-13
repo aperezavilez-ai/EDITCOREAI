@@ -254,6 +254,12 @@ const SKILL_KEYWORD_MAP = {
   "n8n-workflow-patterns": ["n8n patrones", "arquitectura n8n", "workflow patterns n8n", "buenas practicas n8n"],
   "using-n8n-mcp-skills": ["using n8n", "n8n mcp workflow", "automatizar n8n", "operar n8n con mcp"],
 
+  // Newly Installed Elite Skills (.agents/skills)
+  "agent-reach": ["agent reach", "agent-reach", "web scraping", "scraping", "investigacion web", "analisis externo", "buscar web profunda", "api reach", "navegar web"],
+  "frontend-design-system": ["frontend-design-system", "design system", "sistema de diseño", "tailwind v4", "view transitions", "container queries", "componentes ui", "subgrid"],
+  "impeccable-design": ["impeccable-design", "estetica visual", "glassmorphism", "microanimaciones", "pulido visual", "acabado profesional", "diseño impecable", "calidad visual"],
+  "playwright-testing": ["playwright", "playwright-testing", "test e2e", "pruebas e2e", "browser automation", "headless browser", "audit accesibilidad", "test flujo"],
+  "ui-ux-pro-max": ["ui-ux-pro-max", "jerarquia visual", "wcag", "accesibilidad ui", "experiencia de usuario", "diseño de interfaz", "pro max ui", "paleta accesible"],
 };
 
 function uniquePaths(list) {
@@ -269,7 +275,7 @@ function uniquePaths(list) {
 }
 
 /**
- * Localiza carpetas `skills` en EDITCOREAI, kernel, brain-seed y adyacentes.
+ * Localiza carpetas `skills` en EDITCOREAI, kernel, brain-seed, .agents y adyacentes.
  */
 function resolveSkillsRoots(projectRoot) {
   const kernelRoot = path.resolve(__dirname);
@@ -282,16 +288,21 @@ function resolveSkillsRoots(projectRoot) {
     path.join(kernelRoot, "skills"),
     path.join(editcoreRoot, "skills"),
     path.join(editcoreRoot, "brain-seed", "skills"),
+    path.join(editcoreRoot, ".agents", "skills"),
     path.join(editcoreRoot, ".claude", "skills"),
     path.join(editcoreRoot, "plugins", "skills"),
     project ? path.join(project, "skills") : null,
     project ? path.join(project, "brain-seed", "skills") : null,
+    project ? path.join(project, ".agents", "skills") : null,
     project ? path.join(project, ".claude", "skills") : null,
     parentOfEditcore ? path.join(parentOfEditcore, "skills") : null,
+    parentOfEditcore ? path.join(parentOfEditcore, ".agents", "skills") : null,
     parentOfEditcore ? path.join(parentOfEditcore, "EDITCOREAI", "skills") : null,
-    parentOfEditcore ? path.join(parentOfEditcore, "EDITCOREAI", "editcore-chat-kernel", "skills") : null,
     parentOfEditcore ? path.join(parentOfEditcore, "EDITCOREAI", "brain-seed", "skills") : null,
+    parentOfEditcore ? path.join(parentOfEditcore, "EDITCOREAI", ".agents", "skills") : null,
+    parentOfEditcore ? path.join(parentOfEditcore, "EDITCOREAI", "editcore-chat-kernel", "skills") : null,
     parentOfProject ? path.join(parentOfProject, "skills") : null,
+    parentOfProject ? path.join(parentOfProject, ".agents", "skills") : null,
   ].filter(Boolean);
 
   return uniquePaths(candidates).filter((dir) => {

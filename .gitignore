@@ -30,6 +30,7 @@ Thumbs.db
 .idea/
 # Local EditCore runtime
 .editcore/
+graphify-out/
 scratch/
 phase4-results/
 verify-debug.log
