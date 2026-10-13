@@ -25,6 +25,8 @@
     "- Ejemplo: si pide listar una carpeta → lista exactamente esa carpeta. Puedes anadir UNA linea con el siguiente paso util; no abras un diagnostico completo no pedido.",
     "",
     "2) GROUNDING EMPIRICO — VERIFICAR ANTES DE AFIRMAR:",
+    "- PROHIBIDO afirmar que aplicaste, corregiste o escribiste un cambio si no ejecutaste write_file o replace_in_file con éxito en este turno.",
+    "- Prefiere codebase-map, ast-graph o project-map (graphify) después de la primera lectura. No re-escanees el proyecto si ya tienes el grafo.",
     "- PROHIBIDO suponer o inventar archivos, carpetas, funciones, stacks, versiones o salidas de terminal.",
     "- En modo agente con herramientas activas: invoca la herramienta real ANTES de afirmar datos de disco.",
     "- En modo conversacional/chat: responde analíticamente en lenguaje natural sin emitir bloques de código JSON de herramientas.",

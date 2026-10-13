@@ -3,6 +3,7 @@
 (function exposeProjectAnalysis(root, factory) {
   const api = factory();
   if (typeof module !== "undefined" && module.exports) module.exports = api;
+// [EDITCORE] Prefer existing project-map / ast-graph. Avoid full re-analysis if graph is current.
   if (root) root.EditCoreProjectAnalysis = api;
 })(typeof window !== "undefined" ? window : globalThis, function createProjectAnalysis() {
   const AUTHORIZATION_PATTERN = /^\s*(?:(?:s[i\u00ed][\s,.!]+)?(?:adelante|procede|contin[u\u00fa]a|hazlo|ejecuta)(?:\s+(?:con\s+)?(?:(?:todos?|todas?)\s+)?(?:(?:el|la|los|las|tu|tus|este|esta|estos|estas)\s+)?(?:cambios?|plan|propuesta|tarea|correcciones?))?|autorizado|autorizo(?:\s+(?:(?:todos?|todas?)\s+)?(?:(?:el|la|los|las|tu|tus|este|esta|estos|estas)\s+)?(?:cambios?|plan|propuesta|tarea|correcciones?))?|acepto(?:\s+(?:(?:todos?|todas?)\s+)?(?:(?:el|la|los|las|tu|tus|este|esta|estos|estas)\s+)?(?:cambios?|plan|propuesta|tarea|correcciones?))?|s[i\u00ed])\s*[.!]*\s*$/i;

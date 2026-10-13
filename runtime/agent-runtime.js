@@ -4,10 +4,10 @@ const { ActionRegistry } = require("./action-registry");
 const { SmartRetry, createCommonStrategies } = require("./smart-retry");
 
 const MAX_TOOL_RESULT_CHARS = 2000;
-const COMPACT_TRIGGER_STEPS = 6;
-const KEEP_RECENT_PAIRS = 4;
+const COMPACT_TRIGGER_STEPS = 12;
+const KEEP_RECENT_PAIRS = 6;
 const PROVIDER_REQUEST_TIMEOUT_MS = 180_000;
-const DEFAULT_MAX_DUPLICATE_BLOCKS = 3;
+const DEFAULT_MAX_DUPLICATE_BLOCKS = 2;
 
 const CLAUDE_CONFIG = {
   MAX_LOOP_WINDOW: 5,
@@ -159,7 +159,7 @@ class AgentRuntime {
 
     const steps = [];
     const usageRows = [];
-    const maxSteps = Math.max(1, Number(input.maxSteps) || 20);
+    const maxSteps = Math.max(1, Number(input.maxSteps) || 80);
     let callMode = "native";
 
     const recordUsage = (usage, messagesToEstimate, outputText) => {

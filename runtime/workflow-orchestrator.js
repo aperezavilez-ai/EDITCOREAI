@@ -3,6 +3,7 @@
 const { id, now } = require("./task-models");
 const { logWorkflow } = require("./workflow-logger");
 
+// [EDITCORE] On completion always suggest next step or declare finished + ask for review.
 const AWAITING_STATES = new Set(["AWAITING_AUTHORIZATION", "PLAN_READY"]);
 const EXECUTION_ACTIVE_STATES = new Set(["APPROVED", "EXECUTING", "VALIDATING", "IMPLEMENTING", "VERIFYING"]);
 

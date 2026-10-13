@@ -3,6 +3,7 @@
 const path = require("path");
 const {
   handleChat,
+// [EDITCORE] Ensure step budget is respected and final response always closes properly.
   stopChat,
   steerChat,
   isChatRunning,

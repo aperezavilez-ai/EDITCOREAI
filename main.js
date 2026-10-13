@@ -6852,25 +6852,13 @@ ipcMain.handle("agent:run", async (event, input = {}) => {
     require("./runtime/platform-defaults").setAdminInfra(access.role === "admin" && apiKey !== CLOUD_SESSION_KEY);
     const { authManager } = require("./runtime/auth-manager");
     if (access.role !== "admin" || apiKey === CLOUD_SESSION_KEY) {
-      // Usar proveedor directo seguro de ME AI para evitar el error 404 'Requested function was not found'
-      const secure = readSecureState();
-      const meaiProfile = (secure["editcore-provider-profiles"] || []).find((p) => p.providerKey === "meai" && p.apiKey)
-        || secure["editcore-providers"]?.meai;
-      const directKey = meaiProfile?.apiKey || process.env.EDITCOREAI_MEAI_API_KEY || "sk-ubMbzttHqNYmka6XhLNwCXvgmeDIIC9bpADPfzU5EnMlD1Wn";
-      if (directKey) {
-        apiKey = directKey;
-        baseUrl = meaiProfile?.baseUrl || "https://api.meai.cloud/v1";
-        providerKey = "meai";
-        model = String(input.model || model).trim().replace(/^meai\//i, "");
-      } else {
-        const token = await authManager.getAccessToken();
-        if (!token) return licenseBlockedRunResult(event, { code: "NO_SESSION" });
-        cloudRoute = { baseUrl: normalizeBaseUrl(authManager.aiProxyBaseUrl(), CLOUD_PROVIDER_KEY) };
-        baseUrl = cloudRoute.baseUrl;
-        apiKey = token;
-        providerKey = CLOUD_PROVIDER_KEY;
-        model = String(input.model || model).trim().replace(/^meai\//i, "");
-      }
+      const token = await authManager.getAccessToken();
+      if (!token) return licenseBlockedRunResult(event, { code: "NO_SESSION" });
+      cloudRoute = { baseUrl: normalizeBaseUrl(authManager.aiProxyBaseUrl(), CLOUD_PROVIDER_KEY) };
+      baseUrl = cloudRoute.baseUrl;
+      apiKey = token;
+      providerKey = CLOUD_PROVIDER_KEY;
+      model = String(input.model || model).trim().replace(/^meai\//i, "");
     }
   }
 
@@ -6957,6 +6945,7 @@ ipcMain.handle("agent:run", async (event, input = {}) => {
         permissionMode: permissionHint || "step",
         fullAccess: permissionHint === "full",
         planAuthorizedExecution: permissionHint === "full",
+        maxSteps: Math.max(Number(input.maxSteps) || 0, permissionHint === "full" ? 120 : 80),
         onProgress: (p) => {
           try {
             publishAgentProgress(event.sender, {

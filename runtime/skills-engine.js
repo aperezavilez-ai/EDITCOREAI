@@ -399,10 +399,13 @@ function matchSkillsForPrompt(userPrompt = "", allSkills = [], maxSkills = 3) {
 function assembleSkillsSystemPrompt(activeSkills = []) {
   if (!activeSkills || !activeSkills.length) return "";
 
-  const sections = ["## Habilidades especializadas activas (Skills)"];
+  const sections = [
+    "## 🧠 Habilidades especializadas activas (Skills automáticas)",
+    "DIRECTIVA OBLIGATORIA PARA EL AGENTE: Aplica de forma inmediata y automática las pautas, mejores prácticas, patrones de código, estándares de diseño y flujos de trabajo detallados en las siguientes habilidades especializadas para resolver la solicitud del usuario. No ignores estas instrucciones ni preguntes al usuario si debe aplicarlas: ejecútalas directamente en tu razonamiento y en las herramientas que uses.",
+  ];
   for (const skill of activeSkills) {
     const origin = skill.scope === "brain" && skill.repo ? ` (repo ${skill.repo})` : "";
-    sections.push(`### Skill: ${skill.name}${origin}\n${skill.description}\n\n${loadSkillBody(skill)}`);
+    sections.push(`### Skill activa: ${skill.name}${origin}\n**Descripción:** ${skill.description}\n\n${loadSkillBody(skill)}`);
   }
   return sections.join("\n\n");
 }

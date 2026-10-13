@@ -545,7 +545,7 @@ function skillsPrompt(projectRoot, kind, messageOrOpts) {
   const prompt = [
     `SKILLS VÁLIDAS EN DISCO (${availableIds.length}): ${availableIds.join(", ")}`,
     `Inyectadas (${selected.length}/${MAX_SKILLS_IN_PROMPT}) por relevancia al mensaje del usuario (kind=${kind || "n/a"}).`,
-    "Usa estas skills como guía de procedimiento. No inventes tools que no existan en EditCore.",
+    "DIRECTIVA OBLIGATORIA: Aplica de forma inmediata y automática las pautas, patrones y reglas de estas skills activas en tus respuestas y en el código generado por tus tools. No pidas confirmación para seguir sus estándares.",
     "Si la skill habla de deploy/conexión, combina con check_connections / connect_project según corresponda.",
     blocks.join("\n\n"),
   ].join("\n\n");

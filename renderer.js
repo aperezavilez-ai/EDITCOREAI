@@ -5938,7 +5938,7 @@ async function selectProject(id, options = {}) {
   if (normalizeProjectRoot(selected.projectRoot) === normalizeProjectRoot(projectCatalogParent())) {
     throw new Error("Selecciona un proyecto por su nombre; la carpeta que contiene todos los proyectos no puede abrirse como proyecto.");
   }
-  if (selected?.projectRoot && (await window.editcoreProject?.isProtectedAppPath?.(selected.projectRoot)) === true) {
+  if (selected?.projectRoot && await window.editcoreProject?.isProtectedAppPath?.(selected.projectRoot)) {
     throw new Error("Esta carpeta pertenece al núcleo protegido de EditCoreAI y no puede abrirse como proyecto.");
   }
   hideWelcomeScreen();

@@ -113,15 +113,15 @@ try {
   projectRoadmapApi = null;
 }
 
-const DEFAULT_MAX_STEPS = 40;
-const AUTHORIZED_MAX_STEPS = 48;
+const DEFAULT_MAX_STEPS = 80;
+const AUTHORIZED_MAX_STEPS = 120;
 const DEFAULT_TOTAL_TIMEOUT_MS = 900_000; // 15 min — análisis profundo cabe holgado
 const HEARTBEAT_INTERVAL_MS = 5_000;
 const ROADMAP_MIN_LENGTH = 500;
 const MAX_PROMISE_RETRIES = 3;
 const MAX_NO_WRITE_NUDGES = 2;
 // Análisis forense/quirúrgico necesita más lecturas: 8 era demasiado bajo → pausa prematura
-const ANALYSIS_MAX_STEPS = 24;
+const ANALYSIS_MAX_STEPS = 80;
 const ANALYSIS_TIMEOUT_MS = 300_000; // 5 min por turno en análisis
 
 const LEADERSHIP_PROMPT = [
@@ -781,7 +781,7 @@ class ChatOrchestrator {
     const { message, projectRoot, apiBaseUrl, apiKey, model, images, onProgress, helpers,
       autoHeal, background, runModelTaskFn, allowWrite: inputAllowWrite, permissionMode,
       permissionFull, fullAccess: inputFullAccess, planAuthorizedExecution: inputPlanAuth,
-      history, messages: inputMessages, threadId: inputThreadId, chatId } = input;
+      history, messages: inputMessages, threadId: inputThreadId, chatId, maxSteps } = input;
 
     const rawText = typeof message === "object" && message?.text ? message.text : String(message || "");
     const taskImages = Array.isArray(images) ? images.filter(Boolean) : [];
@@ -1301,7 +1301,8 @@ class ChatOrchestrator {
 
     const steps = [];
     const runMutations = [];
-    const stepsLimit = Math.max(1, Number(maxSteps) || DEFAULT_MAX_STEPS);
+    const chatMode = Boolean(chatOnly || decision?.kind === "CHAT");
+    const stepsLimit = Math.max(1, Number(maxSteps) || (chatMode ? CHAT_MAX_STEPS : (fullAccess ? AUTHORIZED_MAX_STEPS : DEFAULT_MAX_STEPS)));
     const totalUsage = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0, cache_read_input_tokens: 0, cache_creation_input_tokens: 0, cache_write_input_tokens: 0, cachedInputTokens: 0, provider_cache_read_tokens: 0, cached_input_tokens: 0, provider_calls: 0 };
     const addUsage = (raw = {}) => {
       const input = Number(raw.prompt_tokens || raw.input_tokens || 0);
@@ -1340,7 +1341,6 @@ class ChatOrchestrator {
           return { kind: "STOP", text: "Detenido.", steps, threadId, usage: totalUsage };
         }
 
-        const chatMode = chatOnly || decision?.kind === "CHAT";
         const availableTools = chatMode
           ? (i < stepsLimit - 1
             ? tools.getToolDefinitions({ allowWrite: false, isFullAccess: false, isAnalysis: false })

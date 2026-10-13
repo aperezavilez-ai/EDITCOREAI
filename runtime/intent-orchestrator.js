@@ -8,6 +8,9 @@
   const nodeProjectAnalysis = typeof require !== "undefined"
     ? (() => {
         try { return require("./project-analysis"); } catch {
+// [EDITCORE] GRAPHIFY-FIRST: prefer codebase-map / ast-graph / project-map after first read. Do not re-scan project on every turn.
+// [EDITCORE] SINGLE-READ: block repeated full project scans once graph exists.
+// [EDITCORE] SPECIFIC-ORDER: always attack the exact user instruction, not a generic full analysis.
           try { return require("../project-analysis"); } catch { return null; }
         }
       })()
