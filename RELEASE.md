@@ -1,3 +1,14 @@
+# RELEASE v4.4.1
+
+## Integración total de 100 Skills, motor HyperFrames y suite multimedia
+
+- **100 Skills registradas y mapeadas:** Se integraron plenamente todas las skills del ecosistema en el catálogo del kernel (`skills-catalog.js`), incluyendo las 47 nuevas skills incorporadas a `brain-seed/skills/`.
+- **Suite HyperFrames y Vídeo:** Soporte nativo para generación y edición de vídeo con código (`hyperframes`, `hyperframes-animation`, `hyperframes-audio`, `hyperframes-cli`, `hyperframes-core`, `hyperframes-creative`, `hyperframes-keyframes`, `hyperframes-registry`, `hyperframes-studio`, `remotion`, `remotion-official`, `remotion-to-hyperframes`, `embedded-captions`, `faceless-explainer`, `slideshow`, `motion-graphics`, `music-to-video`, `product-launch-video`, `pr-to-video`, `talking-head-recut`).
+- **Suite YouTube integral:** Asistencia especializada en guion, empaquetado, edición, retención, SEO, capítulos, comentarios, planificación, análisis viral y auditoría de canales (`yt-script`, `yt-package`, `yt-edit`, `yt-retention`, `yt-seo`, `yt-chapters`, `yt-comment`, `yt-plan`, `yt-viral`, `yt-audit`, `yt-shorts`).
+- **Suite Anti-Slop:** Políticas de calidad estricta contra código, interfaces o textos genéricos de IA (`antislop`, `antislop-ui`, `antislop-code`, `antislop-copywriting`, `antislop-human`, `antislop-layoutmobile`).
+- **Suite GStack y Productividad:** Herramientas de ingeniería continua, retros, reviews y arquitectura (`gstack-core`, `gstack-hackernews`, `gstack-openclaw-ceo-review`, `gstack-openclaw-investigate`, `gstack-openclaw-office-hours`, `gstack-openclaw-retro`, `gstack-skillify`, `graphify`, `figma`, `task-observer`, `prompt-master`).
+- **Resumen optimizado en herramientas:** Rediseñado el resumen de `list_skills` en el kernel para mantener una salida concisa y rápida sin desbordar los tokens de contexto ni los tests.
+
 # RELEASE v4.4.0
 
 ## Redirección oficial al cerrar sesión, contraste total en chat y estabilidad web

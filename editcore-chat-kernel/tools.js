@@ -854,13 +854,15 @@ function listSkills(root, helpers = {}, query = "") {
     const local = (scope) => all.filter((s) => s.scope === scope).map((s) => s.name);
     const repos = {};
     for (const s of all) if (s.scope === "brain") repos[s.repo] = (repos[s.repo] || 0) + 1;
+    const builtinList = local("builtin");
     return {
       ok: true,
       count,
       byScope,
       project: local("project"),
       global: local("global"),
-      builtin: local("builtin"),
+      builtin: builtinList.slice(0, 30),
+      builtinTotal: builtinList.length,
       brainRepos: Object.entries(repos).sort((a, b) => b[1] - a[1]).slice(0, 12).map(([repo, n]) => `${repo} (${n})`),
       hint: "Usa list_skills con query para buscar una skill concreta.",
     };
