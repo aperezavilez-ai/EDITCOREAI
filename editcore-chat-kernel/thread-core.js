@@ -62,7 +62,15 @@ function buildMessageList({ system, systemPrefix = "", turnContext = "", userTex
     messages.push({ role: m.role, content: m.content });
   }
   const hasImages = Array.isArray(images) && images.length > 0;
-  const context = String(turnContext || "").trim();
+  let context = String(turnContext || "").trim();
+  try {
+    if (projectRoot) {
+      const memoryBlock = threadMemory.projectPromptBlock(projectRoot, threadId, query);
+      if (memoryBlock) {
+        context = context ? `${memoryBlock}\n\n${context}` : memoryBlock;
+      }
+    }
+  } catch { /* ignore */ }
   const timedText = context
     ? `${currentTimeLine(now)}\n=== CONTEXTO DE EDITCOREAI PARA ESTE TURNO (lo agrega el IDE, no el usuario) ===\n${context}\n=== FIN CONTEXTO ===\n\n${userText}`
     : `${currentTimeLine(now)}\n${userText}`;

@@ -10,6 +10,7 @@ function isContinuePhrase(text = "") {
   const words = String(text || "").toLowerCase().replace(/[.,;:!?¡¿]+/g, " ").trim().split(/\s+/).filter(Boolean);
   return words.length > 0 && words.length <= 6 && words.every((w) => CONTINUE_WORDS.has(w));
 }
+const CONTINUE_TASK_RE = /^\s*(?:contin[uú]a|sigue|avanza|prosigue|adelante)\b.*(?:tarea|ejecut|paso|evidencia|donde\s+qued|activo|activa|trabajo|arregl|correg)/i;
 const CHAT_INFO_RE = /\b(?:para\s+qu[eé]\s+(?:sirve|funciona|es)|qu[eé]\s+(?:hace|es)|qui[eé]n\s+eres|c[oó]mo\s+te\s+llamas|ayuda|hola|buenos\s+d[ií]as|buenas\s+tardes|buenas\s+noches)\b/i;
 
 // Verbos de cambio/escritura. Ganan sobre TASK_VERIFY_RE si el mensaje pide modificar.
@@ -88,7 +89,7 @@ function classify(message, opts = {}) {
   if (STOP_RE.test(text)) {
     return { kind: "STOP", label: "Parada", allowTools: false, allowWrite: false, background: false };
   }
-  if (APPROVAL_RE.test(text) || isContinuePhrase(text) || /^INSTRUCCI[OÓ]N AUTORIZADA DEL USUARIO:/i.test(text)) {
+  if (APPROVAL_RE.test(text) || isContinuePhrase(text) || CONTINUE_TASK_RE.test(text) || /^INSTRUCCI[OÓ]N AUTORIZADA DEL USUARIO:/i.test(text)) {
     return { kind: "EXECUTE", label: full ? "Ejecución (Acceso completo)" : "Ejecución autorizada", allowTools: true, allowWrite: true, background };
   }
   if (TASK_CLONE_RE.test(text) && HTTP_URL_RE.test(text)) {

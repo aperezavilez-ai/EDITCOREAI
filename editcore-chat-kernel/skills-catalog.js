@@ -220,7 +220,7 @@ const SKILL_KEYWORD_MAP = {
 
   // Design, Templates & Arquitectura
   "figma": ["figma", "tokens figma", "diseño figma", "figma to code", "figma inspect", "autolayout figma"],
-  "graphify": ["graphify", "arquitectura grafo", "relaciones archivo", "mapa dependencias", "call graph", "codebase map", "grafo codigo"],
+  "graphify": ["graphify", "grafo", "grafo del proyecto", "crear grafo", "arquitectura grafo", "relaciones archivo", "mapa dependencias", "call graph", "codebase map", "grafo codigo", "mapa del proyecto", "estructura del proyecto"],
   "project-templates": ["plantilla", "template", "proyecto nuevo", "starter", "boilerplates", "scaffold", "plantillas editcore"],
   "prompt-master": ["prompt master", "optimizar prompt", "prompt engineering", "meta prompt", "sistema prompt", "mejorar prompt"],
   "security-guidance": ["vulnerabilidad", "injection", "owasp", "xss", "csrf", "auditoria seguridad", "cve", "seguridad web"],

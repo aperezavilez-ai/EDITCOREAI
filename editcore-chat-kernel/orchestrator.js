@@ -1005,6 +1005,34 @@ class ChatOrchestrator {
     } catch (_) { /* no-op */ }
     // [/EDITCORE-ADD]
 
+    // [EDITCORE-SPECIALIST] Subagente especialista por dominio (UI, DB, Auth, DevOps)
+    try {
+      const specialist = dispatchSpecialist(effectiveText || text || "");
+      if (specialist && specialist.name) {
+        this._specialist = specialist;
+        this._turnExtras.push([
+          `=== SUBAGENTE ESPECIALISTA ACTIVO: ${specialist.name} ===`,
+          specialist.systemPrompt,
+          `=== FIN SUBAGENTE ESPECIALISTA ===`,
+        ].join("\n"));
+        onProgress?.({
+          phase: "specialist",
+          name: specialist.name,
+          text: `Subagente especialista asignado: ${specialist.name}`,
+        });
+        try {
+          agentBus.record(projectRoot || ".", threadId, {
+            agent: specialist.name,
+            summary: `Subagente especialista activado: ${specialist.name}`,
+            phase: "specialist",
+          });
+        } catch (_) {}
+      }
+    } catch (e) {
+      console.warn("[EDITCORE-SPECIALIST]", e && e.message ? e.message : e);
+    }
+    // [/EDITCORE-SPECIALIST]
+
     if (decision.kind === "CHAT") {
       this.pendingTask = null;
       if (!apiKey) return { kind: "CHAT", text: "EditCoreAI es un IDE con agente autónomo. Abrí un proyecto y pedime un cambio concreto." };

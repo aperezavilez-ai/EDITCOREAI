@@ -226,6 +226,7 @@ function shortHistoryMessages(historyInput, projectRoot, threadId, query) {
 }
 
 function projectPromptBlock(projectRoot, threadId, query) {
+  if (!projectRoot) return "";
   const project = loadProjectState(projectRoot);
   const thread = loadThread(projectRoot, threadId);
   const relevant = retrieveRelevant(projectRoot, threadId, query, 5);
