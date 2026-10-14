@@ -38,7 +38,7 @@ const NATIVE = [
 const TOOL_TAG_NAMES = [...new Set([...NATIVE, ...Object.keys(ALIAS)])];
 
 /** Marca el inicio de protocolo tool/XML/JSON que no debe verse en el chat. */
-const TOOL_MARKUP_START_RE = /<(?:tool_call|tool_use|tool_invocation|function_calls?|function\s*=|parameter\s*=|invoke\b)\b|<\/?(?:tool_call|tool_use|function|parameter)\b|```(?:json|xml)?\s*\n\s*\{[\s\S]*?"(?:name|tool|function)"\s*:/i;
+const TOOL_MARKUP_START_RE = /<(?:dots_function_call|tool_call|tool_use|tool_invocation|function_calls?|function\s*=|parameter\s*=|invoke\b)\b|<\/?(?:dots_function_call|tool_call|tool_use|function|parameter)\b|```(?:json|xml)?\s*\n\s*\{[\s\S]*?"(?:name|tool|function)"\s*:/i;
 
 function normalizeToolName(name) {
   const raw = String(name || "").trim().toLowerCase().replace(/[-\s]+/g, "_");
@@ -197,6 +197,7 @@ function visibleNarrationText(text) {
 
 function stripTextToolMarkup(text) {
   let out = String(text || "");
+  out = out.replace(/<dots_function_call>[\s\S]*?<\/dots_function_call>/gi, "");
   out = out.replace(/<tool_call>[\s\S]*?<\/tool_call>/gi, "");
   out = out.replace(/<function\s*=\s*[a-zA-Z_][\w-]*\s*>[\s\S]*?<\/function>/gi, "");
   out = out.replace(/<parameter\s*=\s*[a-zA-Z_][\w-]*\s*>[\s\S]*?<\/parameter>/gi, "");
