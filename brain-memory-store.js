@@ -11,7 +11,7 @@ function hash(value) {
 
 function searchExpression(query) {
   const words = [...new Set(String(query || "").toLowerCase().normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[̀-ͯ]/g, "")
     .split(/[^a-z0-9_.-]+/)
     .filter((word) => word.length > 2))]
     .slice(0, 16);
@@ -121,13 +121,17 @@ class BrainMemoryStore {
     }));
   }
 
+  // [FIX] replaceKnowledge ya NO borra los chunks externos ('rag-external/…') ingeridos de
+  // forma incremental con upsertKnowledgeChunk. Antes, cada re-index del proyecto (que ocurre
+  // al cambiar cualquier archivo) eliminaba todo el conocimiento externo persistido,
+  // haciendo que la ingesta web/RAG se perdiera silenciosamente en el siguiente índice.
   replaceKnowledge(projectId, chunks = [], relations = []) {
     const pid = String(projectId || "");
     const now = new Date().toISOString();
     this.db.exec("BEGIN IMMEDIATE");
     try {
-      this.db.prepare("DELETE FROM knowledge_chunks WHERE project_id = ?").run(pid);
-      this.db.prepare("DELETE FROM knowledge_fts WHERE project_id = ?").run(pid);
+      this.db.prepare("DELETE FROM knowledge_chunks WHERE project_id = ? AND path NOT LIKE 'rag-external/%'").run(pid);
+      this.db.prepare("DELETE FROM knowledge_fts WHERE project_id = ? AND path NOT LIKE 'rag-external/%'").run(pid);
       this.db.prepare("DELETE FROM relations WHERE project_id = ?").run(pid);
       const insertChunk = this.db.prepare("INSERT INTO knowledge_chunks (id, project_id, path, line, text, content_hash, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)");
       const insertFts = this.db.prepare("INSERT INTO knowledge_fts (project_id, id, path, text) VALUES (?, ?, ?, ?)");

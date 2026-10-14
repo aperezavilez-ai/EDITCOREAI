@@ -153,9 +153,9 @@ function normalizeSkillPath(filePath, installPath) {
 }
 
 class EditCoreBrainService {
-  constructor({ catalogPath, userDataPath, legacyPaths = [], legacyTextPaths = [], sharedSkillPaths = [] }) {
-    this.catalogPath = catalogPath;
-    this.userDataPath = userDataPath;
+  constructor({ catalogPath, userDataPath, legacyPaths = [], legacyTextPaths = [], sharedSkillPaths = [] } = {}) {
+    this.catalogPath = catalogPath || path.join(__dirname, "catalog.json");
+    this.userDataPath = userDataPath || path.join(process.env.APPDATA || "", "EDITCOREAI");
     this.legacyPaths = legacyPaths;
     this.legacyTextPaths = legacyTextPaths;
     this.sharedSkillPaths = sharedSkillPaths;
@@ -286,6 +286,10 @@ class EditCoreBrainService {
 
   installedSkillsFromManifest(item) {
     if (!Array.isArray(item?.skills)) return [];
+    // [FIX] Guard de installedPath: sin él, path.join(undefined, rel) lanzaba TypeError y
+    // tumba listSkills()/readSkill() si un item del manifiesto (p.ej. heredado o con la
+    // carpeta borrada) declara skills pero ya no tiene installedPath.
+    if (!item.installedPath) return [];
     return item.skills.flatMap(skill => {
       const rel=String(skill.relativePath||"").replace(/\\/g,"/");
       if(!skill.name||!rel||rel.startsWith("..")) return [];
@@ -650,7 +654,9 @@ class EditCoreBrainService {
         if(files.length>=MAX_INDEX_FILES) break;
         if(e.isSymbolicLink()) continue;
         const abs = path.join(dir, e.name);
-        if(e.isDirectory()) { if(SKIP_DIRS.has(e.name)||e.name===".editcore"||e.name===".editcore") continue; await walk(abs); continue; }
+        // [FIX] Se eliminó la condición duplicada (`.editcore || .editcore`) — sin cambio de
+        // comportamiento, solo limpieza del chequeo redundante.
+        if(e.isDirectory()) { if(SKIP_DIRS.has(e.name)||e.name===".editcore") continue; await walk(abs); continue; }
         const ln = e.name.toLowerCase();
         if(SENSITIVE_FILE_NAMES.has(ln)||ln.startsWith(".env.")||/^service-account.*\.json$/.test(ln)) continue;
         if(!TEXT_EXTENSIONS.has(path.extname(e.name).toLowerCase())) continue;
@@ -683,7 +689,12 @@ class EditCoreBrainService {
     const previous = await readJson(metaPath, null);
     const files = await this.walkProject(ws);
     const fingerprints = Object.fromEntries(files.map(f=>[f.relative,f.fingerprint]));
-    const databaseReady = this.memoryStore.stats(projectId(ws)).knowledgeChunks > 0;
+    // [FIX] La comprobación "databaseReady" antes solo contaba knowledgeChunks > 0. Con la
+    // corrección en brain-memory-store (los chunks 'rag-external/' ya no se borran al
+    // reindexar), un proyecto NUNCA indexado pero con snippets externos reportaría la base
+    // como "con datos" y devolvería caché vacía. Ahora se exige además meta previo: la caché
+    // solo aplica si este proyecto ya fue indexado alguna vez.
+    const databaseReady = Boolean(previous) && this.memoryStore.stats(projectId(ws)).knowledgeChunks > 0;
     if(!options.force&&databaseReady&&previous&&JSON.stringify(previous.fileHashes||{})===JSON.stringify(fingerprints)&&fs.existsSync(indexPath)) return { ...previous, changedFiles:0, durationMs:Date.now()-startedAt, mode:"cached" };
     const chunks=[];
     for(const file of files) {

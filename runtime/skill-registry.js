@@ -100,7 +100,7 @@ function normalizeSkillPath(filePath, installPath) {
 
 async function healAndPurgeBrainSkills({
   userDataPath = path.join(process.env.APPDATA || "", "EDITCOREAI"),
-  catalogPath = path.join(__dirname, "..", "brain-seed", "catalog.json"),
+  catalogPath = path.join(__dirname, "..", "catalog.json"),
   sharedSkillPaths = [path.join(__dirname, "..", "brain-seed", "skills")],
   dryRun = false,
 } = {}) {

@@ -2,6 +2,15 @@
 
 const path = require("node:path");
 const { classify, isFullAccess } = require("./editcore-chat-kernel/classify");
+const { ChatSession } = require("./editcore-chat-kernel/session");
+const { PersistentMemory } = require("./editcore-chat-kernel/memory");
+const threadCore = require("./editcore-chat-kernel/thread-core");
+const tools = require("./editcore-chat-kernel/tools");
+const { callChat } = require("./editcore-chat-kernel/provider");
+const { parseTextToolCalls } = require("./editcore-chat-kernel/parse-text-tools");
+const taskQueue = require("./task-queue");
+
+const AUTHORIZED_MAX_STEPS = 120;
 
 const GENERATED_PROJECT_DIRS = new Set([
   ".git", ".next", ".nuxt", ".output", ".svelte-kit", ".turbo", ".vercel", ".wrangler",
@@ -747,4 +756,5 @@ module.exports = {
   validateAgentCompletion,
   isFailedDiagnosticResult,
   verificationStepPassed,
+  AUTHORIZED_MAX_STEPS,
 };

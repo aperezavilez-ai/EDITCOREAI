@@ -251,7 +251,14 @@ contextBridge.exposeInMainWorld("editcoreAgent", {
   runTdd: (input = {}) => ipcRenderer.invoke("project:run-tdd", input),
   testRepair: (input = {}) => ipcRenderer.invoke("project:test-repair", input),
   gitCreateBranch: (input = {}) => ipcRenderer.invoke("agent:git-create-branch", input),
-  onProgress: (callback) => ipcRenderer.on("agent:progress", (_event, value) => callback(value)),
+  // [FIX] Devuelve función de cleanup como todos los demás on*; antes retornaba undefined
+  // y cada re-montaje del componente dejaba un listener huérfano (fuga real de listeners IPC).
+  onProgress: (callback) => {
+    if (typeof callback !== "function") return () => {};
+    const listener = (_event, value) => callback(value);
+    ipcRenderer.on("agent:progress", listener);
+    return () => ipcRenderer.removeListener("agent:progress", listener);
+  },
   onThoughtStream: (callback) => {
     const listener = (_event, value) => callback(value);
     ipcRenderer.on("agent:thought-stream", listener);
@@ -357,8 +364,15 @@ contextBridge.exposeInMainWorld("editcoreConnections", {
   operatorMemory: (input = {}) => ipcRenderer.invoke("connections:operator-memory", input),
 });
 
+// [FIX] onChunk ahora devuelve cleanup individual (coherente con el resto del bridge);
+// offChunk se mantiene para desuscribir todos de una vez (API existente, sin romper).
 contextBridge.exposeInMainWorld("editcoreStream", {
-  onChunk: (cb) => ipcRenderer.on("editcore:chunk", (_e, delta) => cb(delta)),
+  onChunk: (cb) => {
+    if (typeof cb !== "function") return () => {};
+    const listener = (_e, delta) => cb(delta);
+    ipcRenderer.on("editcore:chunk", listener);
+    return () => ipcRenderer.removeListener("editcore:chunk", listener);
+  },
   offChunk: () => ipcRenderer.removeAllListeners("editcore:chunk"),
 });
 
@@ -971,10 +985,3 @@ contextBridge.exposeInMainWorld("editcoreRecovery", {
   rollbackLatest: (params) => ipcRenderer.invoke("recovery:rollback-latest", params),
   listCheckpoints: (params) => ipcRenderer.invoke("recovery:list-checkpoints", params),
 });
-
-
-
-
-
-
-
