@@ -1,3 +1,13 @@
+# RELEASE v4.4.2
+
+## Auditoría integral de main.js, blindaje IPC y resiliencia de catálogo
+
+- **100% Cobertura de canales IPC en preload:** Auditoría exhaustiva de los 505 canales únicos de preload; incorporación de manejadores para `terminal:run`, `composer:*`, `lsp:*`, `plugin:*` y `cloud:*`.
+- **Blindaje de seguridad por origen (`assertTrustedIpcSender`):** Validación estricta del `senderFrame` y origen en canales de ejecución y acceso al sistema (`pty:*`, `db:query`, `security:scan-file`, `terminal:run`).
+- **Cableado de dependencias en `agent-runtime.js` (Oleada 1):** Importación canónica de `ChatSession`, `PersistentMemory`, `threadCore`, `tools`, `callChat`, `parseTextToolCalls`, `taskQueue` y definición de `AUTHORIZED_MAX_STEPS = 120`.
+- **Resiliencia de catálogo:** Corrección de la ruta predeterminada de `catalog.json` y fallbacks defensivos en `EditCoreBrainService` y `skill-registry.js`.
+- **Descarga oficial v4.4.2 en la web:** Actualizada la web oficial y landing con enlaces a la versión v4.4.2.
+
 # RELEASE v4.4.1
 
 ## Integración total de 100 Skills, motor HyperFrames y suite multimedia
