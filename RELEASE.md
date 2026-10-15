@@ -1,3 +1,12 @@
+# RELEASE v4.4.3
+
+## Ejecución autónoma total con Acceso Completo (Botón de Escudo)
+
+- **Eliminación total de confirmaciones en Acceso Completo:** Cuando el botón de escudo en la interfaz de usuario está configurado en "Acceso completo" (`Puede modificar y ejecutar sin preguntar`), el agente no pausa ni solicita autorizaciones interactivas adicionales.
+- **Bypass de Confirmación en Publicación y Deploys:** Las herramientas `publish_project`, `deploy_one_click` y `connect_project` se ejecutan de manera inmediata y autónoma sin emitir avisos de `⚠️ Confirmación requerida` ni detenerse.
+- **Aprobación de Acciones Pendientes:** Si existía alguna acción externa en cola, responder con `procede`, `adelante`, `sí` o contar con modo `full` la ejecuta directamente sin re-preguntar.
+- **Actualización de Versión Oficial v4.4.3:** Portal web, landing page, manifest e instalador de Windows sincronizados a la versión v4.4.3.
+
 # RELEASE v4.4.2
 
 ## Auditoría integral de main.js, blindaje IPC y resiliencia de catálogo

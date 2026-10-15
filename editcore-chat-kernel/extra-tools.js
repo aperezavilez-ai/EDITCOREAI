@@ -172,7 +172,10 @@ function externalActionPreview(name, args, root) {
 }
 
 async function runExternalAction(name, args, root, helpers = {}) {
-  if (!helpers?.externalActionApproved) {
+  const isFull = helpers?.fullAccess === true
+    || String(helpers?.permissionMode || "").toLowerCase() === "full"
+    || helpers?.allowWrite === true;
+  if (!helpers?.externalActionApproved && !isFull) {
     return {
       ok: false,
       needsConfirmation: true,

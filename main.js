@@ -781,6 +781,7 @@ function windowStatus() {
 
 async function approveAgentAction(event, mode, name, input, { projectRoot = "" } = {}) {
   if (mode === "readonly") return false;
+  if (mode === "full") return true;
   const remoteDelete = name === "service_write" && String(input.method || "").toUpperCase() === "DELETE";
   const alwaysConfirm = remoteDelete
     || name === "deploy_one_click"
@@ -788,7 +789,6 @@ async function approveAgentAction(event, mode, name, input, { projectRoot = "" }
     || name === "ssh_deploy"
     || name === "git_push"
     || name === "onboard_project";
-  if (mode === "full" && !alwaysConfirm) return true;
   if (name === "run_command") {
     const command = String(input.command || "");
     if (isShellReadCommand(command) || isShellExploreCommand(command)) return true;
@@ -1869,6 +1869,9 @@ ipcMain.handle("editcore:chat", async (_event, input = {}) => {
       appUserData: app.getPath("userData"),
       brainSearch: (root, query, options) => brain().searchForAgent(root, query, options),
       readConnections,
+      fullAccess,
+      externalActionApproved: fullAccess,
+      permissionMode: permissionHint || permissionMode || "step",
       ...buildKernelProcessHooks(rootPath),
     });
     const out = await handleChatKernel({
@@ -6925,6 +6928,7 @@ ipcMain.handle("agent:run", async (event, input = {}) => {
     };
     activeAgentRuns.set(runKey, runState);
     try {
+      const isFull = permissionHint === "full";
       const helpers = buildKernelHelpers({
         BrowserWindow,
         capturePreview,
@@ -6932,6 +6936,9 @@ ipcMain.handle("agent:run", async (event, input = {}) => {
         appUserData: app.getPath("userData"),
         brainSearch: (root, query, options) => brain().searchForAgent(root, query, options),
         readConnections,
+        fullAccess: isFull,
+        externalActionApproved: isFull,
+        permissionMode: permissionHint || "step",
         ...buildKernelProcessHooks(rootPath),
       });
 
@@ -7465,6 +7472,7 @@ ipcMain.handle("agent:run", async (event, input = {}) => {
           && tool.name !== "git_push"
           && tool.name !== "onboard_project") return true;
         if (!canWrite && tool.write) return false;
+        if (livePermission === "full") return true;
         const forceConfirm = ["deploy_one_click", "publish_project", "ssh_deploy", "git_push", "onboard_project"].includes(tool.name)
           || (tool.name === "switch_project" && (toolInput?.publishFirst === true || toolInput?.autoPublish === true));
         if (forceConfirm || livePermission === "step") {
@@ -7474,9 +7482,8 @@ ipcMain.handle("agent:run", async (event, input = {}) => {
             input: toolInput,
             text: `Esperando tu autorización para ${tool.name}...`,
           });
-          return approveAgentAction(event, livePermission === "full" ? "step" : livePermission, tool.name, toolInput, { projectRoot: rootPath });
+          return approveAgentAction(event, livePermission, tool.name, toolInput, { projectRoot: rootPath });
         }
-        if (livePermission === "full") return true;
         if (orchestratorPlan.cursorParityMode === true && livePermission !== "readonly") return true;
         return false;
       },

@@ -793,7 +793,12 @@ class ChatOrchestrator {
       this.pendingExternal = null;
       const fresh = Date.now() - pending.createdAt < PENDING_EXTERNAL_TTL_MS
         && path.resolve(String(pending.projectRoot || "")) === path.resolve(String(projectRoot || ""));
-      if (fresh && APPROVAL_RE.test(text)) return this.runPendingExternal(pending, { helpers, onProgress });
+      const isApproved = APPROVAL_RE.test(text)
+        || isApprovalText
+        || isContinuePhrase(text)
+        || fullAccess
+        || String(permissionMode || "").toLowerCase() === "full";
+      if (fresh && isApproved) return this.runPendingExternal(pending, { helpers: { ...(helpers || {}), fullAccess: true, externalActionApproved: true }, onProgress });
     }
 
     const visionAsk = hasImages && /\b(?:imagen|foto|captura|screenshot|adjunt|overlay|error\s+visible|analiza\s+(?:esto|la|el))\b/i.test(text);
@@ -1608,18 +1613,35 @@ class ChatOrchestrator {
             const impl = await runImplementer({ projectRoot, path: args.path, content: args.content, oldText: args.oldText, newText: args.newText, onProgress, threadId });
             result = impl.result || impl;
           } else {
-            result = await tools.execute(name, args, projectRoot, allowWrite, helpers || {});
+            const effectiveHelpers = {
+              ...(helpers || {}),
+              fullAccess: accessFull || (helpers && helpers.fullAccess === true),
+              externalActionApproved: accessFull || (helpers && helpers.externalActionApproved === true),
+              permissionMode: accessFull ? "full" : (permissionMode || helpers?.permissionMode || "step"),
+            };
+            result = await tools.execute(name, args, projectRoot, allowWrite, effectiveHelpers);
           }
 
           if (result?.needsConfirmation) {
-            this.pendingExternal = { name, args, projectRoot, createdAt: Date.now() };
-            const stepData = { name, input: args, result, ok: false, pendingConfirmation: true };
-            steps.push(stepData); this.session.addStep(stepData);
-            onProgress?.({ phase: "tool", stage: "done", name, input: args, result, ok: false });
-            this.session.kill();
-            const ask = formatAgentVisibleText(`## ⚠️ Confirmación requerida\n\n${result.preview || name}\n\nResponde **sí** o **procede** para ejecutarlo. Cualquier otro mensaje lo cancela.`);
-            rememberOut(ask); detachLongRunningStreams(steps);
-            return { kind: decision?.kind || "EXECUTE", text: ask, steps, pendingConfirmation: true, threadId, usage: totalUsage };
+            if (accessFull) {
+              // Con Acceso Completo se ejecuta directamente sin pedir confirmación
+              const execHelpers = {
+                ...(helpers || {}),
+                fullAccess: true,
+                externalActionApproved: true,
+                permissionMode: "full",
+              };
+              result = await tools.execute(name, args, projectRoot, true, execHelpers);
+            } else {
+              this.pendingExternal = { name, args, projectRoot, createdAt: Date.now() };
+              const stepData = { name, input: args, result, ok: false, pendingConfirmation: true };
+              steps.push(stepData); this.session.addStep(stepData);
+              onProgress?.({ phase: "tool", stage: "done", name, input: args, result, ok: false });
+              this.session.kill();
+              const ask = formatAgentVisibleText(`## ⚠️ Confirmación requerida\n\n${result.preview || name}\n\nResponde **sí** o **procede** para ejecutarlo. Cualquier otro mensaje lo cancela.`);
+              rememberOut(ask); detachLongRunningStreams(steps);
+              return { kind: decision?.kind || "EXECUTE", text: ask, steps, pendingConfirmation: true, threadId, usage: totalUsage };
+            }
           }
 
           const softRecover = recoverSoftToolFailure(name, args, result, projectRoot);

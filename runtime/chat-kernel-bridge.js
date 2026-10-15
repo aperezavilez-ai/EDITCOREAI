@@ -12,8 +12,9 @@ const {
 
 const KERNEL_TIMEOUT_MS = 30 * 60 * 1000; // 30 min — el adapter tiene su propio deadline interno (analysis-depth.js)
 
-function buildKernelHelpers({ BrowserWindow, capturePreview, previewUrl, appUserData, onProcessChunk, onProcessSevereError, abortSignal, brainSearch, readConnections }) {
+function buildKernelHelpers({ BrowserWindow, capturePreview, previewUrl, appUserData, onProcessChunk, onProcessSevereError, abortSignal, brainSearch, readConnections, ...extra }) {
   return {
+    ...extra,
     previewUrl: previewUrl || "",
     userDataPath: appUserData || "",
     brainSearch: typeof brainSearch === "function" ? brainSearch : null,
@@ -106,7 +107,12 @@ async function runKernelChat({
         fallbackProfiles: Array.isArray(fallbackProfiles) ? fallbackProfiles : [],
         skillsPrompt: String(skillsPrompt || ""),
         onProgress,
-        helpers: helpers || {},
+        helpers: {
+          ...(helpers || {}),
+          fullAccess: isFull,
+          externalActionApproved: isFull || (helpers && helpers.externalActionApproved === true),
+          permissionMode: isFull ? "full" : (permissionMode || "step"),
+        },
         autoHeal: autoHeal || null,
         allowWrite: isFull ? true : (allowWrite !== false && mode !== "readonly"),
         permissionMode: isFull ? "full" : (permissionMode || "step"),
