@@ -311,8 +311,8 @@ const MUTATION_TOOLS = new Set(["write_file", "replace_in_file", "create_project
 
 class EditCoreClaudeAdapter {
   constructor(options = {}) {
-    this.maxIterations = options.maxIterations || 18;
-    this.tokenBudget = options.tokenBudget || 100000;
+    this.maxIterations = options.maxIterations || 120;
+    this.tokenBudget = options.tokenBudget || 400000;
     this.logger = options.logger || console;
 
     // NO crear ActionRegistry aquí - se pasa desde afuera
@@ -748,20 +748,18 @@ class EditCoreClaudeAdapter {
     const deepAnalysis = input.analysisMode === true && isDeepOrHeavier(input.analysisDepth.depth);
     const hardCap = listOnly
       ? 2
-      : (input.planAuthorized === true
-        ? 24
-        : (input.allowWrite && input.analysisMode !== true
-          ? 24
-          : Math.min(36, Number(input.analysisDepth.maxIterations) || (deepAnalysis ? 32 : 16))));
+      : (input.planAuthorized === true || input.allowWrite === true || input.fullAccess === true || input.permissionFull === true
+        ? Math.max(120, Number(input.maxIterations) || 120)
+        : Math.min(80, Number(input.analysisDepth.maxIterations) || (deepAnalysis ? 60 : 30)));
     const effectiveMaxIterations = Math.min(
       hardCap,
       requestedIterations > 0
         ? requestedIterations
         : (listOnly
           ? 2
-          : (input.planAuthorized === true
-            ? 18
-            : Math.max(this.maxIterations, Number(input.analysisDepth.maxIterations) || (deepAnalysis ? 28 : 14)))),
+          : (input.planAuthorized === true || input.allowWrite === true || input.fullAccess === true || input.permissionFull === true
+            ? 120
+            : Math.max(this.maxIterations, Number(input.analysisDepth.maxIterations) || (deepAnalysis ? 60 : 30)))),
     );
     const requirements = agentTaskRequirements(input.prompt, input.allowWrite !== false, {
       planAuthorized: input.planAuthorized === true,

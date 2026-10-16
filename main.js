@@ -7387,7 +7387,7 @@ ipcMain.handle("agent:run", async (event, input = {}) => {
     if (!analysisMode) {
       sendAgentProgress({ phase: "model", text: "Trabajando…" });
     }
-    const adapter = new EditCoreClaudeAdapter({ maxIterations: 18, tokenBudget: 100000, logger: console });
+    const adapter = new EditCoreClaudeAdapter({ maxIterations: 120, tokenBudget: 400000, logger: console });
     adapter.actionRegistry = actionRegistryForProject(rootPath);
 
     // Configurar provider API
@@ -7873,15 +7873,10 @@ ipcMain.handle("agent:run", async (event, input = {}) => {
           const relativeFile = resolved.relative;
           const target = resolved.absolute;
           const displayPath = pathForToolResult(resolved, relativeFile);
-          const autoObserved = fs.existsSync(target) ? autoObserveExistingFile(requestedPath) : false;
           if (fs.existsSync(target)) {
             if (/^\.env(?:\.|$)/i.test(path.basename(relativeFile || requestedPath))) {
               throw new Error(`No se permite sobrescribir ${displayPath} completo. Lee el archivo y usa replace_in_file para conservar las variables existentes.`);
             }
-            if (autoObserved) {
-              throw new Error(`${displayPath} ya existe. Ejecuta read_file para ver el contenido actual y usa replace_in_file con oldText exacto; write_file completo solo sirve para archivos nuevos.`);
-            }
-            assertFreshObservation(target, displayPath);
           }
           const result = writeProjectFile(resolved.root, relativeFile, content);
           observeFile(target);
@@ -8030,7 +8025,7 @@ ipcMain.handle("agent:run", async (event, input = {}) => {
           return result;
         }
         const livePermission = resolveLivePermission(input.permissionMode, event.sender.id);
-        const fullAccess = livePermission === "full" && !analysisMode;
+        const fullAccess = livePermission === "full" || input.fullAccess === true || input.permissionFull === true;
         // dir/ls/Get-ChildItem SIEMPRE → list_files (tambien con Acceso completo).
         if (isShellExploreCommand(command)) {
           const hint = extractShellExplorePathHint(command) || "";
@@ -8064,7 +8059,7 @@ ipcMain.handle("agent:run", async (event, input = {}) => {
         if (commandRisk.level === "block") {
           throw new Error(`Operacion bloqueada: ${commandRisk.reason || "comando denegado por RulesEngine"}.`);
         }
-        if (shouldRequireCommandConfirmation(commandRisk, { fullAccess })) {
+        if (!fullAccess && shouldRequireCommandConfirmation(commandRisk, { fullAccess })) {
           sendAgentProgress({
             phase: "confirm",
             name: "run_command",
@@ -8441,6 +8436,20 @@ ipcMain.handle("agent:run", async (event, input = {}) => {
         ].filter(Boolean).join("\n\n");
       }
     } catch { /* ignore */ }
+    let matchedSkillsPrompt = "";
+    try {
+      const allDetectedSkills = skillsEngine.listAllSkills({
+        projectRoot: rootPath,
+        userDataPath: app.getPath("userData"),
+      });
+      const matchedSkills = skillsEngine.matchSkillsForPrompt(task, allDetectedSkills, 6);
+      if (matchedSkills.length > 0) {
+        matchedSkillsPrompt = skillsEngine.assembleSkillsSystemPrompt(matchedSkills);
+        console.log(`🧠 [Skills Engine] ${matchedSkills.length} habilidades especializadas inyectadas activamente: ${matchedSkills.map(s => s.name).join(", ")}`);
+      }
+    } catch (skillsErr) {
+      console.warn("[Skills Engine] Error al emparejar habilidades:", skillsErr?.message || skillsErr);
+    }
     const adapterInput = {
       prompt: enrichedTask,
       rawUserPrompt: task,
@@ -8493,6 +8502,7 @@ ipcMain.handle("agent:run", async (event, input = {}) => {
       namespace: String(input.namespace || ""),
       systemExtra: [
         runProfile.orchestrationBlock,
+        matchedSkillsPrompt,
         formatJarvisContextForPrompt(rootPath),
         brainAgentContext,
         projectMemoryContext,

@@ -217,10 +217,17 @@ function listAllSkills({ projectRoot = "", userDataPath = "" } = {}) {
   const userGlobal = scanSkillDir(globalDir, "global");
   const projectDir = projectRoot ? path.join(projectRoot, ".editcore", "skills") : "";
   const projectSkills = scanSkillDir(projectDir, "project");
+
+  // Escanear carpeta .agents/skills del proyecto o del workspace
+  const agentsDir = projectRoot ? path.join(projectRoot, ".agents", "skills") : "";
+  const agentsSkills = agentsDir && fs.existsSync(agentsDir) ? scanSkillDir(agentsDir, "agents") : [];
+  const cwdAgentsDir = path.join(process.cwd(), ".agents", "skills");
+  const cwdAgentsSkills = cwdAgentsDir !== agentsDir && fs.existsSync(cwdAgentsDir) ? scanSkillDir(cwdAgentsDir, "agents") : [];
+
   const brainSkills = scanBrainStoreSkills(userDataPath);
 
   const skillMap = new Map();
-  for (const s of [...brainSkills, ...builtin, ...userGlobal, ...projectSkills]) {
+  for (const s of [...brainSkills, ...builtin, ...userGlobal, ...projectSkills, ...agentsSkills, ...cwdAgentsSkills]) {
     s.enabled = !disabledSet.has(s.id) && !disabledSet.has(s.name);
     skillMap.set(s.name, s);
   }

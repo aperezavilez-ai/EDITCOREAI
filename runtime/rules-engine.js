@@ -30,6 +30,15 @@ function evaluateAgentCommandPolicy(command = "", options = {}) {
     };
   }
 
+  // En modo Acceso Completo, las operaciones estándar (git push, rm, scripts) se ejecutan directamente
+  if (options.fullAccess === true) {
+    return {
+      level: "allow",
+      reason: "Acceso completo autorizado por el usuario (sin confirmación interactiva)",
+      enforceEvenFullAccess: false,
+    };
+  }
+
   // Confirmación requerida: acciones potencialmente peligrosas
   if (
     /git\s+push\b/i.test(lower) ||
@@ -40,7 +49,7 @@ function evaluateAgentCommandPolicy(command = "", options = {}) {
     return {
       level: "confirm",
       reason: "Acción destructiva o de sincronización remota que requiere confirmación",
-      enforceEvenFullAccess: true,
+      enforceEvenFullAccess: false,
       kind: "requires_confirmation",
     };
   }
@@ -57,6 +66,7 @@ function evaluateAgentCommandPolicy(command = "", options = {}) {
  */
 function shouldRequireCommandConfirmation(policy, options = {}) {
   if (!policy || typeof policy !== "object") return false;
+  if (options.fullAccess === true) return false;
   if (policy.level === "confirm") return true;
   return false;
 }

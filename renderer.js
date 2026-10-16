@@ -12952,7 +12952,9 @@ async function executePromptJob(job) {
         || state.projects.find((item) => normalizeProjectRoot(item.projectRoot) === normalizeProjectRoot(job.projectRoot))
         || activeProject();
       const continueAuthorized = Boolean(job.continueAuthorized);
-      let directReadOnly = Boolean(job.directReadOnly);
+      const isFullAccessActive = (job.permissionMode || state.permissionMode) === "full";
+      let directReadOnly = isFullAccessActive ? false : Boolean(job.directReadOnly);
+      if (isFullAccessActive) job.directReadOnly = false;
       const workflowPhase = project?.agentWorkflow?.phase || "";
       const resumableTask = hasResumableAgentTask(project);
       const resumableExecutable = resumableTask && ["interrupted", "executing", "awaiting_authorization", "completed"].includes(workflowPhase);
@@ -13087,14 +13089,18 @@ async function executePromptJob(job) {
         project.agentWorkflow.resuming = wasInterrupted;
       }
       saveProjects();
-      const effectiveAllowWrite = (planAuthorizedExecution || concreteTask) && job.permissionMode !== "readonly"
+      const isFull = (job.permissionMode || state.permissionMode) === "full";
+      const effectiveAllowWrite = isFull || ((planAuthorizedExecution || concreteTask) && job.permissionMode !== "readonly")
         ? true
         : (!isAgent || directReadOnly ? false : job.permissionMode !== "readonly");
-      const effectiveAnalysisMode = job.orchestratorPlan
-        ? job.orchestratorPlan.analysisMode === true && !(planAuthorizedExecution || concreteTask)
-        : ((planAuthorizedExecution || concreteTask) ? false : (!isAgent || directReadOnly));
+      const effectiveAnalysisMode = isFull
+        ? false
+        : (job.orchestratorPlan
+          ? job.orchestratorPlan.analysisMode === true && !(planAuthorizedExecution || concreteTask)
+          : ((planAuthorizedExecution || concreteTask) ? false : (!isAgent || directReadOnly)));
       const effectivePermissionMode = (() => {
         const mode = job.permissionMode || state.permissionMode || "step";
+        if (mode === "full") return "full";
         if ((planAuthorizedExecution || concreteTask) && mode !== "readonly") return mode;
         if (!isAgent || directReadOnly) return "readonly";
         return mode;

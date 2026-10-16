@@ -863,6 +863,116 @@ function registerAgentCapabilityTools(dispatcher, {
     },
   });
 
+  // Habilidades (Skills) del Sistema y del Cerebro
+  const skillsEngine = require("./skills-engine");
+
+  dispatcher.register({
+    name: "list_skills",
+    description: "Lista todas las habilidades (skills) especializadas disponibles en el proyecto (.agents/skills, .editcore/skills), sistema y Cerebro.",
+    execute: async () => {
+      const all = skillsEngine.listAllSkills({ projectRoot: rootPath, userDataPath: appUserData });
+      return all.map((s) => ({
+        name: s.name,
+        slug: s.slug,
+        description: s.description,
+        category: s.category,
+        scope: s.scope,
+        enabled: s.enabled !== false,
+      }));
+    },
+  });
+
+  dispatcher.register({
+    name: "brain_skill",
+    description: "Lee y devuelve las directivas e instrucciones completas de una habilidad (skill) por nombre o slug para aplicarlas en la tarea.",
+    schema: {
+      type: "object",
+      properties: {
+        name: { type: "string", description: "Nombre o slug de la habilidad/skill" },
+      },
+      required: ["name"],
+    },
+    execute: async (toolInput = {}) => {
+      const skillName = String(toolInput.name || "").trim();
+      if (!skillName) throw new Error("brain_skill requiere el nombre de la habilidad.");
+      const all = skillsEngine.listAllSkills({ projectRoot: rootPath, userDataPath: appUserData });
+      const found = all.find(
+        (s) => s.name.toLowerCase() === skillName.toLowerCase() || s.slug === skillName.toLowerCase(),
+      );
+      if (found) {
+        const body = skillsEngine.loadSkillBody(found);
+        return { name: found.name, description: found.description, content: body, scope: found.scope, filePath: found.filePath };
+      }
+      if (brain && typeof brain.readSkillForAgent === "function") {
+        const content = await brain.readSkillForAgent(rootPath, skillName).catch(() => "");
+        if (content) return { name: skillName, content, scope: "brain" };
+      }
+      return { error: `Skill '${skillName}' no encontrada. Usa list_skills para ver las habilidades disponibles.` };
+    },
+  });
+
+  dispatcher.register({
+    name: "brain_search",
+    description: "Busca habilidades, documentos y conocimientos en el Cerebro de EditCore y la biblioteca de skills.",
+    execute: async (toolInput = {}) => {
+      const query = String(toolInput.query || "").trim();
+      if (!query) throw new Error("brain_search requiere query.");
+      if (brain && typeof brain.searchSkills === "function") {
+        const res = await brain.searchSkills(rootPath, query).catch(() => []);
+        if (Array.isArray(res) && res.length) return res;
+      }
+      const all = skillsEngine.listAllSkills({ projectRoot: rootPath, userDataPath: appUserData });
+      return skillsEngine.matchSkillsForPrompt(query, all, 8);
+    },
+  });
+
+  dispatcher.register({
+    name: "web_search",
+    description: "Busca en la web información técnica, documentación de librerías, paquetes o soluciones actualizadas.",
+    execute: async (toolInput = {}) => {
+      const query = String(toolInput.query || "").trim();
+      if (!query) throw new Error("web_search requiere query.");
+      try {
+        const { analyzePage } = require("./web-fetcher");
+        const encoded = encodeURIComponent(query);
+        const url = `https://html.duckduckgo.com/html/?q=${encoded}`;
+        return await analyzePage(url, { maxSize: 2 * 1024 * 1024, timeout: 20000 });
+      } catch (err) {
+        return { ok: false, error: String(err?.message || err) };
+      }
+    },
+  });
+
+  dispatcher.register({
+    name: "git_status",
+    description: "Muestra el estado actual de los archivos y cambios en el repositorio Git del proyecto.",
+    execute: async () => {
+      if (!runProjectCommand) return { ok: false, error: "runProjectCommand no disponible." };
+      return runProjectCommand(rootPath, "git status", "analysis");
+    },
+  });
+
+  dispatcher.register({
+    name: "git_log",
+    description: "Muestra los últimos commits del repositorio Git.",
+    execute: async (toolInput = {}) => {
+      if (!runProjectCommand) return { ok: false, error: "runProjectCommand no disponible." };
+      const limit = Number(toolInput.limit) || 10;
+      return runProjectCommand(rootPath, `git log -n ${limit} --oneline`, "analysis");
+    },
+  });
+
+  dispatcher.register({
+    name: "git_diff",
+    description: "Muestra las diferencias de git pendientes sin commitear (o contra HEAD / branch).",
+    execute: async (toolInput = {}) => {
+      if (!runProjectCommand) return { ok: false, error: "runProjectCommand no disponible." };
+      const target = String(toolInput.target || "").trim();
+      const cmd = target ? `git diff ${target}` : "git diff";
+      return runProjectCommand(rootPath, cmd, "analysis");
+    },
+  });
+
   return dispatcher;
 }
 

@@ -159,7 +159,7 @@ class AgentRuntime {
 
     const steps = [];
     const usageRows = [];
-    const maxSteps = Math.max(1, Number(input.maxSteps) || 80);
+    const maxSteps = Math.max(1, Number(input.maxSteps) || 120);
     let callMode = "native";
 
     const recordUsage = (usage, messagesToEstimate, outputText) => {
