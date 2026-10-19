@@ -6,14 +6,30 @@
 
 const fs = require("fs");
 const path = require("path");
-const PDFDocument = require("pdfkit");
-const { Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType } = require("docx");
-const ExcelJS = require("exceljs");
+
+let _PDFDocument = null;
+function getPDFDocument() {
+  if (!_PDFDocument) _PDFDocument = require("pdfkit");
+  return _PDFDocument;
+}
+
+let _docx = null;
+function getDocx() {
+  if (!_docx) _docx = require("docx");
+  return _docx;
+}
+
+let _ExcelJS = null;
+function getExcelJS() {
+  if (!_ExcelJS) _ExcelJS = require("exceljs");
+  return _ExcelJS;
+}
 
 /**
  * Crea un documento PDF
  */
 async function createPdf(content, outputPath, options = {}) {
+  const PDFDocument = getPDFDocument();
   return new Promise((resolve, reject) => {
     try {
       const doc = new PDFDocument({
@@ -91,6 +107,7 @@ async function createPdf(content, outputPath, options = {}) {
  */
 async function createWord(content, outputPath, options = {}) {
   try {
+    const { Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType } = getDocx();
     const children = [];
 
     // Título
@@ -198,6 +215,7 @@ async function createWord(content, outputPath, options = {}) {
  * Crea un archivo Excel (.xlsx)
  */
 async function createExcel(data, outputPath, options = {}) {
+  const ExcelJS = getExcelJS();
   const workbook = new ExcelJS.Workbook();
   const addSheet = (sheetName, sheetData) => {
     if (!Array.isArray(sheetData)) throw new Error(`Formato de hoja inválido para ${sheetName}`);

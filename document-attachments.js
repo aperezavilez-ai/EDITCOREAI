@@ -1,9 +1,21 @@
 "use strict";
 
 const path = require("node:path");
-const ExcelJS = require("exceljs");
-const mammoth = require("mammoth");
-const pdfParse = require("pdf-parse");
+let _ExcelJS = null;
+function getExcelJS() {
+  if (!_ExcelJS) _ExcelJS = require("exceljs");
+  return _ExcelJS;
+}
+let _mammoth = null;
+function getMammoth() {
+  if (!_mammoth) _mammoth = require("mammoth");
+  return _mammoth;
+}
+let _pdfParse = null;
+function getPdfParse() {
+  if (!_pdfParse) _pdfParse = require("pdf-parse");
+  return _pdfParse;
+}
 
 const MAX_DOCUMENT_BYTES = 8 * 1024 * 1024;
 const MAX_DOCUMENT_TEXT = 60_000;
@@ -37,6 +49,7 @@ async function extractDocumentAttachment(document) {
       if (extension === ".csv" || /csv/i.test(mimeType)) {
         text = buffer.toString("utf8");
       } else {
+        const ExcelJS = getExcelJS();
         const workbook = new ExcelJS.Workbook();
         await workbook.xlsx.load(buffer);
         text = workbook.worksheets.map((sheet) => {
@@ -56,11 +69,11 @@ async function extractDocumentAttachment(document) {
       }
       format = "excel";
     } else if (extension === ".docx" || /wordprocessingml\.document/i.test(mimeType)) {
-      text = (await mammoth.extractRawText({ buffer })).value;
+      text = (await getMammoth().extractRawText({ buffer })).value;
       format = "word-docx";
     } else if (extension === ".pdf" || mimeType === "application/pdf") {
       // pdf.js lee el ArrayBuffer subyacente desde 0: un Buffer pequeño del pool de Node (byteOffset > 0) da "bad XRef entry".
-      text = (await pdfParse(new Uint8Array(buffer))).text;
+      text = (await getPdfParse()(new Uint8Array(buffer))).text;
       format = "pdf";
     } else if ([".txt", ".md", ".markdown", ".json", ".js", ".ts", ".tsx", ".jsx", ".css", ".html", ".xml", ".csv"].includes(extension)
       || /^text\//i.test(mimeType) || /json|javascript|typescript|css|html|xml/i.test(mimeType)) {

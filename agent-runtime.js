@@ -2,13 +2,37 @@
 
 const path = require("node:path");
 const { classify, isFullAccess } = require("./editcore-chat-kernel/classify");
-const { ChatSession } = require("./editcore-chat-kernel/session");
-const { PersistentMemory } = require("./editcore-chat-kernel/memory");
-const threadCore = require("./editcore-chat-kernel/thread-core");
-const tools = require("./editcore-chat-kernel/tools");
-const { callChat } = require("./editcore-chat-kernel/provider");
-const { parseTextToolCalls } = require("./editcore-chat-kernel/parse-text-tools");
-const taskQueue = require("./task-queue");
+
+let _ChatSession = null;
+function getChatSession() {
+  if (!_ChatSession) _ChatSession = require("./editcore-chat-kernel/session").ChatSession;
+  return _ChatSession;
+}
+let _PersistentMemory = null;
+function getPersistentMemory() {
+  if (!_PersistentMemory) _PersistentMemory = require("./editcore-chat-kernel/memory").PersistentMemory;
+  return _PersistentMemory;
+}
+let _threadCore = null;
+function getThreadCore() {
+  if (!_threadCore) _threadCore = require("./editcore-chat-kernel/thread-core");
+  return _threadCore;
+}
+let _tools = null;
+function getTools() {
+  if (!_tools) _tools = require("./editcore-chat-kernel/tools");
+  return _tools;
+}
+let _callChat = null;
+function getCallChat() {
+  if (!_callChat) _callChat = require("./editcore-chat-kernel/provider").callChat;
+  return _callChat;
+}
+let _parseTextToolCalls = null;
+function getParseTextToolCalls() {
+  if (!_parseTextToolCalls) _parseTextToolCalls = require("./editcore-chat-kernel/parse-text-tools").parseTextToolCalls;
+  return _parseTextToolCalls;
+}
 
 const AUTHORIZED_MAX_STEPS = 120;
 
@@ -548,6 +572,7 @@ function validateAgentCompletion(task, steps = [], canWrite = true, options = {}
 
 class ChatOrchestrator {
   constructor() {
+    const ChatSession = getChatSession();
     this.session = new ChatSession();
     this.abort = null;
     this.turnAbort = null;
@@ -569,7 +594,7 @@ class ChatOrchestrator {
     this.pendingTask = null;
     this.steering = [];
     this.running = false;
-    try { taskQueue.cancelAll(); } catch (_) {}
+    try { require("./task-queue").cancelAll(); } catch (_) {}
     return { kind: "STOP", text: "Frené lo que estaba haciendo. ¿Qué querés que haga ahora?" };
   }
 
@@ -612,9 +637,11 @@ class ChatOrchestrator {
       return { kind: "CHAT", text: "Abrí un proyecto primero y después te ayudo con eso." };
     }
 
+    const PersistentMemory = getPersistentMemory();
     const memory = projectRoot ? new PersistentMemory(projectRoot) : null;
     if (memory) memory.load();
 
+    const threadCore = getThreadCore();
     const threadId = threadCore.resolveThreadId({ threadId: inputThreadId, chatId });
     this._threadId = threadId;
 
@@ -655,6 +682,9 @@ class ChatOrchestrator {
     this.running = true;
 
     try {
+      const tools = getTools();
+      const callChat = getCallChat();
+      const parseTextToolCalls = getParseTextToolCalls();
       const availableTools = allowWrite
         ? tools.DEFINITIONS
         : tools.DEFINITIONS.filter((t) => !["write_file", "replace_in_file", "run_command"].includes(t.function.name));

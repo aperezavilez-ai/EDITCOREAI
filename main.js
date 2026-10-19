@@ -87,7 +87,8 @@ const { execFile, spawn, spawnSync } = require("node:child_process");
 const { promisify } = require("node:util");
 const { EditCoreBrainService } = require("./brain-service");
 const { InspectorCoreService } = require("./inspector-core-service");
-const { autoHealNextProject, localVisionProbe } = require("./runtime/inspector-local-heal");
+const autoHealNextProject = (...args) => require("./runtime/inspector-local-heal").autoHealNextProject(...args);
+const localVisionProbe = (...args) => require("./runtime/inspector-local-heal").localVisionProbe(...args);
 const { containsAgentProtocol, parseAgentPayload, selectAgentResponse } = require("./agent-parser");
 const {
   GENERATED_PROJECT_DIRS,
@@ -172,7 +173,7 @@ const {
 } = require("./runtime/vision-intake");
 const { createExternalKnowledgeHook, wrapDispatcherWithKnowledgePersist } = require("./runtime/external-knowledge-persist");
 const { BRAIN_TOOL_DEFINITIONS, registerBrainTools } = require("./runtime/brain-tools");
-const { registerAgentCapabilityTools } = require("./runtime/register-agent-capability-tools");
+const registerAgentCapabilityTools = (...args) => require("./runtime/register-agent-capability-tools").registerAgentCapabilityTools(...args);
 const { queuePostWriteDiagnostics } = require("./runtime/post-write-diagnostics");
 const { ReversibleContextStore, loadProjectContext } = require("./runtime/context-store");
 const { rememberProjectEvent, loadProjectMemory, formatMemoryForPrompt } = require("./runtime/project-memory");
@@ -9830,7 +9831,7 @@ app.whenReady().then(async () => {
   const importReportPath = connectionImportReportPath();
   const reportPath = verificationReportPath();
   const agentAcceptancePath = agentAcceptanceReportPath();
-  const needsHeadlessPrep = Boolean(importReportPath || reportPath || agentAcceptancePath || requestedUserData);
+  const needsHeadlessPrep = Boolean(importReportPath || reportPath || agentAcceptancePath);
   if (needsHeadlessPrep) {
     if (!requestedUserData) {
       try {

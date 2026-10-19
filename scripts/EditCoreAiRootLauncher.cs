@@ -39,12 +39,23 @@ internal static class Program
         }
         if (refreshCache == null) return;
 
-        // La copia rápida se actualiza en silencio con la app ya abierta; sirve desde el siguiente arranque.
-        bool cacheOwner;
-        using (var cacheMutex = new Mutex(true, "Local\\EditCoreAI.RuntimeCache", out cacheOwner))
+        // La copia rápida se actualiza en silencio en segundo plano sin bloquear el arranque ni la salida del launcher.
+        new Thread(() =>
         {
-            if (cacheOwner) refreshCache();
-        }
+            try
+            {
+                bool cacheOwner;
+                using (var cacheMutex = new Mutex(true, "Local\\EditCoreAI.RuntimeCache", out cacheOwner))
+                {
+                    if (cacheOwner) refreshCache();
+                }
+            }
+            catch { /* ignore */ }
+        })
+        {
+            IsBackground = true,
+            Priority = ThreadPriority.Lowest
+        }.Start();
     }
 
     private static Action Launch()
@@ -111,9 +122,11 @@ internal static class Program
             string cached = Path.Combine(cacheDir, Path.GetFileName(runtime));
             string stampPath = Path.Combine(cacheDir, "runtime.stamp");
             var info = new FileInfo(runtime);
-            string stamp = info.Length + "|" + info.LastWriteTimeUtc.Ticks + "|" + ReadText(Path.Combine(dist, "version"));
+            string version = ReadText(Path.Combine(dist, "version"));
+            string stamp = info.Length + "|" + version;
+            string existingStamp = ReadText(stampPath);
 
-            if (File.Exists(cached) && ReadText(stampPath) == stamp) return cached;
+            if (File.Exists(cached) && (existingStamp == stamp || (existingStamp.StartsWith(info.Length + "|") && existingStamp.EndsWith("|" + version)))) return cached;
 
             refreshCache = () =>
             {
