@@ -736,30 +736,31 @@ class EditCoreClaudeAdapter {
     const depthProfile = input.analysisDepth || depthProfileRaw;
     const minimumTaskBudget = listOnly
       ? 12_000
-      : (input.planAuthorized === true
-        ? 180_000
+      : (input.planAuthorized === true || input.fullAccess === true || input.permissionFull === true
+        ? 500_000
         : (input.allowWrite && input.analysisMode !== true
-          ? 180_000
+          ? 400_000
           : (input.analysisMode === true
-            ? Math.max(120_000, Number(depthProfile.tokenBudget) || 220_000)
-            : 80_000)));
+            ? Math.max(200_000, Number(depthProfile.tokenBudget) || 350_000)
+            : 150_000)));
     const effectiveBudget = Math.max(this.tokenBudget, requestedBudget, minimumTaskBudget);
     const requestedIterations = Number(input.maxIterations) || 0;
     const deepAnalysis = input.analysisMode === true && isDeepOrHeavier(input.analysisDepth.depth);
+    const isUnrestricted = input.planAuthorized === true || input.allowWrite === true || input.fullAccess === true || input.permissionFull === true;
     const hardCap = listOnly
       ? 2
-      : (input.planAuthorized === true || input.allowWrite === true || input.fullAccess === true || input.permissionFull === true
-        ? Math.max(120, Number(input.maxIterations) || 120)
-        : Math.min(80, Number(input.analysisDepth.maxIterations) || (deepAnalysis ? 60 : 30)));
+      : (isUnrestricted
+        ? Math.max(1000, Number(input.maxIterations) || 1000)
+        : Math.min(250, Number(input.analysisDepth.maxIterations) || (deepAnalysis ? 150 : 80)));
     const effectiveMaxIterations = Math.min(
       hardCap,
       requestedIterations > 0
         ? requestedIterations
         : (listOnly
           ? 2
-          : (input.planAuthorized === true || input.allowWrite === true || input.fullAccess === true || input.permissionFull === true
-            ? 120
-            : Math.max(this.maxIterations, Number(input.analysisDepth.maxIterations) || (deepAnalysis ? 60 : 30)))),
+          : (isUnrestricted
+            ? 1000
+            : Math.max(this.maxIterations, Number(input.analysisDepth.maxIterations) || (deepAnalysis ? 150 : 80)))),
     );
     const requirements = agentTaskRequirements(input.prompt, input.allowWrite !== false, {
       planAuthorized: input.planAuthorized === true,

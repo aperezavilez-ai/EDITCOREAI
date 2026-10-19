@@ -10,7 +10,7 @@ const {
   classify,
 } = require("../editcore-chat-kernel/index");
 
-const KERNEL_TIMEOUT_MS = 30 * 60 * 1000; // 30 min — el adapter tiene su propio deadline interno (analysis-depth.js)
+const KERNEL_TIMEOUT_MS = 60 * 60 * 1000; // 60 min — el agente nunca se queda sin tiempo en tareas complejas
 
 function buildKernelHelpers({ BrowserWindow, capturePreview, previewUrl, appUserData, onProcessChunk, onProcessSevereError, abortSignal, brainSearch, readConnections, ...extra }) {
   return {
@@ -62,6 +62,8 @@ async function runKernelChat({
   planAuthorizedExecution,
   fallbackProfiles,
   skillsPrompt,
+  maxSteps,
+  totalTimeoutMs,
 }) {
   const mode = String(permissionMode || "").toLowerCase();
 
@@ -119,10 +121,12 @@ async function runKernelChat({
         permissionFull: isFull,
         fullAccess: isFull,
         planAuthorizedExecution: planAuthorizedExecution === true,
+        maxSteps: Number(maxSteps) || (isFull ? 1000 : 200),
+        totalTimeoutMs: Number(totalTimeoutMs) || (isFull ? 3_600_000 : 1_800_000),
       }),
       new Promise((_, rej) =>
         setTimeout(
-          () => rej(Object.assign(new Error("KERNEL_TIMEOUT: el kernel superó 4 minutos"), { code: "KERNEL_TIMEOUT" })),
+          () => rej(Object.assign(new Error("KERNEL_TIMEOUT: el kernel superó el tiempo límite"), { code: "KERNEL_TIMEOUT" })),
           KERNEL_TIMEOUT_MS,
         )
       ),

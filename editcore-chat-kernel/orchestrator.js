@@ -113,16 +113,16 @@ try {
   projectRoadmapApi = null;
 }
 
-const DEFAULT_MAX_STEPS = 80;
-const AUTHORIZED_MAX_STEPS = 120;
-const DEFAULT_TOTAL_TIMEOUT_MS = 900_000; // 15 min — análisis profundo cabe holgado
+const DEFAULT_MAX_STEPS = 200;
+const AUTHORIZED_MAX_STEPS = 1000;
+const DEFAULT_TOTAL_TIMEOUT_MS = 3_600_000; // 60 min — el agente nunca se queda sin tiempo en tareas complejas
 const HEARTBEAT_INTERVAL_MS = 5_000;
 const ROADMAP_MIN_LENGTH = 500;
 const MAX_PROMISE_RETRIES = 3;
 const MAX_NO_WRITE_NUDGES = 2;
-// Análisis forense/quirúrgico necesita más lecturas: 8 era demasiado bajo → pausa prematura
-const ANALYSIS_MAX_STEPS = 80;
-const ANALYSIS_TIMEOUT_MS = 300_000; // 5 min por turno en análisis
+// Análisis forense/quirúrgico exhaustivo
+const ANALYSIS_MAX_STEPS = 200;
+const ANALYSIS_TIMEOUT_MS = 1_800_000; // 30 min por turno en análisis
 
 const LEADERSHIP_PROMPT = [
   "Protocolo obligatorio de cada orden: 1) Analiza la solicitud en 1-3 lineas. 2) Di que vas a hacer. 3) Ejecuta las tools EN ESTE TURNO. 4) Cierra con REPORTE: que hiciste, archivos/comandos reales, resultado, siguiente paso.",

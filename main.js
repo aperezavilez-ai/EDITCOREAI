@@ -6975,7 +6975,7 @@ ipcMain.handle("agent:run", async (event, input = {}) => {
         permissionMode: permissionHint || "step",
         fullAccess: permissionHint === "full",
         planAuthorizedExecution: permissionHint === "full",
-        maxSteps: Math.max(Number(input.maxSteps) || 0, permissionHint === "full" ? 120 : 80),
+        maxSteps: Math.max(Number(input.maxSteps) || 0, permissionHint === "full" ? 1000 : 200),
         onProgress: (p) => {
           try {
             publishAgentProgress(event.sender, {

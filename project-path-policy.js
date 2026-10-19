@@ -387,16 +387,26 @@ function resolveAccessibleTarget(primaryRoot, maybePath = "", options = {}) {
   } else if (path.isAbsolute(raw)) {
     absolute = normalizeDriveLetter(raw);
     if (options.fullAccess === true || options.grantAbsoluteOnFull === true) {
-      const granted = resolveAuthorizedRoot(absolute);
-      if (granted && !roots.some((item) => item.toLowerCase() === granted.toLowerCase())) {
-        roots.push(granted);
-      } else if (isUnderAllowedUserSpace(absolute)) {
-        const parent = fs.existsSync(absolute) && fs.statSync(absolute).isDirectory()
-          ? absolute
-          : path.dirname(absolute);
-        if (!roots.some((item) => item.toLowerCase() === normalizeDriveLetter(parent).toLowerCase())) {
-          roots.push(normalizeDriveLetter(parent));
+      if (!isDeniedSystemPath(absolute)) {
+        let parent = absolute;
+        try {
+          if (!fs.existsSync(absolute) || !fs.statSync(absolute).isDirectory()) {
+            parent = path.dirname(absolute);
+          }
+        } catch (_) {
+          parent = path.dirname(absolute);
         }
+        const normParent = normalizeDriveLetter(parent);
+        if (!roots.some((item) => item.toLowerCase() === normParent.toLowerCase())) {
+          roots.push(normParent);
+        }
+        return {
+          root: normParent,
+          relative: path.relative(normParent, absolute).replace(/\\/g, "/"),
+          absolute,
+          primary,
+          outsidePrimary: normParent.toLowerCase() !== primary.toLowerCase(),
+        };
       }
     }
     const hit = tryResolveAbsolute(absolute);
@@ -425,6 +435,19 @@ function resolveAccessibleTarget(primaryRoot, maybePath = "", options = {}) {
     for (const candidate of ordered) {
       const hit = tryResolveAbsolute(candidate);
       if (hit) return hit;
+    }
+  }
+
+  if (options.fullAccess === true) {
+    const candidate = normalizeDriveLetter(path.resolve(primary, raw || "."));
+    if (!isDeniedSystemPath(candidate)) {
+      return {
+        root: primary,
+        relative: path.relative(primary, candidate).replace(/\\/g, "/"),
+        absolute: candidate,
+        primary,
+        outsidePrimary: false,
+      };
     }
   }
 

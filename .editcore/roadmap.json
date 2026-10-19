@@ -122,6 +122,12 @@
       "action": "modified",
       "details": "release(v4.4.4): ampliacion de pasos de agentes a 120+, integracion automatica de skills (.agents/skills), registro de tools en dispatcher, bypass de confirmaciones en Acceso Completo, y letras de boton Agente/Chat en blanco de alto contraste",
       "by": "editcore"
+    },
+    {
+      "date": "2026-10-19T10:55:00.000Z",
+      "action": "modified",
+      "details": "feat(agent,kernel,runtime): ejecucion ilimitada (1000 pasos / 60m timeout), acceso universal sin restricciones en Acceso Completo, auto-inspeccion de codigo propio, integracion de navegador interno y salida 100% en espanol",
+      "by": "editcore"
     }
   ],
   "issues": [],

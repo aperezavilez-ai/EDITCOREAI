@@ -307,21 +307,22 @@ const PHASES = {
 const READ_ONLY_TOOLS = [
   "list_files", "read_file", "search_files", "project_discovery",
   "codebase_map", "symbol_search", "dependency_search",
-  "brain_search", "brain_skill", "brain_tools",
+  "brain_search", "brain_skill", "brain_tools", "search_brain",
   "search_codebase_semantic", "list_snapshots", "analyze_circular_dependencies",
   // Nuevas tools de solo lectura
   "web_search", "git_status", "git_log", "git_diff", "list_skills",
+  "check_connections", "read_roadmap", "probe_endpoint",
 ];
 const WRITE_TOOLS = [
   "write_file", "replace_in_file", "delete_file", "create_project",
   "clone_web_page", "web_scrape", "images_to_code",
   "run_command", "create_pdf", "create_word", "create_excel", "create_csv",
   "inspect_preview", "generate_image", "generate_video", "add_erp_module",
-  "deploy_one_click", "publish_project", "fullstack_deploy",
+  "deploy_one_click", "publish_project", "fullstack_deploy", "connect_project",
   "audit_env", "supabase_migrate", "scaffold_project", "capture_preview",
   "capture_preview_screenshot", "run_e2e_pipeline", "rollback_last_change",
   // Nuevas tools de escritura
-  "install_skill", "clone_repo", "ingest_to_brain",
+  "install_skill", "clone_repo", "ingest_to_brain", "update_roadmap",
 ];
 const ALL_ALLOWED_TOOLS = [...new Set([...READ_ONLY_TOOLS, ...WRITE_TOOLS])];
 

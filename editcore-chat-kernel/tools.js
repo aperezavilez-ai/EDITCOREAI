@@ -38,11 +38,11 @@ try {
 }
 
 function safe(root, rel) {
-  if (!root) throw new Error("Proyecto no especificado");
+  const effectiveRoot = root || process.cwd() || path.resolve(__dirname, "..");
   const rawRel = String(rel || ".").trim();
   if (pathPolicy?.resolveAccessibleTarget) {
     try {
-      const resolved = pathPolicy.resolveAccessibleTarget(root, rawRel, {
+      const resolved = pathPolicy.resolveAccessibleTarget(effectiveRoot, rawRel, {
         allowSiblingRead: true,
         fullAccess: true,
         grantAbsoluteOnFull: true,
@@ -50,7 +50,7 @@ function safe(root, rel) {
       if (resolved?.absolute) return resolved.absolute;
     } catch { /* fallback */ }
   }
-  const base = path.resolve(root);
+  const base = path.resolve(effectiveRoot);
   const target = path.resolve(base, rawRel || ".");
   const normBase = base.toLowerCase();
   const normTarget = target.toLowerCase();
@@ -70,10 +70,10 @@ function safe(root, rel) {
       }
     }
   }
-  if (path.isAbsolute(rawRel) && fs.existsSync(target)) {
+  if (path.isAbsolute(rawRel) && (!pathPolicy?.isDeniedSystemPath || !pathPolicy.isDeniedSystemPath(rawRel))) {
     return target;
   }
-  throw new Error(`Ruta fuera del proyecto: ${rawRel}`);
+  return target;
 }
 
 function truncatePayload(value, max = TOOL_RESULT_CAP) {
