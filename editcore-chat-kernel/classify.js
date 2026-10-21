@@ -49,9 +49,7 @@ const BACKGROUND_RE = /\b(?:segundo\s+plano|en\s+background|background|sin\s+esp
 const TASK_VERIFY_RE = /^\s*(?:verifica(?:r)?|verificá|typecheck|compila(?:r)?|compilá|corre?\s+los?\s+tests?|corre?\s+tsc|pasa?\s+el\s+linter|hac[eé]\s+build|build)\b/i;
 
 function isFullAccess(opts = {}) {
-  // NO cambia el permiso del IDE: solo lee lo que la UI ya otorgó.
-  if (opts.permissionFull === true || opts.fullAccess === true || opts.allowWrite === true || opts.write === true) return true;
-  if (opts.isFullAccess === true || opts.accesoCompleto === true) return true;
+  // Respeta con precisión el escudo de permisos seleccionado por el usuario en la UI
   if (opts.readOnly === true || opts.readonly === true || opts.soloLectura === true) return false;
 
   const raw = [
@@ -60,19 +58,25 @@ function isFullAccess(opts = {}) {
   ].filter((v) => v != null && v !== "").map((v) => String(v).toLowerCase().trim());
 
   const joined = raw.join(" | ");
-  // Acceso completo / Agente con escritura (variantes UI EditCore)
-  if (/(?:acceso[\s_-]*completo|full[\s_-]*access|\bfull\b|\bwrite\b|escritura|\bagente\b|\bagent\b|\bexecute\b|ejecuci[oó]n)/i.test(joined)) {
-    if (/(?:solo[\s_-]*lectura|read[\s_-]*only|\breadonly\b|\bchat\b)/i.test(joined) && !/(?:acceso[\s_-]*completo|full[\s_-]*access|\bwrite\b)/i.test(joined)) {
-      return false;
-    }
+  // Si el usuario tiene seleccionado "Preguntar antes de ejecutar" o "Paso a paso", NO es acceso completo
+  if (/(?:preguntar|ask|confirm|confirmar|\bstep\b|paso[\s_-]*a[\s_-]*paso)/i.test(joined)) {
+    return false;
+  }
+
+  // Acceso completo explícito
+  if (opts.permissionFull === true || opts.fullAccess === true || opts.isFullAccess === true || opts.accesoCompleto === true) return true;
+
+  // Acceso completo / Agente autónomo (variantes UI EditCore)
+  if (/(?:acceso[\s_-]*completo|full[\s_-]*access|\bfull\b)/i.test(joined)) {
     return true;
   }
-  if (/(?:solo[\s_-]*lectura|read[\s_-]*only|\breadonly\b)/i.test(joined)) return false;
+  if (/(?:solo[\s_-]*lectura|read[\s_-]*only|\breadonly\b|\bchat\b)/i.test(joined)) return false;
+
   // Nivel numérico o flags anidados
   try {
     if (Number(opts.permissionLevel) >= 2) return true;
     if (opts.permissions && typeof opts.permissions === "object") {
-      if (opts.permissions.write === true || opts.permissions.full === true || opts.permissions.execute === true) return true;
+      if (opts.permissions.full === true || opts.permissions.fullAccess === true) return true;
     }
   } catch { /* ignore */ }
   return false;

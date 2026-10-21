@@ -123,7 +123,7 @@ test("deploy: el modelo no puede autoaprobarse, pide confirmación y se ejecuta 
 
     scripted = [{ text: "", toolCalls: [toolCall("deploy_one_click", { provider: "vercel" })], usage: {} }];
     const orch = new ChatOrchestrator();
-    const base = { projectRoot, apiBaseUrl: "http://127.0.0.1:9/v1", apiKey: "k", model: "m", fullAccess: true, permissionMode: "full" };
+    const base = { projectRoot, apiBaseUrl: "http://127.0.0.1:9/v1", apiKey: "k", model: "m", fullAccess: false, permissionMode: "ask" };
     const ask = await orch.handle({ ...base, message: "despliega el proyecto a vercel" });
     assert.equal(ask.pendingConfirmation, true);
     assert.match(ask.text, /Confirmación requerida/);

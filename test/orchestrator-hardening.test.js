@@ -23,15 +23,18 @@ test("RulesEngine bloquea DROP/force-push incluso en full access", () => {
   assert.equal(force.level, "block");
 });
 
-test("RulesEngine exige confirmacion de git push / rm -rf en full access", () => {
-  const push = evaluateAgentCommandPolicy("git push origin main", { fullAccess: true });
-  assert.equal(push.level, "confirm");
-  assert.equal(push.enforceEvenFullAccess, true);
-  assert.equal(shouldRequireCommandConfirmation(push, { fullAccess: true }), true);
+test("RulesEngine respeta Acceso Completo para git push / rm -rf y exige confirmacion sin full access", () => {
+  const pushFull = evaluateAgentCommandPolicy("git push origin main", { fullAccess: true });
+  assert.equal(pushFull.level, "allow");
+  assert.equal(shouldRequireCommandConfirmation(pushFull, { fullAccess: true }), false);
 
-  const rm = evaluateAgentCommandPolicy("rm -rf dist", { fullAccess: true });
-  assert.equal(rm.level, "confirm");
-  assert.equal(shouldRequireCommandConfirmation(rm, { fullAccess: true }), true);
+  const pushAsk = evaluateAgentCommandPolicy("git push origin main", { fullAccess: false });
+  assert.equal(pushAsk.level, "confirm");
+  assert.equal(shouldRequireCommandConfirmation(pushAsk, { fullAccess: false }), true);
+
+  const rmFull = evaluateAgentCommandPolicy("rm -rf dist", { fullAccess: true });
+  assert.equal(rmFull.level, "allow");
+  assert.equal(shouldRequireCommandConfirmation(rmFull, { fullAccess: true }), false);
 
   const safe = evaluateAgentCommandPolicy("npm run lint", { fullAccess: true });
   assert.equal(shouldRequireCommandConfirmation(safe, { fullAccess: true }), false);

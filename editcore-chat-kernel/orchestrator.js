@@ -125,14 +125,14 @@ const ANALYSIS_MAX_STEPS = 200;
 const ANALYSIS_TIMEOUT_MS = 1_800_000; // 30 min por turno en análisis
 
 const LEADERSHIP_PROMPT = [
-  "Protocolo obligatorio de cada orden: 1) Analiza la solicitud en 1-3 lineas. 2) Di que vas a hacer. 3) Ejecuta las tools EN ESTE TURNO. 4) Cierra con REPORTE: que hiciste, archivos/comandos reales, resultado, siguiente paso.",
-  "Con Acceso completo esta PROHIBIDO pedir Procede, Adelante, confirmacion o permiso extra.",
+  "Protocolo obligatorio de cada orden: 1) Analiza la solicitud en 1-3 lineas. 2) Di que vas a hacer. 3) Ejecuta las tools EN ESTE TURNO. 4) Cierra con REPORTE: que hiciste, archivos/comandos reales, resultado.",
+  "Con Acceso completo esta TERMINANTEMENTE PROHIBIDO pedir confirmación, preguntar '¿Lo hago ahora?', '¿Quieres que proceda?', '¿Deseas que compile?' o pedir permiso. EJECUTA LA ACCIÓN DE INMEDIATO en este mismo turno con run_command, build_project, git_commit o la tool correspondiente.",
   "Credenciales de GitHub, Vercel, Supabase, GafCore y servidor propio estan en la boveda: usa las tools de conexion, no pidas tokens al usuario.",
-  "REGLA DURA: no digas que vas a hacer algo — hacelo en el mismo turno con la tool. Nunca cierres con 'Ahora leo X' sin haber llamado read_file(X).",
+  "REGLA DURA: no digas que vas a hacer algo — hacelo en el mismo turno con la tool. Nunca cierres con 'Ahora leo X' sin haber llamado read_file(X). Si hay que compilar, compila ya con run_command o build_project.",
   "Si falla algo leve (oldText, git auxiliar, ruta ausente), releé contexto y reintentá. No detengas la sesión por eso.",
   "Tras write_file/replace_in_file EditCore verifica solo (typecheck/sintaxis). No digas 'listo' si la verificación falló: reporta el error y corrige.",
   "Si no sabes la ruta de un simbolo o feature, usa search_codebase_semantic o search_files ANTES de adivinar paths.",
-  "CIERRE: solo hechos y estado. PROHIBIDO terminar con menus, opciones, preguntas del tipo quieres que o pasamos a, o listas para elegir. Nada de recomendaciones abiertas al final.",
+  "CIERRE: solo hechos y estado. PROHIBIDO terminar con menus, opciones, preguntas del tipo '¿quieres que...', '¿pasamos a...?', o listas para elegir. Nada de recomendaciones abiertas ni preguntas al final.",
   "Si piden BUSCAR en codigo (login, auth, signIn, donde esta X): OBLIGATORIO search_files o search_codebase_semantic. PROHIBIDO responder solo con list_files de la raiz.",
   "Si piden conectar/publicar/checklist: OBLIGATORIO check_connections en este turno. PROHIBIDO list_files de la raiz como respuesta.",
   "No ofrezcas publish_project ni revisiones extra salvo que el usuario lo pida explicitamente."].join("\n");
@@ -791,6 +791,12 @@ class ChatOrchestrator {
     const isApprovalText = APPROVAL_WORDS.has(textLower) || isContinuePhrase(text);
     const startsWithContinue = /^\s*(?:contin[uú]a|sigue|s[ií]guele|avanza|termina|procede|dale)\b/i.test(text);
 
+    const fullAccess = isFullAccess({ allowWrite: inputAllowWrite, permissionMode, permissionFull, fullAccess: inputFullAccess, planAuthorizedExecution: inputPlanAuth, mode: permissionMode })
+      || String(permissionMode || "").toLowerCase() === "full";
+
+    if (fullAccess) this.pendingTask = null;
+    global.__editcoreFullAccess = Boolean(fullAccess);
+
     if (this.pendingExternal) {
       const pending = this.pendingExternal;
       this.pendingExternal = null;
@@ -826,12 +832,6 @@ class ChatOrchestrator {
     const taskMessage = resumedTask
       ? `${effectiveText}\nMensaje actual del usuario: "${text}". Retoma esa tarea donde quedó (revisa el historial y los errores pendientes) y termínala; no repitas lo que ya está hecho.`
       : text;
-
-    const fullAccess = isFullAccess({ allowWrite: inputAllowWrite, permissionMode, permissionFull, fullAccess: inputFullAccess, planAuthorizedExecution: inputPlanAuth, mode: permissionMode })
-      || String(permissionMode || "").toLowerCase() === "full";
-
-    if (fullAccess) this.pendingTask = null;
-    global.__editcoreFullAccess = Boolean(fullAccess);
 
     const isExplicitReadOnly = ["read", "readonly", "solo lectura", "solo-lectura", "chat"].includes(String(permissionMode || "").toLowerCase().trim()) || inputAllowWrite === false;
     const defaultAllowWrite = fullAccess || !isExplicitReadOnly;
@@ -1023,9 +1023,9 @@ class ChatOrchestrator {
     } catch (_) { /* no-op */ }
     // [/EDITCORE-ADD]
 
-    // [EDITCORE-SPECIALIST] Subagente especialista por dominio (UI, DB, Auth, DevOps)
+    // [EDITCORE-SPECIALIST] Subagente especialista por dominio (UI, DB, Auth, DevOps, Streaming, Release)
     try {
-      const specialist = dispatchSpecialist(effectiveText || text || "");
+      const specialist = dispatchSpecialist(text || "", effectiveText || "");
       if (specialist && specialist.name) {
         this._specialist = specialist;
         this._turnExtras.push([
@@ -1228,7 +1228,6 @@ class ChatOrchestrator {
 
     // Respeta el permiso que YA eligió el usuario en la UI. Nunca lo "resetea".
     const accessFull = fullAccess === true
-      || allowWrite === true
       || isFullAccess({
         ...(opts && typeof opts === "object" ? opts : {}),
         allowWrite,

@@ -1,3 +1,12 @@
+# RELEASE v4.4.5
+
+## Desbloqueo de ejecutables en Windows, ejecución directa sin preguntas y corrección de ruteo de subagentes
+
+- **Desbloqueo de packaging de ejecutables en Windows (Fix EPERM rename `win-unpacked.tmp`):** Se corrigió la retención del lockfile en `app-builder-lib/out/util/electronGet.js` que impedía el renombrado a `win-unpacked` en Windows NTFS con error `EPERM: operation not permitted`, incorporando liberación previa de lock, reintento resiliente y fallback con copia recursiva (`fs.cp`).
+- **Eliminación definitiva de "¿Lo hago ahora?" en Acceso Completo:** Enriquecido el protocolo `LEADERSHIP_PROMPT` en `orchestrator.js` para prohibir terminantemente cerrar turnos con preguntas inquisitivas o de confirmación ("¿Lo hago ahora?", "¿Quieres que proceda?", "¿Deseas que compile?"). Con Acceso Completo, cualquier acción requerida de build, empaquetado, commit o push se ejecuta de inmediato en el turno.
+- **Ruteo certero de subagentes especialistas (`dispatcher.js`):** Eliminada la asignación espuria de `Database Specialist` provocada por tablas de checklist de conexiones o aprobaciones tipo "procede ejecuta". Ahora se prioriza la orden inmediata del usuario asignando `Fullstack Architecture & Release Specialist`, `DevOps & Build Specialist` o `Media & Streaming Specialist`.
+- **Portal Web y Releases sincronizados:** Descarga directa y versión v4.4.5 sincronizadas en web-portal y documentación oficial.
+
 # RELEASE v4.4.4
 
 ## Autonomía ilimitada, herramientas de build/git, subagentes paralelos y fix de contexto
