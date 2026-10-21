@@ -123,6 +123,44 @@ function proposeJobsFromTask(taskText = "") {
       scopePaths: ["src/server", "api"],
       goal: "Revisión",
     });
+  } else if (/(?:commit|push|deploy|release|roadmap|exe|dist|build|empaquetar|publicar)/i.test(t)) {
+    jobs.push({
+      role: "analyst",
+      title: "Inspeccionar estado git y roadmap",
+      scopePaths: [".git", "ROADMAP.md", "package.json", "RELEASES.md"],
+      goal: "Verificar branch, versión y cambios listos para release",
+    });
+    jobs.push({
+      role: "implementer",
+      title: "Sincronizar roadmap, versión y releases",
+      scopePaths: ["ROADMAP.md", "package.json", "RELEASES.md"],
+      goal: "Bump de versión y notas de release",
+    });
+    jobs.push({
+      role: "verifier",
+      title: "Compilar binarios y verificar entrega",
+      scopePaths: ["release", "dist", "scripts"],
+      goal: "Ejecutar build/exe y confirmar empaquetado sin errores",
+    });
+  } else if (/(?:c[aá]mara|webcam|video|stream|remoto|wifi|barrido|fps|playoutdelay)/i.test(t)) {
+    jobs.push({
+      role: "analyst",
+      title: "Diagnosticar WebRTC y flujo de video",
+      scopePaths: ["src/utils", "src/hooks", "src/pages"],
+      goal: "Identificar causas de lentitud, buffering y jitter",
+    });
+    jobs.push({
+      role: "implementer",
+      title: "Aplicar optimizaciones de streaming y RVFC",
+      scopePaths: ["src/utils/videoStream.js", "src/hooks", "src/components"],
+      goal: "RVFC sync, playoutDelayHint a 0, motion hint a 60fps",
+    });
+    jobs.push({
+      role: "verifier",
+      title: "Validar rendimiento y sincronización",
+      scopePaths: ["src", "package.json"],
+      goal: "Comprobar que no hay errores de sintaxis ni barridos",
+    });
   } else {
     jobs.push({
       role: "explorer",
@@ -426,11 +464,11 @@ function createParallelBatch(projectRoot, options) {
  * ¿La tarea se beneficia de fan-out?
  */
 function shouldUseParallel(taskText = "") {
-  const t = String(taskText || "");
-  if (t.length < 40) return false;
-  return /(?:app|saas|plataforma|landing|dashboard|frontend.+backend|completa|desde cero|mvp|y\s+(?:además|también)|api.+ui|ui.+api)/i.test(
+  const t = String(taskText || "").trim();
+  if (t.length < 15) return false;
+  return /(?:app|saas|plataforma|landing|dashboard|frontend.+backend|completa|desde cero|mvp|y\s+(?:además|también)|api.+ui|ui.+api|commit|push|deploy|release|roadmap|exe|dist|build|c[aá]mara|remoto|wifi|video|stream|paralelo|subagente|verificar|implementar|corregir.+y|actualiza)/i.test(
     t
-  );
+  ) || (t.includes(",") && t.length >= 25) || (t.includes(" y ") && t.length >= 25);
 }
 
 module.exports = {

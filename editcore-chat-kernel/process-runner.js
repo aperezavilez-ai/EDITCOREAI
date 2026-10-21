@@ -7,11 +7,14 @@
 
 const { spawn } = require("child_process");
 const path = require("path");
+const fs = require("fs");
 const { detectDevLogIssue, stripDevCacheNoise } = require("./dev-log-detector");
 
 const DEFAULT_TIMEOUT_MS = 180_000;
+const BUILD_TIMEOUT_MS = 900_000; // 15 min para compilación y empaquetado de ejecutables
 const MAX_CAPTURE = 12_000;
 const LONG_RUNNING_RE = /(?:^|\s)(?:npm\s+run\s+(?:dev|start)|pnpm\s+(?:dev|start)|yarn\s+(?:dev|start)|npx\s+next\s+dev|next\s+dev|vite(?:\s|$)|webpack-dev-server)\b/i;
+const BUILD_COMMAND_RE = /(?:build|compile|dist|release|package|pack|electron-builder|rebuild-root-exe|build-windows|csc\.exe|tsc\b)/i;
 
 const SEVERE_RE = /(?:Build error|Failed to compile|ENOENT|TypeScript error|error TS\d+|ELIFECYCLE|Module not found|SyntaxError|EADDRINUSE)/i;
 const NEXT_SERVER_ENOENT_RE = /ENOENT[\s\S]{0,180}?[\\/]\.next[\\/]server[\\/]|Cannot find module[\s\S]{0,120}?[\\/]\.next[\\/]server[\\/]|routes-manifest\.json/i;
@@ -22,6 +25,10 @@ function stripAnsi(text) {
 
 function isLongRunningCommand(command) {
   return LONG_RUNNING_RE.test(String(command || ""));
+}
+
+function isBuildCommand(command) {
+  return BUILD_COMMAND_RE.test(String(command || ""));
 }
 
 function detectSevereIssue(chunk, bufferTail) {
@@ -120,6 +127,24 @@ function runProcess({
 
   const root = path.resolve(cwd || process.cwd());
   const longLived = background || isLongRunningCommand(cmd);
+  const isBuild = isBuildCommand(cmd);
+  const effectiveTimeout = (!longLived && (timeoutMs === DEFAULT_TIMEOUT_MS) && isBuild)
+    ? BUILD_TIMEOUT_MS
+    : timeoutMs;
+
+  // En Windows: limpiar procesos huérfanos que bloqueen ejecutables en build/dist
+  if (process.platform === "win32" && isBuild) {
+    try {
+      const pkgPath = path.join(root, "package.json");
+      if (fs.existsSync(pkgPath)) {
+        const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf8"));
+        const exeName = `${pkg.name || ""}.exe`;
+        if (pkg.name && pkg.name.length > 2) {
+          require("child_process").execSync(`taskkill /F /IM "${exeName}" /T 2>nul || exit 0`, { shell: true, stdio: "ignore" });
+        }
+      }
+    } catch (_) {}
+  }
 
   return new Promise((resolve) => {
     let settled = false;
@@ -171,16 +196,16 @@ function runProcess({
     };
 
     let timer = null;
-    if (!longLived && timeoutMs > 0) {
+    if (!longLived && effectiveTimeout > 0) {
       timer = setTimeout(() => {
         timedOut = true;
         try { child.kill(); } catch {}
         finish({
           ok: false,
-          error: `Timeout tras ${timeoutMs}ms (spawn streaming).`,
+          error: `Timeout tras ${effectiveTimeout}ms (spawn streaming).`,
           code: null,
         });
-      }, timeoutMs);
+      }, effectiveTimeout);
     }
 
     let onAbort = null;
@@ -230,11 +255,11 @@ function runProcess({
     }
 
     child.on("close", (code) => {
-      finish(
-        !timedOut && code === 0,
-        timedOut ? `Timeout tras ${timeoutMs}ms` : (code === 0 ? undefined : `Exit code ${code}`),
-        code
-      );
+      finish({
+        ok: !timedOut && code === 0,
+        error: timedOut ? `Timeout tras ${effectiveTimeout}ms` : (code === 0 ? undefined : `Exit code ${code}`),
+        code,
+      });
     });
   });
 }
@@ -243,9 +268,11 @@ module.exports = {
   runProcess,
   attachProcessStreams,
   isLongRunningCommand,
+  isBuildCommand,
   detectSevereIssue,
   SEVERE_RE,
   LONG_RUNNING_RE,
   DEFAULT_TIMEOUT_MS,
+  BUILD_TIMEOUT_MS,
   MAX_CAPTURE,
 };

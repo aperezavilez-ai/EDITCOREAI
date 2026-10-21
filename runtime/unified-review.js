@@ -228,19 +228,28 @@ function rejectAll(projectRoot, options = {}) {
  */
 function enqueueFromWrite(projectRoot, payload = {}) {
   try {
-    return getReviewQueue(projectRoot).enqueue({
+    const queue = getReviewQueue(projectRoot);
+    const res = queue.enqueue({
       path: payload.path,
       before: payload.before,
       after: payload.after,
       backupPath: payload.backupPath,
       source: payload.source || "agent",
     });
+    if (res && res.ok && (payload.fullAccess === true || payload.autoAccept === true)) {
+      try { queue.accept(res.id); } catch (_) {}
+      res.status = "accepted";
+    }
+    return res;
   } catch (err) {
     return { ok: false, error: err.message };
   }
 }
 
-function getPendingPrompt(projectRoot) {
+function getPendingPrompt(projectRoot, options = {}) {
+  if (options && (options.fullAccess === true || options.isFullAccess === true)) {
+    return "";
+  }
   try {
     return getReviewQueue(projectRoot).getPendingPrompt();
   } catch {

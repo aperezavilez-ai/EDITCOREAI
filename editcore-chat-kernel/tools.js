@@ -266,6 +266,10 @@ function writeFile(root, rel, content) {
   // [/EDITCORE-COORD]
   // [EDITCORE-REVIEW] cola unificada accept/reject (no toca @mentions)
   try {
+    const isFull = Boolean(
+      global.__editcoreFullAccess ||
+      (typeof global.__editcoreCoord !== "undefined" && global.__editcoreCoord?.fullAccess)
+    );
     const unified = require("../runtime/unified-review");
     unified.enqueueFromWrite(root, {
       path: rel,
@@ -273,8 +277,11 @@ function writeFile(root, rel, content) {
       after: body,
       backupPath: snap && snap.ok ? (snap.backupPath || snap.path || null) : null,
       source: "agent",
+      fullAccess: isFull,
+      autoAccept: isFull,
     });
-    out.reviewQueued = true;
+    out.reviewQueued = !isFull;
+    if (isFull) out.accepted = true;
   } catch { /* no bloquear escritura */ }
   // [/EDITCORE-REVIEW]
   // [EDITCORE-INDEX] mantener indice semantico al dia
@@ -412,6 +419,10 @@ function replaceInFile(root, rel, oldText, newText) {
   } catch { /* ignore */ }
   // [EDITCORE-REVIEW] mismo flujo accept/reject que write_file
   try {
+    const isFull = Boolean(
+      global.__editcoreFullAccess ||
+      (typeof global.__editcoreCoord !== "undefined" && global.__editcoreCoord?.fullAccess)
+    );
     const unified = require("../runtime/unified-review");
     unified.enqueueFromWrite(root, {
       path: rel,
@@ -419,8 +430,11 @@ function replaceInFile(root, rel, oldText, newText) {
       after: next,
       backupPath: snap && snap.ok ? (snap.backupPath || snap.path || null) : null,
       source: "agent",
+      fullAccess: isFull,
+      autoAccept: isFull,
     });
-    out.reviewQueued = true;
+    out.reviewQueued = !isFull;
+    if (isFull) out.accepted = true;
   } catch { /* no bloquear */ }
   // [/EDITCORE-REVIEW]
   try {
@@ -783,6 +797,58 @@ async function gitDiff(root, options = {}) {
   }
 }
 
+async function gitCommit(root, options = {}) {
+  try {
+    const gitMgr = require("../runtime/git-manager");
+    const files = Array.isArray(options.files) && options.files.length ? options.files : ["."];
+    const stage = gitMgr.stageFiles(files, root);
+    if (!stage.ok && stage.message) return { ok: false, error: stage.message, stderr: stage.stderr };
+    const msg = String(options.message || "update from editcoreai").trim();
+    const res = gitMgr.commit(msg, root);
+    return { ok: res.ok, output: res.stdout || res.message, error: res.stderr || res.message };
+  } catch (e) {
+    return { ok: false, error: String(e?.message || e).slice(0, 400) };
+  }
+}
+
+async function gitPush(root, options = {}) {
+  try {
+    const gitMgr = require("../runtime/git-manager");
+    const remote = String(options.remote || "origin").trim();
+    const branch = String(options.branch || "").trim();
+    const res = gitMgr.push(remote, branch, root);
+    return { ok: res.ok, output: res.stdout || res.message, error: res.stderr || res.message };
+  } catch (e) {
+    return { ok: false, error: String(e?.message || e).slice(0, 400) };
+  }
+}
+
+async function buildProject(root, options = {}) {
+  const pkgPath = path.join(root, "package.json");
+  let buildCmd = String(options.command || "").trim();
+  if (!buildCmd && fs.existsSync(pkgPath)) {
+    try {
+      const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf8"));
+      const scripts = pkg.scripts || {};
+      if (scripts["dist:win"]) buildCmd = "npm run dist:win";
+      else if (scripts["build:exe"]) buildCmd = "npm run build:exe";
+      else if (scripts["package"]) buildCmd = "npm run package";
+      else if (scripts["electron:build"]) buildCmd = "npm run electron:build";
+      else if (scripts["build"]) buildCmd = "npm run build";
+    } catch (_) {}
+  }
+  if (!buildCmd) {
+    if (fs.existsSync(path.join(root, "scripts", "rebuild-root-exe.js"))) {
+      buildCmd = "node scripts/rebuild-root-exe.js";
+    } else if (fs.existsSync(path.join(root, "scripts", "build-windows.js"))) {
+      buildCmd = "node scripts/build-windows.js";
+    } else {
+      buildCmd = "npm run build";
+    }
+  }
+  return await runCommand(root, buildCmd, { timeoutMs: 900000 });
+}
+
 // ============================================================
 // NEW: SKILLS — instalar / listar skills desde GitHub
 // ============================================================
@@ -951,6 +1017,30 @@ const DEFINITIONS = [
       name: "git_diff",
       description: "Diff de cambios sin commitear (staged=true para staged).",
       parameters: { type: "object", properties: { staged: { type: "boolean" } } },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "git_commit",
+      description: "Hace stage y crea un commit con el mensaje indicado en el repositorio Git del proyecto.",
+      parameters: { type: "object", properties: { message: { type: "string" }, files: { type: "array", items: { type: "string" } } }, required: ["message"] },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "git_push",
+      description: "Envía los commits al repositorio remoto Git (origin/rama).",
+      parameters: { type: "object", properties: { remote: { type: "string" }, branch: { type: "string" } } },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "build_project",
+      description: "Compila o empaqueta el proyecto (ejecutable .exe, dist, build, package) con timeout extendido de 15 minutos y desbloqueo automático de procesos huérfanos.",
+      parameters: { type: "object", properties: { command: { type: "string" } } },
     },
   },
   {
@@ -1207,6 +1297,15 @@ async function execute(name, args, root, allowWrite, helpers = {}) {
       return gitLog(root, { maxCount: a.maxCount });
     case "git_diff":
       return gitDiff(root, { staged: a.staged === true });
+    case "git_commit":
+      if (!allowWrite) return { ok: false, error: "git_commit requiere modo escritura" };
+      return await gitCommit(root, a);
+    case "git_push":
+      if (!allowWrite) return { ok: false, error: "git_push requiere modo escritura" };
+      return await gitPush(root, a);
+    case "build_project":
+      if (!allowWrite) return { ok: false, error: "build_project requiere modo escritura" };
+      return await buildProject(root, a);
     case "install_skill":
       if (!allowWrite) return { ok: false, error: "install_skill requiere modo escritura" };
       return installSkill(root, a.repoUrl, a.skillName);
@@ -1330,6 +1429,7 @@ function getToolDefinitions({ allowWrite = true, isFullAccess = false, isAnalysi
     "write_file", "replace_in_file", "run_command", "scaffold_project",
     "supabase_migrate", "ingest_to_brain", "clone_repo", "rollback_last_change",
     "images_to_code", "clone_web_page", "install_skill",
+    "git_commit", "git_push", "build_project",
     ...extraTools.EXTERNAL_ACTION_TOOLS,
   ]);
   const canWrite = allowWrite === true || isFullAccess === true;
@@ -1412,6 +1512,9 @@ module.exports = {
   gitStatus,
   gitLog,
   gitDiff,
+  gitCommit,
+  gitPush,
+  buildProject,
   installSkill,
   listSkills,
   // [EDITCORE-ADD]

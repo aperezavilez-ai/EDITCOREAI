@@ -1,3 +1,17 @@
+# RELEASE v4.4.4
+
+## Autonomía ilimitada, herramientas de build/git, subagentes paralelos y fix de contexto
+
+- **Ejecución y auto-aceptación total en Acceso Completo:** Se eliminó el bloqueo de cola de revisión (`unified-review`) cuando el usuario tiene seleccionado "Acceso completo" o aprueba la ejecución ("procede"). Los archivos se aplican y aceptan directamente en disco sin dejar pendientes ni mensajes artificiales de confirmación.
+- **Herramientas de primera clase `build_project`, `git_commit` y `git_push`:** El kernel ahora dispone de herramientas directas y dedicadas para realizar commits con mensaje, pushes al repositorio remoto y compilación/empaquetado de ejecutables (.exe, dist, build, package) sin restricciones.
+- **Timeout extendido para compilaciones (15 minutos) y desbloqueo en Windows:** Se implementó `BUILD_TIMEOUT_MS = 900_000` para comandos de construcción y empaquetado, junto con la eliminación automática de procesos huérfanos de la app en ejecución en Windows para evitar bloqueos de archivo `EPERM` / `EBUSY`.
+- **Corrección crítica en `process-runner.js`:** Se corrigió el paso de argumentos en el evento `close` del child process, garantizando la captura real de códigos de salida (`code`) y errores de consola sin pérdidas ni diagnósticos erróneos.
+- **Colaboración paralela de subagentes en consultas sucesivas:** `shouldUseParallel` y `proposeJobsFromTask` ahora detectan flujos de release, commits, builds y optimizaciones multimedia, manteniendo activos los lotes de subagentes y asignando tareas entre turnos.
+- **Nuevos roles de subagentes especialistas:** Integrados `Media & Streaming Specialist` (solución de barridos, RVFC, 60fps, playoutDelayHint en cámaras remotas/WiFi) y `Fullstack Architecture & Release Specialist`.
+- **Prevención de explosión de contexto (hasta 3.4M tokens):** Algoritmo de compactación con ventana deslizante para herramientas previas, conservando completos los últimos resultados y resumiendo los anteriores, impidiendo que se agote la ventana de contexto del proveedor (`Ningún modelo respondió`).
+- **Contraste de botones Agente y Chat:** Tipografía en blanco puro (`#ffffff !important`) en temas oscuros (`negro`, `gris`, `azul`) y negro nítido (`#0f172a !important`) en tema blanco, eliminando el color azul en los botones de modo.
+- **Binario `EDITCOREAI.exe` v4.4.4.0:** Recompilado con iconos oficiales, manifiesto y metadatos de versión sincronizados.
+
 # RELEASE v4.4.3
 
 ## Ejecución autónoma total con Acceso Completo (Botón de Escudo)

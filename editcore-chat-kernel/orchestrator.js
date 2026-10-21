@@ -578,6 +578,9 @@ function formatToolActionNarration(name, args = {}) {
   if (name === "web_search") { const q = String(args.query || "").slice(0, 40); return q ? `Busco en internet: \`${q}\`.` : "Busco en internet."; }
   if (name === "web_scrape") return "Leo URL.";
   if (name === "git_status" || name === "git_log" || name === "git_diff") return "Inspecciono git.";
+  if (name === "git_commit") return `Creo commit Git: "${String(args.message || "").slice(0, 50)}".`;
+  if (name === "git_push") return "Envío cambios con git push.";
+  if (name === "build_project") return "Compilando ejecutable del proyecto...";
   if (name === "install_skill") return `Instalo skill \`${String(args.skillName || "")}\`.`;
   if (name === "list_skills") return "Listo skills instaladas.";
   return "";
@@ -828,6 +831,7 @@ class ChatOrchestrator {
       || String(permissionMode || "").toLowerCase() === "full";
 
     if (fullAccess) this.pendingTask = null;
+    global.__editcoreFullAccess = Boolean(fullAccess);
 
     const isExplicitReadOnly = ["read", "readonly", "solo lectura", "solo-lectura", "chat"].includes(String(permissionMode || "").toLowerCase().trim()) || inputAllowWrite === false;
     const defaultAllowWrite = fullAccess || !isExplicitReadOnly;
@@ -957,10 +961,16 @@ class ChatOrchestrator {
       this._parallelBatch = null;
       if (agentParallel && projectRoot && typeof agentParallel.shouldUseParallel === "function") {
         const taskText = String(effectiveText || text || "");
-        if (agentParallel.shouldUseParallel(taskText)) {
-          const batchRunner = agentParallel.createParallelBatch(projectRoot, {
-            threadId: threadId || "default",
-          });
+        const batchRunner = agentParallel.createParallelBatch(projectRoot, {
+          threadId: threadId || "default",
+        });
+        const activeBatch = batchRunner.batch;
+        if (activeBatch && activeBatch.status !== "closed" && batchRunner.nextPendingJob()) {
+          this._parallelBatch = batchRunner;
+          const nextJob = batchRunner.nextPendingJob();
+          batchRunner.beginJob(nextJob.id);
+          this._turnExtras.push(batchRunner.getCurrentJobPrompt());
+        } else if (agentParallel.shouldUseParallel(taskText)) {
           batchRunner.createBatch(taskText);
           this._parallelBatch = batchRunner;
           this._turnExtras.push(batchRunner.getParallelPrompt());
@@ -983,7 +993,13 @@ class ChatOrchestrator {
         this._turnExtras.push(activeEditorContext.buildActiveEditorPrompt(ed));
       }
       if (ideReviewQueue && projectRoot) {
-        this._turnExtras.push(ideReviewQueue.getReviewQueue(projectRoot).getPendingPrompt());
+        if (fullAccess) {
+          try {
+            ideReviewQueue.getReviewQueue(projectRoot).acceptAll();
+          } catch (_) {}
+        } else {
+          this._turnExtras.push(ideReviewQueue.getReviewQueue(projectRoot).getPendingPrompt());
+        }
       }
     } catch (e) {
       console.warn("[EDITCORE-EDITOR-CTX]", e && e.message ? e.message : e);
@@ -1401,6 +1417,30 @@ class ChatOrchestrator {
             const steerBlock = pendingSteer.join("\n\n");
             messages.push({ role: "user", content: `INSTRUCCIÓN / CONSULTA DEL USUARIO MIENTRAS TRABAJABAS: "${steerBlock}". Responde o ajusta tu trabajo inmediatamente según esta consulta sin perder el avance de las herramientas ya ejecutadas ni romper la memoria del proyecto.` });
             onProgress?.({ phase: "direction", text: `Recibida instrucción del usuario: ${pendingSteer[0].slice(0, 80)}…` });
+          }
+        }
+
+        // Compactar outputs antiguos de tools para evitar desbordar el contexto del modelo (3.4M tokens)
+        if (Array.isArray(messages) && messages.length > 16) {
+          let toolSeen = 0;
+          for (let idx = messages.length - 1; idx >= 0; idx--) {
+            const m = messages[idx];
+            if (m && m.role === "tool") {
+              toolSeen++;
+              if (toolSeen > 8 && typeof m.content === "string" && m.content.length > 250) {
+                try {
+                  const parsed = JSON.parse(m.content);
+                  const brief = {
+                    ok: parsed.ok !== false,
+                    summary: parsed.summary || parsed.note || (parsed.path ? `archivo ${parsed.path} procesado` : "resultado previo completado"),
+                    compacted: true,
+                  };
+                  m.content = JSON.stringify(brief);
+                } catch (_) {
+                  m.content = JSON.stringify({ ok: true, summary: "resultado previo completado", compacted: true });
+                }
+              }
+            }
           }
         }
 

@@ -26,8 +26,18 @@ function dispatchSpecialist(prompt = "") {
     return SPECIALISTS.SECURITY;
   }
 
+  // Media & Streaming Specialist (cámaras, WebRTC, video, buffering, latencia)
+  if (/\b(?:c[aá]mara|webcam|video|stream|streaming|webrtc|remoto|wifi|barrido|fps|pausado|lento|buffer|framerate|rvfc|playoutdelay|audiovideo)\b/i.test(text)) {
+    return SPECIALISTS.MEDIA_STREAMING;
+  }
+
+  // Fullstack Architecture & Release Specialist (commits, push, deploy, build exe, releases)
+  if (/\b(?:commit|push|deploy|release|roadmap|exe|empaquetar|dist:win|build-exe|publicar|producci[oó]n)\b/i.test(text)) {
+    return SPECIALISTS.FULLSTACK_RELEASE || SPECIALISTS.DEVOPS;
+  }
+
   // DevOps & Build Specialist
-  if (/\b(?:build|compilaci[oó]n|devops|docker|deploy|next\s+build|tsc|typecheck|error\s+de\s+compilaci|paquete|dependencia|npm\s+install|package\.json)\b/i.test(text)) {
+  if (/\b(?:build|compilaci[oó]n|devops|docker|next\s+build|tsc|typecheck|error\s+de\s+compilaci|paquete|dependencia|npm\s+install|package\.json)\b/i.test(text)) {
     return SPECIALISTS.DEVOPS;
   }
 

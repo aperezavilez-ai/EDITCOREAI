@@ -4863,12 +4863,24 @@ html[data-theme="azul"] #runMode:focus,
 html[data-theme="gris"] #openChatHomeBtn,
 html[data-theme="negro"] #openChatHomeBtn,
 html[data-theme="azul"] #openChatHomeBtn,
+html[data-theme="gris"] #openChatHomeBtn:hover,
+html[data-theme="negro"] #openChatHomeBtn:hover,
+html[data-theme="azul"] #openChatHomeBtn:hover,
 html[data-theme="gris"] .chat-home-nav-item,
 html[data-theme="negro"] .chat-home-nav-item,
 html[data-theme="azul"] .chat-home-nav-item,
 html[data-theme="gris"] #chatHomeCrumb,
 html[data-theme="negro"] #chatHomeCrumb,
-html[data-theme="azul"] #chatHomeCrumb {
+html[data-theme="azul"] #chatHomeCrumb,
+html[data-theme="gris"] .chat-tab,
+html[data-theme="negro"] .chat-tab,
+html[data-theme="azul"] .chat-tab,
+html[data-theme="gris"] .chat-tab.is-active,
+html[data-theme="negro"] .chat-tab.is-active,
+html[data-theme="azul"] .chat-tab.is-active,
+html[data-theme="gris"] .chat-tab-title,
+html[data-theme="negro"] .chat-tab-title,
+html[data-theme="azul"] .chat-tab-title {
   color: #ffffff !important;
 }
 
@@ -4881,22 +4893,33 @@ html[data-theme="azul"] #runMode option {
 
 html[data-theme="blanco"] #runMode,
 html[data-theme="blanco"] #runMode:hover,
+html[data-theme="blanco"] #runMode:focus,
 html[data-theme="blanco"] #openChatHomeBtn,
+html[data-theme="blanco"] #openChatHomeBtn:hover,
 html[data-theme="blanco"] .chat-home-nav-item,
-html[data-theme="blanco"] #chatHomeCrumb {
-  color: #111827 !important;
+html[data-theme="blanco"] #chatHomeCrumb,
+html[data-theme="blanco"] .chat-tab,
+html[data-theme="blanco"] .chat-tab.is-active,
+html[data-theme="blanco"] .chat-tab-title {
+  color: #0f172a !important;
 }
 
 html[data-theme="blanco"] #runMode option {
   background-color: #ffffff !important;
-  color: #111827 !important;
+  color: #0f172a !important;
 }
+
 html[data-theme="gris"] .chat-model-select,
 html[data-theme="negro"] .chat-model-select,
-html[data-theme="azul"] .chat-model-select,
-html[data-theme="gris"] .composer-bar select,
-html[data-theme="negro"] .composer-bar select,
-html[data-theme="azul"] .composer-bar select {
+html[data-theme="azul"] .chat-model-select {
+  background: var(--ec-bg);
+  color: #ffffff !important;
+  border-color: var(--ec-border-strong);
+}
+
+html[data-theme="gris"] .composer-bar select:not(#runMode),
+html[data-theme="negro"] .composer-bar select:not(#runMode),
+html[data-theme="azul"] .composer-bar select:not(#runMode) {
   background: var(--ec-bg);
   color: var(--ec-text);
   border-color: var(--ec-border-strong);
