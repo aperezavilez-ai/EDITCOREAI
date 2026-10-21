@@ -125,61 +125,15 @@ const ANALYSIS_MAX_STEPS = 200;
 const ANALYSIS_TIMEOUT_MS = 1_800_000; // 30 min por turno en análisis
 
 const LEADERSHIP_PROMPT = [
-  "Protocolo obligatorio de cada orden: 1) Analiza la solicitud en 1-3 lineas. 2) Di que vas a hacer. 3) Ejecuta las tools EN ESTE TURNO. 4) Cierra con REPORTE: que hiciste, archivos/comandos reales, resultado.",
-  "Con Acceso completo esta TERMINANTEMENTE PROHIBIDO pedir confirmación, preguntar '¿Lo hago ahora?', '¿Quieres que proceda?', '¿Deseas que compile?' o pedir permiso. EJECUTA LA ACCIÓN DE INMEDIATO en este mismo turno con run_command, build_project, git_commit o la tool correspondiente.",
-  "Credenciales de GitHub, Vercel, Supabase, GafCore y servidor propio estan en la boveda: usa las tools de conexion, no pidas tokens al usuario.",
-  "REGLA DURA: no digas que vas a hacer algo — hacelo en el mismo turno con la tool. Nunca cierres con 'Ahora leo X' sin haber llamado read_file(X). Si hay que compilar, compila ya con run_command o build_project.",
-  "Si falla algo leve (oldText, git auxiliar, ruta ausente), releé contexto y reintentá. No detengas la sesión por eso.",
-  "Tras write_file/replace_in_file EditCore verifica solo (typecheck/sintaxis). No digas 'listo' si la verificación falló: reporta el error y corrige.",
-  "Si no sabes la ruta de un simbolo o feature, usa search_codebase_semantic o search_files ANTES de adivinar paths.",
-  "CIERRE: solo hechos y estado. PROHIBIDO terminar con menus, opciones, preguntas del tipo '¿quieres que...', '¿pasamos a...?', o listas para elegir. Nada de recomendaciones abiertas ni preguntas al final.",
-  "Si piden BUSCAR en codigo (login, auth, signIn, donde esta X): OBLIGATORIO search_files o search_codebase_semantic. PROHIBIDO responder solo con list_files de la raiz.",
-  "Si piden conectar/publicar/checklist: OBLIGATORIO check_connections en este turno. PROHIBIDO list_files de la raiz como respuesta.",
-  "No ofrezcas publish_project ni revisiones extra salvo que el usuario lo pida explicitamente."].join("\n");
-
-const LIVE_NARRATION_PROMPT = [
-  "Voz EditCoreAI. Primera frase = hallazgo o decisión.",
-  "Si el hilo basta, no llames tools. Si llamás una, contá el porqué en el mismo mensaje.",
+  "Eres EditCoreAI. Si la orden requiere cambios en disco o comandos, ejecútalos directamente con las herramientas disponibles (write_file, replace_in_file, run_command).",
+  "Narra brevemente qué hiciste y el resultado concreto. No pidas confirmaciones redundantes si tienes permisos activos.",
 ].join("\n");
 
-const MARKDOWN_FORMAT_PROMPT = [
-  "=== FORMATO DE RESPUESTA OBLIGATORIO (MARKDOWN RICO) ===",
-  "TODAS tus respuestas al usuario DEBEN estar en Markdown enriquecido, igual que ChatGPT, Claude o Cursor.",
-  "",
-  "ESTRUCTURA OBLIGATORIA:",
-  "1. Titulo de seccion con `##` (nunca uses `#` salvo para el titulo global de la respuesta).",
-  "2. Subsecciones con `###`.",
-  "3. Negritas con `**texto**` para conceptos clave, nombres de archivos, comandos y herramientas.",
-  "4. Codigo inline con backticks simples: `archivo.js`, `npm install`, `run_command`.",
-  "5. Bloques de codigo con triple backtick y lenguaje (```javascript, ```bash, ```json) para codigo o resultados tecnicos.",
-  "6. Listas con `-` para enumeraciones, `1.` para secuencias de pasos.",
-  "7. Tablas con `| Col | Col |` para comparaciones o datos estructurados.",
-  "8. Citas con `>` para advertencias, notas o resumenes destacados.",
-  "9. Separadores `---` entre secciones largas.",
-  "10. Emojis moderados (✅ ❌ ⚠️ 🎯 📁 🔍 🚀 💡) solo para marcar estado o categoria.",
-  "",
-  "REGLAS DURAS:",
-  "- NUNCA respondas con un parrafo monolitico. Divide en secciones.",
-  "- SIEMPRE deja una linea en blanco entre secciones.",
-  "- Los paths van en backticks: `editcore-chat-kernel/orchestrator.js`.",
-  "- Los resultados de herramientas van en bloques de codigo o tablas.",
-  "=== FIN DE FORMATO ===",
-].join("\n");
+const LIVE_NARRATION_PROMPT = "Voz EditCoreAI: directa, técnica y en español.";
 
-const CAPABILITIES_PROMPT = [
-  "=== CAPACIDADES ESPECIALES ===",
-  "- **web_search(query)**: busca en internet (DuckDuckGo + Wikipedia).",
-  "- **web_scrape(url)**: lee el contenido completo de una URL.",
-  "- **git_status / git_log / git_diff**: inspecciona el repositorio git.",
-  "- **install_skill(repoUrl, skillName)** y **list_skills**: gestiona skills.",
-  "- **clone_repo(url)**: clona un repositorio Git dentro del proyecto.",
-  "- **ingest_to_brain(path|title+content) / list_brain / search_brain(query)**: gestiona y consulta el Cerebro RAG (con path ingesta una carpeta de documentacion).",
-  "- **read_pdf(path)**: texto de PDF, Word o Excel. **screenshot_page(url)**: captura y texto de una web. **docker_ps**: contenedores Docker.",
-  "- **check_connections**: estado de GitHub, Vercel, Supabase y del repositorio, con los pasos que faltan.",
-  "- **connect_project / publish_project / deploy_one_click**: conectar, publicar y desplegar. EditCore pide confirmacion al usuario antes de ejecutarlos; llamalos una sola vez y espera.",
-  "Cuando necesites informacion externa (version de una libreria, API actual, error desconocido), usa `web_search` ANTES de responder con conocimiento desactualizado.",
-  "=== FIN CAPACIDADES ===",
-].join("\n");
+const MARKDOWN_FORMAT_PROMPT = "Formato: Markdown estructurado con títulos (##), listas y código en backticks.";
+
+const CAPABILITIES_PROMPT = "";
 
 const CHAT_READ_TOOLS = new Set([
   "web_search", "web_scrape", "list_files", "read_file", "search_files",
@@ -191,84 +145,20 @@ const PENDING_EXTERNAL_TTL_MS = 10 * 60_000;
 const BRAIN_CONTEXT_MIN_SCORE = 2;
 
 const CHAT_TOOLS_PROMPT = [
-  "=== HERRAMIENTAS EN MODO CHARLA (SOLO LECTURA) ===",
-  "- **web_search(query)** / **web_scrape(url)**: informacion actual de internet (versiones, noticias, fechas de lanzamiento, documentacion).",
-  "- **list_files(path)** / **read_file(path)** / **search_files(query)**: leer el disco. Aceptan rutas absolutas como `D:\\PROGRAMAS IA`.",
-  "- **list_skills(query?)**: skills de EditCoreAI (integradas, globales, del proyecto y de los repos del Cerebro). Sin query da un resumen por origen; con query busca una concreta.",
-  "- **git_status / git_log / git_diff**: estado del repositorio.",
-  "- **search_brain(query)**: documentacion y memoria del proyecto guardadas en el Cerebro.",
-  "- **read_pdf(path)**: texto de un PDF, Word o Excel del disco.",
-  "- **screenshot_page(url)**: abre una web, guarda una captura y devuelve su titulo y texto visible.",
-  "- **docker_ps**: contenedores Docker y su estado.",
-  "REGLAS:",
-  "- Si la pregunta depende de datos que cambian (ultima version de algo, precios, noticias), llama `web_search` ANTES de responder. No respondas de memoria.",
-  "- Si piden ver una carpeta o archivo del disco, usa `list_files` / `read_file` con la ruta indicada. NUNCA digas que no tenes acceso al disco.",
-  "- Buscar login/auth/codigo: usa `search_files` o `search_codebase_semantic`, NUNCA solo list_files de la raiz.",
-  "- Conectar/publicar: usa `check_connections`.",
-  "- Cierra sin menus ni preguntas de opciones.",
-  "- Si preguntan que skills tenes, llama `list_skills` y responde con esa lista.",
-  "- En este modo no escribis archivos ni ejecutas comandos; para cambios, el usuario debe pedir la tarea concreta.",
-  "- Si el usuario dice que algo no esta bien, NO repitas tu respuesta anterior: pregunta que parte falla o revisa los datos con las herramientas.",
-  "=== FIN HERRAMIENTAS ===",
+  "MODO CHARLA (SOLO LECTURA):",
+  "- Tienes herramientas de lectura (list_files, read_file, search_files, web_search, git_status).",
+  "- Responde directo a la consulta del usuario sin rodeos ni menús de opciones.",
 ].join("\n");
 
 const LIST_ONLY_PROMPT = [
-  "=== MODO LISTADO (SOLO LISTAR) ===",
-  "El usuario pidio SOLO listar el contenido de una carpeta/archivo.",
-  "",
-  "REGLAS DURAS:",
-  "1. Usa `list_files` con el path indicado. UNICA herramienta permitida.",
-  "2. Responde en espanol con una lista breve: carpetas y archivos del primer nivel.",
-  "3. PROHIBIDO analizar, diagnosticar, dar hallazgos, sugerir soluciones o escribir reportes extensos.",
-  "4. PROHIBIDO pedir confirmacion o pedir que el usuario pegue archivos.",
-  "5. Formato: `## 📁 <path>` + `**Carpetas (N):**` (lista) + `**Archivos (N):**` (lista).",
-  "6. Si el path no existe, dilo en 1 linea y nada mas.",
-  "=== FIN MODO LISTADO ===",
+  "MODO LISTADO: Responde brevemente con las carpetas y archivos del primer nivel del path indicado.",
 ].join("\n");
 
 const ANALYSIS_MODE_PROMPT = [
-  "=== MODO ANALISIS (REPORTE COMPLETO) ===",
-  "El usuario pidio un analisis del proyecto. Debes generar un REPORTE COMPLETO en markdown.",
-  "",
-  "PASOS OBLIGATORIOS:",
-  "1. Revisa la EVIDENCIA BASE que EditCore ya reunio (ROADMAP, package.json, entrypoints, modulos).",
-  "2. Si falta contexto para un analisis honesto, USA read_file para leer MAS archivos (entrypoints, configs, modulos clave). Maximo 6 lecturas adicionales.",
-  "3. NO cierres el reporte con menos de 500 palabras. Un analisis corto es un analisis fallido.",
-  "4. SOLO reporta hallazgos que puedas anclar a archivos reales que leiste.",
-  "",
-  "ESTRUCTURA OBLIGATORIA DEL REPORTE FINAL:",
-  "## 📊 Resumen ejecutivo",
-  "   - 3-5 bullets con lo mas importante del proyecto.",
-  "## 🏗️ Arquitectura y stack",
-  "   - Que tecnologias usa, como esta organizado, entrypoints reales.",
-  "## ⚙️ Funcionalidad principal",
-  "   - Que hace el proyecto hoy, con evidencia de archivos leidos.",
-  "## ⚠️ Errores verificados: prioridad y causa",
-  "   - Una fila por hallazgo de HECHOS VERIFICADOS ordenada por impacto: archivo:linea, prioridad, causa probable y arreglo. NO repitas la tabla de chequeos ni sus resultados (ya se muestran arriba). Si no hay hallazgos, escribe solo: \"Sin errores ni advertencias verificados.\"",
-  "## 🔎 Hipótesis (no verificadas)",
-  "   - Riesgos que ves al leer codigo pero que ningun chequeo confirmo. Marcalos como hipotesis, nunca como hechos.",
-  "## 🎯 Recomendaciones",
-  "   - 3-5 acciones concretas priorizadas.",
-  "## 📁 Evidencia real",
-  "   - Lista de archivos que leiste con `read_file`.",
-  "",
-  "REGLAS DURAS:",
-  "- NO uses write_file / replace_in_file en este turno (el objetivo de este turno es emitir el reporte/diagnóstico).",
-  "- NO digas nunca 'El IDE está en modo solo lectura' ni pidas cambiar permisos.",
-  "- NO inventes. Si un archivo no lo leiste, no afirmes nada sobre el.",
-  "- PROHIBIDO presentar hipotesis como errores verificados. Si no esta en HECHOS VERIFICADOS ni en un read_file con archivo:linea, es hipotesis.",
-  "- Si no hay errores en HECHOS VERIFICADOS, la seccion de errores verificados debe decir solo: Sin errores ni advertencias verificados.",
-  "- Los extractos y lecturas son PARCIALES por presupuesto. Que un extracto termine a mitad de una funcion NO es un hallazgo: PROHIBIDO reportar un archivo como 'truncado' o 'incompleto' por eso. La integridad esta en el encabezado del extracto (lineas totales, bytes, sintaxis): solo hay archivo roto si la sintaxis dice ERROR.",
-  "- Para ver mas de un archivo usa read_file con startLine/endLine (el resultado trae totalLines y endLine).",
-  "- Cada hallazgo cita archivo y linea que leiste. Lo que no pudiste comprobar va como 'no verificado', nunca como 'no existe' ni 'no hay evidencia'. Antes de afirmar que algo falta, buscalo con search_files.",
-  "- Tests, typecheck y build cuentan como ejecutados SOLO si aparecen en HECHOS VERIFICADOS (con su resultado real). Si no aparecen ahí, no afirmes que pasan: di 'no verificado en este analisis'.",
-  "- Los datos que salen de documentos del proyecto (ROADMAP, ANALISIS_*.md, informes, changelogs) se atribuyen: \"segun `archivo.md`\". NO los presentes como verificados por vos.",
-  "- NO agregues secciones ni tablas 'Chequeos reales ejecutados', 'Errores verificados' o 'Advertencias verificadas': EditCore ya las muestra arriba de tu reporte.",
-  "- Si un documento tiene cifras distintas en varias secciones (ej. 19/19, 30/30, 46/46 tests), usa la mas reciente y menciona la discrepancia.",
-  "- Usa tablas cuando listes varios hallazgos o archivos.",
-  "- Si no hay evidencia suficiente, dilo explicitamente.",
-  "- CIERRE: Después de 📁 Evidencia real, concluye preguntando: 'Si quieres que aplique correcciones SOLO de la seccion Errores verificados, responde **procede** o **corrijelos**. No aplico hipotesis hasta que las confirmes.'",
-  "=== FIN MODO ANALISIS ===",
+  "MODO ANALISIS (SOLO LECTURA):",
+  "1. Revisa los archivos clave con read_file o la evidencia recolectada.",
+  "2. Reporta de forma concisa los errores encontrados y qué falta exactamente para que el proyecto funcione.",
+  "3. Termina indicando la acción o comando concreto para corregirlo.",
 ].join("\n");
 
 let eliteCommunication = null;
@@ -454,21 +344,7 @@ function groundUngroundedClaims(text, steps = [], userMessage = "", decision = {
 }
 
 function wrapSystemPrompt(raw = "") {
-  const text = String(raw || "").trim();
-  if (!text) return text;
-  let next = text;
-  if (requestScopePolicy?.withRequestScopePolicy) {
-    try { next = requestScopePolicy.withRequestScopePolicy(next); } catch { /* ignore */ }
-  }
-  if (autoRouterProtocol?.withAutoRouterTransparentProtocol) {
-    try { next = autoRouterProtocol.withAutoRouterTransparentProtocol(next); } catch { /* ignore */ }
-  } else {
-    next = `${LIVE_NARRATION_PROMPT}\n\n${next}`;
-  }
-  if (eliteCommunication?.withEliteCommunicationPolicy) {
-    try { return eliteCommunication.withEliteCommunicationPolicy(next); } catch { /* fall through */ }
-  }
-  return `${LIVE_NARRATION_PROMPT}\n\n${next}`;
+  return String(raw || "").trim();
 }
 
 function scopeUserMessage(message = "", evidence = "") {
@@ -516,38 +392,13 @@ function ensureCognitiveMap(projectRoot) {
 }
 
 function formatCognitiveBlock(projectRoot) {
-  const map = ensureCognitiveMap(projectRoot);
-  if (projectMapApi?.formatMapForPrompt) return projectMapApi.formatMapForPrompt(map);
+  // Context Pruning: no inyectar árbol de archivos ni mapa cognitivo en cada mensaje para ahorrar tokens
   return "";
 }
 
 function buildRoadmapFirstBlock(projectRoot) {
-  if (!projectRoot) return "";
-  const parts = [];
-  try {
-    const { ensureProjectRoadmap, formatRoadmapForPrompt, readRoadmap, isStubRoadmap } = require("../runtime/project-roadmap");
-    const loaded = readRoadmap(projectRoot);
-    if (!loaded.exists || isStubRoadmap(loaded.content || "")) {
-      try { ensureProjectRoadmap(projectRoot, { reason: "kernel-bootstrap" }); } catch { /* ignore */ }
-    }
-    parts.push(formatRoadmapForPrompt(projectRoot));
-  } catch { parts.push(""); }
-  try {
-    const { formatSessionStateForPrompt, ensureSessionState } = require("../runtime/session-state");
-    ensureSessionState(projectRoot);
-    parts.push(formatSessionStateForPrompt(projectRoot, 2_000));
-  } catch { /* ignore */ }
-  parts.push([
-    "## REGLAS DE LECTURA (obligatorias)",
-    "1) El ROADMAP y el session-state YA están arriba. NO ejecutes `list_files('.')` del repo entero si el mapa cubre la tarea.",
-    "2) NO re-leas `ROADMAP.md` con `read_file`.",
-    "3) Para modificar: `read_file` SOLO de archivos concretos, con `startLine`/`endLine` si son grandes.",
-    "4) NO repitas `read_file` del mismo archivo en el mismo turno.",
-    "5) Si el ROADMAP no cubre algo puntual, `list_files('subcarpeta')` SÍ está permitido.",
-    "6) Tras `write_file`/`replace_in_file`, EditCore actualiza el ROADMAP automáticamente.",
-    "7) Nunca cierres un turno diciendo 'ahora leo X' sin llamar la tool en el mismo turno.",
-  ].join("\n"));
-  return parts.filter(Boolean).join("\n\n").slice(0, 9_000);
+  // Context Pruning: no inyectar el roadmap completo ni session state en cada mensaje
+  return "";
 }
 
 function recoverSoftToolFailure(name, args, result, projectRoot) {
@@ -651,30 +502,11 @@ function maybeBlockRootListFiles(name, args, projectRoot, listOnly) {
 
 function buildBrainContextBlock(projectRoot, query) {
   if (!projectRoot || projectRoot === ".") return "";
-  // Auto-index docs clave si hace falta (no borra nada previo del RAG)
-  try { ensureCoreProjectBrain(projectRoot); } catch { /* no bloquear */ }
-  let hits = [];
-  try { hits = searchBrainDocs(projectRoot, query, 5).filter((h) => h.score >= BRAIN_CONTEXT_MIN_SCORE); } catch { return ""; }
-  if (!hits.length) {
-    // Sin match por query: ofrecer títulos indexados para que el modelo sepa que hay cerebro
-    try {
-      const listed = listBrainDocs(projectRoot, 12);
-      const docs = listed?.documents || [];
-      if (!docs.length) return "";
-      return [
-        "=== CEREBRO DEL PROYECTO (indexado; sin hit exacto a la query) ===",
-        "Documentos disponibles: " + docs.map((d) => d.title || d.path).join(", "),
-        "Usa search_brain(query) si necesitas el contenido completo.",
-        "=== FIN CEREBRO ===",
-      ].join("\n");
-    } catch { return ""; }
-  }
-  return [
-    "=== CEREBRO DEL PROYECTO (auto-index + docs ingeridos; pueden estar desactualizados) ===",
-    "Si los usas, citalos: \"segun <titulo>\". No los presentes como verificados.",
-    ...hits.map((h) => `--- ${h.title} (${h.path}) ---\n${h.text.slice(0, 900)}`),
-    "=== FIN CEREBRO ===",
-  ].join("\n");
+  try {
+    const hits = searchBrainDocs(projectRoot, query, 2).filter((h) => h.score >= 4);
+    if (!hits.length) return "";
+    return `Cerebro (relevante): ${hits.map((h) => `${h.title}: ${h.text.slice(0, 200)}`).join(" | ")}`;
+  } catch { return ""; }
 }
 
 function formatExternalActionResult(name, result) {

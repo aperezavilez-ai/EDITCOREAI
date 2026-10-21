@@ -820,17 +820,11 @@ class EditCoreClaudeAdapter {
       ? []
       : filterStepsForScope(Array.isArray(input.resumeSteps) ? input.resumeSteps : [], this.runScope);
 
-    // La conversacion vive durante toda la tarea: prefijo estable (prompt cache)
-    // + harness compacta agresivo para no quemar tokens.
-    const harnessConv = this.harnessProfile?.conversation || {};
+    // Context Pruning: limitar a últimos 3 turnos y máximo 16,000 chars
     this.conversation = new ConversationLog({
       prefixMessages: this.buildPrefixMessages(input),
-      maxChars: listOnly
-        ? 24_000
-        : (Number(harnessConv.maxChars) || (cursorParityMode ? CURSOR_PARITY_LIMITS.conversationMaxChars : 80_000)),
-      keepLastTurns: listOnly
-        ? 4
-        : (Number(harnessConv.keepLastTurns) || (cursorParityMode ? CURSOR_PARITY_LIMITS.conversationTurns : 8)),
+      maxChars: 16_000,
+      keepLastTurns: 3,
     });
 
     const steps = scopedResume
@@ -915,47 +909,7 @@ class EditCoreClaudeAdapter {
     }
 
     // Contrato de trabajo: plan → ejecuta → verifica → cierra (sin llamadas extra al modelo).
-    if (!listOnly && input.promptOnlyMode !== true) {
-      this.conversation.appendUser([
-        "CONTRATO DE TRABAJO (obligatorio):",
-        input.analysisMode === true
-          ? "1. PLAN corto (2-4 lineas): orden de carpetas/archivos. PROHIBIDO listar 8 lecturas de golpe."
-          : "1. PLAN: antes de la primera herramienta, escribe en 3-5 lineas el objetivo, archivos clave y como verificaras.",
-        input.analysisMode === true
-          ? "2. EJECUTA SERIAL: UNA herramienta por turno → narra avance en chat (3-8 lineas) → siguiente herramienta. Como Cursor."
-          : "2. EJECUTA: sigue ese plan. Si la evidencia lo desmiente, corrige el plan en 1 linea y continua; NO reinicies la exploracion.",
-        input.analysisMode === true
-          ? "3. VERIFICA: cada hallazgo del chat debe anclarse a la lectura que acabas de hacer."
-          : "3. VERIFICA: tras la ultima escritura, una lectura o comando que demuestre el efecto. Sin verificacion no cierres.",
-        "4. CIERRA: reporte final + que FALTA para que el proyecto funcione + siguiente accion concreta.",
-        "5. PROHIBIDO pedir al usuario \"mas informacion\" sobre el proyecto abierto: inspecciona el disco tu.",
-        "6. Solo pregunta al usuario secretos/API keys o preferencias de negocio que no estan en el repo.",
-        input.analysisMode === true
-          ? "7. PROHIBIDO saturar: no abras 4+ archivos en el mismo turno ni digas solo 'PLAN: leer 8 archivos' sin avanzar uno a uno."
-          : "",
-      ].filter(Boolean).join("\n"));
-    }
-
-    if (input.analysisMode === true && !input.promptOnlyMode && !listOnly) {
-      const scopedNow = input.instructionConstraints?.mode === "scoped"
-        || input.analysisDepth?.scopedFocus === true;
-      if (scopedNow) {
-        this.conversation.appendUser(buildDepthReportGuide(depthProfile));
-      } else {
-        this.conversation.appendUser([
-          buildDepthReportGuide(depthProfile),
-          "CEREBRO: opcional UNA vez brain_skill deep-project-analysis (si existe) o brain_search sobre analisis de proyectos; si falla la skill, IGNORALA y sigue solo con disco.",
-          "CACHE: no repitas list_files/read_file/search_files identicos; reutiliza hits.",
-        ].join("\n"));
-      }
-
-      // FASE 1 — Razonamiento explícito obligatorio antes de tools.
-      const reasoningPhase = this.buildReasoningPhase(input);
-      if (reasoningPhase) {
-        this.conversation.appendUser(reasoningPhase);
-        this.requiresReasoningBlock = true;
-      }
-    }
+    // Context Pruning: eliminadas inyecciones redundantes de contrato y guías extensas en la conversación
 
     try {
       let modelIterations = 0;
@@ -3963,151 +3917,51 @@ MODO CREACION DE PROYECTO PROFESIONAL (GREENFIELD — PRIORIDAD MAXIMA):
       ].join("\n");
 
     // System prompt CON CACHE CONTROL + politica elite inmutable
+    // System prompt conciso con cache control (Paso 1: Reducción drástica de tokens)
     messages.push({
       role: "system",
       content: [
         {
           type: "text",
-          text: withEliteCommunicationPolicy(`Eres EditCore Agent, ingeniero de software sénior embebido en el IDE con acceso al Cerebro EditCore.
-Sé directo, técnico y propositivo: responde al grano, toma posición y cierra con la siguiente acción concreta.
-Escribe siempre en español correcto: tildes, eñes y espacios entre palabras. No cortes ni pegues palabras.
-Identidad: si te preguntan quién eres o qué modelo eres, responde "Soy EditCoreAI". Nunca digas que eres Qwen, Alibaba, Claude genérico o ChatGPT.
-Usa las siguientes herramientas para completar la tarea:
-
-HERRAMIENTAS DISPONIBLES:
-${toolsListText}
-${analysisGuide}${greenfieldGuide}${cursorParityGuide}
-
-${skillCatalogBlock}
-
-COMO TRABAJAR (ESTILO CURSOR — TEXTO EN VIVO):
-1. El usuario ve tu respuesta escribirse en tiempo real. Narra cada paso en markdown tecnico antes de actuar (sin relleno).
-2. Si el pedido dice NO MODIFICAR / DIAGNOSTICO / solo reporte: OBEDECE. No escribas archivos aunque el usuario diga "avanza" o "porque no avanzas"; entrega el informe.
-3. NO eres un agente paralelo ciego. Continua la MISMA tarea con la evidencia ya en conversacion/cache. PROHIBIDO releer el mismo path.
-4. ${input.analysisMode === true
-    ? "En ANALISIS: carga como mucho 1 skill util del inventario real; prioriza disco y cierra el reporte con recomendaciones concretas."
-    : "Usa el Cerebro (brain_search o brain_skill) cuando aporte valor en tareas largas; no lo uses para retrasar el cierre."}
-5. Usa encabezados ## y listas numeradas para planes, hallazgos y correcciones.
-6. ANTES de invocar herramientas: 1-3 oraciones de razonamiento. Tras cambios: una linea del por que.
-7. tool_calls nativos. Reporte final en markdown.
-8. WORKSPACE: si el usuario pide cerrar este proyecto y abrir otra carpeta, USA switch_project (no digas que no puedes). Tambien puedes usar open_project / close_project por separado.
-
-${input.analysisMode === true ? `SI ES TAREA DE ANÁLISIS/REPORTE/AUDITORIA:
-- Secciones: ## Qué sí funcionó | ## Qué falló / hallazgos | ## Qué falta para que funcione | ## Evidencia | ## Cómo lo corregiré
-- "Qué falta para que funcione": lista concreta (deps, .env, stubs, Docker, workers, endpoints) basada en disco.
-- Tras esas secciones: recomienda la correccion de mayor impacto (archivo + cambio).
-- PROHIBIDO pedir al usuario mas informacion del proyecto: tu lo lees.
-- PROHIBIDO "Verificacion completada con evidencia real..."
-- PROHIBIDO repetir el prompt del usuario como respuesta.
-- PROHIBIDO write_file/replace_in_file en este turno de solo lectura.
-- PROHIBIDO reiniciar el proyecto o decir que el path era incorrecto tras CONTINUA; reutiliza evidencia ya leida.` : `SI ES TAREA DE EJECUCIÓN / CONTINUACIÓN:
-- Tienes permisos de escritura activos (write_file, replace_in_file, run_command).
-- EJECUTA los cambios reales de inmediato con las herramientas de escritura.
-- PROHIBIDO decir que estás en modo solo lectura o pedir cambiar permisos cuando tienes permiso de escritura activo.`}
-
-CIERRE OBLIGATORIO — El modelo DEBE terminar cada respuesta con UNO de estos 3 encabezados de estado (nunca una respuesta abierta sin encabezado):
-
-## ✅ TAREA COMPLETADA
-Usar cuando terminaste de ejecutar y verificaste cambios reales.
-Formato:
-  ## ✅ TAREA COMPLETADA
-  <1-2 líneas: qué se hizo>
-  ### Evidencia
-  - \`<archivo>\` modificado
-  - Verificado con \`<tool>\`
-  ## Siguientes pasos
-  **1. [RECOMENDADA] <título>**
-  - Qué hacer: <1 línea concreta>
-  - Por qué ahora: <1 línea de impacto>
-  **2. <título>**
-  - Qué hacer: ...
-  - Por qué ahora: ...
-  **3. <título>**
-  - Qué hacer: ...
-  - Por qué ahora: ...
-
-## ⏸️ ESPERANDO TU ACCIÓN
-Usar cuando terminaste el análisis y necesitás que el usuario autorice, elija o confirme algo.
-Formato:
-  ## ⏸️ ESPERANDO TU ACCIÓN
-  <1-2 líneas: qué encontraste y qué necesitás>
-  ### Qué necesito
-  - <instrucción exacta>
-  ### Si decidís continuar
-  <qué harás cuando responda>
-
-## ℹ️ RESPUESTA
-Usar cuando el usuario solo hizo una pregunta informativa, conceptual, o es chat casual.
-Formato:
-  ## ℹ️ RESPUESTA
-  <contenido>
-  (opcional) Si querés que profundice en algo o haga alguna acción, decímelo.
-
-REGLAS DURAS:
-- NUNCA termines sin uno de estos 3 encabezados (excepto saludo simple como "hola" que puede ser solo texto breve).
-- NUNCA mezcles estados: o es COMPLETADA, o ESPERANDO, o RESPUESTA.
-- NUNCA uses "TAREA COMPLETADA" si NO hubo write_file/replace_in_file verificados.
-- NUNCA uses "ESPERANDO" si el usuario no tiene nada que decidir.
-- "Siguientes pasos" SOLO aparece en ✅ COMPLETADA, nunca en ℹ️ RESPUESTA.
-- En ⏸️ ESPERANDO NO agregues "Siguientes pasos" (el propio "Qué necesito" es la acción).
-
-2. NO pegues codigo fuente, imports ni bloques fenced en el chat; explica en prosa lo que encontraste o cambiaste.
-3. Indica: resultado, archivos modificados, verificaciones ejecutadas y qué falta para que arranque.
-4. No afirmes que leíste, modificaste o verificaste algo sin herramienta exitosa que lo demuestre.
-5. Si modificaste archivos, verifica después de la última escritura antes de responder como final.
-6. Cierra con UNA recomendacion concreta (siguiente accion). No termines pidiendo "mas informacion".
-7. ${input.analysisMode === true
-    ? "Skills del Cerebro: OPCIONALES en analisis (nombre exacto del inventario). Prioriza disco y el reporte de gaps."
-    : "Las skills del Cerebro ayudan en ejecucion: carga la skill especializada si aplica; si falla, continua sin insistir."}
-8. Si una skill exige un procedimiento especifico, ese procedimiento tiene prioridad sobre tus habitos generales.
-9. En una reanudación: conserva evidencia y skills; no reinicies con reglas genéricas ni reexplores la raiz sin motivo.`),
-          cache_control: { type: "ephemeral" } // ← CACHEA ESTO
-        }
-      ]
+          text: `Eres EditCoreAI, ingeniero de software senior embebido en el IDE.
+Responde siempre en español correcto, directo y al grano.
+HERRAMIENTAS: Usa las tools disponibles según la tarea.
+${input.analysisMode === true ? `MODO ANALISIS (SOLO LECTURA):
+- Inspecciona el código con read_file / list_files. No uses herramientas de escritura.
+- Reporta brevemente los hallazgos reales, qué falta para que funcione y la solución concreta.` : `MODO EJECUCION:
+- Si el usuario pide cambios o correcciones y tienes permisos activos, ejecuta las herramientas correspondientes (write_file, replace_in_file, run_command) directamente en este turno.
+- No pidas confirmaciones redundantes si tienes autorización. Aplica los cambios reales en disco y reporta el resultado.`}`,
+          cache_control: { type: "ephemeral" },
+        },
+      ],
     });
 
-    messages.push({
-      role: "system",
-      content: buildExternalFoundationContext({
-        analysisMode: input.analysisMode === true,
-        allowWrite: input.allowWrite === true,
-      }),
-    });
-
-    // Contexto extra del host (por ejemplo, modo Inspector self-repair)
+    // Contexto extra del host solo si existe
     if (input.systemExtra) {
-      messages.push({ role: "system", content: String(input.systemExtra) });
+      messages.push({ role: "system", content: String(input.systemExtra).slice(0, 500) });
     }
 
-    // Historial del chat Inspector / caller (roles user|assistant) con retención progresiva
+    // Historial: estrictamente los últimos 3 turnos relevantes con truncado a 1000 caracteres
     if (Array.isArray(input.history) && input.history.length) {
-      const compacted = compactChatHistory(input.history, {
-        maxMessages: 28,
-        maxContentChars: 8000,
-        maxTotalChars: 50000,
-        includeSummary: true,
-      });
-      for (const item of compacted) {
+      const recent = input.history.slice(-3);
+      for (const item of recent) {
         const role = item?.role === "assistant" ? "assistant" : "user";
-        if (Array.isArray(item?.content)) {
-          messages.push({ role, content: item.content });
-        } else {
-          const content = String(item?.content || "").trim();
-          if (!content) continue;
-          messages.push({ role, content: content.slice(0, 12000) });
+        const content = String(item?.content || item?.text || "").trim();
+        if (content) {
+          messages.push({ role, content: content.slice(0, 1000) });
         }
       }
     }
 
-    // Inyectar contexto de análisis del proyecto si existe
+    // Contexto de análisis previo (podado)
     if (input.analysisContext) {
       messages.push({
         role: "system",
-        content: `## Contexto del proyecto (análisis previo)\n${input.analysisContext}`,
+        content: `Contexto previo: ${String(input.analysisContext).slice(0, 400)}`,
       });
     }
 
-    // Memoria local de proyecto (.editcore/memory.json)
+    // Memoria local de proyecto (podada a resumen breve)
     if (input.projectRoot) {
       try {
         const projMem = loadProjectMemory(input.projectRoot);
@@ -4115,55 +3969,30 @@ REGLAS DURAS:
         if (projMemFormatted) {
           messages.push({
             role: "system",
-            content: [
-              {
-                type: "text",
-                text: projMemFormatted,
-                cache_control: { type: "ephemeral" },
-              },
-            ],
+            content: `Memoria del proyecto: ${String(projMemFormatted).slice(0, 300)}`,
           });
         }
       } catch {}
     }
 
-    // Contexto de memoria persistente del agente (.editcore/agent-memory)
+    // Memoria persistente del agente (podada)
     if (this.agentMemory) {
-      const memoryContext = this.agentMemory.buildContextForAgent();
-      if (memoryContext.length > 50) {
-        messages.push({
-          role: "system",
-          content: [
-            {
-              type: "text",
-              text: `MEMORIA PERSISTENTE:\n${memoryContext}`,
-              cache_control: { type: "ephemeral" } // ← CACHEA MEMORIA
-            }
-          ]
-        });
-      }
+      try {
+        const memoryContext = this.agentMemory.buildContextForAgent();
+        if (memoryContext && memoryContext.length > 50) {
+          messages.push({
+            role: "system",
+            content: `Memoria persistente: ${memoryContext.slice(0, 300)}`,
+          });
+        }
+      } catch {}
     }
 
-    // Cerebro context CON CACHE (si existe)
-    if (input.brainContext && input.brainContext.length > 100) {
-      messages.push({
-        role: "system",
-        content: [
-          {
-            type: "text",
-        text: `Cerebro EditCore (reglas vigentes para esta tarea):\n${input.brainContext.slice(0, 9000)}`,
-            cache_control: { type: "ephemeral" } // ← CACHEA ESTO
-          }
-        ]
-      });
-    }
-
-    // Memoria de la corrida anterior en este proyecto: evita que una
-    // continuacion ("continua", "procede") re-explore todo desde cero.
+    // Contexto previo de la corrida anterior (podado)
     if (input.previousRunSummary && input.freshAnalysisRun !== true) {
       messages.push({
         role: "system",
-        content: `MEMORIA DE LA CORRIDA ANTERIOR EN ESTE PROYECTO (evidencia ya verificada — NO repitas estas acciones, continua el trabajo desde este punto):\n${String(input.previousRunSummary).slice(0, 6000)}`,
+        content: `Avance previo verificado: ${String(input.previousRunSummary).slice(0, 400)}`,
       });
     }
 

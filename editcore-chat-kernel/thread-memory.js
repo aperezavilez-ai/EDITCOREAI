@@ -10,9 +10,9 @@
 const fs = require("fs");
 const path = require("path");
 
-const SHORT_TURNS = 12;
-const SHORT_CHARS = 10_000;
-const STORE_TURNS = 80;
+const SHORT_TURNS = 3;
+const SHORT_CHARS = 3_000;
+const STORE_TURNS = 40;
 const MAX_DECISIONS = 40;
 const MAX_NOTES = 50;
 
@@ -204,7 +204,7 @@ function shortHistoryMessages(historyInput, projectRoot, threadId, query) {
     const key = `${role}:${text.slice(0, 180)}`;
     if (seen.has(key)) return;
     seen.add(key);
-    merged.push({ role: role === "assistant" ? "assistant" : "user", content: text.slice(0, 1800) });
+    merged.push({ role: role === "assistant" ? "assistant" : "user", content: text.slice(0, 1000) });
   };
   for (const t of persisted) push(t.role === "assistant" ? "assistant" : "user", t.content);
   for (const t of fromInput) {
@@ -229,32 +229,14 @@ function projectPromptBlock(projectRoot, threadId, query) {
   if (!projectRoot) return "";
   const project = loadProjectState(projectRoot);
   const thread = loadThread(projectRoot, threadId);
-  const relevant = retrieveRelevant(projectRoot, threadId, query, 5);
-  const parts = ["[ESTADO DEL HILO — no empieces en frío]"];
-  if (project.objective) parts.push(`Objetivo: ${project.objective}`);
+  const parts = [];
   const working = thread.workingOn || project.workingOn;
-  if (working) parts.push(`Qué estaba haciendo: ${working}`);
-  if (project.style) parts.push(`Estilo: ${project.style}`);
+  if (working) parts.push(`Tarea previa: ${working.slice(0, 150)}`);
   if (project.decisions.length) {
-    parts.push("Decisiones recientes:");
-    for (const d of project.decisions.slice(-5)) parts.push(`- ${d.text}`);
+    const lastDec = project.decisions[project.decisions.length - 1];
+    if (lastDec?.text) parts.push(`Última decisión: ${lastDec.text.slice(0, 150)}`);
   }
-  if (project.files.length) {
-    parts.push("Archivos recientes:");
-    for (const f of project.files.slice(-6)) parts.push(`- ${f.action || "touch"} ${f.rel || f}`);
-  }
-  if (relevant.length) {
-    parts.push("Recuerdo relevante a este mensaje:");
-    for (const r of relevant.slice(0, 4)) {
-      parts.push(`- (${r.source}) ${String(r.text).replace(/\s+/g, " ").slice(0, 220)}`);
-    }
-  }
-  parts.push("Continúa el MISMO hilo. No pidas contexto que ya está arriba. No reinicies la tarea.");
-  try {
-    const busTxt = require("./agent-bus").promptBlock(projectRoot, threadId);
-    if (busTxt) parts.push(busTxt);
-  } catch { /* optional */ }
-  return parts.join("\n").slice(0, 3_600);
+  return parts.join(" | ").slice(0, 500);
 }
 
 module.exports = {
