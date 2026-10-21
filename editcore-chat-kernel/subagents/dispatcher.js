@@ -48,6 +48,11 @@ function dispatchSpecialist(prompt = "", contextPrompt = "") {
     return SPECIALISTS.DATABASE;
   }
 
+  // 7. Code Analysis & Forensic Specialist (análisis quirúrgico, código por código, auditoría, inspección forense)
+  if (/\b(?:an[aá]lisis|quir[uú]rgico|auditor|auditor[ií]a|forense|diagn[oó]stico|inspecci[oó]n|c[oó]digo\s+por\s+c[oó]digo|revisa\s+(?:todo|c[oó]digo|proyecto)|revisi[oó]n|evalua|evaluaci[oó]n)\b/i.test(imm || ctx)) {
+    return SPECIALISTS.ANALYST_FORENSIC || SPECIALISTS.DEVOPS;
+  }
+
   return null;
 }
 

@@ -838,10 +838,16 @@ async function buildProject(root, options = {}) {
     } catch (_) {}
   }
   if (!buildCmd) {
-    if (fs.existsSync(path.join(root, "scripts", "rebuild-root-exe.js"))) {
+    if (fs.existsSync(path.join(root, "scripts", "build-release.mjs"))) {
+      buildCmd = "node scripts/build-release.mjs";
+    } else if (fs.existsSync(path.join(root, "scripts", "build-release.js"))) {
+      buildCmd = "node scripts/build-release.js";
+    } else if (fs.existsSync(path.join(root, "scripts", "rebuild-root-exe.js"))) {
       buildCmd = "node scripts/rebuild-root-exe.js";
     } else if (fs.existsSync(path.join(root, "scripts", "build-windows.js"))) {
       buildCmd = "node scripts/build-windows.js";
+    } else if (fs.existsSync(path.join(root, "src-tauri"))) {
+      buildCmd = "cargo tauri build";
     } else {
       buildCmd = "npm run build";
     }

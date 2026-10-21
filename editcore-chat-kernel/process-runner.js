@@ -14,7 +14,7 @@ const DEFAULT_TIMEOUT_MS = 180_000;
 const BUILD_TIMEOUT_MS = 900_000; // 15 min para compilación y empaquetado de ejecutables
 const MAX_CAPTURE = 12_000;
 const LONG_RUNNING_RE = /(?:^|\s)(?:npm\s+run\s+(?:dev|start)|pnpm\s+(?:dev|start)|yarn\s+(?:dev|start)|npx\s+next\s+dev|next\s+dev|vite(?:\s|$)|webpack-dev-server)\b/i;
-const BUILD_COMMAND_RE = /(?:build|compile|dist|release|package|pack|electron-builder|rebuild-root-exe|build-windows|csc\.exe|tsc\b)/i;
+const BUILD_COMMAND_RE = /(?:build|compile|dist|release|package|pack|electron-builder|rebuild-root-exe|build-windows|csc\.exe|tsc\b|cargo\b|tauri\b|rustc\b|make\b|cmake\b|msbuild|scripts[\\/]build-release)/i;
 
 const SEVERE_RE = /(?:Build error|Failed to compile|ENOENT|TypeScript error|error TS\d+|ELIFECYCLE|Module not found|SyntaxError|EADDRINUSE)/i;
 const NEXT_SERVER_ENOENT_RE = /ENOENT[\s\S]{0,180}?[\\/]\.next[\\/]server[\\/]|Cannot find module[\s\S]{0,120}?[\\/]\.next[\\/]server[\\/]|routes-manifest\.json/i;
@@ -120,9 +120,25 @@ function runProcess({
   signal,
   env,
 } = {}) {
-  const cmd = String(command || "").trim();
+  let cmd = String(command || "").trim();
   if (!cmd) {
     return Promise.resolve({ ok: false, command: "", error: "Comando vacío", stdout: "", stderr: "" });
+  }
+
+  // Desarmar y neutralizar bucles de "sleep falso" con ping en Windows
+  // Ejemplo común del LLM: ping -n 301 127.0.0.1 > nul o timeout /t 300
+  if (process.platform === "win32") {
+    cmd = cmd.replace(/\bping\s+(?:-n\s+(\d+)\s+127\.0\.0\.1|-n\s+(\d+)\s+localhost)\b/gi, (match, n1, n2) => {
+      const count = Number(n1 || n2 || 0);
+      return count > 2 ? "ping -n 2 127.0.0.1" : match;
+    });
+    cmd = cmd.replace(/\btimeout\s+(?:\/t\s+(\d+))\b/gi, (match, count) => {
+      return Number(count) > 2 ? "timeout /t 2" : match;
+    });
+  } else {
+    cmd = cmd.replace(/\bsleep\s+(\d+)\b/gi, (match, count) => {
+      return Number(count) > 2 ? "sleep 2" : match;
+    });
   }
 
   const root = path.resolve(cwd || process.cwd());

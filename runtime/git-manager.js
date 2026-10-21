@@ -148,7 +148,13 @@ function push(remote, branch, cwd) {
   const repo = ensureRepo(cwd);
   if (!repo.ok) return repo;
   const remoteName = typeof remote === "string" && remote.trim() ? remote : "origin";
-  const branchName = typeof branch === "string" && branch.trim() ? branch : "";
+  let branchName = typeof branch === "string" && branch.trim() ? branch : "";
+  if (!branchName) {
+    const status = getStatus(repo.repo);
+    if (status.ok && status.branch) {
+      branchName = status.branch.split("...")[0].trim();
+    }
+  }
   const target = branchName ? `"${branchName.replace(/"/g, '\\"')}"` : "";
   const args = branchName ? `push "${remoteName}" ${target}` : `push "${remoteName}"`;
   return git(args, repo.repo);

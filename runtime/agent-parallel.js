@@ -53,14 +53,35 @@ function proposeJobsFromTask(taskText = "") {
   const t = String(taskText || "").toLowerCase();
   const jobs = [];
 
+  const wantsAnalyst =
+    /(?:an[aá]lis|quir[uú]rgic|auditor|forens|diagn[oó]st|inspecci|c[oó]digo\s+por\s+c[oó]|evalu)/i.test(t);
   const wantsUi =
-    /(?:ui|ux|landing|dashboard|frontend|css|tailwind|página|pantalla|dise[nñ]o|visual)/i.test(t);
+    /(?:\b(?:ui|ux)\b|landing|dashboard|frontend|css|tailwind|p[aá]gina|pantalla|dise[nñ]o|visual)/i.test(t);
   const wantsApi =
-    /(?:api|backend|server|endpoint|supabase|auth|database|db)/i.test(t);
+    /(?:\b(?:api|server|endpoint|supabase|auth|database|db)\b|backend)/i.test(t);
   const wantsFull =
     /(?:app|saas|plataforma|producto|mvp|completa|desde cero)/i.test(t);
 
-  if (wantsFull || (wantsUi && wantsApi)) {
+  if (wantsAnalyst) {
+    jobs.push({
+      role: "explorer",
+      title: "Explorar árbol de archivos y dependencias críticas",
+      scopePaths: ["src", "app", "."],
+      goal: "Mapear arquitectura completa y puntos vulnerables",
+    });
+    jobs.push({
+      role: "analyst",
+      title: "Auditoría forense y análisis quirúrgico",
+      scopePaths: ["src", "."],
+      goal: "Localizar cuellos de botella, memory leaks, bucles y bugs",
+    });
+    jobs.push({
+      role: "verifier",
+      title: "Validación de integridad y síntesis de corrección",
+      scopePaths: ["src", "."],
+      goal: "Verificar hallazgos y estructurar plan de corrección sin regresiones",
+    });
+  } else if (wantsFull || (wantsUi && wantsApi)) {
     jobs.push({
       role: "explorer",
       title: "Mapear estructura y puntos de entrada",
@@ -466,7 +487,7 @@ function createParallelBatch(projectRoot, options) {
 function shouldUseParallel(taskText = "") {
   const t = String(taskText || "").trim();
   if (t.length < 15) return false;
-  return /(?:app|saas|plataforma|landing|dashboard|frontend.+backend|completa|desde cero|mvp|y\s+(?:además|también)|api.+ui|ui.+api|commit|push|deploy|release|roadmap|exe|dist|build|c[aá]mara|remoto|wifi|video|stream|paralelo|subagente|verificar|implementar|corregir.+y|actualiza)/i.test(
+  return /(?:app|saas|plataforma|landing|dashboard|frontend.+backend|completa|desde cero|mvp|y\s+(?:además|también)|api.+ui|ui.+api|commit|push|deploy|release|roadmap|exe|dist|build|c[aá]mara|remoto|wifi|video|stream|paralelo|subagente|verificar|implementar|corregir.+y|actualiza|an[aá]lis|quir[uú]rgic|auditor|forens|diagn[oó]st|inspecci|revis|c[oó]digo\s+por\s+c[oó]digo|evalu)/i.test(
     t
   ) || (t.includes(",") && t.length >= 25) || (t.includes(" y ") && t.length >= 25);
 }
