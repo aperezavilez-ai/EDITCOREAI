@@ -3,9 +3,22 @@
 /** Portero: una sola decisión por mensaje. Acceso completo aware. */
 
 const STOP_RE = /^\s*(?:alto|detente|cancela|cancelar|stop|para|basta|deten(?:te)?)\s*[.!?]?\s*$/i;
-const APPROVAL_RE = /^\s*(?:procede|continua|continúa|hazlo|autorizado|adelante|ejecuta|si|sí|confirmado|procedo|hazlo\s+ya|dale|va|ok)\s*[.!?]?\s*$/i;
+const APPROVAL_RE = /^\s*(?:procede|continua|continúa|hazlo|autorizado|adelante|ejecuta|si|sí|confirmado|procedo|hazlo\s+ya|dale|va|ok|avanza|sigue|de\s+acuerdo|perfecto)\s*[.!?]?\s*$/i;
+
+// Reconocimiento inmediato de opciones de usuario: "OPCION 1", "opción 2", "1", "2.", "elijo 1", "opcion uno"
+const OPTION_CHOICE_RE = /^\s*(?:(?:opci[oó]n|alternativa|paso|item|número|numero|nro|num)?\s*([1-9]\d*|uno|dos|tres|cuatro|cinco)\b|[1-9]\d*(?:\s*[.)\-]?\s*$)|(?:elegir|elijo|escojo|ejecuta(?:r)?|aplica(?:r)?|selecciona(?:r)?|tomar)\s+(?:la\s+)?opci[oó]n\s+[1-9]\d*)/i;
+
 // Frases cortas que solo dicen "seguí" ("si avanza", "ok continua por favor", "termínalo").
-const CONTINUE_WORDS = new Set(["procede", "procedo", "continua", "continúa", "continuar", "continue", "sigue", "siguele", "síguele", "avanza", "avanzale", "avánzale", "adelante", "hazlo", "dale", "ejecuta", "ejecutalo", "ejecútalo", "autorizado", "confirmado", "confirmo", "si", "sí", "ok", "okay", "va", "ya", "termina", "terminalo", "termínalo", "acaba", "acabalo", "acábalo", "por", "favor", "porfa", "porfavor", "y", "pues", "bueno", "ahora", "todo"]);
+const CONTINUE_WORDS = new Set([
+  "procede", "procedo", "continua", "continúa", "continuar", "continue",
+  "sigue", "siguele", "síguele", "avanza", "avanzale", "avánzale", "adelante",
+  "hazlo", "dale", "ejecuta", "ejecutalo", "ejecútalo", "autorizado",
+  "confirmado", "confirmo", "si", "sí", "ok", "okay", "va", "ya", "termina",
+  "terminalo", "termínalo", "acaba", "acabalo", "acábalo", "por", "favor",
+  "porfa", "porfavor", "y", "pues", "bueno", "ahora", "todo",
+  "1", "2", "3", "4", "5", "6", "7", "8", "9",
+  "opcion", "opción", "uno", "dos", "tres", "cuatro", "cinco",
+]);
 function isContinuePhrase(text = "") {
   const words = String(text || "").toLowerCase().replace(/[.,;:!?¡¿]+/g, " ").trim().split(/\s+/).filter(Boolean);
   return words.length > 0 && words.length <= 6 && words.every((w) => CONTINUE_WORDS.has(w));
@@ -63,11 +76,23 @@ function isFullAccess(opts = {}) {
     return false;
   }
 
-  // Acceso completo explícito
-  if (opts.permissionFull === true || opts.fullAccess === true || opts.isFullAccess === true || opts.accesoCompleto === true) return true;
+  // Acceso completo / Modo Agente explícito
+  if (
+    opts.permissionFull === true
+    || opts.fullAccess === true
+    || opts.isFullAccess === true
+    || opts.accesoCompleto === true
+    || opts.isAgent === true
+    || opts.agentMode === true
+    || opts.planAuthorized === true
+    || opts.planAuthorizedExecution === true
+    || opts.authorizedFromPending === true
+  ) {
+    return true;
+  }
 
   // Acceso completo / Agente autónomo (variantes UI EditCore)
-  if (/(?:acceso[\s_-]*completo|full[\s_-]*access|\bfull\b)/i.test(joined)) {
+  if (/(?:acceso[\s_-]*completo|full[\s_-]*access|\bfull\b|\bagente\b|\bagent\b|aut[oó]nomo)/i.test(joined)) {
     return true;
   }
   if (/(?:solo[\s_-]*lectura|read[\s_-]*only|\breadonly\b|\bchat\b)/i.test(joined)) return false;
@@ -76,7 +101,7 @@ function isFullAccess(opts = {}) {
   try {
     if (Number(opts.permissionLevel) >= 2) return true;
     if (opts.permissions && typeof opts.permissions === "object") {
-      if (opts.permissions.full === true || opts.permissions.fullAccess === true) return true;
+      if (opts.permissions.full === true || opts.permissions.fullAccess === true || opts.permissions.agent === true) return true;
     }
   } catch { /* ignore */ }
   return false;
@@ -93,7 +118,13 @@ function classify(message, opts = {}) {
   if (STOP_RE.test(text)) {
     return { kind: "STOP", label: "Parada", allowTools: false, allowWrite: false, background: false };
   }
-  if (APPROVAL_RE.test(text) || isContinuePhrase(text) || CONTINUE_TASK_RE.test(text) || /^INSTRUCCI[OÓ]N AUTORIZADA DEL USUARIO:/i.test(text)) {
+  if (
+    APPROVAL_RE.test(text)
+    || OPTION_CHOICE_RE.test(text)
+    || isContinuePhrase(text)
+    || CONTINUE_TASK_RE.test(text)
+    || /^INSTRUCCI[OÓ]N AUTORIZADA DEL USUARIO:/i.test(text)
+  ) {
     return { kind: "EXECUTE", label: full ? "Ejecución (Acceso completo)" : "Ejecución autorizada", allowTools: true, allowWrite: true, background };
   }
   if (TASK_CLONE_RE.test(text) && HTTP_URL_RE.test(text)) {
@@ -173,8 +204,20 @@ function classify(message, opts = {}) {
     || /\?$/i.test(text)
     || /^(?:qu[eé]\s+(?:skills|es|hace|son|hay|opinas|diferencia|cambi[oó]|pasa)|cu[aá]l(?:es)?|c[oó]mo|por\s*qu[eé]|qui[eé]n(?:es)?|cu[aá]ndo|hay\b|ya\s+qued[oó]|qued[oó]|ya\s+quedaron|porque\s+se\s+te\s+acaba|es\s+posible)\b/i.test(text);
 
+  // En Modo Agente o Acceso Total: NUNCA degradar a CHAT sin herramientas ni pedir cambiar permisos
+  if (full) {
+    const isPureInfo = isQuestionOrChat && !TASK_FIX_RE.test(text);
+    return {
+      kind: isPureInfo ? "ASK" : "EXECUTE",
+      label: isPureInfo ? "Consulta en Modo Agente" : "Ejecución (Acceso completo)",
+      allowTools: true,
+      allowWrite: true,
+      background,
+    };
+  }
+
   if (isQuestionOrChat) {
-    return { kind: "CHAT", label: "Chat", allowTools: false, allowWrite: false, background };
+    return { kind: "CHAT", label: "Chat", allowTools: false, allowWrite: false, background: false };
   }
 
   // --- Fix: NO mandar trabajo a CHAT sin tools ---
