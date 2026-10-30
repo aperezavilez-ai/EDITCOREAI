@@ -28,11 +28,6 @@ function getCallChat() {
   if (!_callChat) _callChat = require("./editcore-chat-kernel/provider").callChat;
   return _callChat;
 }
-let _parseTextToolCalls = null;
-function getParseTextToolCalls() {
-  if (!_parseTextToolCalls) _parseTextToolCalls = require("./editcore-chat-kernel/parse-text-tools").parseTextToolCalls;
-  return _parseTextToolCalls;
-}
 
 const AUTHORIZED_MAX_STEPS = 120;
 
@@ -684,12 +679,16 @@ class ChatOrchestrator {
     try {
       const tools = getTools();
       const callChat = getCallChat();
-      const parseTextToolCalls = getParseTextToolCalls();
       const availableTools = allowWrite
         ? tools.DEFINITIONS
         : tools.DEFINITIONS.filter((t) => !["write_file", "replace_in_file", "run_command"].includes(t.function.name));
 
-      let system = "Sos EditCoreAI. Respondé siempre en español, claro y directo usando herramientas de forma segura.";
+      // REGLA ESTRICTA OPENAI COMPATIBLE
+      let system = `Sos EditCoreAI, un agente de software autónomo. Respondé siempre en español, claro y directo.
+REGLA DE ORO: Tienes ESTRICTAMENTE PROHIBIDO escribir código o herramientas (como "read_file(...)") en el chat de texto. DEBES usar exclusivamente las herramientas nativas (tool_calls) que se te proporcionan.
+Si necesitas leer un archivo, invoca la herramienta 'read_file'. Si necesitas escribir, usa 'write_file'. 
+Si consideras que la tarea está 100% completada y verificada, responde ÚNICAMENTE con la palabra exacta: TASK_COMPLETE.`;
+
       const messages = [{ role: "system", content: system }, { role: "user", content: message }];
       const steps = [];
 
@@ -703,19 +702,27 @@ class ChatOrchestrator {
         });
 
         let toolCalls = Array.isArray(turn.toolCalls) ? turn.toolCalls : [];
-        if (!toolCalls.length && turn.text) {
-          toolCalls = parseTextToolCalls(turn.text, { projectRoot });
-        }
-
+        
+        // Si no hay toolCalls, verificamos si el modelo dijo que terminó o si falló
         if (!toolCalls.length) {
-          this.session.kill();
-          return { kind: decision?.kind || "CHAT", text: turn.text || "Terminado.", steps };
+          if (turn.text && turn.text.includes("TASK_COMPLETE")) {
+            this.session.kill();
+            return { kind: decision?.kind || "CHAT", text: turn.text.replace("TASK_COMPLETE", "").trim() || "Tarea finalizada.", steps };
+          }
+
+          // Si el modelo devolvió texto en lugar de usar la herramienta, lo forzamos a corregir
+          messages.push({ role: "assistant", content: turn.text || "..." });
+          messages.push({ 
+            role: "user", 
+            content: "ERROR CRÍTICO: No has invocado ninguna herramienta (tool_call). Estás OBLIGADO a usar las funciones nativas. Si la tarea ya está terminada, escribe EXACTAMENTE 'TASK_COMPLETE'." 
+          });
+          continue; 
         }
 
         messages.push({
           role: "assistant",
           content: turn.text || null,
-          tool_calls: toolCalls.map((c) => ({ id: c.id, type: "function", function: c.function })),
+          tool_calls: toolCalls,
         });
 
         for (const call of toolCalls) {
@@ -725,7 +732,7 @@ class ChatOrchestrator {
 
           onProgress?.({ phase: "tool", stage: "running", name, input: args });
 
-          // Blindaje determinista: evitar escrituras si no hay permisos de escritura reales
+          // Blindaje determinista: evitar escrituras si no hay permisos
           if ((name === "write_file" || name === "replace_in_file") && !allowWrite) {
             const res = { ok: false, error: "Escritura denegada por política de permisos (Solo lectura)." };
             steps.push({ name, input: args, result: res, ok: false });

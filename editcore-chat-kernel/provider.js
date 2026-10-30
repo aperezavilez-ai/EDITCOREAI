@@ -47,8 +47,6 @@ function isTransientError(error) {
   return /timeout|time-?out|aborted|cloudflare|524|504|502|503|429|econnreset|etimedout|enotfound|fetch failed|socket|network|overloaded/i.test(msg);
 }
 
-// Una clave rechazada (401) no se recupera sola: sus perfiles pasan al final
-// de la cola un rato para no gastar el primer intento de cada turno en ella.
 const REJECTED_KEY_TTL_MS = 10 * 60_000;
 const rejectedKeys = new Map();
 
@@ -139,7 +137,7 @@ async function callChatSingleAttempt({
   const body = {
     model,
     messages: cachedMessages,
-    temperature: 0.2,
+    temperature: 0.1, // Ajustado para ser más determinista en código
     stream: wantStream,
     ...(wantStream ? { stream_options: { include_usage: true } } : {}),
   };
@@ -148,7 +146,6 @@ async function callChatSingleAttempt({
     body.tool_choice = toolChoice || "auto";
   }
 
-  // Plazo por inactividad (no total): una respuesta larga que sigue llegando no se corta.
   const idle = createIdleTimeout(Number(timeoutMs) || 0, Number(timeoutMs) > 0 ? Math.max(Number(timeoutMs), PROVIDER_MAX_TOTAL_MS) : 0);
   const requestSignal = mergeAbortSignals(signal, idle.signal);
   try {
@@ -272,7 +269,7 @@ async function callChat({
 
   for (let pIdx = 0; pIdx < profileList.length; pIdx++) {
     const currentProfile = profileList[pIdx];
-    const maxRetries = pIdx === 0 ? 2 : 1; // 2 intentos en primario, 1 en respaldo
+    const maxRetries = pIdx === 0 ? 2 : 1;
 
     if (pIdx > 0) {
       try {
@@ -313,7 +310,6 @@ async function callChat({
         if (err?.code === "AGENT_STEER" || signal?.aborted) {
           throw err;
         }
-        // Lo ya mostrado no se repite con otro intento ni con otro perfil.
         if (streamedAny) throw err;
         let host = "";
         try { host = new URL(currentProfile.apiBaseUrl).host; } catch { /* sin host */ }
@@ -336,7 +332,7 @@ async function callChat({
           await delay(800 * (attempt + 1), signal).catch(() => {});
           continue;
         }
-        break; // pasar al siguiente perfil si este falló
+        break;
       }
     }
   }

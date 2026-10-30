@@ -84,7 +84,6 @@ function providerToolCallAction(call) {
   return normalizeAgentToolAction(name, input);
 }
 
-/** Garantiza que arguments de tool_call sea JSON object-string valido (nunca lanza). */
 function safeParseToolArguments(raw) {
   const text = String(raw || "").trim();
   if (!text) return {};
@@ -92,7 +91,6 @@ function safeParseToolArguments(raw) {
     const parsed = JSON.parse(text);
     return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
   } catch {}
-  // Recorte al primer objeto balanceado si el modelo mando basura alrededor.
   const start = text.indexOf("{");
   if (start < 0) return {};
   let depth = 0;
