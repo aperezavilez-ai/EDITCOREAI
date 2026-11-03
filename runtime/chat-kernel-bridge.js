@@ -95,6 +95,46 @@ async function runKernelChat({
   }, 5_000);
 
   try {
+    // Si se habilita o solicita el cerebro autónomo EditCore Brain
+    if (helpers?.useEditCoreBrain === true || process.env.EDITCORE_USE_BRAIN === "true") {
+      const { EditCoreBrain } = require("./editcore-brain");
+      const brain = new EditCoreBrain({
+        callChat: helpers?.callChat || null,
+        uiBridge: {
+          onProgress,
+          requestApproval: async (name, input) => {
+            if (typeof helpers?.requestApproval === "function") {
+              return await helpers.requestApproval(name, input);
+            }
+            return true;
+          },
+        },
+      });
+
+      const brainResult = await brain.executeTask({
+        prompt: message,
+        projectRoot,
+        apiKey,
+        model,
+        apiBaseUrl,
+        permissionMode: isFull ? "full" : (permissionMode || "step"),
+        fullAccess: isFull,
+        rules: skillsPrompt,
+        history: chatHistory,
+        onProgress,
+      });
+
+      return {
+        ok: brainResult.ok,
+        text: brainResult.text,
+        steps: brainResult.messages?.filter((m) => m.role === "tool") || [],
+        threadId: tid,
+        kernel: true,
+        brain: true,
+        report: { completed: brainResult.ok, role: brainResult.role },
+      };
+    }
+
     const result = await Promise.race([
       handleChat({
         message,

@@ -158,6 +158,19 @@ REGLAS PRIMORDIALES:
           },
         },
       },
+      {
+        type: "function",
+        function: {
+          name: "list_files",
+          description: "Lista los archivos del directorio especificado (o raíz del proyecto).",
+          parameters: {
+            type: "object",
+            properties: {
+              path: { type: "string", description: "Directorio a listar (por defecto '.')" },
+            },
+          },
+        },
+      },
     ];
 
     while (this.state !== BrainState.DONE && !this.isAborted && turns < this.maxTurns) {
@@ -257,8 +270,19 @@ REGLAS PRIMORDIALES:
             result = await fileEditor.writeFile(args.path, args.content);
           } else if (name === "replace_in_file") {
             result = await fileEditor.replaceInFile(args.path, args.old_text, args.new_text);
+          } else if (name === "list_files") {
+            const fs = require("node:fs/promises");
+            const targetDir = fileEditor.resolveSafePath(args.path || ".");
+            const entries = await fs.readdir(targetDir, { withFileTypes: true });
+            result = {
+              ok: true,
+              path: args.path || ".",
+              entries: entries.slice(0, 100).map((e) => ({
+                name: e.name,
+                isDirectory: e.isDirectory(),
+              })),
+            };
           } else if (name === "run_command") {
-            // Ejecución segura de comandos
             const { exec } = require("node:child_process");
             result = await new Promise((resolve) => {
               exec(args.command, { cwd: projectRoot }, (error, stdout, stderr) => {
