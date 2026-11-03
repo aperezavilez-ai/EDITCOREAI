@@ -75,6 +75,10 @@ async function runKernelChat({
     mode === "full"
   );
 
+  // threadId estable: si no viene, generar uno (evita hilos huérfanos por mensaje).
+  const tid = String(threadId || chatId || "").trim()
+    || `thread_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+
   const { isCasualPrompt, localConversationResponse } = require("./chat-local");
   if (isCasualPrompt(message)) {
     const casualText = localConversationResponse(message) || "Hola. ¿En qué te ayudo?";
@@ -100,10 +104,6 @@ async function runKernelChat({
       }
       return true;
     });
-
-  // threadId estable: si no viene, generar uno (evita hilos huérfanos por mensaje).
-  const tid = String(threadId || chatId || "").trim()
-    || `thread_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
   // Heartbeat cada 5s para que la UI muestre actividad mientras el kernel trabaja.
   const heartbeatStart = Date.now();
