@@ -21,7 +21,7 @@ const DEFAULT_TIER_MODELS = {
     { provider: "gemini", model: "gemini-1.5-flash", priority: 1, costPer1kInput: 0.000075, costPer1kOutput: 0.0003 },
     { provider: "anthropic", model: "claude-3-haiku-20240307", priority: 2, costPer1kInput: 0.00025, costPer1kOutput: 0.00125 },
     { provider: "openai", model: "gpt-4o-mini", priority: 3, costPer1kInput: 0.00015, costPer1kOutput: 0.0006 },
-    { provider: "apicredits", model: "deepseek-coder", priority: 4, costPer1kInput: 0.00014, costPer1kOutput: 0.00028 },
+    { provider: "meai", model: "deepseek-v4-pro", priority: 4, costPer1kInput: 0.00014, costPer1kOutput: 0.00028 },
     { provider: "ollama", model: "qwen2.5-coder:7b", priority: 5, costPer1kInput: 0, costPer1kOutput: 0, isLocal: true },
   ],
   // Balanced models for conversation, explanation and quick debug
@@ -29,14 +29,14 @@ const DEFAULT_TIER_MODELS = {
     { provider: "anthropic", model: "claude-3-5-sonnet-20241022", priority: 1, costPer1kInput: 0.003, costPer1kOutput: 0.015 },
     { provider: "gemini", model: "gemini-1.5-pro", priority: 2, costPer1kInput: 0.00125, costPer1kOutput: 0.005 },
     { provider: "openai", model: "gpt-4o", priority: 3, costPer1kInput: 0.0025, costPer1kOutput: 0.01 },
-    { provider: "apicredits", model: "claude-3-5-sonnet", priority: 4, costPer1kInput: 0.003, costPer1kOutput: 0.015 },
+    { provider: "meai", model: "claude-sonnet-4.6", priority: 4, costPer1kInput: 0.003, costPer1kOutput: 0.015 },
     { provider: "ollama", model: "llama3.1:8b", priority: 5, costPer1kInput: 0, costPer1kOutput: 0, isLocal: true },
   ],
   // High-reasoning heavy models for multi-file architecture, planning and deep audits
   reasoning: [
     { provider: "anthropic", model: "claude-3-7-sonnet", priority: 1, costPer1kInput: 0.003, costPer1kOutput: 0.015 },
     { provider: "openai", model: "o3-mini", priority: 2, costPer1kInput: 0.0011, costPer1kOutput: 0.0044 },
-    { provider: "apicredits", model: "deepseek-r1", priority: 3, costPer1kInput: 0.00055, costPer1kOutput: 0.00219 },
+    { provider: "meai", model: "claude-opus-4.8", priority: 3, costPer1kInput: 0.00055, costPer1kOutput: 0.00219 },
     { provider: "gemini", model: "gemini-2.0-flash-thinking-exp", priority: 4, costPer1kInput: 0, costPer1kOutput: 0 },
     { provider: "ollama", model: "deepseek-r1:14b", priority: 5, costPer1kInput: 0, costPer1kOutput: 0, isLocal: true },
   ],

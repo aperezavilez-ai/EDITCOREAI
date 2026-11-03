@@ -1872,7 +1872,7 @@ ipcMain.handle("editcore:chat", async (_event, input = {}) => {
       fullAccess,
       externalActionApproved: fullAccess,
       permissionMode: permissionHint || permissionMode || "step",
-      ...buildKernelProcessHooks(rootPath),
+      ...buildKernelProcessHooks(rootPath, _event),
     });
     const out = await handleChatKernel({
     helpers,
@@ -2688,16 +2688,17 @@ if (
 }
 
 /** Hooks de streaming para run_command del kernel (process-runner). */
-function buildKernelHelpers(projectRoot, event = null) {
-  const root = String(projectRoot || "");
+function buildKernelProcessHooks(projectRoot, event = null) {
+  const root = typeof projectRoot === "string" ? projectRoot : (projectRoot?.projectRoot || "");
+  const ev = event || (typeof projectRoot === "object" ? projectRoot?.event : null);
   return {
-    onProcessChunk: (ev) => {
+    onProcessChunk: (evChunk) => {
       if (!root) return;
       emitPreviewDaemonEvent(root, {
         type: "process-log",
-        stream: ev?.stream || "stdout",
-        chunk: String(ev?.chunk || "").slice(-2000),
-        command: ev?.command || "",
+        stream: evChunk?.stream || "stdout",
+        chunk: String(evChunk?.chunk || "").slice(-2000),
+        command: evChunk?.command || "",
         at: Date.now(),
       });
     },
@@ -2723,12 +2724,22 @@ function buildKernelHelpers(projectRoot, event = null) {
       });
     },
     requestApproval: async (name, input) => {
-      if (!event) return true;
+      if (!ev) return true;
       const payload = agentApprovalPayload(name, input, { projectRoot: root });
-      return await requestAgentApproval(event, payload);
+      return await requestAgentApproval(ev, payload);
     },
     useEditCoreBrain: true,
   };
+}
+
+function buildKernelHelpers(projectRootOrOptions = {}, event = null) {
+  if (projectRootOrOptions && typeof projectRootOrOptions === "object" && !projectRootOrOptions.onProcessChunk) {
+    return {
+      ...projectRootOrOptions,
+      useEditCoreBrain: true,
+    };
+  }
+  return buildKernelProcessHooks(projectRootOrOptions, event);
 }
 
 function resolveKernelProviderCredentials() {
@@ -3956,55 +3967,45 @@ function gatewayModelsFromPayload(payload) {
   return expandGatewayCatalogModels([...new Set(rows.map((item) => String(item?.id || item?.name || item || "").trim()).filter(Boolean))]);
 }
 
-// ME AI: set recomendado para EditCore (agente + fallbacks).
+// ME AI: catálogo completo soportado para EditCore
 const MEAI_GATEWAY_MODELS = [
-  "claude-sonnet-4.6",
-  "claude-haiku-4-5",
+  "claude-opus-5.5",
+  "claude-opus-5-5",
+  "claude-opus-5",
   "claude-opus-4.8",
-  "qwen3.6-plus",
-  "glm-5",
-  "deepseek-v4-pro",
-  "kimi-k2.6",
-];
-
-// Live GET api.apicredits.site/v1/models por key (2026-09-03).
-const APICREDITS_GATEWAY_MODELS = [
-  "claude-fable-5",
-  "claude-haiku-4-5",
-  "claude-opus-4-7",
   "claude-opus-4-8",
-  "claude-sonnet-4-6",
+  "claude-opus-4.7",
+  "claude-opus-4-7",
+  "claude-opus-4.7-thinking",
+  "claude-opus-4.6",
+  "claude-opus-4-6",
+  "claude-opus-4.6-thinking",
+  "claude-sonnet-5.5",
+  "claude-sonnet-5-5",
   "claude-sonnet-5",
-  "gpt-5.6-luna",
-  "gpt-5.6-sol",
-  "gpt-5.6-terra",
-  "gemini-2.5-flash",
-  "grok-4.3",
-  "grok-4.5",
+  "claude-sonnet-4.6",
+  "claude-sonnet-4-6",
+  "claude-haiku-4.5",
+  "claude-haiku-4-5",
+  "claude-haiku-4-5-20251001",
   "deepseek-v4-pro",
+  "deepseek-v4-flash",
+  "deepseek-v4",
+  "qwen3.6-plus",
+  "qwen3.6",
+  "qwen3.5",
+  "glm-5.2",
+  "glm-5.1",
+  "glm-5",
+  "kimi-k2.6",
+  "minimax-m3",
+  "minimax-m2.7",
+  "minimax-m2.5",
+  "step-3.7-flash",
+  "mimo-v2.5",
 ];
 
 const BLOCKED_GATEWAY_MODELS = [
-  /^meai\/gpt/i,
-  /^meai\/claude-sonnet-5$/i,
-  /^meai\/glm-5\.[12]$/i,
-  /^meai\/qwen3\.5/i,
-  /^meai\/deepseek-v4-flash$/i,
-  /^meai\/deepseek-v4$/i,
-  /^meai\/sd-2/i,
-  /^meai\/.*thinking/i,
-  /^apicredits\/gpt-(?!5\.6-(?:luna|sol|terra)$)/i,
-  /^apicredits\/claude-opus-4-6$/i,
-  /^apicredits\/claude-opus-4-5/i,
-  /^apicredits\/claude-sonnet-4-5/i,
-  /^apicredits\/claude-haiku-4-5-2025/i,
-  /^apicredits\/claude-opus-5$/i,
-  /^apicredits\/claude-sonnet-4\.6$/i,
-  /^apicredits\/claude-haiku-4\.5$/i,
-  /^apicredits\/gemini-(?!2\.5-flash$)/i,
-  /^apicredits\/grok-(?!4\.[35]$)/i,
-  /^apicredits\/deepseek-(?!v4-pro$)/i,
-  /^apicredits\/glm/i,
   /^chatgptpro4all\//i,
 ];
 
@@ -4015,13 +4016,10 @@ function isBlockedGatewayModel(model) {
 
 function expandGatewayCatalogModels(models = []) {
   const list = Array.isArray(models) ? models.map((item) => String(item || "").trim()).filter(Boolean) : [];
-  const cleaned = list.filter((model) => !isBlockedGatewayModel(model));
+  const cleaned = list.filter((model) => !isBlockedGatewayModel(model) && !model.startsWith("apicredits/"));
   const expanded = new Set(cleaned);
   if (cleaned.some((model) => model.startsWith("meai/")) || list.some((model) => model.startsWith("meai/"))) {
     for (const model of MEAI_GATEWAY_MODELS) expanded.add(`meai/${model}`);
-  }
-  if (cleaned.some((model) => model.startsWith("apicredits/")) || list.some((model) => model.startsWith("apicredits/"))) {
-    for (const model of APICREDITS_GATEWAY_MODELS) expanded.add(`apicredits/${model}`);
   }
   return [...expanded].filter((model) => !isBlockedGatewayModel(model));
 }
@@ -6947,7 +6945,7 @@ ipcMain.handle("agent:run", async (event, input = {}) => {
         fullAccess: isFull,
         externalActionApproved: isFull,
         permissionMode: permissionHint || "step",
-        ...buildKernelProcessHooks(rootPath),
+        ...buildKernelProcessHooks(rootPath, event),
       });
 
       // Match & attach active skills
@@ -9724,7 +9722,7 @@ function ensureDirectUpstreamProfiles() {
     const rawProviders = Array.isArray(secure["editcore-custom-providers"]) ? secure["editcore-custom-providers"] : [];
     const rawProfiles = Array.isArray(secure["editcore-provider-profiles"]) ? secure["editcore-provider-profiles"] : [];
     const cleanedProviders = rawProviders.filter((provider) => !isGatewayResidueProvider(provider));
-    let profiles = rawProfiles.filter((profile) => !isGatewayResidueProfile(profile));
+    let profiles = rawProfiles.filter((profile) => !isGatewayResidueProfile(profile) && profile.providerKey !== "apicredits");
     let changed = cleanedProviders.length !== rawProviders.length || profiles.length !== rawProfiles.length;
     if (changed) {
       secure["editcore-custom-providers"] = cleanedProviders;
@@ -9733,6 +9731,21 @@ function ensureDirectUpstreamProfiles() {
     const providers = secure["editcore-providers"] && typeof secure["editcore-providers"] === "object"
       ? { ...secure["editcore-providers"] }
       : {};
+
+    if (providers.apicredits) {
+      delete providers.apicredits;
+      changed = true;
+    }
+    if (secure["editcore-chat-config"]?.providerKey === "apicredits") {
+      secure["editcore-chat-config"] = {
+        ...secure["editcore-chat-config"],
+        providerKey: "meai",
+        model: "claude-sonnet-4.6",
+        providerProfileId: "meai:claude-sonnet-4.6",
+        autoProviderScope: "meai",
+      };
+      changed = true;
+    }
 
     const upsertDirect = ({ providerKey, providerName, baseUrl, model, apiKey }) => {
       const key = String(apiKey || "").trim();
@@ -9775,21 +9788,7 @@ function ensureDirectUpstreamProfiles() {
     };
 
     if (toolsDir) {
-      const apicreditsKeys = readLocalKeysFile(path.join(toolsDir, ".apicredits-keys.local"));
       const meaiKeys = readLocalKeysFile(path.join(toolsDir, ".meai-keys.local"));
-      const claudeApicredits = String(apicreditsKeys.claude || apicreditsKeys.claude_default || apicreditsKeys.apicredits || "").trim();
-      const { HIDDEN_PROVIDER_KEYS } = require("./runtime/meai-single-key");
-      if (claudeApicredits.startsWith("sk-") && !HIDDEN_PROVIDER_KEYS.includes("apicredits")) {
-        for (const model of ["claude-fable-5", "claude-haiku-4-5"]) {
-          upsertDirect({
-            providerKey: "apicredits",
-            providerName: "APICredits",
-            baseUrl: "https://api.apicredits.site/v1",
-            model,
-            apiKey: claudeApicredits,
-          });
-        }
-      }
       const meaiSingleKey = String(meaiKeys["claude-sonnet-4.6"] || meaiKeys.default || meaiKeys.meai || "").trim();
       const meaiAlreadyConfigured = String(providers.meai?.apiKey || "").trim() !== "";
       for (const model of MEAI_GATEWAY_MODELS) {

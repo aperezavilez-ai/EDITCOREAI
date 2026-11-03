@@ -1,9 +1,6 @@
 "use strict";
 
-// ME AI usa una sola API key para todos sus modelos. Un proveedor en
-// HIDDEN_PROVIDER_KEYS se oculta guardando su status en hiddenStatus; al sacarlo
-// de la lista, sus perfiles vuelven con el status que tenían. APICredits sigue
-// visible para el administrador; a los usuarios los filtra el rol en renderer.js.
+// ME AI usa una sola API key para todos sus modelos.
 const MEAI_KEY = "meai";
 const MEAI_BASE_URL = "https://api.meai.cloud/v1";
 const MEAI_DEFAULT_MODEL = "claude-sonnet-4.6";
@@ -42,11 +39,14 @@ function unifyMeaiSecureState(input) {
   const providers = state["editcore-providers"] && typeof state["editcore-providers"] === "object"
     ? { ...state["editcore-providers"] }
     : {};
+  if (providers.apicredits) delete providers.apicredits;
   const rawProfiles = Array.isArray(state["editcore-provider-profiles"]) ? state["editcore-provider-profiles"] : [];
   const before = JSON.stringify([providers[MEAI_KEY] || null, rawProfiles, state["editcore-chat-config"] || null]);
 
   const apiKey = pickMeaiKey(providers[MEAI_KEY] || {}, rawProfiles);
-  let profiles = rawProfiles.map((p) => {
+  let profiles = rawProfiles
+    .filter((p) => p && p.providerKey !== "apicredits")
+    .map((p) => {
     if (!p || typeof p !== "object") return p;
     if (p.providerKey === MEAI_KEY && apiKey && p.apiKey !== apiKey) return { ...p, apiKey };
     if (HIDDEN_PROVIDER_KEYS.includes(p.providerKey)) {

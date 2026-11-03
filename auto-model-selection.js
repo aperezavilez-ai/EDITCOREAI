@@ -8,21 +8,18 @@
   const AUTO_MODEL_SELECTION = "__auto__";
   const CAPABILITY_FAIL_TTL_MS = 20 * 60 * 1000;
   const SLOW_MODEL_MS = 90_000;
-  const UPSTREAM_ORDER = ["meai", "apicredits"];
-  const AUTO_SCOPE_LABELS = { all: "Todos", meai: "ME AI", apicredits: "APICredits" };
+  const UPSTREAM_ORDER = ["meai"];
+  const AUTO_SCOPE_LABELS = { all: "Todos", meai: "ME AI" };
 
   function normalizeAutoProviderScope(scope) {
     const value = String(scope || "").trim().toLowerCase();
-    if (value === "meai" || value === "apicredits") return value;
-    if (value === "all" || value === "both" || value === "*" || value === "combined" || value === "todos") return "all";
-    // Legacy: "__auto__" sin sufijo / scope vacio = ambos proveedores.
-    if (!value) return "all";
+    if (value === "meai") return "meai";
     return "all";
   }
 
   function isScopedAutoProvider(scope) {
     const normalized = normalizeAutoProviderScope(scope);
-    return normalized === "meai" || normalized === "apicredits";
+    return normalized === "meai";
   }
 
   function autoSelectionValue(scope = "") {
@@ -56,50 +53,47 @@
     const fromModel = autoRotationBucket(entry?.model);
     if (fromModel) return fromModel;
     const group = String(entry?.modelProviderGroup || "").toLowerCase();
-    if (group === "meai" || group === "apicredits") return group;
+    if (group === "meai") return group;
     const key = String(entry?.providerKey || "").toLowerCase();
-    if (key === "meai" || key === "apicredits") return key;
+    if (key === "meai") return key;
     return "";
   }
 
   // Modelos estables conocidos (fallback si no hay catalogo amplio).
   const AUTO_SAFE_MODEL_PATTERNS = [
-    /fable-5/i,
-    /claude-haiku-4/i,
-    /claude-sonnet-4[.-]6/i,
-    /meai\/claude-sonnet-4\.6/i,
-    /gpt-5\.6-(?:luna|sol|terra)/i,
-    /glm-5$/i,
-    /qwen3\.6-plus/i,
-    /deepseek-v4-pro/i,
-    /kimi-k2\.6/i,
-    /gemini-2\.5-flash/i,
-    /grok-4\.[35]/i,
+    /claude-opus/i,
+    /claude-sonnet/i,
+    /claude-haiku/i,
+    /qwen3/i,
+    /glm-5/i,
+    /deepseek-v4/i,
+    /kimi-k2/i,
+    /minimax-m/i,
+    /step-3/i,
+    /mimo-v2/i,
   ];
 
   const TIER_SCORES = [
-    ["claude-fable-5", 72],
-    ["claude-opus-4.8", 100],
-    ["claude-opus-4", 98],
-    ["claude-opus", 95],
-    ["claude-sonnet-4", 88],
+    ["claude-opus-5", 100],
+    ["claude-opus-4.8", 98],
+    ["claude-opus-4.7", 96],
+    ["claude-opus-4.6", 94],
+    ["claude-opus", 92],
+    ["claude-sonnet-5", 90],
+    ["claude-sonnet-4.6", 88],
     ["claude-sonnet", 85],
-    ["gpt-5.6", 82],
-    ["gpt-5", 76],
-    ["gpt-4o", 70],
-    ["grok-4.5", 68],
-    ["grok-4.3", 64],
-    ["deepseek-v4-pro", 58],
-    ["deepseek-v4", 55],
-    ["kimi-k2.6", 53],
-    ["kimi-k2", 52],
-    ["glm-5", 48],
-    ["qwen3", 45],
-    ["claude-haiku", 42],
-    ["gemini-2.5-flash", 40],
-    ["mini", 38],
-    ["flash", 32],
-    ["turbo", 30],
+    ["deepseek-v4-pro", 75],
+    ["deepseek-v4", 70],
+    ["qwen3.6-plus", 68],
+    ["qwen3.6", 65],
+    ["qwen3.5", 60],
+    ["kimi-k2.6", 58],
+    ["glm-5.2", 55],
+    ["glm-5", 50],
+    ["claude-haiku-4.5", 48],
+    ["claude-haiku", 45],
+    ["minimax-m3", 42],
+    ["step-3.7-flash", 40],
   ];
 
   // ---------------------------------------------------------------------------
@@ -108,27 +102,35 @@
   // ---------------------------------------------------------------------------
   const MODEL_DUTY_CATALOG = [
     // ME AI
+    { id: "meai/claude-opus-5.5", family: "claude", duty: "verify+hard-implement", purpose: "Auditorias criticas, arquitectura, maximo razonamiento." },
+    { id: "meai/claude-opus-5-5", family: "claude", duty: "verify+hard-implement", purpose: "Auditorias criticas, arquitectura, maximo razonamiento (alias)." },
+    { id: "meai/claude-opus-5", family: "claude", duty: "verify+hard-implement", purpose: "Auditorias y razonamiento avanzado." },
     { id: "meai/claude-opus-4.8", family: "claude", duty: "verify+hard-implement", purpose: "Auditorias criticas, refactors dificiles, cierre de plan con tools." },
+    { id: "meai/claude-opus-4-8", family: "claude", duty: "verify+hard-implement", purpose: "Auditorias criticas, refactors dificiles (alias)." },
+    { id: "meai/claude-opus-4.7", family: "claude", duty: "verify", purpose: "Verificacion e inspeccion de codigo." },
+    { id: "meai/claude-opus-4-7", family: "claude", duty: "verify", purpose: "Verificacion e inspeccion de codigo (alias)." },
+    { id: "meai/claude-opus-4.6", family: "claude", duty: "verify", purpose: "Verificacion profunda de seguridad." },
+    { id: "meai/claude-opus-4-6", family: "claude", duty: "verify", purpose: "Verificacion profunda de seguridad (alias)." },
+    { id: "meai/claude-sonnet-5.5", family: "claude", duty: "implement+analyze", purpose: "Agente principal de ultima generacion." },
+    { id: "meai/claude-sonnet-5-5", family: "claude", duty: "implement+analyze", purpose: "Agente principal de ultima generacion (alias)." },
+    { id: "meai/claude-sonnet-5", family: "claude", duty: "implement+analyze", purpose: "Implementacion avanzada con tools." },
     { id: "meai/claude-sonnet-4.6", family: "claude", duty: "implement+analyze", purpose: "Agente principal: editar codigo, analizar runtime, reportes con tools." },
-    { id: "meai/claude-haiku-4-5", family: "claude", duty: "chat+fast-analyze", purpose: "Chat corto y analisis rapido de bajo costo." },
-    { id: "meai/qwen3.6-plus", family: "qwen", duty: "implement-alt", purpose: "Alternativa de implementacion cuando Claude/Grok ya se usaron." },
+    { id: "meai/claude-sonnet-4-6", family: "claude", duty: "implement+analyze", purpose: "Agente principal: editar codigo, analizar runtime (alias)." },
+    { id: "meai/claude-haiku-4.5", family: "claude", duty: "chat+fast-analyze", purpose: "Chat rapido y analisis ligero de bajo costo." },
+    { id: "meai/claude-haiku-4-5", family: "claude", duty: "chat+fast-analyze", purpose: "Chat corto y analisis rapido de bajo costo (alias)." },
+    { id: "meai/deepseek-v4-pro", family: "deepseek", duty: "implement-alt", purpose: "Implementacion con razonamiento matematico y logico." },
+    { id: "meai/deepseek-v4-flash", family: "deepseek", duty: "fast-analyze", purpose: "Analisis rapido de logs y diagnostico." },
+    { id: "meai/deepseek-v4", family: "deepseek", duty: "reserve", purpose: "Reserva de desarrollo general." },
+    { id: "meai/qwen3.6-plus", family: "qwen", duty: "implement-alt", purpose: "Alternativa de implementacion cuando Claude ya se uso." },
+    { id: "meai/qwen3.6", family: "qwen", duty: "implement-alt", purpose: "Implementacion general alternativa." },
+    { id: "meai/qwen3.5", family: "qwen", duty: "chat+alt", purpose: "Chat y soporte rapido." },
+    { id: "meai/glm-5.2", family: "glm", duty: "implement-alt", purpose: "Alternativa moderna de implementacion." },
+    { id: "meai/glm-5.1", family: "glm", duty: "implement-alt", purpose: "Implementacion y analisis intermedio." },
     { id: "meai/glm-5", family: "glm", duty: "implement-alt", purpose: "Alternativa de implementacion / analisis medio." },
-    { id: "meai/kimi-k2.6", family: "kimi", duty: "chat+alt", purpose: "Chat y respaldo ligero; no es el agente principal." },
-    { id: "meai/deepseek-v4-pro", family: "deepseek", duty: "reserve", purpose: "RESERVA cara. Solo si fallan los del carril primario/secundario. Nunca dominante." },
-    // APICredits
-    { id: "apicredits/claude-fable-5", family: "claude", duty: "implement+analyze", purpose: "Agente Claude barato/estable en APICredits." },
-    { id: "apicredits/claude-sonnet-5", family: "claude", duty: "implement", purpose: "Implementacion fuerte APICredits." },
-    { id: "apicredits/claude-sonnet-4-6", family: "claude", duty: "analyze+implement", purpose: "Analisis e implementacion equilibrada." },
-    { id: "apicredits/claude-opus-4-8", family: "claude", duty: "verify", purpose: "Verificacion / alto riesgo." },
-    { id: "apicredits/claude-opus-4-7", family: "claude", duty: "verify", purpose: "Verificacion alternativa." },
-    { id: "apicredits/claude-haiku-4-5", family: "claude", duty: "chat", purpose: "Chat y lecturas cortas." },
-    { id: "apicredits/gpt-5.6-terra", family: "gpt", duty: "implement", purpose: "Implementacion GPT con tools." },
-    { id: "apicredits/gpt-5.6-luna", family: "gpt", duty: "chat+analyze", purpose: "Chat y analisis ligero." },
-    { id: "apicredits/gpt-5.6-sol", family: "gpt", duty: "chat-only", purpose: "SOLO chat. Prohibido como agente con tools." },
-    { id: "apicredits/grok-4.5", family: "grok", duty: "implement+verify", purpose: "Implementacion / verificacion alternativa." },
-    { id: "apicredits/grok-4.3", family: "grok", duty: "analyze+chat", purpose: "Analisis y chat medio." },
-    { id: "apicredits/gemini-2.5-flash", family: "gemini", duty: "analyze+chat", purpose: "Analisis rapido y chat; no implementacion pesada." },
-    { id: "apicredits/deepseek-v4-pro", family: "deepseek", duty: "reserve", purpose: "RESERVA. Key propia cara. Solo fallback, max 12% share." },
+    { id: "meai/kimi-k2.6", family: "kimi", duty: "chat+alt", purpose: "Chat y contexto extendido; respaldo ligero." },
+    { id: "meai/minimax-m3", family: "minimax", duty: "chat+fast-analyze", purpose: "Chat veloz y lectura rapida." },
+    { id: "meai/step-3.7-flash", family: "step", duty: "chat", purpose: "Chat instantaneo de soporte." },
+    { id: "meai/mimo-v2.5", family: "mimo", duty: "chat", purpose: "Chat ligero de asistencia." },
   ];
 
   /**

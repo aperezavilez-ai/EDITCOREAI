@@ -21,16 +21,9 @@ const PROVIDERS = {
   anthropic:{ label: "Anthropic", baseUrl: "https://api.anthropic.com/v1", model: "claude-sonnet-4-6" },
   gemini:   { label: "Gemini",    baseUrl: "https://generativelanguage.googleapis.com/v1beta", model: "gemini-2.5-pro" },
   meai:     { label: "ME AI Cloud", baseUrl: "https://api.meai.cloud/v1", model: "claude-sonnet-4.6" },
-  apicredits: { label: "APICredits", baseUrl: "https://api.apicredits.site/v1", model: "claude-sonnet-4-6" },
-  claude:   { label: "Claude",    baseUrl: "https://api.apicredits.site/v1", model: "claude-sonnet-4-6" },
-  gpt:      { label: "ChatGPT",   baseUrl: "https://api.apicredits.site/v1", model: "gpt-5.6-sol" },
-  kimi:     { label: "Kimi",      baseUrl: "https://api.moonshot.cn/v1",   model: "moonshot-v1-8k" },
-  deepseek: { label: "DeepSeek",  baseUrl: "https://api.deepseek.com/v1", model: "deepseek-chat" },
-  qwen:     { label: "Qwen",      baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1", model: "qwen-plus" },
 };
-// ME AI usa una sola API key para todos sus modelos. APICredits solo lo ve el
-// administrador: filterModelOptionsForRole deja a los usuarios solo con ME AI.
-const PRIMARY_PROVIDER_KEYS = ["meai", "apicredits"];
+// ME AI usa una sola API key para todos sus modelos.
+const PRIMARY_PROVIDER_KEYS = ["meai"];
 const HIDDEN_PROVIDER_KEYS = [];
 const SINGLE_KEY_PROVIDER_KEYS = ["meai"];
 
@@ -39,12 +32,6 @@ const PROVIDER_MODELS = {
   anthropic: ["claude-sonnet-4-6", "claude-opus-4-7", "claude-haiku-4-5"],
   gemini: ["gemini-2.5-pro", "gemini-2.5-flash", "gemini-1.5-pro"],
   meai: [],
-  apicredits: [],
-  claude: [
-    "claude-fable-5", "claude-haiku-4-5", "claude-opus-4-7", "claude-opus-4-8",
-    "claude-sonnet-4-6", "claude-sonnet-5",
-  ],
-  gpt: ["gpt-5.6-luna", "gpt-5.6-sol", "gpt-5.6-terra"],
   kimi: [
     "moonshot-v1-8k", "moonshot-v1-32k", "moonshot-v1-128k",
     "kimi-k2-0711-preview",
@@ -59,27 +46,45 @@ const PROVIDER_MODELS = {
   ],
 };
 
-// ME AI: set recomendado para EditCore (agente + fallbacks).
+// ME AI: catálogo completo soportado para EditCore
 const MEAI_PROVIDER_MODELS = [
-  "claude-sonnet-4.6",
-  "claude-haiku-4-5",
+  "claude-opus-5.5",
+  "claude-opus-5-5",
+  "claude-opus-5",
   "claude-opus-4.8",
+  "claude-opus-4-8",
+  "claude-opus-4.7",
+  "claude-opus-4-7",
+  "claude-opus-4.7-thinking",
+  "claude-opus-4.6",
+  "claude-opus-4-6",
+  "claude-opus-4.6-thinking",
+  "claude-sonnet-5.5",
+  "claude-sonnet-5-5",
+  "claude-sonnet-5",
+  "claude-sonnet-4.6",
+  "claude-sonnet-4-6",
+  "claude-haiku-4.5",
+  "claude-haiku-4-5",
+  "claude-haiku-4-5-20251001",
+  "deepseek-v4-pro",
+  "deepseek-v4-flash",
+  "deepseek-v4",
   "qwen3.6-plus",
+  "qwen3.6",
+  "qwen3.5",
+  "glm-5.2",
+  "glm-5.1",
   "glm-5",
-  "deepseek-v4-pro",
   "kimi-k2.6",
+  "minimax-m3",
+  "minimax-m2.7",
+  "minimax-m2.5",
+  "step-3.7-flash",
+  "mimo-v2.5",
 ];
-// APICredits: live GET /v1/models por key (a6-claude/openai/gemini/grok/deepseek).
-const APICREDITS_PROVIDER_MODELS = [
-  "claude-fable-5", "claude-haiku-4-5", "claude-opus-4-7", "claude-opus-4-8",
-  "claude-sonnet-4-6", "claude-sonnet-5",
-  "gpt-5.6-luna", "gpt-5.6-sol", "gpt-5.6-terra",
-  "gemini-2.5-flash",
-  "grok-4.3", "grok-4.5",
-  "deepseek-v4-pro",
-];
+const APICREDITS_PROVIDER_MODELS = [];
 PROVIDER_MODELS.meai = MEAI_PROVIDER_MODELS;
-PROVIDER_MODELS.apicredits = APICREDITS_PROVIDER_MODELS;
 
 const state = {
   mode: "claude",
@@ -108,7 +113,7 @@ const state = {
   cacheStats: { responses: {}, tools: {}, harness: {} },
   modelSelectionAuto: false,
   lastAutoResolvedModel: "",
-  autoUpstreamUsage: { meai: 0, apicredits: 0 },
+  autoUpstreamUsage: { meai: 0 },
   autoModelUsage: {},
   fileListRelativePath: "",
   lastUserPrompt: "",
@@ -1409,11 +1414,11 @@ function getModelFamilyKey(model = "") {
 }
 
 function ensureDefaultProviderProfiles(profiles = []) {
-  const current = Array.isArray(profiles) ? [...profiles] : [];
+  const current = (Array.isArray(profiles) ? [...profiles] : []).filter((p) => p && p.providerKey !== "apicredits");
   const providers = loadJson("editcore-providers", {});
 
   for (const provKey of PRIMARY_PROVIDER_KEYS) {
-    const catalog = provKey === "apicredits" ? APICREDITS_PROVIDER_MODELS : provKey === "meai" ? MEAI_PROVIDER_MODELS : (PROVIDER_MODELS[provKey] || []);
+    const catalog = provKey === "meai" ? MEAI_PROVIDER_MODELS : (PROVIDER_MODELS[provKey] || []);
     const provConfig = providers[provKey] || {};
     const existingForProv = current.filter((p) => p && p.providerKey === provKey);
 
@@ -1454,7 +1459,7 @@ function ensureDefaultProviderProfiles(profiles = []) {
         const newProfile = {
           id: `${provKey}:${m}`,
           providerKey: provKey,
-          providerName: provKey === "apicredits" ? "APICredits" : provKey === "meai" ? "ME AI Cloud" : provKey,
+          providerName: provKey === "meai" ? "ME AI Cloud" : provKey,
           baseUrl: provConfig.baseUrl || gafSaved.baseUrl || PROVIDERS[provKey]?.baseUrl || "",
           apiKey: inheritedKey,
           model: m,
@@ -1545,11 +1550,11 @@ function providerKeyForEndpoint(url) {
   if (value.includes("api.openai.com")) return "openai";
   if (value.includes("api.anthropic.com")) return "anthropic";
   if (value.includes("generativelanguage.googleapis.com")) return "gemini";
-  return PRIMARY_PROVIDER_KEYS.find((key) => value.includes(new URL(PROVIDERS[key].baseUrl).hostname)) || "apicredits";
+  return PRIMARY_PROVIDER_KEYS.find((key) => value.includes(new URL(PROVIDERS[key].baseUrl).hostname)) || "meai";
 }
 
 function renderProviderProfiles() {
-  const profiles = loadProviderProfiles();
+  const profiles = loadProviderProfiles().filter((p) => p && p.providerKey !== "apicredits");
   document.querySelectorAll("[data-provider-profiles]").forEach((host) => {
     const key = host.dataset.providerProfiles;
     host.replaceChildren();
@@ -1571,23 +1576,6 @@ function renderProviderProfiles() {
           seenModels.set(mKey, p);
         }
       }
-    }
-    if (key === "apicredits") {
-      const getFamOrder = (m) => {
-        const s = String(m || "").toLowerCase();
-        if (s.startsWith("claude")) return 1;
-        if (s.startsWith("gpt")) return 2;
-        if (s.startsWith("gemini")) return 3;
-        if (s.startsWith("grok")) return 4;
-        if (s.startsWith("deepseek")) return 5;
-        return 6;
-      };
-      dedupedProviderProfiles.sort((a, b) => {
-        const fa = getFamOrder(a.model);
-        const fb = getFamOrder(b.model);
-        if (fa !== fb) return fa - fb;
-        return String(a.model || "").localeCompare(String(b.model || ""), undefined, { numeric: true });
-      });
     }
     if (key === "custom:gafcore-gateway") {
       const labels = { meai: "ME AI Cloud", apicredits: "APICredits" };
@@ -1811,7 +1799,7 @@ function resolveActiveChatProfile(context = {}) {
         || Boolean(context.isAgent && context.usesProjectTools),
       capabilities: cachedModelCapabilities,
       lastAutoResolvedModel: state.lastAutoResolvedModel || "",
-      autoUpstreamUsage: state.autoUpstreamUsage || { meai: 0, apicredits: 0 },
+      autoUpstreamUsage: state.autoUpstreamUsage || { meai: 0 },
       autoModelUsage: state.autoModelUsage || {},
       excludeModels: context.excludeModels || [],
     });
@@ -1863,8 +1851,8 @@ function rememberAutoResolvedProfile(profile) {
     state.autoUpstreamUsage = AutoModel.bumpUpstreamUsage(state.autoUpstreamUsage, profile.model);
   } else {
     const bucket = String(profile.model || "").split("/")[0]?.toLowerCase();
-    if (bucket === "meai" || bucket === "apicredits") {
-      state.autoUpstreamUsage = state.autoUpstreamUsage || { meai: 0, apicredits: 0 };
+    if (bucket === "meai") {
+      state.autoUpstreamUsage = state.autoUpstreamUsage || { meai: 0 };
       state.autoUpstreamUsage[bucket] = Number(state.autoUpstreamUsage[bucket] || 0) + 1;
     }
   }
@@ -2073,13 +2061,9 @@ function renderModelPickerMenu() {
   menu.appendChild(searchWrap);
 
   const isAdmin = isCurrentUserAdmin();
-  const autoScopes = isAdmin
-    ? [
-      { scope: "all", title: "Auto", hint: "ME AI Cloud + APICredits juntos." },
-      { scope: "meai", title: "Auto · ME AI", hint: "Solo modelos ME AI Cloud." },
-      { scope: "apicredits", title: "Auto · APICredits", hint: "Solo modelos APICredits." },
-    ]
-    : [{ scope: "meai", title: "Auto", hint: "EditCoreAI elige el mejor modelo para cada tarea." }];
+  const autoScopes = [
+    { scope: "all", title: "Auto", hint: "EditCoreAI elige automáticamente el modelo ideal de ME AI para cada tarea." },
+  ];
   autoScopes.forEach(({ scope, title, hint }) => {
     const autoRow = document.createElement("div");
     autoRow.className = "model-picker-auto-row";
@@ -2321,7 +2305,7 @@ function filterModelOptionsForRole(options) {
 function catalogChatModelOptions() {
   const customProvidersByKey = new Map(loadCustomProviders().map((provider) => [`custom:${provider.id}`, provider]));
   const profiles = loadProviderProfiles().filter((profile) => {
-    if (!profile || !profile.model) return false;
+    if (!profile || !profile.model || profile.providerKey === "apicredits") return false;
     const effectiveKey = profile.apiKey || resolveProviderApiKey(profile.providerKey, "");
     return Boolean(effectiveKey) || PRIMARY_PROVIDER_KEYS.includes(profile.providerKey);
   });
@@ -2478,9 +2462,9 @@ async function addProviderProfile(key) {
 }
 
 async function bulkAddProviderProfiles(key) {
-  const models = PROVIDER_MODELS[key] || (key === "apicredits" ? APICREDITS_PROVIDER_MODELS : key === "meai" ? MEAI_PROVIDER_MODELS : []);
+  const models = PROVIDER_MODELS[key] || (key === "meai" ? MEAI_PROVIDER_MODELS : []);
   if (!models.length) return;
-  const profiles = loadProviderProfiles();
+  const profiles = loadProviderProfiles().filter((p) => p && p.providerKey !== "apicredits");
   const existingApiKey = profiles.find((p) => p.providerKey === key && p.apiKey)?.apiKey || resolveProviderApiKey(key, "");
   const existingModels = new Set(profiles.filter((p) => p.providerKey === key).map((p) => String(p.model || "").toLowerCase()));
   const toAdd = models.filter((m) => m && !existingModels.has(m.toLowerCase()));
@@ -2493,7 +2477,7 @@ async function bulkAddProviderProfiles(key) {
       profiles.push({
         id: `${key}:${m}`,
         providerKey: key,
-        providerName: key === "apicredits" ? "APICredits" : key === "meai" ? "ME AI Cloud" : key,
+        providerName: key === "meai" ? "ME AI Cloud" : key,
         baseUrl: PROVIDERS[key]?.baseUrl || "",
         apiKey: keyToUse,
         model: m,
@@ -2881,6 +2865,77 @@ function renderCustomProviderBlock(prov, container, { readOnlyEndpoint = false }
   container.appendChild(item);
 }
 
+async function autoDetectIntegratedProvider(key) {
+  const providers = loadJson("editcore-providers", {});
+  const provConfig = providers[key] || {};
+  const urlEl = document.querySelector(`[data-prov-url="${key}"]`);
+  const keyEl = document.querySelector(`[data-prov-key="${key}"]`);
+  const baseUrl = (urlEl?.value.trim() || provConfig.baseUrl || PROVIDERS[key]?.baseUrl || "").replace(/\/+$/, "");
+  const apiKey = keyEl?.value.trim() || provConfig.apiKey || "";
+
+  if (!apiKey) {
+    alert("Por favor pega primero tu API Key en el campo correspondiente.");
+    keyEl?.focus();
+    return;
+  }
+
+  $("status").textContent = `🔍 Conectando con ${PROVIDERS[key]?.label || key} y detectando modelos...`;
+  try {
+    let rawModels = [];
+    if (window.editcoreModels?.list) {
+      rawModels = await window.editcoreModels.list({ apiKey, baseUrl, providerKey: key });
+    }
+    if (!Array.isArray(rawModels) || !rawModels.length) {
+      const testRes = await window.editcoreProviders.test({ providerKey: key, baseUrl, apiKey, model: "" });
+      rawModels = Array.isArray(testRes?.models) ? testRes.models : (testRes?.model ? [testRes.model] : []);
+    }
+    if (!Array.isArray(rawModels) || !rawModels.length) {
+      throw new Error("El proveedor no devolvió modelos en /v1/models");
+    }
+
+    providers[key] = {
+      ...(providers[key] || {}),
+      baseUrl,
+      apiKey,
+      status: "active",
+      models: rawModels,
+      modelCount: rawModels.length,
+      checkedAt: Date.now(),
+      error: "",
+    };
+    await saveSecureJson("editcore-providers", providers);
+
+    const profiles = loadProviderProfiles().filter((p) => p && p.providerKey !== key && p.providerKey !== "apicredits");
+    for (const m of rawModels) {
+      profiles.push({
+        id: `${key}:${m}`,
+        providerKey: key,
+        providerName: PROVIDERS[key]?.label || key,
+        baseUrl,
+        apiKey,
+        model: m,
+        modelCount: rawModels.length,
+        status: "active",
+        catalogConfirmed: true,
+        chatVerified: true,
+        checkedAt: Date.now(),
+        error: "",
+      });
+    }
+    await saveProviderProfiles(profiles);
+    renderProviderProfiles();
+    renderProviderStatus(key, { status: "active", modelCount: rawModels.length });
+    setChatModelOptions(rawModels, rawModels[0], key, `${key}:${rawModels[0]}`);
+    syncChatModelFromConfig();
+    updateModelPickerLabel();
+    $("status").textContent = `✅ ¡${rawModels.length} modelos detectados y activados con éxito para ${PROVIDERS[key]?.label || key}!`;
+  } catch (error) {
+    console.error("Error auto-detectando modelos:", error);
+    $("status").textContent = `Error detectando modelos: ${sanitizeProviderIpcError(error)}`;
+    alert(`No se pudieron detectar modelos automáticamente: ${sanitizeProviderIpcError(error)}\nPuedes usar "Cargar catálogo completo" o agregar modelos manualmente.`);
+  }
+}
+
 function renderCustomProviders() {
   const container = $("customProvidersList");
   if (!container) return;
@@ -2949,6 +3004,15 @@ function renderCustomProviders() {
     modelActionsDiv.style.gap = "8px";
     modelActionsDiv.style.marginTop = "4px";
     modelActionsDiv.style.flexWrap = "wrap";
+
+    const autoDetectBtn = document.createElement("button");
+    autoDetectBtn.type = "button";
+    autoDetectBtn.className = "profile-verify";
+    autoDetectBtn.style.cssText = "background: linear-gradient(135deg, #0e639c, #0ea5a4); color: white; border: none; font-weight: 700; padding: 6px 14px; border-radius: 6px; cursor: pointer;";
+    autoDetectBtn.textContent = "⚡ Auto-Detectar Modelos por API";
+    autoDetectBtn.title = "Consultar el endpoint /v1/models de esta API para detectar y activar automáticamente todos los modelos disponibles";
+    autoDetectBtn.onclick = () => autoDetectIntegratedProvider(key);
+    modelActionsDiv.appendChild(autoDetectBtn);
 
     const addProfile = document.createElement("button");
     addProfile.type = "button";
@@ -7156,7 +7220,7 @@ function loadProviderIntoSettings(key) {
     const s = savedProviders[key] || {};
     $("baseUrl").value = s.baseUrl || def.baseUrl;
     $("apiKey").value = s.apiKey || "";
-    state.mode = key === "claude" || key === "meai" || key === "apicredits" ? "claude" : "gpt";
+    state.mode = key === "claude" || key === "meai" ? "claude" : "gpt";
     defaultModels = PROVIDER_MODELS[key] || [];
   }
 
@@ -13812,10 +13876,9 @@ async function boot() {
     const raw = JSON.parse(localStorage.getItem("editcore-auto-upstream-usage") || "{}");
     state.autoUpstreamUsage = {
       meai: Math.max(0, Number(raw.meai) || 0),
-      apicredits: Math.max(0, Number(raw.apicredits) || 0),
     };
   } catch {
-    state.autoUpstreamUsage = { meai: 0, apicredits: 0 };
+    state.autoUpstreamUsage = { meai: 0 };
   }
   try {
     const rawModels = JSON.parse(localStorage.getItem("editcore-auto-model-usage") || "{}");
@@ -14273,7 +14336,7 @@ async function bootBackground({
 
 async function fetchModels() {
   const apiKey = $("apiKey").value.trim();
-  const baseUrl = $("baseUrl").value.trim() || "https://api.apicredits.site/v1";
+  const baseUrl = $("baseUrl").value.trim() || "https://api.meai.cloud/v1";
   const btn = $("fetchModelsBtn");
   const dot = $("apiStatusDot");
 
@@ -14378,7 +14441,7 @@ function renderFallbackProviders() {
 
 function addFallbackProvider() {
   const list = loadFallbackProviders();
-  list.push({ name: "", baseUrl: "https://api.apicredits.site/v1", apiKey: "" });
+  list.push({ name: "", baseUrl: "https://api.meai.cloud/v1", apiKey: "" });
   saveFallbackProviders(list);
   renderFallbackProviders();
 }
@@ -16102,7 +16165,7 @@ function setChatModelOptions(_models = [], selected = "", selectedProviderKey = 
     group.label = providerOptions[0]?.providerLabel || PROVIDERS[providerKey]?.label || providerKey;
     const scopedAuto = AutoModel.isScopedAutoProvider?.(providerKey)
       ? AutoModel.normalizeAutoProviderScope(providerKey)
-      : (providerKey === "meai" || providerKey === "apicredits" ? providerKey : "");
+      : (providerKey === "meai" ? providerKey : "");
     if (scopedAuto && AutoModel.isScopedAutoProvider(scopedAuto)) {
       const autoOption = document.createElement("option");
       autoOption.value = AutoModel.autoSelectionValue(scopedAuto);

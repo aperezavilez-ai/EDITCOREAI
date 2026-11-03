@@ -34,7 +34,7 @@ function hostOf(baseUrl = "") {
 
 function isPreferredUserHost(baseUrl = "") {
   const host = hostOf(baseUrl);
-  return host.includes("meai.cloud") || host.includes("apicredits.site");
+  return host.includes("meai.cloud");
 }
 
 function isBlockedHost(baseUrl = "") {
@@ -107,9 +107,7 @@ function collectApiKeys(secure = {}) {
     add(provider?.apiKey, providerKey);
   }
   add(providers?.meai?.apiKey, "meai");
-  add(providers?.apicredits?.apiKey, "apicredits");
   add(secure?.keys?.meai, "keys.meai");
-  add(secure?.keys?.apicredits, "keys.apicredits");
   add(secure?.keys?.openai, "keys.openai");
   return keys;
 }
@@ -130,9 +128,6 @@ function collectWhisperCandidates(secure = {}, userDataPath = "") {
     if (!apiKey || !baseUrl) return;
     if (hostOf(baseUrl).includes("meai.cloud") && !/\/v1(\/|$)/.test(baseUrl)) {
       baseUrl = "https://api.meai.cloud/v1";
-    }
-    if (hostOf(baseUrl).includes("apicredits.site") && !/\/v1(\/|$)/.test(baseUrl)) {
-      baseUrl = "https://api.apicredits.site/v1";
     }
     if (!isWhisperCandidate({ ...entry, apiKey, baseUrl })) return;
     const id = `${normalizeOpenAiBase(baseUrl)}|${apiKey.slice(0, 8)}`;
@@ -182,13 +177,6 @@ function collectWhisperCandidates(secure = {}, userDataPath = "") {
         label: "meai-profile",
         apiKey: profile.apiKey,
         baseUrl: "https://api.meai.cloud/v1",
-      });
-    } else if (hostOf(base).includes("apicredits.site") || /apicredits/i.test(key)) {
-      push({
-        providerKey: "apicredits",
-        label: "apicredits-profile",
-        apiKey: profile.apiKey,
-        baseUrl: "https://api.apicredits.site/v1",
       });
     } else {
       push(profile);
