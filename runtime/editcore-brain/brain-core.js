@@ -17,6 +17,14 @@ const { AtomicFileEditor } = require("./file-editor");
 const { DynamicAgentCoordinator } = require("./agent-coordinator");
 const { BrainProviderGateway } = require("./provider-gateway");
 
+function sanitizeWindowsCommand(command) {
+  let cmd = String(command || "").trim();
+  // Strip Unix redirection/pipeline like 2>&1 | tail -5 or | head -10 or | tail
+  cmd = cmd.replace(/\s*2>&1\s*\|\s*(?:tail|head)(?:\s+-\d+)?/gi, "");
+  cmd = cmd.replace(/\s*\|\s*(?:tail|head)(?:\s+-\d+)?/gi, "");
+  return cmd;
+}
+
 class EditCoreBrain {
   constructor(deps = {}) {
     this.providerGateway = new BrainProviderGateway(deps);
@@ -83,12 +91,12 @@ ${specialistDirectives}
 ${rules ? `<directivas_proyecto>\n${rules}\n</directivas_proyecto>` : ""}
 
 REGLAS PRIMORDIALES:
-1. Inspecciona antes de modificar. Usa las herramientas especializadas 'read_file' y 'list_files' para explorar el proyecto.
-2. EN WINDOWS: No ejecutes 'grep', 'head' ni comandos de Linux en run_command. Para buscar código usa 'read_file' o 'list_files'.
-3. Todo código debe ser completo y funcional; jamás omitas partes con '// resto igual'.
-4. Usa replace_in_file para cambios quirúrgicos precisos o write_file para archivos nuevos.
-5. El proyecto del usuario en ${projectRoot} es el único foco de tu trabajo. Errores internos de la aplicación no forman parte de este proyecto.
-6. Cuando hayas completado y validado la tarea con éxito, incluye 'TASK_COMPLETE' en tu mensaje con un resumen conciso de los cambios.`;
+1. Responde a preguntas directas, conceptuales o de identidad ("qué modelo eres", dudas, explicaciones) de forma concisa, cordial y natural en español sin llamar a herramientas innecesarias.
+2. Si la tarea requiere inspeccionar o editar código, usa las herramientas provistas (read_file, list_files, replace_in_file, write_file).
+3. EN WINDOWS: No ejecutes pipelines de Linux en run_command (evita 'tail', 'grep', 'head', '2>&1 | tail'). Usa comandos compatibles de Windows o examina archivos con read_file.
+4. Todo código debe ser completo y funcional; jamás omitas partes con '// resto igual'.
+5. Usa replace_in_file para cambios quirúrgicos precisos o write_file para archivos nuevos.
+6. El proyecto del usuario en ${projectRoot} es el único foco de tu trabajo.`;
 
     const messages = [
       { role: "system", content: systemPrompt },
@@ -213,19 +221,11 @@ REGLAS PRIMORDIALES:
       const hasTools = assistantMsg.tool_calls && assistantMsg.tool_calls.length > 0;
       const isComplete = assistantMsg.content && assistantMsg.content.includes("TASK_COMPLETE");
 
-      if (isComplete) {
+      if (isComplete || !hasTools) {
         this.state = BrainState.DONE;
-        notify({ phase: "done", text: "Tarea completada exitosamente." });
+        const cleanContent = (assistantMsg.content || "").replace(/TASK_COMPLETE/g, "").trim();
+        notify({ phase: "done", text: cleanContent || "Tarea completada." });
         break;
-      }
-
-      if (!hasTools) {
-        // Obliga al modelo a actuar o concluir en lugar de detenerse
-        messages.push({
-          role: "user",
-          content: "[EditCore Brain] No usaste herramientas en tu turno. Ejecuta una herramienta para avanzar o escribe TASK_COMPLETE si el trabajo ha concluido.",
-        });
-        continue;
       }
 
       // 2. Procesamiento de herramientas
@@ -298,16 +298,24 @@ REGLAS PRIMORDIALES:
             };
           } else if (name === "run_command") {
             const { exec } = require("node:child_process");
+            const rawCmd = String(args.command || "").trim();
+            const sanitizedCmd = process.platform === "win32"
+              ? sanitizeWindowsCommand(rawCmd)
+              : rawCmd;
             result = await new Promise((resolve) => {
-              exec(args.command, {
+              exec(sanitizedCmd, {
                 cwd: projectRoot,
-                shell: process.platform === "win32" ? "powershell.exe" : undefined,
                 timeout: 120_000,
+                maxBuffer: 10 * 1024 * 1024,
               }, (error, stdout, stderr) => {
+                const outStr = (stdout || "").slice(-4000);
+                const errStr = (stderr || "").slice(-2000);
+                const errMsg = error ? (errStr || error.message || "Command failed") : "";
                 resolve({
                   ok: !error,
-                  stdout: (stdout || "").slice(-4000),
-                  stderr: (stderr || "").slice(-2000),
+                  stdout: outStr,
+                  stderr: errStr,
+                  error: errMsg,
                   exitCode: error ? error.code || 1 : 0,
                 });
               });
@@ -330,9 +338,12 @@ REGLAS PRIMORDIALES:
       }
     }
 
+    const lastAssistant = [...messages].reverse().find((m) => m && m.role === "assistant");
+    let finalText = (lastAssistant?.content || "").replace(/TASK_COMPLETE/g, "").trim();
+
     return {
       ok: this.state === BrainState.DONE || !this.isAborted,
-      text: messages[messages.length - 1]?.content || "",
+      text: finalText || "Tarea procesada exitosamente.",
       turns,
       role: selectedRole,
       messages,

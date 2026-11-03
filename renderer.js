@@ -8791,7 +8791,11 @@ function agentProgressText(progress) {
   const running = progress.stage === "running" || (phase === "tool" && progress.ok === undefined && progress.stage !== "done");
   const done = progress.stage === "done" || progress.ok === true;
   const failed = progress.ok === false;
-  const error = String(progress.result?.error || progress.result || "error").replace(/\s+/g, " ").slice(0, 160);
+  const rawErr = progress.result?.error || progress.error || progress.result?.stderr;
+  const error = (typeof rawErr === "object"
+    ? (rawErr?.message || rawErr?.stderr || JSON.stringify(rawErr))
+    : String(rawErr || (typeof progress.result === "string" ? progress.result : progress.result?.stderr) || "error")
+  ).replace(/\s+/g, " ").slice(0, 160);
   const target = String(input.path || input.filePath || input.query || input.command || "").replace(/\s+/g, " ").slice(0, 120);
   if (failed) {
     if (name === "read_file" && /no aparecio al listar|Path no descubierto|Antes de leer|PATH_NOT_DISCOVERED/i.test(error)) {

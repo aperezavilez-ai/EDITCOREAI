@@ -50,7 +50,7 @@ test("chat-kernel-bridge: enruta correctamente hacia EditCore Brain cuando se so
 
   assert.strictEqual(res.ok, true);
   assert.strictEqual(res.brain, true);
-  assert.ok(res.text.includes("TASK_COMPLETE"));
+  assert.ok(res.text.includes("Brain completó la tarea"));
 
   await fs.rm(tmpDir, { recursive: true, force: true });
 });
