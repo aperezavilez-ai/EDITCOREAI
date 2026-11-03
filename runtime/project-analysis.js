@@ -1189,14 +1189,15 @@
     const explicitAnalysisRequest = isFreshAnalysisRequest(prompt)
       || (/\b(?:analiza|audita|diagnostica|an[aá]lisis|reporte|hallazgos)\b/i.test(text(prompt))
         && /\b(?:proyecto|repo|carpeta|c[oó]digo|completo|profundo)\b/i.test(text(prompt)));
-    const autoEscalatedAgent = !requestedAgent && projectOpen
+    const userExplicitlyInChatMode = options.requestedAgent === false || options.runMode === "chat";
+    const autoEscalatedAgent = !userExplicitlyInChatMode && !requestedAgent && projectOpen
       && (explicitChangeRequest || explicitAnalysisRequest || explicitCloudOperate);
-    const taskContinuation = projectOpen && resumableTask && (
+    const taskContinuation = !userExplicitlyInChatMode && projectOpen && resumableTask && (
       isAuthorization(prompt)
       || (resumableExecutable && (isRecoveryInstruction(prompt) || isAgentTaskFeedback(prompt)))
     );
     const isCasual = /^(?:hola|hi|hello|hey|buenas|buen(?:os|as)\s+(?:d[ií]as|tardes|noches)|gracias|ok|vale|perfecto|c[oó]mo\s+est[aá]s|qui[eé]n\s+eres)[.!?¿¡\s]*$/i.test(text(prompt));
-    const isAgent = !isCasual && (requestedAgent || autoEscalatedAgent || taskContinuation);
+    const isAgent = !isCasual && !userExplicitlyInChatMode && (requestedAgent || autoEscalatedAgent || taskContinuation);
     const pathGiven = hasUsableAbsolutePath(prompt);
     const openNamedProject = isOpenNamedProjectRequest(prompt);
     const referencedProjectName = extractReferencedProjectName(prompt);

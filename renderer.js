@@ -1671,32 +1671,41 @@ function renderProviderProfiles() {
 }
 
 async function verifyAllSingleKeyModels(key) {
-  const parent = readProviderForm(key);
-  const profiles = loadProviderProfiles();
-  const own = profiles.filter((profile) => profile.providerKey === key && profile.model);
-  let working = 0;
-  for (const [index, profile] of own.entries()) {
-    $("status").textContent = `Verificando ${profile.model} (${index + 1}/${own.length})…`;
-    profile.apiKey = parent.apiKey;
-    profile.baseUrl = parent.baseUrl;
-    profile.checkedAt = Date.now();
-    try {
-      const result = await window.editcoreProviders.test({ providerKey: key, baseUrl: parent.baseUrl, apiKey: parent.apiKey, model: profile.model });
-      const exact = String(result.model || "").toLowerCase() === String(profile.model).toLowerCase();
-      profile.status = exact ? "active" : "inactive";
-      profile.error = exact ? "" : `Esta API no respondió con ${profile.model}`;
-      profile.toolOK = result.toolOK === true;
-      if (exact) working += 1;
-    } catch (error) {
-      profile.status = "inactive";
-      profile.error = sanitizeProviderIpcError(error);
+  try {
+    await autoDetectIntegratedProvider(key);
+    const profiles = loadProviderProfiles().filter((p) => p && p.providerKey === key && p.status === "active");
+    return { working: profiles.length, total: profiles.length };
+  } catch (error) {
+    console.warn(`[verifyAllSingleKeyModels] Fast detect failed: ${error?.message || error}`);
+    const parent = readProviderForm(key);
+    const profiles = loadProviderProfiles();
+    const own = profiles.filter((profile) => profile.providerKey === key && profile.model);
+    let working = 0;
+    // Solo verificar el modelo principal para no congelar la UI
+    const primary = own.find((p) => p.model === parent.model) || own[0];
+    if (primary) {
+      $("status").textContent = `Verificando ${primary.model}…`;
+      primary.apiKey = parent.apiKey;
+      primary.baseUrl = parent.baseUrl;
+      primary.checkedAt = Date.now();
+      try {
+        const result = await window.editcoreProviders.test({ providerKey: key, baseUrl: parent.baseUrl, apiKey: parent.apiKey, model: primary.model });
+        primary.status = "active";
+        primary.error = "";
+        primary.toolOK = result.toolOK === true;
+        working = 1;
+        // Marcar todos los demás perfiles con la misma key como activos
+        own.forEach((p) => { p.apiKey = parent.apiKey; p.baseUrl = parent.baseUrl; p.status = "active"; });
+      } catch (err) {
+        primary.status = "inactive";
+        primary.error = sanitizeProviderIpcError(err);
+      }
     }
+    await saveProviderProfiles(profiles);
+    renderProviderProfiles();
+    renderProviderStatus(key);
+    return { working, total: own.length };
   }
-  await saveProviderProfiles(profiles);
-  renderProviderProfiles();
-  renderProviderStatus(key);
-  $("status").textContent = `${PROVIDERS[key]?.label || key}: ${working} de ${own.length} modelos funcionando con una sola API`;
-  return { working, total: own.length };
 }
 
 function modelsForProvider(key) {
@@ -2717,6 +2726,7 @@ async function autoDetectAndVerifyCustomProvider(providerId, { nameInp, urlInp, 
     setChatModelOptions([], provider.model, provKey, `${provider.id}:${provider.model}`);
     syncChatModelFromConfig();
     updateModelPickerLabel();
+    renderModelPickerMenu();
     updateStatus();
 
     try {
@@ -2797,12 +2807,26 @@ function renderCustomProviderBlock(prov, container, { readOnlyEndpoint = false }
   keyLbl.className = "field";
   const keyCap = document.createElement("span");
   keyCap.textContent = "API Key";
+  const keyWrap = document.createElement("div");
+  keyWrap.style.cssText = "display: flex; gap: 6px; align-items: center; width: 100%;";
   const keyInp = document.createElement("input");
   keyInp.type = "password";
   keyInp.value = prov.apiKey || "";
   keyInp.placeholder = "Clave API (sk-..., gsk-..., o vacía si es Ollama local)";
   keyInp.dataset.provKey = provKey;
-  keyLbl.append(keyCap, keyInp);
+  keyInp.style.flex = "1";
+  const eyeBtn = document.createElement("button");
+  eyeBtn.type = "button";
+  eyeBtn.textContent = "👁️";
+  eyeBtn.title = "Mostrar / Ocultar API Key";
+  eyeBtn.style.cssText = "background: rgba(255,255,255,0.08); border: 1px solid var(--ec-border, #444); border-radius: 4px; padding: 5px 10px; cursor: pointer; font-size: 14px;";
+  eyeBtn.onclick = (e) => {
+    e.preventDefault();
+    keyInp.type = keyInp.type === "password" ? "text" : "password";
+    eyeBtn.textContent = keyInp.type === "password" ? "👁️" : "🙈";
+  };
+  keyWrap.append(keyInp, eyeBtn);
+  keyLbl.append(keyCap, keyWrap);
   fields.appendChild(keyLbl);
 
   const liveActionBox = document.createElement("div");
@@ -2928,6 +2952,7 @@ async function autoDetectIntegratedProvider(key) {
     setChatModelOptions(rawModels, rawModels[0], key, `${key}:${rawModels[0]}`);
     syncChatModelFromConfig();
     updateModelPickerLabel();
+    renderModelPickerMenu();
     $("status").textContent = `✅ ¡${rawModels.length} modelos detectados y activados con éxito para ${PROVIDERS[key]?.label || key}!`;
   } catch (error) {
     console.error("Error auto-detectando modelos:", error);
@@ -2992,8 +3017,21 @@ function renderCustomProviders() {
     urlLbl.append(urlCap, urlInp); fields.appendChild(urlLbl);
     const keyLbl = document.createElement("label"); keyLbl.className = "field";
     const keyCap = document.createElement("span"); keyCap.textContent = "API key";
-    const keyInp = document.createElement("input"); keyInp.type = "password"; keyInp.placeholder = "Clave del proveedor"; keyInp.dataset.provKey = key;
-    keyLbl.append(keyCap, keyInp); fields.appendChild(keyLbl);
+    const keyWrap = document.createElement("div");
+    keyWrap.style.cssText = "display: flex; gap: 6px; align-items: center; width: 100%;";
+    const keyInp = document.createElement("input"); keyInp.type = "password"; keyInp.placeholder = "Clave del proveedor"; keyInp.dataset.provKey = key; keyInp.style.flex = "1";
+    const eyeBtn = document.createElement("button");
+    eyeBtn.type = "button";
+    eyeBtn.textContent = "👁️";
+    eyeBtn.title = "Mostrar / Ocultar API Key";
+    eyeBtn.style.cssText = "background: rgba(255,255,255,0.08); border: 1px solid var(--ec-border, #444); border-radius: 4px; padding: 4px 8px; cursor: pointer; font-size: 14px;";
+    eyeBtn.onclick = (e) => {
+      e.preventDefault();
+      keyInp.type = keyInp.type === "password" ? "text" : "password";
+      eyeBtn.textContent = keyInp.type === "password" ? "👁️" : "🙈";
+    };
+    keyWrap.append(keyInp, eyeBtn);
+    keyLbl.append(keyCap, keyWrap); fields.appendChild(keyLbl);
     const modelLbl = document.createElement("label"); modelLbl.className = "field";
     const modelCap = document.createElement("span"); modelCap.textContent = "Modelo";
     const modelInp = document.createElement("input"); modelInp.type = "text"; modelInp.value = def.model || ""; modelInp.placeholder = "modelo"; modelInp.dataset.provModel = key;
@@ -11967,6 +12005,7 @@ async function send(event) {
   const selectedRunMode = $("runMode").value;
   const initialModeDecision = ProjectAnalysis.resolveExecutionMode(effectivePrompt, {
     requestedAgent: selectedRunMode === "agent",
+    runMode: selectedRunMode,
     projectOpen: Boolean(state.projectRoot || project?.projectRoot),
     resumableTask: hasResumableAgentTask(project),
     workflowPhase: project?.agentWorkflow?.phase || "",
@@ -12353,6 +12392,7 @@ function buildPromptJob(prompt) {
 
   const modeDecision = ProjectAnalysis.resolveExecutionMode(prompt, {
     requestedAgent: isCasualGreeting ? false : requestedAgent,
+    runMode: $("runMode")?.value || "chat",
     projectOpen: Boolean(effectiveProjectRoot),
     resumableTask,
     workflowPhase,
@@ -14463,11 +14503,8 @@ function addFallbackProvider() {
 function wireComposerControls() {
   renderPermissionButton(state.permissionMode || "step");
   $("runMode")?.addEventListener("change", () => {
-    if ($("runMode").value === "agent" && state.permissionMode !== "full") {
-      applyPermissionMode("full");
-      const project = activeProject();
-      if (project) { project.permissionMode = "full"; saveProjects(); }
-    }
+    const isAgent = $("runMode")?.value === "agent";
+    $("status").textContent = isAgent ? `Modo Agente activo [Permisos: ${state.permissionMode || "step"}]` : "Modo Chat activo (conversación)";
     updateSendButtonState();
   });
 
@@ -15333,19 +15370,23 @@ document.querySelectorAll("[data-bulk-add-profiles]").forEach((button) => {
 });
 
 // Activar hardcoded providers via event delegation
-$("providersDialog").addEventListener("click", (e) => {
+$("providersDialog").addEventListener("click", async (e) => {
   const key = e.target.dataset?.provActivate;
   if (!key || !PROVIDERS[key]) return;
   e.preventDefault();
   e.stopPropagation();
-  verifyProvider(key)
-    .then(async (provider) => {
-      if (SINGLE_KEY_PROVIDER_KEYS.includes(key)) await verifyAllSingleKeyModels(key);
-      return activateProvider(provider);
-    })
-    .catch((error) => {
-      $("status").textContent = `API no activada: ${sanitizeProviderIpcError(error)}`;
-    });
+  const btn = e.target;
+  const originalText = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = "🔄 Verificando API...";
+  try {
+    await autoDetectIntegratedProvider(key);
+  } catch (error) {
+    $("status").textContent = `API no activada: ${sanitizeProviderIpcError(error)}`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = originalText;
+  }
 });
 
 // Connection buttons

@@ -242,8 +242,19 @@ REGLAS PRIMORDIALES:
           args = {};
         }
 
-        // 3. Escudo de aprobación en modo STEP
+        // 3. Escudo de aprobación y modo de permisos
         const isMutation = ["write_file", "replace_in_file", "run_command"].includes(name);
+        const isReadonly = permissionMode === "readonly" || permissionMode === PermissionMode.READONLY;
+        if (isReadonly && isMutation) {
+          messages.push({
+            role: "tool",
+            tool_call_id: call.id,
+            name,
+            content: JSON.stringify({ error: `[EditCore Brain] La herramienta '${name}' está bloqueada en modo Solo Lectura. No se permiten modificaciones ni ejecución de comandos.` }),
+          });
+          notify({ phase: "tool", stage: "rejected", name, error: "Modo Solo Lectura activo" });
+          continue;
+        }
         if (isStep && isMutation) {
           this.state = BrainState.WAITING_APPROVAL;
           notify({ phase: "approval", name, input: args, stage: "waiting" });
