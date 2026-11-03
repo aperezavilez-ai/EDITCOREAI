@@ -43,6 +43,7 @@ const DISCOVERY_TOOLS = new Set([
 const MUTATION_TOOLS = new Set([
   "write_file", "replace_in_file", "create_project", "service_write",
   "create_pdf", "create_word", "create_excel", "create_csv",
+  "run_command", "build_project", "git_commit", "git_push", "deploy_one_click"
 ]);
 const VERIFICATION_COMMAND = /(^|\s)(test|build|lint|(?:--)?check|typecheck)(\s|$)/i;
 
@@ -679,42 +680,63 @@ class ChatOrchestrator {
     try {
       const tools = getTools();
       const callChat = getCallChat();
+      
       const availableTools = allowWrite
         ? tools.DEFINITIONS
-        : tools.DEFINITIONS.filter((t) => !["write_file", "replace_in_file", "run_command"].includes(t.function.name));
+        : tools.DEFINITIONS.filter((t) => !["write_file", "replace_in_file", "run_command", "publish_project", "git_commit", "git_push", "build_project"].includes(t.function.name));
 
-      // REGLA ESTRICTA OPENAI COMPATIBLE
-      let system = `Sos EditCoreAI, un agente de software autónomo. Respondé siempre en español, claro y directo.
-REGLA DE ORO: Tienes ESTRICTAMENTE PROHIBIDO escribir código o herramientas (como "read_file(...)") en el chat de texto. DEBES usar exclusivamente las herramientas nativas (tool_calls) que se te proporcionan.
-Si necesitas leer un archivo, invoca la herramienta 'read_file'. Si necesitas escribir, usa 'write_file'. 
-Si consideras que la tarea está 100% completada y verificada, responde ÚNICAMENTE con la palabra exacta: TASK_COMPLETE.`;
+      let modeInstruction = "";
+      if (fullAccess) {
+        modeInstruction = `MODO ACTUAL: ACCESO COMPLETO. 
+Tienes permiso total. NUNCA le pidas al usuario que haga clic en botones (como "Publicar" o "Ejecutar"). 
+Si necesitas publicar, usar la herramienta 'publish_project' directamente. Si necesitas ejecutar algo, usa 'run_command'. No pidas confirmación.`;
+      } else if (allowWrite) {
+        modeInstruction = `MODO ACTUAL: PREGUNTAR ANTES DE ESCRIBIR.
+Debes usar las herramientas para leer, pero si necesitas escribir o ejecutar comandos, el sistema pausará y le preguntará al usuario. Tú simplemente invoca la herramienta.`;
+      } else {
+        modeInstruction = `MODO ACTUAL: SOLO LECTURA.
+No puedes usar herramientas de escritura ni ejecución. Solo lectura y análisis.`;
+      }
 
-      const messages = [{ role: "system", content: system }, { role: "user", content: message }];
+      const systemPrompt = `Sos EditCoreAI, un agente autónomo experto (arquitectura ReAct).
+${modeInstruction}
+
+=== REGLAS ESTRICTAS ===
+1. ACCIÓN > EXPLICACIÓN: No digas "Voy a hacer X". Simplemente HAZLO usando el tool_call.
+2. TIENES PROHIBIDO conversar o pedir permiso en el chat. Si el usuario te dio acceso, actúa.
+3. Si necesitas publicar, usa la herramienta 'publish_project'. No le digas al usuario que toque botones.
+4. Si la tarea está 100% terminada (y verificada), responde ÚNICAMENTE con la palabra: TASK_COMPLETE.`;
+
+      const messages = [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: message }
+      ];
+
       const steps = [];
 
       for (let i = 0; i < (maxSteps || 10); i++) {
         if (!this.session.alive) break;
+        onProgress?.({ phase: "thinking", text: "Analizando siguiente paso..." });
 
         const turn = await callChat({
-          apiBaseUrl, apiKey, model: model || "claude-sonnet-4-6", messages,
+          apiBaseUrl, apiKey, model: model || "deepseek-v4-pro", messages,
           tools: chatOnly ? [] : availableTools,
           signal: this.abort.signal,
+          toolChoice: chatOnly ? undefined : "required"
         });
 
         let toolCalls = Array.isArray(turn.toolCalls) ? turn.toolCalls : [];
         
-        // Si no hay toolCalls, verificamos si el modelo dijo que terminó o si falló
         if (!toolCalls.length) {
           if (turn.text && turn.text.includes("TASK_COMPLETE")) {
             this.session.kill();
-            return { kind: decision?.kind || "CHAT", text: turn.text.replace("TASK_COMPLETE", "").trim() || "Tarea finalizada.", steps };
+            return { kind: decision?.kind || "CHAT", text: "Tarea finalizada con éxito.", steps };
           }
 
-          // Si el modelo devolvió texto en lugar de usar la herramienta, lo forzamos a corregir
           messages.push({ role: "assistant", content: turn.text || "..." });
           messages.push({ 
             role: "user", 
-            content: "ERROR CRÍTICO: No has invocado ninguna herramienta (tool_call). Estás OBLIGADO a usar las funciones nativas. Si la tarea ya está terminada, escribe EXACTAMENTE 'TASK_COMPLETE'." 
+            content: "ERROR CRÍTICO: No has invocado ninguna herramienta (tool_call). Estás en un bucle de agente. Usa las herramientas. Si la tarea ya terminó, escribe TASK_COMPLETE." 
           });
           continue; 
         }
@@ -730,17 +752,36 @@ Si consideras que la tarea está 100% completada y verificada, responde ÚNICAME
           let args = {};
           try { args = JSON.parse(call.function?.arguments || "{}"); } catch { args = {}; }
 
-          onProgress?.({ phase: "tool", stage: "running", name, input: args });
-
-          // Blindaje determinista: evitar escrituras si no hay permisos
-          if ((name === "write_file" || name === "replace_in_file") && !allowWrite) {
-            const res = { ok: false, error: "Escritura denegada por política de permisos (Solo lectura)." };
+          if (!allowWrite && ["write_file", "replace_in_file", "run_command", "publish_project"].includes(name)) {
+            const res = { ok: false, error: "Acción denegada: Estás en Modo Solo Lectura." };
             steps.push({ name, input: args, result: res, ok: false });
             messages.push({ role: "tool", tool_call_id: call.id, name, content: JSON.stringify(res) });
             continue;
           }
 
-          const result = await tools.execute(name, args, projectRoot, allowWrite, helpers || {});
+          // AQUI ESTA LA MAGIA: INTERCEPCIÓN DE PERMISOS
+          const needsPermission = ["write_file", "replace_in_file", "run_command", "publish_project", "git_commit", "git_push", "build_project"].includes(name);
+          
+          if (needsPermission && !fullAccess && typeof helpers?.requestApproval === "function") {
+            onProgress?.({ phase: "confirm", text: `Esperando tu autorización para ${name}...` });
+            const approved = await helpers.requestApproval(name, args);
+            if (!approved) {
+              const rejectedResult = { ok: false, error: "Acción denegada por el usuario en el escudo." };
+              steps.push({ name, input: args, result: rejectedResult, ok: false });
+              messages.push({ role: "tool", tool_call_id: call.id, name, content: JSON.stringify(rejectedResult) });
+              continue;
+            }
+          }
+
+          onProgress?.({ phase: "tool", stage: "running", name, input: args });
+
+          let result;
+          try {
+            result = await tools.execute(name, args, projectRoot, allowWrite, helpers || {});
+          } catch (e) {
+            result = { ok: false, error: e.message };
+          }
+
           steps.push({ name, input: args, result, ok: result?.ok !== false });
 
           messages.push({

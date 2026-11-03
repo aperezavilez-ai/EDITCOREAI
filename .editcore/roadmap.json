@@ -38,10 +38,7 @@
   "deployment": {
     "pipeline": "vercel",
     "lastDeploy": {
-      "timestamp": "2026-10-13T16:25:08.434Z",
-      "type": "vercel",
-      "status": "ready",
-      "url": "https://editcore.mx"
+      "timestamp": "2026-11-03T17:58:31.779Z"
     }
   },
   "history": [
@@ -133,6 +130,30 @@
       "date": "2026-10-30T00:51:31.344Z",
       "action": "modified",
       "details": "git push main (b314da5): Release: Actualizacion de agentes OpenAI Compatible",
+      "by": "editcore"
+    },
+    {
+      "date": "2026-11-03T17:42:37.616Z",
+      "action": "deployed",
+      "details": "undefined: undefined",
+      "by": "editcore"
+    },
+    {
+      "date": "2026-11-03T17:49:55.445Z",
+      "action": "deployed",
+      "details": "undefined: undefined",
+      "by": "editcore"
+    },
+    {
+      "date": "2026-11-03T17:57:13.249Z",
+      "action": "deployed",
+      "details": "undefined: undefined",
+      "by": "editcore"
+    },
+    {
+      "date": "2026-11-03T17:58:31.780Z",
+      "action": "deployed",
+      "details": "undefined: undefined",
       "by": "editcore"
     }
   ],
