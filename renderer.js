@@ -2947,6 +2947,18 @@ function renderCustomProviders() {
   hint.textContent = "Selecciona Auto en el chat o fija un modelo. Cada endpoint puede tener varios modelos con su propia API key.";
   container.appendChild(hint);
 
+  const addActionRow = document.createElement("div");
+  addActionRow.style.cssText = "display: flex; gap: 10px; margin: 10px 0 14px 0; align-items: center;";
+  const addCustomTopBtn = document.createElement("button");
+  addCustomTopBtn.type = "button";
+  addCustomTopBtn.className = "profile-save";
+  addCustomTopBtn.style.cssText = "background: linear-gradient(135deg, #0e639c, #0ea5a4); color: white; border: none; font-weight: 700; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-size: 13px; display: inline-flex; align-items: center; gap: 6px;";
+  addCustomTopBtn.innerHTML = "<span>➕</span> <span>Agregar Proveedor Personalizado (OpenAI-compatible)</span>";
+  addCustomTopBtn.title = "Añadir cualquier API (Groq, OpenRouter, Mistral, Ollama, DeepSeek, etc.) y auto-detectar sus modelos";
+  addCustomTopBtn.onclick = () => addCustomProvider();
+  addActionRow.appendChild(addCustomTopBtn);
+  container.appendChild(addActionRow);
+
   const integratedTitle = document.createElement("div");
   integratedTitle.className = "providers-section-title";
   integratedTitle.textContent = "APIs integradas";
@@ -2956,7 +2968,7 @@ function renderCustomProviders() {
     const def = PROVIDERS[key];
     const item = document.createElement("details");
     item.className = "prov-item";
-    item.open = ["openai", "anthropic", "gemini"].includes(key);
+    item.open = true; // Siempre abierto y visible por defecto para configurar API key y auto-detectar modelos
 
     const summary = document.createElement("summary");
     summary.className = "prov-summary";
@@ -12337,13 +12349,15 @@ function buildPromptJob(prompt) {
   }
   const effectiveProjectRoot = state.projectRoot || ephemeralRoot || "";
 
+  const isCasualGreeting = /^(?:hola|hi|hello|hey|buenas|buen(?:os|as)\s+(?:d[ií]as|tardes|noches)|gracias|ok|vale|perfecto|c[oó]mo\s+est[aá]s|qui[eé]n\s+eres)[.!?¿¡\s]*$/i.test(String(prompt || "").trim());
+
   const modeDecision = ProjectAnalysis.resolveExecutionMode(prompt, {
-    requestedAgent,
+    requestedAgent: isCasualGreeting ? false : requestedAgent,
     projectOpen: Boolean(effectiveProjectRoot),
     resumableTask,
     workflowPhase,
   });
-  const isAgent = modeDecision.isAgent;
+  const isAgent = !isCasualGreeting && modeDecision.isAgent;
   const planAuthorizedExecution = isPlanAuthorizedExecution(project, prompt, isAgent);
   const resumableExecutable = resumableTask && ["interrupted", "executing", "awaiting_authorization"].includes(workflowPhase);
   const userAuthPrompt = isAgentAuthorization(prompt);

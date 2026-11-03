@@ -2733,13 +2733,23 @@ function buildKernelProcessHooks(projectRoot, event = null) {
 }
 
 function buildKernelHelpers(projectRootOrOptions = {}, event = null) {
-  if (projectRootOrOptions && typeof projectRootOrOptions === "object" && !projectRootOrOptions.onProcessChunk) {
+  if (typeof projectRootOrOptions === "string") {
     return {
+      ...buildKernelProcessHooks(projectRootOrOptions, event),
+      useEditCoreBrain: true,
+    };
+  }
+  if (projectRootOrOptions && typeof projectRootOrOptions === "object") {
+    const root = projectRootOrOptions.projectRoot || "";
+    const ev = event || projectRootOrOptions.event || null;
+    return {
+      useEditCoreBrain: true,
+      ...buildKernelProcessHooks(root, ev),
       ...projectRootOrOptions,
       useEditCoreBrain: true,
     };
   }
-  return buildKernelProcessHooks(projectRootOrOptions, event);
+  return { useEditCoreBrain: true };
 }
 
 function resolveKernelProviderCredentials() {
@@ -6811,6 +6821,17 @@ ipcMain.handle("agent:run", async (event, input = {}) => {
   const task = String(input.prompt || "").trim() || (runImages.length ? "Analiza la imagen adjunta." : "");
 
   if (!task) throw new Error("Falta tarea.");
+
+  if (isCasualPrompt(task)) {
+    const casualText = (typeof localConversationResponse === "function" ? localConversationResponse(task) : "") || "Hola. ¿En qué te ayudo?";
+    return {
+      text: casualText,
+      steps: [],
+      usage: { confirmed_input_tokens: 0, confirmed_output_tokens: 0, local_response: true },
+      report: { completed: true, toolCount: 0, changedFiles: [], stopReason: "Casual chat", kernel: true },
+      kernel: true,
+    };
+  }
 
   if (runImages.length) {
     const routed = ensureVisionRoute({

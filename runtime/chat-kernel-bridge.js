@@ -75,11 +75,31 @@ async function runKernelChat({
     mode === "full"
   );
 
-  const chatHistory = Array.isArray(history)
-    ? history
-    : Array.isArray(messages)
-      ? messages
-      : [];
+  const { isCasualPrompt, localConversationResponse } = require("./chat-local");
+  if (isCasualPrompt(message)) {
+    const casualText = localConversationResponse(message) || "Hola. ¿En qué te ayudo?";
+    onProgress?.({ phase: "delta", text: casualText });
+    return {
+      ok: true,
+      text: casualText,
+      steps: [],
+      threadId: tid,
+      kernel: true,
+      brain: true,
+      casual: true,
+      report: { completed: true, role: "assistant" },
+    };
+  }
+
+  const chatHistory = (Array.isArray(history) ? history : Array.isArray(messages) ? messages : [])
+    .filter((msg) => {
+      if (!msg) return false;
+      const content = typeof msg.content === "string" ? msg.content : "";
+      if (content.includes("buildKernelProcessHooks is not defined") || content.includes("Error invoking remote method")) {
+        return false;
+      }
+      return true;
+    });
 
   // threadId estable: si no viene, generar uno (evita hilos huérfanos por mensaje).
   const tid = String(threadId || chatId || "").trim()
@@ -95,8 +115,9 @@ async function runKernelChat({
   }, 5_000);
 
   try {
-    // Si se habilita o solicita el cerebro autónomo EditCore Brain
-    if (helpers?.useEditCoreBrain === true || process.env.EDITCORE_USE_BRAIN === "true") {
+    // EditCore Brain activo por defecto como motor principal
+    const useBrain = helpers?.useEditCoreBrain !== false || process.env.EDITCORE_USE_BRAIN === "true";
+    if (useBrain) {
       const { EditCoreBrain } = require("./editcore-brain");
       const brain = new EditCoreBrain({
         callChat: helpers?.callChat || null,

@@ -1195,7 +1195,8 @@
       isAuthorization(prompt)
       || (resumableExecutable && (isRecoveryInstruction(prompt) || isAgentTaskFeedback(prompt)))
     );
-    const isAgent = requestedAgent || autoEscalatedAgent || taskContinuation;
+    const isCasual = /^(?:hola|hi|hello|hey|buenas|buen(?:os|as)\s+(?:d[ií]as|tardes|noches)|gracias|ok|vale|perfecto|c[oó]mo\s+est[aá]s|qui[eé]n\s+eres)[.!?¿¡\s]*$/i.test(text(prompt));
+    const isAgent = !isCasual && (requestedAgent || autoEscalatedAgent || taskContinuation);
     const pathGiven = hasUsableAbsolutePath(prompt);
     const openNamedProject = isOpenNamedProjectRequest(prompt);
     const referencedProjectName = extractReferencedProjectName(prompt);

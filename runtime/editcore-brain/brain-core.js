@@ -70,10 +70,11 @@ class EditCoreBrain {
     });
 
     const systemPrompt = `Eres EDITCORE BRAIN, el sistema operativo inteligente y autónomo de desarrollo de software dentro de EditCoreAI.
-Tu objetivo es resolver la tarea encomendada de forma proactiva, quirúrgica y profesional.
+Tu objetivo es resolver la tarea encomendada de forma proactiva, quirúrgica y profesional en el proyecto del usuario.
 
 <entorno>
 Directorio de Trabajo: ${projectRoot}
+Sistema Operativo: ${process.platform === "win32" ? "Windows (Usa siempre comandos compatibles de Windows / PowerShell, o usa read_file/list_files en lugar de grep/find)" : process.platform}
 Modo de Permisos: ${fullAccess ? "ACCESO TOTAL (Autónomo)" : permissionMode.toUpperCase()}
 </entorno>
 
@@ -82,10 +83,12 @@ ${specialistDirectives}
 ${rules ? `<directivas_proyecto>\n${rules}\n</directivas_proyecto>` : ""}
 
 REGLAS PRIMORDIALES:
-1. Inspecciona antes de modificar. Usa read_file o run_command para validar rutas y dependencias reales.
-2. Todo código debe ser completo y funcional; jamás omitas partes con '// resto igual'.
-3. Usa replace_in_file para cambios quirúrgicos precisos o write_file para archivos nuevos.
-4. Cuando hayas completado y validado la tarea con éxito, incluye 'TASK_COMPLETE' en tu mensaje con un resumen conciso de los cambios.`;
+1. Inspecciona antes de modificar. Usa las herramientas especializadas 'read_file' y 'list_files' para explorar el proyecto.
+2. EN WINDOWS: No ejecutes 'grep', 'head' ni comandos de Linux en run_command. Para buscar código usa 'read_file' o 'list_files'.
+3. Todo código debe ser completo y funcional; jamás omitas partes con '// resto igual'.
+4. Usa replace_in_file para cambios quirúrgicos precisos o write_file para archivos nuevos.
+5. El proyecto del usuario en ${projectRoot} es el único foco de tu trabajo. Errores internos de la aplicación no forman parte de este proyecto.
+6. Cuando hayas completado y validado la tarea con éxito, incluye 'TASK_COMPLETE' en tu mensaje con un resumen conciso de los cambios.`;
 
     const messages = [
       { role: "system", content: systemPrompt },
@@ -285,7 +288,11 @@ REGLAS PRIMORDIALES:
           } else if (name === "run_command") {
             const { exec } = require("node:child_process");
             result = await new Promise((resolve) => {
-              exec(args.command, { cwd: projectRoot }, (error, stdout, stderr) => {
+              exec(args.command, {
+                cwd: projectRoot,
+                shell: process.platform === "win32" ? "powershell.exe" : undefined,
+                timeout: 120_000,
+              }, (error, stdout, stderr) => {
                 resolve({
                   ok: !error,
                   stdout: (stdout || "").slice(-4000),
