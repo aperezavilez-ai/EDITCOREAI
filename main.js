@@ -20,11 +20,11 @@ if (ipcMain && typeof ipcMain.handle === "function") {
 let __editcoreBooting = true;
 let __editcoreBootErrorHandled = false;
 
-// El diálogo lo ve el usuario: sin rutas del sistema. El stack completo va a startup.log y a la consola.
+// El diÃ¡logo lo ve el usuario: sin rutas del sistema. El stack completo va a startup.log y a la consola.
 function maskBootErrorPaths(text) {
   return String(text || "")
-    .replace(/(?:file:\/\/\/?)?(?:[A-Za-z]:|\\\\[^\\/\s]+)[\\/](?:[^\\/:*?"<>|()\r\n]+[\\/])*([^\\/:*?"<>|()\r\n]+)/g, "…\\$1")
-    .replace(/\/(?:Users|home|opt|usr|var|tmp|private|Applications|mnt|root|snap)\/(?:[^/:\s()"'<>]+\/)*([^/:\s()"'<>]+)/g, "…/$1");
+    .replace(/(?:file:\/\/\/?)?(?:[A-Za-z]:|\\\\[^\\/\s]+)[\\/](?:[^\\/:*?"<>|()\r\n]+[\\/])*([^\\/:*?"<>|()\r\n]+)/g, "â€¦\\$1")
+    .replace(/\/(?:Users|home|opt|usr|var|tmp|private|Applications|mnt|root|snap)\/(?:[^/:\s()"'<>]+\/)*([^/:\s()"'<>]+)/g, "â€¦/$1");
 }
 
 process.on("uncaughtException", (error) => {
@@ -37,8 +37,8 @@ process.on("uncaughtException", (error) => {
       const { runRecovery } = require("./scripts/failsafe-recovery");
       const choice = dialog.showMessageBoxSync({
         type: "error",
-        title: "EditCoreAI - Auto-Recuperación de Arranque",
-        message: "EditCoreAI detectó un error crítico durante el inicio:\n\n" + maskBootErrorPaths(errText).slice(0, 400) + "\n\n¿Deseas auto-restaurar inmediatamente el último estado funcional verificado?",
+        title: "EditCoreAI - Auto-RecuperaciÃ³n de Arranque",
+        message: "EditCoreAI detectÃ³ un error crÃ­tico durante el inicio:\n\n" + maskBootErrorPaths(errText).slice(0, 400) + "\n\nÂ¿Deseas auto-restaurar inmediatamente el Ãºltimo estado funcional verificado?",
         buttons: ["Restaurar y Reabrir", "Cerrar"],
         defaultId: 0,
         cancelId: 1,
@@ -242,7 +242,6 @@ const {
   steerChatKernel,
   isChatKernelRunning,
   classifyChatKernel,
-  buildKernelHelpers,
 } = require("./runtime/chat-kernel-bridge");
 const {
   attachTransparencyToProgress,
@@ -310,7 +309,7 @@ const legacyUserDataPaths = [
   path.join(editCoreAppData, "editcore-ai"),
 ];
 const legacySecureKeyMap = {};
-// Identidad canónica de ESTE proyecto. Nunca mezclar con otras instalaciones.
+// Identidad canÃ³nica de ESTE proyecto. Nunca mezclar con otras instalaciones.
 app.setName("EditCoreAI");
 app.setPath("userData", requestedUserData || path.join(editCoreAppData, "EDITCOREAI"));
 
@@ -441,7 +440,7 @@ function resolveIncomingWorkspaceRoot(event, input = {}, task = "") {
     if (fromSender) return fromSender;
   }
   if (globalActiveWorkspacePath) return globalActiveWorkspacePath;
-  // Autoconocimiento: auditorias de EDITCOREAI sin root → carpeta de la app.
+  // Autoconocimiento: auditorias de EDITCOREAI sin root â†’ carpeta de la app.
   if (/\beditcoreai\b/i.test(String(task || ""))) {
     const appRoot = path.resolve(__dirname);
     if (/editcoreai$/i.test(path.basename(appRoot))) return appRoot;
@@ -721,7 +720,7 @@ function publishAgentProgress(sender, payload = {}) {
     attachTransparencyToProgress(sender, redacted, redacted);
   } catch { /* ignore */ }
   // Kernel escribe directo a disco: emitir files-changed al completar mutaciones
-  // para que el panel derecho se refresque aunque el runId no esté en agentWorkflow.
+  // para que el panel derecho se refresque aunque el runId no estÃ© en agentWorkflow.
   try {
     const tool = String(redacted?.name || "");
     const stage = String(redacted?.stage || "");
@@ -810,7 +809,7 @@ async function approveAgentAction(event, mode, name, input, { projectRoot = "" }
     buttons: ["Cancelar", "Autorizar una vez"],
     defaultId: 0,
     cancelId: 0,
-    title: "Autorizar acción del agente",
+    title: "Autorizar acciÃ³n del agente",
     message: payload.message,
     detail: payload.detail,
     noLink: true,
@@ -869,7 +868,7 @@ async function confirmExternalAgentAction(event, { kind, command }) {
     buttons: ["Cancelar", "Autorizar una vez"],
     defaultId: 0,
     cancelId: 0,
-    title: "Confirmar acción externa",
+    title: "Confirmar acciÃ³n externa",
     message: payload.message,
     detail: payload.detail,
     noLink: true,
@@ -968,13 +967,13 @@ function slimAgentStepsForIpc(steps = []) {
         preview: content ? content.slice(0, 240) : result.preview,
       };
       if (slimResult.stdout && String(slimResult.stdout).length > 4000) {
-        slimResult.stdout = `${String(slimResult.stdout).slice(0, 4000)}…`;
+        slimResult.stdout = `${String(slimResult.stdout).slice(0, 4000)}â€¦`;
       }
       if (slimResult.stderr && String(slimResult.stderr).length > 2000) {
-        slimResult.stderr = `${String(slimResult.stderr).slice(0, 2000)}…`;
+        slimResult.stderr = `${String(slimResult.stderr).slice(0, 2000)}â€¦`;
       }
     } else if (typeof result === "string" && result.length > 4000) {
-      slimResult = `${result.slice(0, 4000)}…`;
+      slimResult = `${result.slice(0, 4000)}â€¦`;
     }
     return {
       name: step?.name,
@@ -991,7 +990,7 @@ function previousAgentRunSummary(rootPath) {
   const entry = lastAgentRunSummaries.get(key);
   if (!entry || (Date.now() - entry.at) > 2 * 3_600_000) return "";
   const stepLines = entry.steps
-    .map((step) => `- ${step.ok ? "OK" : "FALLO"} ${step.name}${step.target ? ` → ${step.target}` : ""}`)
+    .map((step) => `- ${step.ok ? "OK" : "FALLO"} ${step.name}${step.target ? ` â†’ ${step.target}` : ""}`)
     .join("\n");
   return [
     `Solicitud anterior: ${entry.prompt}`,
@@ -1238,8 +1237,8 @@ const RUNTIME_VERSION = (() => {
 })();
 
 function resolveUiIndexHtml() {
-  // En desarrollo (no empaquetado) SIEMPRE la UI de la raíz del repo.
-  // Preferir resources/app solo en builds empaquetados — evita ERR_FAILED (-2) y UI fantasma.
+  // En desarrollo (no empaquetado) SIEMPRE la UI de la raÃ­z del repo.
+  // Preferir resources/app solo en builds empaquetados â€” evita ERR_FAILED (-2) y UI fantasma.
   const packaged = (() => {
     try { return app.isPackaged === true; } catch { return false; }
   })();
@@ -1275,7 +1274,7 @@ function resolveUiIndexHtml() {
 }
 
 function buildUiFileUrl(indexHtml, hash = "") {
-  // pathToFileURL codifica espacios (PROGRAMAS IA) — loadFile a veces emite file:///D:\... inválido.
+  // pathToFileURL codifica espacios (PROGRAMAS IA) â€” loadFile a veces emite file:///D:\... invÃ¡lido.
   let href = pathToFileURL(path.resolve(indexHtml)).href;
   const fragment = String(hash || "").replace(/^#/, "").trim();
   if (fragment) href += `#${fragment}`;
@@ -1313,7 +1312,7 @@ function loadUiIntoWindow(win, hash = "") {
     ].filter((p) => p && path.resolve(p) !== path.resolve(indexHtml));
     const tryNext = (i = 0) => {
       if (i >= fallbacks.length || win.isDestroyed()) {
-        // Último recurso: HTML mínimo para no dejar pantalla en blanco.
+        // Ãšltimo recurso: HTML mÃ­nimo para no dejar pantalla en blanco.
         const emergency = "data:text/html;charset=utf-8," + encodeURIComponent(
           "<!doctype html><html><body style=\"font-family:Segoe UI,sans-serif;padding:32px;background:#f5f6f8;color:#1a1a1a\">"
           + "<h1>EditCoreAI</h1><p>No se pudo cargar la UI. Cierra todas las ventanas de EditCoreAI y vuelve a abrir.</p>"
@@ -1520,14 +1519,14 @@ function createWindow(options = {}) {
   win.webContents.on("did-fail-load", (_event, code, description, validatedURL, isMainFrame) => {
     logStartup(`did-fail-load ${code}: ${description} url=${validatedURL || ""} main=${isMainFrame}`);
     if (!win.isDestroyed() && isMainFrame !== false && Number(code) !== -3) {
-      // -3 = ERR_ABORTED (navegación sustituida). No reintentar en bucle.
+      // -3 = ERR_ABORTED (navegaciÃ³n sustituida). No reintentar en bucle.
       setTimeout(() => {
         if (win.isDestroyed()) return;
         const target = path.join(__dirname, "index.html");
         if (!fs.existsSync(target)) return;
         const href = buildUiFileUrl(target);
         logStartup(`startup:did-fail-retry ${href}`);
-        win.loadURL(href).catch((err) => logStartup("Reintento loadURL falló", err));
+        win.loadURL(href).catch((err) => logStartup("Reintento loadURL fallÃ³", err));
       }, 500);
     }
   });
@@ -1727,7 +1726,7 @@ function sanitizeChatText(value) {
   const stripped = text.replace(/\s+/g, " ").trim();
   const isPureXmlProtocol = /^<(?:tool_call|tool_use|function_call)\b/i.test(stripped);
   const isPureJsonProtocol = /^\s*\{[\s\S]{0,20}"type"\s*:\s*"tool"/.test(text)
-    && !/[.!?¿¡]\s*[A-ZÁÉÍÓÚa-záéíóú]/.test(text.slice(0, 300));
+    && !/[.!?Â¿Â¡]\s*[A-ZÃÃ‰ÃÃ“Ãša-zÃ¡Ã©Ã­Ã³Ãº]/.test(text.slice(0, 300));
   if (isPureXmlProtocol || isPureJsonProtocol) {
     return "El proveedor devolvio una instruccion interna; EditCore la proceso como protocolo, no la mostro ni la ejecuto en el chat.";
   }
@@ -1770,12 +1769,12 @@ function toUserFacingError(error) {
     return sanitizeChatProviderError(error);
   } catch {
     const message = String(error?.message || error || "").trim();
-    if (!message) return "No pude completar la acción. Intenta de nuevo.";
+    if (!message) return "No pude completar la acciÃ³n. Intenta de nuevo.";
     if (/gafcore/i.test(message)) return "No pude completar la respuesta. Intenta de nuevo.";
     if (/Cannot find module|Require stack|ENOENT|\.asar[\\/]|node_modules|ipcMain|jarvis-adapter/i.test(message)) {
       return "No pude procesar tu mensaje ahora. Verifica que tengas un modelo verificado en Modelos y vuelve a intentar.";
     }
-    if (/ECONNREFUSED|fetch failed|backend|no est[aá] disponible|tardo demasiado|502|503|429|timeout/i.test(message)) {
+    if (/ECONNREFUSED|fetch failed|backend|no est[aÃ¡] disponible|tardo demasiado|502|503|429|timeout/i.test(message)) {
       return "No pude completar la respuesta. Intenta de nuevo.";
     }
     return message.replace(/^Error invoking remote method '[^']+':\s*/i, "");
@@ -1876,6 +1875,7 @@ ipcMain.handle("editcore:chat", async (_event, input = {}) => {
       ...buildKernelProcessHooks(rootPath),
     });
     const out = await handleChatKernel({
+    helpers,
       message: effectivePrompt,
       history: Array.isArray(input.history) ? input.history : (Array.isArray(input.messages) ? input.messages : []),
       threadId: input.chatId || input.threadId || input.conversationId || "",
@@ -1899,7 +1899,7 @@ ipcMain.handle("editcore:chat", async (_event, input = {}) => {
             projectRoot: rootPath,
             ...(p && typeof p === "object" ? p : { text: String(p || "") }),
           };
-          // Solo agent:progress — NO reenviar por editcore:chunk (duplicaba el texto en el chat).
+          // Solo agent:progress â€” NO reenviar por editcore:chunk (duplicaba el texto en el chat).
           publishAgentProgress(sender, payload);
         } catch { /* ignore */ }
       },
@@ -2072,7 +2072,7 @@ const EDITCORE_AGENT_KNOWLEDGE_PACK = [
   "5. CO-CREACION: tu creas/analizas el proyecto CON el usuario. NO le pidas mas informacion que puedas obtener con list_files/read_file.",
   "6. Al cerrar un analisis o scaffold: di que FALTA para que el proyecto funcione (env, deps, scripts, stubs, Docker, workers) y el siguiente paso concreto.",
   "7. Si una skill define un procedimiento, ese procedimiento gana sobre tus habitos, pero nunca sobre la instruccion del usuario.",
-  "8. ANALISIS SERIAL (como Cursor): 1 tool → avance visible en el chat → siguiente tool. PROHIBIDO saturar con 4+ lecturas o un PLAN de 8 archivos sin narrar entre medias.",
+  "8. ANALISIS SERIAL (como Cursor): 1 tool â†’ avance visible en el chat â†’ siguiente tool. PROHIBIDO saturar con 4+ lecturas o un PLAN de 8 archivos sin narrar entre medias.",
   "9. TOKENS / ROADMAP-FIRST: en CADA turno lee primero ROADMAP.md y .editcore/session-state.json (ya inyectados si existen). PROHIBIDO reexplorar el repo entero con list_files/glob. EditCore actualiza ROADMAP + session-state tras applyPatch; no uses ROADMAP como fuente de bugs.",
   "10. ARCHIVOS: puedes leer y crear cualquier path del proyecto (texto + PDF/DOCX/XLSX/CSV). Si falta un archivo, listalo o CREALO; NUNCA te detengas pidiendo que el usuario lo pegue.",
 ].join("\n");
@@ -2085,7 +2085,7 @@ function formatBrainAgentContext(inventory = {}, orchestratorContent = "") {
   return [
     EDITCORE_AGENT_KNOWLEDGE_PACK,
     orchestratorContent ? `SKILL ORQUESTADORA DEL CEREBRO (aplicar al inicio de cada tarea):\n${String(orchestratorContent).slice(0, 5000)}` : "",
-    skillLines.length ? `SKILLS DEL CEREBRO (${skills.length} disponibles — usa brain_skill con el nombre exacto):\n${skillLines.join("\n")}` : "",
+    skillLines.length ? `SKILLS DEL CEREBRO (${skills.length} disponibles â€” usa brain_skill con el nombre exacto):\n${skillLines.join("\n")}` : "",
     installedLines.length ? `CAPACIDADES INSTALADAS EN EDITCORE:\n${installedLines.join("\n")}` : "",
     "PROTOCOLO CEREBRO: como mucho UNA ronda brain_skill o brain_search al inicio. Luego herramientas del proyecto. PROHIBIDO repetir brain_search en bucle.",
   ].filter(Boolean).join("\n\n");
@@ -2093,7 +2093,7 @@ function formatBrainAgentContext(inventory = {}, orchestratorContent = "") {
 
 function formatProjectBootstrapListing(rootPath, options = {}) {
   try {
-    // Siempre inyectar ROADMAP como índice (ahorro tokens). En análisis: no usarlo como fuente de bugs.
+    // Siempre inyectar ROADMAP como Ã­ndice (ahorro tokens). En anÃ¡lisis: no usarlo como fuente de bugs.
     const ignoreRoadmap = options.ignoreRoadmap === true;
     const analysisMode = options.analysisMode === true;
     const roadmap = ignoreRoadmap ? { exists: false, content: "" } : readRoadmap(rootPath);
@@ -2253,7 +2253,7 @@ function writeProjectFile(rootPath, relativePath, content) {
       summary: existed ? "archivo actualizado" : "archivo creado",
     });
   } catch {
-    // El índice no debe bloquear escrituras.
+    // El Ã­ndice no debe bloquear escrituras.
   }
   return result;
 }
@@ -2595,12 +2595,12 @@ function isAuthOrUpstreamFailure(error) {
   try {
     const { isHardProviderFailure } = require("./runtime/chat-error-sanitize");
     const message = String(error?.message || error || "");
-    // Auth/billing sí; timeouts temporales NO (deben reintentarse).
+    // Auth/billing sÃ­; timeouts temporales NO (deben reintentarse).
     return isHardProviderFailure(message, error?.status);
   } catch {
     const message = String(error?.message || error || "");
-    return /401|403|无效|令牌|invalid.?token|inv[aá]lid.?token|forbidden/i.test(message)
-      && !/no est[aá] disponible|tard[oó] demasiado|reintenta en/i.test(message);
+    return /401|403|æ— æ•ˆ|ä»¤ç‰Œ|invalid.?token|inv[aÃ¡]lid.?token|forbidden/i.test(message)
+      && !/no est[aÃ¡] disponible|tard[oÃ³] demasiado|reintenta en/i.test(message);
   }
 }
 
@@ -2617,7 +2617,7 @@ function isTransientProviderError(error) {
     if (error?.code === "PROVIDER_GATEWAY_TIMEOUT" || Number(error?.status) === 524) return true;
     const message = String(error?.message || error || "");
     return isRetryableProviderStatus(error?.status)
-      || /timeout|timed out|network|fetch failed|socket|temporarily|temporalmente|unavailable|overloaded|rate limit|try again|reintenta|gateway time-?out|cloudflare|524|no est[aá] disponible|tard[oó] demasiado|503|502/i.test(message);
+      || /timeout|timed out|network|fetch failed|socket|temporarily|temporalmente|unavailable|overloaded|rate limit|try again|reintenta|gateway time-?out|cloudflare|524|no est[aÃ¡] disponible|tard[oÃ³] demasiado|503|502/i.test(message);
   }
 }
 
@@ -2633,7 +2633,7 @@ function toUserFacingProviderError(error) {
     });
   } catch {
     if (error?.code === "PROVIDER_GATEWAY_TIMEOUT" || Number(error?.status) === 524) {
-      const msg = "La respuesta tardó demasiado tiempo. Intenta reducir el alcance de la solicitud.";
+      const msg = "La respuesta tardÃ³ demasiado tiempo. Intenta reducir el alcance de la solicitud.";
       return Object.assign(new Error(msg), {
         status: Number(error.status) || 524,
         code: "PROVIDER_GATEWAY_TIMEOUT",
@@ -2642,7 +2642,7 @@ function toUserFacingProviderError(error) {
     }
     const message = String(error?.message || error || "");
     if (/gafcore/i.test(message) || /<!DOCTYPE\s+html|<html[\s>]|cloudflare|error code 524|gateway time-?out|API 524/i.test(message)) {
-      const msg = "El proveedor no respondió a tiempo. Reintenta en unos segundos; tu modelo se conserva.";
+      const msg = "El proveedor no respondiÃ³ a tiempo. Reintenta en unos segundos; tu modelo se conserva.";
       return Object.assign(new Error(msg), {
         status: Number(error?.status) || 524,
         code: "PROVIDER_GATEWAY_TIMEOUT",
@@ -2688,7 +2688,7 @@ if (
 }
 
 /** Hooks de streaming para run_command del kernel (process-runner). */
-function buildKernelProcessHooks(projectRoot) {
+function buildKernelHelpers(projectRoot, event = null) {
   const root = String(projectRoot || "");
   return {
     onProcessChunk: (ev) => {
@@ -2722,6 +2722,12 @@ function buildKernelProcessHooks(projectRoot) {
         wakeVerifier: true,
       });
     },
+    requestApproval: async (name, input) => {
+      if (!event) return true;
+      const payload = agentApprovalPayload(name, input, { projectRoot: root });
+      return await requestAgentApproval(event, payload);
+    },
+    useEditCoreBrain: true,
   };
 }
 
@@ -2755,7 +2761,7 @@ async function maybeAutoHealPreview(projectRoot, issue) {
       || issue?.nextServerEnoent === true
       || isNextServerEnoentError(excerpt);
 
-    // ENOENT en .next/server: no reintentar lectura ni depender de API — heal local inmediato.
+    // ENOENT en .next/server: no reintentar lectura ni depender de API â€” heal local inmediato.
     if (nextCacheHeal) {
       emitPreviewDaemonEvent(projectRoot, {
         type: "preview-heal-start",
@@ -2781,8 +2787,8 @@ async function maybeAutoHealPreview(projectRoot, issue) {
       emitPreviewDaemonEvent(projectRoot, {
         type: "preview-heal-done",
         text: heal?.uiMessage || (heal?.ok
-          ? "Caché de Next.js regenerada exitosamente"
-          : "Autorreparación de .next incompleta"),
+          ? "CachÃ© de Next.js regenerada exitosamente"
+          : "AutorreparaciÃ³n de .next incompleta"),
         kind: "local-next-heal",
         ok: heal?.ok === true,
         snapshotId: heal?.snapshotId || null,
@@ -2796,7 +2802,7 @@ async function maybeAutoHealPreview(projectRoot, issue) {
                 projectRoot,
                 url,
                 reason: "auto-heal",
-                message: "Caché de Next.js regenerada exitosamente",
+                message: "CachÃ© de Next.js regenerada exitosamente",
               });
             }
           } catch { /* ignore */ }
@@ -2825,6 +2831,7 @@ async function maybeAutoHealPreview(projectRoot, issue) {
       ...buildKernelProcessHooks(projectRoot),
     });
     const out = await handleChatKernel({
+    helpers,
       message: `Auto-heal preview: ${issue.summary}`,
       projectRoot,
       apiBaseUrl: baseUrl,
@@ -2916,7 +2923,7 @@ async function startProjectPreviewNow(safeRoot, ownerId) {
     if (!serverRunning && detection.isNext && detection.issues.some((issue) => issue.autoHeal)) {
       emitPreviewDaemonEvent(safeRoot, {
         type: "preview-heal-start",
-        issue: { summary: detection.issues[0]?.summary || "Caché .next corrupta", healStrategy: "next-cache-rebuild" },
+        issue: { summary: detection.issues[0]?.summary || "CachÃ© .next corrupta", healStrategy: "next-cache-rebuild" },
       });
       const heal = await autoHealNextProject(runtimeRoot, {
         rebuild: !pkg?.scripts?.dev,
@@ -2933,7 +2940,7 @@ async function startProjectPreviewNow(safeRoot, ownerId) {
       emitPreviewDaemonEvent(safeRoot, {
         type: "preview-heal-done",
         ok: heal?.ok === true,
-        text: heal?.uiMessage || (heal?.ok ? "Caché de Next.js regenerada exitosamente" : "Heal incompleto"),
+        text: heal?.uiMessage || (heal?.ok ? "CachÃ© de Next.js regenerada exitosamente" : "Heal incompleto"),
         kind: "local-next-heal",
       });
     }
@@ -2978,7 +2985,7 @@ const dependencyReport = await ensureProjectDependencies(runtimeRoot, pkg, manag
   },
 });
   const script = pkg.scripts.dev ? "dev" : "start";
-  // CADA proyecto tiene un puerto dedicado único e irrepetible derivado de su ruta física
+  // CADA proyecto tiene un puerto dedicado Ãºnico e irrepetible derivado de su ruta fÃ­sica
   // mediante stablePreviewPort(safeRoot) (rango 4100-5900).
   // NUNCA usar puertos globales del sistema (3000, 5173, 8080, etc.) porque suelen
   // estar ocupados por Docker, contenedores de cobro/caja o servicios del sistema.
@@ -2986,7 +2993,7 @@ const dependencyReport = await ensureProjectDependencies(runtimeRoot, pkg, manag
   const assignedPort = await findAvailablePort(dedicatedBasePort, 200);
   const previewUrl = "http://127.0.0.1:" + assignedPort;
 
-  // Si esta misma ventana (ownerId) tenía otro preview abierto, desasociarlo y detenerlo
+  // Si esta misma ventana (ownerId) tenÃ­a otro preview abierto, desasociarlo y detenerlo
   // para no dejar procesos zombies en segundo plano al cambiar de proyecto.
   for (const [otherRoot, otherRuntime] of previewProcesses) {
     if (otherRoot !== safeRoot && otherRuntime?.owners?.has(ownerId)) {
@@ -3011,8 +3018,8 @@ const dependencyReport = await ensureProjectDependencies(runtimeRoot, pkg, manag
   ].find((candidate) => fs.existsSync(path.join(candidate, "index.html")));
   const deploymentFallbackUrl = inferDeploymentPreviewUrl(runtimeRoot);
 
-  // Argumentos explícitos para obligar a Next.js / Vite / Astro a escuchar en assignedPort
-  // incluso si se ejecutan a través de npm/pnpm/yarn/bun.
+  // Argumentos explÃ­citos para obligar a Next.js / Vite / Astro a escuchar en assignedPort
+  // incluso si se ejecutan a travÃ©s de npm/pnpm/yarn/bun.
   const isNext = fs.readdirSync(runtimeRoot).some((name) => /^next\.config\./i.test(name));
   const isVite = fs.readdirSync(runtimeRoot).some((name) => /^vite\.config\./i.test(name));
   const isAstro = fs.readdirSync(runtimeRoot).some((name) => /^astro\.config\./i.test(name));
@@ -3048,9 +3055,9 @@ const dependencyReport = await ensureProjectDependencies(runtimeRoot, pkg, manag
     const startupTimeout = direct?.direct ? PREVIEW_START_TIMEOUT_MS
       : staticFallbackRoot || deploymentFallbackUrl ? 45_000 : PREVIEW_START_TIMEOUT_MS;
     // Siempre detectar URL real del proceso (vite/next pueden publicar otro puerto)
-    // y también sondear el puerto asignado.
+    // y tambiÃ©n sondear el puerto asignado.
     runtime.url = await detectListeningUrl(child, previewUrl, startupTimeout, outputRef);
-    logPreviewRuntime(`Preview listo ${safeRoot} → ${runtime.url}`);
+    logPreviewRuntime(`Preview listo ${safeRoot} â†’ ${runtime.url}`);
     return { available: true, started: true, pid: child.pid, script: runtime.script, url: runtime.url, runtimeRoot, dependencyReport };
   } catch (error) {
     stopPreviewRuntime(runtime);
@@ -3191,7 +3198,7 @@ async function startDesktopPreview(safeRoot, ownerId, target) {
     } catch (error) {
       fail(runtime, error);
     }
-    logPreviewRuntime(`Preview ${label} listo ${safeRoot} → ${runtime.url}`);
+    logPreviewRuntime(`Preview ${label} listo ${safeRoot} â†’ ${runtime.url}`);
     return describe(runtime, true);
   }
 
@@ -3207,7 +3214,7 @@ async function startDesktopPreview(safeRoot, ownerId, target) {
   } catch (error) {
     fail(runtime, error);
   }
-  logPreviewRuntime(`Preview ${label} estatico ${safeRoot} → ${runtime.url}`);
+  logPreviewRuntime(`Preview ${label} estatico ${safeRoot} â†’ ${runtime.url}`);
   return describe(runtime, true);
 }
 
@@ -3248,7 +3255,7 @@ async function isHttpReady(url) {
       return !ct || isPreviewDocumentContentType(ct) || /html|xhtml|xml/i.test(ct);
     }
     if (!response.ok) return false;
-    // Vite/Next a veces omiten content-type en el primer hit; aceptar 2xx vacío.
+    // Vite/Next a veces omiten content-type en el primer hit; aceptar 2xx vacÃ­o.
     if (!ct) return true;
     if (isPreviewDocumentContentType(ct)) return true;
     // Evitar dar por bueno un JSON de API / texto plano de error.
@@ -3351,13 +3358,13 @@ function sanitizeMessagesForModel(messages, model) {
       ...msg,
       content: [
         ...textParts,
-        { type: "text", text: `[${imgCount} imagen(es) adjunta(s) — el modelo activo no soporta visión y no hubo candidato multimodal disponible.]` },
+        { type: "text", text: `[${imgCount} imagen(es) adjunta(s) â€” el modelo activo no soporta visiÃ³n y no hubo candidato multimodal disponible.]` },
       ],
     };
   });
 }
 
-// ── Registro persistente de capacidades por modelo ─────────────────────────
+// â”€â”€ Registro persistente de capacidades por modelo â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Cada llamada real (exito o fallo) y cada verificacion alimentan este
 // registro; el fallback automatico elige solo modelos con exito reciente.
 function modelCapabilitiesPath() {
@@ -3428,7 +3435,7 @@ function capabilityFallbackCandidates(current = {}) {
 // el modelo no existe en la cuenta o el proveedor lo tiene inactivo.
 function isModelUnavailableError(error) {
   const message = String(error?.message || error || "");
-  return /is not supported|not supported by any|no existe o est[aá] inactivo|proveedor no existe|model .* not found|unknown model|modelo no disponible/i.test(message);
+  return /is not supported|not supported by any|no existe o est[aÃ¡] inactivo|proveedor no existe|model .* not found|unknown model|modelo no disponible/i.test(message);
 }
 
 function buildFailoverCandidateProfiles(current = {}, { requireTools = true } = {}) {
@@ -3581,7 +3588,7 @@ async function callProvider({ baseUrl, apiKey, model, messages, providerKey = ""
       if (trace) auditPhase1()?.response(trace, { ok: false, error });
       lastError = toUserFacingProviderError(error);
       if (signal?.aborted) throw lastError;
-      // Reintentar solo si el usuario todavía no vio texto de este intento (sin duplicar ni cobrar dos veces lo mostrado).
+      // Reintentar solo si el usuario todavÃ­a no vio texto de este intento (sin duplicar ni cobrar dos veces lo mostrado).
       if (attempt < attempts && !streamedAny && (isTransientProviderError(error) || error?.code === "EMPTY_PROVIDER_RESPONSE")) {
         idleTimeout.clear();
         await new Promise((resolve) => setTimeout(resolve, Math.min(1500 * attempt, 3000)));
@@ -3717,7 +3724,7 @@ function mergeSecureStateFrom(sourcePath) {
   try {
     source = readSecureStateFile(sourcePath);
   } catch (error) {
-    logStartup(`No se pudo descifrar bóveda legacy ${sourcePath}`, error);
+    logStartup(`No se pudo descifrar bÃ³veda legacy ${sourcePath}`, error);
     return;
   }
   if (!Object.keys(source).length) return;
@@ -4038,7 +4045,7 @@ function isGatewayResidueProfile(profile) {
     || url.includes("gafcore-gateway");
 }
 
-/** Elimina residuos del gateway AI de la bóveda. No reinyecta endpoints. */
+/** Elimina residuos del gateway AI de la bÃ³veda. No reinyecta endpoints. */
 function scrubGatewayFromSecureState() {
   const secure = readSecureState();
   let changed = false;
@@ -4097,7 +4104,7 @@ function scrubGatewayFromSecureState() {
 }
 
 function applyGatewayProjectToSecureState(_link) {
-  // Integración eliminada: nunca reinyectar el gateway en la bóveda.
+  // IntegraciÃ³n eliminada: nunca reinyectar el gateway en la bÃ³veda.
   scrubGatewayFromSecureState();
   return "";
 }
@@ -4127,7 +4134,7 @@ function gatewayLinkForInput(input = {}) {
 function readConnections() {
   const value = readSecureState()["editcore-connections"];
   const connections = value && typeof value === "object" ? { ...value } : {};
-  // Bóveda global: nunca conservar path de un proyecto (/taxidriv, /page, ...).
+  // BÃ³veda global: nunca conservar path de un proyecto (/taxidriv, /page, ...).
   const rawUrl = String(connections.selfSupabaseUrl || "").trim();
   try {
     const parsed = new URL(rawUrl);
@@ -4258,13 +4265,13 @@ async function validateConnection(service) {
     const raw = String(error?.message || error).slice(0, 300);
     let hint = raw;
     if (name === "github" && /401|403|Bad credentials|Requires authentication/i.test(raw)) {
-      hint = `${raw} — revisa el token GitHub (scopes repo,workflow) o regeneralo.`;
+      hint = `${raw} â€” revisa el token GitHub (scopes repo,workflow) o regeneralo.`;
     }
     if (name === "selfsupabase" && /gafcore-gateway|404|ENOTFOUND/i.test(raw)) {
-      hint = `${raw} — usa la URL de tu proyecto de Supabase (ej. https://tu-servidor/tu-proyecto), no la de un proveedor de modelos.`;
+      hint = `${raw} â€” usa la URL de tu proyecto de Supabase (ej. https://tu-servidor/tu-proyecto), no la de un proveedor de modelos.`;
     }
     if (name === "selfsupabase" && /401|403|JWT|Invalid API key|unauthorized/i.test(raw)) {
-      hint = `${raw} — API Key o URL de proyecto incorrecta. Revisa la URL de tu Supabase y la clave service_role de tu proyecto.`;
+      hint = `${raw} â€” API Key o URL de proyecto incorrecta. Revisa la URL de tu Supabase y la clave service_role de tu proyecto.`;
     }
     return { service: name, configured: true, ok: false, error: hint };
   }
@@ -4304,7 +4311,7 @@ ipcMain.handle("connections:gafcore-status", async () => {
 
 ipcMain.handle("connections:gafcore-admin-token", async () => {
   scrubGatewayFromSecureState();
-  throw new Error("Esta integración ya no está disponible. Elige un modelo en el panel Modelos.");
+  throw new Error("Esta integraciÃ³n ya no estÃ¡ disponible. Elige un modelo en el panel Modelos.");
 });
 
 ipcMain.handle("connections:gafcore-activate", async () => {
@@ -4314,7 +4321,7 @@ ipcMain.handle("connections:gafcore-activate", async () => {
 
 async function connectGatewayProjectInternal() {
   scrubGatewayFromSecureState();
-  throw new Error("Esta integración ya no está disponible. Elige un modelo en el panel Modelos.");
+  throw new Error("Esta integraciÃ³n ya no estÃ¡ disponible. Elige un modelo en el panel Modelos.");
 }
 
 ipcMain.handle("connections:gafcore-project", async (_event, input = {}) => connectGatewayProjectInternal(input));
@@ -4344,7 +4351,7 @@ ipcMain.handle("cloud:provision-supabase", async (_event, input = {}) => {
 });
 ipcMain.handle("cloud:provision-gafcore-ai", async () => {
   scrubGatewayFromSecureState();
-  throw new Error("Esta integración ya no está disponible. Elige un modelo en el panel Modelos.");
+  throw new Error("Esta integraciÃ³n ya no estÃ¡ disponible. Elige un modelo en el panel Modelos.");
 });
 ipcMain.handle("cloud:provision-fullstack", async (_event, input = {}) => {
   const root = String(input.projectRoot || "").trim();
@@ -4653,7 +4660,7 @@ async function importLocalConnections(input = {}) {
 
   if (!connections.selfSupabaseUrl || !connections.selfSupabaseKey || !await connectionWorks("selfsupabase", connections)) {
     const activeRoot = String(input.projectRoot || "").trim();
-    // Solo el proyecto activo: nunca importar URL de TAXIDRIV u otros a la bóveda global.
+    // Solo el proyecto activo: nunca importar URL de TAXIDRIV u otros a la bÃ³veda global.
     const envFiles = activeRoot
       ? [path.join(activeRoot, ".env"), path.join(activeRoot, ".env.local")]
       : [];
@@ -4664,7 +4671,7 @@ async function importLocalConnections(input = {}) {
       const rawUrl = urlNames.map((name) => values[name]).find((value) => /https:\/\/supabase\.gafcore\.com/i.test(String(value || "")));
       const key = keyNames.map((name) => values[name]).find(Boolean);
       if (!rawUrl || !key) continue;
-      // Bóveda = origen de plataforma SIN path de proyecto (/taxidriv, /page, ...).
+      // BÃ³veda = origen de plataforma SIN path de proyecto (/taxidriv, /page, ...).
       let url = String(rawUrl).replace(/^=+/, "").replace(/\/+$/, "")
         .replace(/\/gafcore-gateway(?:\/api(?:\/openai(?:\/v1)?)?)?$/i, "")
         .replace(/\/rest\/v1$/i, "")
@@ -4686,7 +4693,7 @@ async function importLocalConnections(input = {}) {
     }
   }
 
-  // Importación de tokens de gateway AI eliminada a propósito.
+  // ImportaciÃ³n de tokens de gateway AI eliminada a propÃ³sito.
 
   secure["editcore-connections"] = connections;
   writeSecureState(secure);
@@ -5015,7 +5022,7 @@ ipcMain.handle("secure-config:load", async () => {
   try {
     return readSecureState();
   } catch (error) {
-    throw new Error(`No se pudo abrir la configuración segura: ${error.message}`);
+    throw new Error(`No se pudo abrir la configuraciÃ³n segura: ${error.message}`);
   }
 });
 
@@ -5060,10 +5067,10 @@ ipcMain.handle("editor:inline-edit", async (_event, input = {}) => {
   } = input || {};
 
   if (!instruction || !String(instruction).trim()) {
-    return { ok: false, error: "Falta la instrucción." };
+    return { ok: false, error: "Falta la instrucciÃ³n." };
   }
   if (!selection && !previousProposal) {
-    return { ok: false, error: "Seleccioná código o mové el cursor a una línea." };
+    return { ok: false, error: "SeleccionÃ¡ cÃ³digo o movÃ© el cursor a una lÃ­nea." };
   }
 
   const creds = resolveKernelProviderCredentials();
@@ -5072,31 +5079,31 @@ ipcMain.handle("editor:inline-edit", async (_event, input = {}) => {
   const resolvedBaseUrl = String(baseUrl || creds.baseUrl || "").trim();
   const resolvedProviderKey = String(providerKey || creds.providerKey || "").trim();
   if (!resolvedApiKey || !resolvedModel || !resolvedBaseUrl) {
-    return { ok: false, error: "Configurá un modelo en Modelos antes de usar Inline Edit." };
+    return { ok: false, error: "ConfigurÃ¡ un modelo en Modelos antes de usar Inline Edit." };
   }
 
   const system = [
-    "Sos un editor inline de código.",
-    "Devolvés EXCLUSIVAMENTE el código nuevo que reemplaza la selección.",
+    "Sos un editor inline de cÃ³digo.",
+    "DevolvÃ©s EXCLUSIVAMENTE el cÃ³digo nuevo que reemplaza la selecciÃ³n.",
     "Reglas:",
     "- Sin markdown, sin ```, sin explicaciones, sin texto previo ni posterior.",
-    "- Sin comentarios agregados salvo que la instrucción lo pida.",
-    "- Mantené el estilo del código circundante (indentación, comillas, semicolons).",
-    "- Si la instrucción es imposible o ambigua, devolvé la selección sin cambios.",
-    "- Preservá imports/exports si están en la selección.",
+    "- Sin comentarios agregados salvo que la instrucciÃ³n lo pida.",
+    "- MantenÃ© el estilo del cÃ³digo circundante (indentaciÃ³n, comillas, semicolons).",
+    "- Si la instrucciÃ³n es imposible o ambigua, devolvÃ© la selecciÃ³n sin cambios.",
+    "- PreservÃ¡ imports/exports si estÃ¡n en la selecciÃ³n.",
   ].join("\n");
 
   const userParts = [
     `Archivo: ${relPath || "(sin path)"}`,
     `Lenguaje: ${language}`,
-    `Rango: líneas ${startLine}-${endLine}`,
+    `Rango: lÃ­neas ${startLine}-${endLine}`,
     before ? `\n--- CONTEXTO ANTES ---\n${before}` : "",
-    `\n--- SELECCIÓN A EDITAR ---\n${selection || "(cursor vacío)"}`,
-    after ? `\n--- CONTEXTO DESPUÉS ---\n${after}` : "",
+    `\n--- SELECCIÃ“N A EDITAR ---\n${selection || "(cursor vacÃ­o)"}`,
+    after ? `\n--- CONTEXTO DESPUÃ‰S ---\n${after}` : "",
     previousProposal ? `\n--- PROPUESTA ANTERIOR (refinar) ---\n${previousProposal}` : "",
-    `\n--- INSTRUCCIÓN ---\n${instruction}`,
+    `\n--- INSTRUCCIÃ“N ---\n${instruction}`,
     "",
-    "Devolvé SOLO el código nuevo.",
+    "DevolvÃ© SOLO el cÃ³digo nuevo.",
   ].filter(Boolean).join("\n");
 
   try {
@@ -5122,7 +5129,7 @@ ipcMain.handle("editor:inline-edit", async (_event, input = {}) => {
     proposal = proposal.replace(/^```[\w-]*\r?\n?/, "").replace(/\r?\n?```$/, "").trim();
 
     if (!proposal) {
-      return { ok: false, error: "El modelo devolvió una respuesta vacía." };
+      return { ok: false, error: "El modelo devolviÃ³ una respuesta vacÃ­a." };
     }
     return { ok: true, proposal };
   } catch (error) {
@@ -5400,7 +5407,7 @@ function licenseBlockedRunResult(event, charge = {}) {
   charge = { ...charge, error: charge.error || CREDIT_ERRORS[code] || "" };
   try { event?.sender?.send?.("license:blocked", { code, message: charge.error || "" }); } catch { /* ignore */ }
   return {
-    text: `🔒 ${charge.error || "Inicia sesión con Google para usar EditCoreAI."}`,
+    text: `ðŸ”’ ${charge.error || "Inicia sesiÃ³n con Google para usar EditCoreAI."}`,
     steps: [],
     usage: { confirmed_input_tokens: 0, confirmed_output_tokens: 0, local_response: true },
     report: { completed: false, toolCount: 0, changedFiles: [], stopReason: code, kernel: true },
@@ -5521,7 +5528,7 @@ ipcMain.handle("agent:transcribe-audio", async (_event, input) => {
     });
   } catch (err) {
     console.warn("[main] STT error:", err?.message || err);
-    return { ok: false, error: String(err?.message || err || "STT falló") };
+    return { ok: false, error: String(err?.message || err || "STT fallÃ³") };
   }
 });
 
@@ -5546,7 +5553,7 @@ ipcMain.handle("agent:transcribe-local-pcm", async (_event, input = {}) => {
       },
     });
   } catch (err) {
-    return { ok: false, error: String(err?.message || err || "Whisper local falló") };
+    return { ok: false, error: String(err?.message || err || "Whisper local fallÃ³") };
   }
 });
 
@@ -5686,7 +5693,7 @@ ipcMain.handle("project:pick", async () => {
     dialog.showMessageBoxSync({
       type: "warning",
       title: "Proyecto no permitido",
-      message: "Esta carpeta pertenece al núcleo protegido de EditCoreAI y no puede abrirse ni modificarse como proyecto.",
+      message: "Esta carpeta pertenece al nÃºcleo protegido de EditCoreAI y no puede abrirse ni modificarse como proyecto.",
     });
     return null;
   }
@@ -5702,7 +5709,7 @@ ipcMain.handle("project:pick-parent", async () => {
 ipcMain.handle("project:save", async (_event, input = {}) => {
   const root = assertProjectRoot(String(input.root || "").trim());
   if (isAppProtectedPath(root)) {
-    throw new Error("Esta carpeta pertenece al núcleo protegido de EditCoreAI y no puede ser modificada.");
+    throw new Error("Esta carpeta pertenece al nÃºcleo protegido de EditCoreAI y no puede ser modificada.");
   }
   const metadataDir = resolveProjectPath(root, ".editcore");
   const target = resolveProjectPath(root, ".editcore/project.json");
@@ -5758,7 +5765,7 @@ ipcMain.handle("project:save-changes", async (_event, input = {}) => {
     };
   }
 
-  // Guardar = metadatos + commit local (sin push). Timeout evita “Guardando…” infinito.
+  // Guardar = metadatos + commit local (sin push). Timeout evita â€œGuardandoâ€¦â€ infinito.
   const commitMessage = String(input.commitMessage || "").trim()
     || (mode === "editcore"
       ? `chore(editcoreai): save ${new Date().toISOString().slice(0, 19)}`
@@ -5789,7 +5796,7 @@ ipcMain.handle("project:save-changes", async (_event, input = {}) => {
         committed: false,
         path: target,
         manifest,
-        message: "Metadatos guardados. El commit local tardó demasiado y se omitió; el preview se restaura.",
+        message: "Metadatos guardados. El commit local tardÃ³ demasiado y se omitiÃ³; el preview se restaura.",
       };
     }
     throw error;
@@ -6072,7 +6079,7 @@ ipcMain.handle("project:preview-health", async (event, rootPath) => {
   }
   try {
     if (!(await isHttpReady(runtime.url))) {
-      // Next/Vite pueden tardar más que el sondeo HTTP mientras compilan: si el proceso
+      // Next/Vite pueden tardar mÃ¡s que el sondeo HTTP mientras compilan: si el proceso
       // sigue vivo y escuchando en su puerto, no se reinicia (reiniciar crea el bucle).
       const port = Number(new URL(runtime.url).port || 0);
       if (port && runtime.child.exitCode === null && !(await portIsFree(port))) {
@@ -6121,7 +6128,7 @@ ipcMain.handle("project:publish", async (event, input = {}) => {
   const missing = [];
   if (!String(connections.githubToken || "").trim()) missing.push("GitHub (token en Conexiones)");
   if (mode === "project" && input.deploy !== false && !String(connections.vercelToken || "").trim()) {
-    // Deploy es opcional si no hay Vercel; se advertirá en el pipeline.
+    // Deploy es opcional si no hay Vercel; se advertirÃ¡ en el pipeline.
   }
   if (missing.length) {
     return {
@@ -6142,7 +6149,7 @@ ipcMain.handle("project:publish", async (event, input = {}) => {
       message: mode === "editcore"
         ? "Commit + push de EditCoreAI con el token GitHub de Conexiones (y ASAR si aplica)?"
         : "Commit + push con GitHub de Conexiones, Supabase si aplica, y deploy Vercel con el token de Conexiones?",
-      detail: `${rootPath}\n\nFuente de credenciales: bóveda EditCoreAI (independiente de otras carpetas legacy).`,
+      detail: `${rootPath}\n\nFuente de credenciales: bÃ³veda EditCoreAI (independiente de otras carpetas legacy).`,
     });
     if (result.response !== 1) {
       return { ok: false, cancelled: true, message: "Publicacion cancelada por el usuario." };
@@ -6257,7 +6264,7 @@ ipcMain.handle("project:fullstack-deploy", async (event, input = {}) => {
     return {
       ok: false,
       cancelled: false,
-      message: "Publicar requiere GitHub en Conexiones (bóveda safeStorage).",
+      message: "Publicar requiere GitHub en Conexiones (bÃ³veda safeStorage).",
       missing: ["github"],
     };
   }
@@ -6269,14 +6276,14 @@ ipcMain.handle("project:fullstack-deploy", async (event, input = {}) => {
       buttons: ["Cancelar", isUpdate ? "Actualizar" : "Publicar"],
       defaultId: 1,
       cancelId: 0,
-      title: isUpdate ? "Actualizar publicación" : "Publicar",
+      title: isUpdate ? "Actualizar publicaciÃ³n" : "Publicar",
       message: isUpdate
-        ? "Actualizará la publicación en vivo: commit → push → redeploy Vercel (token de Conexiones; sin login OAuth aparte)."
-        : "Publicará el proyecto: GitHub (push) → Vercel (token en Conexiones) → Supabase → Live. Vercel no pide permiso OAuth aparte: usa el token guardado.",
-      detail: `${rootPath}\n\nCredenciales: bóveda EditCoreAI (safeStorage). Git puede pedir confirmación al hacer push; Vercel usa el token de Conexiones en silencio.`,
+        ? "ActualizarÃ¡ la publicaciÃ³n en vivo: commit â†’ push â†’ redeploy Vercel (token de Conexiones; sin login OAuth aparte)."
+        : "PublicarÃ¡ el proyecto: GitHub (push) â†’ Vercel (token en Conexiones) â†’ Supabase â†’ Live. Vercel no pide permiso OAuth aparte: usa el token guardado.",
+      detail: `${rootPath}\n\nCredenciales: bÃ³veda EditCoreAI (safeStorage). Git puede pedir confirmaciÃ³n al hacer push; Vercel usa el token de Conexiones en silencio.`,
     });
     if (result.response !== 1) {
-      return { ok: false, cancelled: true, message: "Publicación cancelada por el usuario." };
+      return { ok: false, cancelled: true, message: "PublicaciÃ³n cancelada por el usuario." };
     }
   }
   const sender = event.sender;
@@ -6445,7 +6452,7 @@ ipcMain.handle("recovery:create-checkpoint", async (_event, input = {}) => {
   try {
     const root = String(input?.projectRoot || globalActiveWorkspacePath || app.getAppPath()).trim();
     const files = Array.isArray(input?.files) ? input.files : ["main.js", "preload.js", "index.html", "chat-home.js", "renderer.js"];
-    const reason = String(input?.reason || "Punto de restauración manual").trim();
+    const reason = String(input?.reason || "Punto de restauraciÃ³n manual").trim();
     const snap = createSnapshot(root, files, reason);
     return { success: true, snapshot: snap };
   } catch (error) {
@@ -6699,7 +6706,7 @@ ipcMain.handle("agent:plan", async (event, input = {}) => {
     if (!planSession.isAuthenticated || planSession.user?.status === "suspended") {
       activePlanRuns.delete(planRunKeyValue);
       licenseBlockedRunResult(event, { code: planSession.isAuthenticated ? "ACCOUNT_SUSPENDED" : "NO_SESSION" });
-      throw new Error(planSession.isAuthenticated ? "Tu cuenta está suspendida. Contacta al administrador." : "Inicia sesión con Google para usar EditCoreAI.");
+      throw new Error(planSession.isAuthenticated ? "Tu cuenta estÃ¡ suspendida. Contacta al administrador." : "Inicia sesiÃ³n con Google para usar EditCoreAI.");
     }
   }
   const rootPath = assertProjectRoot(String(input.projectRoot || "").trim());
@@ -6725,22 +6732,22 @@ ipcMain.handle("agent:plan", async (event, input = {}) => {
     const messages = [{
       role: "system",
       content: [
-        "Eres el planificador de EditCore Agent. Responde siempre en español.",
+        "Eres el planificador de EditCore Agent. Responde siempre en espaÃ±ol.",
         "Esta fase solo propone: nunca afirmes que ejecutaste, modificaste o verificaste cambios.",
       "Responde como un colaborador de IDE en markdown estructurado y legible.",
       "Estructura OBLIGATORIA:",
       "## Entendimiento",
       "2-3 frases claras de lo que pediste.",
       "## Plan paso a paso",
-      "Lista numerada con pasos concretos (1., 2., 3.) — qué harás, en qué archivos y por qué.",
-      "## Riesgos y verificación",
-      "Riesgos reales y cómo comprobarás el resultado.",
+      "Lista numerada con pasos concretos (1., 2., 3.) â€” quÃ© harÃ¡s, en quÃ© archivos y por quÃ©.",
+      "## Riesgos y verificaciÃ³n",
+      "Riesgos reales y cÃ³mo comprobarÃ¡s el resultado.",
       "Puedes mencionar archivos concretos dentro de cada paso solo si ya tienes evidencia.",
       "No muestres nombres internos de herramientas ni inventarios de carpetas.",
         "No ejecutes y no pidas datos salvo que exista un bloqueo indispensable.",
         "Termina exactamente con: Cuando autorices procedo con los cambios.",
         brainCtx ? `\n## Contexto del proyecto\n${brainCtx}` : "",
-        analysisCtx ? `\n## Análisis previo del proyecto\n${analysisCtx}` : "",
+        analysisCtx ? `\n## AnÃ¡lisis previo del proyecto\n${analysisCtx}` : "",
       ].filter(Boolean).join("\n"),
     }, {
       role: "user",
@@ -6766,7 +6773,7 @@ ipcMain.handle("agent:plan", async (event, input = {}) => {
     const text = String(result.text || "").trim();
     const authorizationLine = "Cuando autorices procedo con los cambios.";
     const conversationalText = text
-      .replace(/^\s*(?:#{1,6}\s*)?(?:[-*•]|\d+[.)])\s+/gm, "")
+      .replace(/^\s*(?:#{1,6}\s*)?(?:[-*â€¢]|\d+[.)])\s+/gm, "")
       .replace(/\n{3,}/g, "\n\n")
       .trim();
     const planText = conversationalText
@@ -6797,7 +6804,7 @@ ipcMain.handle("agent:plan", async (event, input = {}) => {
 });
 
 ipcMain.handle("agent:run", async (event, input = {}) => {
-  // Validaciones básicas
+  // Validaciones bÃ¡sicas
   let apiKey = String(input.apiKey || "").trim();
   let model = String(input.model || "").trim();
   let baseUrl = normalizeBaseUrl(input.baseUrl, input.providerKey);
@@ -6847,14 +6854,14 @@ ipcMain.handle("agent:run", async (event, input = {}) => {
         projectRoot: resolveIncomingWorkspaceRoot(event, input, task) || "",
       });
       const confirmText = [
-        `## ✅ Habilidad aprendida e integrada con éxito`,
+        `## âœ… Habilidad aprendida e integrada con Ã©xito`,
         ``,
         `- **Nombre:** \`${saved.name}\``,
-        `- **Categoría:** \`${learnSkill.category}\``,
-        `- **Descripción:** ${learnSkill.description}`,
-        `- **Ubicación:** \`${saved.filePath}\``,
+        `- **CategorÃ­a:** \`${learnSkill.category}\``,
+        `- **DescripciÃ³n:** ${learnSkill.description}`,
+        `- **UbicaciÃ³n:** \`${saved.filePath}\``,
         ``,
-        `He registrado e indexado esta habilidad en el repositorio de habilidades. A partir de ahora, cuando me pidas tareas que requieran esta especialidad, activaré automáticamente estas directivas.`,
+        `He registrado e indexado esta habilidad en el repositorio de habilidades. A partir de ahora, cuando me pidas tareas que requieran esta especialidad, activarÃ© automÃ¡ticamente estas directivas.`,
       ].join("\n");
       return {
         text: confirmText,
@@ -6869,7 +6876,7 @@ ipcMain.handle("agent:run", async (event, input = {}) => {
   }
 
   // Usuarios (no admin) y el admin en "Ver como usuario": la consulta va al servidor de EditCoreAI
-  // con su sesión; él cobra por tokens (al admin no le cobra).
+  // con su sesiÃ³n; Ã©l cobra por tokens (al admin no le cobra).
   let cloudRoute = null;
   {
     const { creditLedger } = require("./runtime/credit-ledger");
@@ -6891,7 +6898,7 @@ ipcMain.handle("agent:run", async (event, input = {}) => {
   if (!apiKey) throw new Error("Falta API key.");
   if (!model) throw new Error("Falta modelo.");
 
-  // Preferir núcleo multi-agente salvo bypass explícito al adapter legado.
+  // Preferir nÃºcleo multi-agente salvo bypass explÃ­cito al adapter legado.
   if (input.useLegacyAdapter !== true || cloudRoute) {
     const privacy = readPrivacyMode(readSecureState());
     const cloudGate = assertCloudAllowed(privacy, String(input.providerKey || input.provider || ""));
@@ -6959,6 +6966,7 @@ ipcMain.handle("agent:run", async (event, input = {}) => {
       }
 
       const out = await handleChatKernel({
+    helpers,
         message: task,
         skillsPrompt,
         fallbackProfiles: cloudRoute ? [] : fallbackProviderProfiles({ providerKey, baseUrl, model, apiKey }),
@@ -7006,7 +7014,7 @@ ipcMain.handle("agent:run", async (event, input = {}) => {
           filesForCheckpoint = changedFiles.map((rel) => {
             const norm = String(rel).replace(/\\/g, "/");
             let backupPath = "";
-            // El backup pre-corrida es el más antiguo en la ventana que tenga .bak
+            // El backup pre-corrida es el mÃ¡s antiguo en la ventana que tenga .bak
             for (let i = window.length - 1; i >= 0; i -= 1) {
               const abs = resolveSnapshotBackupAbs(rootPath, window[i]?.id, norm);
               if (abs) {
@@ -7119,7 +7127,7 @@ ipcMain.handle("agent:run", async (event, input = {}) => {
   // Fast-path: PROCEDE + cambio concreto (h1/replace/path) sin orquestador durable.
   // Evita corridas zombie a 0s ("Analisis interrumpido") cuando hay taskId stale.
   // NO incluir "continua": suele ser retomar analisis/forense con muchos .ts en el prompt
-  // y entraba aqui por error → Agent Core asar → "Invalid package config".
+  // y entraba aqui por error â†’ Agent Core asar â†’ "Invalid package config".
   const concreteAuth = (
     input.planAuthorized === true
     || /TAREA CONCRETA:|AUTORIZACION DE EJECUCION \(PROCEDE\)/i.test(task)
@@ -7131,7 +7139,7 @@ ipcMain.handle("agent:run", async (event, input = {}) => {
     || /\bcambia(?:r)?\s+.+\s+por\s+/i.test(task)
   );
   const looksLikeAnalysisContinuation = (
-    /\b(?:analiz|auditor|diagn[oó]st|hallazgo|forense|exhaustiv|carpeta\s+por\s+carpeta|reporte)\b/i.test(task)
+    /\b(?:analiz|auditor|diagn[oÃ³]st|hallazgo|forense|exhaustiv|carpeta\s+por\s+carpeta|reporte)\b/i.test(task)
     || task.length > 1200
   );
   const concreteFastPath = concreteAuth && concreteChange
@@ -7172,7 +7180,7 @@ ipcMain.handle("agent:run", async (event, input = {}) => {
   const actionPermission = selectedPermission;
   const canWrite = actionPermission !== "readonly";
   // Lectura multi-root siempre: proyecto + hermanos del padre (PROGRAMAS IA).
-  // Acceso completo añade rutas absolutas del prompt; escritura fuera del activo se bloquea abajo.
+  // Acceso completo aÃ±ade rutas absolutas del prompt; escritura fuera del activo se bloquea abajo.
   const crossProjectAccess = selectedPermission === "full";
   const allowedRoots = crossProjectAccess
     ? collectFullAccessRoots(rootPath, task, Array.isArray(input.authorizedPaths) ? input.authorizedPaths : [])
@@ -7184,7 +7192,7 @@ ipcMain.handle("agent:run", async (event, input = {}) => {
   const assertWritableToolPath = (resolved, label = "escritura") => {
     if (resolved?.outsidePrimary && !crossProjectAccess) {
       throw new Error(
-        `${label} en proyecto hermano requiere Acceso completo. La lectura de hermanos sí está permitida.`,
+        `${label} en proyecto hermano requiere Acceso completo. La lectura de hermanos sÃ­ estÃ¡ permitida.`,
       );
     }
     return resolved;
@@ -7328,7 +7336,7 @@ ipcMain.handle("agent:run", async (event, input = {}) => {
     }
   }
   // Analisis forense/profundo necesita mas que 4 min (Opus + muchas lecturas).
-  // Escritura: 8 min. Analisis: 6–15 min segun profundidad (tope duro, no 25 min).
+  // Escritura: 8 min. Analisis: 6â€“15 min segun profundidad (tope duro, no 25 min).
   const { resolveRunDeadlineMs } = require("./runtime/analysis-depth");
   const runDeadlineMs = resolveRunDeadlineMs({
     analysisMode,
@@ -7363,7 +7371,7 @@ ipcMain.handle("agent:run", async (event, input = {}) => {
     if (skipBrainNow) {
       console.log("[Agent] Modo sin Cerebro (o analisis con timeout 0):", orchestratorPlan.reason || runProfile.reason || runProfile.statusLabel);
     } else {
-      sendAgentProgress({ phase: "model", text: "Trabajando…" });
+      sendAgentProgress({ phase: "model", text: "Trabajandoâ€¦" });
       try {
         const brainLoad = Promise.all([
           brain().assembleContext(rootPath, task).catch(() => ""),
@@ -7378,15 +7386,15 @@ ipcMain.handle("agent:run", async (event, input = {}) => {
       } catch (brainError) {
         console.warn("[Agent] Carga del Cerebro fallida:", brainError?.message || brainError);
       }
-      console.log(`✓ [Claude Code] ${brainInventory.skills.length} skills cargadas`);
+      console.log(`âœ“ [Claude Code] ${brainInventory.skills.length} skills cargadas`);
     }
 
     sendAgentProgress({
       phase: "startup",
-      text: analysisMode ? "Leyendo archivos del proyecto..." : "Trabajando…",
+      text: analysisMode ? "Leyendo archivos del proyecto..." : "Trabajandoâ€¦",
     });
     if (!analysisMode) {
-      sendAgentProgress({ phase: "model", text: "Trabajando…" });
+      sendAgentProgress({ phase: "model", text: "Trabajandoâ€¦" });
     }
     const adapter = new EditCoreClaudeAdapter({ maxIterations: 120, tokenBudget: 400000, logger: console });
     adapter.actionRegistry = actionRegistryForProject(rootPath);
@@ -7402,7 +7410,7 @@ ipcMain.handle("agent:run", async (event, input = {}) => {
           : requestController.signal;
         try {
           const toolList = Array.isArray(options.tools) ? options.tools : [];
-          // Sintesis del Agent Core pasa tools:[] → NO forzar enableTools (si no, el modelo
+          // Sintesis del Agent Core pasa tools:[] â†’ NO forzar enableTools (si no, el modelo
           // vuelve con tool_calls inventados y el informe se descarta).
           const enableTools = options.enableTools === true
             ? toolList.length > 0
@@ -7439,13 +7447,13 @@ ipcMain.handle("agent:run", async (event, input = {}) => {
       defaultTimeoutMs: 60_000,
       authorize: async (tool, toolInput) => {
         // Candado duro: diagnostico / NO MODIFICAR = cero mutaciones (ni ROADMAP ni .md).
-        // Acceso completo: aplica parches sin pedir PROCEDE (salvo NO MODIFICAR explícito).
+        // Acceso completo: aplica parches sin pedir PROCEDE (salvo NO MODIFICAR explÃ­cito).
         const promptText = String(input.prompt || input.originalGoal || task || "");
-        const procedeInPrompt = /^\s*(?:procede|adelante|autorizo|continua|continúa)\b/i.test(promptText)
+        const procedeInPrompt = /^\s*(?:procede|adelante|autorizo|continua|continÃºa)\b/i.test(promptText)
           || /\b(?:procede|adelante|autorizo)\b/i.test(promptText);
         const livePermission = resolveLivePermission(input.permissionMode, event.sender.id);
         const fullAccess = livePermission === "full" || input.fullAccess === true;
-        const explicitNoWrite = /\bNO\s+MODIFIQUES?\b|\bNO\s+MODIFICAR\b|\bNO\s+CREES?\s+ARCHIVOS\b|\bSOLO\s+(?:LEE|LECTURA|ANALIZA|AN[AÁ]LISIS)\b|\bMODO:\s*DIAGN/i.test(promptText);
+        const explicitNoWrite = /\bNO\s+MODIFIQUES?\b|\bNO\s+MODIFICAR\b|\bNO\s+CREES?\s+ARCHIVOS\b|\bSOLO\s+(?:LEE|LECTURA|ANALIZA|AN[AÃ]LISIS)\b|\bMODO:\s*DIAGN/i.test(promptText);
         const fixOrApplyIntent = /\b(?:corrige|arreglar?|fix|aplica|implementa|parchea|refactor|reescribe|repara|audita(?:r)?(?:\s+y\s+(?:corrige|arregla|repara))?|patch)\b/i.test(promptText);
         const authorizedToMutate = input.planAuthorized === true
           || procedeInPrompt
@@ -7481,7 +7489,7 @@ ipcMain.handle("agent:run", async (event, input = {}) => {
             phase: "confirm",
             name: tool.name,
             input: toolInput,
-            text: `Esperando tu autorización para ${tool.name}...`,
+            text: `Esperando tu autorizaciÃ³n para ${tool.name}...`,
           });
           return approveAgentAction(event, livePermission, tool.name, toolInput, { projectRoot: rootPath });
         }
@@ -7654,7 +7662,7 @@ ipcMain.handle("agent:run", async (event, input = {}) => {
         const resolved = resolveToolPath(String(toolInput.path || ""));
         if (analysisMode && !resolved.outsidePrimary) {
           const gate = discoveryLedger.assertReadable(resolved.relative || String(toolInput.path || ""));
-          // Si el ledger resolvio un path canonico distinto (basename → runtime/...), usarlo.
+          // Si el ledger resolvio un path canonico distinto (basename â†’ runtime/...), usarlo.
           if (gate?.resolvedPath && gate.resolvedPath !== resolved.relative) {
             const remapped = resolveToolPath(gate.resolvedPath);
             Object.assign(resolved, remapped);
@@ -7855,7 +7863,7 @@ ipcMain.handle("agent:run", async (event, input = {}) => {
       dispatcher.register({
         name: "create_project",
         write: true,
-        description: "Crea un proyecto desde plantilla. template: blank|web|node|react|web-pro|next-saas|open-saas|soundonemusic|auto. Si omites template, EditCore infiere del prompt (SaaS Next→next-saas, React+Vite+Supabase→web-pro).",
+        description: "Crea un proyecto desde plantilla. template: blank|web|node|react|web-pro|next-saas|open-saas|soundonemusic|auto. Si omites template, EditCore infiere del prompt (SaaS Nextâ†’next-saas, React+Vite+Supabaseâ†’web-pro).",
         execute: async (toolInput) => createProjectInside(rootPath, { ...toolInput, prompt: toolInput.prompt || input?.prompt }, { signal: runController.signal, prompt: input?.prompt }),
       });
       dispatcher.register({
@@ -7867,7 +7875,7 @@ ipcMain.handle("agent:run", async (event, input = {}) => {
           const content = String(toolInput.content || "");
           // Candado: no inventar *-fixed.js / placeholders de "demostracion".
           if (/(?:^|[\\/])[\w.-]*-fixed\.js$/i.test(requestedPath.replace(/\\/g, "/"))
-            || /placeholder temporal|DEADLOCK T[EÉ]CNICO|demostrar tool execution/i.test(content)) {
+            || /placeholder temporal|DEADLOCK T[EÃ‰]CNICO|demostrar tool execution/i.test(content)) {
             throw new Error("Escritura bloqueada: no se permiten archivos *-fixed.js ni placeholders inventados. Usa replace_in_file sobre el archivo real del plan.");
           }
           const resolved = assertWritableToolPath(resolveToolPath(requestedPath), "write_file");
@@ -7988,7 +7996,7 @@ ipcMain.handle("agent:run", async (event, input = {}) => {
 
     // En analisis solo acepta la lista restringida de comandos sin mutacion.
     // En agente conserva la autorizacion de escritura del despachador.
-    // Tool: run_sql_migration — migraciones SQL a Supabase self-hosted vía SSH
+    // Tool: run_sql_migration â€” migraciones SQL a Supabase self-hosted vÃ­a SSH
     try {
       const { runRemoteSql } = require("./runtime/sql-migration-tool");
       dispatcher.register({
@@ -8027,7 +8035,7 @@ ipcMain.handle("agent:run", async (event, input = {}) => {
         }
         const livePermission = resolveLivePermission(input.permissionMode, event.sender.id);
         const fullAccess = livePermission === "full" || input.fullAccess === true || input.permissionFull === true;
-        // dir/ls/Get-ChildItem SIEMPRE → list_files (tambien con Acceso completo).
+        // dir/ls/Get-ChildItem SIEMPRE â†’ list_files (tambien con Acceso completo).
         if (isShellExploreCommand(command)) {
           const hint = extractShellExplorePathHint(command) || "";
           let resolved;
@@ -8096,7 +8104,7 @@ ipcMain.handle("agent:run", async (event, input = {}) => {
               : String(preview?.message || "No se pudo iniciar el preview del proyecto."),
           };
         }
-        // Candado duro: forense/CONTINUA/analisis NUNCA lint/build — aunque analysisMode
+        // Candado duro: forense/CONTINUA/analisis NUNCA lint/build â€” aunque analysisMode
         // venga mal o Cursor parity use acceso full. Solo PROCEDE (planAuthorized).
         // Typecheck acotado (tsc --noEmit / npm run typecheck) solo tras cobertura.
         const forbidHeavy = shouldBlockHeavyVerification({
@@ -8388,7 +8396,7 @@ ipcMain.handle("agent:run", async (event, input = {}) => {
         projectMemoryContext = String(loadProjectContext(rootPath).prompt || "").slice(0, 12_000);
       } catch {}
     }
-    // Índice completo solo con @mentions o análisis amplio — no en cada "modifica X".
+    // Ãndice completo solo con @mentions o anÃ¡lisis amplio â€” no en cada "modifica X".
     let enrichedTask = task;
     if (!scopedDiskFocus) {
       try {
@@ -8446,7 +8454,7 @@ ipcMain.handle("agent:run", async (event, input = {}) => {
       const matchedSkills = skillsEngine.matchSkillsForPrompt(task, allDetectedSkills, 6);
       if (matchedSkills.length > 0) {
         matchedSkillsPrompt = skillsEngine.assembleSkillsSystemPrompt(matchedSkills);
-        console.log(`🧠 [Skills Engine] ${matchedSkills.length} habilidades especializadas inyectadas activamente: ${matchedSkills.map(s => s.name).join(", ")}`);
+        console.log(`ðŸ§  [Skills Engine] ${matchedSkills.length} habilidades especializadas inyectadas activamente: ${matchedSkills.map(s => s.name).join(", ")}`);
       }
     } catch (skillsErr) {
       console.warn("[Skills Engine] Error al emparejar habilidades:", skillsErr?.message || skillsErr);
@@ -8620,7 +8628,7 @@ ipcMain.handle("agent:run", async (event, input = {}) => {
       getRequestController: () => runState.requestController,
     });
 
-    console.log("ÔÜí [Claude Code] Ejecutando con ActionRegistry, SmartRetry, TokenLedger, AdaptiveBudget y Memory");
+    console.log("Ã”ÃœÃ­ [Claude Code] Ejecutando con ActionRegistry, SmartRetry, TokenLedger, AdaptiveBudget y Memory");
 
     const supervised = workerSupervisor?.start({
       senderId: String(event.sender.id),
@@ -8636,11 +8644,11 @@ ipcMain.handle("agent:run", async (event, input = {}) => {
       execute: async () => adapter.executeTask(adapterInput),
     });
 
-    // EJECUTAR — Motor Único Unificado de Agente
+    // EJECUTAR â€” Motor Ãšnico Unificado de Agente
     let result;
     try {
       const procedeAuth = input.planAuthorized === true
-        || /^\s*(?:procede|adelante|autorizo|contin[uú]a)\b/i.test(String(input.prompt || task || ""))
+        || /^\s*(?:procede|adelante|autorizo|contin[uÃº]a)\b/i.test(String(input.prompt || task || ""))
         || /TAREA CONCRETA:|AUTORIZACION DE EJECUCION \(PROCEDE\)/i.test(String(input.prompt || task || ""));
       sendAgentProgress({
         phase: "startup",
@@ -8686,15 +8694,15 @@ ipcMain.handle("agent:run", async (event, input = {}) => {
           }, "ANALYSIS_AWAITING_AUTHORIZATION");
         } else {
           // Nunca marcar COMPLETED solo porque el modelo dijo "listo" sin mutar disco.
-          // Eso dejaba el chat muerto: procede/continua → "tarea terminal COMPLETED".
+          // Eso dejaba el chat muerto: procede/continua â†’ "tarea terminal COMPLETED".
           const doneSteps = Array.isArray(result.steps) ? result.steps : (adapter.steps || []);
           const mutated = doneSteps.some((step) => step?.ok !== false && [
             "write_file", "replace_in_file", "delete_file", "create_project", "apply_diff",
           ].includes(String(step?.name || "")));
           const reportText = String(result.text || "");
-          const looksLikePlan = /##\s*(?:Qué|Que)\s+sí\s+funcionó/i.test(reportText)
+          const looksLikePlan = /##\s*(?:QuÃ©|Que)\s+sÃ­\s+funcionÃ³/i.test(reportText)
             || /Cuando autorices|escribe\s+\*{0,2}procede/i.test(reportText)
-            || /##\s*(?:Plan|Recomendaciones|C[oó]mo lo corregir)/i.test(reportText);
+            || /##\s*(?:Plan|Recomendaciones|C[oÃ³]mo lo corregir)/i.test(reportText);
           if (looksLikePlan && workflowOrchestrator) {
             workflowOrchestrator.completeAnalysisRun(taskId, reportText, {
               projectId: String(input.projectId || ""),
@@ -8845,7 +8853,7 @@ ipcMain.handle("agent:run", async (event, input = {}) => {
     };
 
   } catch (error) {
-    console.error("ÔØî [Claude Code] Error:", error);
+    console.error("Ã”Ã˜Ã® [Claude Code] Error:", error);
 
     if (taskManager && taskId) {
       try { tasks().markTaskFailed(taskId, error, { recoverable: true, runId: durableRun?.runId || "", stage: "execution" }); } catch {}
@@ -9583,16 +9591,16 @@ ipcMain.handle("project:browser-inspect", async (event, input = {}) => {
 function isUserStopInstruction(text = "") {
   const value = String(text || "").trim().toLowerCase().replace(/[.!?,;]+$/g, "");
   if (!value) return false;
-  if (/^(?:por\s+favor\s+)?(?:alto|detente|det[eé]n(?:lo)?|detener|parar?|p[aá]ralo|stop|cancela(?:r|lo)?|aborta(?:r|lo)?|interrump(?:e|ir|alo)?|basta|escala|pausa(?:r)?|no\s+sigas|termina(?:r)?)$/i.test(value)) {
+  if (/^(?:por\s+favor\s+)?(?:alto|detente|det[eÃ©]n(?:lo)?|detener|parar?|p[aÃ¡]ralo|stop|cancela(?:r|lo)?|aborta(?:r|lo)?|interrump(?:e|ir|alo)?|basta|escala|pausa(?:r)?|no\s+sigas|termina(?:r)?)$/i.test(value)) {
     return true;
   }
-  if (/^(?:por\s+favor\s+)?(?:cancela|cancelar|det[eé]n|detener|parar?|p[aá]ralo|aborta|abortar|pausa|pausar|interrumpir|termina(?:r)?)\s+(?:el\s+an[aá]lisis|la\s+tarea|la\s+ejecuci[oó]n|esto|todo|toda(?:\s+acci[oó]n|s)?|el\s+proceso|la\s+b[uú]squeda|todas?\s+las?\s+acciones?)$/i.test(value)) {
+  if (/^(?:por\s+favor\s+)?(?:cancela|cancelar|det[eÃ©]n|detener|parar?|p[aÃ¡]ralo|aborta|abortar|pausa|pausar|interrumpir|termina(?:r)?)\s+(?:el\s+an[aÃ¡]lisis|la\s+tarea|la\s+ejecuci[oÃ³]n|esto|todo|toda(?:\s+acci[oÃ³]n|s)?|el\s+proceso|la\s+b[uÃº]squeda|todas?\s+las?\s+acciones?)$/i.test(value)) {
     return true;
   }
   if (/^(?:ya\s+)?(?:no\s+sigas|deja\s+de\s+(?:analizar|buscar|ejecutar|trabajar|hacer\s+nada))$/i.test(value)) {
     return true;
   }
-  if (/^(?:termina|cancel[ae]|det[eé]n|para|aborta)\s+(?:toda|todo|todas)\b/i.test(value)) {
+  if (/^(?:termina|cancel[ae]|det[eÃ©]n|para|aborta)\s+(?:toda|todo|todas)\b/i.test(value)) {
     return true;
   }
   return false;
@@ -9620,7 +9628,7 @@ ipcMain.handle("agent:steer", async (event, input = {}) => {
     return { accepted: true, cancelled: true };
   }
 
-  // Kernel path: el orquestador singleton recibe la dirección de inmediato.
+  // Kernel path: el orquestador singleton recibe la direcciÃ³n de inmediato.
   let kernelResult = null;
   try {
     if (typeof steerChatKernel === "function" && (typeof isChatKernelRunning !== "function" || isChatKernelRunning())) {
@@ -9811,7 +9819,7 @@ function ensureDirectUpstreamProfiles() {
 
 function ensureExpandedMeaiGatewayModels() {
   if (hasUserLock(readSecureState())) return false;
-  // Ya no se amplía catálogo vía gateway; solo se limpia residuo.
+  // Ya no se amplÃ­a catÃ¡logo vÃ­a gateway; solo se limpia residuo.
   try {
     return scrubGatewayFromSecureState();
   } catch (error) {
@@ -9923,7 +9931,7 @@ app.whenReady().then(async () => {
     } catch (error) {
       logStartup("La migracion de datos no pudo completarse.", error);
     }
-    // Legacy vault import usa spawnSync de otro Electron — NO bloquear el arranque.
+    // Legacy vault import usa spawnSync de otro Electron â€” NO bloquear el arranque.
     // Se difiere para que welcome + botones respondan al instante.
     setTimeout(() => {
       try {
@@ -10079,7 +10087,7 @@ app.on("activate", () => {
   if (!BrowserWindow.getAllWindows().length) createWindow();
 });
 
-// ── Brain IPC handlers ────────────────────────────────────────────────────────
+// â”€â”€ Brain IPC handlers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 ipcMain.handle("brain:snapshot",        (_e, root)              => brain().snapshot(root));
 ipcMain.handle("brain:index",           (_e, root, options)     => brain().indexProject(root, options || {}));
 ipcMain.handle("brain:search",          (_e, root, query, lim)  => brain().searchMemory(root, query, lim));
@@ -10122,7 +10130,7 @@ function inspectorTargetRoot(target, requestedRoot = "") {
     fs.accessSync(root, fs.constants.R_OK);
 
     // Reparar dentro de un .asar falla (ruta solo lectura). Si el usuario apunta
-    // a resources/app.asar, redirigimos a una carpeta extraída si existe.
+    // a resources/app.asar, redirigimos a una carpeta extraÃ­da si existe.
     // Esto hace que inspector:repair-safe pueda aplicar correcciones reales.
     const rootLower = String(root).toLowerCase();
     if (rootLower.endsWith("app.asar")) {
@@ -10162,7 +10170,7 @@ async function attachInspectorRuntime(evaluation) {
   return evaluation;
 }
 
-// Inspector: diagnóstico + autorreparación local (kernel, sin Gateway).
+// Inspector: diagnÃ³stico + autorreparaciÃ³n local (kernel, sin Gateway).
 function beginInspectorRun(runId, event) {
   const id = String(runId || crypto.randomUUID());
   const controller = new AbortController();
@@ -10221,7 +10229,7 @@ ipcMain.handle("inspector:kernel-status", async (_event, target, requestedRoot) 
   return {
     ok: true,
     mode: "local-autonomous",
-    message: "Inspector Nativo Autónomo Activo (Modo Local)",
+    message: "Inspector Nativo AutÃ³nomo Activo (Modo Local)",
     projectRoot: root,
     next: detection,
     snapshots: listSnapshots(root, 5),
@@ -11131,7 +11139,7 @@ ipcMain.handle("remoteEnv:get-status", async (_event, containerId) => {
   }
 });
 
-// Créditos: todo lo decide el servidor de cuentas; ante cualquier fallo no se permite ejecutar.
+// CrÃ©ditos: todo lo decide el servidor de cuentas; ante cualquier fallo no se permite ejecutar.
 function creditsIpc(channel, handler) {
   ipcMain.handle(channel, async (_event, ...args) => {
     try {
@@ -11167,7 +11175,7 @@ creditsIpc("credits:cloud-models", async () => {
       return { ok: true, models: list, baseUrl: authManager.aiProxyBaseUrl() };
     }
   } catch {
-    /* fallback a modelos recomendados si la función en la nube no responde */
+    /* fallback a modelos recomendados si la funciÃ³n en la nube no responde */
   }
   return { ok: true, models: [...MEAI_GATEWAY_MODELS], baseUrl: authManager.aiProxyBaseUrl() };
 });
@@ -11198,7 +11206,7 @@ creditsIpc("credits:checkout", async () => {
   const { authManager } = require("./runtime/auth-manager");
   const res = await authManager.createCheckout();
   if (!res?.ok) return { ok: false, error: res?.error?.message || "No se pudo iniciar el pago.", code: res?.error?.code || "" };
-  if (!isMercadoPagoCheckoutUrl(res.url)) return { ok: false, error: "Enlace de pago inválido." };
+  if (!isMercadoPagoCheckoutUrl(res.url)) return { ok: false, error: "Enlace de pago invÃ¡lido." };
   await shell.openExternal(res.url);
   return { ok: true, amount: res.amount, currency: res.currency, creditUsd: res.creditUsd };
 });
@@ -11208,7 +11216,7 @@ ipcMain.handle("auth:check-access", async (_event, _userFromRenderer, targetPath
   try {
     const { rolePolicyGuard } = require("./runtime/role-policy-guard");
     const current = await authManager.getCurrentSession();
-    if (!current.isAuthenticated) return { allowed: false, code: "NO_SESSION", message: "Inicia sesión con Google para usar EditCoreAI." };
+    if (!current.isAuthenticated) return { allowed: false, code: "NO_SESSION", message: "Inicia sesiÃ³n con Google para usar EditCoreAI." };
     return rolePolicyGuard.canAccessPath({ role: current.user?.isAdmin ? "admin" : "user" }, targetPath);
   } catch (error) {
     return { allowed: false, error: error?.message || String(error) };
@@ -12843,7 +12851,6 @@ ipcMain.handle("cloud:list-peers", async (event) => {
   assertTrustedIpcSender(event, "cloud:list-peers");
   return { ok: true, peers: [] };
 });
-
 
 
 
