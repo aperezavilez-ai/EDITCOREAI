@@ -167,6 +167,18 @@
       "action": "deployed",
       "details": "undefined: undefined",
       "by": "editcore"
+    },
+    {
+      "date": "2026-11-03T20:26:00.000Z",
+      "action": "modified",
+      "details": "git push main (6e012af): v4.4.7 - Cline Engine & Provider Auto-Discovery",
+      "by": "editcore"
+    },
+    {
+      "date": "2026-11-03T20:26:00.000Z",
+      "action": "deployed",
+      "details": "release v4.4.7: EDITCOREAI-Setup.exe",
+      "by": "editcore"
     }
   ],
   "issues": [],

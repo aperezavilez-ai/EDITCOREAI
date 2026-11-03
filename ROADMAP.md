@@ -60,19 +60,25 @@ EditCore actualiza este archivo tras cambios. No pedirlo al usuario. No pegar co
 - Usar el Mapa; no list_files('.') si ya hay rutas aqui
 
 ## Tarea activa
-- Sin tarea activa
+- Completada: v4.4.7 con EditCore Brain (Cline), Auto-Detección de Modelos por API, Ojito para API Keys, y Permisos Estrictos.
 
 ## Bloqueos / bugs conocidos
-- Ninguno registrado
+- Ninguno pendiente. Todos los bloqueos reportados fueron corregidos y testeados (8/8 tests OK).
 
 ## Decisiones
-- Ninguna registrada
+- Auto-detección ágil: reemplazo de las 34 llamadas secuenciales por una única llamada a `/v1/models` que puebla el selector inmediatamente.
+- Respeto absoluto del escudo de permisos: no mutar a `full` al cambiar entre Chat y Agente.
+- Windows cmd.exe sanitization para comandos evitando pipelines Unix (`| tail -5`).
 
 ## Cambios recientes
-- Ninguno todavia
+- v4.4.7 publicada en GitHub Releases con installer `EDITCOREAI-Setup.exe`.
+- Botón ojito (👁️) para mostrar/ocultar API keys en todos los formularios de proveedores.
+- Integración directa de modelos detectados en el menú modal del chat.
+- Corrección de `formatAgentStep` para errores de terminal en Windows (evitar `[object Object]`).
 
 ## Verificado
-- Pendiente
+- Verificado: 8/8 tests unitarios pasando (`editcore-brain.test.js`, `editcore-brain-bridge.test.js`, `editcore-cline-engine.test.js`).
+- Installer generado y publicado exitosamente en GitHub: https://github.com/aperezavilez-ai/EDITCOREAI/releases/tag/v4.4.7
 
 ## Siguiente
 - Partir de este mapa. No pedir el ROADMAP al usuario. Solo leer archivos a cambiar.
