@@ -2,6 +2,7 @@
 
 const fs = require("fs");
 const path = require("path");
+const { spawn } = require("child_process");
 const { execFile } = require("child_process");
 const { promisify } = require("util");
 const execFileAsync = promisify(execFile);
@@ -14,7 +15,6 @@ const {
   rollbackLastChange,
   listSnapshots,
 } = require("./snapshot");
-const { runProcess, isLongRunningCommand } = require("./process-runner");
 const { capture_preview_screenshot, DEFAULT_PREVIEW_URL } = require("./vision-inspector");
 const { detectCircularDependencies } = require("./circular-dependency-detector");
 
@@ -129,8 +129,6 @@ function invalidateReadCache(file) {
   }
 }
 
-// El contenido se corta en límites de línea y la respuesta declara qué rango se leyó:
-// un corte por presupuesto nunca debe parecer un archivo truncado.
 function readFile(root, rel, maxChars = TOOL_RESULT_CAP, opts = {}) {
   const file = safe(root, rel);
   if (!fs.existsSync(file)) return { ok: false, error: `No existe: ${rel}` };
@@ -187,7 +185,6 @@ function readFile(root, rel, maxChars = TOOL_RESULT_CAP, opts = {}) {
 function writeFile(root, rel, content) {
   const file = safe(root, rel);
   const body = String(content ?? "");
-  // [EDITCORE-STACK] rechazar código incompleto / TODOs de implementación
   try {
     const { looksIncomplete } = require("../runtime/transactional-engine");
     if (typeof looksIncomplete === "function" && body.trim() && looksIncomplete(body)) {
@@ -197,8 +194,7 @@ function writeFile(root, rel, content) {
       };
     }
   } catch { /* stack no instalado → continuar */ }
-  // [/EDITCORE-STACK]
-  // [EDITCORE-COORD] lock por archivo — evita que agentes se pisen
+  
   let _coord = null;
   let _coordThread = "default";
   let _coordAgent = "implementer";
@@ -213,7 +209,7 @@ function writeFile(root, rel, content) {
       return { ok: false, error: lock.error, locked: true };
     }
   } catch { /* coordinación no instalada → continuar */ }
-  // [/EDITCORE-COORD]
+  
   let _beforeForReview = "";
   try {
     if (fs.existsSync(file) && fs.statSync(file).isFile()) {
@@ -251,7 +247,7 @@ function writeFile(root, rel, content) {
       summary: "archivo escrito (kernel)",
     });
   } catch { /* índice no debe bloquear escritura */ }
-  // [EDITCORE-COORD] registrar actividad
+  
   try {
     if (typeof _coord !== "undefined" && _coord) {
       _coord.recordActivity(_coordThread, {
@@ -263,8 +259,7 @@ function writeFile(root, rel, content) {
       });
     }
   } catch { /* no bloquear */ }
-  // [/EDITCORE-COORD]
-  // [EDITCORE-REVIEW] cola unificada accept/reject (no toca @mentions)
+  
   try {
     const isFull = Boolean(
       global.__editcoreFullAccess ||
@@ -283,14 +278,13 @@ function writeFile(root, rel, content) {
     out.reviewQueued = !isFull;
     if (isFull) out.accepted = true;
   } catch { /* no bloquear escritura */ }
-  // [/EDITCORE-REVIEW]
-  // [EDITCORE-INDEX] mantener indice semantico al dia
+  
   try {
     const { updateFileInIndex } = require("../runtime/codebase-indexer");
     updateFileInIndex(root, rel, body);
     out.indexUpdated = true;
   } catch { /* no bloquear */ }
-  // [/EDITCORE-INDEX]
+  
   return out;
 }
 
@@ -373,7 +367,9 @@ function replaceInFile(root, rel, oldText, newText) {
       preview: current.slice(0, 1200),
     };
   }
-  const next = current.replace(located.match, () => String(newText ?? ""));
+  const eol = current.includes("\r\n") ? "\r\n" : "\n";
+  const normNew = String(newText ?? "").replace(/\r\n|\n/g, eol);
+  const next = current.replace(located.match, () => normNew);
   if (next === current) {
     return { ok: false, soft: true, unchanged: true, path: rel, error: `El reemplazo no cambia nada en ${rel} (oldText y newText son iguales). No se escribió nada.`, hint: "Escribe en newText el código corregido, distinto del actual." };
   }
@@ -417,7 +413,7 @@ function replaceInFile(root, rel, oldText, newText) {
       summary: "parche aplicado (kernel)",
     });
   } catch { /* ignore */ }
-  // [EDITCORE-REVIEW] mismo flujo accept/reject que write_file
+  
   try {
     const isFull = Boolean(
       global.__editcoreFullAccess ||
@@ -436,7 +432,7 @@ function replaceInFile(root, rel, oldText, newText) {
     out.reviewQueued = !isFull;
     if (isFull) out.accepted = true;
   } catch { /* no bloquear */ }
-  // [/EDITCORE-REVIEW]
+  
   try {
     const { updateFileInIndex } = require("../runtime/codebase-indexer");
     updateFileInIndex(root, rel, next);
@@ -482,30 +478,34 @@ function searchFiles(root, query, maxHits = 30) {
   return { ok: true, query, hits };
 }
 
-function runCommand(root, command, {
-  timeoutMs = 180000,
-  onChunk = null,
-  onSevereError = null,
-  signal = null,
-  background = null,
-} = {}) {
-  const cmd = String(command || "").trim();
-  const longLived = background === true || (background !== false && isLongRunningCommand(cmd));
-  return runProcess({
-    cwd: root,
-    command: cmd,
-    timeoutMs: longLived ? Math.max(timeoutMs, 8000) : timeoutMs,
-    background: longLived,
-    onChunk,
-    onSevereError,
-    signal,
-  }).then((result) => ({
-    ...result,
-    ok: result.ok !== false,
-    note: result.streaming
-      ? "Proceso de desarrollo en streaming (sin esperar exit). Errores graves disparan auto-heal."
-      : undefined,
-  }));
+// REEMPLAZO DE PROCESS-RUNNER CON CHILD_PROCESS NATIVO
+function runCommand(root, command, options = {}) {
+  return new Promise((resolve) => {
+    const isWin = process.platform === "win32";
+    const shell = isWin ? "powershell.exe" : "/bin/sh";
+    const args = isWin ? ["-Command", command] : ["-c", command];
+    
+    const child = spawn(shell, args, { cwd: root, windowsHide: true });
+    let output = "";
+    let stderr = "";
+    
+    child.stdout.on("data", (d) => {
+      output += d.toString();
+      if (options.onChunk) options.onChunk({ stream: "stdout", chunk: d.toString() });
+    });
+    child.stderr.on("data", (d) => {
+      stderr += d.toString();
+      if (options.onChunk) options.onChunk({ stream: "stderr", chunk: d.toString() });
+    });
+    
+    child.on("close", (code) => {
+      resolve({ ok: code === 0, code, output: output.slice(0, 10000), stderr: stderr.slice(0, 10000) });
+    });
+    
+    child.on("error", (err) => {
+      resolve({ ok: false, error: err.message });
+    });
+  });
 }
 
 function auditEnv(root) {
@@ -663,9 +663,6 @@ async function cloneRepo(root, repoUrl, destRel) {
   };
 }
 
-// ============================================================
-// NEW: INTERNET — búsqueda web multi-fuente
-// ============================================================
 function stripHtml(html = "") {
   return String(html || "")
     .replace(/<script[\s\S]*?<\/script>/gi, "")
@@ -687,7 +684,6 @@ async function webSearch(query, options = {}) {
   if (!q) return { ok: false, error: "query vacía" };
   const maxResults = Math.max(1, Math.min(10, Number(options.maxResults) || 5));
 
-  // Fuente 1: DuckDuckGo HTML (resultados generales)
   try {
     const url = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(q)}`;
     const res = await fetch(url, {
@@ -718,7 +714,6 @@ async function webSearch(query, options = {}) {
     }
   } catch { /* fallback */ }
 
-  // Fuente 2: DuckDuckGo Instant Answer API
   try {
     const url = `https://api.duckduckgo.com/?q=${encodeURIComponent(q)}&format=json&no_html=1&skip_disambig=1`;
     const res = await fetch(url, { signal: AbortSignal.timeout(10000) });
@@ -738,7 +733,6 @@ async function webSearch(query, options = {}) {
     if (results.length) return { ok: true, query: q, source: "duckduckgo-instant", count: results.length, results };
   } catch { /* fallback */ }
 
-  // Fuente 3: Wikipedia ES
   try {
     const url = `https://es.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(q)}&format=json&srlimit=${maxResults}`;
     const res = await fetch(url, { signal: AbortSignal.timeout(10000) });
@@ -755,9 +749,6 @@ async function webSearch(query, options = {}) {
   return { ok: false, error: "No se encontraron resultados en ninguna fuente", query: q };
 }
 
-// ============================================================
-// NEW: GIT — introspección del repositorio
-// ============================================================
 async function gitStatus(root) {
   try {
     const { stdout } = await execFileAsync("git", ["status", "--short", "--branch"], { cwd: root, timeout: 10000 });
@@ -835,6 +826,7 @@ async function buildProject(root, options = {}) {
       else if (scripts["package"]) buildCmd = "npm run package";
       else if (scripts["electron:build"]) buildCmd = "npm run electron:build";
       else if (scripts["build"]) buildCmd = "npm run build";
+      else if (scripts["release:win"]) buildCmd = "npm run release:win";
     } catch (_) {}
   }
   if (!buildCmd) {
@@ -855,9 +847,6 @@ async function buildProject(root, options = {}) {
   return await runCommand(root, buildCmd, { timeoutMs: 900000 });
 }
 
-// ============================================================
-// NEW: SKILLS — instalar / listar skills desde GitHub
-// ============================================================
 async function installSkill(root, repoUrl, skillName) {
   const url = String(repoUrl || "").trim();
   const name = String(skillName || "").trim().replace(/[^a-zA-Z0-9._-]/g, "_");
@@ -905,7 +894,6 @@ function skillsUserDataPath(helpers = {}) {
   try { return require("electron").app?.getPath?.("userData") || ""; } catch { return ""; }
 }
 
-// El resultado de una tool se recorta a ~2000 caracteres: con cientos de skills se resume por origen.
 function listSkills(root, helpers = {}, query = "") {
   try {
     const engine = require("../runtime/skills-engine");
@@ -963,225 +951,211 @@ function listSkills(root, helpers = {}, query = "") {
   }
 }
 
-// ============================================================
-// TOOL DEFINITIONS
-// ============================================================
 const DEFINITIONS = [
-  { type: "function", function: { name: "list_files", description: "Lista carpetas/archivos reales en disco. Usá path='..' para ver proyectos hermanos bajo el padre. forceReal=true fuerza listado real de '.' (ignora cache ROADMAP).", parameters: { type: "object", properties: { path: { type: "string" }, forceReal: { type: "boolean" } } } } },
-  { type: "function", function: { name: "read_file", description: "Lee un archivo por rango de líneas. Devuelve totalLines, startLine y endLine; si partial=true el archivo CONTINÚA (no está truncado): pedí el resto con startLine. Acepta rutas absolutas (D:\\...) o relativas al proyecto.", parameters: { type: "object", properties: { path: { type: "string" }, startLine: { type: "integer", description: "Primera línea a leer (1 = inicio)." }, endLine: { type: "integer", description: "Última línea a leer (opcional)." } }, required: ["path"] } } },
-  { type: "function", function: { name: "write_file", description: "Crea/sobrescribe archivo REAL en disco. Para proyecto hermano: '../NombreProyecto/archivo.ext'.", parameters: { type: "object", properties: { path: { type: "string" }, content: { type: "string" } }, required: ["path", "content"] } } },
-  { type: "function", function: { name: "replace_in_file", description: "Parche quirúrgico: reemplaza oldText exacto por newText.", parameters: { type: "object", properties: { path: { type: "string" }, oldText: { type: "string" }, newText: { type: "string" } }, required: ["path", "oldText", "newText"] } } },
-  { type: "function", function: { name: "search_files", description: "Busca texto en el repo.", parameters: { type: "object", properties: { query: { type: "string" } }, required: ["query"] } } },
-  { type: "function", function: { name: "run_command", description: "Comando shell (timeout 25s).", parameters: { type: "object", properties: { command: { type: "string" } }, required: ["command"] } } },
-  { type: "function", function: { name: "audit_env", description: "Compara .env.example vs .env.local y lista claves faltantes.", parameters: { type: "object", properties: {} } } },
-  { type: "function", function: { name: "supabase_migrate", description: "Prepara/lista migraciones SQL de supabase/migrations.", parameters: { type: "object", properties: { path: { type: "string" } } } } },
-  { type: "function", function: { name: "scaffold_project", description: "Inicializa Next.js+Tailwind+TS (+Supabase stubs) 0→100.", parameters: { type: "object", properties: { withSupabase: { type: "boolean" } } } } },
-  { type: "function", function: { name: "capture_preview", description: "Captura visual del preview local (Electron o Puppeteer).", parameters: { type: "object", properties: { url: { type: "string" }, viewport: { type: "string" } } } } },
   {
     type: "function",
     function: {
-      name: "capture_preview_screenshot",
-      description: "Captura el preview activo (por defecto http://127.0.0.1:4568/) con Puppeteer/Playwright y diagnostica maquetación para evaluación multimodal UI/UX.",
-      parameters: { type: "object", properties: { url: { type: "string" }, viewport: { type: "string" } } },
-    },
+      name: "list_files",
+      description: "Lista los archivos y carpetas en una ruta específica. Úsalo para explorar el proyecto.",
+      parameters: {
+        type: "object",
+        properties: {
+          path: { type: "string", description: "Ruta relativa a listar. Usa '.' para la raíz." },
+          forceReal: { type: "boolean", description: "Si es true, ignora la caché y lee el disco real." }
+        }
+      }
+    }
   },
   {
     type: "function",
     function: {
-      name: "web_scrape",
-      description: "Navega a una URL, extrae su contenido de texto y lo devuelve para análisis.",
-      parameters: { type: "object", properties: { url: { type: "string" }, ingest: { type: "boolean" }, title: { type: "string" } }, required: ["url"] },
-    },
+      name: "read_file",
+      description: "Lee el contenido de un archivo. Si el archivo es muy largo, usa startLine y endLine.",
+      parameters: {
+        type: "object",
+        properties: {
+          path: { type: "string", description: "Ruta relativa del archivo a leer." },
+          startLine: { type: "integer", description: "Línea de inicio (opcional)." },
+          endLine: { type: "integer", description: "Línea de fin (opcional)." }
+        },
+        required: ["path"]
+      }
+    }
   },
   {
     type: "function",
     function: {
-      name: "web_search",
-      description: "Busca en internet con DuckDuckGo + Wikipedia. Devuelve los mejores resultados con título, URL y snippet. Usala para documentación actualizada, APIs, librerías, errores de código.",
-      parameters: { type: "object", properties: { query: { type: "string" }, maxResults: { type: "number" } }, required: ["query"] },
-    },
+      name: "write_file",
+      description: "Crea o sobrescribe un archivo completo. Úsalo solo para archivos nuevos o si necesitas reemplazar todo el contenido.",
+      parameters: {
+        type: "object",
+        properties: {
+          path: { type: "string", description: "Ruta del archivo a escribir." },
+          content: { type: "string", description: "Contenido completo del archivo." }
+        },
+        required: ["path", "content"]
+      }
+    }
   },
   {
     type: "function",
     function: {
-      name: "git_status",
-      description: "Estado actual del repo git (rama, modificados, staged, untracked).",
-      parameters: { type: "object", properties: {} },
-    },
+      name: "replace_in_file",
+      description: "Edita un archivo reemplazando un bloque de texto exacto. Es la forma preferida de modificar código existente.",
+      parameters: {
+        type: "object",
+        properties: {
+          path: { type: "string", description: "Ruta del archivo a editar." },
+          oldText: { type: "string", description: "El texto exacto a buscar. Debe coincidir byte por byte." },
+          newText: { type: "string", description: "El nuevo texto que reemplazará al oldText." }
+        },
+        required: ["path", "oldText", "newText"]
+      }
+    }
   },
   {
     type: "function",
     function: {
-      name: "git_log",
-      description: "Historial de commits del repo git.",
-      parameters: { type: "object", properties: { maxCount: { type: "number" } } },
-    },
+      name: "search_files",
+      description: "Busca una cadena de texto o código dentro de los archivos del proyecto.",
+      parameters: {
+        type: "object",
+        properties: {
+          query: { type: "string", description: "Texto o expresión a buscar." }
+        },
+        required: ["query"]
+      }
+    }
   },
   {
     type: "function",
     function: {
-      name: "git_diff",
-      description: "Diff de cambios sin commitear (staged=true para staged).",
-      parameters: { type: "object", properties: { staged: { type: "boolean" } } },
-    },
-  },
-  {
-    type: "function",
-    function: {
-      name: "git_commit",
-      description: "Hace stage y crea un commit con el mensaje indicado en el repositorio Git del proyecto.",
-      parameters: { type: "object", properties: { message: { type: "string" }, files: { type: "array", items: { type: "string" } } }, required: ["message"] },
-    },
-  },
-  {
-    type: "function",
-    function: {
-      name: "git_push",
-      description: "Envía los commits al repositorio remoto Git (origin/rama).",
-      parameters: { type: "object", properties: { remote: { type: "string" }, branch: { type: "string" } } },
-    },
+      name: "run_command",
+      description: "Ejecuta un comando en la terminal (PowerShell/CMD). Úsalo para compilar, instalar, o hacer git push.",
+      parameters: {
+        type: "object",
+        properties: {
+          command: { type: "string", description: "El comando a ejecutar (ej. 'npm run build')." }
+        },
+        required: ["command"]
+      }
+    }
   },
   {
     type: "function",
     function: {
       name: "build_project",
-      description: "Compila o empaqueta el proyecto (ejecutable .exe, dist, build, package) con timeout extendido de 15 minutos y desbloqueo automático de procesos huérfanos.",
-      parameters: { type: "object", properties: { command: { type: "string" } } },
-    },
-  },
-  {
-    type: "function",
-    function: {
-      name: "install_skill",
-      description: "Instala skills clonando un repo GitHub en .editcore/skills/<name>/. Detecta SKILL.md en la raíz o en subcarpetas (skills/<x>/SKILL.md) y devuelve las skills encontradas.",
-      parameters: { type: "object", properties: { repoUrl: { type: "string" }, skillName: { type: "string" } }, required: ["repoUrl", "skillName"] },
-    },
-  },
-  {
-    type: "function",
-    function: {
-      name: "list_skills",
-      description: "Skills disponibles: integradas, globales, del proyecto y de los repos del Cerebro. Sin query devuelve un resumen por origen; con query busca por nombre/descripción.",
-      parameters: { type: "object", properties: { query: { type: "string" } } },
-    },
-  },
-  {
-    type: "function",
-    function: {
-      name: "ingest_to_brain",
-      description: "Guarda conocimiento en el Cerebro RAG (.editcore/rag/). Con title+content guarda un texto; con path ingesta un archivo o una carpeta de documentación (md, txt, pdf, docx, xlsx; hasta 40 archivos).",
-      parameters: { type: "object", properties: { title: { type: "string" }, content: { type: "string" }, source: { type: "string" }, path: { type: "string" } } },
-    },
-  },
-  {
-    type: "function",
-    function: {
-      name: "list_brain",
-      description: "Lista documentos indexados en el Cerebro RAG del proyecto.",
-      parameters: { type: "object", properties: {} },
-    },
-  },
-  {
-    type: "function",
-    function: {
-      name: "clone_repo",
-      description: "Clona un repositorio Git dentro del proyecto (.editcore/repos/) e ingesta el README al cerebro si existe.",
-      parameters: { type: "object", properties: { url: { type: "string" }, path: { type: "string" } }, required: ["url"] },
-    },
-  },
-  {
-    type: "function",
-    function: {
-      name: "clone_web_page",
-      description: "Clona una URL: render DOM (Puppeteer/Playwright), capturas, visión→React/Tailwind y merge en golden template.",
-      parameters: { type: "object", properties: { url: { type: "string" }, title: { type: "string" }, folder: { type: "string" }, viewport: { type: "string" }, replacements: { type: "object" }, skipVision: { type: "boolean" }, mergeApp: { type: "boolean" }, dryRun: { type: "boolean" } }, required: ["url"] },
-    },
-  },
-  {
-    type: "function",
-    function: {
-      name: "images_to_code",
-      description: "Genera UI desde brief/imagen (scaffold o visión).",
-      parameters: { type: "object", properties: { title: { type: "string" }, description: { type: "string" }, folder: { type: "string" } } },
-    },
-  },
-  {
-    type: "function",
-    function: {
-      name: "run_e2e_pipeline",
-      description: "Verificación end-to-end 1→100 del cableado EditCore.",
-      parameters: { type: "object", properties: { writeReport: { type: "boolean" } } },
-    },
-  },
-  {
-    type: "function",
-    function: {
-      name: "rollback_last_change",
-      description: "Restaura el último snapshot (.editcore/snapshots/) tras un fallo de compilación.",
-      parameters: { type: "object", properties: { snapshotId: { type: "string" } } },
-    },
-  },
-  {
-    type: "function",
-    function: {
-      name: "list_snapshots",
-      description: "Lista checkpoints recientes del proyecto.",
-      parameters: { type: "object", properties: {} },
-    },
-  },
-  {
-    type: "function",
-    function: {
-      name: "analyze_circular_dependencies",
-      description: "Analiza el arbol de dependencias e imports/requires en el proyecto o carpeta y detecta ciclos circulares recursivos.",
-      parameters: { type: "object", properties: { path: { type: "string" }, maxDepth: { type: "number" } } },
-    },
-  },
-  {
-    type: "function",
-    function: {
-      name: "search_codebase_semantic",
-      description: "Busqueda semantica tipo Cursor en el codigo del proyecto (indice local TF-IDF/BM25). Usala cuando no sepas la ruta exacta de un simbolo, funcion o feature.",
-      parameters: { type: "object", properties: { query: { type: "string" }, topK: { type: "number" } }, required: ["query"] },
-    },
-  },
-  {
-    type: "function",
-    function: {
-      name: "list_review_pending",
-      description: "Lista cambios del agente pendientes de Accept/Reject en la cola unificada de review del proyecto.",
-      parameters: { type: "object", properties: {} },
-    },
-  },
-  {
-    type: "function",
-    function: {
-      name: "graphify_project",
-      description: "Ejecuta Graphify para mapear la arquitectura completa del proyecto en un grafo de conocimiento interactivo con dependencias, God Nodes y comunidades. Genera graphify-out/graph.json, graphify-out/GRAPH_REPORT.md y graphify-out/graph.html.",
+      description: "Compila el proyecto completo (build, dist, make). Usa esto en lugar de run_command si tu única intención es compilar.",
       parameters: {
         type: "object",
         properties: {
-          path: { type: "string", description: "Ruta del proyecto (por defecto '.')." },
+          command: { type: "string", description: "Comando de compilación personalizado (opcional)." }
+        }
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "git_status",
+      description: "Muestra el estado actual de Git (archivos modificados, rama, etc.).",
+      parameters: { type: "object", properties: {} }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "git_commit",
+      description: "Hace un commit de los cambios actuales en Git.",
+      parameters: {
+        type: "object",
+        properties: {
+          message: { type: "string", description: "Mensaje del commit." }
         },
-      },
-    },
+        required: ["message"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "git_push",
+      description: "Sube los commits al repositorio remoto.",
+      parameters: {
+        type: "object",
+        properties: {
+          remote: { type: "string", description: "Nombre del remoto (por defecto 'origin')." },
+          branch: { type: "string", description: "Nombre de la rama (opcional)." }
+        }
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "web_search",
+      description: "Busca en internet (DuckDuckGo/Wikipedia). Úsalo para buscar documentación actualizada o resolver errores.",
+      parameters: {
+        type: "object",
+        properties: {
+          query: { type: "string", description: "La consulta de búsqueda." }
+        },
+        required: ["query"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "deploy_one_click",
+      description: "Publica o despliega el proyecto actual (ej. Vercel o servidor configurado).",
+      parameters: {
+        type: "object",
+        properties: {
+          target: { type: "string", description: "Destino del deploy (ej. 'vercel', 'production')." }
+        }
+      }
+    }
   },
   {
     type: "function",
     function: {
       name: "invoke_subagent",
-      description: "Despacha un subagente especializado autónomo para una tarea puntual (explorer, implementer, analyst, verifier, security, database, ui_ux, devops).",
+      description: "Despacha un subagente especializado para una tarea puntual.",
       parameters: {
         type: "object",
         properties: {
-          role: { type: "string", enum: ["explorer", "implementer", "analyst", "verifier", "security", "database", "ui_ux", "devops"], description: "Rol asignado al subagente." },
-          task: { type: "string", description: "Objetivo o instrucción detallada para el subagente." },
-          target: { type: "string", description: "Archivo o ruta a explorar/modificar." },
+          role: { type: "string", enum: ["explorer", "implementer", "analyst", "verifier", "security", "database", "ui_ux", "devops"], description: "Rol del subagente." },
+          task: { type: "string", description: "Instrucción para el subagente." },
+          target: { type: "string", description: "Archivo o ruta objetivo." }
         },
-        required: ["role", "task"],
-      },
-    },
+        required: ["role", "task"]
+      }
+    }
   },
+  {
+    type: "function",
+    function: {
+      name: "install_skill",
+      description: "Instala una skill clonando un repositorio de GitHub.",
+      parameters: {
+        type: "object",
+        properties: {
+          repoUrl: { type: "string", description: "URL del repositorio." },
+          skillName: { type: "string", description: "Nombre de la carpeta para la skill." }
+        },
+        required: ["repoUrl", "skillName"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "list_skills",
+      description: "Lista las skills disponibles en el sistema.",
+      parameters: { type: "object", properties: {} }
+    }
+  }
 ];
 
 function resolveListPath(root, requested) {
@@ -1197,258 +1171,106 @@ function resolveListPath(root, requested) {
 
 async function execute(name, args, root, allowWrite, helpers = {}) {
   const a = args || {};
-  switch (name) {
-    case "list_files": {
-      const rawPath = String(a.path || "").trim();
-      if (rawPath && path.isAbsolute(rawPath)) {
-        const absolute = path.resolve(rawPath);
-        let isDir = false;
-        try { isDir = fs.statSync(absolute).isDirectory(); } catch { isDir = false; }
-        if (!isDir) return { ok: false, error: `No existe la carpeta: ${rawPath}` };
-        const listed = listFiles(root, absolute, 200, { forceReal: true });
-        return listed.ok ? { ...listed, path: absolute } : listed;
-      }
-      const resolved = resolveListPath(root, a.path || ".");
-      const listed = listFiles(root, resolved.target || ".", 80, {
-        forceReal: a.forceReal === true || a.real === true,
-      });
-      if (resolved.missing) {
-        return {
-          ...listed,
-          requested: a.path || ".",
-          resolved: resolved.target,
-          note: `Ruta '${resolved.missing}' no está en el mapa cognitivo; listando '${resolved.target}'.`,
-          soft: !listed.ok,
-        };
-      }
-      return listed;
-    }
-    case "read_file": return readFile(root, a.path, READ_FILE_TOOL_CAP, { startLine: a.startLine, endLine: a.endLine });
-    case "search_files": return searchFiles(root, a.query || "");
-    case "write_file":
-      if (!allowWrite) return { ok: false, error: "Escritura no permitida" };
-      return writeFile(root, a.path, a.content);
-    case "replace_in_file":
-      if (!allowWrite) return { ok: false, error: "Escritura no permitida" };
-      return replaceInFile(root, a.path, a.oldText, a.newText);
-    case "run_command":
-      if (!allowWrite) return { ok: false, error: "Comandos no permitidos en modo lectura" };
-      return runCommand(root, a.command, {
-        onChunk: typeof helpers.onProcessChunk === "function"
-          ? (ev) => helpers.onProcessChunk({ command: a.command, ...ev })
-          : null,
-        onSevereError: typeof helpers.onProcessSevereError === "function"
-          ? (issue) => helpers.onProcessSevereError({ command: a.command, projectRoot: root, ...issue })
-          : null,
-        signal: helpers.abortSignal || null,
-      });
-    case "audit_env":
-      return auditEnv(root);
-    case "supabase_migrate":
-      if (!allowWrite) return { ok: false, error: "Migraciones requieren modo escritura/ejecución" };
-      return runSupabaseSql(root, a.path);
-    case "scaffold_project":
-      if (!allowWrite) return { ok: false, error: "Scaffold requiere escritura" };
-      return scaffoldNextApp({ projectRoot: root, withSupabase: a.withSupabase !== false });
-    case "capture_preview":
-    case "capture_preview_screenshot": {
-      const url = a.url || helpers.previewUrl || DEFAULT_PREVIEW_URL;
-      const viewport = a.viewport || "desktop";
-      try {
-        const shot = await capture_preview_screenshot({
-          url,
-          viewport,
-          projectRoot: root,
-          electronCapture: typeof helpers.capturePreview === "function"
-            ? (opts) => helpers.capturePreview(opts)
-            : null,
-        });
-        const { screenshotAbs: _abs, imageDataUrl: _img, ...safeShot } = shot;
-        return safeShot;
-      } catch (error) {
-        return { ok: false, error: String(error?.message || error).slice(0, 400) };
-      }
-    }
-    case "web_scrape": {
-      const scraped = await scrapeWebPage(a.url);
-      if (!scraped.ok) return scraped;
-      let ingested = null;
-      if (a.ingest === true) {
-        if (!allowWrite) {
-          return { ...scraped, ingested: { ok: false, error: "Ingesta requiere modo escritura" } };
+  try {
+    switch (name) {
+      case "list_files": {
+        const rawPath = String(a.path || "").trim();
+        if (rawPath && path.isAbsolute(rawPath)) {
+          const absolute = path.resolve(rawPath);
+          let isDir = false;
+          try { isDir = fs.statSync(absolute).isDirectory(); } catch { isDir = false; }
+          if (!isDir) return { ok: false, error: `No existe la carpeta: ${rawPath}` };
+          const listed = listFiles(root, absolute, 200, { forceReal: true });
+          return listed.ok ? { ...listed, path: absolute } : listed;
         }
-        ingested = saveToBrain(
-          root,
-          a.title || scraped.title || scraped.url || "web_doc",
-          scraped.content,
-          { source: scraped.url, tags: ["web_scrape"] },
-        );
+        const resolved = resolveListPath(root, a.path || ".");
+        const listed = listFiles(root, resolved.target || ".", 80, {
+          forceReal: a.forceReal === true || a.real === true,
+        });
+        if (resolved.missing) {
+          return {
+            ...listed,
+            requested: a.path || ".",
+            resolved: resolved.target,
+            note: `Ruta '${resolved.missing}' no está en el mapa cognitivo; listando '${resolved.target}'.`,
+            soft: !listed.ok,
+          };
+        }
+        return listed;
       }
-      return {
-        ok: true,
-        url: scraped.url,
-        title: scraped.title || "",
-        engine: scraped.engine,
-        content: scraped.content,
-        bytes: scraped.bytes,
-        note: scraped.note,
-        ingested,
-      };
-    }
-    case "web_search":
-      return webSearch(a.query, { maxResults: a.maxResults });
-    case "git_status":
-      return gitStatus(root);
-    case "git_log":
-      return gitLog(root, { maxCount: a.maxCount });
-    case "git_diff":
-      return gitDiff(root, { staged: a.staged === true });
-    case "git_commit":
-      if (!allowWrite) return { ok: false, error: "git_commit requiere modo escritura" };
-      return await gitCommit(root, a);
-    case "git_push":
-      if (!allowWrite) return { ok: false, error: "git_push requiere modo escritura" };
-      return await gitPush(root, a);
-    case "build_project":
-      if (!allowWrite) return { ok: false, error: "build_project requiere modo escritura" };
-      return await buildProject(root, a);
-    case "install_skill":
-      if (!allowWrite) return { ok: false, error: "install_skill requiere modo escritura" };
-      return installSkill(root, a.repoUrl, a.skillName);
-    case "list_skills":
-      return listSkills(root, helpers, a.query);
-    case "ingest_to_brain":
-      if (!allowWrite) return { ok: false, error: "Ingesta al cerebro requiere modo escritura" };
-      if (a.path && !a.content) {
-        try { return await ingestPathToBrain(root, safe(root, a.path)); } catch (e) { return { ok: false, error: String(e?.message || e).slice(0, 300) }; }
+      case "read_file": return readFile(root, a.path, READ_FILE_TOOL_CAP, { startLine: a.startLine, endLine: a.endLine });
+      case "search_files": return searchFiles(root, a.query || "");
+      case "write_file":
+        if (!allowWrite) return { ok: false, error: "Escritura no permitida (Modo Solo Lectura)." };
+        return writeFile(root, a.path, a.content);
+      case "replace_in_file":
+        if (!allowWrite) return { ok: false, error: "Escritura no permitida (Modo Solo Lectura)." };
+        return replaceInFile(root, a.path, a.oldText, a.newText);
+      case "run_command":
+        if (!allowWrite) return { ok: false, error: "Comandos no permitidos en modo lectura." };
+        return runCommand(root, a.command, {
+          onChunk: typeof helpers.onProcessChunk === "function"
+            ? (ev) => helpers.onProcessChunk({ command: a.command, ...ev })
+            : null,
+          onSevereError: typeof helpers.onProcessSevereError === "function"
+            ? (issue) => helpers.onProcessSevereError({ command: a.command, projectRoot: root, ...issue })
+            : null,
+          signal: helpers.abortSignal || null,
+        });
+      case "build_project":
+        if (!allowWrite) return { ok: false, error: "Compilar requiere modo escritura/ejecución." };
+        return await buildProject(root, a);
+      case "git_status":
+        return await gitStatus(root);
+      case "git_commit":
+        if (!allowWrite) return { ok: false, error: "git_commit requiere modo escritura." };
+        return await gitCommit(root, a);
+      case "git_push":
+        if (!allowWrite) return { ok: false, error: "git_push requiere modo escritura." };
+        return await gitPush(root, a);
+      case "web_search":
+        return webSearch(a.query, { maxResults: a.maxResults });
+      case "deploy_one_click":
+        if (!allowWrite) return { ok: false, error: "Deploy requiere modo ejecución." };
+        return await extraTools.runExternalAction("deploy_one_click", a, root, helpers);
+      case "invoke_subagent": {
+        const { runSubagent } = require("../runtime/subagent-runner");
+        const subRole = String(a.role || "explorer").toLowerCase();
+        if ((subRole === "implementer" || subRole === "writer") && !allowWrite) {
+          return { ok: false, error: "Subagente implementer requiere modo escritura." };
+        }
+        return await runSubagent(root, {
+          role: subRole,
+          task: a.task,
+          target: a.target,
+          query: a.task,
+        }, helpers);
       }
-      return saveToBrain(root, a.title, a.content, { source: a.source || "" });
-    case "search_brain":
-      return extraTools.searchBrain(root, a.query, helpers);
-    case "read_pdf":
-      try { return await extraTools.readPdf(safe(root, a.path), { maxChars: a.maxChars }); } catch (e) { return { ok: false, error: String(e?.message || e).slice(0, 300) }; }
-    case "screenshot_page":
-      try { return await extraTools.screenshotPage(a.url, { viewport: a.viewport, fullPage: a.fullPage, helpers }); } catch (e) { return { ok: false, error: String(e?.message || e).slice(0, 300) }; }
-    case "docker_ps":
-      return extraTools.dockerPs({ all: a.all === true });
-    case "check_connections":
-      try { return await extraTools.checkConnections(root, helpers); } catch (e) { return { ok: false, error: String(e?.message || e).slice(0, 300) }; }
-    case "publish_project":
-    case "deploy_one_click":
-    case "connect_project":
-      if (!allowWrite) return { ok: false, error: `${name} requiere modo ejecución` };
-      try { return await extraTools.runExternalAction(name, a, root, helpers); } catch (e) { return { ok: false, error: String(e?.message || e).slice(0, 400) }; }
-    case "list_brain":
-      return listBrainDocs(root);
-    case "clone_repo":
-      if (!allowWrite) return { ok: false, error: "Clonar requiere modo escritura" };
-      return cloneRepo(root, a.url, a.path);
-    case "clone_web_page": {
-      if (!allowWrite) return { ok: false, error: "clone_web_page requiere modo escritura" };
-      if (!a.url || !/^https?:\/\//i.test(String(a.url).trim())) {
-        return { ok: false, error: "clone_web_page requiere una URL externa http(s) válida en el argumento 'url'. No uses clone_web_page para modificar archivos locales existentes del proyecto." };
-      }
-      const { cloneWebPage } = require("../runtime/clone-web-page");
-      return cloneWebPage(root, {
-        url: a.url,
-        title: a.title,
-        folder: a.folder,
-        viewport: a.viewport,
-        replacements: a.replacements || a.data || {},
-        skipVision: a.skipVision === true,
-        mergeApp: a.mergeApp === true,
-        dryRun: a.dryRun === true,
-      }, { model: a.model || "" });
+      case "install_skill":
+        if (!allowWrite) return { ok: false, error: "install_skill requiere modo escritura." };
+        return installSkill(root, a.repoUrl, a.skillName);
+      case "list_skills":
+        return listSkills(root, helpers, a.query);
+      default:
+        return { ok: false, error: `Herramienta desconocida: ${name}` };
     }
-    case "images_to_code": {
-      if (!allowWrite) return { ok: false, error: "images_to_code requiere modo escritura" };
-      const { imagesToCode } = require("../runtime/images-to-code");
-      return imagesToCode(root, a);
-    }
-    case "run_e2e_pipeline": {
-      const { runEditcoreE2ePipeline } = require("../runtime/e2e-pipeline-report");
-      return runEditcoreE2ePipeline(root, { writeReport: a.writeReport !== false });
-    }
-    case "search_codebase_semantic": {
-      const { querySemanticCodebase } = require("../runtime/codebase-indexer");
-      const results = querySemanticCodebase(root, a.query || "", a.topK || 6);
-      return {
-        ok: true,
-        results: results.map((r) => ({
-          file: r.file,
-          startLine: r.startLine,
-          endLine: r.endLine,
-          score: r.score,
-          preview: String(r.content || "").slice(0, 500),
-        })),
-        count: results.length,
-        note: results.length ? "Abre el archivo con read_file usando file + startLine." : "Sin hits; prueba search_files o otra query.",
-      };
-    }
-    case "list_review_pending": {
-      try {
-        const unified = require("../runtime/unified-review");
-        const listed = unified.list(root);
-        return {
-          ok: true,
-          count: listed.count || 0,
-          items: listed.items || [],
-          report: typeof unified.formatPendingMarkdown === "function"
-            ? unified.formatPendingMarkdown(root)
-            : undefined,
-        };
-      } catch (e) {
-        return { ok: false, error: String(e?.message || e).slice(0, 300) };
-      }
-    }
-    case "rollback_last_change":
-      if (!allowWrite) return { ok: false, error: "Rollback requiere modo escritura" };
-      return rollbackLastChange(root, a.snapshotId || null);
-    case "list_snapshots":
-      return listSnapshots(root);
-    case "analyze_circular_dependencies":
-      return detectCircularDependencies(root, a);
-    case "graphify_project": {
-      const { buildProjectGraph } = require("./graphify-runner");
-      return await buildProjectGraph(safe(root, a.path || "."), a);
-    }
-    case "invoke_subagent": {
-      const { runSubagent } = require("../runtime/subagent-runner");
-      const subRole = String(a.role || "explorer").toLowerCase();
-      if ((subRole === "implementer" || subRole === "writer") && !allowWrite) {
-        return { ok: false, error: "Subagente implementer requiere modo escritura/ejecución" };
-      }
-      return await runSubagent(root, {
-        role: subRole,
-        task: a.task,
-        target: a.target,
-        query: a.task,
-      }, helpers);
-    }
-    default:
-      return { ok: false, error: `Herramienta desconocida: ${name}` };
+  } catch (err) {
+    return { ok: false, error: `Error interno ejecutando ${name}: ${err.message}` };
   }
 }
 
 function getToolDefinitions({ allowWrite = true, isFullAccess = false, isAnalysis = false } = {}) {
   const writeTools = new Set([
-    "write_file", "replace_in_file", "run_command", "scaffold_project",
-    "supabase_migrate", "ingest_to_brain", "clone_repo", "rollback_last_change",
-    "images_to_code", "clone_web_page", "install_skill",
-    "git_commit", "git_push", "build_project",
-    ...extraTools.EXTERNAL_ACTION_TOOLS,
+    "write_file", "replace_in_file", "run_command", "build_project", 
+    "git_commit", "git_push", "deploy_one_click", "install_skill"
   ]);
   const canWrite = allowWrite === true || isFullAccess === true;
-  return [...DEFINITIONS, ...extraTools.EXTRA_DEFINITIONS].filter((t) => {
+  return DEFINITIONS.filter((t) => {
     if (!canWrite && writeTools.has(t.function?.name)) return false;
     return true;
   });
 }
 
-// =====================================================================
-// [EDITCORE-ADD] Métricas de uso por tool + rate limiter. Puro add-on.
-// No modifica ni reemplaza nada. Si no se usa, no-op.
-// =====================================================================
 const _ecToolStats = new Map();
 const _ecToolRateBuckets = new Map();
 
@@ -1489,7 +1311,6 @@ function getToolStats() {
 }
 
 function resetToolStats() { _ecToolStats.clear(); _ecToolRateBuckets.clear(); }
-// [/EDITCORE-ADD]
 
 module.exports = {
   TOOL_RESULT_CAP,
@@ -1513,7 +1334,6 @@ module.exports = {
   execute,
   DEFINITIONS,
   getToolDefinitions,
-  // NUEVAS EXPORTS (por si otros módulos las necesitan)
   webSearch,
   gitStatus,
   gitLog,
@@ -1523,7 +1343,6 @@ module.exports = {
   buildProject,
   installSkill,
   listSkills,
-  // [EDITCORE-ADD]
   recordToolCall,
   getToolStats,
   resetToolStats,

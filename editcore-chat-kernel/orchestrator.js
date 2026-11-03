@@ -1252,23 +1252,30 @@ class ChatOrchestrator {
         }
 
         // Compactar outputs antiguos de tools para evitar desbordar el contexto del modelo (3.4M tokens)
-        if (Array.isArray(messages) && messages.length > 16) {
-          let toolSeen = 0;
-          for (let idx = messages.length - 1; idx >= 0; idx--) {
-            const m = messages[idx];
-            if (m && m.role === "tool") {
-              toolSeen++;
-              if (toolSeen > 8 && typeof m.content === "string" && m.content.length > 250) {
-                try {
-                  const parsed = JSON.parse(m.content);
-                  const brief = {
-                    ok: parsed.ok !== false,
-                    summary: parsed.summary || parsed.note || (parsed.path ? `archivo ${parsed.path} procesado` : "resultado previo completado"),
-                    compacted: true,
-                  };
-                  m.content = JSON.stringify(brief);
-                } catch (_) {
-                  m.content = JSON.stringify({ ok: true, summary: "resultado previo completado", compacted: true });
+        // [EDITCORE-CLINE] Compactación profunda y poda de contexto estilo Cline
+        try {
+          const { ContextCompactor } = require("../runtime/editcore-cline/context-compactor");
+          const compactor = new ContextCompactor();
+          messages = compactor.compactMessages(messages);
+        } catch (_) {
+          if (Array.isArray(messages) && messages.length > 16) {
+            let toolSeen = 0;
+            for (let idx = messages.length - 1; idx >= 0; idx--) {
+              const m = messages[idx];
+              if (m && m.role === "tool") {
+                toolSeen++;
+                if (toolSeen > 8 && typeof m.content === "string" && m.content.length > 250) {
+                  try {
+                    const parsed = JSON.parse(m.content);
+                    const brief = {
+                      ok: parsed.ok !== false,
+                      summary: parsed.summary || parsed.note || (parsed.path ? `archivo ${parsed.path} procesado` : "resultado previo completado"),
+                      compacted: true,
+                    };
+                    m.content = JSON.stringify(brief);
+                  } catch (_) {
+                    m.content = JSON.stringify({ ok: true, summary: "resultado previo completado", compacted: true });
+                  }
                 }
               }
             }
