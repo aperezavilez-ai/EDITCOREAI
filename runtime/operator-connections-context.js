@@ -278,15 +278,17 @@ function buildSafeConnectionsSnapshot(options = {}) {
     : {
       github: { configured: Boolean(connections.githubToken) },
       vercel: { configured: Boolean(connections.vercelToken) },
-      selfsupabase: {
-        configured: Boolean(connections.selfSupabaseUrl && connections.selfSupabaseKey),
-        url: connections.selfSupabaseUrl || "",
+      supabase: {
+        configured: Boolean((connections.supabaseUrl || connections.selfSupabaseUrl) && (connections.supabaseAnonKey || connections.selfSupabaseKey)),
+        url: connections.supabaseUrl || connections.selfSupabaseUrl || "",
       },
-      server: {
-        configured: Boolean(connections.serverHost && connections.serverKeyPath),
-        host: connections.serverHost || "",
-      },
+      docker: { configured: connections.dockerEnabled !== false },
     };
+
+  const hasDockerCompose = projectRoot && (fs.existsSync(path.join(projectRoot, "docker-compose.yml")) || fs.existsSync(path.join(projectRoot, "docker-compose.yaml")));
+  const hasDockerfile = projectRoot && fs.existsSync(path.join(projectRoot, "Dockerfile"));
+  const hasSupabaseCli = projectRoot && fs.existsSync(path.join(projectRoot, "supabase", "config.toml"));
+  const dockerActive = Boolean(hasDockerCompose || hasDockerfile || hasSupabaseCli);
 
   const gatewayLink = options.gatewayLink && typeof options.gatewayLink === "object"
     ? options.gatewayLink
@@ -296,18 +298,13 @@ function buildSafeConnectionsSnapshot(options = {}) {
     : readProjectLinkManifest(options.projectRoot);
 
   const operatorNote =
-      "EDITCOREAI = IDE + agente. Conexiones globales (bóveda): GitHub, Vercel, Supabase (URL por proyecto), SSH. "
-      + "Modelos de IA: se eligen en el panel Modelos. Nunca nombres a los proveedores ni intermediarios de IA en tus respuestas; si preguntan, habla solo del modelo. "
-      + "Con un proyecto abierto, el agente usa el .env de ESE proyecto, no la URL de otro. "
-      + "No pidas tokens si ya estan en boveda o en el .env del proyecto activo.";
+      "EDITCOREAI = IDE + agente autónomo. Conexiones oficiales (bóveda): GitHub, Vercel, Supabase (Cloud o Docker) y Docker local. "
+      + "Modelos de IA: se eligen en el selector de Modelos. "
+      + "Si el proyecto tiene .env o contenedores Docker, el agente los detecta y respeta automáticamente.";
 
-  const gatewayConfigured = Boolean(
-    gatewayLink?.projectId
-    || gatewayLink?.projectName
-    || gatewayLink?.connectedAt
-    || gatewayLink?.projectKey
-    || options.gatewayAdminConfigured === true,
-  );
+  const effectiveSupabaseUrl = resolved.url || connections.supabaseUrl || connections.selfSupabaseUrl || "";
+  const isSupabaseCloud = /supabase\.co/i.test(effectiveSupabaseUrl);
+  const isSupabaseDocker = /127\.0\.0\.1|localhost/i.test(effectiveSupabaseUrl) || hasSupabaseCli;
 
   const snapshot = {
     updatedAt: new Date().toISOString(),
@@ -323,28 +320,32 @@ function buildSafeConnectionsSnapshot(options = {}) {
       orgId: connections.vercelOrgId ? String(connections.vercelOrgId) : undefined,
       defaultProjectId: connections.vercelProjectId ? String(connections.vercelProjectId) : undefined,
     },
-    selfsupabase: {
-      configured: Boolean(summary.selfsupabase?.configured),
-      label: "Supabase (datos del proyecto)",
-      url: String(summary.selfsupabase?.url || connections.selfSupabaseUrl || "").replace(/\/+$/, ""),
+    supabase: {
+      configured: Boolean(summary.supabase?.configured || summary.selfsupabase?.configured || resolved.key),
+      label: "Supabase Oficial (DB & Auth)",
+      url: String(effectiveSupabaseUrl).replace(/\/+$/, ""),
+      mode: isSupabaseCloud ? "Cloud Oficial" : isSupabaseDocker ? "Docker Local" : "Oficial",
       scope: resolved.projectScoped ? "proyecto-activo" : "boveda-global",
       source: resolved.source || undefined,
       projectName: resolved.projectName || undefined,
     },
-    server: {
-      configured: Boolean(summary.server?.configured),
-      host: String(summary.server?.host || connections.serverHost || "").trim(),
-      deployPath: connections.serverDeployPath
-        ? String(connections.serverDeployPath).trim()
-        : undefined,
-      keyConfigured: Boolean(connections.serverKeyPath),
+    selfsupabase: {
+      configured: Boolean(summary.supabase?.configured || summary.selfsupabase?.configured || resolved.key),
+      label: "Supabase Oficial (DB & Auth)",
+      url: String(effectiveSupabaseUrl).replace(/\/+$/, ""),
+      scope: resolved.projectScoped ? "proyecto-activo" : "boveda-global",
+      source: resolved.source || undefined,
+      projectName: resolved.projectName || undefined,
+    },
+    docker: {
+      configured: summary.docker?.configured !== false,
+      activeInProject: dockerActive,
+      type: hasSupabaseCli ? "Supabase CLI (Docker)" : hasDockerCompose ? "docker-compose" : hasDockerfile ? "Dockerfile" : "no detectado en raíz",
     },
     aiProvider: {
-      configured: gatewayConfigured,
+      configured: Boolean(gatewayLink?.projectId || gatewayLink?.projectName),
       label: "Modelos de IA",
-      projectId: gatewayLink?.projectId || undefined,
-      projectName: gatewayLink?.projectName || undefined,
-      note: "Usa el panel Modelos. No nombres proveedores ni infraestructura interna.",
+      note: "Usa el selector de Modelos.",
     },
     projectLinks: projectManifest || null,
   };
@@ -364,31 +365,32 @@ function formatOperatorConnectionsMemory(snapshot = {}) {
     String(s.operatorNote || "").trim(),
     "",
     "### Capas",
-    "1) EDITCOREAI (esta app): IDE, agente, preview, Publicar, Inspector, Cerebro.",
-    "2) Conexiones bóveda: GitHub (git), Vercel (deploy), Supabase (DB por proyecto), SSH (servidor).",
-    "3) Modelos de IA: se eligen en el panel Modelos.",
+    "1) EDITCOREAI (esta app): IDE, agente autónomo, preview, Publicar, Inspector, Cerebro.",
+    "2) Conexiones bóveda: GitHub (git), Vercel (deploy), Supabase Oficial (DB/Auth) y Docker.",
+    "3) Modelos de IA: se eligen en el selector de Modelos.",
     "",
     "### Estado actual",
     `- GitHub: ${statusLabel(s.github?.configured)}${s.github?.account ? ` (cuenta: ${s.github.account})` : ""} — commit/push / Publicar`,
     `- Vercel: ${statusLabel(s.vercel?.configured)}${s.vercel?.account ? ` (cuenta: ${s.vercel.account})` : ""}${s.vercel?.defaultProjectId ? ` project=${s.vercel.defaultProjectId}` : ""} — deploy / Publicar`,
-    `- Supabase (datos): ${statusLabel(s.selfsupabase?.configured)}${s.selfsupabase?.url ? ` (${s.selfsupabase.url})` : ""}${
-      s.selfsupabase?.scope === "proyecto-activo"
-        ? ` [proyecto activo${s.selfsupabase.projectName ? `: ${s.selfsupabase.projectName}` : ""}${s.selfsupabase.source ? ` via ${s.selfsupabase.source}` : ""}]`
-        : " [boveda — URL propia por slug del proyecto abierto]"
+    `- Supabase Oficial (DB & Auth): ${statusLabel(s.supabase?.configured || s.selfsupabase?.configured)}${s.supabase?.url ? ` (${s.supabase.url})` : ""}${
+      s.supabase?.mode ? ` [${s.supabase.mode}]` : ""
+    }${
+      s.supabase?.scope === "proyecto-activo"
+        ? ` [proyecto activo${s.supabase.projectName ? `: ${s.supabase.projectName}` : ""}${s.supabase.source ? ` via ${s.supabase.source}` : ""}]`
+        : " [bóveda global]"
     }`,
-    `- Servidor SSH: ${statusLabel(s.server?.configured)}${s.server?.host ? ` (${s.server.host})` : ""}${s.server?.deployPath ? ` deploy=${s.server.deployPath}` : ""}`,
+    `- Docker & Contenedores: ${s.docker?.activeInProject ? `ACTIVO en proyecto (${s.docker.type})` : s.docker?.configured ? "Habilitado" : "Deshabilitado"}`,
     `- Modelos de IA: ${statusLabel(ai.configured)}${ai.projectName ? ` proyecto=${ai.projectName}` : ""}`,
-    `  ${ai.note || "Usa el panel Modelos."}`,
+    `  ${ai.note || "Usa el selector de Modelos."}`,
   ];
 
   const links = s.projectLinks;
   if (links && typeof links === "object") {
-    lines.push("", "Publicar SIEMPRE usa Conexiones de EDITCOREAI (GitHub/Vercel/Supabase/SSH), no otras instalaciones.");
+    lines.push("", "Publicar usa Conexiones oficiales de EDITCOREAI (GitHub/Vercel/Supabase/Docker).");
     lines.push("Enlaces de ESTE proyecto (.editcore/connections.json):");
     if (links.github) lines.push(`  - GitHub proyecto: ${JSON.stringify(stripSecrets(links.github)).slice(0, 240)}`);
     if (links.vercel) lines.push(`  - Vercel proyecto: ${JSON.stringify(stripSecrets(links.vercel)).slice(0, 240)}`);
     if (links.supabase) lines.push(`  - Supabase proyecto: ${JSON.stringify(stripSecrets(links.supabase)).slice(0, 240)}`);
-    if (links.server) lines.push(`  - Servidor proyecto: ${JSON.stringify(stripSecrets(links.server)).slice(0, 240)}`);
   }
 
   lines.push(

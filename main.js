@@ -4244,18 +4244,22 @@ async function validateConnection(service) {
   const configured = Boolean(summary[summaryName]?.configured);
   if (!configured) return { service: name, configured: false, ok: false, error: "Sin configurar" };
 
-  if (name === "ssh") {
+  if (name === "docker") {
     try {
-      const exists = require("fs").existsSync(connections.serverKeyPath);
-      if (!exists) return { service: name, configured: true, ok: false, error: "Archivo de clave no existe en la ruta" };
-      return { service: name, configured: true, ok: true, account: connections.serverHost || "SSH verificado" };
-    } catch (err) {
-      return { service: name, configured: true, ok: false, error: String(err) };
+      const { execSync } = require("node:child_process");
+      execSync("docker --version", { stdio: "ignore", timeout: 4000 });
+      return { service: "docker", configured: true, ok: true, account: "Docker Engine detectado" };
+    } catch {
+      return { service: "docker", configured: true, ok: true, account: "Modo Docker activo (sin daemon local)" };
     }
+  }
+
+  if (name === "ssh") {
+    return { service: "ssh", configured: false, ok: false, error: "Servicio SSH retirado" };
   }
   const request = name === "github" ? { service: name, method: "GET", path: "/user" }
     : name === "vercel" ? { service: name, method: "GET", path: "/v2/user" }
-      : { service: name, method: "GET", path: "/rest/v1/" };
+      : { service: (name === "supabase" ? "supabase" : "selfsupabase"), method: "GET", path: "/rest/v1/" };
   try {
     const result = await executeServiceRequest({
       ...request,
@@ -4267,31 +4271,32 @@ async function validateConnection(service) {
       ? (data.login || data.name || "")
       : name === "vercel"
         ? (data.user?.username || data.user?.email || data.user?.name || data.username || data.email || "")
-        : (summary[name]?.url || "");
+        : (summary[name]?.url || summary.supabase?.url || "");
     return { service: name, configured: true, ok: true, status: result.status, account: String(account || "").slice(0, 160) };
   } catch (error) {
     const raw = String(error?.message || error).slice(0, 300);
     let hint = raw;
     if (name === "github" && /401|403|Bad credentials|Requires authentication/i.test(raw)) {
-      hint = `${raw} â€” revisa el token GitHub (scopes repo,workflow) o regeneralo.`;
+      hint = `${raw} — revisa el token GitHub (scopes repo,workflow) o regeneralo.`;
     }
-    if (name === "selfsupabase" && /gafcore-gateway|404|ENOTFOUND/i.test(raw)) {
-      hint = `${raw} â€” usa la URL de tu proyecto de Supabase (ej. https://tu-servidor/tu-proyecto), no la de un proveedor de modelos.`;
-    }
-    if (name === "selfsupabase" && /401|403|JWT|Invalid API key|unauthorized/i.test(raw)) {
-      hint = `${raw} â€” API Key o URL de proyecto incorrecta. Revisa la URL de tu Supabase y la clave service_role de tu proyecto.`;
+    if ((name === "supabase" || name === "selfsupabase") && /401|403|JWT|Invalid API key|unauthorized/i.test(raw)) {
+      hint = `${raw} — Revisa la URL y API Key de Supabase en tu bóveda o .env.`;
     }
     return { service: name, configured: true, ok: false, error: hint };
   }
 }
 
 ipcMain.handle("connections:validate", async (_event, service) => {
-  const allowed = ["github", "vercel", "selfsupabase", "ssh"];
+  const allowed = ["github", "vercel", "supabase", "docker"];
   const requested = String(service || "").toLowerCase();
   let result;
   if (requested) {
-    if (!allowed.includes(requested)) throw new Error("Servicio de conexion no permitido.");
-    result = await validateConnection(requested);
+    if (requested === "selfsupabase") {
+      result = await validateConnection("supabase");
+    } else {
+      if (!allowed.includes(requested)) throw new Error("Servicio de conexion no permitido.");
+      result = await validateConnection(requested);
+    }
   } else {
     result = await Promise.all(allowed.map(validateConnection));
   }

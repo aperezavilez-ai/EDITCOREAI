@@ -187,6 +187,8 @@ function scanProject(root) {
   let hasVercelDir = false;
   let hasVercelConfig = false;
   let hasSupabaseDir = false;
+  let hasDockerCompose = false;
+  let hasDockerfile = false;
 
   try {
     for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
@@ -196,6 +198,8 @@ function scanProject(root) {
       if (entry.name === ".vercel") hasVercelDir = true;
       if (entry.name === "vercel.json" || entry.name === "vercel.config.json") hasVercelConfig = true;
       if (entry.name === "supabase") hasSupabaseDir = true;
+      if (entry.name === "docker-compose.yml" || entry.name === "docker-compose.yaml") hasDockerCompose = true;
+      if (entry.name === "Dockerfile") hasDockerfile = true;
     }
   } catch {
     return null;
@@ -224,11 +228,17 @@ function scanProject(root) {
     }
   }
 
+  const hasSupabaseCli = hasSupabaseDir && fs.existsSync(path.join(root, "supabase", "config.toml"));
+  const isDockerActive = Boolean(hasDockerCompose || hasDockerfile || hasSupabaseCli);
+
   if (hasSupabaseDir || envSupabaseUrl) {
+    const isCloud = /supabase\.co/i.test(envSupabaseUrl || "");
+    const isDockerLocal = /127\.0\.0\.1|localhost/i.test(envSupabaseUrl || "") || hasSupabaseCli;
     supabaseInfo = {
       hasLocalDir: hasSupabaseDir,
       url: envSupabaseUrl,
       hasKey: !!envSupabaseKey,
+      mode: isCloud ? "official-cloud" : isDockerLocal ? "docker-local" : "custom",
     };
   }
 
@@ -253,6 +263,13 @@ function scanProject(root) {
     hasVercelDir,
     hasVercelConfig,
     hasSupabaseDir,
+    hasDocker: isDockerActive,
+    docker: isDockerActive ? {
+      hasCompose: hasDockerCompose,
+      hasDockerfile,
+      hasSupabaseCli,
+      type: hasSupabaseCli ? "supabase-local" : hasDockerCompose ? "docker-compose" : "dockerfile",
+    } : null,
     frameworks,
     languages,
     vercel: vercelProject ? { linked: true, ...vercelProject } : null,
@@ -279,6 +296,8 @@ async function scanProjectAsync(root) {
   let hasVercelDir = false;
   let hasVercelConfig = false;
   let hasSupabaseDir = false;
+  let hasDockerCompose = false;
+  let hasDockerfile = false;
 
   try {
     const dirents = await fsp.readdir(root, { withFileTypes: true });
@@ -289,6 +308,8 @@ async function scanProjectAsync(root) {
       if (entry.name === ".vercel") hasVercelDir = true;
       if (entry.name === "vercel.json" || entry.name === "vercel.config.json") hasVercelConfig = true;
       if (entry.name === "supabase") hasSupabaseDir = true;
+      if (entry.name === "docker-compose.yml" || entry.name === "docker-compose.yaml") hasDockerCompose = true;
+      if (entry.name === "Dockerfile") hasDockerfile = true;
     }
   } catch {
     return null;
@@ -321,11 +342,17 @@ async function scanProjectAsync(root) {
     if (envSupabaseUrl && envSupabaseKey) break;
   }
 
+  const hasSupabaseCli = hasSupabaseDir && fs.existsSync(path.join(root, "supabase", "config.toml"));
+  const isDockerActive = Boolean(hasDockerCompose || hasDockerfile || hasSupabaseCli);
+
   if (hasSupabaseDir || envSupabaseUrl) {
+    const isCloud = /supabase\.co/i.test(envSupabaseUrl || "");
+    const isDockerLocal = /127\.0\.0\.1|localhost/i.test(envSupabaseUrl || "") || hasSupabaseCli;
     supabaseInfo = {
       hasLocalDir: hasSupabaseDir,
       url: envSupabaseUrl,
       hasKey: !!envSupabaseKey,
+      mode: isCloud ? "official-cloud" : isDockerLocal ? "docker-local" : "custom",
     };
   }
 
@@ -356,6 +383,13 @@ async function scanProjectAsync(root) {
     hasVercelDir,
     hasVercelConfig,
     hasSupabaseDir,
+    hasDocker: isDockerActive,
+    docker: isDockerActive ? {
+      hasCompose: hasDockerCompose,
+      hasDockerfile,
+      hasSupabaseCli,
+      type: hasSupabaseCli ? "supabase-local" : hasDockerCompose ? "docker-compose" : "dockerfile",
+    } : null,
     frameworks,
     languages,
     vercel: vercelProject ? { linked: true, ...vercelProject } : null,

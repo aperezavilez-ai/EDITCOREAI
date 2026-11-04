@@ -68,16 +68,13 @@ function serviceSpec(service, connections) {
   if (service === "netlify") {
     throw new Error("Netlify ya no forma parte de las conexiones de EDITCOREAI. Usa Vercel.");
   }
-  if (service === "selfsupabase") {
-    const raw = String(connections.selfSupabaseUrl || "").trim();
+  if (service === "selfsupabase" || service === "supabase") {
+    const raw = String(connections.supabaseUrl || connections.selfSupabaseUrl || "").trim();
     const baseUrl = normalizeSelfSupabaseUrl(raw);
-    const apiKey = connections.selfSupabaseKey;
-    if (!baseUrl || !apiKey) throw new Error("Supabase propio no esta configurado.");
-    if (!/^https:\/\//i.test(baseUrl)) throw new Error("La URL de Supabase debe usar HTTPS.");
-    if (/gafcore-gateway/i.test(baseUrl)) {
-      throw new Error(
-        "URL invalida: no uses un endpoint de modelos como URL de Supabase. Usa la URL de tu proyecto de Supabase (ej. https://tu-servidor/tu-proyecto).",
-      );
+    const apiKey = connections.supabaseAnonKey || connections.supabaseKey || connections.selfSupabaseKey;
+    if (!baseUrl || !apiKey) throw new Error("Supabase no está configurado.");
+    if (!/^https?:\/\//i.test(baseUrl)) {
+      throw new Error("La URL de Supabase debe ser válida (https:// para cloud o http:// para Docker local).");
     }
     return { baseUrl, headers: { apikey: apiKey, Authorization: `Bearer ${apiKey}` } };
   }
@@ -85,12 +82,15 @@ function serviceSpec(service, connections) {
 }
 
 function connectionSummary(connections = {}) {
-  const supabaseUrl = normalizeSelfSupabaseUrl(connections.selfSupabaseUrl || "");
+  const supabaseUrl = normalizeSelfSupabaseUrl(connections.supabaseUrl || connections.selfSupabaseUrl || "");
+  const supabaseKey = connections.supabaseAnonKey || connections.supabaseKey || connections.selfSupabaseKey || "";
   return {
     github: { configured: Boolean(connections.githubToken) },
     vercel: { configured: Boolean(connections.vercelToken) },
-    selfsupabase: { configured: Boolean(supabaseUrl && connections.selfSupabaseKey), url: supabaseUrl },
-    server: { configured: Boolean(connections.serverHost && connections.serverKeyPath), host: connections.serverHost || "" },
+    supabase: { configured: Boolean(supabaseUrl && supabaseKey), url: supabaseUrl },
+    selfsupabase: { configured: Boolean(supabaseUrl && supabaseKey), url: supabaseUrl },
+    docker: { configured: connections.dockerEnabled !== false },
+    server: { configured: false },
     gafcoreGateway: { configured: false },
   };
 }

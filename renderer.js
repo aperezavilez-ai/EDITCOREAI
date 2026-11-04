@@ -959,30 +959,81 @@ function loadConnections() {
   if (previewNote) previewNote.hidden = !preview;
   const saved = preview ? {} : loadJson("editcore-connections", {});
   const display = { ...saved };
-  display.selfSupabaseUrl = displaySupabaseUrlForActiveProject(
-    saved.selfSupabaseUrl,
-    state.projectRoot || "",
-  );
+  display.supabaseUrl = saved.supabaseUrl || saved.selfSupabaseUrl || "";
+  display.supabaseAnonKey = saved.supabaseAnonKey || saved.selfSupabaseKey || "";
+  display.supabaseServiceKey = saved.supabaseServiceKey || "";
+
   document.querySelectorAll("[data-conn]").forEach((input) => {
     input.value = display[input.dataset.conn] || "";
   });
-  const urlHint = $("selfSupabaseProjectHint");
+
+  const dockerToggle = $("dockerSupportToggle");
+  if (dockerToggle) {
+    dockerToggle.checked = saved.dockerEnabled !== false;
+  }
+
+  const urlHint = $("supabaseProjectHint");
   if (urlHint) {
     const root = String(state.projectRoot || "").trim();
-    if (root && isGafcoreSupabaseUrl(display.selfSupabaseUrl || "https://supabase.gafcore.com")) {
-      urlHint.textContent = `DB del proyecto: ${gafcoreProjectSlugFromRoot(root)}`;
-      urlHint.hidden = false;
-    } else {
-      urlHint.textContent = "";
-      urlHint.hidden = true;
+    if (root) {
+      urlHint.textContent = `Proyecto activo: ${pathBasename(root)} (reconociendo .env / docker-compose)`;
     }
   }
-  // Limpiar bóveda si aún guarda path ajeno (/taxidriv, ...).
-  const safeVaultUrl = vaultSafeSupabaseUrl(saved.selfSupabaseUrl);
-  if (safeVaultUrl && safeVaultUrl !== String(saved.selfSupabaseUrl || "").replace(/\/+$/, "")) {
-    void saveSecureJson("editcore-connections", { ...saved, selfSupabaseUrl: safeVaultUrl });
-  }
+
+  setupAddConnectionDrawer();
   renderConnectionStatus();
+}
+
+function setupAddConnectionDrawer() {
+  const toggleBtn = $("toggleAddConnectionBtn");
+  const catalog = $("addConnectionCatalog");
+  if (!toggleBtn || !catalog || toggleBtn.__initialized) return;
+  toggleBtn.__initialized = true;
+
+  toggleBtn.onclick = () => {
+    const isHidden = catalog.style.display === "none";
+    catalog.style.display = isHidden ? "block" : "none";
+    toggleBtn.textContent = isHidden ? "✕ Cerrar catálogo" : "+ Añadir Conexión";
+  };
+
+  document.querySelectorAll(".add-service-option").forEach((btn) => {
+    btn.onclick = () => {
+      const svc = btn.dataset.addService;
+      const form = $("dynamicServiceForm");
+      const title = $("dynamicServiceName");
+      const valInput = $("dynamicServiceValue");
+      if (!form || !title || !valInput) return;
+      form.style.display = "block";
+      const titles = {
+        cloudflare: "Cloudflare (API Token)",
+        neon: "Neon / Postgres (Connection String o Token)",
+        aws: "AWS / S3 (Access Key / Secret)",
+        custom: "Integración Personalizada (Token / URL)",
+      };
+      title.textContent = titles[svc] || "Configuración";
+      valInput.dataset.targetService = svc;
+      valInput.value = "";
+      valInput.focus();
+    };
+  });
+
+  const saveDynamicBtn = $("saveDynamicServiceBtn");
+  if (saveDynamicBtn) {
+    saveDynamicBtn.onclick = async () => {
+      const valInput = $("dynamicServiceValue");
+      const svc = valInput?.dataset?.targetService;
+      const val = valInput?.value?.trim();
+      if (!svc || !val) return;
+      const current = loadJson("editcore-connections", {});
+      current[`custom_${svc}`] = val;
+      await saveSecureJson("editcore-connections", current);
+      $("status").textContent = `Integración ${svc} guardada en bóveda segura.`;
+      valInput.value = "";
+      if ($("dynamicServiceForm")) $("dynamicServiceForm").style.display = "none";
+      if (catalog) catalog.style.display = "none";
+      if (toggleBtn) toggleBtn.textContent = "+ Añadir Conexión";
+    };
+  }
 }
 
 async function renderGatewayProjectStatus() {
@@ -1016,7 +1067,7 @@ async function saveConnections() {
   document.querySelectorAll("[data-conn]").forEach((input) => {
     const key = input.dataset.conn;
     const next = input.value.trim();
-    const isSecret = /token|key|password|secret|host|path/i.test(String(key || ""));
+    const isSecret = /token|key|password|secret|path/i.test(String(key || ""));
     // Boveda: nunca pisar un secreto guardado con vacio (autofill / campo no tocado).
     if (isSecret) {
       if (!next) {
@@ -1028,56 +1079,62 @@ async function saveConnections() {
     }
     if (next || !(key in previous)) data[key] = next;
   });
-  // Netlify retirado de la bóveda UI: no lo usamos.
+
+  // Limpiar servicios y claves obsoletas
   delete data.netlifyToken;
   delete data.netlifySiteId;
-  // Cloud token / Org ID de Supabase Cloud: retirados de la UI (solo usamos Supabase propio URL+API Key).
   delete data.supabaseCloudToken;
   delete data.supabaseOrgId;
   delete data.supabaseManagementToken;
-  if (data.selfSupabaseUrl) {
-    data.selfSupabaseUrl = String(data.selfSupabaseUrl || "")
-      .trim()
-      .replace(/\/+$/, "")
-      .replace(/\/gafcore-gateway(?:\/api(?:\/openai(?:\/v1)?)?)?$/i, "")
-      .replace(/\/api\/openai\/v1$/i, "")
-      .replace(/\/rest\/v1$/i, "")
-      .replace(/\/+$/, "");
-    // Nunca persistir /taxidriv u otro slug en la bóveda global.
-    data.selfSupabaseUrl = vaultSafeSupabaseUrl(data.selfSupabaseUrl) || data.selfSupabaseUrl;
-    const urlInput = document.querySelector("[data-conn='selfSupabaseUrl']");
-    if (urlInput) {
-      urlInput.value = displaySupabaseUrlForActiveProject(data.selfSupabaseUrl, state.projectRoot || "");
-    }
+  delete data.serverHost;
+  delete data.serverKeyPath;
+  delete data.serverDeployPath;
+  delete data.selfSupabaseUrl;
+  delete data.selfSupabaseKey;
+
+  const dockerToggle = $("dockerSupportToggle");
+  data.dockerEnabled = dockerToggle ? dockerToggle.checked : true;
+
+  if (data.supabaseUrl) {
+    data.supabaseUrl = String(data.supabaseUrl || "").trim().replace(/\/+$/, "");
   }
+
   await saveSecureJson("editcore-connections", data);
   await saveSecureJson("editcore-rtk", { enabled: true });
-  // Guardar = persistir boveda. No martillar APIs (GitHub rate-limit / falsos ERROR).
   await renderConnectionStatus(false);
-  $("status").textContent = "Conexiones guardadas (boveda). Usa «Probar ahora» solo para validar red. Supabase se resuelve por proyecto activo (.env) si existe.";
+  $("status").textContent = "Conexiones guardadas en bóveda. Supabase y Docker operando para tus proyectos.";
 }
 
 async function renderConnectionStatus(validate = false) {
   const preview = isPreviewAsUser();
   if (preview) validate = false;
   const saved = preview ? {} : loadJson("editcore-connections", {});
+  const hasSupabase = Boolean(
+    (saved.supabaseUrl && (saved.supabaseAnonKey || saved.supabaseServiceKey)) ||
+    (saved.selfSupabaseUrl && saved.selfSupabaseKey)
+  );
   const map = {
-    github:      !!saved.githubToken,
-    vercel:      !!saved.vercelToken,
-    selfsupabase: !!(saved.selfSupabaseUrl && saved.selfSupabaseKey),
-    ssh:         !!(saved.serverHost && saved.serverKeyPath),
+    github:   !!saved.githubToken,
+    vercel:   !!saved.vercelToken,
+    supabase: hasSupabase,
+    docker:   saved.dockerEnabled !== false,
   };
   Object.entries(map).forEach(([key, configured]) => {
     const badge = document.querySelector(`.conn-status[data-service="${key}"]`);
     if (!badge) return;
     badge.classList.remove("connected", "error");
     badge.removeAttribute("title");
+    if (key === "docker") {
+      badge.textContent = configured ? "activo" : "desactivado";
+      badge.classList.toggle("connected", configured);
+      return;
+    }
     if (!configured) {
       badge.textContent = "sin configurar";
       return;
     }
-    // Sin validate: mostrar "en boveda" (no ERROR por red/rate-limit).
-    badge.textContent = "en boveda";
+    // Sin validate: mostrar "en bóveda"
+    badge.textContent = "en bóveda";
     badge.classList.add("connected");
   });
   if (preview) {
@@ -1186,12 +1243,15 @@ function connectVercel() {
   openExternal("https://vercel.com/account/tokens");
 }
 
-function connectSelfSupabase() {
-  const urlKey = "selfSupabaseUrl";
-  const keyKey = "selfSupabaseKey";
-  const url = document.querySelector(`[data-conn='${urlKey}']`)?.value.trim();
-  const key = document.querySelector(`[data-conn='${keyKey}']`)?.value.trim();
+function connectSupabase() {
+  const url = document.querySelector("[data-conn='supabaseUrl']")?.value.trim();
+  const key = document.querySelector("[data-conn='supabaseAnonKey']")?.value.trim();
   if (url && key) { saveConnections(); return; }
+  openExternal("https://supabase.com/dashboard");
+}
+
+function connectSelfSupabase() {
+  return connectSupabase();
 }
 
 function renderDialogAfterOpen(dialog, render) {
@@ -15409,6 +15469,8 @@ document.querySelector(".conn-connect-btn[data-service='vercel']")
   ?.addEventListener("click", connectVercel);
 document.querySelector(".conn-connect-btn[data-service='selfsupabase']")
   ?.addEventListener("click", connectSelfSupabase);
+document.querySelector(".conn-connect-btn[data-service='supabase']")
+  ?.addEventListener("click", connectSupabase);
 
 $("newProjectBtn").addEventListener("click", openNewProjectDialog);
 $("saveProjectBtn")?.addEventListener("click", saveCurrentProjectEntry);

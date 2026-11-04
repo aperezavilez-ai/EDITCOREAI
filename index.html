@@ -1152,7 +1152,7 @@
           <header class="dlg-head">
             <div>
               <h2>Conexiones</h2>
-              <p>Bóveda segura en esta computadora. Conecta tus propias cuentas de GitHub, Vercel, Supabase y SSH; nadie más las ve. Los modelos de IA los administra el administrador de EditCoreAI.</p>
+              <p>Bóveda segura en tu computadora. Conecta tus cuentas oficiales (GitHub, Vercel, Supabase y Docker). Nadie más las ve. Los modelos de IA se administran en el selector de Modelos.</p>
               <p id="connectionsPreviewNote" class="conn-preview-note" hidden>Vista de usuario: así ve este panel un cliente nuevo (vacío). Tus conexiones reales no se muestran ni se modifican.</p>
             </div>
             <button id="closeConnectionsBtn" type="button" class="dlg-close">✕</button>
@@ -1172,7 +1172,7 @@
               <div class="conn-error-detail" data-service="github" style="display:none;color:#e55;font-size:0.8em;margin-top:4px;padding:4px 8px;background:rgba(255,80,80,0.08);border-radius:4px;word-break:break-word;"></div>
             </div>
 
-              <div class="conn-section">
+            <div class="conn-section">
               <div class="conn-section-title">Vercel <span class="conn-status" data-service="vercel">sin conectar</span></div>
               <div class="oauth-row">
                 <div class="conn-field">
@@ -1184,24 +1184,60 @@
               <div class="conn-error-detail" data-service="vercel" style="display:none;color:#e55;font-size:0.8em;margin-top:4px;padding:4px 8px;background:rgba(255,80,80,0.08);border-radius:4px;word-break:break-word;"></div>
             </div>
 
-              <div class="conn-section">
-              <div class="conn-section-title">Supabase propio <span class="conn-status" data-service="selfsupabase">sin conectar</span></div>
+            <div class="conn-section">
+              <div class="conn-section-title">Supabase Oficial <span class="conn-status" data-service="supabase">sin conectar</span></div>
               <div class="conn-grid">
-                <div class="conn-field"><span>URL</span><input data-conn="selfSupabaseUrl" placeholder="https://supabase.gafcore.com/tu-proyecto" /><small id="selfSupabaseProjectHint" hidden style="display:block;margin-top:4px;opacity:.75"></small></div>
-                <div class="conn-field"><span>API Key</span><input data-conn="selfSupabaseKey" type="password" /></div>
+                <div class="conn-field">
+                  <span>Project URL (Cloud o Docker local)</span>
+                  <input data-conn="supabaseUrl" placeholder="https://xyzcompany.supabase.co o http://127.0.0.1:54321" />
+                  <small id="supabaseProjectHint" style="display:block;margin-top:4px;opacity:.75;font-size:0.8em;">Detectado automáticamente desde .env / docker-compose del proyecto</small>
+                </div>
+                <div class="conn-field">
+                  <span>Anon / API Key</span>
+                  <input data-conn="supabaseAnonKey" type="password" placeholder="eyJhbGciOi..." />
+                </div>
               </div>
-              <div class="conn-error-detail" data-service="selfsupabase" style="display:none;color:#e55;font-size:0.8em;margin-top:4px;padding:4px 8px;background:rgba(255,80,80,0.08);border-radius:4px;word-break:break-word;"></div>
-              <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:6px;flex-wrap:wrap">
-                <button type="button" id="createSupabaseProjectBtn" class="conn-connect-btn" title="Crea supabase/ en el proyecto activo">Crear en proyecto</button>
-                <button type="button" class="conn-connect-btn" data-service="selfsupabase">Guardar →</button>
+              <div class="conn-grid" style="margin-top:6px;">
+                <div class="conn-field">
+                  <span>Service Role Key (Opcional, administración / migraciones)</span>
+                  <input data-conn="supabaseServiceKey" type="password" placeholder="eyJhbGciOi..." />
+                </div>
+                <div style="display:flex;align-items:flex-end;justify-content:flex-end;gap:8px;">
+                  <button type="button" class="conn-connect-btn" data-service="supabase">Guardar →</button>
+                </div>
               </div>
+              <div class="conn-error-detail" data-service="supabase" style="display:none;color:#e55;font-size:0.8em;margin-top:4px;padding:4px 8px;background:rgba(255,80,80,0.08);border-radius:4px;word-break:break-word;"></div>
             </div>
 
             <div class="conn-section">
-              <div class="conn-section-title">Servidor SSH <span class="conn-status" data-service="ssh">sin conectar</span></div>
-              <div class="conn-grid">
-                <div class="conn-field"><span>Host (usuario@host:puerto)</span><input data-conn="serverHost" placeholder="usuario@host:22" /></div>
-                <div class="conn-field"><span>Ruta clave SSH</span><input data-conn="serverKeyPath" placeholder="C:\ruta\id_rsa" /></div>
+              <div class="conn-section-title">Docker & Contenedores <span class="conn-status" data-service="docker">activo</span></div>
+              <p style="font-size:0.82em;color:var(--text-muted,#888);margin:4px 0 6px;">Detección automática de Docker Engine, docker-compose y contenedores locales en tus proyectos.</p>
+              <label style="display:flex;align-items:center;gap:8px;font-size:0.85em;cursor:pointer;">
+                <input type="checkbox" id="dockerSupportToggle" data-conn="dockerEnabled" checked />
+                <span>Reconocer Docker en proyectos (docker-compose.yml / Dockerfile / Supabase CLI)</span>
+              </label>
+            </div>
+
+            <div class="conn-add-drawer" style="margin-top:12px;padding-top:12px;border-top:1px solid rgba(255,255,255,0.08);">
+              <div style="display:flex;justify-content:space-between;align-items:center;">
+                <span style="font-size:0.85em;font-weight:600;color:var(--text-muted, #aaa);">Más Integraciones</span>
+                <button type="button" id="toggleAddConnectionBtn" class="btn-outline-teal" style="font-size:0.8em;padding:4px 10px;">+ Añadir Conexión</button>
+              </div>
+              <div id="addConnectionCatalog" style="display:none;margin-top:10px;padding:10px;background:rgba(0,0,0,0.25);border-radius:6px;border:1px dashed rgba(255,255,255,0.15);">
+                <p style="font-size:0.8em;color:var(--text-muted, #aaa);margin-bottom:8px;">Selecciona una integración para conectar:</p>
+                <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(130px, 1fr));gap:8px;">
+                  <button type="button" class="btn-outline add-service-option" data-add-service="cloudflare" style="text-align:left;padding:8px;font-size:0.8em;">☁️ Cloudflare</button>
+                  <button type="button" class="btn-outline add-service-option" data-add-service="neon" style="text-align:left;padding:8px;font-size:0.8em;">🐘 Neon / Postgres</button>
+                  <button type="button" class="btn-outline add-service-option" data-add-service="aws" style="text-align:left;padding:8px;font-size:0.8em;">📦 AWS / S3</button>
+                  <button type="button" class="btn-outline add-service-option" data-add-service="custom" style="text-align:left;padding:8px;font-size:0.8em;">🔑 API Personalizada</button>
+                </div>
+                <div id="dynamicServiceForm" style="display:none;margin-top:10px;padding-top:8px;border-top:1px solid rgba(255,255,255,0.08);">
+                  <div class="conn-field">
+                    <span id="dynamicServiceName" style="font-weight:bold;font-size:0.85em;">Configuración</span>
+                    <input id="dynamicServiceValue" type="password" placeholder="API Key, Token o Connection String..." />
+                  </div>
+                  <button type="button" id="saveDynamicServiceBtn" class="btn-primary" style="margin-top:6px;font-size:0.8em;padding:4px 10px;">Guardar Integración</button>
+                </div>
               </div>
             </div>
 
