@@ -3,6 +3,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const crypto = require("node:crypto");
+const os = require("node:os");
 
 const FRAMEWORKS = [
   { name: "vite", pattern: /^vite(?:\s+(?:dev|serve))?(?:\s|$)/i, binary: ["vite", "bin", "vite.js"], args: (port) => ["--host", "127.0.0.1", "--port", String(port), "--strictPort"] },
@@ -303,6 +304,82 @@ function resolveDesktopPreviewTarget(root, pkg) {
   return null;
 }
 
+function findPythonExecutable(projectRoot) {
+  if (projectRoot) {
+    const venvPaths = [
+      path.join(projectRoot, ".venv", "Scripts", "python.exe"),
+      path.join(projectRoot, "venv", "Scripts", "python.exe"),
+      path.join(projectRoot, "env", "Scripts", "python.exe"),
+      path.join(projectRoot, ".venv", "bin", "python"),
+      path.join(projectRoot, "venv", "bin", "python"),
+    ];
+    for (const vp of venvPaths) {
+      if (fs.existsSync(vp)) return vp;
+    }
+  }
+  const systemCandidates = [
+    path.join(os.homedir(), "AppData", "Local", "Programs", "Python", "Python312", "python.exe"),
+    path.join(os.homedir(), "AppData", "Local", "Programs", "Python", "Python311", "python.exe"),
+    path.join(os.homedir(), "AppData", "Local", "Programs", "Python", "Python310", "python.exe"),
+    path.join(os.homedir(), "AppData", "Local", "Programs", "Python", "Launcher", "py.exe"),
+    "C:\\Program Files\\Python312\\python.exe",
+    "C:\\Program Files\\Python311\\python.exe",
+    "C:\\Python312\\python.exe",
+    "C:\\Python311\\python.exe",
+  ];
+  for (const sc of systemCandidates) {
+    if (fs.existsSync(sc)) return sc;
+  }
+  return process.platform === "win32" ? "python.exe" : "python3";
+}
+
+function resolvePythonPreviewTarget(root) {
+  const safeRoot = path.resolve(String(root || ""));
+  if (!fs.existsSync(safeRoot) || !fs.statSync(safeRoot).isDirectory()) return null;
+
+  const entryCandidates = ["app.py", "main.py", "manage.py", "wsgi.py", "server.py"];
+  let entry = "";
+  for (const cand of entryCandidates) {
+    if (fs.existsSync(path.join(safeRoot, cand))) {
+      entry = cand;
+      break;
+    }
+  }
+  if (!entry) return null;
+
+  const hasTemplates = fs.existsSync(path.join(safeRoot, "templates"));
+  const hasStatic = fs.existsSync(path.join(safeRoot, "static"));
+  const reqPath = path.join(safeRoot, "requirements.txt");
+  let reqContent = "";
+  try { if (fs.existsSync(reqPath)) reqContent = fs.readFileSync(reqPath, "utf8"); } catch {}
+  let entryContent = "";
+  try { entryContent = fs.readFileSync(path.join(safeRoot, entry), "utf8"); } catch {}
+
+  const isFlask = /flask/i.test(reqContent) || /from\s+flask|import\s+flask/i.test(entryContent);
+  const isFastApi = /fastapi|uvicorn/i.test(reqContent) || /from\s+fastapi|import\s+fastapi/i.test(entryContent);
+  const isDjango = entry === "manage.py" || /django/i.test(reqContent) || /django/i.test(entryContent);
+  const isStreamlit = /streamlit/i.test(reqContent) || /import\s+streamlit/i.test(entryContent);
+  const isGenericWeb = hasTemplates || hasStatic || /render_template|run\(|app\.run/i.test(entryContent);
+
+  if (!isFlask && !isFastApi && !isDjango && !isStreamlit && !isGenericWeb) {
+    return null;
+  }
+
+  let framework = "flask";
+  if (isFastApi) framework = "fastapi";
+  else if (isDjango) framework = "django";
+  else if (isStreamlit) framework = "streamlit";
+
+  return {
+    kind: "python",
+    mode: "python-server",
+    entry,
+    framework,
+    pythonExecutable: findPythonExecutable(safeRoot),
+    cwd: safeRoot,
+  };
+}
+
 /**
  * 🔧 FIX: normalizePreviewUrl defensiva.
  *
@@ -363,6 +440,8 @@ module.exports = {
   findRunnableProjectRoot,
   findStaticUiRoot,
   resolveDesktopPreviewTarget,
+  findPythonExecutable,
+  resolvePythonPreviewTarget,
   isPreviewDocumentContentType,
   normalizePreviewUrl,
   buildPreviewUrl,

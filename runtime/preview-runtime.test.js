@@ -5,7 +5,7 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const test = require("node:test");
-const { findRunnableProjectRoot, previewRuntimeFingerprint, readProjectPreviewEnv } = require("../preview-runtime");
+const { findRunnableProjectRoot, previewRuntimeFingerprint, readProjectPreviewEnv, resolvePythonPreviewTarget, findPythonExecutable } = require("../preview-runtime");
 
 function temporaryRoot(t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "editcore-preview-"));
@@ -98,3 +98,25 @@ test("lee archivos de entorno del modo desarrollo", (t) => {
     VITE_API_URL: "https://dev.example",
   });
 });
+
+test("detecta proyectos web Flask (ej. ALFA LUBES con app.py y templates)", (t) => {
+  const root = temporaryRoot(t);
+  fs.writeFileSync(path.join(root, "app.py"), "from flask import Flask\napp = Flask(__name__)\nif __name__ == '__main__': app.run()");
+  fs.mkdirSync(path.join(root, "templates"));
+  fs.writeFileSync(path.join(root, "requirements.txt"), "Flask==3.0.3\n");
+
+  const target = resolvePythonPreviewTarget(root);
+  assert.ok(target, "Debe detectar el target de Python");
+  assert.equal(target.kind, "python");
+  assert.equal(target.mode, "python-server");
+  assert.equal(target.entry, "app.py");
+  assert.equal(target.framework, "flask");
+  assert.ok(typeof target.pythonExecutable === "string" && target.pythonExecutable.length > 0);
+});
+
+test("no marca scripts python de terminal puro como servidores web", (t) => {
+  const root = temporaryRoot(t);
+  fs.writeFileSync(path.join(root, "data_processor.py"), "print('hello terminal')");
+  assert.equal(resolvePythonPreviewTarget(root), null);
+});
+

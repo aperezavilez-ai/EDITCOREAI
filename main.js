@@ -147,7 +147,7 @@ const { ResponseCache } = require("./response-cache");
 const { ToolCache } = require("./tool-cache");
 const { READ_METHODS, connectionSummary, digest, executeServiceRequest } = require("./service-harness");
 const { aggregateUsage, localCacheUsage, normalizeProviderUsage } = require("./usage-metrics");
-const { builtNextPreviewLaunch, directPreviewLaunch, findRunnableProjectRoot, isPreviewDocumentContentType, normalizePreviewUrl, previewRuntimeFingerprint, readProjectPreviewEnv, resolveDesktopPreviewTarget, stablePreviewPort, staticPreviewLaunch } = require("./preview-runtime");
+const { builtNextPreviewLaunch, directPreviewLaunch, findRunnableProjectRoot, findPythonExecutable, resolvePythonPreviewTarget, isPreviewDocumentContentType, normalizePreviewUrl, previewRuntimeFingerprint, readProjectPreviewEnv, resolveDesktopPreviewTarget, stablePreviewPort, staticPreviewLaunch } = require("./preview-runtime");
 const { ensureProjectDependencies } = require("./project-dependencies");
 const { capturePreview } = require("./visual-preview-inspector");
 const { documentContext, normalizeDocuments } = require("./document-attachments");
@@ -330,9 +330,22 @@ function addExistingPathEntries(entries) {
 }
 
 addExistingPathEntries([
+  path.join(os.homedir(), "AppData", "Local", "Programs", "Python", "Python312"),
+  path.join(os.homedir(), "AppData", "Local", "Programs", "Python", "Python312", "Scripts"),
+  path.join(os.homedir(), "AppData", "Local", "Programs", "Python", "Python311"),
+  path.join(os.homedir(), "AppData", "Local", "Programs", "Python", "Python311", "Scripts"),
+  path.join(os.homedir(), "AppData", "Local", "Programs", "Python", "Python310"),
+  path.join(os.homedir(), "AppData", "Local", "Programs", "Python", "Python310", "Scripts"),
+  path.join(os.homedir(), "AppData", "Local", "Programs", "Python", "Launcher"),
   path.join(os.homedir(), "AppData", "Roaming", "Python", "Python312", "Scripts"),
   path.join(os.homedir(), "AppData", "Roaming", "Python", "Python311", "Scripts"),
   path.join(os.homedir(), "AppData", "Roaming", "Python", "Python310", "Scripts"),
+  "C:\\Program Files\\Python312",
+  "C:\\Program Files\\Python312\\Scripts",
+  "C:\\Program Files\\Python311",
+  "C:\\Program Files\\Python311\\Scripts",
+  "C:\\Python312",
+  "C:\\Python311",
 ]);
 
 // FIX A: Node.js + npm al PATH. Sin esto, spawn("npm install") falla con ENOENT
@@ -2927,6 +2940,8 @@ async function startProjectPreviewNow(safeRoot, ownerId) {
     try { rootPkg = JSON.parse(fs.readFileSync(path.join(safeRoot, "package.json"), "utf8")); } catch { /* sin package.json */ }
     const desktop = resolveDesktopPreviewTarget(safeRoot, rootPkg);
     if (desktop) return startDesktopPreview(safeRoot, ownerId, desktop);
+    const pythonTarget = resolvePythonPreviewTarget(safeRoot);
+    if (pythonTarget) return startPythonPreview(safeRoot, ownerId, pythonTarget);
     return { available: false, url: "", message: "Este proyecto no tiene interfaz que mostrar en el navegador (ni script dev/start ni index.html). Ejecutalo desde la Terminal." };
   }
   let pkg;
@@ -3235,7 +3250,111 @@ async function startDesktopPreview(safeRoot, ownerId, target) {
   } catch (error) {
     fail(runtime, error);
   }
-  logPreviewRuntime(`Preview ${label} estatico ${safeRoot} â†’ ${runtime.url}`);
+  logPreviewRuntime(`Preview ${label} estatico ${safeRoot} → ${runtime.url}`);
+  return describe(runtime, true);
+}
+
+async function startPythonPreview(safeRoot, ownerId, target) {
+  const label = `Python (${target.framework || "web"})`;
+  const pythonKey = `python|${target.entry}|${target.pythonExecutable}`;
+  const describe = (runtime, started) => ({
+    available: true,
+    started,
+    remote: runtime.remote === true,
+    pid: runtime.child?.pid || 0,
+    script: runtime.script,
+    url: runtime.url,
+    runtimeRoot: safeRoot,
+    desktop: "python",
+    desktopLabel: label,
+  });
+
+  const existing = previewProcesses.get(safeRoot);
+  if (existing?.pythonKey === pythonKey && existing.url && existing.child?.exitCode === null && await isHttpReady(existing.url)) {
+    existing.owners.add(ownerId);
+    return describe(existing, false);
+  }
+  if (existing) {
+    stopPreviewRuntime(existing);
+    previewProcesses.delete(safeRoot);
+  }
+
+  const dedicatedBasePort = stablePreviewPort(safeRoot);
+  const assignedPort = await findAvailablePort(dedicatedBasePort, 200);
+  const previewUrl = `http://127.0.0.1:${assignedPort}`;
+
+  for (const [otherRoot, otherRuntime] of previewProcesses) {
+    if (otherRoot !== safeRoot && otherRuntime?.owners?.has(ownerId)) {
+      otherRuntime.owners.delete(otherRoot);
+      if (!otherRuntime.owners.size) {
+        logPreviewRuntime(`Deteniendo preview anterior no utilizado: ${otherRoot}`);
+        stopPreviewRuntime(otherRuntime);
+        previewProcesses.delete(otherRoot);
+      }
+    }
+  }
+
+  let cmdArgs = [target.entry];
+  if (target.framework === "django") {
+    cmdArgs = ["manage.py", "runserver", `127.0.0.1:${assignedPort}`, "--noreload"];
+  } else if (target.framework === "fastapi") {
+    const moduleName = target.entry.replace(/\.py$/, "");
+    cmdArgs = ["-m", "uvicorn", `${moduleName}:app`, "--host", "127.0.0.1", "--port", String(assignedPort)];
+  } else if (target.framework === "streamlit") {
+    cmdArgs = ["-m", "streamlit", "run", target.entry, "--server.port", String(assignedPort), "--server.headless", "true"];
+  }
+
+  const child = spawn(target.pythonExecutable, cmdArgs, {
+    cwd: safeRoot,
+    windowsHide: true,
+    detached: false,
+    stdio: ["ignore", "pipe", "pipe"],
+    env: {
+      ...process.env,
+      PORT: String(assignedPort),
+      FLASK_RUN_PORT: String(assignedPort),
+      FLASK_APP: target.entry,
+      PYTHONUNBUFFERED: "1",
+      BROWSER: "none",
+      FORCE_COLOR: "0",
+    },
+  });
+
+  const runtime = {
+    child,
+    script: `${path.basename(target.pythonExecutable)} ${target.entry}`,
+    url: "",
+    runtimeRoot: safeRoot,
+    owners: new Set([ownerId]),
+    pythonKey,
+  };
+
+  previewProcesses.set(safeRoot, runtime);
+  runtime.child.once("exit", () => {
+    try { runtime.logDetach?.(); } catch {}
+    if (previewProcesses.get(safeRoot) === runtime) previewProcesses.delete(safeRoot);
+  });
+  runtime.child.once("error", () => {
+    try { runtime.logDetach?.(); } catch {}
+    if (previewProcesses.get(safeRoot) === runtime) previewProcesses.delete(safeRoot);
+  });
+
+  runtime.logDetach = attachPreviewLogStream({
+    child,
+    projectRoot: safeRoot,
+    stateByRoot: previewLogStates,
+    emit: (payload) => emitPreviewDaemonEvent(safeRoot, payload),
+  }).detach;
+
+  try {
+    runtime.url = await detectListeningUrl(child, previewUrl, PREVIEW_START_TIMEOUT_MS, { value: "" });
+  } catch (error) {
+    stopPreviewRuntime(runtime);
+    if (previewProcesses.get(safeRoot) === runtime) previewProcesses.delete(safeRoot);
+    throw error;
+  }
+
+  logPreviewRuntime(`Preview ${label} listo ${safeRoot} → ${runtime.url}`);
   return describe(runtime, true);
 }
 
@@ -6082,13 +6201,15 @@ ipcMain.handle("project:preview-health", async (event, rootPath) => {
   if (!runtime?.child || runtime.child.exitCode !== null || !runtime.url) {
     return { available: false, url: runtime?.url || "", reason: "Preview no iniciado." };
   }
-  const currentRuntimeRoot = findRunnableProjectRoot(safeRoot);
-  if (!currentRuntimeRoot
-    || runtime.fingerprint !== previewRuntimeFingerprint(safeRoot, currentRuntimeRoot)) {
-    logPreviewRuntime(`Configuracion de preview modificada; reiniciando ${safeRoot}`);
-    stopPreviewRuntime(runtime);
-    previewProcesses.delete(safeRoot);
-    return { available: false, url: "", reason: "La configuracion del proyecto cambio; reiniciando preview." };
+  if (!runtime?.desktopKey && !runtime?.pythonKey) {
+    const currentRuntimeRoot = findRunnableProjectRoot(safeRoot);
+    if (!currentRuntimeRoot
+      || runtime.fingerprint !== previewRuntimeFingerprint(safeRoot, currentRuntimeRoot)) {
+      logPreviewRuntime(`Configuracion de preview modificada; reiniciando ${safeRoot}`);
+      stopPreviewRuntime(runtime);
+      previewProcesses.delete(safeRoot);
+      return { available: false, url: "", reason: "La configuracion del proyecto cambio; reiniciando preview." };
+    }
   }
   try {
     if (!(await isHttpReady(runtime.url))) {
