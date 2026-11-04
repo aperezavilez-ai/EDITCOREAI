@@ -3,16 +3,19 @@
 /**
  * EditCoreAI - Core Agent Controller (Motor Estilo Cline)
  * 
- * Reemplaza los orquestadores antiguos con una máquina de estados unidireccional y robusta:
+ * Máquina de estados unidireccional y robusta:
  * - IDLE -> THINKING -> WAITING_APPROVAL -> EXECUTING -> THINKING -> DONE
- * - Intercepta cada mutación y solicita aprobación en la UI si el modo no es 'full'.
- * - Aplica compactación de contexto automática antes de cada llamada LLM.
+ * - Sin barreras de regex que bloqueen herramientas legítimas.
+ * - Soporte de Modo Solo Lectura y Modo Paso a Paso con UI Bridge.
+ * - Detección de bucles repetitivos y cadencia determinista.
+ * - Compactación de contexto automática antes de cada llamada LLM.
  * - Soporta streaming y reporte en vivo de eventos.
  */
 
 const { ContextCompactor } = require("./context-compactor");
 const { buildEditCoreSystemPrompt, FormatResponse } = require("./prompt-builder");
 const { EditCoreClineTools } = require("./tool-executor");
+const { BrainProviderGateway } = require("../editcore-brain/provider-gateway");
 
 const STATE = {
   IDLE: "IDLE",
@@ -23,25 +26,15 @@ const STATE = {
   ERROR: "ERROR"
 };
 
-const { BrainProviderGateway } = require("../editcore-brain/provider-gateway");
-
-const QUESTION_WORDS_RE = /^(?:por\s*qu[eé]|prque|qu[eé]\s+(?:pas[oó]|sucede|ocurre|es|significa|fall[oó]|error)|c[oó]mo|explicame|expl[ií]came|dime|cu[aá]l\s+es|por\s*que\s+tanto\s+error|por\s*que\s+paras|prque\s+paras|analiza|qu[eé]\s+haces|quien\s+eres|qui[eé]n\s+eres|[?¿])/i;
-
-const APPROVAL_WORDS_RE = /\b(?:procede|proceder|autorizo|autorizado|autoriza|continua|contin[uú]a|dale|adelante|hazlo|aplica(?:lo)?|ejecuta(?:lo)?|s[ií]\s*,\s*(?:hazlo|procede|autorizo)|ok\s*,\s*(?:hazlo|procede)|de\s+acuerdo)\b/i;
-
+// Funciones de utilidad para clasificación / metadatos si se requieren
 function isQuestionInput(text = "") {
   const trimmed = String(text || "").trim();
   if (!trimmed) return false;
-  if (/^[?¿]/.test(trimmed) || /[?¿]$/.test(trimmed)) return true;
-  if (QUESTION_WORDS_RE.test(trimmed)) return true;
-  if (/\b(?:por\s*qu[eé]\s+tanto\s+error|por\s*qu[eé]\s+(?:hay|da|tienes?)\s+error|por\s*qu[eé]\s+paras|prque\s+paras|expl[ií]came\s+por\s*qu[eé]|qu[eé]\s+pas[oó]\s+aqu[ií])\b/i.test(trimmed)) {
-    return true;
-  }
-  return false;
+  return /^[?¿]|^(?:por\s*qu[eé]|prque|qu[eé]\s+(?:pas[oó]|sucede|ocurre|es|significa|fall[oó]|error)|c[oó]mo|explicame|expl[ií]came|dime|cu[aá]l\s+es|quien\s+eres|qui[eé]n\s+eres)/i.test(trimmed);
 }
 
 function isApprovalInput(text = "") {
-  return APPROVAL_WORDS_RE.test(String(text || "").trim());
+  return /\b(?:procede|proceder|autorizo|autorizado|autoriza|continua|contin[uú]a|dale|adelante|hazlo|aplica(?:lo)?|ejecuta(?:lo)?)\b/i.test(String(text || "").trim());
 }
 
 class EditCoreClineController {
@@ -51,14 +44,14 @@ class EditCoreClineController {
     this.existingTools = deps.existingTools || null;
     this.uiBridge = deps.uiBridge || {
       updateStatus: () => {},
-      requestApproval: async () => false,
+      requestApproval: async () => true,
       onProgress: () => {}
     };
     this.compactor = new ContextCompactor();
     this.state = STATE.IDLE;
     this.messages = [];
     this.isAborted = false;
-    this.maxTurns = deps.maxTurns || 50;
+    this.maxTurns = deps.maxTurns || 25;
   }
 
   abort() {
@@ -82,16 +75,12 @@ class EditCoreClineController {
     this.isAborted = false;
     this.state = STATE.THINKING;
 
-    const isQuestion = isQuestionInput(prompt);
-    const isApproved = isApprovalInput(prompt);
-    const isStepMode = !fullAccess && permissionMode !== "full";
-
+    const isReadonly = permissionMode === "readonly";
     const toolExecutor = new EditCoreClineTools(projectRoot, this.existingTools);
     const systemPrompt = buildEditCoreSystemPrompt({
       workspaceRoot: projectRoot,
       mode,
       permissionMode,
-      isQuestion,
       rules
     });
 
@@ -108,20 +97,15 @@ class EditCoreClineController {
 
     notify({
       phase: "thought",
-      text: isQuestion
-        ? "Analizando consulta y diagnosticando el estado..."
-        : "Iniciando análisis con motor EditCoreAI..."
+      text: "Iniciando análisis con motor EditCoreAI..."
     });
 
     let turnCount = 0;
-    let toolFailureCount = 0;
-    const maxTurnsThisRun = isStepMode ? Math.min(this.maxTurns, 4) : this.maxTurns;
+    const maxTurnsThisRun = Math.min(this.maxTurns, 25);
+    const recentToolCalls = [];
 
-    // Si el usuario hace una pregunta, solo ofrecemos herramientas de solo lectura
-    const allTools = toolExecutor.getDefinitions();
-    const availableTools = isQuestion
-      ? allTools.filter((t) => !["write_file", "write_to_file", "replace_in_file", "run_command", "execute_command"].includes(t.function?.name))
-      : allTools;
+    // Todas las herramientas disponibles para el modelo sin restricciones artificiales
+    const availableTools = toolExecutor.getDefinitions();
 
     while (this.state !== STATE.DONE && !this.isAborted && turnCount < maxTurnsThisRun) {
       turnCount++;
@@ -174,6 +158,8 @@ class EditCoreClineController {
       }
 
       // 3. Procesamiento de llamadas a herramientas
+      let loopDetected = false;
+
       for (const call of assistantMessage.tool_calls) {
         if (this.isAborted) break;
 
@@ -189,22 +175,7 @@ class EditCoreClineController {
 
         const isMutation = ["write_file", "write_to_file", "replace_in_file", "run_command", "execute_command"].includes(toolName);
 
-        // Bloqueo 1: Modo Pregunta / Diagnóstico no permite mutaciones ("no escribir como loco")
-        if (isQuestion && isMutation) {
-          this.messages.push({
-            role: "tool",
-            tool_call_id: call.id,
-            name: toolName,
-            content: JSON.stringify({
-              error: `[EditCoreAI] El usuario hizo una pregunta o solicitó diagnóstico ('${prompt}'). No debes modificar código ni ejecutar comandos mutantes. Responde a su pregunta explicando técnicamente la causa del error y el plan propuesto, solicitando confirmación con 'procede' o 'autorizo'.`
-            })
-          });
-          notify({ phase: "tool", stage: "rejected", name: toolName, input: toolArgs, error: "Modo diagnóstico: mutaciones no permitidas" });
-          continue;
-        }
-
-        // Bloqueo 2: Modo Solo Lectura
-        const isReadonly = permissionMode === "readonly";
+        // Bloqueo 1: Modo Solo Lectura
         if (isReadonly && isMutation) {
           this.messages.push({
             role: "tool",
@@ -216,20 +187,20 @@ class EditCoreClineController {
           continue;
         }
 
-        // Bloqueo 3: Modo Paso a Paso (Step) sin autorización explícita ("procede", "autorizo")
-        if (isStepMode && isMutation && !isApproved) {
+        // Bloqueo 2: Modo Paso a Paso (Step) con UI Bridge interactivo si el usuario deniega
+        if (!fullAccess && permissionMode === "step" && isMutation && typeof this.uiBridge.requestApproval === "function") {
           this.state = STATE.WAITING_APPROVAL;
           notify({ phase: "approval", name: toolName, input: toolArgs, stage: "waiting" });
 
           const approved = await this.uiBridge.requestApproval(toolName, toolArgs);
-          if (!approved) {
+          if (approved === false) {
             this.messages.push({
               role: "tool",
               tool_call_id: call.id,
               name: toolName,
               content: JSON.stringify({
-                status: "waiting_authorization",
-                message: `[EditCoreAI - Esperando Autorización] La herramienta '${toolName}' requiere confirmación explícita del usuario ('procede' o 'autorizo') antes de modificar archivos o ejecutar comandos. Explica al usuario qué cambios vas a realizar y pídele autorización.`
+                status: "denied",
+                message: `[EditCoreAI] La herramienta '${toolName}' fue denegada por el usuario desde la interfaz.`
               })
             });
             notify({ phase: "tool", stage: "rejected", name: toolName, input: toolArgs });
@@ -237,7 +208,27 @@ class EditCoreClineController {
           }
         }
 
-        // 5. Ejecución segura de la herramienta
+        // Detección de bucle repetitivo (misma herramienta con exactamente mismos argumentos 3 veces consecutivas)
+        const callSig = `${toolName}:${JSON.stringify(toolArgs)}`;
+        recentToolCalls.push(callSig);
+        if (recentToolCalls.length >= 3) {
+          const last3 = recentToolCalls.slice(-3);
+          if (last3[0] === last3[1] && last3[1] === last3[2]) {
+            loopDetected = true;
+            this.messages.push({
+              role: "tool",
+              tool_call_id: call.id,
+              name: toolName,
+              content: JSON.stringify({
+                ok: false,
+                error: `[EditCoreAI - Bucle Detectado] La herramienta '${toolName}' se ha invocado repetidamente con los mismos argumentos sin cambios. Detén las llamadas idénticas y explica el estado al usuario.`
+              })
+            });
+            break;
+          }
+        }
+
+        // 4. Ejecución segura de la herramienta
         this.state = STATE.EXECUTING;
         notify({ phase: "tool", stage: "running", name: toolName, input: toolArgs });
 
@@ -246,10 +237,6 @@ class EditCoreClineController {
           result = await toolExecutor.execute(toolName, toolArgs);
         } catch (execError) {
           result = { ok: false, error: execError.message };
-        }
-
-        if (result && result.ok === false) {
-          toolFailureCount++;
         }
 
         this.messages.push({
@@ -262,8 +249,7 @@ class EditCoreClineController {
         notify({ phase: "tool", stage: "done", name: toolName, input: toolArgs, result, ok: result.ok !== false });
       }
 
-      // Si se acumulan fallos de herramientas consecutivas, detener bucle y dar respuesta al usuario
-      if (toolFailureCount >= 2) {
+      if (loopDetected) {
         break;
       }
     }
@@ -287,7 +273,7 @@ class EditCoreClineController {
           if (parsed.message) {
             finalText = parsed.message;
           } else if (parsed.error) {
-            finalText = `Se presentó la siguiente situación al inspeccionar el código: ${parsed.error}`;
+            finalText = `Se presentó la siguiente situación: ${parsed.error}`;
           } else if (parsed.output) {
             const lines = String(parsed.output).trim().split("\n");
             finalText = `Resultado de la ejecución:\n\n${lines.slice(-15).join("\n")}`;
@@ -298,7 +284,7 @@ class EditCoreClineController {
           finalText = "Operación procesada.";
         }
       } else {
-        finalText = "Consulta analizada correctamente.";
+        finalText = "Operación completada exitosamente.";
       }
     }
 

@@ -15,7 +15,6 @@ function buildEditCoreSystemPrompt(options = {}) {
     platform = process.platform,
     mode = "act",
     permissionMode = "step",
-    isQuestion = false,
     rules = "",
     ideName = "EditCoreAI Studio",
   } = options;
@@ -36,43 +35,22 @@ function buildEditCoreSystemPrompt(options = {}) {
 5. Modo de Permisos: ${permissionMode.toUpperCase()}
 </entorno>
 
-REGLA FUNDAMENTAL: DIFERENCIAR PREGUNTAS/DUDAS DE ACCIONES/MUTACIONES:
-1. SI EL USUARIO HACE UNA PREGUNTA, CONSULTA TÉCNICA O DIAGNÓSTICO:
-   - Casos: "¿Por qué tanto error?", "¿Por qué paras?", "¿Qué significa este error?", "¿Cómo funciona X?", "¿Qué pasó con el build?", "¿Por qué falló?".
-   - ACCIÓN REQUERIDA: RESPONDE LA PREGUNTA DIRECTA Y TÉCNICAMENTE. Explica la causa raíz del error, el archivo y la línea afectada.
-   - PROHIBIDO: Ponerte a escribir código, editar archivos o ejecutar herramientas mutantes ("no te pongas a escribir como loco"). Solo diagnostica e informa.
-   - Puedes usar 'read_file' o 'grep_search' si necesitas ver el código para responder la duda con exactitud, pero NUNCA 'write_file' ni 'replace_in_file'.
-   - Al terminar de explicar la causa, propón la solución y dile al usuario: "Para aplicar esta corrección, responde con 'procede' o 'autorizo'".
-   - Concluye tu explicación emitiendo TASK_COMPLETE.
-
-2. COMPUERTA DE AUTORIZACIÓN ("PROCEDE", "AUTORIZO", "CONTINUA", "HAZLO"):
-   - En modo '${permissionMode}', NUNCA modifiques archivos ni ejecutes comandos de mutación sin autorización explícita previa del usuario.
-   - Si el usuario no ha dicho "procede", "autorizo", "continua" o "hazlo": Presenta primero tu plan quirúrgico paso a paso y pide su autorización.
-   - Únicamente cuando el usuario confirme con esas palabras (o en modo 'full'), ejecuta los cambios con 'replace_in_file' o 'write_file'.
-
-3. RESPUESTAS LIMPIAS (PROHIBIDO DUMP DE JSON):
-   - NUNCA muestres JSON crudo ni volcados internos en el chat. Redacta siempre en español técnico, claro y profesional.
-
-4. CADENCIA DE HERRAMIENTAS Y PARADA DETERMINISTA (ESTILO CLINE):
-   - Ejecuta un paso a la vez de forma precisa y deliberada.
-   - NUNCA re-leas archivos que ya leíste en turnos previos del historial; usa la información ya disponible en el contexto.
-   - NUNCA llames a 'write_file' con rutas de directorios ni sin especificar el nombre exacto de un archivo con su extensión.
-   - Si ejecutas un comando de compilación o verificación (como 'npm run build' o 'npx tsc') y el resultado es exitoso (exitCode 0), CONCLUYE DE INMEDIATO: emite TASK_COMPLETE con un resumen limpio del éxito al usuario. NO sigas invocando herramientas innecesarias.
-   - Si una herramienta falla, NO intentes bucles ciegos ni llamadas erráticas repetidas. Explica el fallo con honestidad técnica al usuario y detén la ejecución.
-
-DIRECTIVAS ESENCIALES:
-- Lee e inspecciona SIEMPRE antes de modificar código o ejecutar comandos que dependan del estado del proyecto.
-- No adivines ni inventes dependencias, puertos, rutas o esquemas de base de datos; usa read_file o run_command para verificarlos.
-- Código completo y funcional: NUNCA dejes marcadores como "// resto del código igual", "// TODO" o funciones truncadas.
-- Aplica cambios quirúrgicos con replace_in_file siempre que sea posible. Si creas archivos nuevos o esqueletos completos, usa write_file.
-- Respeta las convenciones del repositorio actual y nunca rompas código existente que ya esté funcionando.
-${rules ? `\n<reglas_adicionales>\n${rules}\n</reglas_adicionales>` : ""}
-
-FLUJO DE EJECUCIÓN:
-1. Si la entrada es una pregunta o diagnóstico: Explica de inmediato el por qué del fallo con precisión técnica. No mutes código.
-2. Si la entrada es una indicación o tarea:
-   a. Si no hay confirmación previa ("procede"/"autorizo"): Plantea el plan y pide confirmación.
-   b. Si el usuario ya dio autorización ("procede"/"autorizo") o modo full: Ejecuta las herramientas necesarias, valida la solución y concluye de inmediato con TASK_COMPLETE.`;
+DIRECTIVAS ESENCIALES (ESTILO CLINE):
+1. ANÁLISIS VS ACCIÓN:
+   - Si el usuario hace una pregunta, consulta técnica o pide explicación (ej. "¿por qué tanto error?", "¿qué pasó?", "¿cómo funciona esto?"): responde con claridad, precisión técnica y diagnóstico directo. Usa read_file o list_files si necesitas consultar el código para dar la respuesta exacta.
+   - Si el usuario te pide implementar, corregir, construir o refactorizar: inspecciona los archivos relevantes primero, realiza las modificaciones quirúrgicas y valida el resultado.
+2. EJECUCIÓN QUIRÚRGICA:
+   - Lee SIEMPRE los archivos antes de modificarlos. NUNCA adivines rutas, contenidos ni dependencias.
+   - Usa 'replace_in_file' para cambios quirúrgicos precisos. Usa 'write_file' únicamente para archivos nuevos o reescrituras completas.
+   - NUNCA uses marcadores incompletos como '// resto del código igual' o '// TODO'. Todo código debe ser 100% completo y funcional.
+   - NUNCA llames a 'write_file' apuntando a directorios o carpetas raíz; especifica siempre el archivo con su extensión.
+3. VERIFICACIÓN Y DIAGNÓSTICO:
+   - Puedes ejecutar comandos con 'run_command' (ej. 'npm run build', 'npx tsc', pruebas) para verificar tus cambios.
+   - Si un comando falla con errores de compilación o sintaxis, analiza el error, lee el archivo correspondiente y corrígelo de inmediato.
+4. RESPUESTAS LIMPIAS:
+   - NUNCA vuelques JSON crudo ni metadatos internos en el chat. Explica siempre en español claro, profesional y directo.
+   - Cuando hayas concluido la tarea o respondido completamente la consulta del usuario, incluye 'TASK_COMPLETE' para cerrar el ciclo limpiamente.
+${rules ? `\n<reglas_adicionales>\n${rules}\n</reglas_adicionales>` : ""}`;
 }
 
 const FormatResponse = {
@@ -80,7 +58,7 @@ const FormatResponse = {
     `[ERROR de EditCoreAI] No invocaste ninguna herramienta en tu respuesta anterior. Debes ejecutar una herramienta para avanzar en la tarea o emitir 'TASK_COMPLETE' si el objetivo está totalmente satisfecho.`,
 
   toolDenied: (toolName) =>
-    `[EditCoreAI - Aprobación Requerida] La herramienta '${toolName}' requiere confirmación explícita del usuario ('procede' o 'autorizo'). Presenta el plan y solicita autorización al usuario antes de continuar.`,
+    `[EditCoreAI - Aprobación Requerida] La ejecución de '${toolName}' fue denegada por el usuario en la interfaz.`,
 
   toolError: (error) =>
     `La ejecución de la herramienta falló con el siguiente error:\n<error>\n${error || "Error desconocido"}\n</error>`,
