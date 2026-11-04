@@ -179,6 +179,18 @@
       "action": "deployed",
       "details": "release v4.4.7: EDITCOREAI-Setup.exe",
       "by": "editcore"
+    },
+    {
+      "date": "2026-11-04T14:18:00.000Z",
+      "action": "modified",
+      "details": "git push main (ca4b862): v4.4.8 - Unificación limpia del motor Cline y eliminación de [object Object]",
+      "by": "editcore"
+    },
+    {
+      "date": "2026-11-04T14:18:00.000Z",
+      "action": "deployed",
+      "details": "release v4.4.8: EDITCOREAI-Setup.exe",
+      "by": "editcore"
     }
   ],
   "issues": [],
