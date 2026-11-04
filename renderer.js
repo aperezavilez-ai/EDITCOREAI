@@ -8706,9 +8706,9 @@ function addAgentNarration(thinkingItem, text) {
   const value = humanizeAgentNarration(stripAgentToolXml(String(text || ""))).trim();
   if (!thinkingItem || !value) return;
   if (looksLikeAgentToolDump(text) && value.length < 8) return;
-  // Líneas de acción del orquestador → panel CoT (no el stream markdown).
+  // Líneas de acción del orquestador: actualizar actividad en vivo sin ensuciar la caja de pensamiento
   if (/^[⚙️🔍📂✓○→✗]/.test(value) || /^(Creando|Editando|Leyendo|Verificando|Explorando)\b/i.test(value)) {
-    appendThoughtLine(thinkingItem, value, { kind: "action" });
+    setAgentLiveActivity(thinkingItem, value);
     thinkingItem._thoughtLiveBlock = null;
     return;
   }
@@ -15729,7 +15729,6 @@ window.editcoreAgent.onProgress((progress) => {
       addAgentStepToThinking(thinkingEl, progress);
       if (isToolStep) {
         if (narrative) {
-          appendThoughtLine(thinkingEl, narrative, { kind: "action" });
           setAgentLiveActivity(thinkingEl, narrative);
           $("status").textContent = narrative;
         }

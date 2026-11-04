@@ -56,6 +56,7 @@ function createLineDiff(oldContent, newContent, maxLines = 150) {
 
 function sanitizeWindowsCommand(command) {
   let cmd = String(command || "").trim();
+  cmd = cmd.replace(/^cd\s+(?:"[^"]+"|\S+)\s*(?:&&|;)\s*/i, "");
   cmd = cmd.replace(/\s*2>&1\s*\|\s*(?:tail|head)(?:\s+-\d+)?/gi, "");
   cmd = cmd.replace(/\s*\|\s*(?:tail|head)(?:\s+-\d+)?/gi, "");
   return cmd;
@@ -69,12 +70,40 @@ class EditCoreClineTools {
 
   resolvePath(relOrAbsPath) {
     if (!relOrAbsPath) return this.projectRoot;
-    if (path.isAbsolute(relOrAbsPath)) return path.normalize(relOrAbsPath);
-    return path.resolve(this.projectRoot, relOrAbsPath);
+    if (typeof relOrAbsPath !== "string") return this.projectRoot;
+    const clean = relOrAbsPath.trim();
+    if (!clean || clean === "." || clean === "./" || clean === ".\\") return this.projectRoot;
+    if (path.isAbsolute(clean)) return path.normalize(clean);
+    return path.resolve(this.projectRoot, clean);
+  }
+
+  resolveFilePath(filePath) {
+    if (!filePath || typeof filePath !== "string") {
+      throw new Error("Ruta de archivo no especificada o inválida.");
+    }
+    const clean = filePath.trim();
+    if (!clean || clean === "." || clean === "./" || clean === ".\\") {
+      throw new Error(`Ruta de archivo inválida: '${filePath}'. Debes especificar un archivo concreto con su nombre y extensión.`);
+    }
+    const resolved = this.resolvePath(clean);
+    if (resolved === this.projectRoot) {
+      throw new Error(`Ruta inválida: '${filePath}' apunta a la raíz del proyecto, no a un archivo.`);
+    }
+    return resolved;
   }
 
   async readFile(filePath, startLine = null, endLine = null) {
-    const fullPath = this.resolvePath(filePath);
+    const fullPath = this.resolveFilePath(filePath);
+    try {
+      const stat = await fs.stat(fullPath);
+      if (stat.isDirectory()) {
+        throw new Error(`'${filePath}' es un directorio, no un archivo. Usa 'list_files' para explorar su contenido.`);
+      }
+    } catch (err) {
+      if (err.code === "ENOENT") throw new Error(`El archivo '${filePath}' no existe.`);
+      throw err;
+    }
+
     const content = await fs.readFile(fullPath, "utf-8");
     const lines = content.split(/\r\n|\n/);
 
@@ -100,7 +129,16 @@ class EditCoreClineTools {
   }
 
   async writeFile(filePath, content) {
-    const fullPath = this.resolvePath(filePath);
+    const fullPath = this.resolveFilePath(filePath);
+    try {
+      const stat = await fs.stat(fullPath);
+      if (stat.isDirectory()) {
+        throw new Error(`No se puede escribir en '${filePath}': es un directorio existente. Debes especificar un nombre de archivo.`);
+      }
+    } catch (e) {
+      if (e.code !== "ENOENT") throw e;
+    }
+
     await fs.mkdir(path.dirname(fullPath), { recursive: true });
     const eol = detectLineEnding(content);
     const normalized = normalizeLineEndings(content, eol);
@@ -113,7 +151,17 @@ class EditCoreClineTools {
   }
 
   async replaceInFile(filePath, oldText, newText) {
-    const fullPath = this.resolvePath(filePath);
+    const fullPath = this.resolveFilePath(filePath);
+    let stat;
+    try {
+      stat = await fs.stat(fullPath);
+    } catch {
+      throw new Error(`El archivo '${filePath}' no existe.`);
+    }
+    if (stat.isDirectory()) {
+      throw new Error(`'${filePath}' es un directorio, no un archivo.`);
+    }
+
     let content;
     try {
       content = await fs.readFile(fullPath, "utf-8");

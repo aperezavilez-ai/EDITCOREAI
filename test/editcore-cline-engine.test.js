@@ -313,3 +313,77 @@ test("EditCoreClineController: nunca devuelve JSON crudo de tools en finalText",
 
   await fs.rm(tmpDir, { recursive: true, force: true });
 });
+
+test("EditCoreClineTools: protección estricta contra escritura o lectura en carpetas (anti-EISDIR)", async () => {
+  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ec-cline-eisdir-"));
+  const subFolder = path.join(tmpDir, "src");
+  await fs.mkdir(subFolder);
+
+  const tools = new EditCoreClineTools(tmpDir);
+
+  // 1. Escribir con ruta vacía o "." debe fallar
+  await assert.rejects(
+    async () => tools.writeFile("", "contenido"),
+    /Ruta de archivo no especificada o inválida/
+  );
+  await assert.rejects(
+    async () => tools.writeFile(".", "contenido"),
+    /Ruta.*inv[aá]lida/i
+  );
+
+  // 2. Escribir directamente en la carpeta raíz o una subcarpeta debe fallar con error explicativo
+  await assert.rejects(
+    async () => tools.writeFile(tmpDir, "contenido"),
+    /apunta a la ra[ií]z|es un directorio/i
+  );
+  await assert.rejects(
+    async () => tools.writeFile("src", "contenido"),
+    /es un directorio existente/
+  );
+
+  // 3. Leer una carpeta con read_file debe sugerir list_files
+  await assert.rejects(
+    async () => tools.readFile("src"),
+    /es un directorio, no un archivo/
+  );
+
+  await fs.rm(tmpDir, { recursive: true, force: true });
+});
+
+test("EditCoreClineController: acota los turnos en step mode a máximo 4 turnos para evitar bucles descontrolados", async () => {
+  const { EditCoreClineController } = require("../runtime/editcore-cline/index");
+
+  let turnsExecuted = 0;
+  const mockCallChat = async () => {
+    turnsExecuted++;
+    return {
+      text: "Leyendo archivo",
+      toolCalls: [{
+        id: `call_${turnsExecuted}`,
+        function: {
+          name: "list_files",
+          arguments: JSON.stringify({ path: "." })
+        }
+      }]
+    };
+  };
+
+  const controller = new EditCoreClineController({
+    callChat: mockCallChat,
+    maxTurns: 50 // Aunque el controller tenga maxTurns: 50
+  });
+
+  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ec-cline-pacing-"));
+  const result = await controller.runTask({
+    prompt: "continua",
+    projectRoot: tmpDir,
+    permissionMode: "step",
+    fullAccess: false
+  });
+
+  // En step mode no debe ejecutar 50 turnos ni 7 turnos: máximo 4 turnos y se detiene
+  assert.ok(turnsExecuted <= 4, `Ejecutó ${turnsExecuted} turnos, debe ser <= 4`);
+  assert.ok(result.turns <= 4);
+
+  await fs.rm(tmpDir, { recursive: true, force: true });
+});

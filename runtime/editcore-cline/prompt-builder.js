@@ -53,6 +53,13 @@ REGLA FUNDAMENTAL: DIFERENCIAR PREGUNTAS/DUDAS DE ACCIONES/MUTACIONES:
 3. RESPUESTAS LIMPIAS (PROHIBIDO DUMP DE JSON):
    - NUNCA muestres JSON crudo ni volcados internos en el chat. Redacta siempre en español técnico, claro y profesional.
 
+4. CADENCIA DE HERRAMIENTAS Y PARADA DETERMINISTA (ESTILO CLINE):
+   - Ejecuta un paso a la vez de forma precisa y deliberada.
+   - NUNCA re-leas archivos que ya leíste en turnos previos del historial; usa la información ya disponible en el contexto.
+   - NUNCA llames a 'write_file' con rutas de directorios ni sin especificar el nombre exacto de un archivo con su extensión.
+   - Si ejecutas un comando de compilación o verificación (como 'npm run build' o 'npx tsc') y el resultado es exitoso (exitCode 0), CONCLUYE DE INMEDIATO: emite TASK_COMPLETE con un resumen limpio del éxito al usuario. NO sigas invocando herramientas innecesarias.
+   - Si una herramienta falla, NO intentes bucles ciegos ni llamadas erráticas repetidas. Explica el fallo con honestidad técnica al usuario y detén la ejecución.
+
 DIRECTIVAS ESENCIALES:
 - Lee e inspecciona SIEMPRE antes de modificar código o ejecutar comandos que dependan del estado del proyecto.
 - No adivines ni inventes dependencias, puertos, rutas o esquemas de base de datos; usa read_file o run_command para verificarlos.
@@ -65,7 +72,7 @@ FLUJO DE EJECUCIÓN:
 1. Si la entrada es una pregunta o diagnóstico: Explica de inmediato el por qué del fallo con precisión técnica. No mutes código.
 2. Si la entrada es una indicación o tarea:
    a. Si no hay confirmación previa ("procede"/"autorizo"): Plantea el plan y pide confirmación.
-   b. Si el usuario ya dio autorización ("procede"/"autorizo") o modo full: Ejecuta las herramientas, valida la solución y concluye con TASK_COMPLETE.`;
+   b. Si el usuario ya dio autorización ("procede"/"autorizo") o modo full: Ejecuta las herramientas necesarias, valida la solución y concluye de inmediato con TASK_COMPLETE.`;
 }
 
 const FormatResponse = {

@@ -114,6 +114,8 @@ class EditCoreClineController {
     });
 
     let turnCount = 0;
+    let toolFailureCount = 0;
+    const maxTurnsThisRun = isStepMode ? Math.min(this.maxTurns, 4) : this.maxTurns;
 
     // Si el usuario hace una pregunta, solo ofrecemos herramientas de solo lectura
     const allTools = toolExecutor.getDefinitions();
@@ -121,7 +123,7 @@ class EditCoreClineController {
       ? allTools.filter((t) => !["write_file", "write_to_file", "replace_in_file", "run_command", "execute_command"].includes(t.function?.name))
       : allTools;
 
-    while (this.state !== STATE.DONE && !this.isAborted && turnCount < this.maxTurns) {
+    while (this.state !== STATE.DONE && !this.isAborted && turnCount < maxTurnsThisRun) {
       turnCount++;
 
       // 1. Poda y compactación de memoria antes del turno del modelo
@@ -246,6 +248,10 @@ class EditCoreClineController {
           result = { ok: false, error: execError.message };
         }
 
+        if (result && result.ok === false) {
+          toolFailureCount++;
+        }
+
         this.messages.push({
           role: "tool",
           tool_call_id: call.id,
@@ -254,6 +260,11 @@ class EditCoreClineController {
         });
 
         notify({ phase: "tool", stage: "done", name: toolName, input: toolArgs, result, ok: result.ok !== false });
+      }
+
+      // Si se acumulan fallos de herramientas consecutivas, detener bucle y dar respuesta al usuario
+      if (toolFailureCount >= 2) {
+        break;
       }
     }
 
