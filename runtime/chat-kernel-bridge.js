@@ -115,84 +115,44 @@ async function runKernelChat({
   }, 5_000);
 
   try {
-    // EditCore Brain activo por defecto como motor principal
-    const useBrain = helpers?.useEditCoreBrain !== false || process.env.EDITCORE_USE_BRAIN === "true";
-    if (useBrain) {
-      const { EditCoreBrain } = require("./editcore-brain");
-      const brain = new EditCoreBrain({
-        callChat: helpers?.callChat || null,
-        uiBridge: {
-          onProgress,
-          requestApproval: async (name, input) => {
-            if (typeof helpers?.requestApproval === "function") {
-              return await helpers.requestApproval(name, input);
-            }
-            return true;
-          },
-        },
-      });
-
-      const brainResult = await brain.executeTask({
-        prompt: message,
-        projectRoot,
-        apiKey,
-        model,
-        apiBaseUrl,
-        permissionMode: isFull ? "full" : (permissionMode || "step"),
-        fullAccess: isFull,
-        rules: skillsPrompt,
-        history: chatHistory,
+    // Motor Cline 100% como ejecutor unificado de EditCore
+    const { EditCoreClineController } = require("./editcore-cline");
+    const cline = new EditCoreClineController({
+      callChat: helpers?.callChat || null,
+      uiBridge: {
         onProgress,
-      });
-
-      return {
-        ok: brainResult.ok,
-        text: brainResult.text,
-        steps: brainResult.messages?.filter((m) => m.role === "tool") || [],
-        threadId: tid,
-        kernel: true,
-        brain: true,
-        report: { completed: brainResult.ok, role: brainResult.role },
-      };
-    }
-
-    const result = await Promise.race([
-      handleChat({
-        message,
-        history: chatHistory,
-        threadId: tid,
-        chatId: tid,
-        projectRoot,
-        apiBaseUrl,
-        apiKey,
-        model,
-        images: Array.isArray(images) ? images : [],
-        fallbackProfiles: Array.isArray(fallbackProfiles) ? fallbackProfiles : [],
-        skillsPrompt: String(skillsPrompt || ""),
-        onProgress,
-        helpers: {
-          ...(helpers || {}),
-          fullAccess: isFull,
-          externalActionApproved: isFull || (helpers && helpers.externalActionApproved === true),
-          permissionMode: isFull ? "full" : (permissionMode || "step"),
+        requestApproval: async (name, input) => {
+          if (typeof helpers?.requestApproval === "function") {
+            return await helpers.requestApproval(name, input);
+          }
+          return true;
         },
-        autoHeal: autoHeal || null,
-        allowWrite: isFull ? true : (allowWrite !== false && mode !== "readonly"),
-        permissionMode: isFull ? "full" : (permissionMode || "step"),
-        permissionFull: isFull,
-        fullAccess: isFull,
-        planAuthorizedExecution: planAuthorizedExecution === true,
-        maxSteps: Number(maxSteps) || (isFull ? 1000 : 200),
-        totalTimeoutMs: Number(totalTimeoutMs) || (isFull ? 3_600_000 : 1_800_000),
-      }),
-      new Promise((_, rej) =>
-        setTimeout(
-          () => rej(Object.assign(new Error("KERNEL_TIMEOUT: el kernel superó el tiempo límite"), { code: "KERNEL_TIMEOUT" })),
-          KERNEL_TIMEOUT_MS,
-        )
-      ),
-    ]);
-    return { ...result, threadId: tid, kernelError: result?.error === true };
+      },
+    });
+
+    const clineResult = await cline.runTask({
+      prompt: message,
+      projectRoot,
+      apiKey,
+      model,
+      apiBaseUrl,
+      permissionMode: isFull ? "full" : (permissionMode || "step"),
+      fullAccess: isFull,
+      rules: skillsPrompt,
+      history: chatHistory,
+      onProgress,
+    });
+
+    return {
+      ok: clineResult.ok,
+      text: clineResult.text,
+      steps: clineResult.messages?.filter((m) => m.role === "tool") || [],
+      threadId: tid,
+      kernel: true,
+      brain: true,
+      cline: true,
+      report: { completed: clineResult.ok, role: "assistant" },
+    };
   } catch (err) {
     const message = String(err?.message || err).slice(0, 400);
     try {

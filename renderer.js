@@ -8783,6 +8783,9 @@ function agentProgressText(progress) {
     if (totalSec <= 0) return "Trabajando…";
     return `Trabajando… ${formatElapsed(totalSec)}`;
   }
+  if (phase === "thought") {
+    return sanitizeLiveActivityLabel(progress.text || "Pensando…");
+  }
   if (phase === "model") {
     return sanitizeLiveActivityLabel(progress.text || "Trabajando…");
   }
@@ -8791,10 +8794,17 @@ function agentProgressText(progress) {
   const running = progress.stage === "running" || (phase === "tool" && progress.ok === undefined && progress.stage !== "done");
   const done = progress.stage === "done" || progress.ok === true;
   const failed = progress.ok === false;
+  const safeExtract = (val) => {
+    if (!val) return "";
+    if (typeof val === "string") return val;
+    if (typeof val === "object") return val.message || val.stderr || val.error || val.output || "";
+    return String(val);
+  };
   const rawErr = progress.result?.error || progress.error || progress.result?.stderr;
-  const error = (typeof rawErr === "object"
-    ? (rawErr?.message || rawErr?.stderr || JSON.stringify(rawErr))
-    : String(rawErr || (typeof progress.result === "string" ? progress.result : progress.result?.stderr) || "error")
+  const error = (
+    safeExtract(rawErr) ||
+    safeExtract(progress.result) ||
+    "error"
   ).replace(/\s+/g, " ").slice(0, 160);
   const target = String(input.path || input.filePath || input.query || input.command || "").replace(/\s+/g, " ").slice(0, 120);
   if (failed) {
@@ -8812,14 +8822,11 @@ function agentProgressText(progress) {
     if (name === "run_command" && /no esta disponible|list_files|Argumentos de listado/i.test(error)) {
       return "○ Exploracion por shell bloqueada → usar list_files";
     }
-    if (name === "run_command" && /Command failed|\(code\s*\d+\)|exit\s*\d+|verificacion finalizado/i.test(error)) {
+    if (name === "run_command") {
       const cmd = (target || "comando").slice(0, 100);
-      if (/\b(dir|ls|tree|get-childitem|gci)\b/i.test(cmd) || /cmd\s+\/c\s+dir/i.test(cmd)) {
-        return `○ ${cmd} omitido → usar list_files`;
-      }
       const codeMatch = error.match(/\(code\s*(\d+)\)|exit\s+(\d+)/i);
-      const code = codeMatch?.[1] || codeMatch?.[2] || "?";
-      return `○ ${cmd} → exit ${code} (Esto NO es un fallo de la herramienta run_command: evidencia de verificacion; no es fallo de la herramienta: la salida sirve para diagnosticar y corregir)`;
+      const code = progress.result?.exitCode ?? codeMatch?.[1] ?? codeMatch?.[2] ?? "?";
+      return `○ ${cmd} → exit ${code} (evidencia de diagnostico)`;
     }
     if (name === "read_file" && /No es archivo|carpeta|isDirectory/i.test(error)) {
       return `○ ${target || "Ruta"} es una carpeta; el agente listara archivos y continuara`;
@@ -8863,7 +8870,13 @@ function agentProgressText(progress) {
     if (running) return target ? `→ Ejecutando: ${target.slice(0, 100)}` : "→ Ejecutando comando...";
     if (done) {
       const resultObj = progress.result && typeof progress.result === "object" ? progress.result : null;
-      const resultText = typeof progress.result === "string" ? progress.result : String(progress.result?.output || progress.result || "");
+      const resultText = typeof progress.result === "string"
+        ? progress.result
+        : String(resultObj?.output || resultObj?.stdout || resultObj?.stderr || resultObj?.error || "");
+      if (progress.ok === false || resultObj?.ok === false) {
+        const code = resultObj?.exitCode ?? "≠0";
+        return `○ ${(target || "comando").slice(0, 80)} → exit ${code} (evidencia)`;
+      }
       const failedDiag = (resultObj?.diagnostic === true && resultObj?.passed === false)
         || progress.verificationPassed === false
         || /verificacion finalizado con exit\s+[1-9]|Resultado de verificacion:\s*FALLO/i.test(resultText);
@@ -8871,10 +8884,6 @@ function agentProgressText(progress) {
         const codeMatch = resultText.match(/exit\s+(\d+)/i);
         const code = resultObj?.exitCode ?? codeMatch?.[1] ?? "≠0";
         return `✗ ${(target || "comando").slice(0, 80)} → FALLO exit ${code} (no cuenta como OK)`;
-      }
-      if (/verificacion finalizado con exit|exit\s+[1-9]/i.test(resultText)) {
-        const codeMatch = resultText.match(/exit\s+(\d+)/i);
-        return `○ ${(target || "comando").slice(0, 80)} → exit ${codeMatch?.[1] || "≠0"} (evidencia)`;
       }
       return target ? `✓ Comando listo: ${target.slice(0, 80)}` : "✓ Comando ejecutado";
     }

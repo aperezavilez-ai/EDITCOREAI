@@ -54,6 +54,13 @@ function createLineDiff(oldContent, newContent, maxLines = 150) {
   return out.join("\n");
 }
 
+function sanitizeWindowsCommand(command) {
+  let cmd = String(command || "").trim();
+  cmd = cmd.replace(/\s*2>&1\s*\|\s*(?:tail|head)(?:\s+-\d+)?/gi, "");
+  cmd = cmd.replace(/\s*\|\s*(?:tail|head)(?:\s+-\d+)?/gi, "");
+  return cmd;
+}
+
 class EditCoreClineTools {
   constructor(projectRoot, existingToolExecutor = null) {
     this.projectRoot = path.resolve(projectRoot || process.cwd());
@@ -138,6 +145,53 @@ class EditCoreClineTools {
     };
   }
 
+  async listFiles(dirPath = ".") {
+    const fullPath = this.resolvePath(dirPath);
+    try {
+      const entries = await fs.readdir(fullPath, { withFileTypes: true });
+      return {
+        ok: true,
+        path: dirPath,
+        entries: entries.slice(0, 100).map((e) => ({
+          name: e.name,
+          isDirectory: e.isDirectory(),
+        })),
+      };
+    } catch (err) {
+      return { ok: false, path: dirPath, error: err.message };
+    }
+  }
+
+  async runCommand(command) {
+    const { exec } = require("node:child_process");
+    const rawCmd = String(command || "").trim();
+    const sanitizedCmd = process.platform === "win32"
+      ? sanitizeWindowsCommand(rawCmd)
+      : rawCmd;
+
+    return new Promise((resolve) => {
+      exec(sanitizedCmd, {
+        cwd: this.projectRoot,
+        timeout: 120_000,
+        maxBuffer: 10 * 1024 * 1024,
+      }, (error, stdout, stderr) => {
+        const outStr = (stdout || "").slice(-4000);
+        const errStr = (stderr || "").slice(-2000);
+        const combined = (outStr + (errStr ? "\n" + errStr : "")).trim();
+        const errMsg = error ? (errStr || error.message || "Command failed") : "";
+        resolve({
+          ok: !error,
+          stdout: outStr,
+          stderr: errStr,
+          output: combined || (error ? errMsg : "Comando ejecutado exitosamente"),
+          error: errMsg,
+          exitCode: error ? (error.code || 1) : 0,
+          command: sanitizedCmd,
+        });
+      });
+    });
+  }
+
   async execute(name, args, helpers = {}) {
     try {
       switch (name) {
@@ -151,8 +205,14 @@ class EditCoreClineTools {
         case "replace_in_file":
           return await this.replaceInFile(args.path, args.oldText || args.old_text, args.newText || args.new_text);
 
+        case "list_files":
+          return await this.listFiles(args.path || ".");
+
+        case "run_command":
+        case "execute_command":
+          return await this.runCommand(args.command);
+
         default:
-          // Delegar al ejecutor nativo de EditCoreAI para run_command, git_push, web_search, etc.
           if (this.existingToolExecutor && typeof this.existingToolExecutor.execute === "function") {
             return await this.existingToolExecutor.execute(name, args, this.projectRoot, true, helpers);
           }

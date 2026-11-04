@@ -23,9 +23,12 @@ const STATE = {
   ERROR: "ERROR"
 };
 
+const { BrainProviderGateway } = require("../editcore-brain/provider-gateway");
+
 class EditCoreClineController {
   constructor(deps = {}) {
-    this.callChat = deps.callChat; // Motor de llamada a proveedores (provider.js)
+    this.providerGateway = new BrainProviderGateway(deps);
+    this.callChat = deps.callChat || ((params) => this.providerGateway.requestTurn(params));
     this.existingTools = deps.existingTools || null;
     this.uiBridge = deps.uiBridge || {
       updateStatus: () => {},
@@ -122,23 +125,15 @@ class EditCoreClineController {
       };
       this.messages.push(assistantMessage);
 
-      // 2. Si el asistente completó o no ejecutó herramientas
+      // 2. Si el asistente completó o respondió directamente sin herramientas
       const hasTools = assistantMessage.tool_calls && assistantMessage.tool_calls.length > 0;
       const claimsCompletion = assistantMessage.content && assistantMessage.content.includes("TASK_COMPLETE");
 
-      if (claimsCompletion) {
+      if (!hasTools || claimsCompletion) {
         this.state = STATE.DONE;
-        notify({ phase: "done", text: "Tarea completada exitosamente." });
+        const cleanContent = (assistantMessage.content || "").replace(/TASK_COMPLETE/g, "").trim();
+        notify({ phase: "done", text: cleanContent || "Tarea completada exitosamente." });
         break;
-      }
-
-      if (!hasTools) {
-        // En lugar de detenerse o romper el contexto, forzar al modelo a avanzar o terminar
-        this.messages.push({
-          role: "user",
-          content: FormatResponse.noToolsUsed()
-        });
-        continue;
       }
 
       // 3. Procesamiento de llamadas a herramientas
@@ -156,7 +151,19 @@ class EditCoreClineController {
         }
 
         // 4. Intercepción de permisos / Escudo de seguridad estilo Cline
-        const isMutation = ["write_file", "write_to_file", "replace_in_file", "run_command"].includes(toolName);
+        const isMutation = ["write_file", "write_to_file", "replace_in_file", "run_command", "execute_command"].includes(toolName);
+        const isReadonly = permissionMode === "readonly";
+        if (isReadonly && isMutation) {
+          this.messages.push({
+            role: "tool",
+            tool_call_id: call.id,
+            name: toolName,
+            content: JSON.stringify({ error: `[EditCore Cline] La herramienta '${toolName}' está bloqueada en modo Solo Lectura. No se permiten modificaciones ni ejecución de comandos.` })
+          });
+          notify({ phase: "tool", stage: "rejected", name: toolName, input: toolArgs, error: "Modo Solo Lectura activo" });
+          continue;
+        }
+
         if (isStepMode && isMutation) {
           this.state = STATE.WAITING_APPROVAL;
           notify({ phase: "approval", name: toolName, input: toolArgs, stage: "waiting" });
@@ -169,7 +176,7 @@ class EditCoreClineController {
               name: toolName,
               content: JSON.stringify({ error: FormatResponse.toolDenied(toolName) })
             });
-            notify({ phase: "tool", stage: "rejected", name: toolName });
+            notify({ phase: "tool", stage: "rejected", name: toolName, input: toolArgs });
             continue;
           }
         }
@@ -192,13 +199,16 @@ class EditCoreClineController {
           content: JSON.stringify(result)
         });
 
-        notify({ phase: "tool", stage: "done", name: toolName, result, ok: result.ok !== false });
+        notify({ phase: "tool", stage: "done", name: toolName, input: toolArgs, result, ok: result.ok !== false });
       }
     }
 
+    const lastMsg = this.messages[this.messages.length - 1];
+    const finalText = (lastMsg?.content || "").replace(/TASK_COMPLETE/g, "").trim();
+
     return {
       ok: this.state === STATE.DONE || !this.isAborted,
-      text: this.messages[this.messages.length - 1]?.content || "",
+      text: finalText,
       turns: turnCount,
       messages: this.messages
     };

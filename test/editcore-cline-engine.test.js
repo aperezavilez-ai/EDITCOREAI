@@ -97,11 +97,41 @@ test("EditCoreClineController: ejecuta máquina de estados con aprobación y com
 
   assert.strictEqual(result.ok, true);
   assert.strictEqual(approvalRequested, true);
-  assert.ok(result.text.includes("TASK_COMPLETE"));
+  assert.ok(result.text.includes("Todo listo"));
 
   const createdFile = path.join(tmpDir, "test.txt");
   const content = await fs.readFile(createdFile, "utf-8");
   assert.strictEqual(content, "hola mundo");
+
+  await fs.rm(tmpDir, { recursive: true, force: true });
+});
+
+test("EditCoreClineTools: list_files y run_command ejecutan limpiamente en Windows/Unix", async () => {
+  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ec-cline-cmd-"));
+  await fs.writeFile(path.join(tmpDir, "fileA.txt"), "A", "utf-8");
+  await fs.mkdir(path.join(tmpDir, "subDir"));
+
+  const tools = new EditCoreClineTools(tmpDir);
+
+  // 1. list_files
+  const listRes = await tools.execute("list_files", { path: "." });
+  assert.strictEqual(listRes.ok, true);
+  assert.ok(Array.isArray(listRes.entries));
+  const fileNames = listRes.entries.map((e) => e.name);
+  assert.ok(fileNames.includes("fileA.txt"));
+  assert.ok(fileNames.includes("subDir"));
+
+  // 2. run_command exitoso con sanitización
+  const echoRes = await tools.execute("run_command", { command: "node -e \"console.log('hola cline')\" 2>&1 | tail -5" });
+  assert.strictEqual(echoRes.ok, true);
+  assert.strictEqual(echoRes.exitCode, 0);
+  assert.ok(echoRes.output.includes("hola cline"));
+
+  // 3. run_command con fallo no revienta ni produce [object Object]
+  const failRes = await tools.execute("run_command", { command: "node -e \"process.exit(2)\"" });
+  assert.strictEqual(failRes.ok, false);
+  assert.strictEqual(failRes.exitCode, 2);
+  assert.strictEqual(typeof failRes.output, "string");
 
   await fs.rm(tmpDir, { recursive: true, force: true });
 });
