@@ -125,7 +125,7 @@ async function runKernelChat({
           if (typeof helpers?.requestApproval === "function") {
             return await helpers.requestApproval(name, input);
           }
-          return true;
+          return false;
         },
       },
     });

@@ -135,3 +135,181 @@ test("EditCoreClineTools: list_files y run_command ejecutan limpiamente en Windo
 
   await fs.rm(tmpDir, { recursive: true, force: true });
 });
+
+test("isQuestionInput y isApprovalInput: clasificación precisa de intenciones", () => {
+  const { isQuestionInput, isApprovalInput } = require("../runtime/editcore-cline/index");
+
+  // Preguntas / Diagnósticos
+  assert.strictEqual(isQuestionInput("¿Por qué tanto error?"), true);
+  assert.strictEqual(isQuestionInput("PORQUE PARAS"), true);
+  assert.strictEqual(isQuestionInput("por que tanto error"), true);
+  assert.strictEqual(isQuestionInput("¿Qué significa este error de build?"), true);
+  assert.strictEqual(isQuestionInput("explícame qué pasó"), true);
+  assert.strictEqual(isQuestionInput("cómo funciona el sistema"), true);
+  assert.strictEqual(isQuestionInput("analiza este código"), true);
+
+  // Aprobaciones explícitas
+  assert.strictEqual(isApprovalInput("procede con el cambio"), true);
+  assert.strictEqual(isApprovalInput("autorizo"), true);
+  assert.strictEqual(isApprovalInput("continua"), true);
+  assert.strictEqual(isApprovalInput("hazlo ahora"), true);
+  assert.strictEqual(isApprovalInput("dale"), true);
+  assert.strictEqual(isApprovalInput("adelante"), true);
+  assert.strictEqual(isApprovalInput("sí, procede"), true);
+
+  // Instrucciones sin aprobación previa
+  assert.strictEqual(isApprovalInput("Crea el archivo POSView.tsx"), false);
+  assert.strictEqual(isApprovalInput("Corrige el fallo"), false);
+  assert.strictEqual(isQuestionInput("Crea el archivo POSView.tsx"), false);
+});
+
+test("EditCoreClineController: en modo Pregunta no ofrece herramientas de mutación y responde técnicamente", async () => {
+  const { EditCoreClineController } = require("../runtime/editcore-cline/index");
+  let offeredTools = [];
+
+  const mockCallChat = async ({ messages, tools }) => {
+    offeredTools = tools ? tools.map(t => t.function?.name) : [];
+    return {
+      text: "El error se debe a un template literal no cerrado en la línea 346 de POSView.tsx. Para corregirlo, escribe 'procede' o 'autorizo'. TASK_COMPLETE",
+      toolCalls: []
+    };
+  };
+
+  const controller = new EditCoreClineController({
+    callChat: mockCallChat
+  });
+
+  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ec-cline-question-"));
+  const result = await controller.runTask({
+    prompt: "¿Por qué tanto error en el build?",
+    projectRoot: tmpDir,
+    permissionMode: "step"
+  });
+
+  assert.strictEqual(result.ok, true);
+  // Ninguna herramienta mutante (write_file, replace_in_file, run_command) fue ofrecida
+  assert.ok(!offeredTools.includes("write_file"));
+  assert.ok(!offeredTools.includes("replace_in_file"));
+  assert.ok(!offeredTools.includes("run_command"));
+  // Respondió la explicación técnica limpia
+  assert.ok(result.text.includes("template literal"));
+  assert.ok(!result.text.includes("{"));
+
+  await fs.rm(tmpDir, { recursive: true, force: true });
+});
+
+test("EditCoreClineController: compuerta de aprobación bloquea mutación en step mode si no hay 'procede' o 'autorizo'", async () => {
+  const { EditCoreClineController } = require("../runtime/editcore-cline/index");
+
+  let toolExecuted = false;
+  const mockCallChat = async ({ messages }) => {
+    const last = messages[messages.length - 1];
+    if (last.role === "tool") {
+      // El asistente nota que la herramienta fue bloqueada esperando autorización
+      return {
+        text: "He preparado el plan para crear el archivo. Responde con 'procede' o 'autorizo' para aplicarlo. TASK_COMPLETE",
+        toolCalls: []
+      };
+    }
+    return {
+      text: "Intentaré escribir el archivo",
+      toolCalls: [{
+        id: "call_mutation_1",
+        function: {
+          name: "write_file",
+          arguments: JSON.stringify({ path: "seguridad.txt", content: "contenido" })
+        }
+      }]
+    };
+  };
+
+  const controller = new EditCoreClineController({
+    callChat: mockCallChat,
+    uiBridge: {
+      requestApproval: async () => false // No aprobado en UI
+    }
+  });
+
+  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ec-cline-gate-"));
+  const result = await controller.runTask({
+    prompt: "Crea el archivo seguridad.txt", // No contiene "procede" ni "autorizo"
+    projectRoot: tmpDir,
+    permissionMode: "step",
+    fullAccess: false
+  });
+
+  assert.strictEqual(result.ok, true);
+  // El archivo NO debe haber sido creado en disco
+  const fileExists = await fs.access(path.join(tmpDir, "seguridad.txt")).then(() => true).catch(() => false);
+  assert.strictEqual(fileExists, false);
+  assert.ok(result.text.includes("procede") || result.text.includes("autorizo"));
+
+  // Ahora simulamos que el usuario autoriza explícitamente con "procede"
+  const approvedController = new EditCoreClineController({
+    callChat: async ({ messages }) => {
+      const last = messages[messages.length - 1];
+      if (last.role === "tool") {
+        return { text: "Archivo creado exitosamente. TASK_COMPLETE", toolCalls: [] };
+      }
+      return {
+        text: "Procediendo a escribir",
+        toolCalls: [{
+          id: "call_mutation_2",
+          function: {
+            name: "write_file",
+            arguments: JSON.stringify({ path: "seguridad.txt", content: "contenido seguro" })
+          }
+        }]
+      };
+    }
+  });
+
+  const approvedResult = await approvedController.runTask({
+    prompt: "procede y crea el archivo",
+    projectRoot: tmpDir,
+    permissionMode: "step",
+    fullAccess: false
+  });
+
+  assert.strictEqual(approvedResult.ok, true);
+  const createdContent = await fs.readFile(path.join(tmpDir, "seguridad.txt"), "utf-8");
+  assert.strictEqual(createdContent, "contenido seguro");
+
+  await fs.rm(tmpDir, { recursive: true, force: true });
+});
+
+test("EditCoreClineController: nunca devuelve JSON crudo de tools en finalText", async () => {
+  const { EditCoreClineController } = require("../runtime/editcore-cline/index");
+
+  // Simulamos que el asistente ejecuta una tool que falla y el loop termina sin mensaje de texto
+  const mockCallChat = async ({ messages }) => {
+    return {
+      text: "",
+      toolCalls: [{
+        id: "call_cmd_1",
+        function: {
+          name: "run_command",
+          arguments: JSON.stringify({ command: "node -e \"process.exit(1)\"" })
+        }
+      }]
+    };
+  };
+
+  const controller = new EditCoreClineController({
+    callChat: mockCallChat,
+    maxTurns: 1 // Forzar fin de turnos tras la herramienta
+  });
+
+  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ec-cline-rawjson-"));
+  const result = await controller.runTask({
+    prompt: "procede a ejecutar build",
+    projectRoot: tmpDir,
+    permissionMode: "step"
+  });
+
+  // finalText no debe ser el JSON crudo {"stderr":"", "exitCode": 1, ...}
+  assert.ok(!result.text.startsWith('{"'));
+  assert.ok(!result.text.includes('"exitCode":'));
+
+  await fs.rm(tmpDir, { recursive: true, force: true });
+});
