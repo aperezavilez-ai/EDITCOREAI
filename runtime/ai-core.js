@@ -305,6 +305,10 @@ async function readOpenAiStream(response, onTextDelta, signal, onActivity) {
       try { data = JSON.parse(value.slice(5).trim()); } catch { continue; }
       if (data?.usage) streamUsage = data.usage;
       const delta = data?.choices?.[0]?.delta || data?.choices?.[0]?.message || {};
+      const reasoning = delta.reasoning_content || delta.thought || "";
+      if (reasoning) {
+        try { onTextDelta?.(reasoning); } catch { /* ignore */ }
+      }
       const content = deltaText(delta.content ?? data?.choices?.[0]?.text);
       if (content) {
         text += content;
