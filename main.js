@@ -3444,12 +3444,21 @@ async function detectListeningUrl(child, fallbackUrl, timeoutMs = PREVIEW_START_
         : "El servidor del proyecto termino antes de publicar una URL. Revisa su script de desarrollo.");
     }
     const matches = [...output.matchAll(/https?:\/\/(?:localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\]):(\d+)[^\s"'<>]*/gi)];
+    // Probar primero URLs cercanas al targetPort
+    if (targetPort) {
+      for (const match of matches.slice().reverse()) {
+        try {
+          const foundPort = Number(match[1]);
+          if (Math.abs(foundPort - targetPort) <= 20) {
+            const url = normalizePreviewUrl(match[0].replace(/[.,;)]+$/, ""));
+            if (await isHttpReady(url)) return url;
+          }
+        } catch { /* ignore bad match */ }
+      }
+    }
+    // Probar cualquier URL emitida por el proceso del proyecto (ej. Flask 5000, Django/FastAPI 8000)
     for (const match of matches.reverse()) {
       try {
-        const foundPort = Number(match[1]);
-        if (targetPort && Math.abs(foundPort - targetPort) > 20) {
-          continue;
-        }
         const url = normalizePreviewUrl(match[0].replace(/[.,;)]+$/, ""));
         if (await isHttpReady(url)) return url;
       } catch { /* ignore bad match */ }

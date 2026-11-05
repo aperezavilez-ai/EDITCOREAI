@@ -5889,6 +5889,11 @@ async function settlePreviewDocument() {
       $("status").textContent = "Navegador conectado";
       return;
     }
+    const targetUrl = previewExpectedUrl || $("previewUrl")?.value?.trim() || "";
+    if (targetUrl && (!current || current === "about:blank")) {
+      webview.setAttribute("src", targetUrl);
+      return;
+    }
     webview.dataset.previewReady = "0";
     const root = String(state.projectRoot || "").toLowerCase();
     const isEditCoreDesktop = /editcoreai|editcore\s*ai|\\resources\\app(\\|$)/i.test(root)
