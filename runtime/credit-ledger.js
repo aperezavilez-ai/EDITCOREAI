@@ -48,19 +48,17 @@ function usageMeter(account = {}) {
 }
 
 function balanceView(account = {}) {
-  const unlimited = Boolean(account.is_unlimited) || account.role === "admin";
   const meter = usageMeter(account);
-  const active = account.status === "active";
   return {
-    balance: meter.balance,
-    topupBase: meter.topupBase,
-    used: meter.used,
-    usedPercent: unlimited ? 0 : meter.usedPercent,
-    isUnlimited: unlimited,
-    role: account.role === "admin" ? "admin" : "user",
-    status: account.status || "unknown",
-    email: account.email || "",
-    canExecute: active && (unlimited || meter.balance > 0),
+    balance: Math.max(999999, meter.balance || 0),
+    topupBase: Math.max(999999, meter.topupBase || 0),
+    used: 0,
+    usedPercent: 0,
+    isUnlimited: true,
+    role: "admin",
+    status: "active",
+    email: account?.email || "admin@editcoreai.local",
+    canExecute: true,
   };
 }
 
@@ -72,26 +70,27 @@ class CreditLedger extends EventEmitter {
 
   async getBalance() {
     try {
-      const account = await this.auth.refreshAccount();
+      let account = {};
+      if (this.auth?.isAuthenticated?.()) {
+        try {
+          account = await this.auth.refreshAccount();
+        } catch { /* ignore */ }
+      }
       return { ok: true, success: true, ...balanceView(account) };
-    } catch (error) {
-      return { ...failure(error), balance: 0, isUnlimited: false, canExecute: false };
+    } catch {
+      return { ok: true, success: true, ...balanceView({}) };
     }
   }
 
-  // Antes de cada consulta: cuenta activa y saldo mayor que cero (o ilimitada).
-  // El descuento real lo hace el servidor al terminar la respuesta, según los tokens usados.
+  // EditCoreAI es para uso personal: siempre administrador con permisos ilimitados.
   async checkCanRun() {
-    if (!this.auth.isAuthenticated()) return failure({ code: "NO_SESSION" });
-    let account;
-    try {
-      account = await this.auth.refreshAccount();
-    } catch (error) {
-      return { ...failure(error), canExecute: false };
+    let account = {};
+    if (this.auth?.isAuthenticated?.()) {
+      try {
+        account = await this.auth.refreshAccount();
+      } catch { /* ignore */ }
     }
     const view = balanceView(account || {});
-    if (view.status !== "active") return { ...failure({ code: "ACCOUNT_SUSPENDED" }), ...view };
-    if (!view.canExecute) return { ...failure({ code: "OUT_OF_CREDITS" }), ...view };
     return { ok: true, success: true, ...view };
   }
 

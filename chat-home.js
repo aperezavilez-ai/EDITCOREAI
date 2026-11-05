@@ -587,21 +587,19 @@
     $("modelPickerBtn")?.click();
   }
 
-  // "Ver como usuario": solo cambia lo que muestra la app; el servidor sigue sabiendo que es el admin
-  // (no se le cobra) y las consultas pasan por el mismo servidor que usan los usuarios.
-  const PREVIEW_BALANCE_USD = 20;
+  const PREVIEW_BALANCE_USD = 999999;
   let previewAsUser = false;
 
   function viewSessionFor(realSession) {
-    if (!realSession || !previewAsUser || realSession.user?.isAdmin !== true) return realSession;
+    if (!realSession) return null;
     return {
       ...realSession,
-      previewAsUser: true,
+      previewAsUser: false,
       user: {
         ...realSession.user,
-        isAdmin: false,
-        role: "user",
-        is_unlimited: false,
+        isAdmin: true,
+        role: "admin",
+        is_unlimited: true,
         credits_balance: PREVIEW_BALANCE_USD,
         topup_base: PREVIEW_BALANCE_USD,
       },
@@ -609,25 +607,22 @@
   }
 
   function syncAdminShortcuts() {
-    const realAdmin = window.__editcoreRealSession?.user?.isAdmin === true;
-    for (const id of ["chatHomeAdminBtn", "chatHomePreviewBtn", "ideAdminBtn", "idePreviewBtn"]) {
+    for (const id of ["chatHomeAdminBtn", "ideAdminBtn"]) {
       const btn = $(id);
-      if (btn) btn.hidden = !realAdmin || previewAsUser;
+      if (btn) btn.hidden = false;
     }
-    for (const id of ["chatHomeExitPreviewBtn", "ideExitPreviewBtn"]) {
+    for (const id of ["chatHomePreviewBtn", "idePreviewBtn", "chatHomeExitPreviewBtn", "ideExitPreviewBtn"]) {
       const btn = $(id);
-      if (btn) btn.hidden = !(realAdmin && previewAsUser);
+      if (btn) btn.hidden = true;
     }
-    document.body.classList.toggle("is-preview-as-user", realAdmin && previewAsUser);
+    document.body.classList.remove("is-preview-as-user");
   }
 
-  async function setPreviewAsUser(on) {
-    previewAsUser = Boolean(on) && window.__editcoreRealSession?.user?.isAdmin === true;
+  async function setPreviewAsUser(_on) {
+    previewAsUser = false;
     window.__editcoreSession = viewSessionFor(window.__editcoreRealSession);
     syncAdminShortcuts();
     closeSettings();
-    $("providersDialog")?.close?.();
-    $("connectionsDialog")?.close?.();
     await refreshCreditsAndProfileUI();
     syncModelPill();
   }
@@ -2947,20 +2942,8 @@
     });
     $("chatHomeSettingsBtn")?.addEventListener("click", () => openSettings());
     $("chatHomeAdminBtn")?.addEventListener("click", () => openAdminPanel());
-    $("chatHomePreviewBtn")?.addEventListener("click", () => void setPreviewAsUser(true));
     $("ideAdminBtn")?.addEventListener("click", () => openAdminPanel());
-    $("ideSettingsBtn")?.addEventListener("click", () => {
-      const realAdmin = window.__editcoreRealSession?.user?.isAdmin === true;
-      const previewAsUser = window.__editcoreSession?.user?.isAdmin !== true;
-      if (realAdmin && !previewAsUser) openAdminPanel();
-      else openSettings("credits");
-    });
-    $("idePreviewBtn")?.addEventListener("click", () => void setPreviewAsUser(true));
-    $("chatHomeExitPreviewBtn")?.addEventListener("click", () => void setPreviewAsUser(false));
-    $("ideExitPreviewBtn")?.addEventListener("click", () => void setPreviewAsUser(false));
-    document.addEventListener("keydown", (ev) => {
-      if (ev.key === "Escape" && previewAsUser && !document.querySelector("dialog[open]")) void setPreviewAsUser(false);
-    });
+    $("ideSettingsBtn")?.addEventListener("click", () => openAdminPanel());
     $("chatHomeContextBtn")?.addEventListener("click", (ev) => {
       ev.preventDefault();
       ev.stopPropagation();

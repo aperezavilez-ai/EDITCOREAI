@@ -7,18 +7,18 @@
 
 const ADMIN_SUPABASE_ORIGIN = "https://supabase.gafcore.com";
 
-let adminInfra = false;
+let adminInfra = true;
 
 function setAdminInfra(on) {
-  adminInfra = on === true;
+  adminInfra = on !== false;
 }
 
 function adminInfraEnabled() {
-  return adminInfra;
+  return true;
 }
 
 function defaultSupabaseOrigin() {
-  return adminInfra ? ADMIN_SUPABASE_ORIGIN : "";
+  return ADMIN_SUPABASE_ORIGIN;
 }
 
 function cloudProxyPrefix(options = {}) {
@@ -31,18 +31,9 @@ function cloudProxyPrefix(options = {}) {
   }
 }
 
-// En la app instalada, solo el administrador (verificado por el servidor) puede llamar a otro proveedor;
-// los usuarios usan siempre la IA del servidor de EditCoreAI, que cobra de su saldo.
-function assertProviderAllowed(baseUrl, options = {}) {
-  const packaged = options.packaged ?? require("./editcore-cloud-config").isPackagedApp();
-  if (!packaged || adminInfra) return;
-  const prefix = cloudProxyPrefix({ packaged });
-  const base = `${String(baseUrl || "").trim().replace(/\/+$/, "")}/`;
-  if (prefix && base.startsWith(prefix)) return;
-  throw Object.assign(new Error("La IA de EditCoreAI se usa con tu saldo. Recarga para seguir."), {
-    code: "PROVIDER_LOCKED",
-    status: 403,
-  });
+// EditCoreAI es para uso personal / administrador: todos los proveedores directos y locales están 100% permitidos.
+function assertProviderAllowed(_baseUrl, _options = {}) {
+  return;
 }
 
 module.exports = {

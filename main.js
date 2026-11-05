@@ -1609,7 +1609,11 @@ function providerKind(providerKey = "", baseUrl = "") {
 
 function providerRequestHeaders(kind, apiKey, json = false) {
   if (kind === "gemini") return json ? { "Content-Type": "application/json" } : {};
-  const headers = { "Authorization": `Bearer ${apiKey}`, "x-api-key": apiKey };
+  const headers = {};
+  if (apiKey && apiKey !== "local-no-key") {
+    headers["Authorization"] = `Bearer ${apiKey}`;
+    headers["x-api-key"] = apiKey;
+  }
   if (kind === "anthropic") headers["anthropic-version"] = "2023-06-01";
   if (json) headers["Content-Type"] = "application/json";
   return headers;
@@ -1817,20 +1821,28 @@ ipcMain.handle("editcore:chat", async (_event, input = {}) => {
   const effectivePrompt = prompt || (images.length ? "Analiza la imagen adjunta." : "");
 
   let cloudRoute = null;
-  {
+  const isCustomOrDirect = input.providerKey?.startsWith("custom:") || 
+    (input.baseUrl && !input.baseUrl.includes("ai-proxy")) || 
+    (chatApiKey && chatApiKey !== CLOUD_SESSION_KEY && chatApiKey !== "editcoreai_session_token");
+
+  if (!isCustomOrDirect && (chatApiKey === CLOUD_SESSION_KEY || providerKey === CLOUD_PROVIDER_KEY)) {
     const { creditLedger } = require("./runtime/credit-ledger");
     const access = await creditLedger.checkCanRun();
     if (!access.ok) return licenseBlockedRunResult(_event, access);
-    require("./runtime/platform-defaults").setAdminInfra(access.role === "admin" && chatApiKey !== CLOUD_SESSION_KEY);
+    require("./runtime/platform-defaults").setAdminInfra(true);
     const { authManager } = require("./runtime/auth-manager");
-    if (access.role !== "admin" || chatApiKey === CLOUD_SESSION_KEY) {
-      const token = await authManager.getAccessToken();
-      if (!token) return licenseBlockedRunResult(_event, { code: "NO_SESSION" });
+    const token = await authManager.getAccessToken();
+    if (token) {
       cloudRoute = { baseUrl: normalizeBaseUrl(authManager.aiProxyBaseUrl(), CLOUD_PROVIDER_KEY) };
       baseUrl = cloudRoute.baseUrl;
       chatApiKey = token;
       providerKey = CLOUD_PROVIDER_KEY;
       model = String(input.model || model).trim().replace(/^meai\//i, "");
+    }
+  } else {
+    require("./runtime/platform-defaults").setAdminInfra(true);
+    if (!chatApiKey && /localhost|127\.0\.0\.1|0\.0\.0\.0/i.test(baseUrl)) {
+      chatApiKey = "local-no-key";
     }
   }
 
@@ -5735,10 +5747,12 @@ ipcMain.handle("models:record-capability", async (_event, input = {}) => {
 });
 
 ipcMain.handle("models:list", async (_event, input = {}) => {
-  const apiKey = String(input.apiKey || "").trim();
+  let apiKey = String(input.apiKey || "").trim();
   const baseUrl = normalizeBaseUrl(input.baseUrl, input.providerKey);
+  const isLocal = /localhost|127\.0\.0\.1|0\.0\.0\.0/i.test(baseUrl);
+  if (!apiKey && isLocal) apiKey = "local-no-key";
+  if (!apiKey && !input.providerKey?.startsWith("custom:")) throw new Error("Falta API key.");
   const kind = providerKind(input.providerKey, baseUrl);
-  if (!apiKey) throw new Error("Falta API key.");
   const response = await fetch(providerModelsUrl(input.baseUrl, input.providerKey, apiKey), {
     headers: providerRequestHeaders(kind, apiKey),
   });
@@ -5749,11 +5763,13 @@ ipcMain.handle("models:list", async (_event, input = {}) => {
 });
 
 ipcMain.handle("provider:test", async (_event, input = {}) => {
-  const apiKey = String(input.apiKey || "").trim();
+  let apiKey = String(input.apiKey || "").trim();
   const baseUrl = normalizeBaseUrl(input.baseUrl, input.providerKey);
+  const isLocal = /localhost|127\.0\.0\.1|0\.0\.0\.0/i.test(baseUrl);
+  if (!apiKey && isLocal) apiKey = "local-no-key";
+  if (!apiKey && !input.providerKey?.startsWith("custom:")) throw new Error("Falta API key.");
   const kind = providerKind(input.providerKey, baseUrl);
   const requestedModel = String(input.model || "").trim();
-  if (!apiKey) throw new Error("Falta API key.");
   const modelsResponse = await fetch(providerModelsUrl(input.baseUrl, input.providerKey, apiKey), {
     headers: providerRequestHeaders(kind, apiKey),
     signal: AbortSignal.timeout(20_000),
@@ -7064,27 +7080,33 @@ ipcMain.handle("agent:run", async (event, input = {}) => {
     }
   }
 
-  // Usuarios (no admin) y el admin en "Ver como usuario": la consulta va al servidor de EditCoreAI
-  // con su sesiÃ³n; Ã©l cobra por tokens (al admin no le cobra).
   let cloudRoute = null;
-  {
+  const isCustomOrDirect = input.providerKey?.startsWith("custom:") || 
+    (input.baseUrl && !input.baseUrl.includes("ai-proxy")) || 
+    (apiKey && apiKey !== CLOUD_SESSION_KEY && apiKey !== "editcoreai_session_token");
+
+  if (!isCustomOrDirect && (apiKey === CLOUD_SESSION_KEY || providerKey === CLOUD_PROVIDER_KEY)) {
     const { creditLedger } = require("./runtime/credit-ledger");
     const access = await creditLedger.checkCanRun();
     if (!access.ok) return licenseBlockedRunResult(event, access);
-    require("./runtime/platform-defaults").setAdminInfra(access.role === "admin" && apiKey !== CLOUD_SESSION_KEY);
+    require("./runtime/platform-defaults").setAdminInfra(true);
     const { authManager } = require("./runtime/auth-manager");
-    if (access.role !== "admin" || apiKey === CLOUD_SESSION_KEY) {
-      const token = await authManager.getAccessToken();
-      if (!token) return licenseBlockedRunResult(event, { code: "NO_SESSION" });
+    const token = await authManager.getAccessToken();
+    if (token) {
       cloudRoute = { baseUrl: normalizeBaseUrl(authManager.aiProxyBaseUrl(), CLOUD_PROVIDER_KEY) };
       baseUrl = cloudRoute.baseUrl;
       apiKey = token;
       providerKey = CLOUD_PROVIDER_KEY;
       model = String(input.model || model).trim().replace(/^meai\//i, "");
     }
+  } else {
+    require("./runtime/platform-defaults").setAdminInfra(true);
+    if (!apiKey && /localhost|127\.0\.0\.1|0\.0\.0\.0/i.test(baseUrl)) {
+      apiKey = "local-no-key";
+    }
   }
 
-  if (!apiKey) throw new Error("Falta API key.");
+  if (!apiKey && !input.providerKey?.startsWith("custom:")) throw new Error("Falta API key.");
   if (!model) throw new Error("Falta modelo.");
 
   // Preferir nÃºcleo multi-agente salvo bypass explÃ­cito al adapter legado.

@@ -47,9 +47,7 @@
               </div>
               <div class="ec-usage-bar"><div class="ec-usage-bar-fill" id="chatHomeUsageFill"></div></div>
             </div>
-            <button type="button" class="chat-home-settings-btn chat-home-admin-btn" id="chatHomeAdminBtn" title="Panel de administración: usuarios, saldo, códigos y pagos" hidden>🛡 Administración</button>
-            <button type="button" class="chat-home-settings-btn" id="chatHomePreviewBtn" title="Mira EditCoreAI tal como lo ve un usuario normal" hidden>👁 Ver como usuario</button>
-            <button type="button" class="chat-home-settings-btn ec-preview-exit-btn" id="chatHomeExitPreviewBtn" title="Estás viendo la app como usuario (saldo de ejemplo, sin cobro). También puedes pulsar Esc." hidden>✕ Salir de vista usuario</button>
+            <button type="button" class="chat-home-settings-btn chat-home-admin-btn" id="chatHomeAdminBtn" title="Panel de administración: usuarios, saldo, códigos y pagos">🛡 Administración</button>
             <button type="button" class="chat-home-settings-btn" id="chatHomeSettingsBtn" title="Configuración">⚙ Configuración</button>
           </div>
         </aside>
@@ -742,11 +740,9 @@
         </div>
         <span class="toolbar-divider" aria-hidden="true"></span>
         <div class="toolbar-group" aria-label="Cuenta y modelos">
-          <button id="connectionsBtn" type="button" title="GitHub, Vercel y Supabase">Conexiones</button>
+          <button id="connectionsBtn" type="button" title="GitHub, Vercel, Supabase y Proveedores IA">Conexiones</button>
           <button id="providersBtn" type="button" title="Proveedores y modelos de IA">Modelos</button>
-          <button id="ideAdminBtn" type="button" class="toolbar-admin-btn" title="Panel de administración: usuarios, saldo, códigos y pagos" hidden>🛡 Administración</button>
-          <button id="idePreviewBtn" type="button" class="toolbar-admin-btn" title="Ver EditCoreAI exactamente como lo ve un usuario normal" hidden>👁 Ver como usuario</button>
-          <button id="ideExitPreviewBtn" type="button" class="toolbar-admin-btn ec-preview-exit-btn" title="Estás viendo la app como usuario (saldo de ejemplo, sin cobro). También puedes pulsar Esc." hidden>✕ Salir de vista usuario</button>
+          <button id="ideAdminBtn" type="button" class="toolbar-admin-btn" title="Panel de administración: usuarios, saldo, códigos y pagos">🛡 Administración</button>
         </div>
         <span class="toolbar-divider" aria-hidden="true"></span>
           <div class="toolbar-group" aria-label="Acciones">
@@ -1152,13 +1148,18 @@
           <header class="dlg-head">
             <div>
               <h2>Conexiones</h2>
-              <p>Bóveda segura en tu computadora. Conecta tus cuentas oficiales (GitHub, Vercel, Supabase y Docker). Nadie más las ve. Los modelos de IA se administran en el selector de Modelos.</p>
-              <p id="connectionsPreviewNote" class="conn-preview-note" hidden>Vista de usuario: así ve este panel un cliente nuevo (vacío). Tus conexiones reales no se muestran ni se modifican.</p>
+              <p>Bóveda segura en tu computadora. Conecta tus cuentas oficiales (GitHub, Vercel, Supabase y Docker) y gestiona tus proveedores de IA OpenAI-compatible directos.</p>
             </div>
             <button id="closeConnectionsBtn" type="button" class="dlg-close">✕</button>
           </header>
 
           <div class="connections-body">
+
+            <div class="conn-section" style="border-left: 3px solid var(--accent, #00d2b4); background: rgba(0, 210, 180, 0.05); padding: 12px; margin-bottom: 12px; border-radius: 6px;">
+              <div class="conn-section-title" style="color: var(--accent, #00d2b4); font-size: 0.95em; font-weight: 600;">🧠 Proveedores de IA (OpenAI-Compatible) <span class="conn-status" style="color: var(--accent, #00d2b4); background: rgba(0,210,180,0.15); padding: 2px 6px; border-radius: 4px; font-size: 0.75em;">Directo</span></div>
+              <p style="font-size: 0.85em; opacity: 0.85; margin: 6px 0 10px; line-height: 1.4;">Conecta cualquier proveedor con API OpenAI-compatible (OpenAI, DeepSeek, Groq, OpenRouter, Mistral, Ollama local, etc.) con su Base URL y API Key. Conexión 100% directa sin intermediarios.</p>
+              <button type="button" id="openAiProvidersFromConnBtn" class="btn-primary" style="font-size: 0.85em; padding: 6px 14px; cursor: pointer;">Gestionar Proveedores y Modelos de IA →</button>
+            </div>
 
             <div class="conn-section">
               <div class="conn-section-title">GitHub <span class="conn-status" data-service="github">sin conectar</span></div>

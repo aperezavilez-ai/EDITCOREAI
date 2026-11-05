@@ -22,8 +22,8 @@ const PROVIDERS = {
   gemini:   { label: "Gemini",    baseUrl: "https://generativelanguage.googleapis.com/v1beta", model: "gemini-2.5-pro" },
   meai:     { label: "ME AI Cloud", baseUrl: "https://api.meai.cloud/v1", model: "claude-sonnet-4.6" },
 };
-// ME AI usa una sola API key para todos sus modelos.
-const PRIMARY_PROVIDER_KEYS = ["meai"];
+// Proveedores de IA principales disponibles directamente para el administrador
+const PRIMARY_PROVIDER_KEYS = ["openai", "anthropic", "gemini", "meai"];
 const HIDDEN_PROVIDER_KEYS = [];
 const SINGLE_KEY_PROVIDER_KEYS = ["meai"];
 
@@ -1618,8 +1618,7 @@ const CLOUD_SESSION_API_KEY = "editcore-session";
 let cloudModelState = { ids: [...MEAI_PROVIDER_MODELS], baseUrl: "" };
 
 function isCloudUser() {
-  if (window.EDITCORE_IS_WEB === true) return true;
-  return window.__editcoreSession !== undefined && !isCurrentUserAdmin();
+  return false;
 }
 
 function cloudProviderProfiles() {
@@ -2403,7 +2402,7 @@ function mapProfileToModelOption(profile, customProvidersByKey) {
 }
 
 function isCurrentUserAdmin() {
-  return window.__editcoreSession?.user?.isAdmin === true;
+  return true;
 }
 
 const USER_MODEL_GROUP_LABEL = "Modelos";
@@ -15429,6 +15428,10 @@ try { wireComposerControls(); } catch (err) {
 
 $("connectionsBtn")?.addEventListener("click", openConnections);
 $("closeConnectionsBtn")?.addEventListener("click", closeConnections);
+$("openAiProvidersFromConnBtn")?.addEventListener("click", () => {
+  closeConnections();
+  openProviders();
+});
 $("detectConnectionsBtn")?.addEventListener("click", detectConnections);
 $("validateConnectionsBtn")?.addEventListener("click", () => {
   renderConnectionStatus(true).catch((error) => {
