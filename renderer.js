@@ -802,17 +802,66 @@ function sniffMimeFromDataUrl(dataUrl = "") {
   return mime;
 }
 
+function compressImageDataUrl(dataUrl, maxDim = 1280, quality = 0.82) {
+  return new Promise((resolve) => {
+    if (!dataUrl || typeof dataUrl !== "string" || !dataUrl.startsWith("data:image/")) {
+      return resolve(dataUrl);
+    }
+    const img = new Image();
+    img.onload = () => {
+      try {
+        let { width, height } = img;
+        if (!width || !height) return resolve(dataUrl);
+        if (width <= maxDim && height <= maxDim && dataUrl.length < 500_000) {
+          return resolve(dataUrl);
+        }
+        if (width > height) {
+          if (width > maxDim) {
+            height = Math.round((height * maxDim) / width);
+            width = maxDim;
+          }
+        } else {
+          if (height > maxDim) {
+            width = Math.round((width * maxDim) / height);
+            height = maxDim;
+          }
+        }
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0, width, height);
+        const compressed = canvas.toDataURL("image/jpeg", quality);
+        resolve(compressed || dataUrl);
+      } catch {
+        resolve(dataUrl);
+      }
+    };
+    img.onerror = () => resolve(dataUrl);
+    img.src = dataUrl;
+  });
+}
+
 async function addFiles(files) {
   const incoming = [...(files || [])].filter(Boolean).slice(0, 8);
   for (const file of incoming) {
-    const dataUrl = await readFileAsDataUrl(file);
+    const rawDataUrl = await readFileAsDataUrl(file);
     let mimeType = String(file.type || "").toLowerCase();
     if (mimeType === "image/jpg") mimeType = "image/jpeg";
     const name = String(file.name || `archivo-${Date.now()}`).slice(0, 120);
     if (!mimeType || mimeType === "application/octet-stream") {
-      mimeType = sniffMimeFromDataUrl(dataUrl) || mimeFromFileName(name) || mimeType || "application/octet-stream";
+      mimeType = sniffMimeFromDataUrl(rawDataUrl) || mimeFromFileName(name) || mimeType || "application/octet-stream";
     }
-    state.attachments.push({ name, mimeType, size: file.size, dataUrl });
+    let dataUrl = rawDataUrl;
+    if (isImageAttachment({ mimeType, dataUrl: rawDataUrl })) {
+      try {
+        dataUrl = await compressImageDataUrl(rawDataUrl);
+        mimeType = "image/jpeg";
+      } catch {
+        dataUrl = rawDataUrl;
+      }
+    }
+    state.attachments.push({ name, mimeType, size: Math.round(dataUrl.length * 0.75), dataUrl });
   }
   renderAttachments();
 }
@@ -3668,6 +3717,7 @@ function allowsImmediateAgentExecution(job, project, prompt, isAgent, flags = {}
   if (job.orchestratorPlan?.greenfieldCreate) return true;
   if (ProjectAnalysis.isChangeRequest(prompt)) return true;
   if (/^\s*(?:procede|adelante|autorizo)\b/i.test(String(prompt || "").trim())) return true;
+  if (isAgent && (job.permissionMode || state.permissionMode) !== "readonly") return true;
   return false;
 }
 

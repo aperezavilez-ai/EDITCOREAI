@@ -37,6 +37,57 @@ function isApprovalInput(text = "") {
   return /\b(?:procede|proceder|autorizo|autorizado|autoriza|continua|contin[uú]a|dale|adelante|hazlo|aplica(?:lo)?|ejecuta(?:lo)?)\b/i.test(String(text || "").trim());
 }
 
+function extractToolCallsFromText(text = "") {
+  const toolCalls = [];
+  if (!text || typeof text !== "string") return toolCalls;
+
+  const toolNames = ["write_file", "write_to_file", "replace_in_file", "read_file", "run_command", "execute_command", "list_files", "create_pdf", "create_word", "create_excel"];
+  for (const name of toolNames) {
+    const regex = new RegExp(`<(?:tool_call>\\s*)?<${name}>([\\s\\S]*?)<\\/${name}>(?:\\s*<\\/tool_call>)?`, "gi");
+    let match;
+    while ((match = regex.exec(text)) !== null) {
+      const body = match[1];
+      const args = {};
+      const paramMatches = [...body.matchAll(/<([a-zA-Z0-9_]+)>([\s\S]*?)<\/\1>/g)];
+      for (const p of paramMatches) {
+        args[p[1]] = p[2].trim();
+      }
+      toolCalls.push({
+        id: `call_${Date.now()}_${toolCalls.length}`,
+        function: {
+          name: name === "write_to_file" ? "write_file" : name === "execute_command" ? "run_command" : name,
+          arguments: args,
+        }
+      });
+    }
+  }
+
+  if (toolCalls.length === 0) {
+    const jsonBlockRegex = /```(?:json)?\s*\{[\s\S]*?"(?:tool|tool_name|action)"\s*:\s*"([^"]+)"[\s\S]*?\}\s*```/gi;
+    let jMatch;
+    while ((jMatch = jsonBlockRegex.exec(text)) !== null) {
+      try {
+        const raw = jMatch[0].replace(/^```(?:json)?|```$/g, "").trim();
+        const parsed = JSON.parse(raw);
+        const name = parsed.tool || parsed.tool_name || parsed.action;
+        delete parsed.tool;
+        delete parsed.tool_name;
+        delete parsed.action;
+        const args = parsed.arguments || parsed.params || parsed.input || parsed;
+        toolCalls.push({
+          id: `call_${Date.now()}_${toolCalls.length}`,
+          function: {
+            name: name === "write_to_file" ? "write_file" : name === "execute_command" ? "run_command" : name,
+            arguments: args
+          }
+        });
+      } catch { /* ignore */ }
+    }
+  }
+
+  return toolCalls;
+}
+
 class EditCoreClineController {
   constructor(deps = {}) {
     this.providerGateway = new BrainProviderGateway(deps);
@@ -145,23 +196,52 @@ class EditCoreClineController {
           onTextDelta: (delta) => notify({ phase: "delta", text: delta })
         });
       } catch (err) {
-        this.state = STATE.ERROR;
-        const errMsg = String(err?.message || err || "Error en el proveedor de IA");
-        notify({ phase: "error", error: errMsg });
-        return {
-          ok: false,
-          error: errMsg,
-          text: `[Error de EditCoreAI] ${errMsg}`,
-          messages: this.messages
-        };
+        if (/openai_error|tools|function|unsupported|not allowed|malformed|400/i.test(String(err?.message || ""))) {
+          try {
+            notify({ phase: "thought", text: "Reintentando en modo de ejecución directa compatible..." });
+            response = await this.callChat({
+              apiBaseUrl,
+              apiKey,
+              model,
+              messages: safeMessages,
+              tools: undefined,
+              toolChoice: undefined,
+              onTextDelta: (delta) => notify({ phase: "delta", text: delta })
+            });
+          } catch (retryErr) {
+            this.state = STATE.ERROR;
+            const errMsg = String(retryErr?.message || retryErr || "Error en el proveedor de IA");
+            notify({ phase: "error", error: errMsg });
+            return {
+              ok: false,
+              error: errMsg,
+              text: `[Error de EditCoreAI] ${errMsg}`,
+              messages: this.messages
+            };
+          }
+        } else {
+          this.state = STATE.ERROR;
+          const errMsg = String(err?.message || err || "Error en el proveedor de IA");
+          notify({ phase: "error", error: errMsg });
+          return {
+            ok: false,
+            error: errMsg,
+            text: `[Error de EditCoreAI] ${errMsg}`,
+            messages: this.messages
+          };
+        }
       }
 
       if (this.isAborted) break;
 
+      const rawToolCalls = Array.isArray(response.toolCalls) && response.toolCalls.length > 0
+        ? response.toolCalls
+        : extractToolCallsFromText(response.text || "");
+
       const assistantMessage = {
         role: "assistant",
         content: response.text || "",
-        tool_calls: response.toolCalls || []
+        tool_calls: rawToolCalls
       };
       this.messages.push(assistantMessage);
 
