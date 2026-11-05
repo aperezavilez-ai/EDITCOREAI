@@ -2360,10 +2360,10 @@ function isCurrentUserAdmin() {
 const USER_MODEL_GROUP_LABEL = "Modelos";
 
 function isUserVisibleModelOption(entry) {
-  return String(entry?.modelProviderGroup || entry?.providerKey || "").replace(/^custom:/, "").toLowerCase() === "meai";
+  return Boolean(entry && entry.enabled !== false && entry.model);
 }
 
-// Usuarios no admin: solo modelos ME AI y sin nombres de proveedor.
+// Usuarios no admin: ven todos los modelos activos configurados por el administrador, agrupados limpiamente bajo "Modelos" sin exponer infraestructura interna
 function filterModelOptionsForRole(options) {
   if (isCurrentUserAdmin()) return options;
   return options
