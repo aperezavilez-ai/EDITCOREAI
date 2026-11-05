@@ -248,6 +248,8 @@ const {
   createAgentTransparencyEmitter,
 } = require("./runtime/agent-transparency-bus");
 const { attachPreviewLogStream } = require("./runtime/dev-server-daemon");
+const CLOUD_PROVIDER_KEY = "editcore-cloud";
+const CLOUD_SESSION_KEY = "editcore-session";
 const { enrichAgentInventory, formatJarvisContextForPrompt } = require("./runtime/jarvis-port");
 const { getBotRegistry } = require("./runtime/bot-registry");
 const {
@@ -1814,16 +1816,34 @@ ipcMain.handle("editcore:chat", async (_event, input = {}) => {
   if (!prompt && !images.length) throw new Error("Escribe un mensaje.");
   const effectivePrompt = prompt || (images.length ? "Analiza la imagen adjunta." : "");
 
+  let cloudRoute = null;
+  {
+    const { creditLedger } = require("./runtime/credit-ledger");
+    const access = await creditLedger.checkCanRun();
+    if (!access.ok) return licenseBlockedRunResult(_event, access);
+    require("./runtime/platform-defaults").setAdminInfra(access.role === "admin" && chatApiKey !== CLOUD_SESSION_KEY);
+    const { authManager } = require("./runtime/auth-manager");
+    if (access.role !== "admin" || chatApiKey === CLOUD_SESSION_KEY) {
+      const token = await authManager.getAccessToken();
+      if (!token) return licenseBlockedRunResult(_event, { code: "NO_SESSION" });
+      cloudRoute = { baseUrl: normalizeBaseUrl(authManager.aiProxyBaseUrl(), CLOUD_PROVIDER_KEY) };
+      baseUrl = cloudRoute.baseUrl;
+      chatApiKey = token;
+      providerKey = CLOUD_PROVIDER_KEY;
+      model = String(input.model || model).trim().replace(/^meai\//i, "");
+    }
+  }
+
   if (images.length) {
     const routed = ensureVisionRoute({
       model,
       images,
-      candidates: fallbackProviderProfiles({ providerKey, baseUrl, model, apiKey: chatApiKey }),
+      candidates: cloudRoute ? [] : fallbackProviderProfiles({ providerKey, baseUrl, model, apiKey: chatApiKey }),
     });
     if (routed.routed && routed.model) {
       model = routed.model;
-      if (routed.apiKey) chatApiKey = routed.apiKey;
-      if (routed.baseUrl) baseUrl = normalizeBaseUrl(routed.baseUrl, routed.providerKey || providerKey);
+      if (routed.apiKey && !cloudRoute) chatApiKey = routed.apiKey;
+      if (routed.baseUrl && !cloudRoute) baseUrl = normalizeBaseUrl(routed.baseUrl, routed.providerKey || providerKey);
       if (routed.providerKey) providerKey = routed.providerKey;
     }
   }
@@ -1898,7 +1918,7 @@ ipcMain.handle("editcore:chat", async (_event, input = {}) => {
       apiKey: chatApiKey,
       model,
       images,
-      fallbackProfiles: fallbackProviderProfiles({ providerKey, baseUrl, model, apiKey: chatApiKey }),
+      fallbackProfiles: cloudRoute ? [] : fallbackProviderProfiles({ providerKey, baseUrl, model, apiKey: chatApiKey }),
       helpers,
       allowWrite: fullAccess || permissionHint !== "readonly",
       permissionMode: permissionHint || permissionMode || "step",
@@ -1912,12 +1932,12 @@ ipcMain.handle("editcore:chat", async (_event, input = {}) => {
             projectRoot: rootPath,
             ...(p && typeof p === "object" ? p : { text: String(p || "") }),
           };
-          // Solo agent:progress â€” NO reenviar por editcore:chunk (duplicaba el texto en el chat).
+          // Solo agent:progress — NO reenviar por editcore:chunk (duplicaba el texto en el chat).
           publishAgentProgress(sender, payload);
         } catch { /* ignore */ }
       },
     });
-    const text = String(out?.text || "").trim() || "Sin respuesta.";
+    const text = String(out?.text || "").trim() || (out?.error ? `[Error de EditCoreAI] ${out.error}` : "Sin respuesta.");
     try {
       if (!sender.isDestroyed()) sender.send("editcore:chunk", { done: true, text });
     } catch { /* ignore */ }
@@ -5531,9 +5551,6 @@ app.whenReady().then(() => setTimeout(() => {
   syncAdminInfra();
 }, 15000));
 setInterval(sendPresenceHeartbeat, PRESENCE_HEARTBEAT_MS).unref?.();
-
-const CLOUD_PROVIDER_KEY = "editcore-cloud";
-const CLOUD_SESSION_KEY = "editcore-session";
 
 function notifyCloudBalance(event) {
   const { creditLedger } = require("./runtime/credit-ledger");

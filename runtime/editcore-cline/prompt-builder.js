@@ -17,6 +17,7 @@ function buildEditCoreSystemPrompt(options = {}) {
     permissionMode = "step",
     rules = "",
     ideName = "EditCoreAI Studio",
+    hasImages = false,
   } = options;
 
   const currentDate = new Date().toLocaleDateString();
@@ -54,8 +55,12 @@ DIRECTIVAS ESENCIALES (ESTILO CLINE):
    - Tienes visión directa sobre imágenes o capturas que el usuario adjunte. Analízalas con total precisión técnica y haz referencia a su contenido visual.
    - El texto de documentos adjuntos (PDF, DOCX, XLSX, CSV, TXT) se incluye automáticamente en el contexto para tu análisis.
    - Para inspeccionar archivos del proyecto incluidos PDFs (.pdf), Word (.docx) o Excel (.xlsx/.xls/.csv), usa 'read_file' y el sistema extraerá su texto automáticamente.
-   - Para generar nuevos documentos cuando el usuario lo pida, usa las herramientas 'create_pdf', 'create_word' o 'create_excel'.
-${rules ? `\n<reglas_adicionales>\n${rules}\n</reglas_adicionales>` : ""}`;
+   - Para generar nuevos documentos cuando el usuario lo pida, usa las herramientas 'create_pdf', 'create_word' o 'create_excel'.${hasImages ? `\n6. VISIÓN MULTIMODAL OBLIGATORIA (imagen/captura adjunta):
+   - Hay una o más imágenes o capturas de pantalla adjuntas en el mensaje del usuario.
+   - PROHIBIDO responder que no ves la imagen, que no hay adjunto o pedir que la suba de nuevo.
+   - PROHIBIDO responder en silencio o ignorar la imagen.
+   - En tu respuesta analiza de inmediato los elementos visuales observados: interfaz, formularios, tablas, botones, campos, navegación y estilo de diseño.
+   - Diseña o implementa los apartados y la arquitectura funcional tomando como guía directa la referencia visual que te envió el usuario.` : ""}${rules ? `\n<reglas_adicionales>\n${rules}\n</reglas_adicionales>` : ""}`;
 }
 
 const FormatResponse = {

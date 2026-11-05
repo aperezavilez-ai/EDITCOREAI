@@ -144,9 +144,12 @@ async function runKernelChat({
       onProgress,
     });
 
+    const finalText = clineResult.text || (clineResult.error ? `[Error de EditCoreAI] ${clineResult.error}` : "Operación procesada.");
+
     return {
       ok: clineResult.ok,
-      text: clineResult.text,
+      text: finalText,
+      error: clineResult.error || undefined,
       steps: clineResult.messages?.filter((m) => m.role === "tool") || [],
       threadId: tid,
       kernel: true,

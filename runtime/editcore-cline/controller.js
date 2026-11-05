@@ -77,12 +77,14 @@ class EditCoreClineController {
     this.state = STATE.THINKING;
 
     const isReadonly = permissionMode === "readonly";
+    const hasImages = Array.isArray(images) && images.length > 0;
     const toolExecutor = new EditCoreClineTools(projectRoot, this.existingTools);
     const systemPrompt = buildEditCoreSystemPrompt({
       workspaceRoot: projectRoot,
       mode,
       permissionMode,
-      rules
+      rules,
+      hasImages
     });
 
     let userContent = prompt;
@@ -144,10 +146,12 @@ class EditCoreClineController {
         });
       } catch (err) {
         this.state = STATE.ERROR;
-        notify({ phase: "error", error: err.message });
+        const errMsg = String(err?.message || err || "Error en el proveedor de IA");
+        notify({ phase: "error", error: errMsg });
         return {
           ok: false,
-          error: err.message,
+          error: errMsg,
+          text: `[Error de EditCoreAI] ${errMsg}`,
           messages: this.messages
         };
       }
