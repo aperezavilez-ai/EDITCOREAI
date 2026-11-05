@@ -104,6 +104,28 @@ class EditCoreClineTools {
       throw err;
     }
 
+    const ext = path.extname(fullPath).toLowerCase();
+    if ([".pdf", ".docx", ".xlsx", ".xls", ".xlsm"].includes(ext)) {
+      try {
+        const { extractDocumentFromBuffer } = require("../../document-attachments");
+        const buffer = await fs.readFile(fullPath);
+        const extracted = await extractDocumentFromBuffer(path.basename(fullPath), buffer);
+        if (extracted.supported && extracted.text) {
+          const lines = extracted.text.split(/\r?\n/);
+          return {
+            ok: true,
+            path: filePath,
+            format: extracted.format,
+            totalLines: lines.length,
+            content: extracted.text.slice(0, 50_000),
+            truncated: extracted.truncated || extracted.text.length > 50_000
+          };
+        }
+      } catch (docErr) {
+        throw new Error(`No se pudo extraer contenido del documento '${filePath}': ${docErr.message}`);
+      }
+    }
+
     const content = await fs.readFile(fullPath, "utf-8");
     const lines = content.split(/\r\n|\n/);
 
@@ -260,6 +282,34 @@ class EditCoreClineTools {
         case "execute_command":
           return await this.runCommand(args.command);
 
+        case "create_pdf": {
+          const { createPdf } = require("../document-writer");
+          const fullPath = this.resolveFilePath(args.path);
+          await fs.mkdir(path.dirname(fullPath), { recursive: true });
+          const res = await createPdf(args.content, fullPath, {
+            title: args.title,
+            author: args.author,
+            align: args.align
+          });
+          return { ok: true, path: args.path, size: res.size, message: `PDF creado exitosamente en ${args.path}` };
+        }
+
+        case "create_word": {
+          const { createWord } = require("../document-writer");
+          const fullPath = this.resolveFilePath(args.path);
+          await fs.mkdir(path.dirname(fullPath), { recursive: true });
+          const res = await createWord(args.content, fullPath, { title: args.title });
+          return { ok: true, path: args.path, size: res.size, message: `Documento Word (.docx) creado exitosamente en ${args.path}` };
+        }
+
+        case "create_excel": {
+          const { createExcel } = require("../document-writer");
+          const fullPath = this.resolveFilePath(args.path);
+          await fs.mkdir(path.dirname(fullPath), { recursive: true });
+          const res = await createExcel(args.data, fullPath, { sheetName: args.sheetName });
+          return { ok: true, path: args.path, size: res.size, message: `Archivo Excel (.xlsx) creado exitosamente en ${args.path}` };
+        }
+
         default:
           if (this.existingToolExecutor && typeof this.existingToolExecutor.execute === "function") {
             return await this.existingToolExecutor.execute(name, args, this.projectRoot, true, helpers);
@@ -344,6 +394,58 @@ class EditCoreClineTools {
             properties: {
               path: { type: "string", description: "Directorio a listar (por defecto '.')." }
             }
+          }
+        }
+      },
+      {
+        type: "function",
+        function: {
+          name: "create_pdf",
+          description: "Crea un documento PDF profesional con texto estructurado, títulos y listas.",
+          parameters: {
+            type: "object",
+            properties: {
+              path: { type: "string", description: "Ruta del archivo PDF a generar (ej. 'docs/informe.pdf')." },
+              content: { type: "string", description: "Contenido de texto o párrafos a incluir en el PDF." },
+              title: { type: "string", description: "Título del documento (opcional)." }
+            },
+            required: ["path", "content"]
+          }
+        }
+      },
+      {
+        type: "function",
+        function: {
+          name: "create_word",
+          description: "Crea un documento de Microsoft Word (.docx) con formato profesional.",
+          parameters: {
+            type: "object",
+            properties: {
+              path: { type: "string", description: "Ruta del archivo Word a generar (ej. 'docs/informe.docx')." },
+              content: { type: "string", description: "Contenido del documento de texto." },
+              title: { type: "string", description: "Título principal del documento (opcional)." }
+            },
+            required: ["path", "content"]
+          }
+        }
+      },
+      {
+        type: "function",
+        function: {
+          name: "create_excel",
+          description: "Crea una hoja de cálculo Excel (.xlsx) con datos tabulares.",
+          parameters: {
+            type: "object",
+            properties: {
+              path: { type: "string", description: "Ruta del archivo Excel a generar (ej. 'datos/tabla.xlsx')." },
+              data: {
+                type: "array",
+                description: "Array de filas o array de objetos para las columnas de la hoja.",
+                items: { type: "object" }
+              },
+              sheetName: { type: "string", description: "Nombre de la hoja de cálculo (opcional)." }
+            },
+            required: ["path", "data"]
           }
         }
       }

@@ -136,6 +136,7 @@ async function runKernelChat({
       apiKey,
       model,
       apiBaseUrl,
+      images: Array.isArray(images) ? images : [],
       permissionMode: isFull ? "full" : (permissionMode || "step"),
       fullAccess: isFull,
       rules: skillsPrompt,

@@ -50,6 +50,11 @@ DIRECTIVAS ESENCIALES (ESTILO CLINE):
 4. RESPUESTAS LIMPIAS:
    - NUNCA vuelques JSON crudo ni metadatos internos en el chat. Explica siempre en español claro, profesional y directo.
    - Cuando hayas concluido la tarea o respondido completamente la consulta del usuario, incluye 'TASK_COMPLETE' para cerrar el ciclo limpiamente.
+5. DOCUMENTOS Y MULTIMODALIDAD:
+   - Tienes visión directa sobre imágenes o capturas que el usuario adjunte. Analízalas con total precisión técnica y haz referencia a su contenido visual.
+   - El texto de documentos adjuntos (PDF, DOCX, XLSX, CSV, TXT) se incluye automáticamente en el contexto para tu análisis.
+   - Para inspeccionar archivos del proyecto incluidos PDFs (.pdf), Word (.docx) o Excel (.xlsx/.xls/.csv), usa 'read_file' y el sistema extraerá su texto automáticamente.
+   - Para generar nuevos documentos cuando el usuario lo pida, usa las herramientas 'create_pdf', 'create_word' o 'create_excel'.
 ${rules ? `\n<reglas_adicionales>\n${rules}\n</reglas_adicionales>` : ""}`;
 }
 

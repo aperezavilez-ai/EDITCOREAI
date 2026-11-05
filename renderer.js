@@ -7487,11 +7487,41 @@ function append(role, text, usage, scroll = true, elapsedSeconds = null, images 
     item.appendChild(meta);
   }
 
+function openImageLightbox(src, alt = "") {
+  let overlay = document.getElementById("editcoreImageLightbox");
+  if (!overlay) {
+    overlay = document.createElement("div");
+    overlay.id = "editcoreImageLightbox";
+    overlay.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:99999;display:flex;align-items:center;justify-content:center;padding:24px;cursor:zoom-out;backdrop-filter:blur(4px);";
+    const img = document.createElement("img");
+    img.style.cssText = "max-width:92vw;max-height:92vh;border-radius:8px;box-shadow:0 8px 32px rgba(0,0,0,0.6);object-fit:contain;cursor:default;";
+    img.addEventListener("click", (e) => e.stopPropagation());
+    const closeBtn = document.createElement("button");
+    closeBtn.textContent = "×";
+    closeBtn.style.cssText = "position:absolute;top:16px;right:20px;font-size:28px;color:#fff;background:transparent;border:0;cursor:pointer;line-height:1;";
+    closeBtn.onclick = () => overlay.remove();
+    overlay.appendChild(img);
+    overlay.appendChild(closeBtn);
+    overlay.onclick = () => overlay.remove();
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && overlay.parentNode) overlay.remove();
+    });
+  }
+  const imgEl = overlay.querySelector("img");
+  if (imgEl) {
+    imgEl.src = src;
+    imgEl.alt = alt;
+  }
+  document.body.appendChild(overlay);
+}
+
   for (const image of images) {
     const imageElement = document.createElement("img");
     imageElement.src = image.dataUrl;
     imageElement.alt = image.name || "imagen adjunta";
     imageElement.className = "msg-img";
+    imageElement.title = "Haz clic para ampliar la imagen";
+    imageElement.addEventListener("click", () => openImageLightbox(image.dataUrl, image.name));
     item.appendChild(imageElement);
   }
   for (const documentItem of documents) {
@@ -12190,10 +12220,11 @@ async function send(event) {
   const userAuthorized = isAgentAuthorization(effectivePrompt);
   const userVisiblePrompt = String(effectivePrompt || "").trim();
   const queuedImages = [...(state.attachments || []).filter((a) => isImageAttachment(a))];
+  const queuedDocs = [...(state.attachments || []).filter((a) => !isImageAttachment(a))];
   // Pintar PROCEDE/HAZLO al instante (antes de awaits / cancelaciones).
   let userBubblePainted = false;
-  if (userVisiblePrompt || queuedImages.length) {
-    appendUserMessageImmediate(userVisiblePrompt || "Imagen adjunta", queuedImages);
+  if (userVisiblePrompt || queuedImages.length || queuedDocs.length) {
+    appendUserMessageImmediate(userVisiblePrompt || (queuedImages.length ? "Imagen adjunta" : "Documento adjunto"), queuedImages, queuedDocs);
     userBubblePainted = true;
     $("prompt").value = "";
     updateSendButtonState();
@@ -12399,7 +12430,7 @@ async function send(event) {
     }
     const visiblePrompt = ProjectAnalysis.redactCredentials(job.displayPrompt || userVisiblePrompt || job.prompt);
     if (!job.userMessageDisplayed) {
-      appendUserWithImages(visiblePrompt, job.images || []);
+      appendUserWithImages(visiblePrompt, job.images || [], job.documents || []);
       rememberMessage("user", visiblePrompt, null, job.images || [], job.documents || []);
       job.userMessageDisplayed = true;
     }
@@ -13099,7 +13130,7 @@ async function executePromptJob(job) {
   const documents = job.documents || [];
   if (!job.userMessageDisplayed) {
     const visiblePrompt = ProjectAnalysis.redactCredentials(job.displayPrompt || job.prompt);
-    appendUserWithImages(visiblePrompt, job.images || []);
+    appendUserWithImages(visiblePrompt, job.images || [], job.documents || []);
     rememberMessage("user", visiblePrompt, null, job.images || [], job.documents || []);
     job.userMessageDisplayed = true;
   }
@@ -13808,7 +13839,7 @@ async function cancelProjectAgentJobs(projectRoot) {
   setRunningControls();
 }
 
-function appendUserWithImages(text, images) {
+function appendUserWithImages(text, images = [], documents = []) {
   state.lastUserPrompt = String(text || "").trim();
   const item = document.createElement("article");
   item.className = "msg user";
@@ -13829,7 +13860,16 @@ function appendUserWithImages(text, images) {
     imgEl.src = img.dataUrl;
     imgEl.alt = img.name;
     imgEl.className = "msg-img";
+    imgEl.title = "Haz clic para ampliar la imagen";
+    imgEl.addEventListener("click", () => openImageLightbox(img.dataUrl, img.name));
     item.appendChild(imgEl);
+  }
+
+  for (const doc of documents || []) {
+    const docEl = document.createElement("div");
+    docEl.className = "msg-attachment";
+    docEl.textContent = `📄 ${doc.name || "documento adjunto"}`;
+    item.appendChild(docEl);
   }
 
   $("feed").appendChild(item);
@@ -13841,12 +13881,14 @@ function appendUserWithImages(text, images) {
   return item;
 }
 
-function appendUserMessageImmediate(text, images = []) {
+function appendUserMessageImmediate(text, images = [], documents = []) {
   const visible = ProjectAnalysis.redactCredentials(String(text || "").trim());
   const imgs = Array.isArray(images) ? images : [];
-  if (!visible && !imgs.length) return null;
-  const item = appendUserWithImages(visible || "Imagen adjunta", imgs);
-  rememberMessage("user", visible || "Imagen adjunta", null, imgs, []);
+  const docs = Array.isArray(documents) ? documents : [];
+  if (!visible && !imgs.length && !docs.length) return null;
+  const fallbackLabel = imgs.length ? "Imagen adjunta" : "Documento adjunto";
+  const item = appendUserWithImages(visible || fallbackLabel, imgs, docs);
+  rememberMessage("user", visible || fallbackLabel, null, imgs, docs);
   return item;
 }
 

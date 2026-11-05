@@ -348,3 +348,65 @@ test("EditCoreClineTools: protección estricta contra escritura o lectura en car
 
   await fs.rm(tmpDir, { recursive: true, force: true });
 });
+
+test("EditCoreClineController: preserva y pasa imágenes en formato multimodal al modelo", async () => {
+  const { EditCoreClineController } = require("../runtime/editcore-cline/index");
+
+  let receivedMessages = [];
+  const mockCallChat = async ({ messages }) => {
+    receivedMessages = messages;
+    return {
+      text: "Veo la imagen claramente. TASK_COMPLETE",
+      toolCalls: []
+    };
+  };
+
+  const controller = new EditCoreClineController({ callChat: mockCallChat });
+  const result = await controller.runTask({
+    prompt: "Analiza esta captura",
+    images: [{ dataUrl: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==" }],
+    permissionMode: "step"
+  });
+
+  assert.strictEqual(result.ok, true);
+  const userMsg = receivedMessages.find((m) => m.role === "user");
+  assert.ok(Array.isArray(userMsg.content), "El contenido del usuario debe ser un array multimodal");
+  const textPart = userMsg.content.find((p) => p.type === "text");
+  const imgPart = userMsg.content.find((p) => p.type === "image_url");
+  assert.strictEqual(textPart.text, "Analiza esta captura");
+  assert.ok(imgPart.image_url.url.startsWith("data:image/png;base64,"));
+});
+
+test("EditCoreClineTools: soporta creación y lectura de documentos (create_pdf, create_word)", async () => {
+  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ec-cline-docs-"));
+  const tools = new EditCoreClineTools(tmpDir);
+
+  // 1. Crear PDF
+  const pdfRes = await tools.execute("create_pdf", {
+    path: "reporte.pdf",
+    title: "Reporte Técnico",
+    content: "Contenido del informe en PDF."
+  });
+  assert.strictEqual(pdfRes.ok, true);
+  const pdfExists = await fs.access(path.join(tmpDir, "reporte.pdf")).then(() => true).catch(() => false);
+  assert.strictEqual(pdfExists, true);
+
+  // 2. Crear Word
+  const wordRes = await tools.execute("create_word", {
+    path: "documento.docx",
+    title: "Documento Oficial",
+    content: "Texto del documento oficial en Word."
+  });
+  assert.strictEqual(wordRes.ok, true);
+  const wordExists = await fs.access(path.join(tmpDir, "documento.docx")).then(() => true).catch(() => false);
+  assert.strictEqual(wordExists, true);
+
+  // 3. Leer documento Word con readFile (debe extraer texto limpio)
+  const readDoc = await tools.readFile("documento.docx");
+  assert.strictEqual(readDoc.ok, true);
+  assert.strictEqual(readDoc.format, "word-docx");
+  assert.ok(readDoc.content.includes("Documento Oficial") || readDoc.content.includes("Texto del documento"));
+
+  await fs.rm(tmpDir, { recursive: true, force: true });
+});
+

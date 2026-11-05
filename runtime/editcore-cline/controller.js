@@ -65,6 +65,7 @@ class EditCoreClineController {
     model,
     apiKey,
     apiBaseUrl,
+    images = [],
     mode = "act",
     permissionMode = "step",
     fullAccess = false,
@@ -84,10 +85,24 @@ class EditCoreClineController {
       rules
     });
 
+    let userContent = prompt;
+    if (Array.isArray(images) && images.length > 0) {
+      userContent = [{ type: "text", text: String(prompt || "") }];
+      for (const img of images) {
+        const url = typeof img === "string" ? img : (img.dataUrl || img.url || "");
+        if (url) {
+          userContent.push({
+            type: "image_url",
+            image_url: { url }
+          });
+        }
+      }
+    }
+
     this.messages = [
       { role: "system", content: systemPrompt },
       ...(Array.isArray(history) && history.length > 0 ? history : []),
-      { role: "user", content: prompt }
+      { role: "user", content: userContent }
     ];
 
     const notify = (data) => {

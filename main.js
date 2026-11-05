@@ -6944,7 +6944,25 @@ ipcMain.handle("agent:run", async (event, input = {}) => {
   let baseUrl = normalizeBaseUrl(input.baseUrl, input.providerKey);
   let providerKey = String(input.providerKey || "");
   const runImages = normalizeImages(input.images);
-  const task = String(input.prompt || "").trim() || (runImages.length ? "Analiza la imagen adjunta." : "");
+
+  // Extraer documentos adjuntos (PDF, DOCX, XLSX, CSV, TXT)
+  let docContext = "";
+  if (Array.isArray(input.documents) && input.documents.length) {
+    try {
+      const extractedDocs = await normalizeDocuments(input.documents);
+      docContext = documentContext(extractedDocs);
+    } catch (err) {
+      console.warn("[document-attachments] Error extrayendo documentos:", err);
+    }
+  }
+
+  let task = String(input.prompt || "").trim();
+  if (docContext) {
+    task = task ? `${task}\n\n${docContext}` : docContext;
+  }
+  if (!task && (runImages.length || (Array.isArray(input.documents) && input.documents.length))) {
+    task = runImages.length ? "Analiza la imagen adjunta." : "Analiza el documento adjunto.";
+  }
 
   if (!task) throw new Error("Falta tarea.");
 
