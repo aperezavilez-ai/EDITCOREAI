@@ -410,3 +410,96 @@ test("EditCoreClineTools: soporta creación y lectura de documentos (create_pdf,
   await fs.rm(tmpDir, { recursive: true, force: true });
 });
 
+test("EditCoreClineTools: grep busca patrones en archivos y directorios", async () => {
+  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ec-cline-grep-"));
+  const appPy = path.join(tmpDir, "app.py");
+  await fs.writeFile(appPy, "def ai_chat():\n    return 'chat ok'\n\ndef ai_recommend():\n    return 'rec ok'\n", "utf-8");
+
+  const tools = new EditCoreClineTools(tmpDir);
+
+  // 1. Búsqueda exacta en archivo específico
+  const fileRes = await tools.execute("grep", {
+    pattern: "def ai_chat",
+    path: "app.py"
+  });
+  assert.strictEqual(fileRes.ok, true);
+  assert.strictEqual(fileRes.totalMatches, 1);
+  assert.strictEqual(fileRes.matches[0].line, 1);
+  assert.ok(fileRes.matches[0].text.includes("def ai_chat"));
+
+  // 2. Búsqueda en todo el directorio
+  const dirRes = await tools.execute("grep", {
+    pattern: "ai_recommend",
+    path: "."
+  });
+  assert.strictEqual(dirRes.ok, true);
+  assert.strictEqual(dirRes.totalMatches, 1);
+  assert.strictEqual(dirRes.matches[0].line, 4);
+
+  // 3. Búsqueda con regex
+  const regexRes = await tools.execute("grep", {
+    pattern: "def\\s+ai_",
+    is_regex: "true",
+    path: "app.py"
+  });
+  assert.strictEqual(regexRes.ok, true);
+  assert.strictEqual(regexRes.totalMatches, 2);
+
+  await fs.rm(tmpDir, { recursive: true, force: true });
+});
+
+test("EditCoreClineController: procesa dots_function_call XML y ejecuta grep sin truncar la tarea", async () => {
+  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ec-cline-dots-"));
+  const appPy = path.join(tmpDir, "app.py");
+  await fs.writeFile(appPy, "def ai_chat():\n    pass\n\ndef ai_recommend():\n    pass\n", "utf-8");
+
+  let chatTurns = 0;
+  const mockCallChat = async ({ messages }) => {
+    chatTurns++;
+    const last = messages[messages.length - 1];
+    if (last.role === "tool") {
+      // Turno 2: el modelo recibe el resultado de grep y entrega la respuesta final
+      return {
+        text: "Encontré las funciones `ai_chat` en la línea 1 y `ai_recommend` en la línea 4 de app.py. TASK_COMPLETE",
+        toolCalls: []
+      };
+    }
+    // Turno 1: el modelo emite llamadas XML con <dots_function_call>
+    return {
+      text: `<dots_function_call>
+<invoke name="grep">
+<parameter name="pattern">def ai_chat</parameter>
+<parameter name="path">app.py</parameter>
+</invoke>
+</dots_function_call>
+<dots_function_call>
+<invoke name="grep">
+<parameter name="pattern">def ai_recommend</parameter>
+<parameter name="path">app.py</parameter>
+</invoke>
+</dots_function_call>`,
+      toolCalls: []
+    };
+  };
+
+  const controller = new EditCoreClineController({
+    callChat: mockCallChat
+  });
+
+  const result = await controller.runTask({
+    prompt: "¿Dónde están definidas las funciones de IA?",
+    projectRoot: tmpDir,
+    permissionMode: "step"
+  });
+
+  assert.strictEqual(result.ok, true);
+  assert.strictEqual(chatTurns, 2);
+  // Verificar que NO se filtró XML crudo al texto final
+  assert.strictEqual(result.text.includes("<dots_function_call>"), false);
+  assert.strictEqual(result.text.includes("<invoke"), false);
+  assert.ok(result.text.includes("ai_chat"));
+  assert.ok(result.text.includes("ai_recommend"));
+
+  await fs.rm(tmpDir, { recursive: true, force: true });
+});
+

@@ -232,6 +232,109 @@ class EditCoreClineTools {
     }
   }
 
+  async grep(pattern, targetPath = ".", isRegex = false) {
+    if (!pattern || typeof pattern !== "string") {
+      return { ok: false, error: "El parámetro 'pattern' es requerido para grep." };
+    }
+
+    const resolved = this.resolvePath(targetPath);
+    const matches = [];
+    const maxMatches = 150;
+    const ignoredDirs = new Set([
+      "node_modules", ".git", ".next", "dist", "build",
+      "__pycache__", ".venv", "venv", ".cache", ".editcore",
+      ".output", ".turbo", "coverage"
+    ]);
+    const ignoredExts = new Set([
+      ".png", ".jpg", ".jpeg", ".gif", ".ico", ".webp", ".pdf",
+      ".zip", ".tar", ".gz", ".exe", ".dll", ".so", ".dylib",
+      ".woff", ".woff2", ".ttf", ".eot", ".mp3", ".mp4", ".mov",
+      ".avi", ".pyc", ".db", ".sqlite"
+    ]);
+
+    let reg;
+    try {
+      reg = isRegex ? new RegExp(pattern, "i") : null;
+    } catch {
+      reg = null;
+    }
+
+    const searchInFile = async (filePath) => {
+      try {
+        const ext = path.extname(filePath).toLowerCase();
+        if (ignoredExts.has(ext)) return;
+
+        const stat = await fs.stat(filePath);
+        if (stat.size > 2 * 1024 * 1024) return; // Omitir archivos > 2MB
+
+        const content = await fs.readFile(filePath, "utf-8");
+        const lines = content.split(/\r\n|\n/);
+        const relPath = path.relative(this.projectRoot, filePath).replace(/\\/g, "/");
+
+        for (let i = 0; i < lines.length; i++) {
+          if (matches.length >= maxMatches) break;
+          const line = lines[i];
+          const matched = reg ? reg.test(line) : line.toLowerCase().includes(pattern.toLowerCase());
+          if (matched) {
+            matches.push({
+              file: relPath || path.basename(filePath),
+              line: i + 1,
+              text: line.trim().slice(0, 300)
+            });
+          }
+        }
+      } catch {
+        // Ignorar errores de lectura en archivos individuales (ej. binarios o sin permisos)
+      }
+    };
+
+    try {
+      const stat = await fs.stat(resolved);
+      if (stat.isFile()) {
+        await searchInFile(resolved);
+      } else if (stat.isDirectory()) {
+        const walk = async (currentDir, depth = 0) => {
+          if (depth > 8 || matches.length >= maxMatches) return;
+          let entries = [];
+          try {
+            entries = await fs.readdir(currentDir, { withFileTypes: true });
+          } catch {
+            return;
+          }
+
+          for (const entry of entries) {
+            if (matches.length >= maxMatches) break;
+            const full = path.join(currentDir, entry.name);
+            if (entry.isDirectory()) {
+              if (!ignoredDirs.has(entry.name) && !entry.name.startsWith(".")) {
+                await walk(full, depth + 1);
+              }
+            } else if (entry.isFile()) {
+              await searchInFile(full);
+            }
+          }
+        };
+
+        await walk(resolved, 0);
+      }
+    } catch (err) {
+      return { ok: false, error: `Error accediendo a '${targetPath}': ${err.message}` };
+    }
+
+    const output = matches.map((m) => `${m.file}:${m.line}: ${m.text}`).join("\n");
+    return {
+      ok: true,
+      pattern,
+      targetPath,
+      matches,
+      totalMatches: matches.length,
+      output: output || `No se encontraron coincidencias para '${pattern}' en '${targetPath}'.`,
+      message: matches.length > 0
+        ? `Se encontraron ${matches.length} coincidencias para '${pattern}'`
+        : `No se encontraron coincidencias para '${pattern}' en '${targetPath}'`
+    };
+  }
+
   async runCommand(command) {
     const { exec } = require("node:child_process");
     const rawCmd = String(command || "").trim();
@@ -262,25 +365,49 @@ class EditCoreClineTools {
     });
   }
 
-  async execute(name, args, helpers = {}) {
+  async execute(name, rawArgs = {}, helpers = {}) {
+    const args = rawArgs && typeof rawArgs === "object" ? rawArgs : {};
     try {
       switch (name) {
-        case "read_file":
-          return await this.readFile(args.path, args.startLine, args.endLine);
+        case "grep":
+        case "grep_search":
+        case "search_files":
+        case "file_search": {
+          const pattern = args.pattern || args.query || args.search || "";
+          const targetPath = args.path || args.targetPath || args.dir || args.directory || ".";
+          const isRegex = args.is_regex === true || args.is_regex === "true" || args.isRegex === true;
+          return await this.grep(pattern, targetPath, isRegex);
+        }
+
+        case "read_file": {
+          const filePath = args.path || args.file || args.filePath || args.targetPath;
+          return await this.readFile(filePath, args.startLine, args.endLine);
+        }
 
         case "write_file":
-        case "write_to_file":
-          return await this.writeFile(args.path, args.content);
+        case "write_to_file": {
+          const filePath = args.path || args.file || args.filePath;
+          const content = args.content !== undefined ? args.content : (args.text !== undefined ? args.text : args.code);
+          return await this.writeFile(filePath, content);
+        }
 
-        case "replace_in_file":
-          return await this.replaceInFile(args.path, args.oldText || args.old_text, args.newText || args.new_text);
+        case "replace_in_file": {
+          const filePath = args.path || args.file || args.filePath;
+          const oldText = args.old_text !== undefined ? args.old_text : (args.oldText !== undefined ? args.oldText : (args.search !== undefined ? args.search : args.find));
+          const newText = args.new_text !== undefined ? args.new_text : (args.newText !== undefined ? args.newText : (args.replace !== undefined ? args.replace : ""));
+          return await this.replaceInFile(filePath, oldText, newText);
+        }
 
-        case "list_files":
-          return await this.listFiles(args.path || ".");
+        case "list_files": {
+          const dirPath = args.path || args.dir || args.directory || ".";
+          return await this.listFiles(dirPath);
+        }
 
         case "run_command":
-        case "execute_command":
-          return await this.runCommand(args.command);
+        case "execute_command": {
+          const command = args.command || args.cmd;
+          return await this.runCommand(command);
+        }
 
         case "create_pdf": {
           const { createPdf } = require("../document-writer");
@@ -323,6 +450,22 @@ class EditCoreClineTools {
 
   getDefinitions() {
     return [
+      {
+        type: "function",
+        function: {
+          name: "grep",
+          description: "Busca un patrón de texto o expresión regular en un archivo específico o en todo el proyecto.",
+          parameters: {
+            type: "object",
+            properties: {
+              pattern: { type: "string", description: "Texto o expresión regular a buscar." },
+              path: { type: "string", description: "Ruta del archivo o directorio (por defecto '.')." },
+              is_regex: { type: "boolean", description: "True si pattern es una expresión regular." }
+            },
+            required: ["pattern"]
+          }
+        }
+      },
       {
         type: "function",
         function: {

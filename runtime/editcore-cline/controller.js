@@ -37,48 +37,121 @@ function isApprovalInput(text = "") {
   return /\b(?:procede|proceder|autorizo|autorizado|autoriza|continua|contin[uú]a|dale|adelante|hazlo|aplica(?:lo)?|ejecuta(?:lo)?)\b/i.test(String(text || "").trim());
 }
 
+function normalizeToolName(rawName = "") {
+  const n = String(rawName || "").trim().toLowerCase();
+  if (["write_to_file", "writefile"].includes(n)) return "write_file";
+  if (["replace_in_file", "replaceinfile"].includes(n)) return "replace_in_file";
+  if (["execute_command", "executecommand", "terminal", "bash", "sh"].includes(n)) return "run_command";
+  if (["read_file", "readfile"].includes(n)) return "read_file";
+  if (["list_files", "listfiles", "dir", "ls"].includes(n)) return "list_files";
+  if (["grep", "grep_search", "search_files", "file_search", "search", "search_dir"].includes(n)) return "grep";
+  return n;
+}
+
+function cleanRawToolCallsFromText(text = "") {
+  if (!text || typeof text !== "string") return "";
+  let clean = text;
+  // 1. Elimina wrappers completos <dots_function_call>...</dots_function_call>
+  clean = clean.replace(/<(?:dots_function_call|tool_call|function_call)>[\s\S]*?<\/(?:dots_function_call|tool_call|function_call)>/gi, "");
+  // 2. Elimina cualquier bloque <invoke ...>...</invoke>
+  clean = clean.replace(/<invoke[\s\S]*?<\/invoke>/gi, "");
+  // 3. Elimina tags sueltos de wrapper o parámetros si quedaron huérfanos
+  clean = clean.replace(/<\/?(?:dots_function_call|tool_call|function_call|invoke|parameter|param|arg|argument)[^>]*>/gi, "");
+  // 4. Elimina tags XML estándar de herramientas
+  const toolNames = [
+    "grep", "grep_search", "search_files", "file_search",
+    "write_file", "write_to_file", "replace_in_file", "read_file",
+    "run_command", "execute_command", "list_files",
+    "create_pdf", "create_word", "create_excel"
+  ];
+  for (const name of toolNames) {
+    clean = clean.replace(new RegExp(`<(?:tool_call>\\s*)?<${name}>[\\s\\S]*?<\\/${name}>(?:\\s*<\\/tool_call>)?`, "gi"), "");
+    clean = clean.replace(new RegExp(`<\/?${name}[^>]*>`, "gi"), "");
+  }
+  // 5. Elimina bloques json de herramientas en markdown
+  clean = clean.replace(/```(?:json)?\s*\{[\s\S]*?"(?:tool|tool_name|action|name)"\s*:\s*"[^"]+"[\s\S]*?\}\s*```/gi, "");
+  return clean.replace(/TASK_COMPLETE/g, "").trim();
+}
+
 function extractToolCallsFromText(text = "") {
   const toolCalls = [];
   if (!text || typeof text !== "string") return toolCalls;
 
-  const toolNames = ["write_file", "write_to_file", "replace_in_file", "read_file", "run_command", "execute_command", "list_files", "create_pdf", "create_word", "create_excel"];
-  for (const name of toolNames) {
-    const regex = new RegExp(`<(?:tool_call>\\s*)?<${name}>([\\s\\S]*?)<\\/${name}>(?:\\s*<\\/tool_call>)?`, "gi");
-    let match;
-    while ((match = regex.exec(text)) !== null) {
-      const body = match[1];
-      const args = {};
-      const paramMatches = [...body.matchAll(/<([a-zA-Z0-9_]+)>([\s\S]*?)<\/\1>/g)];
-      for (const p of paramMatches) {
+  // 1. Formato <invoke name="..."> o <invoke tool="..."> (incluso dentro de <dots_function_call>, <tool_call>, etc.)
+  const invokeRegex = /<invoke\s+(?:name|tool|function)=["']([^"']+)["']>([\s\S]*?)<\/invoke>/gi;
+  let invMatch;
+  while ((invMatch = invokeRegex.exec(text)) !== null) {
+    const rawName = invMatch[1].trim();
+    const body = invMatch[2];
+    const args = {};
+    const paramMatches = [...body.matchAll(/<(?:parameter|param|arg|argument)\s+name=["']([^"']+)["']>([\s\S]*?)<\/(?:parameter|param|arg|argument)>/gi)];
+    for (const p of paramMatches) {
+      args[p[1].trim()] = p[2].trim();
+    }
+    // Si no usó <parameter name="...">, buscar tags directos como <pattern>val</pattern>
+    if (paramMatches.length === 0) {
+      const directMatches = [...body.matchAll(/<([a-zA-Z0-9_]+)>([\s\S]*?)<\/\1>/g)];
+      for (const p of directMatches) {
         args[p[1]] = p[2].trim();
       }
-      toolCalls.push({
-        id: `call_${Date.now()}_${toolCalls.length}`,
-        function: {
-          name: name === "write_to_file" ? "write_file" : name === "execute_command" ? "run_command" : name,
-          arguments: args,
+    }
+    toolCalls.push({
+      id: `call_${Date.now()}_${toolCalls.length}`,
+      function: {
+        name: normalizeToolName(rawName),
+        arguments: args,
+      }
+    });
+  }
+
+  // 2. Formato XML estándar <tool_name><param>valor</param></tool_name>
+  if (toolCalls.length === 0) {
+    const toolNames = [
+      "grep", "grep_search", "search_files", "file_search",
+      "write_file", "write_to_file", "replace_in_file", "read_file",
+      "run_command", "execute_command", "list_files",
+      "create_pdf", "create_word", "create_excel"
+    ];
+    for (const name of toolNames) {
+      const regex = new RegExp(`<(?:tool_call>\\s*)?<${name}>([\\s\\S]*?)<\\/${name}>(?:\\s*<\\/tool_call>)?`, "gi");
+      let match;
+      while ((match = regex.exec(text)) !== null) {
+        const body = match[1];
+        const args = {};
+        const paramMatches = [...body.matchAll(/<([a-zA-Z0-9_]+)>([\s\S]*?)<\/\1>/g)];
+        for (const p of paramMatches) {
+          args[p[1]] = p[2].trim();
         }
-      });
+        toolCalls.push({
+          id: `call_${Date.now()}_${toolCalls.length}`,
+          function: {
+            name: normalizeToolName(name),
+            arguments: args,
+          }
+        });
+      }
     }
   }
 
+  // 3. Formato bloque JSON en Markdown
   if (toolCalls.length === 0) {
-    const jsonBlockRegex = /```(?:json)?\s*\{[\s\S]*?"(?:tool|tool_name|action)"\s*:\s*"([^"]+)"[\s\S]*?\}\s*```/gi;
+    const jsonBlockRegex = /```(?:json)?\s*\{[\s\S]*?"(?:tool|tool_name|action|name)"\s*:\s*"([^"]+)"[\s\S]*?\}\s*```/gi;
     let jMatch;
     while ((jMatch = jsonBlockRegex.exec(text)) !== null) {
       try {
         const raw = jMatch[0].replace(/^```(?:json)?|```$/g, "").trim();
         const parsed = JSON.parse(raw);
-        const name = parsed.tool || parsed.tool_name || parsed.action;
+        const name = parsed.tool || parsed.tool_name || parsed.action || parsed.name;
         delete parsed.tool;
         delete parsed.tool_name;
         delete parsed.action;
-        const args = parsed.arguments || parsed.params || parsed.input || parsed;
+        delete parsed.name;
+        const args = parsed.arguments || parsed.params || parsed.parameters || parsed.input || parsed;
         toolCalls.push({
           id: `call_${Date.now()}_${toolCalls.length}`,
           function: {
-            name: name === "write_to_file" ? "write_file" : name === "execute_command" ? "run_command" : name,
-            arguments: args
+            name: normalizeToolName(name),
+            arguments: args,
           }
         });
       } catch { /* ignore */ }
@@ -184,6 +257,15 @@ class EditCoreClineController {
       this.state = STATE.THINKING;
       notify({ phase: "thought", text: `Pensando (turno ${turnCount})...` });
 
+      let rawStreamBuffer = "";
+      const handleDelta = (delta) => {
+        rawStreamBuffer += delta;
+        if (/<(?:dots_function_call|invoke|tool_call|function_call|parameter|param|arg|argument)\b/i.test(rawStreamBuffer)) {
+          return;
+        }
+        notify({ phase: "delta", text: delta });
+      };
+
       let response;
       try {
         response = await this.callChat({
@@ -193,7 +275,7 @@ class EditCoreClineController {
           messages: safeMessages,
           tools: availableTools,
           toolChoice: "auto",
-          onTextDelta: (delta) => notify({ phase: "delta", text: delta })
+          onTextDelta: handleDelta
         });
       } catch (err) {
         if (/openai_error|tools|function|unsupported|not allowed|malformed|400/i.test(String(err?.message || ""))) {
@@ -206,7 +288,7 @@ class EditCoreClineController {
               messages: safeMessages,
               tools: undefined,
               toolChoice: undefined,
-              onTextDelta: (delta) => notify({ phase: "delta", text: delta })
+              onTextDelta: handleDelta
             });
           } catch (retryErr) {
             this.state = STATE.ERROR;
@@ -238,21 +320,22 @@ class EditCoreClineController {
         ? response.toolCalls
         : extractToolCallsFromText(response.text || "");
 
+      const cleanText = cleanRawToolCallsFromText(response.text || "");
+
       const assistantMessage = {
         role: "assistant",
-        content: response.text || "",
+        content: cleanText,
         tool_calls: rawToolCalls
       };
       this.messages.push(assistantMessage);
 
       // 2. Si el asistente completó o respondió directamente sin herramientas
       const hasTools = assistantMessage.tool_calls && assistantMessage.tool_calls.length > 0;
-      const claimsCompletion = assistantMessage.content && assistantMessage.content.includes("TASK_COMPLETE");
+      const claimsCompletion = (response.text || "").includes("TASK_COMPLETE");
 
       if (!hasTools || claimsCompletion) {
         this.state = STATE.DONE;
-        const cleanContent = (assistantMessage.content || "").replace(/TASK_COMPLETE/g, "").trim();
-        notify({ phase: "done", text: cleanContent || "Tarea completada exitosamente." });
+        notify({ phase: "done", text: cleanText || "Tarea completada exitosamente." });
         break;
       }
 
@@ -353,13 +436,47 @@ class EditCoreClineController {
       }
     }
 
-    // Extraer siempre respuesta limpia y legible en vez de volcar JSON crudo de tools
+    // Si la última interacción fue una herramienta (el modelo no formuló la respuesta final),
+    // realizamos un turno de síntesis para que EditCoreAI explique o resuma el resultado al usuario.
+    const lastMsg = this.messages[this.messages.length - 1];
+    if (lastMsg && lastMsg.role === "tool" && !this.isAborted) {
+      notify({ phase: "thought", text: "Elaborando respuesta final..." });
+      try {
+        const synthResponse = await this.callChat({
+          apiBaseUrl,
+          apiKey,
+          model,
+          messages: this.compactor.compactMessages(this.messages),
+          tools: undefined,
+          toolChoice: undefined,
+          onTextDelta: (delta) => notify({ phase: "delta", text: delta })
+        });
+        if (synthResponse && synthResponse.text) {
+          const cleanSynth = cleanRawToolCallsFromText(synthResponse.text);
+          if (cleanSynth) {
+            this.messages.push({
+              role: "assistant",
+              content: cleanSynth
+            });
+            this.state = STATE.DONE;
+            notify({ phase: "done", text: cleanSynth });
+          }
+        }
+      } catch {
+        // Fallback al extracto de herramientas si falla la llamada
+      }
+    }
+
+    // Extraer siempre respuesta limpia y legible en vez de volcar JSON crudo de tools o tags XML
     let finalText = "";
     for (let i = this.messages.length - 1; i >= 0; i--) {
       const msg = this.messages[i];
-      if (msg.role === "assistant" && typeof msg.content === "string" && msg.content.trim().length > 0) {
-        finalText = msg.content.replace(/TASK_COMPLETE/g, "").trim();
-        break;
+      if (msg.role === "assistant" && typeof msg.content === "string") {
+        const cleaned = cleanRawToolCallsFromText(msg.content);
+        if (cleaned.length > 0) {
+          finalText = cleaned;
+          break;
+        }
       }
     }
 
