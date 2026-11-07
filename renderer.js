@@ -7474,6 +7474,9 @@ function updateStatus() {
 
 function prepareChatProseForRender(text) {
   let value = repairMojibakeText(String(text || ""));
+  if (typeof stripAgentToolXml === "function") {
+    value = stripAgentToolXml(value, { trim: false });
+  }
   if (/PROVIDER_TEMPORARILY_UNAVAILABLE|Tu modelo seleccionado se conserv/i.test(value)
     || /gafcore(?:\s*gateway)?|gafcore-gateway\.vercel\.app/i.test(value)
       && /no est[aá] disponible|tard[oó] demasiado|PROVIDER_TEMPORARILY/i.test(value)) {
@@ -7614,8 +7617,11 @@ function rememberMessage(role, content, usage, images = [], documents = []) {
   const chat = activeChat(project);
   project.mode = state.mode;
   project.model = $("model").value.trim() || PROVIDERS[state.mode]?.model || "";
-  project.chatCleared = false;
-  const entry = { role, content: repairMojibakeText(content), usage: usage || null, images, documents };
+  let cleanedContent = repairMojibakeText(content);
+  if (role === "assistant" && typeof stripAgentToolXml === "function") {
+    cleanedContent = stripAgentToolXml(cleanedContent, { trim: false });
+  }
+  const entry = { role, content: cleanedContent, usage: usage || null, images, documents };
   chat.messages.push(entry);
   project.messages = chat.messages;
   if (role === "user") {

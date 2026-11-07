@@ -175,6 +175,36 @@ function parseTextToolCalls(text, { projectRoot } = {}) {
     }
   }
 
+  // Formato dots_function_call: <dots_function_call><invoke name="grep"><parameter name="pattern">...</parameter></invoke></dots_function_call>
+  const dotsRe = /<dots_function_call>\s*<invoke\s+name\s*=\s*["']?([^"'>\s]+)["']?\s*>\s*([\s\S]*?)\s*<\/invoke>\s*<\/dots_function_call>/gi;
+  while ((m = dotsRe.exec(src))) {
+    const rawName = m[1];
+    const body = m[2];
+    const args = {};
+    const paramRe = /<parameter\s+name\s*=\s*["']?([^"'>\s]+)["']?\s*>\s*([\s\S]*?)\s*<\/parameter>/gi;
+    let pm;
+    while ((pm = paramRe.exec(body))) {
+      assignArg(args, pm[1], pm[2].trim());
+    }
+    pushCall(calls, rawName, args, projectRoot);
+  }
+
+  // <invoke name="tool"> sin wrapper dots_function_call
+  if (!calls.length) {
+    const bareInvoke = /<invoke\s+name\s*=\s*["']?([^"'>\s]+)["']?\s*>\s*([\s\S]*?)(?:<\/invoke>|$)/gi;
+    while ((m = bareInvoke.exec(src))) {
+      const rawName = m[1];
+      const body = m[2];
+      const args = {};
+      const paramRe = /<parameter\s+name\s*=\s*["']?([^"'>\s]+)["']?\s*>\s*([\s\S]*?)(?:<\/parameter>|$)/gi;
+      let pm;
+      while ((pm = paramRe.exec(body))) {
+        assignArg(args, pm[1], pm[2].trim());
+      }
+      pushCall(calls, rawName, args, projectRoot);
+    }
+  }
+
   // Formato clásico: <read_file>...</read_file>
   const names = TOOL_TAG_NAMES.join("|");
   const blockRe = new RegExp(`<(${names})>\\s*([\\s\\S]*?)\\s*<\\/\\1>`, "gi");
@@ -198,12 +228,16 @@ function visibleNarrationText(text) {
 function stripTextToolMarkup(text) {
   let out = String(text || "");
   out = out.replace(/<dots_function_call>[\s\S]*?<\/dots_function_call>/gi, "");
+  out = out.replace(/<invoke\b[^>]*>[\s\S]*?<\/invoke>/gi, "");
+  out = out.replace(/<parameter\b[^>]*>[\s\S]*?<\/parameter>/gi, "");
   out = out.replace(/<tool_call>[\s\S]*?<\/tool_call>/gi, "");
+  out = out.replace(/<tool_use>[\s\S]*?<\/tool_use>/gi, "");
   out = out.replace(/<function\s*=\s*[a-zA-Z_][\w-]*\s*>[\s\S]*?<\/function>/gi, "");
   out = out.replace(/<parameter\s*=\s*[a-zA-Z_][\w-]*\s*>[\s\S]*?<\/parameter>/gi, "");
   const names = TOOL_TAG_NAMES.join("|");
   const re = new RegExp(`<(${names})>\\s*[\\s\\S]*?\\s*<\\/\\1>`, "gi");
   out = out.replace(re, "");
+  out = out.replace(/<\/?(?:dots_function_call|invoke|parameter|tool_call|tool_use)\b[^>]*>/gi, "");
   // Incompletos / stream cortado
   out = visibleNarrationText(out);
   return out.replace(/\n{3,}/g, "\n\n").trim();
