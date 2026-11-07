@@ -722,9 +722,17 @@ function requestAgentApproval(event, payload = {}) {
 /** Progress + eventos granulares Cursor-like (thought / explore / diff). */
 function publishAgentProgress(sender, payload = {}) {
   if (!sender || sender.isDestroyed?.()) return;
-  const safePayload = typeof clipMutationProgressForUi === "function"
+  let safePayload = typeof clipMutationProgressForUi === "function"
     ? clipMutationProgressForUi(payload)
     : (payload || {});
+  if (safePayload && typeof safePayload.text === "string" && /<(?:dots_function_call|invoke\b|parameter\b|tool_call|tool_use)\b/i.test(safePayload.text)) {
+    try {
+      const { cleanRawToolCallsFromText } = require("./runtime/editcore-cline/controller");
+      if (typeof cleanRawToolCallsFromText === "function") {
+        safePayload = { ...safePayload, text: cleanRawToolCallsFromText(safePayload.text) };
+      }
+    } catch { /* ignore */ }
+  }
   const redacted = typeof redactSensitive === "function"
     ? redactSensitive(safePayload, 8)
     : safePayload;

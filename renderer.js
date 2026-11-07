@@ -338,22 +338,28 @@ function stripAgentToolXml(value, { trim = true } = {}) {
     "replace_in_file", "search_files", "execute_command", "run_command",
     "run_shell", "bash", "shell", "audit_env", "supabase_migrate",
     "scaffold_project", "capture_preview", "str_replace", "search_replace",
+    "grep", "grep_search", "find_files",
   ].join("|");
   const re = new RegExp(`<(${names})>[\\s\\S]*?<\\/\\1>`, "gi");
   let out = String(value || "")
+    .replace(/<dots_function_call>[\s\S]*?<\/dots_function_call>/gi, "")
+    .replace(/<invoke\b[^>]*>[\s\S]*?<\/invoke>/gi, "")
+    .replace(/<parameter\b[^>]*>[\s\S]*?<\/parameter>/gi, "")
     .replace(/<tool_call>[\s\S]*?<\/tool_call>/gi, "")
+    .replace(/<tool_use>[\s\S]*?<\/tool_use>/gi, "")
     .replace(/<function\s*=\s*[a-zA-Z_][\w-]*\s*>[\s\S]*?<\/function>/gi, "")
     .replace(/<parameter\s*=\s*[a-zA-Z_][\w-]*\s*>[\s\S]*?<\/parameter>/gi, "")
-    .replace(re, "");
+    .replace(re, "")
+    .replace(/<\/?(?:dots_function_call|invoke|parameter|tool_call|tool_use)\b[^>]*>/gi, "");
   // Bloques incompletos / stream cortado: cortar desde el primer marcador de protocolo.
-  const cut = out.search(/<(?:tool_call|tool_use|tool_invocation|function_calls?|function\s*=|parameter\s*=)\b/i);
+  const cut = out.search(/<(?:dots_function_call|invoke\b|parameter\b|tool_call|tool_use|tool_invocation|function_calls?|function\s*=|parameter\s*=)\b/i);
   if (cut >= 0) out = out.slice(0, cut);
   out = out.replace(/\n{3,}/g, "\n\n");
   return trim ? out.trimEnd() : out;
 }
 
 function looksLikeAgentToolDump(value = "") {
-  return /<(?:tool_call|tool_use|function\s*=|parameter\s*=)\b/i.test(String(value || ""));
+  return /<(?:dots_function_call|invoke\b|parameter\b|tool_call|tool_use|function\s*=|parameter\s*=)\b/i.test(String(value || ""));
 }
 
 /** Une chunks del agente sin pegar pasos (evita "correctamente.Entendido"). */
