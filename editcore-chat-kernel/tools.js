@@ -1233,6 +1233,29 @@ async function execute(name, args, root, allowWrite, helpers = {}) {
       case "deploy_one_click":
         if (!allowWrite) return { ok: false, error: "Deploy requiere modo ejecución." };
         return await extraTools.runExternalAction("deploy_one_click", a, root, helpers);
+      case "read_pdf": {
+        const file = path.isAbsolute(String(a.path || "")) ? String(a.path) : path.join(root, String(a.path || ""));
+        return await extraTools.readPdf(file, { maxChars: a.maxChars });
+      }
+      case "docker_ps":
+        return await extraTools.dockerPs({ all: a.all === true });
+      case "screenshot_page":
+        return await extraTools.screenshotPage(a.url, { viewport: a.viewport, fullPage: a.fullPage === true, helpers });
+      case "search_brain":
+        return await extraTools.searchBrain(root, a.query || "", helpers, a.limit);
+      case "check_connections":
+        return await extraTools.checkConnections(root, helpers);
+      case "ingest_to_brain": {
+        if (!allowWrite) return { ok: false, error: "ingest_to_brain requiere modo escritura." };
+        const target = path.isAbsolute(String(a.path || "")) ? String(a.path) : path.join(root, String(a.path || ""));
+        return await ingestPathToBrain(root, target);
+      }
+      case "connect_project":
+        if (!allowWrite) return { ok: false, error: "connect_project requiere modo escritura." };
+        return await extraTools.runExternalAction("connect_project", a, root, helpers);
+      case "publish_project":
+        if (!allowWrite) return { ok: false, error: "publish_project requiere modo escritura." };
+        return await extraTools.runExternalAction("publish_project", a, root, helpers);
       case "invoke_subagent": {
         const { runSubagent } = require("../runtime/subagent-runner");
         const subRole = String(a.role || "explorer").toLowerCase();
@@ -1259,10 +1282,15 @@ async function execute(name, args, root, allowWrite, helpers = {}) {
   }
 }
 
+// Las definiciones extra viven en extra-tools.js; se fusionan una sola vez y sin duplicar.
+for (const def of extraTools.EXTRA_DEFINITIONS) {
+  if (!DEFINITIONS.some((t) => t.function?.name === def.function?.name)) DEFINITIONS.push(def);
+}
+
 function getToolDefinitions({ allowWrite = true, isFullAccess = false, isAnalysis = false } = {}) {
   const writeTools = new Set([
     "write_file", "replace_in_file", "run_command", "build_project", 
-    "git_commit", "git_push", "deploy_one_click", "install_skill"
+    "git_commit", "git_push", "deploy_one_click", "install_skill", "ingest_to_brain", "connect_project", "publish_project"
   ]);
   const canWrite = allowWrite === true || isFullAccess === true;
   return DEFINITIONS.filter((t) => {

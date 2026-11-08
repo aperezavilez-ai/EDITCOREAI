@@ -280,6 +280,14 @@ function looksLikePromiseWithoutAction(text = "") {
   if (promisesFuture) return true;
   const claimsDoneWork = /\b(?:he\s+(?:le[ií]do|creado|escrito|generado|implementado|verificado|ejecutado|analizado)|le[ií]\s+el\s+archivo|ya\s+(?:est[aá]|qu[eé]d[oó])\s+(?:listo|creado|hecho))\b/i.test(raw);
   if (claimsDoneWork) return true;
+  // Narración en curso: el modelo cierra el turno contando lo que ESTÁ
+  // haciendo ("Sigue leyendo el archivo para ver si…") sin haber ejecutado
+  // la herramienta. Es el mismo defecto que la promesa a futuro, en gerundio:
+  // nunca es una respuesta final válida. (Las formas "sigo/voy a + infinitivo"
+  // ya estaban; faltaban "sigue/continúa + gerundio".)
+  const narratesOngoing = /^(?:sigue|siguiendo|contin[uú]a|continuando|ahora\s+sigue)\b[^.!?\n]{0,140}\b(?:leyendo|revisando|analizando|buscando|verificando|ejecutando|escribiendo|creando|editando|implementando|inspeccionando|escaneando|abriendo)\b/i.test(raw)
+    || /\b(?:sigue|siguiendo)\s+(?:\w+\s+){0,3}?(?:leyendo|revisando|analizando|buscando|verificando|ejecutando)\b/i.test(raw);
+  if (narratesOngoing) return true;
   return /(?:d[eé]jame|espera|un\s+momento|voy)\s+(?:revisar|leer|buscar|chequear)/i.test(raw);
 }
 
@@ -484,7 +492,10 @@ function wantsCodeSearch(text) {
 }
 
 function wantsConnectionsCheck(text) {
-  return /\b(?:check_connections|conect(?:a|ar|iones)?|publica(?:r)?|deploy|checklist|github|vercel|qu[eé]\s+falta)\b/i.test(String(text || ""));
+  // Sin "qué falta" a secas: esa frase en una pregunta cualquiera
+  // ("¿qué falta para que la IA funcione?") secuestraba el turno y forzaba
+  // check_connections en cada paso. Hace falta contexto de conexión/deploy.
+  return /\b(?:check_connections|conect(?:a|ar|iones)?|publica(?:r)?|deploy|checklist|github|vercel)\b/i.test(String(text || ""));
 }
 
 function maybeBlockRootListFiles(name, args, projectRoot, listOnly) {
@@ -503,9 +514,10 @@ function maybeBlockRootListFiles(name, args, projectRoot, listOnly) {
 function buildBrainContextBlock(projectRoot, query) {
   if (!projectRoot || projectRoot === ".") return "";
   try {
-    const hits = searchBrainDocs(projectRoot, query, 2).filter((h) => h.score >= 4);
+    const hits = searchBrainDocs(projectRoot, query, 3).filter((h) => h.score >= BRAIN_CONTEXT_MIN_SCORE);
     if (!hits.length) return "";
-    return `Cerebro (relevante): ${hits.map((h) => `${h.title}: ${h.text.slice(0, 200)}`).join(" | ")}`;
+    const lines = hits.map((h) => `- **${h.title}**: ${String(h.text || "").slice(0, 700)}`);
+    return `## CEREBRO DEL PROYECTO (documentos relevantes ya ingeridos)\n${lines.join("\n")}`;
   } catch { return ""; }
 }
 
@@ -1090,6 +1102,8 @@ class ChatOrchestrator {
     const deadline = Date.now() + globalTimeoutMs;
     let promiseRetries = 0;
     let noWriteNudges = 0;
+    let connNudges = 0;
+    let narrationRetries = 0;
 
     const toolHistory = new Map();
     const readCache = new Map();
@@ -1333,7 +1347,29 @@ class ChatOrchestrator {
         const cleanText = stripTextToolMarkup(turn.text || "");
 
         if (!toolCalls.length) {
-          const promisesAction = !chatOnly && decision?.kind !== "CHAT" && !listOnlyMode && !analysisMode
+          // NARRACIÓN COMO RESPUESTA, también en modo CHAT: si TODO el turno
+          // es "sigue leyendo… / voy a revisar…" sin herramientas, no es una
+          // respuesta, es el modelo narrando a mitad de tarea (pasa cuando el
+          // historial trae una tarea de agente y el turno se clasifica CHAT).
+          // En CHAT ninguna otra compuerta lo atrapaba: el fragmento salía
+          // como respuesta final. Se empuja UNA vez a responder o a leer.
+          if ((chatOnly || decision?.kind === "CHAT")
+            && narrationRetries < 1
+            && i < stepsLimit - 1
+            && looksLikePromiseWithoutAction(cleanText)) {
+            narrationRetries += 1;
+            messages.push({ role: "assistant", content: cleanText || null });
+            messages.push({ role: "user", content: "No cierres con una narración de lo que estás haciendo. Responde ahora a la pregunta del usuario con lo que ya sabes, o usa las herramientas de lectura (read_file, list_files, search_files) si necesitas revisar el proyecto antes de responder." });
+            onProgress?.({ phase: "model", text: "Narración sin respuesta: pidiendo que responda o actúe" });
+            continue;
+          }
+
+          // Sin !listOnlyMode: en ASK/LIST el empujón solo puede dispararse
+          // cuando el texto ES promesa/narración (looksLikePromiseWithoutAction
+          // ya es condición), y una narración a mitad de tarea tampoco es una
+          // respuesta válida en esos modos: antes el turno cerraba con el
+          // fragmento ("Sigue leyendo el archivo…") como si fuera la respuesta.
+          const promisesAction = !chatOnly && decision?.kind !== "CHAT" && !analysisMode
             && looksLikePromiseWithoutAction(cleanText)
             && promiseRetries < MAX_PROMISE_RETRIES
             && i < stepsLimit - 2
@@ -1385,9 +1421,10 @@ class ChatOrchestrator {
               continue;
             }
           }
-          if (!analysisMode && !listOnlyMode && wantsConnectionsCheck(userMsg) && i < stepsLimit - 2) {
+          if (!analysisMode && !listOnlyMode && wantsConnectionsCheck(userMsg) && connNudges < 1 && i < stepsLimit - 2) {
             const usedConn = steps.some((s) => s.name === "check_connections");
             if (!usedConn) {
+              connNudges += 1;
               messages.push({ role: "assistant", content: cleanText || null });
               messages.push({ role: "user", content: "Ejecuta AHORA check_connections y muestra checklist. No uses list_files de la raiz. Cierra SIN preguntar opciones." });
               onProgress?.({ phase: "model", text: "Forzando check_connections..." });
