@@ -117,7 +117,11 @@ class SwarmOrchestrator {
     if (!swarm) return null;
 
     const completed = swarm.agents.filter((a) => a.status === "COMPLETED");
-    const summary = completed.map((a) => `• [${a.role}]: ${a.result?.summary || 'Tarea completada'}`).join("\n");
+    const notCompleted = swarm.agents.filter((a) => a.status !== "COMPLETED");
+    const summary = [
+      ...completed.map((a) => `• [${a.role}]: ${a.result?.summary || 'Tarea completada'}`),
+      ...notCompleted.map((a) => `• [${a.role}] (${a.status}): ${a.result?.summary || 'Sin ejecutar'}`),
+    ].join("\n");
 
     const sharedDoc = crdtEngine.getOrCreateDocument(`swarm_shared_${swarmId}`, `## Resultado del Enjambre: ${swarm.goal}\n\n`);
 
@@ -145,17 +149,20 @@ class SwarmOrchestrator {
     const swarm = this.swarms.get(swarmId);
     if (!swarm) return;
 
+    // HONESTIDAD: este ejecutor determinista no corre ningún agente real.
+    // Antes marcaba todo COMPLETED con resúmenes y parches prefabricados:
+    // éxito falso de fábrica. Ahora reporta la verdad: no ejecutado.
     for (const agent of swarm.agents) {
-      agent.status = "COMPLETED";
-      agent.progress = 100;
+      agent.status = "FAILED";
+      agent.progress = 0;
       agent.result = {
-        summary: `Subtarea completada exitosamente según peritaje en ${agent.expertise}.`,
-        patch: `// ${agent.role} verified changes for: ${swarm.goal}`,
+        summary: `Subtarea NO ejecutada: el ejecutor de enjambre no está conectado a ningún motor real (experiencia declarada: ${agent.expertise}).`,
+        patch: "",
       };
-      agent.logs.push(`[${agent.role}] Finalizado con éxito.`);
+      agent.logs.push(`[${agent.role}] Sin ejecutor real: subtarea no ejecutada.`);
     }
 
-    swarm.status = "COMPLETED";
+    swarm.status = "FAILED";
     this.aggregateSwarmResults(swarmId);
   }
 }

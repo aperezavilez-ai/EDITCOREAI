@@ -1927,6 +1927,9 @@ ipcMain.handle("editcore:chat", async (_event, input = {}) => {
       permissionMode: permissionHint || permissionMode || "step",
       ...buildKernelProcessHooks(rootPath, _event),
     });
+    // Registro de la corrida activa: editcore:cancel aborta ESTA corrida.
+    // Antes el mapa nunca se poblaba y el cancel no tenía nada que abortar.
+    activeChatRuns.set(sender.id, { abort: () => { try { stopChatKernel(); } catch { /* ignore */ } } });
     const out = await handleChatKernel({
     helpers,
       message: effectivePrompt,
@@ -1957,6 +1960,7 @@ ipcMain.handle("editcore:chat", async (_event, input = {}) => {
         } catch { /* ignore */ }
       },
     });
+    activeChatRuns.delete(sender.id);
     const text = String(out?.text || "").trim() || (out?.error ? `[Error de EditCoreAI] ${out.error}` : "Sin respuesta.");
     try {
       if (!sender.isDestroyed()) sender.send("editcore:chunk", { done: true, text });

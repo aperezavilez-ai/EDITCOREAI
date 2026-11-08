@@ -922,7 +922,7 @@ class ChatOrchestrator {
       const target = extractListTarget(text, projectRoot) || ".";
       this.session.start(decision.kind, projectRoot);
       const out = agentBus.wrapSubagentResult(projectRoot, this._threadId, "explorer",
-        await runExplorer({ projectRoot, target, onProgress, threadId: this._threadId }));
+        await runExplorer({ projectRoot, target, onProgress, threadId: this._threadId, signal: this.abort?.signal }));
       this.session.kill();
       if (memory) memory.note(`listó ${out.target || target}`);
 
@@ -964,8 +964,9 @@ class ChatOrchestrator {
       }
       const verifiedMd = verified ? forensic.formatForensicMarkdown(verified) : "";
       onProgress?.({ phase: "start", text: "Reuniendo evidencia del proyecto…" });
+      if (!this.abort || this.abort.signal.aborted) this.abort = new AbortController();
       const out = agentBus.wrapSubagentResult(projectRoot, this._threadId, "analyst",
-        await runAnalyst({ projectRoot, onProgress, maxReads, userMessage: text, threadId: this._threadId }));
+        await runAnalyst({ projectRoot, onProgress, maxReads, userMessage: text, threadId: this._threadId, signal: this.abort?.signal }));
       const testsRun = (verified?.checks || []).find((c) => c.id === "tests" && (c.status === "pass" || c.status === "fail"));
       if (testsRun && typeof out?.report === "string") {
         out.report = out.report.replace(
@@ -999,8 +1000,9 @@ class ChatOrchestrator {
 
     if (decision.kind === "VERIFY") {
       this.session.start("VERIFY", projectRoot);
+      if (!this.abort || this.abort.signal.aborted) this.abort = new AbortController();
       const out = agentBus.wrapSubagentResult(projectRoot, this._threadId, "verifier",
-        await runVerifier({ projectRoot, onProgress, timeoutMs: 60_000, threadId: this._threadId }));
+        await runVerifier({ projectRoot, onProgress, timeoutMs: 60_000, threadId: this._threadId, signal: this.abort?.signal }));
       this.session.kill();
       if (out?.forensic) {
         const previous = forensic.loadForensic(projectRoot);
@@ -1021,7 +1023,7 @@ class ChatOrchestrator {
       return runner({
         decision, message: taskMessage, projectRoot, apiBaseUrl, apiKey, model, memory, onProgress,
         allowWrite: canWrite, planAuthorizedExecution: canWrite, maxSteps: canWrite ? AUTHORIZED_MAX_STEPS : CHAT_MAX_STEPS,
-        helpers, authorizedFromPending: true, fullAccess,
+        helpers, authorizedFromPending: canWrite, fullAccess,
         permissionMode: fullAccess ? "full" : permissionMode, images: taskImages,
       });
     }
@@ -1284,7 +1286,11 @@ class ChatOrchestrator {
 
         let turn;
         try {
-          turn = await callChat({
+          // Inyección opcional del llamador de chat (helpers.callChat): la
+          // usa el bridge para arneses/pruebas; en producción no viene y se
+          // usa el callChat real del proveedor.
+          const chatCaller = (helpers && typeof helpers.callChat === "function") ? helpers.callChat : callChat;
+          turn = await chatCaller({
             apiBaseUrl, apiKey, model: routedModel, messages,
             tools: availableTools,
             signal: turnSignal,
@@ -1558,10 +1564,12 @@ class ChatOrchestrator {
       textOut = formatAgentVisibleText(textOut);
       persistKernelRoadmap(projectRoot, { task: this._currentUserText || message, steps, kind: decision?.kind, text: textOut, completed: !pausedByLimit });
       rememberOut(textOut); detachLongRunningStreams(steps);
-      // [EDITCORE-ADD] Feedback de éxito (steps agotados pero sin excepción).
+      // [EDITCORE-ADD] Feedback a la red: un turno pausado por límite de
+      // pasos es un turno INCOMPLETO, no un éxito. Antes se registraba true
+      // y la confianza del rol subía con trabajo no terminado.
       try {
         if (agentNetwork && this._ecRoutedAgent && typeof agentNetwork.recordOutcome === "function") {
-          agentNetwork.recordOutcome(this._ecRoutedAgent, true);
+          agentNetwork.recordOutcome(this._ecRoutedAgent, !pausedByLimit);
         }
       } catch (_) {}
       // [/EDITCORE-ADD]

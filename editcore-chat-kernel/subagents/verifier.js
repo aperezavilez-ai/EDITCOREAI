@@ -69,12 +69,16 @@ async function runVerifier({
   onProgress,
   timeoutMs = 45_000,
   autoRollback = false,
+  signal,
   priorError = null,
   solutionApplied = null,
   learn = true,
   incremental = true,
 } = {}) {
   const steps = [];
+  if (signal?.aborted) {
+    return { ok: false, aborted: true, result: { error: "Verificación cancelada por el usuario." }, steps };
+  }
   onProgress?.({
     phase: "subagent",
     name: "verifier",

@@ -17,7 +17,10 @@ function loadProjectMap() {
 }
 
 /** Explorer enriquecido: árbol real vía mapa cognitivo + configs clave. */
-async function runExplorer({ projectRoot, target = ".", onProgress }) {
+async function runExplorer({ projectRoot, target = ".", onProgress, signal }) {
+  if (signal?.aborted) {
+    return { ok: false, aborted: true, summary: "Exploración cancelada por el usuario.", steps: [], target };
+  }
   const mapApi = loadProjectMap();
   let cognitive = null;
   let resolvedTarget = target;
@@ -44,6 +47,9 @@ async function runExplorer({ projectRoot, target = ".", onProgress }) {
   onProgress?.({ phase: "subagent", name: "explorer", text: `Mapeando ${label}...` });
   const steps = [];
   const res = tools.listFiles(projectRoot, resolvedTarget);
+  if (signal?.aborted) {
+    return { ok: false, aborted: true, summary: "Exploración cancelada por el usuario.", steps, target: resolvedTarget };
+  }
   steps.push({
     name: "list_files",
     input: { path: resolvedTarget, requested: target },
@@ -54,6 +60,7 @@ async function runExplorer({ projectRoot, target = ".", onProgress }) {
   if (!res.ok) {
     const roots = (cognitive?.rootDirs || []).slice(0, 20).join(", ") || "(desconocidas)";
     return {
+      ok: false,
       summary: [
         `No se pudo listar "${resolvedTarget}": ${res.error}`,
         `Carpetas raíz del mapa: ${roots}`,

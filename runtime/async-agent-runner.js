@@ -123,13 +123,12 @@ class AsyncAgentRunner extends EventEmitter {
   }
 
   async _defaultExecutor(task) {
-    this.updateProgress(task.id, 25);
-    this.appendLog(task.id, `Analizando contexto de ${task.projectRoot || "workspace"}...`);
-    this.updateProgress(task.id, 60);
-    this.appendLog(task.id, `Ejecutando proceso autónomo tipo: ${task.type}...`);
-    this.updateProgress(task.id, 90);
-    this.appendLog(task.id, `Consolidando resultados de tarea...`);
-    task.result = { status: "ok", type: task.type, finished: true };
+    // HONESTIDAD: no existe un ejecutor por defecto real. Antes subía el
+    // progreso 25→60→90 y devolvía {status:"ok"} sin trabajar: cualquier
+    // tarea en segundo plano sin payload.executor "triunfaba" en falso.
+    // Ahora la tarea cae en el catch del llamador y queda FAILED con causa.
+    this.appendLog(task.id, `Sin ejecutor conectado para la tarea tipo: ${task.type}. No se ejecutó.`);
+    throw new Error(`Tarea sin ejecutor: no se conectó payload.executor y no existe un ejecutor por defecto real; la tarea "${task.name || task.type}" NO se ejecutó.`);
   }
 
   /**

@@ -221,6 +221,9 @@ async function sendChatRequest({ url, body, apiKey, wantStream, signal, requestS
         },
       }];
     }
+    if (!String(msg.content || "").trim() && !toolCalls.length) {
+      throw Object.assign(new Error("El proveedor devolvió una respuesta vacía."), { code: "EMPTY_PROVIDER_RESPONSE", status: 502 });
+    }
     if (onTextDelta && msg.content) {
       try { onTextDelta(String(msg.content)); } catch { /* ignore */ }
     }
@@ -302,7 +305,7 @@ async function callChat({
           toolChoice,
           timeoutMs,
           stream,
-          onTextDelta: onTextDelta ? (d) => { if (d) streamedAny = true; return onTextDelta(d); } : null,
+          onTextDelta: onTextDelta ? (d, meta) => { if (d && !(meta && meta.reasoning)) streamedAny = true; return onTextDelta(d, meta); } : null,
         });
         return result;
       } catch (err) {

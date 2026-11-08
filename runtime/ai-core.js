@@ -307,7 +307,7 @@ async function readOpenAiStream(response, onTextDelta, signal, onActivity) {
       const delta = data?.choices?.[0]?.delta || data?.choices?.[0]?.message || {};
       const reasoning = delta.reasoning_content || delta.thought || "";
       if (reasoning) {
-        try { onTextDelta?.(reasoning); } catch { /* ignore */ }
+        try { onTextDelta?.(reasoning, { reasoning: true }); } catch { /* ignore */ }
       }
       const content = deltaText(delta.content ?? data?.choices?.[0]?.text);
       if (content) {

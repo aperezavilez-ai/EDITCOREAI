@@ -78,7 +78,10 @@ const SOURCE_DIRS = [
   "components", "pages", "routes", "handlers", "services",
 ];
 
-async function runAnalyst({ projectRoot, onProgress, maxReads = 14, userMessage = "" }) {
+async function runAnalyst({ projectRoot, onProgress, maxReads = 14, userMessage = "", signal }) {
+  if (signal?.aborted) {
+    return { ok: false, aborted: true, report: "Análisis cancelado por el usuario.", steps: [] };
+  }
   const steps = [];
   let readCount = 0;
   const mapApi = loadMap();
@@ -114,6 +117,9 @@ async function runAnalyst({ projectRoot, onProgress, maxReads = 14, userMessage 
 
   // Config
   for (const f of listedFiles) {
+    if (signal?.aborted) {
+      return { ok: false, aborted: true, report: "Análisis cancelado por el usuario.", steps };
+    }
     if (/^(package\.json|(next|vite|tailwind|jest|vitest|eslint)\.config\.(js|ts|mjs|cjs)|(tsconfig|jsconfig)\.json)$/i.test(f)) {
       priority.config.push(f);
     }

@@ -71,6 +71,13 @@ function isFullAccess(opts = {}) {
   ].filter((v) => v != null && v !== "").map((v) => String(v).toLowerCase().trim());
 
   const joined = raw.join(" | ");
+  // Solo lectura EXPLÍCITA gana sobre cualquier flag de autorización previa:
+  // antes, authorizedFromPending/planAuthorizedExecution devolvían true ANTES
+  // de llegar al chequeo de solo-lectura del final, y el modo solo-lectura
+  // quedaba anulado en silencio (se ofrecían herramientas de escritura).
+  if (/(?:solo[\s_-]*lectura|read[\s_-]*only|\breadonly\b|\bchat\b)/i.test(joined)) {
+    return false;
+  }
   // Si el usuario tiene seleccionado "Preguntar antes de ejecutar" o "Paso a paso", NO es acceso completo
   if (/(?:preguntar|ask|confirm|confirmar|\bstep\b|paso[\s_-]*a[\s_-]*paso)/i.test(joined)) {
     return false;

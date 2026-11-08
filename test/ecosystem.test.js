@@ -31,12 +31,15 @@ test("Swarm Orchestrator: lanza enjambres y agrega resultados consolidados", () 
 
   assert.ok(swarm.swarmId.startsWith("swarm_"));
   assert.strictEqual(swarm.agents.length, 3);
-  assert.strictEqual(swarm.status, "COMPLETED");
+  // Contrato honesto: sin ejecutor real conectado, el enjambre NO se marca
+  // completado con resúmenes prefabricados; reporta FAILED y 0 completados.
+  assert.strictEqual(swarm.status, "FAILED");
 
   const results = orchestrator.aggregateSwarmResults(swarm.swarmId);
-  assert.strictEqual(results.completedAgents, 3);
+  assert.strictEqual(results.completedAgents, 0);
   assert.ok(results.summary.includes("DatabaseAgent"));
   assert.ok(results.summary.includes("SecurityAgent"));
+  assert.ok(results.summary.includes("NO ejecutada"));
 });
 
 // CICLO 38: Auto-TDD & Refactoring

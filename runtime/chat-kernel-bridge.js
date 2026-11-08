@@ -115,47 +115,52 @@ async function runKernelChat({
   }, 5_000);
 
   try {
-    // Motor Cline 100% como ejecutor unificado de EditCore
-    const { EditCoreClineController } = require("./editcore-cline");
-    const cline = new EditCoreClineController({
-      callChat: helpers?.callChat || null,
-      uiBridge: {
-        onProgress,
-        requestApproval: async (name, input) => {
-          if (typeof helpers?.requestApproval === "function") {
-            return await helpers.requestApproval(name, input);
-          }
-          return true;
-        },
-      },
-    });
-
-    const clineResult = await cline.runTask({
-      prompt: message,
+    // MOTOR ÚNICO (unificación): el chat lo ejecuta el ChatOrchestrator del
+    // kernel (editcore-chat-kernel), que ya tiene herramientas nativas,
+    // cancelación de punta a punta y error explícito ante respuestas vacías.
+    // El controlador Cline salió de esta ruta: su código permanece en
+    // runtime/editcore-cline/ como referencia, pero ya no ejecuta el chat.
+    // stopChatKernel() (arriba, vía index.js) detiene ESTE motor: el que corre.
+    const out = await handleChat({
+      message,
+      history: chatHistory,
+      messages: chatHistory,
+      threadId: tid,
+      chatId,
       projectRoot,
+      apiBaseUrl,
       apiKey,
       model,
-      apiBaseUrl,
       images: Array.isArray(images) ? images : [],
-      permissionMode: isFull ? "full" : (permissionMode || "step"),
-      fullAccess: isFull,
-      rules: skillsPrompt,
-      history: chatHistory,
       onProgress,
+      helpers,
+      autoHeal,
+      allowWrite,
+      permissionMode,
+      permissionFull,
+      fullAccess,
+      planAuthorizedExecution,
+      fallbackProfiles,
+      skillsPrompt,
+      maxSteps,
     });
 
-    const finalText = clineResult.text || (clineResult.error ? `[Error de EditCoreAI] ${clineResult.error}` : "Operación procesada.");
+    const ok = !out?.blocked;
+    const finalText = out?.text
+      || (ok ? "Operación procesada." : "Hay un proceso activo. Envía **detente** para cancelarlo antes de mandar otro mensaje.");
 
     return {
-      ok: clineResult.ok,
+      ok,
       text: finalText,
-      error: clineResult.error || undefined,
-      steps: clineResult.messages?.filter((m) => m.role === "tool") || [],
-      threadId: tid,
+      steps: Array.isArray(out?.steps) ? out.steps : [],
+      threadId: out?.threadId || tid,
       kernel: true,
       brain: true,
-      cline: true,
-      report: { completed: clineResult.ok, role: "assistant" },
+      kind: out?.kind,
+      incomplete: !!out?.incomplete,
+      mutations: out?.mutations,
+      usage: out?.usage,
+      report: { completed: ok && !out?.incomplete, role: "assistant" },
     };
   } catch (err) {
     const message = String(err?.message || err).slice(0, 400);
