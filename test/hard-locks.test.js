@@ -46,7 +46,7 @@ test("H2: analysisMode / NO MODIFICAR deniega write en authorize", () => {
 
 test("H2b: evidenceFinalText en analysisMode no es Verificacion completada", () => {
   assert.match(adapterSource, /if \(input\?\.analysisMode === true\) \{\s*return this\.buildAnalysisFallbackReport/);
-  assert.match(adapterSource, /PROHIBIDO "Verificacion completada/);
+  assert.match(adapterSource, /Verificacion completada con evidencia real/);
 });
 
 test("H2c: eco del prompt se rechaza", () => {

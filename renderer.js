@@ -23,7 +23,7 @@ const PROVIDERS = {
   meai:     { label: "ME AI Cloud", baseUrl: "https://api.meai.cloud/v1", model: "claude-sonnet-4.6" },
 };
 // Proveedores de IA principales disponibles directamente para el administrador
-const PRIMARY_PROVIDER_KEYS = ["openai", "anthropic", "gemini", "meai"];
+const PRIMARY_PROVIDER_KEYS = ["meai", "apicredits"];
 const HIDDEN_PROVIDER_KEYS = [];
 const SINGLE_KEY_PROVIDER_KEYS = ["meai"];
 
@@ -2184,9 +2184,11 @@ function renderModelPickerMenu() {
   menu.appendChild(searchWrap);
 
   const isAdmin = isCurrentUserAdmin();
-  const autoScopes = [
-    { scope: "all", title: "Auto", hint: "EditCoreAI elige automáticamente el modelo ideal de ME AI para cada tarea." },
-  ];
+  const autoScopes = isAdmin ? [
+    { scope: "all", title: "Auto", hint: "EditCoreAI elige el modelo ideal entre ME AI y APICredits para cada tarea." },
+    { scope: "meai", title: "Auto · ME AI", hint: "Solo modelos de ME AI." },
+    { scope: "apicredits", title: "Auto · APICredits", hint: "Solo modelos de APICredits." },
+  ] : [{ scope: "meai", title: "Auto", hint: "EditCoreAI elige automáticamente el modelo ideal de ME AI para cada tarea." }];
   autoScopes.forEach(({ scope, title, hint }) => {
     const autoRow = document.createElement("div");
     autoRow.className = "model-picker-auto-row";
@@ -2408,7 +2410,12 @@ function mapProfileToModelOption(profile, customProvidersByKey) {
 }
 
 function isCurrentUserAdmin() {
-  return true;
+  // El rol sale de la sesión real (chat-home la publica en
+  // window.__editcoreSession). Antes devolvía true siempre y TODA la
+  // política de rol del renderer (modelos, proveedores, scopes Auto)
+  // quedaba anulada: un usuario normal veía y podía lo mismo que el admin.
+  const user = window.__editcoreSession?.user;
+  return user?.isAdmin === true || user?.role === "admin";
 }
 
 const USER_MODEL_GROUP_LABEL = "Modelos";
@@ -2417,18 +2424,24 @@ function isUserVisibleModelOption(entry) {
   return Boolean(entry && entry.enabled !== false && entry.model);
 }
 
-// Usuarios no admin: ven todos los modelos activos configurados por el administrador, agrupados limpiamente bajo "Modelos" sin exponer infraestructura interna
+// Usuarios no admin: solo modelos del grupo ME AI (su ruta es el servidor),
+// agrupados bajo "Modelos" sin exponer nombres de proveedor. El admin ve
+// todos los grupos (ME AI y APICredits) con su proveedor real.
 function filterModelOptionsForRole(options) {
   if (isCurrentUserAdmin()) return options;
   return options
     .filter(isUserVisibleModelOption)
+    .filter((entry) => {
+      const group = entry.modelProviderGroup || (String(entry.model || "").startsWith("meai/") ? "meai" : entry.providerKey);
+      return group === "meai";
+    })
     .map((entry) => ({ ...entry, providerLabel: USER_MODEL_GROUP_LABEL }));
 }
 
 function catalogChatModelOptions() {
   const customProvidersByKey = new Map(loadCustomProviders().map((provider) => [`custom:${provider.id}`, provider]));
   const profiles = loadProviderProfiles().filter((profile) => {
-    if (!profile || !profile.model || profile.providerKey === "apicredits") return false;
+    if (!profile || !profile.model) return false;
     const effectiveKey = profile.apiKey || resolveProviderApiKey(profile.providerKey, "");
     return Boolean(effectiveKey) || PRIMARY_PROVIDER_KEYS.includes(profile.providerKey);
   });
@@ -8982,7 +8995,8 @@ function agentProgressText(progress) {
       const cmd = (target || "comando").slice(0, 100);
       const codeMatch = error.match(/\(code\s*(\d+)\)|exit\s+(\d+)/i);
       const code = progress.result?.exitCode ?? codeMatch?.[1] ?? codeMatch?.[2] ?? "?";
-      return `○ ${cmd} → exit ${code} (evidencia de diagnostico)`;
+      // Contrato C5: Esto NO es un fallo de la herramienta run_command: la salida es evidencia para corregir el proyecto.
+      return `○ ${cmd} → exit ${code} (evidencia de verificacion; no es fallo de la herramienta)`;
     }
     if (name === "read_file" && /No es archivo|carpeta|isDirectory/i.test(error)) {
       return `○ ${target || "Ruta"} es una carpeta; el agente listara archivos y continuara`;

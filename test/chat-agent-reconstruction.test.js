@@ -669,7 +669,7 @@ test("Chat conserva analisis de solo lectura y escala cambios al Agente", () => 
   const source = fs.readFileSync(path.join(__dirname, "..", "renderer.js"), "utf8");
   const mainSource = fs.readFileSync(path.join(__dirname, "..", "main.js"), "utf8");
   const preloadSource = fs.readFileSync(path.join(__dirname, "..", "preload.js"), "utf8");
-  assert.match(source, /const isAgent = modeDecision\.isAgent;/);
+  assert.match(source, /const isAgent = !isCasualGreeting && modeDecision\.isAgent;/);
   assert.match(source, /const planAuthorizedExecution = isPlanAuthorizedExecution/);
   assert.match(source, /AgentOrchestrator\.resolveUnifiedAgentPlan/);
   assert.match(source, /orchestratorPlan: plan/);

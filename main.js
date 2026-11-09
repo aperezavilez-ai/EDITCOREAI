@@ -727,9 +727,11 @@ function publishAgentProgress(sender, payload = {}) {
     : (payload || {});
   if (safePayload && typeof safePayload.text === "string" && /<(?:dots_function_call|invoke\b|parameter\b|tool_call|tool_use)\b/i.test(safePayload.text)) {
     try {
-      const { cleanRawToolCallsFromText } = require("./runtime/editcore-cline/controller");
-      if (typeof cleanRawToolCallsFromText === "function") {
-        safePayload = { ...safePayload, text: cleanRawToolCallsFromText(safePayload.text) };
+      // Convergencia: la limpieza de marcado de herramientas vive en el kernel
+      // (parse-text-tools). Antes se importaba del controlador Cline, ya retirado.
+      const { stripTextToolMarkup } = require("./editcore-chat-kernel/parse-text-tools");
+      if (typeof stripTextToolMarkup === "function") {
+        safePayload = { ...safePayload, text: stripTextToolMarkup(safePayload.text) };
       }
     } catch { /* ignore */ }
   }
@@ -1837,7 +1839,7 @@ ipcMain.handle("editcore:chat", async (_event, input = {}) => {
     const { creditLedger } = require("./runtime/credit-ledger");
     const access = await creditLedger.checkCanRun();
     if (!access.ok) return licenseBlockedRunResult(_event, access);
-    require("./runtime/platform-defaults").setAdminInfra(true);
+    require("./runtime/platform-defaults").setAdminInfra(access.role === "admin" && chatApiKey !== CLOUD_SESSION_KEY);
     const { authManager } = require("./runtime/auth-manager");
     const token = await authManager.getAccessToken();
     if (token) {
@@ -1848,7 +1850,6 @@ ipcMain.handle("editcore:chat", async (_event, input = {}) => {
       model = String(input.model || model).trim().replace(/^meai\//i, "");
     }
   } else {
-    require("./runtime/platform-defaults").setAdminInfra(true);
     if (!chatApiKey && /localhost|127\.0\.0\.1|0\.0\.0\.0/i.test(baseUrl)) {
       chatApiKey = "local-no-key";
     }
@@ -4198,7 +4199,7 @@ function isBlockedGatewayModel(model) {
 
 function expandGatewayCatalogModels(models = []) {
   const list = Array.isArray(models) ? models.map((item) => String(item || "").trim()).filter(Boolean) : [];
-  const cleaned = list.filter((model) => !isBlockedGatewayModel(model) && !model.startsWith("apicredits/"));
+  const cleaned = list.filter((model) => !isBlockedGatewayModel(model));
   const expanded = new Set(cleaned);
   if (cleaned.some((model) => model.startsWith("meai/")) || list.some((model) => model.startsWith("meai/"))) {
     for (const model of MEAI_GATEWAY_MODELS) expanded.add(`meai/${model}`);
@@ -7097,11 +7098,18 @@ ipcMain.handle("agent:run", async (event, input = {}) => {
     (input.baseUrl && !input.baseUrl.includes("ai-proxy")) || 
     (apiKey && apiKey !== CLOUD_SESSION_KEY && apiKey !== "editcoreai_session_token");
 
-  if (!isCustomOrDirect && (apiKey === CLOUD_SESSION_KEY || providerKey === CLOUD_PROVIDER_KEY)) {
-    const { creditLedger } = require("./runtime/credit-ledger");
-    const access = await creditLedger.checkCanRun();
+  // Política única de ruta: un usuario que NO es admin va siempre por el
+  // servidor de EditCoreAI (ai-proxy), traiga la clave que traiga — es el
+  // mismo candado que assertProviderAllowed aplica a la app instalada.
+  // Solo el admin con clave directa usa proveedores directos.
+  const { creditLedger } = require("./runtime/credit-ledger");
+  // La infra del administrador solo se activa con sesión admin real y fuera
+  // de la ruta cloud de usuarios (antes: setAdminInfra(true) incondicional).
+  const { setAdminInfra } = require("./runtime/platform-defaults");
+  const access = await creditLedger.checkCanRun();
+  if (access.role !== "admin" || apiKey === CLOUD_SESSION_KEY) {
     if (!access.ok) return licenseBlockedRunResult(event, access);
-    require("./runtime/platform-defaults").setAdminInfra(true);
+    setAdminInfra(access.role === "admin" && apiKey !== CLOUD_SESSION_KEY);
     const { authManager } = require("./runtime/auth-manager");
     const token = await authManager.getAccessToken();
     if (token) {
@@ -7112,7 +7120,6 @@ ipcMain.handle("agent:run", async (event, input = {}) => {
       model = String(input.model || model).trim().replace(/^meai\//i, "");
     }
   } else {
-    require("./runtime/platform-defaults").setAdminInfra(true);
     if (!apiKey && /localhost|127\.0\.0\.1|0\.0\.0\.0/i.test(baseUrl)) {
       apiKey = "local-no-key";
     }
@@ -9947,7 +9954,7 @@ function ensureDirectUpstreamProfiles() {
     const rawProviders = Array.isArray(secure["editcore-custom-providers"]) ? secure["editcore-custom-providers"] : [];
     const rawProfiles = Array.isArray(secure["editcore-provider-profiles"]) ? secure["editcore-provider-profiles"] : [];
     const cleanedProviders = rawProviders.filter((provider) => !isGatewayResidueProvider(provider));
-    let profiles = rawProfiles.filter((profile) => !isGatewayResidueProfile(profile) && profile.providerKey !== "apicredits");
+    let profiles = rawProfiles.filter((profile) => !isGatewayResidueProfile(profile));
     let changed = cleanedProviders.length !== rawProviders.length || profiles.length !== rawProfiles.length;
     if (changed) {
       secure["editcore-custom-providers"] = cleanedProviders;
@@ -9957,20 +9964,10 @@ function ensureDirectUpstreamProfiles() {
       ? { ...secure["editcore-providers"] }
       : {};
 
-    if (providers.apicredits) {
-      delete providers.apicredits;
-      changed = true;
-    }
-    if (secure["editcore-chat-config"]?.providerKey === "apicredits") {
-      secure["editcore-chat-config"] = {
-        ...secure["editcore-chat-config"],
-        providerKey: "meai",
-        model: "claude-sonnet-4.6",
-        providerProfileId: "meai:claude-sonnet-4.6",
-        autoProviderScope: "meai",
-      };
-      changed = true;
-    }
+    // APICredits se conserva: es el segundo gateway del administrador.
+    // (Antes este arranque borraba el proveedor, sus perfiles y reescribía
+    // el chat activo a ME AI en cada inicio, contra la política de dos
+    // gateways que el resto del sistema y los tests esperan.)
 
     const upsertDirect = ({ providerKey, providerName, baseUrl, model, apiKey }) => {
       const key = String(apiKey || "").trim();
@@ -11638,43 +11635,10 @@ ipcMain.handle("ghost-completion:cache", async (_event, prefix, completion, ttlM
   }
 });
 
-// Ciclo 29+: Smart Router, Async Agent Runner, Marketplace & Zero-Config LSP Bundler
-ipcMain.handle("smart-router:resolve-candidate", async (_event, taskType, options) => {
-  try {
-    const { smartRouter } = require("./runtime/smart-router");
-    return smartRouter.resolveCandidate(taskType, options);
-  } catch (error) {
-    return { error: error.message };
-  }
-});
-
-ipcMain.handle("smart-router:record-execution", async (_event, provider, data) => {
-  try {
-    const { smartRouter } = require("./runtime/smart-router");
-    return smartRouter.recordExecution(provider, data);
-  } catch (error) {
-    return { error: error.message };
-  }
-});
-
-ipcMain.handle("smart-router:get-stats", async () => {
-  try {
-    const { smartRouter } = require("./runtime/smart-router");
-    return smartRouter.getStats();
-  } catch (error) {
-    return { error: error.message };
-  }
-});
-
-ipcMain.handle("smart-router:get-fallback", async (_event, failedProvider, taskType) => {
-  try {
-    const { smartRouter } = require("./runtime/smart-router");
-    return smartRouter.getFallbackFor(failedProvider, taskType);
-  } catch (error) {
-    return { error: error.message };
-  }
-});
-
+// Ciclo 29+: Async Agent Runner, Marketplace & Zero-Config LSP Bundler
+// (Smart Router retirado en la convergencia: tercer router, sin un solo
+// consumidor en el renderer; la selección de modelo vive en UN sitio:
+// auto-model-selection.js para el picker y model-router.js en el kernel.)
 ipcMain.handle("async-agent:enqueue", async (_event, taskConfig) => {
   try {
     const { asyncAgentRunner } = require("./runtime/async-agent-runner");

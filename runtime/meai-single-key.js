@@ -39,13 +39,16 @@ function unifyMeaiSecureState(input) {
   const providers = state["editcore-providers"] && typeof state["editcore-providers"] === "object"
     ? { ...state["editcore-providers"] }
     : {};
-  if (providers.apicredits) delete providers.apicredits;
+  // APICredits NO se borra: es el segundo gateway del administrador y sigue
+  // disponible (la unificación es solo de la clave ME AI). Antes este módulo
+  // eliminaba el proveedor y todos sus perfiles en cada lectura/escritura
+  // de la bóveda, contra la política de dos gateways.
   const rawProfiles = Array.isArray(state["editcore-provider-profiles"]) ? state["editcore-provider-profiles"] : [];
   const before = JSON.stringify([providers[MEAI_KEY] || null, rawProfiles, state["editcore-chat-config"] || null]);
 
   const apiKey = pickMeaiKey(providers[MEAI_KEY] || {}, rawProfiles);
   let profiles = rawProfiles
-    .filter((p) => p && p.providerKey !== "apicredits")
+    .filter((p) => p)
     .map((p) => {
     if (!p || typeof p !== "object") return p;
     if (p.providerKey === MEAI_KEY && apiKey && p.apiKey !== apiKey) return { ...p, apiKey };

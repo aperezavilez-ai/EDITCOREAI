@@ -745,13 +745,6 @@ contextBridge.exposeInMainWorld("editcoreGhostCompletion", {
   cache: (prefix, completion, ttlMs) => ipcRenderer.invoke("ghost-completion:cache", prefix, completion, ttlMs),
 });
 
-contextBridge.exposeInMainWorld("editcoreSmartRouter", {
-  resolveCandidate: (taskType, options) => ipcRenderer.invoke("smart-router:resolve-candidate", taskType, options),
-  recordExecution: (provider, data) => ipcRenderer.invoke("smart-router:record-execution", provider, data),
-  getStats: () => ipcRenderer.invoke("smart-router:get-stats"),
-  getFallback: (failedProvider, taskType) => ipcRenderer.invoke("smart-router:get-fallback", failedProvider, taskType),
-});
-
 contextBridge.exposeInMainWorld("editcoreAsyncAgent", {
   enqueue: (taskConfig) => ipcRenderer.invoke("async-agent:enqueue", taskConfig),
   cancel: (taskId) => ipcRenderer.invoke("async-agent:cancel", taskId),

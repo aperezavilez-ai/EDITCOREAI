@@ -119,7 +119,7 @@ async function runKernelChat({
     // kernel (editcore-chat-kernel), que ya tiene herramientas nativas,
     // cancelación de punta a punta y error explícito ante respuestas vacías.
     // El controlador Cline salió de esta ruta: su código permanece en
-    // runtime/editcore-cline/ como referencia, pero ya no ejecuta el chat.
+    // El motor Cline fue retirado del disco en la convergencia; el chat lo ejecuta solo el kernel.
     // stopChatKernel() (arriba, vía index.js) detiene ESTE motor: el que corre.
     const out = await handleChat({
       message,

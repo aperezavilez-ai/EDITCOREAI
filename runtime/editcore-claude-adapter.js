@@ -742,7 +742,7 @@ class EditCoreClaudeAdapter {
           ? 400_000
           : (input.analysisMode === true
             ? Math.max(200_000, Number(depthProfile.tokenBudget) || 350_000)
-            : 150_000)));
+            : 80_000)));
     const effectiveBudget = Math.max(this.tokenBudget, requestedBudget, minimumTaskBudget);
     const requestedIterations = Number(input.maxIterations) || 0;
     const deepAnalysis = input.analysisMode === true && isDeepOrHeavier(input.analysisDepth.depth);
@@ -820,11 +820,13 @@ class EditCoreClaudeAdapter {
       ? []
       : filterStepsForScope(Array.isArray(input.resumeSteps) ? input.resumeSteps : [], this.runScope);
 
-    // Context Pruning: limitar a últimos 3 turnos y máximo 16,000 chars
+    // Auditoría de contexto: el log conserva hasta 80.000 chars y los últimos
+    // 8 turnos (con 16.000/3, la poda preventiva destruía evidencia reciente
+    // que la propia auditoría del adaptador espera retener).
     this.conversation = new ConversationLog({
       prefixMessages: this.buildPrefixMessages(input),
-      maxChars: 16_000,
-      keepLastTurns: 3,
+      maxChars: 80_000,
+      keepLastTurns: 8,
     });
 
     const steps = scopedResume
@@ -3916,21 +3918,28 @@ MODO CREACION DE PROYECTO PROFESIONAL (GREENFIELD — PRIORIDAD MAXIMA):
         "- frontend-design: Diseno visual",
       ].join("\n");
 
-    // System prompt CON CACHE CONTROL + politica elite inmutable
-    // System prompt conciso con cache control (Paso 1: Reducción drástica de tokens)
+    // System prompt CON CACHE CONTROL + politica elite inmutable.
+    // La reescritura "concisa" había dejado fuera la política élite (se
+    // importaba withEliteCommunicationPolicy y nunca se aplicaba), el
+    // contrato de trabajo y la guía analysisGuide, que se construía y no
+    // se usaba. Se restaura la envoltura completa.
     messages.push({
       role: "system",
       content: [
         {
           type: "text",
-          text: `Eres EditCoreAI, ingeniero de software senior embebido en el IDE.
+          text: withEliteCommunicationPolicy(`Eres EditCoreAI, ingeniero de software senior embebido en el IDE.
 Responde siempre en español correcto, directo y al grano.
 HERRAMIENTAS: Usa las tools disponibles según la tarea.
+CONTRATO DE TRABAJO:
+- Trabajas con evidencia real del disco: lee antes de afirmar, escribe con tools y verifica con comandos reales.
+- Si algo no funciona, di qué falta para que funcione y cuál es la corrección de mayor impacto; no cierres con narración ni promesas.
+- Nada de éxitos falsos: solo reporta como hecho lo que una tool confirmó.
 ${input.analysisMode === true ? `MODO ANALISIS (SOLO LECTURA):
 - Inspecciona el código con read_file / list_files. No uses herramientas de escritura.
 - Reporta brevemente los hallazgos reales, qué falta para que funcione y la solución concreta.` : `MODO EJECUCION:
 - Si el usuario pide cambios o correcciones y tienes permisos activos, ejecuta las herramientas correspondientes (write_file, replace_in_file, run_command) directamente en este turno.
-- No pidas confirmaciones redundantes si tienes autorización. Aplica los cambios reales en disco y reporta el resultado.`}`,
+- No pidas confirmaciones redundantes si tienes autorización. Aplica los cambios reales en disco y reporta el resultado.`}${analysisGuide}`),
           cache_control: { type: "ephemeral" },
         },
       ],

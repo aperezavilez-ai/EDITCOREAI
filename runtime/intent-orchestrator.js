@@ -94,11 +94,13 @@
       || /\bhaz(?:me)?\s+caso\b/i.test(text);
   }
 
+  // Convergencia: el único agent-runtime es el de la raíz (utilidades
+  // compartidas: agentTaskRequirements, validateAgentCompletion, ...).
+  // El fork runtime/agent-runtime.js (clase AgentRuntime) sombreaba ese
+  // módulo y dejaba agentTaskRequirements en undefined vía optional chaining.
   const AgentRuntime = (() => {
     if (typeof require !== "undefined") {
-      try { return require("./agent-runtime"); } catch {
-        try { return require("../agent-runtime"); } catch { /* fallthrough */ }
-      }
+      try { return require("../agent-runtime"); } catch { /* fallthrough */ }
     }
     return browserRoot?.EditCoreAgentRuntime || null;
   })();

@@ -8,18 +8,18 @@
   const AUTO_MODEL_SELECTION = "__auto__";
   const CAPABILITY_FAIL_TTL_MS = 20 * 60 * 1000;
   const SLOW_MODEL_MS = 90_000;
-  const UPSTREAM_ORDER = ["meai"];
-  const AUTO_SCOPE_LABELS = { all: "Todos", meai: "ME AI" };
+  const UPSTREAM_ORDER = ["meai", "apicredits"];
+  const AUTO_SCOPE_LABELS = { all: "Todos", meai: "ME AI", apicredits: "APICredits" };
 
   function normalizeAutoProviderScope(scope) {
     const value = String(scope || "").trim().toLowerCase();
-    if (value === "meai") return "meai";
+    if (value === "meai" || value === "apicredits") return value;
     return "all";
   }
 
   function isScopedAutoProvider(scope) {
     const normalized = normalizeAutoProviderScope(scope);
-    return normalized === "meai";
+    return normalized === "meai" || normalized === "apicredits";
   }
 
   function autoSelectionValue(scope = "") {
@@ -53,9 +53,9 @@
     const fromModel = autoRotationBucket(entry?.model);
     if (fromModel) return fromModel;
     const group = String(entry?.modelProviderGroup || "").toLowerCase();
-    if (group === "meai") return group;
+    if (group === "meai" || group === "apicredits") return group;
     const key = String(entry?.providerKey || "").toLowerCase();
-    if (key === "meai") return key;
+    if (key === "meai" || key === "apicredits") return key;
     return "";
   }
 
@@ -131,6 +131,23 @@
     { id: "meai/minimax-m3", family: "minimax", duty: "chat+fast-analyze", purpose: "Chat veloz y lectura rapida." },
     { id: "meai/step-3.7-flash", family: "step", duty: "chat", purpose: "Chat instantaneo de soporte." },
     { id: "meai/mimo-v2.5", family: "mimo", duty: "chat", purpose: "Chat ligero de asistencia." },
+    // APICredits (segundo gateway del administrador; el catálogo solo tenía
+    // filas meai/* y describeModelDuty resolvía los apicredits/* al alias
+    // ME AI con el rol equivocado, p. ej. deepseek-v4-pro como implement-alt
+    // cuando su carril es reserve).
+    { id: "apicredits/claude-fable-5", family: "claude", duty: "implement+analyze", purpose: "Agente principal APICredits: implementar y analizar con tools." },
+    { id: "apicredits/claude-sonnet-5", family: "claude", duty: "implement+analyze", purpose: "Implementacion avanzada con tools." },
+    { id: "apicredits/claude-sonnet-4-6", family: "claude", duty: "implement+analyze", purpose: "Agente principal: editar codigo y analizar runtime." },
+    { id: "apicredits/claude-opus-4-8", family: "claude", duty: "verify+hard-implement", purpose: "Auditorias criticas y refactors dificiles." },
+    { id: "apicredits/claude-opus-4-7", family: "claude", duty: "verify", purpose: "Verificacion e inspeccion de codigo." },
+    { id: "apicredits/claude-haiku-4-5", family: "claude", duty: "chat+fast-analyze", purpose: "Chat corto y analisis rapido de bajo costo." },
+    { id: "apicredits/gpt-5.6-terra", family: "gpt", duty: "implement", purpose: "Implementacion con tools en el carril primario." },
+    { id: "apicredits/gpt-5.6-sol", family: "gpt", duty: "reserve", purpose: "Reserva de maximo razonamiento; fuera de los carriles de implementacion." },
+    { id: "apicredits/gpt-5.6-luna", family: "gpt", duty: "chat+fast-analyze", purpose: "Chat rapido y analisis ligero." },
+    { id: "apicredits/gemini-2.5-flash", family: "gemini", duty: "fast-analyze", purpose: "Analisis rapido; prohibido en implementacion." },
+    { id: "apicredits/grok-4.5", family: "grok", duty: "implement-alt", purpose: "Alternativa de implementacion en carril primario." },
+    { id: "apicredits/grok-4.3", family: "grok", duty: "analyze", purpose: "Analisis y lectura de codigo." },
+    { id: "apicredits/deepseek-v4-pro", family: "deepseek", duty: "reserve", purpose: "Reserva: solo entra si el carril primario no esta disponible." },
   ];
 
   /**

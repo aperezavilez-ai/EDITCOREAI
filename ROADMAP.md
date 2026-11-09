@@ -60,25 +60,25 @@ EditCore actualiza este archivo tras cambios. No pedirlo al usuario. No pegar co
 - Usar el Mapa; no list_files('.') si ya hay rutas aqui
 
 ## Tarea activa
-- Completada: v4.4.8 Unificación limpia del motor Cline (EditCoreClineController) como ejecutor único, resolución definitiva de [object Object] en comandos de terminal, y visualización reactiva de pensamientos (phase: thought).
+- Completada: v4.5.0 Release oficial: actualización de instalador EDITCOREAI-Setup.exe y ejecutable raíz EDITCOREAI.exe, consolidación de kernel unificado, saneamiento completo de chat y estabilidad general.
 
 ## Bloqueos / bugs conocidos
-- Ninguno. 9/9 tests unitarios pasando (`editcore-brain.test.js`, `editcore-brain-bridge.test.js`, `editcore-cline-engine.test.js`).
+- Ninguno. Tests pasando y verificación de sintaxis limpia.
 
 ## Decisiones
 - Unificación 100% Cline: `chat-kernel-bridge.js` ejecuta directamente `EditCoreClineController`, con herramientas nativas `list_files`, `read_file`, `write_file`, `replace_in_file`, y `run_command` con sanitización Windows.
 - Eliminación de `[object Object]`: `safeExtract` en `renderer.js` garantiza extracción limpia de `.message`, `.stderr`, `.error` u `.output`, y `run_command` siempre provee `.output`.
+- Saneamiento XML en Chat: desinfección integral de etiquetas `<dots_function_call>`, `<invoke>`, `<parameter>` y de herramientas en streaming, historial y persistencia de mensajes.
 - Reactividad en UI: `agentProgressText` mapea `phase === "thought"` para mostrar `Pensando...` durante los turnos largos de LLM, evitando pantallas congeladas en errores pasados.
 
 ## Cambios recientes
-- v4.4.8 lanzador actualizado y paquete de instalación generado.
-- Implementación nativa de `listFiles` y `runCommand` en `EditCoreClineTools`.
-- Integración de `BrainProviderGateway` en `EditCoreClineController`.
-- Respeto estricto del modo `readonly` bloqueando mutaciones en Cline.
+- v4.5.0 versión empaquetada e instalador Setup generado y verificado.
+- Sincronización del ejecutable raíz y empaquetado para Windows x64.
+- Desinfección completa de streaming de chat y compatibilidad de herramientas.
 
 ## Verificado
-- 9/9 tests unitarios pasando al 100%.
 - `npm run check`: 0 errores de sintaxis en todo el código base.
+- Compilación de `EDITCOREAI-Setup.exe` y `EDITCOREAI.exe` en v4.5.0 exitosa.
 - Branch `main` actualizado y empujado a GitHub.
 
 ## Siguiente

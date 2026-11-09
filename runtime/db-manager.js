@@ -190,7 +190,8 @@ class DbManager {
 
   _isBinaryAvailable(binary) {
     try {
-      const result = spawnSync("where", [binary], { stdio: "pipe" });
+      // "where" solo existe en Windows; en el resto es "which".
+      const result = spawnSync(process.platform === "win32" ? "where" : "which", [binary], { stdio: "pipe" });
       return result.status === 0;
     } catch {
       return false;

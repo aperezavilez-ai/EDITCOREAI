@@ -1,8 +1,21 @@
 "use strict";
 
 /**
- * Infraestructura del administrador (servidor Supabase propio, etc.) como valor por defecto.
- * Solo se activa con la sesión del administrador; los usuarios conectan sus propias cuentas.
+ * Política de proveedores e infraestructura del administrador — MÓDULO ÚNICO.
+ *
+ * Toda decisión de "qué proveedor puede usar esta instalación" pasa por aquí:
+ * - adminInfra: la infraestructura del administrador (Supabase propio, claves
+ *   directas) solo se ofrece cuando la sesión activa es la del administrador.
+ *   main.js la sincroniza con setAdminInfra(rol === "admin" && !sesión cloud).
+ * - assertProviderAllowed: en la app INSTALADA (packaged) sin sesión admin,
+ *   la única ruta de IA permitida es el proxy del servidor de EditCoreAI
+ *   (cloudProxyPrefix). Cualquier URL directa lanza PROVIDER_LOCKED.
+ *   En desarrollo, o con sesión admin, no se bloquea ningún proveedor.
+ *
+ * Antes este módulo era una fachada: setAdminInfra ignoraba el flag,
+ * adminInfraEnabled() devolvía siempre true y assertProviderAllowed era
+ * un no-op con un comentario de "uso personal". La política parecía existir
+ * y no existía.
  */
 
 const ADMIN_SUPABASE_ORIGIN = "https://supabase.gafcore.com";
@@ -14,26 +27,41 @@ function setAdminInfra(on) {
 }
 
 function adminInfraEnabled() {
-  return true;
+  return adminInfra;
 }
 
 function defaultSupabaseOrigin() {
-  return ADMIN_SUPABASE_ORIGIN;
+  return adminInfra ? ADMIN_SUPABASE_ORIGIN : "";
 }
 
 function cloudProxyPrefix(options = {}) {
   try {
     const { loadCloudConfig } = require("./editcore-cloud-config");
-    const url = String(loadCloudConfig(options).url || "").replace(/\/+$/, "");
+    const url = String(loadCloudConfig({ ...options, packaged: true }).url || "").replace(/\/+$/, "");
     return url ? `${url}/functions/v1/ai-proxy/` : "";
   } catch {
     return "";
   }
 }
 
-// EditCoreAI es para uso personal / administrador: todos los proveedores directos y locales están 100% permitidos.
-function assertProviderAllowed(_baseUrl, _options = {}) {
-  return;
+function assertProviderAllowed(baseUrl, options = {}) {
+  // Desarrollo o sesión del administrador: sin candado. Si el llamante no
+  // dice si la app está instalada, se detecta igual que en editcore-cloud-config
+  // (las dos rutas vivas, ai-core y el provider del kernel, llaman sin options).
+  let packaged = options.packaged;
+  if (packaged === undefined) {
+    try { packaged = require("./editcore-cloud-config").isPackagedApp(); } catch { packaged = false; }
+  }
+  if (packaged !== true || adminInfra) return;
+  const prefix = cloudProxyPrefix(options);
+  const url = String(baseUrl || "").trim();
+  if (prefix && url.startsWith(prefix)) return;
+  const err = new Error(
+    "Proveedor bloqueado: la app instalada solo puede usar la IA del servidor de EditCoreAI. " +
+    "Conecta una cuenta o inicia sesión como administrador para usar proveedores directos."
+  );
+  err.code = "PROVIDER_LOCKED";
+  throw err;
 }
 
 module.exports = {
@@ -41,5 +69,6 @@ module.exports = {
   setAdminInfra,
   adminInfraEnabled,
   defaultSupabaseOrigin,
+  cloudProxyPrefix,
   assertProviderAllowed,
 };

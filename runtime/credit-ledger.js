@@ -47,18 +47,25 @@ function usageMeter(account = {}) {
   return { balance, topupBase, used, usedPercent };
 }
 
+// La vista refleja la cuenta que devuelve el servidor: saldo, rol y estado
+// reales. (La versión "uso personal" devolvía siempre 999999/admin/ilimitado
+// y contradecía el encabezado de este archivo: sin servidor no hay saldo.)
 function balanceView(account = {}) {
   const meter = usageMeter(account);
+  const role = String(account?.role || "user");
+  const status = String(account?.status || "active");
+  const isUnlimited = account?.is_unlimited === true || role === "admin";
+  const canExecute = status === "active" && (isUnlimited || meter.balance > 0);
   return {
-    balance: Math.max(999999, meter.balance || 0),
-    topupBase: Math.max(999999, meter.topupBase || 0),
-    used: 0,
-    usedPercent: 0,
-    isUnlimited: true,
-    role: "admin",
-    status: "active",
-    email: account?.email || "admin@editcoreai.local",
-    canExecute: true,
+    balance: meter.balance,
+    topupBase: meter.topupBase,
+    used: meter.used,
+    usedPercent: meter.usedPercent,
+    isUnlimited,
+    role,
+    status,
+    email: account?.email || "",
+    canExecute,
   };
 }
 
@@ -69,28 +76,35 @@ class CreditLedger extends EventEmitter {
   }
 
   async getBalance() {
+    if (!this.auth?.isAuthenticated?.()) {
+      return { ...failure({ code: "NO_SESSION" }), ...balanceView({}), canExecute: false };
+    }
     try {
-      let account = {};
-      if (this.auth?.isAuthenticated?.()) {
-        try {
-          account = await this.auth.refreshAccount();
-        } catch { /* ignore */ }
-      }
-      return { ok: true, success: true, ...balanceView(account) };
-    } catch {
-      return { ok: true, success: true, ...balanceView({}) };
+      const account = await this.auth.refreshAccount();
+      return { ok: true, success: true, ...balanceView(account || {}) };
+    } catch (error) {
+      // Fail-closed: si el servidor no responde, nunca saldo infinito.
+      return { ...failure(error), ...balanceView({}), canExecute: false };
     }
   }
 
-  // EditCoreAI es para uso personal: siempre administrador con permisos ilimitados.
   async checkCanRun() {
-    let account = {};
-    if (this.auth?.isAuthenticated?.()) {
-      try {
-        account = await this.auth.refreshAccount();
-      } catch { /* ignore */ }
+    if (!this.auth?.isAuthenticated?.()) {
+      return { ...failure({ code: "NO_SESSION" }), ...balanceView({}), canExecute: false };
+    }
+    let account;
+    try {
+      account = await this.auth.refreshAccount();
+    } catch (error) {
+      return { ...failure(error), ...balanceView({}), canExecute: false };
     }
     const view = balanceView(account || {});
+    if (view.status === "suspended") {
+      return { ...failure({ code: "ACCOUNT_SUSPENDED" }), ...view, canExecute: false };
+    }
+    if (!view.canExecute) {
+      return { ...failure({ code: "OUT_OF_CREDITS" }), ...view, canExecute: false };
+    }
     return { ok: true, success: true, ...view };
   }
 

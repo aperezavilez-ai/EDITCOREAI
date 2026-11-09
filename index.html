@@ -48,6 +48,8 @@
               <div class="ec-usage-bar"><div class="ec-usage-bar-fill" id="chatHomeUsageFill"></div></div>
             </div>
             <button type="button" class="chat-home-settings-btn chat-home-admin-btn" id="chatHomeAdminBtn" title="Panel de administración: usuarios, saldo, códigos y pagos">🛡 Administración</button>
+            <button type="button" class="chat-home-settings-btn" id="chatHomePreviewBtn" title="Ver la app como un usuario normal" hidden>👁 Ver como usuario</button>
+            <button type="button" class="chat-home-settings-btn ec-preview-exit-btn" id="chatHomeExitPreviewBtn" hidden>✕ Salir de vista usuario</button>
             <button type="button" class="chat-home-settings-btn" id="chatHomeSettingsBtn" title="Configuración">⚙ Configuración</button>
           </div>
         </aside>
@@ -742,7 +744,9 @@
         <div class="toolbar-group" aria-label="Cuenta y modelos">
           <button id="connectionsBtn" type="button" title="GitHub, Vercel, Supabase y Proveedores IA">Conexiones</button>
           <button id="providersBtn" type="button" title="Proveedores y modelos de IA">Modelos</button>
-          <button id="ideAdminBtn" type="button" class="toolbar-admin-btn" title="Panel de administración: usuarios, saldo, códigos y pagos">🛡 Administración</button>
+          <button id="ideAdminBtn" type="button" class="toolbar-admin-btn" title="Panel de administración: usuarios, saldo, códigos y pagos" hidden>🛡 Administración</button>
+          <button id="idePreviewBtn" type="button" title="Ver la app como un usuario normal" hidden>👁 Ver como usuario</button>
+          <button id="ideExitPreviewBtn" type="button" class="ec-preview-exit-btn" hidden>✕ Salir de vista usuario</button>
         </div>
         <span class="toolbar-divider" aria-hidden="true"></span>
           <div class="toolbar-group" aria-label="Acciones">

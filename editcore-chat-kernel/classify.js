@@ -25,6 +25,11 @@ function isContinuePhrase(text = "") {
 }
 const CONTINUE_TASK_RE = /^\s*(?:contin[uú]a|sigue|avanza|prosigue|adelante)\b.*(?:tarea|ejecut|paso|evidencia|donde\s+qued|activo|activa|trabajo|arregl|correg)/i;
 const CHAT_INFO_RE = /\b(?:para\s+qu[eé]\s+(?:sirve|funciona|es)|qu[eé]\s+(?:hace|es)|qui[eé]n\s+eres|c[oó]mo\s+te\s+llamas|ayuda|hola|buenos\s+d[ií]as|buenas\s+tardes|buenas\s+noches)\b/i;
+// Saludo puro (el mensaje ENTERO es el saludo): es CHAT sin herramientas en
+// cualquier modo de permisos. Sin esto, el atajo de Acceso completo convertía
+// un "hola" en ASK con allowWrite=true (chat ciego al revés: agente armado
+// para saludar).
+const PURE_GREETING_RE = /^\s*(?:hola|hi|hello|hey|buenas|buenos\s+d[ií]as|buenas\s+tardes|buenas\s+noches|qu[eé]\s+tal)(?:\s*[,!]?\s*(?:c[oó]mo\s+est[aá]s|todo\s+bien))?\s*[.!?¡¿]*\s*$/i;
 
 // Verbos de cambio/escritura y quejas de error. Ganan sobre TASK_VERIFY_RE si el mensaje pide modificar o reporta fallo.
 const TASK_FIX_RE = /\b(?:corr[eií][gj](?:e|ir|alo|alos|ala|alas|eme|me|as)?(?:me|lo|la|los|las)?|arregl(?:a|á|ar|alo|alos|ala|alas|ame|as)?(?:me|lo|la|los|las)?|repar(?:a|á|ar|alo|alos|ala|alas|ame|as)?(?:me|lo|la|los|las)?|solucion(?:a|á|ar|alo|alos|ala|alas|ame|as)?(?:me|lo|la|los|las)?|resu[eé]lve(?:lo|la|los|las|me)?|resolver(?:lo|la|los|las|me)?|corrige|corrije|corrijelo|corrijelos|corrigelo|corrigelos|corrijelas|corrigelas|arregla|arreglá|arreglalo|arreglalos|arreglala|arreglalas|implementa(?:r|lo|los|la|las)?|aplica|aplicá|aplicalo|aplicalos|aplicala|aplicalas|repara|repará|reparalo|reparalos|soluciona|solucioná|solucionalo|solucionalos|crea(?:r|ción)?|creá|genera(?:r)?|generá|escribe|escrib[ií]|modifica(?:r|lo|los|la|las)?|modificá|modificaciones|modificaci[oó]n|refactoriza(?:r)?|actualiza(?:r|lo|los|la|las)?|actualizá|añade|añadí|agrega(?:r|lo|los|la|las)?|agregá|cambia(?:r|lo|los|la|las)?|cambiá|muev\w*|mov[eé]|copiar?|copiá|haz(?:me|lo|la|los|las)?|hacer|hac[eé](?:me|lo|la)?|cr[eé]a(?:me|lo|la)|gen[eé]ra(?:me|lo|la)|arr[eé]gla(?:me|lo|la)|corr[ií][gj]e(?:me|lo|la)|agr[eé]ga(?:me|lo|la)|arma|armá|scaffold|nuevo\s+proyecto|ejecuta(?:r|lo|los|la|las)?|ejecutá|reemplaza(?:r|lo|los|la|las)?|reemplazá|pon[eé]?|setea(?:r)?|borra(?:r)?|elimina(?:r|lo|los|la|las)?|renombra(?:r)?|run_command|run|build|tsc|npx|npm|no\s+(?:abre|entra|carga|funciona|compila|sirve|deja|puedo|muestra|pasa)|sigue\s+(?:sin|roto|fallando|el\s+error|con\s+error|con\s+fallo)|error\s+al\s+(?:abrir|entrar|cargar)|sigue\s+el\s+problema)\b/i;
@@ -211,6 +216,10 @@ function classify(message, opts = {}) {
     || /\?$/i.test(text)
     || /^(?:qu[eé]\s+(?:skills|es|hace|son|hay|opinas|diferencia|cambi[oó]|pasa)|cu[aá]l(?:es)?|c[oó]mo|por\s*qu[eé]|qui[eé]n(?:es)?|cu[aá]ndo|hay\b|ya\s+qued[oó]|qued[oó]|ya\s+quedaron|porque\s+se\s+te\s+acaba|es\s+posible)\b/i.test(text);
 
+  if (PURE_GREETING_RE.test(text)) {
+    return { kind: "CHAT", label: "Chat", allowTools: false, allowWrite: false, background: false };
+  }
+
   // En Modo Agente o Acceso Total: NUNCA degradar a CHAT sin herramientas ni pedir cambiar permisos
   if (full) {
     const isPureInfo = isQuestionOrChat && !TASK_FIX_RE.test(text);
@@ -260,18 +269,25 @@ function loadProjectMapHelpers() {
   catch { try { return require("./project-map"); } catch { return null; } }
 }
 
-// Las rutas Windows pueden tener espacios ("D:\PROGRAMAS IA"): se toma la más larga que exista.
-function longestExistingWindowsPath(text) {
-  const m = String(text || "").match(/\b([A-Za-z]:[\\/][^"'`\r\n]*)/);
-  if (!m) return "";
+// Las rutas absolutas pueden tener espacios ("D:\PROGRAMAS IA", "/tmp/CARPETA CON
+// ESPACIOS"): se captura el tramo completo (con espacios) y se recorta palabra a
+// palabra desde el final hasta dar con la ruta más larga que exista en disco.
+// Así el texto que sigue a la ruta ("y dime qué hay.") no se cuela en el destino.
+function longestExistingAbsPath(raw) {
   const fs = require("fs");
-  const parts = m[1].trim().split(/(\s+)/);
+  const parts = String(raw || "").trim().split(/(\s+)/);
   for (let n = parts.length; n > 0; n -= 1) {
     const candidate = parts.slice(0, n).join("").trim().replace(/[.,;:!?)]+$/, "");
     if (!candidate) continue;
     try { if (fs.existsSync(candidate)) return candidate; } catch { /* sigue */ }
   }
   return "";
+}
+
+function longestExistingWindowsPath(text) {
+  const m = String(text || "").match(/\b([A-Za-z]:[\\/][^"'`\r\n]*)/);
+  if (!m) return "";
+  return longestExistingAbsPath(m[1]);
 }
 
 function isInsideRoot(root, target) {
@@ -303,12 +319,13 @@ function extractListTarget(message, projectRoot = null) {
     return candidate;
   }
 
-  // 2) Ruta absoluta Unix (/home/..., /var/...)
-  const absUnixMatch = t.match(/(?:^|\s)(\/[^\s"'`]+)/);
+  // 2) Ruta absoluta Unix (/home/..., /var/...) — también puede llevar espacios.
+  const absUnixMatch = t.match(/(?:^|\s)(\/[^\n"'`]+)/);
   if (absUnixMatch && !absUnixMatch[1].startsWith("//")) {
-    candidate = absUnixMatch[1].trim().replace(/[.,;]+$/, "");
+    candidate = longestExistingAbsPath(absUnixMatch[1]) || absUnixMatch[1].trim().replace(/[.,;]+$/, "");
     const root = String(projectRoot || "").trim();
     if (!root) return candidate;
+    if (!isInsideRoot(root, candidate)) return candidate;
     const mapApi = loadProjectMapHelpers();
     if (mapApi?.resolveExistingTarget) {
       try {
@@ -366,6 +383,9 @@ const READ_ONLY_TOOLS = [
   // Nuevas tools de solo lectura
   "web_search", "git_status", "git_log", "git_diff", "list_skills",
   "check_connections", "read_roadmap", "probe_endpoint",
+  // Herramientas extra del kernel (extra-tools.js): lectura pura, sin guardia
+  // de escritura en el despachador. Faltaban aquí y la clasificación derivaba.
+  "read_pdf", "docker_ps", "screenshot_page",
 ];
 const WRITE_TOOLS = [
   "write_file", "replace_in_file", "delete_file", "create_project",
@@ -377,7 +397,22 @@ const WRITE_TOOLS = [
   "capture_preview_screenshot", "run_e2e_pipeline", "rollback_last_change",
   // Nuevas tools de escritura
   "install_skill", "clone_repo", "ingest_to_brain", "update_roadmap",
+  // Del catálogo base del kernel: ejecutan/comprometen el repo y el
+  // despachador las protege con allowWrite; no estaban clasificadas.
+  "build_project", "git_commit", "git_push",
 ];
+
+// Subconjunto curado para MODO CHARLA: lectura ligera, sin análisis pesado.
+// Se DERIVA de READ_ONLY_TOOLS (única fuente de clasificación): si un nombre
+// saliera de solo-lectura, desaparece de charla solo — jamás puede colarse
+// una herramienta de escritura. Antes el orquestador mantenía su copia a mano
+// (incluía nombres fantasma sin definición ni despachador: web_scrape,
+// list_brain).
+const CHAT_READ_TOOLS = new Set([
+  "web_search", "list_files", "read_file", "search_files",
+  "list_skills", "git_status", "git_log", "git_diff",
+  "search_brain", "read_pdf", "screenshot_page", "docker_ps", "check_connections",
+].filter((name) => READ_ONLY_TOOLS.includes(name)));
 const ALL_ALLOWED_TOOLS = [...new Set([...READ_ONLY_TOOLS, ...WRITE_TOOLS])];
 
 const TOOL_ALLOWLIST = Object.assign(
@@ -434,6 +469,9 @@ module.exports = {
   MODES,
   SUB_AGENTS,
   PHASES,
+  READ_ONLY_TOOLS,
+  WRITE_TOOLS,
+  CHAT_READ_TOOLS,
   TOOL_ALLOWLIST,
   STOP_RE,
   APPROVAL_RE,

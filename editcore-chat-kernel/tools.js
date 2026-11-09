@@ -1230,6 +1230,14 @@ async function execute(name, args, root, allowWrite, helpers = {}) {
         return await gitPush(root, a);
       case "web_search":
         return webSearch(a.query, { maxResults: a.maxResults });
+      case "graphify_project": {
+        // El runner existe (graphify-runner.js) pero el despachador no tenía
+        // el case: caía en "Herramienta desconocida". Genera el grafo y sus
+        // salidas en graphify-out/ del proyecto analizado.
+        const { buildProjectGraph } = require("./graphify-runner");
+        const target = a.path && a.path !== "." ? (path.isAbsolute(String(a.path)) ? String(a.path) : path.join(root, String(a.path))) : root;
+        return await buildProjectGraph(target, {});
+      }
       case "deploy_one_click":
         if (!allowWrite) return { ok: false, error: "Deploy requiere modo ejecución." };
         return await extraTools.runExternalAction("deploy_one_click", a, root, helpers);
@@ -1287,14 +1295,16 @@ for (const def of extraTools.EXTRA_DEFINITIONS) {
   if (!DEFINITIONS.some((t) => t.function?.name === def.function?.name)) DEFINITIONS.push(def);
 }
 
+// La clasificación lectura/escritura vive en classify.js (única fuente):
+// antes este módulo mantenía su propio Set de herramientas de escritura y
+// derivaba del despachador real (p. ej. no conocía delete_file ni move_file).
+const { WRITE_TOOLS } = require("./classify");
+const WRITE_TOOL_SET = new Set(WRITE_TOOLS);
+
 function getToolDefinitions({ allowWrite = true, isFullAccess = false, isAnalysis = false } = {}) {
-  const writeTools = new Set([
-    "write_file", "replace_in_file", "run_command", "build_project", 
-    "git_commit", "git_push", "deploy_one_click", "install_skill", "ingest_to_brain", "connect_project", "publish_project"
-  ]);
   const canWrite = allowWrite === true || isFullAccess === true;
   return DEFINITIONS.filter((t) => {
-    if (!canWrite && writeTools.has(t.function?.name)) return false;
+    if (!canWrite && WRITE_TOOL_SET.has(t.function?.name)) return false;
     return true;
   });
 }

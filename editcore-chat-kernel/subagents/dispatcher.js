@@ -12,6 +12,13 @@ function dispatchSpecialist(prompt = "", contextPrompt = "") {
   const ctx = String(contextPrompt || "").toLowerCase();
   if (!imm && !ctx) return null;
 
+  // 0. CI/CD explícito (pipelines, GitHub Actions, workflows): es DevOps aunque
+  // el texto también mencione "deploy" — la regla 1 lo capturaba antes y
+  // devolvía el especialista de releases.
+  if (/\b(?:ci\/cd|ci|cicd|pipeline|pipelines|github\s+actions|gitlab\s+ci|workflows?|integraci[oó]n\s+continua)\b/i.test(imm || ctx)) {
+    return SPECIALISTS.DEVOPS;
+  }
+
   // 1. Fullstack Architecture & Release Specialist (commits, push, deploy, build exe, releases)
   if (/\b(?:commit|push|deploy|release|roadmap|exe|empaquetar|dist:win|build-exe|publicar|producci[oó]n)\b/i.test(imm) ||
       (/\b(?:procede|ejecuta|continua|adelante)\b/i.test(imm) && /\b(?:commit|push|deploy|release|roadmap|exe|empaquetar|dist:win|build-exe|publicar)\b/i.test(ctx)) ||

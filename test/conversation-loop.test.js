@@ -535,7 +535,7 @@ test("la memoria de la corrida anterior entra al prefijo de la conversacion", ()
     projectRoot: "C:/proyecto",
     previousRunSummary: "Solicitud anterior: instalar dependencias\nAcciones ya ejecutadas:\n- OK read_file → package.json",
   });
-  const memory = messages.find((item) => item.role === "system" && /MEMORIA DE LA CORRIDA ANTERIOR/.test(String(item.content)));
+  const memory = messages.find((item) => item.role === "system" && /Avance previo verificado/.test(String(item.content)));
   assert.ok(memory, "el prefijo debe incluir la memoria de la corrida anterior");
   assert.match(String(memory.content), /package\.json/);
 });

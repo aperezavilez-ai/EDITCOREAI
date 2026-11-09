@@ -1,9 +1,9 @@
 "use strict";
 
 /**
- * EditCoreAI - Cline-Grade Context Pruning & Message Compaction
+ * EditCoreAI - Context Pruning & Message Compaction (kernel)
  * 
- * Basado en el algoritmo MessageBuilder de Cline:
+ * Algoritmo de poda de contexto (originalmente del motor Cline, cosechado al kernel):
  * 1. Poda histórica progresiva: conserva siempre el System Prompt y el primer mensaje del usuario.
  * 2. Deduplicación y rewrite de lecturas de archivos viejas: cuando se vuelve a leer un archivo,
  *    las lecturas anteriores se reemplazan por un marcador compacto.

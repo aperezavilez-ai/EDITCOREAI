@@ -3082,3 +3082,20 @@ html[data-theme="azul"] .diff-decision-card {
 
 
 
+
+/* Ver como usuario: franja fina superior (no tapa botones) y salida en barra. */
+body.is-preview-as-user::before {
+  content: "";
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: #f59e0b;
+  pointer-events: none;
+  z-index: 9999;
+}
+
+.app-toolbar .ec-preview-exit-btn {
+  -webkit-app-region: no-drag;
+}

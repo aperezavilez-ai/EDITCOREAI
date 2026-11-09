@@ -12,8 +12,12 @@ const path = require("path");
 const MANIFEST_NAMES = ["SKILL.md", "README.md", "CLAUDE.md", "mcp.json"];
 const NESTED_SCAN_DIRS = [".claude", "plugins", "src"];
 const MAX_SKILLS_IN_PROMPT = 4;
-const MAX_SKILL_CHARS = 1600;
-const MAX_PROMPT_CHARS = 7000;
+// CUERPO COMPLETO: las skills se inyectan ENTERAS. El truncado anterior
+// (1.600 caracteres por skill y 7.000 para todo el bloque) dejaba fuera la
+// mayor parte de casi todos los SKILL.md de brain-seed (mediana muy por
+// encima de 1.600) y partía la 4ª skill a la mitad: el modelo recibía
+// reglas mutiladas sin saberlo. La selección sigue siendo por relevancia
+// (máx. 4), pero lo seleccionado va completo.
 
 /** IDs canónicos conocidos (compatibilidad / fallback de ranking). */
 const SKILL_IDS = [
@@ -291,6 +295,7 @@ function resolveSkillsRoots(projectRoot) {
     path.join(editcoreRoot, ".agents", "skills"),
     path.join(editcoreRoot, ".claude", "skills"),
     path.join(editcoreRoot, "plugins", "skills"),
+    project ? path.join(project, ".editcore", "skills") : null,
     project ? path.join(project, "skills") : null,
     project ? path.join(project, "brain-seed", "skills") : null,
     project ? path.join(project, ".agents", "skills") : null,
@@ -476,13 +481,14 @@ function pickSkillsForKind(kind) {
   return [];
 }
 
-function loadManifestBody(manifestPath, maxChars = MAX_SKILL_CHARS) {
+function loadManifestBody(manifestPath, maxChars = 0) {
   try {
     const raw = fs.readFileSync(manifestPath, "utf8");
     if (String(manifestPath).toLowerCase().endsWith("mcp.json")) {
-      return raw.slice(0, Math.min(maxChars, 800));
+      return raw.slice(0, Math.min(maxChars > 0 ? maxChars : 800, 800));
     }
-    return raw.slice(0, maxChars);
+    // Sin corte por defecto: el cuerpo va completo (ver nota en MAX_SKILLS_IN_PROMPT).
+    return maxChars > 0 ? raw.slice(0, maxChars) : raw;
   } catch {
     return "";
   }
@@ -561,7 +567,7 @@ function skillsPrompt(projectRoot, kind, messageOrOpts) {
     blocks.join("\n\n"),
   ].join("\n\n");
 
-  return prompt.slice(0, MAX_PROMPT_CHARS);
+  return prompt;
 }
 
 module.exports = {
@@ -575,7 +581,7 @@ module.exports = {
   scoreSkill,
   skillsPrompt,
   // compat
-  loadSkillBody: (projectRoot, id, maxChars = MAX_SKILL_CHARS) => {
+  loadSkillBody: (projectRoot, id, maxChars = 0) => {
     const hit = getValidLocalSkills(projectRoot).find((s) => s.id === id);
     if (!hit) return { id, available: false, body: "" };
     return { id, available: true, body: loadManifestBody(hit.manifestPath, maxChars) };

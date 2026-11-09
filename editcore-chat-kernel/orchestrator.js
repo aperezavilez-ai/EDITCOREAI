@@ -7,7 +7,8 @@ const {
   isFullAccess,
   resolveExecutionMode,
   MODES,
-  TOOL_ALLOWLIST,
+  CHAT_READ_TOOLS,
+  WRITE_TOOLS,
   SUB_AGENTS,
   APPROVAL_RE,
   isContinuePhrase,
@@ -135,11 +136,8 @@ const MARKDOWN_FORMAT_PROMPT = "Formato: Markdown estructurado con títulos (##)
 
 const CAPABILITIES_PROMPT = "";
 
-const CHAT_READ_TOOLS = new Set([
-  "web_search", "web_scrape", "list_files", "read_file", "search_files",
-  "list_skills", "list_brain", "git_status", "git_log", "git_diff",
-  "search_brain", "read_pdf", "screenshot_page", "docker_ps", "check_connections",
-]);
+// CHAT_READ_TOOLS se importa de classify.js (única fuente de clasificación);
+// aquí vivía una copia a mano que ya había derivado (web_scrape, list_brain).
 const CHAT_MAX_STEPS = 6;
 const PENDING_EXTERNAL_TTL_MS = 10 * 60_000;
 const BRAIN_CONTEXT_MIN_SCORE = 2;
@@ -988,7 +986,17 @@ class ChatOrchestrator {
       }
       if (memory) { memory.setReport(out.report); memory.note("análisis completado"); }
       this.session.kill();
-      const evidence = verified ? `${forensic.formatForensicPromptBlock(verified)}\n\n${out.report}` : out.report;
+      // Honestidad del análisis (contrato): los extractos son parciales por
+      // presupuesto de tokens; PROHIBIDO reportar un archivo como 'truncado'
+      // solo porque un extracto termine a mitad de una función. Y todo lo que
+      // no salga de los chequeos reales ni de lecturas de este turno queda
+      // no verificado en este analisis: va etiquetado como hipótesis.
+      const analysisHonesty = [
+        "REGLAS DE HONESTIDAD DEL REPORTE:",
+        "- PROHIBIDO reportar un archivo como 'truncado' o incompleto solo porque un extracto termine a mitad: los extractos son parciales por presupuesto.",
+        "- Lo confirmado por los chequeos reales va como hallazgo verificado. Todo lo demás queda no verificado en este analisis y debe presentarse bajo la sección «## 🔎 Hipótesis (no verificadas)», nunca como hecho.",
+      ].join("\n");
+      const evidence = `${verified ? `${forensic.formatForensicPromptBlock(verified)}\n\n` : ""}${out.report}\n\n${analysisHonesty}`;
 
       if (apiKey) {
         onProgress?.({ phase: "model", text: "Generando reporte completo..." });
@@ -1268,9 +1276,9 @@ class ChatOrchestrator {
         }
 
         // Compactar outputs antiguos de tools para evitar desbordar el contexto del modelo (3.4M tokens)
-        // [EDITCORE-CLINE] Compactación profunda y poda de contexto estilo Cline
+        // Compactación profunda y poda de contexto (cosechado al kernel en la convergencia)
         try {
-          const { ContextCompactor } = require("../runtime/editcore-cline/context-compactor");
+          const { ContextCompactor } = require("./context-compactor");
           const compactor = new ContextCompactor();
           messages = compactor.compactMessages(messages);
         } catch (_) {
@@ -1528,8 +1536,12 @@ class ChatOrchestrator {
           onProgress?.({ phase: "tool", stage: "running", name, input: args });
 
           let result;
-          if ((name === "write_file" || name === "replace_in_file") && readOnlyMode) {
-            result = { ok: false, error: "Modo solo lectura: no se modifican archivos. Pide al usuario que cambie el modo de permisos." };
+          // Guardia ÚNICA de solo-lectura antes de despachar: cualquier
+          // herramienta de escritura (clasificación de classify.js) se corta
+          // aquí, no solo write_file/replace_in_file como antes. El paso queda
+          // registrado como bloqueado (ok:false) y el archivo no se toca.
+          if ((readOnlyMode || allowWrite === false) && WRITE_TOOLS.includes(name)) {
+            result = { ok: false, error: "Modo solo lectura: no se ejecutan herramientas de escritura. Pide al usuario que cambie el modo de permisos.", blockedReadOnly: true };
           } else if (name === "write_file" || name === "replace_in_file") {
             const impl = await runImplementer({ projectRoot, path: args.path, content: args.content, oldText: args.oldText, newText: args.newText, onProgress, threadId });
             result = impl.result || impl;

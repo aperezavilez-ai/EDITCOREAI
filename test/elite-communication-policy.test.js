@@ -16,7 +16,7 @@ const {
 } = require("../runtime/elite-communication-policy");
 
 test("politica elite contiene ortografia y las 4 directrices", () => {
-  assert.match(ELITE_COMMUNICATION_POLICY, /Español correcto/i);
+  assert.match(ELITE_COMMUNICATION_POLICY, /español impecable/i);
   assert.match(ELITE_COMMUNICATION_POLICY, /tildes/);
   assert.match(ELITE_COMMUNICATION_POLICY, /PRIMERA FRASE = RESPUESTA|APERTURA DIRECTA/i);
   assert.match(ELITE_COMMUNICATION_POLICY, /RAZONAMIENTO VISIBLE|RAZONAMIENTO ANTES DE ACCI/i);

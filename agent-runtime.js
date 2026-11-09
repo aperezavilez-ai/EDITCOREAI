@@ -3,32 +3,9 @@
 const path = require("node:path");
 const { classify, isFullAccess } = require("./editcore-chat-kernel/classify");
 
-let _ChatSession = null;
-function getChatSession() {
-  if (!_ChatSession) _ChatSession = require("./editcore-chat-kernel/session").ChatSession;
-  return _ChatSession;
-}
-let _PersistentMemory = null;
-function getPersistentMemory() {
-  if (!_PersistentMemory) _PersistentMemory = require("./editcore-chat-kernel/memory").PersistentMemory;
-  return _PersistentMemory;
-}
-let _threadCore = null;
-function getThreadCore() {
-  if (!_threadCore) _threadCore = require("./editcore-chat-kernel/thread-core");
-  return _threadCore;
-}
-let _tools = null;
-function getTools() {
-  if (!_tools) _tools = require("./editcore-chat-kernel/tools");
-  return _tools;
-}
-let _callChat = null;
-function getCallChat() {
-  if (!_callChat) _callChat = require("./editcore-chat-kernel/provider").callChat;
-  return _callChat;
-}
-
+// Convergencia: los cargadores perezosos del kernel (getChatSession/getTools/
+// getCallChat/...) solo los usaba la clase ChatOrchestrator muerta de este
+// archivo; se retiraron con ella. El orquestador vivo es el del kernel.
 const AUTHORIZED_MAX_STEPS = 120;
 
 const GENERATED_PROJECT_DIRS = new Set([
@@ -356,8 +333,12 @@ function normalizeMutationPath(value, projectRoot = "") {
 
 function classifyAgentStep(step = {}) {
   const resolvedName = TOOL_ALIASES[step.name] || step.name;
-  if (MUTATION_TOOLS.has(resolvedName)) return "mutation";
+  // Un run_command de verificación (test/build/lint/check) ES verificación,
+  // no mutación: esta rama debe ir ANTES del set de mutaciones (que incluye
+  // run_command) o queda muerta y validateAgentCompletion nunca reconoce
+  // una verificación, ni siquiera una fallida.
   if (resolvedName === "run_command" && VERIFICATION_COMMAND.test(String(step.input?.command || ""))) return "verification";
+  if (MUTATION_TOOLS.has(resolvedName)) return "mutation";
   if (DISCOVERY_TOOLS.has(resolvedName)) return "discovery";
   return "other";
 }
@@ -493,9 +474,14 @@ function validateAgentCompletion(task, steps = [], canWrite = true, options = {}
   
   const getResolvedName = (s) => TOOL_ALIASES[s.name] || s.name;
 
+  // Una escritura es lo que classifyAgentStep llama "mutation": un run_command
+  // de verificación (test/build/lint) NO es escritura; contarlo como tal
+  // ponía lastWriteIndex sobre la propia verificación y la dejaba fuera de
+  // la ventana successfulAfterWrite (nunca se reconocía, ni fallando).
+  const isWriteStep = (step) => classifyAgentStep(step) === "mutation";
   const hasRead = successful.some((step) => readTools.has(getResolvedName(step)));
-  const hasWrite = successful.some((step) => writeTools.has(getResolvedName(step)));
-  const lastWriteIndex = allSteps.reduce((last, step, index) => writeTools.has(getResolvedName(step)) && step.ok !== false && !step.result?.error ? index : last, -1);
+  const hasWrite = successful.some((step) => isWriteStep(step));
+  const lastWriteIndex = allSteps.reduce((last, step, index) => isWriteStep(step) && step.ok !== false && !step.result?.error ? index : last, -1);
   const successfulAfterWrite = lastWriteIndex < 0 ? successful : allSteps.slice(lastWriteIndex + 1).filter((step) => step && step.ok !== false && !step.result?.error);
   const hasVerification = successfulAfterWrite.some((step) => verificationStepPassed(step));
   const hasVisualInspection = successfulAfterWrite.some((step) => getResolvedName(step) === "inspect_preview"
@@ -510,7 +496,7 @@ function validateAgentCompletion(task, steps = [], canWrite = true, options = {}
     .map(agentStepSignature)).size;
   const hasRealFileRead = meaningfulSuccessful.some((step) => getResolvedName(step) === "read_file" && step.result?.isDirectory !== true);
   const changedFiles = new Set(successful
-    .filter((step) => writeTools.has(getResolvedName(step)))
+    .filter((step) => isWriteStep(step))
     .map((step) => normalizeMutationPath(step.input?.path, projectRoot))
     .filter(Boolean));
   const missingTargetFiles = requirements.targetFiles.filter((file) => !changedFiles.has(normalizeMutationPath(file, projectRoot)));
@@ -566,247 +552,7 @@ function validateAgentCompletion(task, steps = [], canWrite = true, options = {}
   return { ok: true, requirements, hasRead, hasWrite, hasVerification, verificationAttempted, verificationFailed, hasVisualInspection, missingTargetFiles, missingVerificationCommands, lastWriteIndex };
 }
 
-class ChatOrchestrator {
-  constructor() {
-    const ChatSession = getChatSession();
-    this.session = new ChatSession();
-    this.abort = null;
-    this.turnAbort = null;
-    this.steering = [];
-    this.running = false;
-    this.pendingTask = null;
-  }
-
-  stop() {
-    const reason = Object.assign(new Error("Detenido por el usuario."), { code: "AGENT_STEER" });
-    if (this.turnAbort) {
-      try { this.turnAbort.abort(reason); } catch (_) {}
-      this.turnAbort = null;
-    }
-    if (this.abort) {
-      try { this.abort.abort(reason); } catch (_) {}
-    }
-    this.session.kill();
-    this.pendingTask = null;
-    this.steering = [];
-    this.running = false;
-    try { require("./task-queue").cancelAll(); } catch (_) {}
-    return { kind: "STOP", text: "Frené lo que estaba haciendo. ¿Qué querés que haga ahora?" };
-  }
-
-  steer(instruction = "") {
-    const text = String(instruction || "").trim();
-    if (!text) return { accepted: false };
-    if (!this.running && !this.abort) return { accepted: false };
-    this.steering.push({ instruction: text, at: Date.now() });
-    let interrupted = false;
-    if (this.turnAbort) {
-      const steerError = Object.assign(new Error("Nueva instruccion del usuario."), { code: "AGENT_STEER" });
-      try {
-        this.turnAbort.abort(steerError);
-        interrupted = true;
-      } catch (_) {}
-    }
-    return { accepted: true, pendingDirections: this.steering.length, interrupted };
-  }
-
-  isRunning() {
-    return this.running === true;
-  }
-
-  async handle(input = {}) {
-    const {
-      message, projectRoot, apiBaseUrl, apiKey, model, images, onProgress, helpers,
-      allowWrite: inputAllowWrite, permissionMode, fullAccess: inputFullAccess, history,
-      messages: inputMessages, threadId: inputThreadId, chatId,
-    } = input;
-
-    const rawText = typeof message === "object" && message?.text ? message.text : String(message || "");
-    const text = rawText.trim() || "Analiza esto.";
-
-    const fullAccess = isFullAccess({ allowWrite: inputAllowWrite, permissionMode, fullAccess: inputFullAccess });
-    if (fullAccess) this.pendingTask = null;
-
-    let decision = classify(text, { allowWrite: fullAccess || inputAllowWrite === true, permissionMode });
-
-    if (!projectRoot && decision.kind !== "CHAT") {
-      return { kind: "CHAT", text: "Abrí un proyecto primero y después te ayudo con eso." };
-    }
-
-    const PersistentMemory = getPersistentMemory();
-    const memory = projectRoot ? new PersistentMemory(projectRoot) : null;
-    if (memory) memory.load();
-
-    const threadCore = getThreadCore();
-    const threadId = threadCore.resolveThreadId({ threadId: inputThreadId, chatId });
-    this._threadId = threadId;
-
-    if (decision.kind === "CHAT") {
-      return this.runModelTask({
-        decision, message: text, projectRoot: projectRoot || ".", apiBaseUrl, apiKey, model, memory, onProgress,
-        allowWrite: false, maxSteps: 1, helpers, chatOnly: true,
-      });
-    }
-
-    const wantsWrite = fullAccess || decision.allowWrite;
-
-    return this.runModelTask({
-      decision,
-      message: text,
-      projectRoot,
-      apiBaseUrl,
-      apiKey,
-      model,
-      memory,
-      onProgress,
-      allowWrite: wantsWrite,
-      maxSteps: wantsWrite ? AUTHORIZED_MAX_STEPS : 8,
-      helpers,
-      fullAccess,
-      permissionMode,
-    });
-  }
-
-  async runModelTask(opts) {
-    const {
-      decision, message, projectRoot, apiBaseUrl, apiKey, model, memory, onProgress,
-      allowWrite, maxSteps, helpers, chatOnly, fullAccess, permissionMode
-    } = opts;
-
-    this.session.start(decision?.kind || "EXECUTE", projectRoot);
-    this.abort = new AbortController();
-    this.running = true;
-
-    try {
-      const tools = getTools();
-      const callChat = getCallChat();
-      
-      const availableTools = allowWrite
-        ? tools.DEFINITIONS
-        : tools.DEFINITIONS.filter((t) => !["write_file", "replace_in_file", "run_command", "publish_project", "git_commit", "git_push", "build_project"].includes(t.function.name));
-
-      let modeInstruction = "";
-      if (fullAccess) {
-        modeInstruction = `MODO ACTUAL: ACCESO COMPLETO. 
-Tienes permiso total. NUNCA le pidas al usuario que haga clic en botones (como "Publicar" o "Ejecutar"). 
-Si necesitas publicar, usar la herramienta 'publish_project' directamente. Si necesitas ejecutar algo, usa 'run_command'. No pidas confirmación.`;
-      } else if (allowWrite) {
-        modeInstruction = `MODO ACTUAL: PREGUNTAR ANTES DE ESCRIBIR.
-Debes usar las herramientas para leer, pero si necesitas escribir o ejecutar comandos, el sistema pausará y le preguntará al usuario. Tú simplemente invoca la herramienta.`;
-      } else {
-        modeInstruction = `MODO ACTUAL: SOLO LECTURA.
-No puedes usar herramientas de escritura ni ejecución. Solo lectura y análisis.`;
-      }
-
-      const systemPrompt = `Sos EditCoreAI, un agente autónomo experto (arquitectura ReAct).
-${modeInstruction}
-
-=== REGLAS ESTRICTAS ===
-1. ACCIÓN > EXPLICACIÓN: No digas "Voy a hacer X". Simplemente HAZLO usando el tool_call.
-2. TIENES PROHIBIDO conversar o pedir permiso en el chat. Si el usuario te dio acceso, actúa.
-3. Si necesitas publicar, usa la herramienta 'publish_project'. No le digas al usuario que toque botones.
-4. Si la tarea está 100% terminada (y verificada), responde ÚNICAMENTE con la palabra: TASK_COMPLETE.`;
-
-      const messages = [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: message }
-      ];
-
-      const steps = [];
-
-      for (let i = 0; i < (maxSteps || 10); i++) {
-        if (!this.session.alive) break;
-        onProgress?.({ phase: "thinking", text: "Analizando siguiente paso..." });
-
-        const turn = await callChat({
-          apiBaseUrl, apiKey, model: model || "deepseek-v4-pro", messages,
-          tools: chatOnly ? [] : availableTools,
-          signal: this.abort.signal,
-          toolChoice: chatOnly ? undefined : "required"
-        });
-
-        let toolCalls = Array.isArray(turn.toolCalls) ? turn.toolCalls : [];
-        
-        if (!toolCalls.length) {
-          if (turn.text && turn.text.includes("TASK_COMPLETE")) {
-            this.session.kill();
-            return { kind: decision?.kind || "CHAT", text: "Tarea finalizada con éxito.", steps };
-          }
-
-          messages.push({ role: "assistant", content: turn.text || "..." });
-          messages.push({ 
-            role: "user", 
-            content: "ERROR CRÍTICO: No has invocado ninguna herramienta (tool_call). Estás en un bucle de agente. Usa las herramientas. Si la tarea ya terminó, escribe TASK_COMPLETE." 
-          });
-          continue; 
-        }
-
-        messages.push({
-          role: "assistant",
-          content: turn.text || null,
-          tool_calls: toolCalls,
-        });
-
-        for (const call of toolCalls) {
-          const name = call.function?.name;
-          let args = {};
-          try { args = JSON.parse(call.function?.arguments || "{}"); } catch { args = {}; }
-
-          if (!allowWrite && ["write_file", "replace_in_file", "run_command", "publish_project"].includes(name)) {
-            const res = { ok: false, error: "Acción denegada: Estás en Modo Solo Lectura." };
-            steps.push({ name, input: args, result: res, ok: false });
-            messages.push({ role: "tool", tool_call_id: call.id, name, content: JSON.stringify(res) });
-            continue;
-          }
-
-          // AQUI ESTA LA MAGIA: INTERCEPCIÓN DE PERMISOS
-          const needsPermission = ["write_file", "replace_in_file", "run_command", "publish_project", "git_commit", "git_push", "build_project"].includes(name);
-          
-          if (needsPermission && !fullAccess && typeof helpers?.requestApproval === "function") {
-            onProgress?.({ phase: "confirm", text: `Esperando tu autorización para ${name}...` });
-            const approved = await helpers.requestApproval(name, args);
-            if (!approved) {
-              const rejectedResult = { ok: false, error: "Acción denegada por el usuario en el escudo." };
-              steps.push({ name, input: args, result: rejectedResult, ok: false });
-              messages.push({ role: "tool", tool_call_id: call.id, name, content: JSON.stringify(rejectedResult) });
-              continue;
-            }
-          }
-
-          onProgress?.({ phase: "tool", stage: "running", name, input: args });
-
-          let result;
-          try {
-            result = await tools.execute(name, args, projectRoot, allowWrite, helpers || {});
-          } catch (e) {
-            result = { ok: false, error: e.message };
-          }
-
-          steps.push({ name, input: args, result, ok: result?.ok !== false });
-
-          messages.push({
-            role: "tool",
-            tool_call_id: call.id,
-            name,
-            content: tools.truncatePayload(result || {}, 2000),
-          });
-        }
-      }
-
-      this.session.kill();
-      return { kind: "EXECUTE", text: "Ciclo de herramientas completado.", steps };
-    } catch (err) {
-      this.session.kill();
-      return { kind: "CHAT", text: "Error en la ejecución: " + (err?.message || err) };
-    } finally {
-      this.running = false;
-      try { onProgress?.({ phase: "done", text: "" }); } catch {}
-    }
-  }
-}
-
 module.exports = {
-  ChatOrchestrator,
   SKILL_IDS: [],
   taskQueue: require("./task-queue"),
   classify,
