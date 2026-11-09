@@ -83,7 +83,7 @@ async function dockerPs({ all = false } = {}) {
     const msg = String(e?.stderr || e?.message || e);
     if (e?.code === "ENOENT") return { ok: false, error: "Docker no está instalado o no está en el PATH." };
     if (/daemon|pipe|connect/i.test(msg)) return { ok: false, error: "Docker está instalado pero el motor no está corriendo (abre Docker Desktop)." };
-    return { ok: false, error: msg.slice(0, 300) };
+    return { ok: false, error: `Docker no pudo listar los contenedores: ${msg.slice(0, 300)}` };
   }
 }
 

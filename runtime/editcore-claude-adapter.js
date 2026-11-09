@@ -1,7 +1,12 @@
 "use strict";
 
 /**
+ * [LEGADO NO USADO EN RUTA VIVA]
  * EDITCORE-CLAUDE-ADAPTER (CONVERSACIONAL)
+ *
+ * Tras la Convergencia Total, la ruta activa de Modo Agente (agent:run) y Chat (editcore:chat)
+ * corren exclusivamente sobre el motor único del kernel (editcore-chat-kernel / ChatOrchestrator).
+ * Este módulo se preserva como referencia y compatibilidad con pruebas unitarias históricas.
  *
  * Ejecuta la tarea del agente manteniendo una conversacion nativa con el
  * proveedor: prefijo estable (system + tarea) y turnos append-only de

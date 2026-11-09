@@ -39,9 +39,14 @@ test("H1b: adapter usa CACHE HIT en vez de error en repeats>=1", () => {
 });
 
 test("H2: analysisMode / NO MODIFICAR deniega write en authorize", () => {
-  assert.match(mainSource, /readonlyDiagnostic/);
-  assert.match(mainSource, /if \(readonlyDiagnostic && tool\.write\) return false/);
-  assert.match(mainSource, /NO\s+MODIFICAR/);
+  // [COSECHA MODO AGENTE] La denegación ya no vive en el authorize() del
+  // despachador legado (readonlyDiagnostic): vive en la guardia previa al
+  // despacho del orquestador del kernel, que corta TODAS las WRITE_TOOLS
+  // cuando el turno no puede escribir y marca el paso blockedReadOnly.
+  const orchSource = fs.readFileSync(path.join(__dirname, "..", "editcore-chat-kernel", "orchestrator.js"), "utf8");
+  assert.match(orchSource, /WRITE_TOOLS\.includes\(name\)/);
+  assert.match(orchSource, /blockedReadOnly: true/);
+  assert.match(orchSource, /Modo solo lectura: no se ejecutan herramientas de escritura/);
 });
 
 test("H2b: evidenceFinalText en analysisMode no es Verificacion completada", () => {

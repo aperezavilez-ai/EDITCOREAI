@@ -178,8 +178,6 @@
     getBalance: safe(() => ledger().getBalance()),
     redeem: safe((code) => ledger().redeemVoucher(code)),
     transactions: safe((limit) => ledger().listTransactions(limit)),
-    getPacks: safe(() => ledger().getPacks()),
-    calculateUsage: safe((model, i, o) => ledger().calculateUsageCredits(model, i, o)),
     adminOverview: safe(() => ledger().adminOverview()),
     adminListUsers: safe((search) => ledger().adminListUsers(search)),
     adminMeaiBalance: safe(() => ledger().adminMeaiBalance()),
@@ -430,6 +428,34 @@
   async function findProjectBySlug(slug) {
     const list = await projectIndex();
     return list.find((p) => p.slug === slug) || null;
+  }
+
+  // Nombre legible a partir del pedido del usuario: fuera la muletilla inicial
+  // («crea…», «quiero…») y hasta seis palabras del tema («una tienda de ropa…»).
+  function deriveAgentProjectName(prompt) {
+    let text = String(prompt || "").replace(/\s+/g, " ").trim();
+    text = text.replace(/^(?:por favor[ ,]*)?(?:crea(?:r|me)?|construye|construir|desarrolla(?:r)?|dise[ñn]a(?:r)?|genera(?:r)?|haz(?:me)?|hacer|arma(?:r)?|monta(?:r)?|implementa(?:r)?|programa(?:r)?|quiero|necesito|me gustar[íi]a)\s+/i, "");
+    const words = text.split(" ").filter(Boolean).slice(0, 6).join(" ").replace(/["“”«»]+/g, "").replace(/[.:;,]+$/, "").trim();
+    if (words.length < 3) return "Mi proyecto";
+    return (words.charAt(0).toUpperCase() + words.slice(1)).slice(0, 60);
+  }
+
+  // Primera tarea de agente sin proyecto abierto: crea uno con la plantilla
+  // STARTER y lo recuerda (por cuenta) para reusar el mismo en los turnos
+  // siguientes, en vez de crear uno nuevo en cada mensaje. El catálogo del IDE
+  // lo recoge al recargar /app (loadProjectCatalogFromDisk del renderer).
+  const AGENT_PROJECT_KEY = "agent-project";
+  async function ensureProjectForAgent(prompt) {
+    const saved = await kvGet(AGENT_PROJECT_KEY);
+    if (saved?.root) {
+      const list = await projectIndex();
+      if (list.some((p) => p.root === saved.root)) {
+        return { root: saved.root, name: saved.name || "Mi proyecto", created: false };
+      }
+    }
+    const created = await createProject(deriveAgentProjectName(prompt));
+    await kvSet(AGENT_PROJECT_KEY, { root: created.root, name: created.name });
+    return { root: created.root, name: created.name, created: true };
   }
 
   ns("editcore", {
@@ -739,5 +765,5 @@ document.addEventListener("click",function(e){var a=e.target&&e.target.closest&&
     });
   });
 
-  window.EditCoreWebBridge = { ready, notifyBalance, publicSession, previewUrlFor, createProject, kv: { get: kvGet, set: kvSet }, slugify };
+  window.EditCoreWebBridge = { ready, notifyBalance, publicSession, previewUrlFor, createProject, ensureProjectForAgent, kv: { get: kvGet, set: kvSet }, slugify };
 })();

@@ -1,3 +1,13 @@
+# RELEASE v4.6.0
+
+## Convergencia Total: motor único, ME AI único, dinero y web corregidos
+
+- **Motor único consolidado**: Convergencia total de `agent:run` y `editcore:chat` sobre `ChatOrchestrator` del kernel; eliminación de despachadores duplicados y neutralización de adaptadores legados.
+- **ME AI único**: Consolidación definitiva en `api.meai.cloud` con clave única protegida en bóveda/entorno, evitando duplicación de proveedores.
+- **Web Portal saneado**: Retiro completo de endpoints legados de checkout, webhooks y chat server-side expuestos; verificación externa con respuesta 404 en rutas retiradas.
+- **Balance y cobro corregidos**: Transacciones y saldo protegidos ante fallos de cobro de IA vía migración y ledger atómico.
+- **Suite de pruebas**: 1067 tests automatizados en verde (0 fallos).
+
 # RELEASE v4.4.5
 
 ## Desbloqueo de ejecutables en Windows, ejecución directa sin preguntas y corrección de ruteo de subagentes
@@ -188,12 +198,12 @@
 
 # RELEASE v4.3.1
 
-## Navegador del proyecto sin bucles, panel a todo lo ancho y APICredits para el administrador
+## Navegador del proyecto sin bucles y panel a todo lo ancho
 
 - Navegador del proyecto: ya no se queda en «Iniciando servidor del proyecto…» reiniciándose sin parar. Si el proyecto tiene un error en su código, el navegador muestra la página con el error (y el detalle en «Errores del preview») sin "reparar" ni recargar en bucle; cuando se corrige el código, la página se actualiza sola. La caché .next solo se repara si de verdad está dañada. Un servidor que tarda en compilar ya no se reinicia.
 
 - Con la administración abierta, la ventana de Configuración ocupa toda la pantalla y la tarjeta «Saldo global de ME AI» (saldo, dinero real, días que alcanza, consumo y precios) se estira al ancho completo en lugar de quedar angosta.
-- APICredits vuelve al panel Modelos del administrador, con sus claves y modelos como estaban, y las opciones Auto, Auto · ME AI y Auto · APICredits. Los usuarios siguen viendo solo los modelos de ME AI, sin nombres de proveedor.
+- El panel Modelos del administrador conserva sus claves y modelos, con las opciones Auto y Auto · ME AI. Los usuarios siguen viendo solo los modelos de ME AI, sin nombres de proveedor.
 - Incluye todo lo de la versión 4.3.0.
 
 ### Archivos
@@ -227,7 +237,7 @@
 ## ME AI con una sola API, Publicar inteligente y engrane en el IDE
 
 ### Nuevo
-- **ME AI con una sola API**: todos los modelos usan la clave de Claude Sonnet 4.6 (verificada: los 7 modelos responden). En Modelos ya no hay una clave por modelo y en el chat eliges «Auto» o un modelo de ME AI. APICredits queda oculto.
+- **ME AI con una sola API**: todos los modelos usan la clave de Claude Sonnet 4.6 (verificada: los 7 modelos responden). En Modelos ya no hay una clave por modelo y en el chat eliges «Auto» o un modelo de ME AI.
 - **Publicar**: gris mientras el proyecto no está conectado y azul cuando ya lo está; al pulsarlo sube los cambios a GitHub, Vercel y Supabase. El botón «Conectar» se quitó: para conectar un proyecto, pídelo en el chat («conecta este proyecto con GitHub, Vercel y Supabase»).
 - **Engrane ⚙ en el IDE**: el usuario ve su saldo y consumo, y el administrador abre Administración, sin salir del IDE.
 - **Conexiones por usuario**: cada usuario conecta sus propias cuentas; nunca ve las del administrador.

@@ -18,8 +18,17 @@ test("live activity: una sola fila setAgentLiveActivity", () => {
 
 test("live activity: analisis no bloquea minutos en Cerebro", () => {
   assert.match(mainSource, /analysisMode/);
-  assert.match(mainSource, /setTimeout\(\(\) => resolve\(\["", emptyInventory\]\), 3_000\)/);
-  assert.match(mainSource, /const skipBrainNow =/);
+  // [COSECHA MODO AGENTE] La carga del Cerebro con timeout de 3s
+  // (assembleContext + skipBrainNow) era de la rama legada. La ruta del
+  // kernel no carga el Cerebro al arrancar la corrida: las skills se
+  // resuelven localmente con skillsEngine y el contexto del Cerebro entra
+  // por búsqueda (brainSearch) durante el turno, sin bloqueo inicial.
+  const agentRun = mainSource.slice(
+    mainSource.indexOf('ipcMain.handle("agent:run"'),
+    mainSource.indexOf('ipcMain.handle("agent:cancel"'),
+  );
+  assert.doesNotMatch(agentRun, /assembleContext/);
+  assert.match(agentRun, /skillsEngine\.matchSkillsForPrompt/);
 });
 
 test("live activity: ticker trabajando silencioso", () => {

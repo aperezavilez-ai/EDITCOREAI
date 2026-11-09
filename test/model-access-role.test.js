@@ -39,9 +39,9 @@ function loadRoleFilter(session) {
 
 const CATALOG = [
   { providerKey: "custom:gafcore-gateway", modelProviderGroup: "meai", providerLabel: "ME AI Cloud", model: "meai/claude-opus-4.8" },
-  { providerKey: "custom:gafcore-gateway", modelProviderGroup: "apicredits", providerLabel: "APICredits", model: "apicredits/gpt-5" },
+  { providerKey: "custom:gafcore-gateway", modelProviderGroup: "openai", providerLabel: "OpenAI", model: "openai/gpt-5" },
   { providerKey: "meai", modelProviderGroup: "meai", providerLabel: "ME AI Cloud", model: "claude-sonnet-4.6" },
-  { providerKey: "apicredits", modelProviderGroup: "apicredits", providerLabel: "APICredits", model: "gpt-5-mini" },
+  { providerKey: "openai", modelProviderGroup: "openai", providerLabel: "OpenAI", model: "gpt-5-mini" },
 ];
 
 test("usuario normal: solo modelos ME AI y sin nombres de proveedor", () => {
@@ -50,20 +50,23 @@ test("usuario normal: solo modelos ME AI y sin nombres de proveedor", () => {
   assert.deepEqual(visible.map((e) => e.model), ["meai/claude-opus-4.8", "claude-sonnet-4.6"]);
   for (const entry of visible) {
     assert.equal(entry.providerLabel, "Modelos");
-    assert.doesNotMatch(JSON.stringify(entry.providerLabel), /ME AI|APICredits/i);
+    assert.doesNotMatch(JSON.stringify(entry.providerLabel), /ME AI|OpenAI/i);
   }
 });
 
 test("sin sesión se trata como usuario normal", () => {
   const filter = loadRoleFilter(null);
-  assert.equal(filter(CATALOG).some((e) => /apicredits/i.test(e.modelProviderGroup)), false);
+  // [PROVEEDOR RETIRADO — decisión del dueño 2026-11-09] Sin sesión, ningún
+  // grupo distinto de ME AI es visible (antes el contraste era el gateway
+  // retirado; hoy vale para cualquier proveedor no-ME AI).
+  assert.equal(filter(CATALOG).some((e) => e.modelProviderGroup !== "meai"), false);
 });
 
 test("administrador ve todos los modelos con sus proveedores", () => {
   const filter = loadRoleFilter({ user: { isAdmin: true, role: "admin" } });
   const visible = filter(CATALOG);
   assert.equal(visible.length, CATALOG.length);
-  assert.ok(visible.some((e) => e.providerLabel === "APICredits"));
+  assert.ok(visible.some((e) => e.providerLabel === "OpenAI"));
 });
 
 test("las listas del chat y de Auto pasan por el filtro de rol", () => {

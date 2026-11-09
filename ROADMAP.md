@@ -60,26 +60,26 @@ EditCore actualiza este archivo tras cambios. No pedirlo al usuario. No pegar co
 - Usar el Mapa; no list_files('.') si ya hay rutas aqui
 
 ## Tarea activa
-- Completada: v4.5.0 Release oficial: actualización de instalador EDITCOREAI-Setup.exe y ejecutable raíz EDITCOREAI.exe, consolidación de kernel unificado, saneamiento completo de chat y estabilidad general.
+- Completada: v4.6.0 Release oficial — convergencia total: motor único, ME AI único, dinero y web corregidos (suite 1067/0).
 
 ## Bloqueos / bugs conocidos
-- Ninguno. Tests pasando y verificación de sintaxis limpia.
+- Ninguno. Tests pasando (1067/1067) y verificación de sintaxis limpia.
 
 ## Decisiones
-- Unificación 100% Cline: `chat-kernel-bridge.js` ejecuta directamente `EditCoreClineController`, con herramientas nativas `list_files`, `read_file`, `write_file`, `replace_in_file`, y `run_command` con sanitización Windows.
-- Eliminación de `[object Object]`: `safeExtract` en `renderer.js` garantiza extracción limpia de `.message`, `.stderr`, `.error` u `.output`, y `run_command` siempre provee `.output`.
-- Saneamiento XML en Chat: desinfección integral de etiquetas `<dots_function_call>`, `<invoke>`, `<parameter>` y de herramientas en streaming, historial y persistencia de mensajes.
-- Reactividad en UI: `agentProgressText` mapea `phase === "thought"` para mostrar `Pensando...` durante los turnos largos de LLM, evitando pantallas congeladas en errores pasados.
+- Convergencia Total: migración completa de `agent:run` al kernel unificado (`ChatOrchestrator`), neutralización de `useLegacyAdapter`, eliminación de código y despachadores duplicados.
+- Proveedor único ME AI (`api.meai.cloud`) con clave gestionada en entorno seguro/bóveda.
+- Saneamiento del portal web: retirada de endpoints server-side expuestos de checkout y webhooks.
+- Manejo resiliente de fallos de cobro de IA vía migración y persistencia de ledger.
 
 ## Cambios recientes
-- v4.5.0 versión empaquetada e instalador Setup generado y verificado.
-- Sincronización del ejecutable raíz y empaquetado para Windows x64.
-- Desinfección completa de streaming de chat y compatibilidad de herramientas.
+- v4.6.0 versión empaquetada e instalador Setup generado y verificado.
+- Migración de Modo Agente (`agent:run`) al kernel manteniendo contrato completo de eventos y persistencia de tareas.
+- Suite de pruebas ampliada y 100% verde (1067 tests pasando).
 
 ## Verificado
 - `npm run check`: 0 errores de sintaxis en todo el código base.
-- Compilación de `EDITCOREAI-Setup.exe` y `EDITCOREAI.exe` en v4.5.0 exitosa.
-- Branch `main` actualizado y empujado a GitHub.
+- `npm test`: 1067 tests pasando, 0 fallos.
+- Branch `main` actualizado y listo para publicación.
 
 ## Siguiente
 - Partir de este mapa. No pedir el ROADMAP al usuario. Solo leer archivos a cambiar.

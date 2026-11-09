@@ -11,7 +11,7 @@ const {
 const AutoModel = require("../auto-model-selection");
 
 test("sanitize: elimina GafCore Gateway del mensaje de timeout", () => {
-  const raw = "APICredits no esta disponible o tardo demasiado en responder. Tu modelo seleccionado se conservo; reintenta en 30 segundos o actualiza las API keys en el admin de GafCore Gateway.";
+  const raw = "ME AI no esta disponible o tardo demasiado en responder. Tu modelo seleccionado se conservo; reintenta en 30 segundos o actualiza las API keys en el admin de GafCore Gateway.";
   const out = sanitizeChatProviderError(raw);
   assert.match(out, /proveedor no respondi|Reintenta/i);
   assert.doesNotMatch(out, /gafcore/i);
@@ -23,7 +23,7 @@ test("sanitize: stripGafcoreMentions", () => {
 });
 
 test("transient timeout NO cuarentena Auto", () => {
-  const msg = "APICredits no esta disponible o tardo demasiado en responder";
+  const msg = "ME AI no esta disponible o tardo demasiado en responder";
   assert.equal(isTransientProviderFailure(msg, 503), true);
   assert.equal(shouldQuarantineModelForAuto(msg, 503), false);
   assert.equal(AutoModel.shouldQuarantineModelForAuto(msg), false);

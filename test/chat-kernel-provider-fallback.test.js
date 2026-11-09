@@ -97,12 +97,14 @@ test("si todos los perfiles fallan, el mensaje dice qué proveedor revisar sin h
         model: "glm-5",
         messages: [{ role: "user", content: "hola" }],
         stream: false,
-        fallbackProfiles: [{ baseUrl: "https://api.apicredits.site/v1", apiKey: "sk-apic-111111", model: "gpt-5.6-luna" }],
+        // [PROVEEDOR RETIRADO — decisión del dueño 2026-11-09] El fallback ya
+        // no apunta al gateway retirado: es otro proveedor ("Otro proveedor").
+        fallbackProfiles: [{ baseUrl: "https://api.openai.com/v1", apiKey: "sk-otro-111111", model: "gpt-5.6-luna" }],
       }),
       (err) => {
         assert.equal(err.code, "ALL_PROVIDERS_FAILED");
         assert.match(err.message, /ME AI: clave rechazada/);
-        assert.match(err.message, /APICredits: no disponible ahora/);
+        assert.match(err.message, /Otro proveedor: no disponible ahora/);
         assert.ok(!/api\.|\.cloud|\.site/.test(err.message));
         return true;
       },

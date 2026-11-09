@@ -7,7 +7,7 @@
 
 ## 1. STACK Y ALCANCE
 - App: Electron IDE (main.js, preload.js, renderer.js) + `editcore-chat-kernel/` + `runtime/`.
-- Proveedores de modelos visibles al usuario: **ME AI** y **APICredits** (panel Modelos).
+- Proveedores de modelos visibles al usuario: **ME AI** (panel Modelos).
 - **PROHIBIDO** mencionar «GafCore Gateway», `gafcore-gateway`, project keys o URLs de gateway en el chat o en textos de ayuda al usuario.
 - Conexiones bóveda: GitHub, Vercel, Supabase, SSH (sin secretos en el chat).
 

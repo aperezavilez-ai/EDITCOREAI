@@ -3,7 +3,8 @@
 const assert = require("node:assert/strict");
 const test = require("node:test");
 
-const PRIMARY_PROVIDER_KEYS = ["openai", "anthropic", "gemini", "meai", "apicredits"];
+// [PROVEEDOR RETIRADO — decisión del dueño 2026-11-09] Sin el gateway retirado.
+const PRIMARY_PROVIDER_KEYS = ["openai", "anthropic", "gemini", "meai"];
 
 function mergeGatewaySecureState(secureState) {
   const storedProfiles = Array.isArray(secureState["editcore-provider-profiles"])

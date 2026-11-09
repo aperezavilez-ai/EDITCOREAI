@@ -23,7 +23,7 @@ const PROVIDERS = {
   meai:     { label: "ME AI Cloud", baseUrl: "https://api.meai.cloud/v1", model: "claude-sonnet-4.6" },
 };
 // Proveedores de IA principales disponibles directamente para el administrador
-const PRIMARY_PROVIDER_KEYS = ["meai", "apicredits"];
+const PRIMARY_PROVIDER_KEYS = ["meai"];
 const HIDDEN_PROVIDER_KEYS = [];
 const SINGLE_KEY_PROVIDER_KEYS = ["meai"];
 
@@ -83,7 +83,6 @@ const MEAI_PROVIDER_MODELS = [
   "step-3.7-flash",
   "mimo-v2.5",
 ];
-const APICREDITS_PROVIDER_MODELS = [];
 PROVIDER_MODELS.meai = MEAI_PROVIDER_MODELS;
 
 const state = {
@@ -431,7 +430,7 @@ function userFacingError(message) {
   if (/Cannot find module|Require stack|ENOENT|\.asar[\\/]|node_modules|jarvis-adapter|ipcMain/i.test(text)) {
     return "No pude procesar tu mensaje ahora. Verifica que tengas un modelo verificado en Modelos y vuelve a intentar.";
   }
-  if (/respuesta vacia|EMPTY_PROVIDER|gafcore-gateway|apicredits\/|meai\/|devolvio una respuesta|proveedor .+ devolvio|upstream|502|503|429|timeout|invalid.?token|no available accounts|no est[aá] disponible|tard[oó] demasiado/i.test(text)) {
+  if (/respuesta vacia|EMPTY_PROVIDER|gafcore-gateway|meai\/|devolvio una respuesta|proveedor .+ devolvio|upstream|502|503|429|timeout|invalid.?token|no available accounts|no est[aá] disponible|tard[oó] demasiado/i.test(text)) {
     return "No pude completar la respuesta. Intenta de nuevo.";
   }
   if (typeof AutoModel !== "undefined" && AutoModel?.isProviderFailureMessage?.(text)) {
@@ -1528,8 +1527,19 @@ function getModelFamilyKey(model = "") {
   return "";
 }
 
+// Un perfil solo es usable si su proveedor existe en los registros vigentes
+// (PROVIDERS, PROVIDER_MODELS, PRIMARY_PROVIDER_KEYS o un custom:* del
+// usuario). Cualquier otro providerKey corresponde a un proveedor retirado o
+// desconocido: su perfil queda inerte (nunca se ofrece ni se despacha).
+function isKnownProviderProfile(profile) {
+  const key = String(profile?.providerKey || "");
+  if (!key) return true;
+  if (key.startsWith("custom:")) return true;
+  return key in PROVIDERS || key in PROVIDER_MODELS || PRIMARY_PROVIDER_KEYS.includes(key);
+}
+
 function ensureDefaultProviderProfiles(profiles = []) {
-  const current = (Array.isArray(profiles) ? [...profiles] : []).filter((p) => p && p.providerKey !== "apicredits");
+  const current = (Array.isArray(profiles) ? [...profiles] : []).filter((p) => p && isKnownProviderProfile(p));
   const providers = loadJson("editcore-providers", {});
 
   for (const provKey of PRIMARY_PROVIDER_KEYS) {
@@ -1668,7 +1678,7 @@ function providerKeyForEndpoint(url) {
 }
 
 function renderProviderProfiles() {
-  const profiles = loadProviderProfiles().filter((p) => p && p.providerKey !== "apicredits");
+  const profiles = loadProviderProfiles().filter((p) => p && isKnownProviderProfile(p));
   document.querySelectorAll("[data-provider-profiles]").forEach((host) => {
     const key = host.dataset.providerProfiles;
     host.replaceChildren();
@@ -1692,7 +1702,7 @@ function renderProviderProfiles() {
       }
     }
     if (key === "custom:gafcore-gateway") {
-      const labels = { meai: "ME AI Cloud", apicredits: "APICredits" };
+      const labels = { meai: "ME AI Cloud" };
       dedupedProviderProfiles.sort((a, b) => {
         const [aProvider, ...aModel] = String(a.model || "").split("/");
         const [bProvider, ...bModel] = String(b.model || "").split("/");
@@ -1707,7 +1717,7 @@ function renderProviderProfiles() {
         renderedProviderGroup = modelProvider;
         const heading = document.createElement("div");
         heading.className = "gateway-model-provider";
-        heading.textContent = ({ meai: "ME AI Cloud", apicredits: "APICredits" }[modelProvider] || modelProvider);
+        heading.textContent = ({ meai: "ME AI Cloud" }[modelProvider] || modelProvider);
         host.appendChild(heading);
       }
       const row = document.createElement("div"); row.className = "provider-profile"; row.dataset.profileId = profile.id;
@@ -1871,10 +1881,7 @@ async function refreshModelCapabilities(force = false) {
 function isGatewayProviderFailure(message, model = "") {
   if (AutoModel.isProviderFailureMessage?.(message)) return true;
   const text = String(message || "").toLowerCase();
-  const group = AutoModel.gatewayUpstreamGroup(model);
-  if (group === "apicredits") return /502|503|401|403|timeout|invalid|无效|令牌|upstream|no est[aá] disponible|tard[oó] demasiado/i.test(text);
-  return /apicredits/.test(text)
-    && (/no est[aá] disponible|tard[oó] demasiado|502|503|upstream|forbidden|temporarily unavailable|no available accounts/i.test(text));
+  return /502|503|401|403|timeout|invalid|无效|令牌|upstream|no est[aá] disponible|tard[oó] demasiado|forbidden|temporarily unavailable|no available accounts/i.test(text);
 }
 
 async function quarantineModelForAuto(job = {}, message = "") {
@@ -1898,7 +1905,7 @@ async function quarantineModelForAuto(job = {}, message = "") {
 
 async function handleProviderFailureForAuto(message, job = {}) {
   if (isCloudUser()) return;
-  // Timeouts / 503 temporales: NO cuarentenar 20 min (mataba APICredits con saldo).
+  // Timeouts / 503 temporales: NO cuarentenar 20 min (mataba al gateway con saldo).
   const shouldQuarantine = typeof AutoModel?.shouldQuarantineModelForAuto === "function"
     ? AutoModel.shouldQuarantineModelForAuto(message)
     : /401|403|402|invalid.?token|forbidden|no est[aá] permitido|EMPTY_PROVIDER|saldo|balance/i.test(String(message || ""));
@@ -1909,7 +1916,7 @@ async function handleProviderFailureForAuto(message, job = {}) {
 
 function resolveActiveChatProfile(context = {}) {
   if (isChatModelAutoMode()) {
-    // Auto debe rotar sobre modelos activos del proveedor (scope ME AI / APICredits).
+    // Auto debe rotar sobre modelos activos del proveedor (scope ME AI).
     const options = verifiedChatModelOptions();
     const profiles = loadProviderProfiles();
     return AutoModel.resolveAutoModelProfile(options, profiles, {
@@ -2018,7 +2025,7 @@ function autoLabelForRole() {
 function modelNameForDisplay(model, providerKey) {
   const label = AutoModel.formatChatModelLabel(model, providerKey);
   if (isCurrentUserAdmin()) return label;
-  return String(label || "").replace(/^(?:meai|apicredits)\//i, "");
+  return String(label || "").replace(/^(?:meai)\//i, "");
 }
 
 function positionFloatingMenu(menu, anchor, { align = "right", gap = 8 } = {}) {
@@ -2185,9 +2192,8 @@ function renderModelPickerMenu() {
 
   const isAdmin = isCurrentUserAdmin();
   const autoScopes = isAdmin ? [
-    { scope: "all", title: "Auto", hint: "EditCoreAI elige el modelo ideal entre ME AI y APICredits para cada tarea." },
+    { scope: "all", title: "Auto", hint: "EditCoreAI elige el modelo ideal de ME AI para cada tarea." },
     { scope: "meai", title: "Auto · ME AI", hint: "Solo modelos de ME AI." },
-    { scope: "apicredits", title: "Auto · APICredits", hint: "Solo modelos de APICredits." },
   ] : [{ scope: "meai", title: "Auto", hint: "EditCoreAI elige automáticamente el modelo ideal de ME AI para cada tarea." }];
   autoScopes.forEach(({ scope, title, hint }) => {
     const autoRow = document.createElement("div");
@@ -2397,7 +2403,7 @@ function mapProfileToModelOption(profile, customProvidersByKey) {
   return {
     providerKey: profile.providerKey,
     providerLabel: profile.providerKey === "custom:gafcore-gateway"
-      ? ({ meai: "ME AI Cloud", apicredits: "APICredits" }[String(profile.model).split("/", 1)[0]] || "Proveedor")
+      ? ({ meai: "ME AI Cloud" }[String(profile.model).split("/", 1)[0]] || "Proveedor")
       : (PRIMARY_PROVIDER_KEYS.includes(profile.providerKey)
         ? PROVIDERS[profile.providerKey]?.label
         : customProvidersByKey.get(profile.providerKey)?.name || profile.providerName || profile.providerKey),
@@ -2426,7 +2432,7 @@ function isUserVisibleModelOption(entry) {
 
 // Usuarios no admin: solo modelos del grupo ME AI (su ruta es el servidor),
 // agrupados bajo "Modelos" sin exponer nombres de proveedor. El admin ve
-// todos los grupos (ME AI y APICredits) con su proveedor real.
+// el grupo ME AI con su proveedor real.
 function filterModelOptionsForRole(options) {
   if (isCurrentUserAdmin()) return options;
   return options
@@ -2600,7 +2606,7 @@ async function addProviderProfile(key) {
 async function bulkAddProviderProfiles(key) {
   const models = PROVIDER_MODELS[key] || (key === "meai" ? MEAI_PROVIDER_MODELS : []);
   if (!models.length) return;
-  const profiles = loadProviderProfiles().filter((p) => p && p.providerKey !== "apicredits");
+  const profiles = loadProviderProfiles().filter((p) => p);
   const existingApiKey = profiles.find((p) => p.providerKey === key && p.apiKey)?.apiKey || resolveProviderApiKey(key, "");
   const existingModels = new Set(profiles.filter((p) => p.providerKey === key).map((p) => String(p.model || "").toLowerCase()));
   const toAdd = models.filter((m) => m && !existingModels.has(m.toLowerCase()));
@@ -3056,7 +3062,7 @@ async function autoDetectIntegratedProvider(key) {
     };
     await saveSecureJson("editcore-providers", providers);
 
-    const profiles = loadProviderProfiles().filter((p) => p && p.providerKey !== key && p.providerKey !== "apicredits");
+    const profiles = loadProviderProfiles().filter((p) => p && p.providerKey !== key);
     for (const m of rawModels) {
       profiles.push({
         id: `${key}:${m}`,
@@ -3211,7 +3217,7 @@ function renderCustomProviders() {
     container.appendChild(item);
   });
 
-  const gafcore = null; // Gateway eliminado del panel Modelos (solo ME AI / APICredits).
+  const gafcore = null; // Gateway eliminado del panel Modelos (solo ME AI).
   const userCustom = list.filter((provider) => {
     const id = String(provider?.id || "").toLowerCase();
     const url = String(provider?.baseUrl || "").toLowerCase();
@@ -3263,7 +3269,7 @@ async function removeCustomProvider(id) {
 }
 
 async function addGafCoreGateway() {
-  // No reintroducir Gateway en Modelos. Solo proveedores directos ME AI / APICredits.
+  // No reintroducir Gateway en Modelos. Solo el proveedor directo ME AI.
   const list = loadCustomProviders().filter((provider) => {
     const id = String(provider?.id || "").toLowerCase();
     const url = String(provider?.baseUrl || "").toLowerCase();
@@ -8904,15 +8910,15 @@ function sanitizeLiveActivityLabel(raw = "") {
   }
   if (/\bes\s+solo\s+chat;\s+usando\b/i.test(text)) return "Trabajando…";
   if (/failover|fallback|cambiando\s+de\s+modelo|siguiente\s+modelo/i.test(text)
-    && /modelo|provider|meai|apicredits|claude|gpt|deepseek/i.test(text)) {
+    && /modelo|provider|meai|claude|gpt|deepseek/i.test(text)) {
     return "Trabajando…";
   }
-  if (/^(?:meai|apicredits|anthropic|openai|gemini|claude|gpt|deepseek|grok)\b/i.test(text)
+  if (/^(?:meai|anthropic|openai|gemini|claude|gpt|deepseek|grok)\b/i.test(text)
     && /modelo|provider|failover|fallback/i.test(text)) {
     return "Trabajando…";
   }
   return text
-    .replace(/\b(?:meai|apicredits)\/[^\s…]+\b/gi, "")
+    .replace(/\b(?:meai)\/[^\s…]+\b/gi, "")
     .replace(/\s{2,}/g, " ")
     .trim() || "Trabajando…";
 }
@@ -9996,7 +10002,7 @@ async function refreshInspectorForProject(options = {}) {
 function activeModelConfigForInspector(requireTools = false) {
   const selectEl = $("inspectorModelSelect");
   const selectedValue = selectEl?.value || "";
-  // Modo local: cualquier perfil activo (ME AI / APICredits / custom), sin Gateway.
+  // Modo local: cualquier perfil activo (ME AI / custom), sin Gateway.
   const active = loadProviderProfiles()
     .filter((profile) => ["active", "enabled"].includes(String(profile?.status || "").toLowerCase()) && profile?.apiKey && profile?.baseUrl && profile?.model)
     .filter((profile) => profile?.providerKey !== "custom:gafcore-gateway")
@@ -10064,8 +10070,8 @@ function populateInspectorModelSelect() {
     const upstream = String(p.model).split("/", 1)[0].toLowerCase();
     if (!isAdmin && String(p.providerKey || "").replace(/^custom:/, "").toLowerCase() !== "meai") continue;
     const key = p.providerKey || upstream || hostname || p.id;
-    const upstreamLabel = ({ meai: "ME AI Cloud", apicredits: "APICredits" }[upstream]
-      || ({ meai: "ME AI Cloud", apicredits: "APICredits" }[String(p.providerKey || "").replace(/^custom:/, "")] )
+    const upstreamLabel = ({ meai: "ME AI Cloud" }[upstream]
+      || ({ meai: "ME AI Cloud" }[String(p.providerKey || "").replace(/^custom:/, "")] )
       || p.providerName
       || upstream
       || "Proveedor local");
@@ -13183,6 +13189,15 @@ async function executePromptJob(job) {
       }
       job.projectRoot = fromPrompt;
       job.ephemeralRoot = true;
+    } else if (window.EDITCORE_IS_WEB && typeof window.EditCoreWebBridge?.ensureProjectForAgent === "function") {
+      // Solo web (EDITCORE_IS_WEB lo define el puente web; en escritorio esta rama
+      // nunca se toma y el comportamiento no cambia): la primera tarea de agente
+      // sin proyecto crea uno con la plantilla inicial del puente, que además lo
+      // recuerda y lo reusa en los turnos siguientes.
+      const ensured = await window.EditCoreWebBridge.ensureProjectForAgent(job.prompt || prompt);
+      if (!ensured?.root) throw new Error("No se pudo crear un proyecto para el agente. Crea uno desde Proyectos.");
+      job.projectRoot = ensured.root;
+      job.autoCreatedProject = ensured;
     } else {
       // Nunca abrir el dialogo de carpeta automaticamente: el usuario debe Abrir o escribir la ruta.
       throw new Error("Indica una ruta absoluta (ej. D:\\PROGRAMAS IA) con Acceso completo, o abre un proyecto.");
@@ -14059,11 +14074,6 @@ async function cleanupObsoleteProviders() {
   if (changed) await saveProviderProfiles(profiles);
 }
 
-const APICREDITS_VERIFIED_MODELS = [
-  "claude-fable-5", "claude-haiku-4-5", "claude-opus-4-7", "claude-opus-4-8",
-  "claude-sonnet-4-6", "claude-sonnet-5",
-  "gpt-5.6-luna", "gpt-5.6-sol", "gpt-5.6-terra",
-];
 
 async function ensureDefaultModelSelectionMode() {
   const config = loadJson("editcore-chat-config", {});
@@ -15465,13 +15475,13 @@ $("validateConnectionsBtn")?.addEventListener("click", () => {
   });
 });
 $("connectGatewayProjectBtn")?.addEventListener("click", () => {
-  $("status").textContent = "Usa el panel Modelos (ME AI / APICredits) para conectar proveedores.";
+  $("status").textContent = "Usa el panel Modelos (ME AI) para conectar proveedores.";
 });
 $("saveGafcoreAdminTokenBtn")?.addEventListener("click", () => {
-  $("status").textContent = "Usa el panel Modelos (ME AI / APICredits) para conectar proveedores.";
+  $("status").textContent = "Usa el panel Modelos (ME AI) para conectar proveedores.";
 });
 $("openGafcoreDashboardBtn")?.addEventListener("click", () => {
-  $("status").textContent = "Usa el panel Modelos (ME AI / APICredits) para conectar proveedores.";
+  $("status").textContent = "Usa el panel Modelos (ME AI) para conectar proveedores.";
 });
 $("providersBtn")?.addEventListener("click", openProviders);
 $("addCustomProviderBtn")?.addEventListener("click", () => addCustomProvider());
@@ -16407,7 +16417,7 @@ function setChatModelOptions(_models = [], selected = "", selectedProviderKey = 
     allAuto.textContent = AutoModel.formatAutoLabel("all");
     allAuto.dataset.auto = "1";
     allAuto.dataset.autoScope = "all";
-    allAuto.title = "EditCoreAI elige automáticamente entre ME AI Cloud y APICredits";
+    allAuto.title = "EditCoreAI elige automáticamente el modelo de ME AI Cloud";
     select.appendChild(allAuto);
   }
 

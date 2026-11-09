@@ -62,6 +62,11 @@ test("cancelacion rechaza aprobaciones pendientes y limpia cola", () => {
 
 test("acceso completo no pide confirmacion para comandos compuestos", () => {
   const main = fs.readFileSync(path.join(__dirname, "..", "main.js"), "utf8");
-  assert.match(main, /shouldRequireCommandConfirmation\(commandRisk,\s*\{\s*fullAccess\s*\}\)/);
+  // [COSECHA MODO AGENTE] La llamada shouldRequireCommandConfirmation(...)
+  // vivía en el authorize() del despachador legado. En la ruta del kernel
+  // el Acceso completo pre-aprueba las acciones externas vía los helpers
+  // que main pasa al kernel (externalActionApproved ligado a fullAccess).
+  assert.match(main, /externalActionApproved: isFull/);
+  assert.match(main, /externalActionApproved: fullAccess/);
   assert.doesNotMatch(main, /fullAccess\s*\?\s*await confirmRiskyAgentAction/);
 });

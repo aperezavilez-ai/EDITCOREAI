@@ -39,7 +39,7 @@ function isPreferredUserHost(baseUrl = "") {
 
 function isBlockedHost(baseUrl = "") {
   const host = hostOf(baseUrl);
-  // AiPrimeTech: el usuario no lo usa. Endpoints de chat (meai/apicredits) no soportan /audio/transcriptions.
+  // AiPrimeTech: el usuario no lo usa. Endpoints de chat (ME AI) no soportan /audio/transcriptions.
   return (
     host.includes("aiprimetech")
     || host.includes("openai.com")
@@ -75,7 +75,7 @@ function isWhisperCandidate(profile) {
   if (!profile?.apiKey || !profile?.baseUrl) return false;
   if (isBlockedHost(profile.baseUrl)) return false;
   const host = hostOf(profile.baseUrl);
-  if (host.includes("meai.cloud") || host.includes("apicredits.site")) return true;
+  if (host.includes("meai.cloud")) return true;
   const kind = providerKind(profile.providerKey, profile.baseUrl);
   if (kind === "anthropic" || kind === "gemini") return false;
   const key = String(profile.providerKey || "").toLowerCase();
@@ -143,8 +143,8 @@ function collectWhisperCandidates(secure = {}, userDataPath = "") {
     });
   };
 
-  // Solo hosts meai/apicredits reales. NUNCA remapear keys de GafCore
-  // (invalid token). GafCore y apicredits Whisper no sirven para este usuario.
+  // Solo hosts ME AI reales. NUNCA remapear keys de GafCore
+  // (invalid token): GafCore no sirve como Whisper para este usuario.
   for (const [providerKey, provider] of Object.entries(providers)) {
     if (/(gafcore)/i.test(providerKey) || hostOf(provider?.baseUrl).includes("gafcore-gateway")) continue;
     if (hostOf(provider?.baseUrl).includes("meai.cloud") || providerKey === "meai") {
@@ -336,7 +336,7 @@ function describeSttAvailability(secure = {}) {
       ? `STT vía ${preferred.join(", ")} (Whisper).`
       : whisper.length || gemini.length
         ? "Hay backends STT configurados."
-        : "Sin Whisper en meai/apicredits usable. Claude del chat no transcribe voz.",
+        : "Sin Whisper en ME AI usable. Claude del chat no transcribe voz.",
   };
 }
 

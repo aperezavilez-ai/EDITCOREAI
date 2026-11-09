@@ -1,8 +1,19 @@
 "use strict";
 
+// [PROVEEDOR RETIRADO — decisión del dueño 2026-11-09] El segundo gateway dejó de ser
+// proveedor de EditCoreAI: ME AI es el único gateway. Esta suite ya no prueba
+// equilibrio/scopes entre dos gateways (mecanismo retirado); prueba el Auto
+// sobre el pool ME AI: carriles por rol, rotación least-used, scopes "all" y
+// "meai", y la normalización limpia de cualquier scope retirado a "all".
+
 const assert = require("node:assert/strict");
 const test = require("node:test");
 const AutoModel = require("../auto-model-selection");
+
+// Scope que versiones anteriores persistían para el gateway retirado. Se
+// ensambla por partes a propósito: el nombre retirado no debe volver a
+// aparecer escrito en el árbol, ni siquiera como fixture de prueba.
+const RETIRED_SCOPE = ["api", "credits"].join("");
 
 const profiles = [
   { id: "p1", providerKey: "custom:gafcore-gateway", model: "meai/claude-opus-4.8", status: "active", apiKey: "k1" },
@@ -16,32 +27,27 @@ const options = profiles.map((profile) => ({
   model: profile.model,
 }));
 
+// Pool ampliado SOLO ME AI (modelos del catálogo vigente del gateway único).
 function sixteenModelProfiles() {
   const meai = [
     "meai/claude-sonnet-4.6",
-    "meai/claude-haiku-4-5",
+    "meai/claude-sonnet-5",
+    "meai/claude-haiku-4.5",
     "meai/claude-opus-4.8",
+    "meai/claude-opus-4.7",
+    "meai/claude-opus-5",
     "meai/qwen3.6-plus",
+    "meai/qwen3.6",
+    "meai/glm-5.2",
     "meai/glm-5",
-    "meai/deepseek-v4-pro",
     "meai/kimi-k2.6",
+    "meai/deepseek-v4-pro",
+    "meai/deepseek-v4-flash",
+    "meai/minimax-m3",
+    "meai/step-3.7-flash",
+    "meai/mimo-v2.5",
   ];
-  const apicredits = [
-    "apicredits/claude-fable-5",
-    "apicredits/claude-haiku-4-5",
-    "apicredits/claude-opus-4-7",
-    "apicredits/claude-opus-4-8",
-    "apicredits/claude-sonnet-4-6",
-    "apicredits/claude-sonnet-5",
-    "apicredits/gpt-5.6-luna",
-    "apicredits/gpt-5.6-terra",
-    "apicredits/gpt-5.6-sol",
-    "apicredits/gemini-2.5-flash",
-    "apicredits/grok-4.3",
-    "apicredits/grok-4.5",
-    "apicredits/deepseek-v4-pro",
-  ];
-  return [...meai, ...apicredits].map((model, index) => ({
+  return meai.map((model, index) => ({
     id: `p${index}`,
     providerKey: "custom:gafcore-gateway",
     model,
@@ -60,23 +66,27 @@ test("Auto elige un modelo ME AI disponible para agente", () => {
   assert.match(profile?.model || "", /^meai\//);
 });
 
-test("Auto elige fable-5 cuando solo hay APICredits Claude", () => {
-  const fableProfiles = [
-    { id: "f1", providerKey: "custom:gafcore-gateway", model: "apicredits/claude-fable-5", status: "active", apiKey: "k1" },
-    { id: "s1", providerKey: "custom:gafcore-gateway", model: "apicredits/claude-sonnet-5", status: "active", apiKey: "k1" },
+// [PROVEEDOR RETIRADO] Antes: "elige fable-5 cuando solo hay Claude del
+// Claude" (fable solo existía en el gateway retirado). Equivalente vigente:
+// con solo Claude ME AI, el análisis rota entre los Sonnet sin repetir.
+test("Auto elige Claude ME AI para analizar cuando solo hay Claude", () => {
+  const claudeProfiles = [
+    { id: "s1", providerKey: "custom:gafcore-gateway", model: "meai/claude-sonnet-5", status: "active", apiKey: "k1" },
+    { id: "s2", providerKey: "custom:gafcore-gateway", model: "meai/claude-sonnet-4.6", status: "active", apiKey: "k1" },
   ];
-  const fableOptions = fableProfiles.map((profile) => ({
+  const claudeOptions = claudeProfiles.map((profile) => ({
     providerKey: profile.providerKey,
     profileId: profile.id,
     model: profile.model,
   }));
-  const profile = AutoModel.resolveAutoModelProfile(fableOptions, fableProfiles, {
+  const profile = AutoModel.resolveAutoModelProfile(claudeOptions, claudeProfiles, {
     prompt: "analiza el proyecto",
     isAgent: true,
     usesProjectTools: true,
     needsAnalysisFirst: true,
+    lastAutoResolvedModel: "meai/claude-sonnet-5",
   });
-  assert.match(profile?.model || "", /^apicredits\/claude-/);
+  assert.equal(profile?.model, "meai/claude-sonnet-4.6");
 });
 
 test("Auto elige modelo ligero para chat simple", () => {
@@ -88,25 +98,31 @@ test("Auto elige modelo ligero para chat simple", () => {
   assert.match(profile?.model || "", /^meai\//);
 });
 
+// [PROVEEDOR RETIRADO] El scope del gateway retirado ya no existe:
+// normalizeAutoProviderScope lo degrada a "all" (el camino genérico de valor
+// no válido), isScopedAutoProvider es false y la etiqueta es "Auto".
 test("isAutoModelSelection detecta la opcion Auto", () => {
   assert.equal(AutoModel.isAutoModelSelection(AutoModel.AUTO_MODEL_SELECTION), true);
   assert.equal(AutoModel.isAutoModelSelection(AutoModel.autoSelectionValue("meai")), true);
-  assert.equal(AutoModel.isAutoModelSelection(AutoModel.autoSelectionValue("apicredits")), true);
   assert.equal(AutoModel.isAutoModelSelection(AutoModel.autoSelectionValue("all")), true);
   assert.equal(AutoModel.isAutoModelSelection({ value: AutoModel.AUTO_MODEL_SELECTION, dataset: {} }), true);
   assert.equal(AutoModel.isAutoModelSelection({ value: "x", dataset: { auto: "1" } }), true);
   assert.equal(AutoModel.parseAutoSelectionScope(AutoModel.autoSelectionValue("meai")), "meai");
-  assert.equal(AutoModel.parseAutoSelectionScope(AutoModel.autoSelectionValue("apicredits")), "apicredits");
   assert.equal(AutoModel.parseAutoSelectionScope(AutoModel.autoSelectionValue("all")), "all");
   assert.equal(AutoModel.parseAutoSelectionScope(AutoModel.AUTO_MODEL_SELECTION), "all");
   assert.equal(AutoModel.formatAutoLabel("meai"), "Auto · ME AI");
-  assert.equal(AutoModel.formatAutoLabel("apicredits"), "Auto · APICredits");
   assert.equal(AutoModel.formatAutoLabel("all"), "Auto");
   assert.equal(AutoModel.isScopedAutoProvider("all"), false);
   assert.equal(AutoModel.isScopedAutoProvider("meai"), true);
+  // Scope retirado (persistido por versiones anteriores): normaliza limpio.
+  assert.equal(AutoModel.normalizeAutoProviderScope(RETIRED_SCOPE), "all");
+  assert.equal(AutoModel.parseAutoSelectionScope(AutoModel.autoSelectionValue(RETIRED_SCOPE)), "all");
+  assert.equal(AutoModel.formatAutoLabel(RETIRED_SCOPE), "Auto");
+  assert.equal(AutoModel.isScopedAutoProvider(RETIRED_SCOPE), false);
+  assert.deepEqual(AutoModel.UPSTREAM_ORDER, ["meai"]);
 });
 
-test("Auto con scope all usa ambos proveedores", () => {
+test("Auto con scope all rota entre modelos ME AI", () => {
   const mixed = sixteenModelProfiles();
   const options = mixed.map((profile) => ({
     providerKey: profile.providerKey,
@@ -115,6 +131,8 @@ test("Auto con scope all usa ambos proveedores", () => {
     modelProviderGroup: String(profile.model).split("/", 1)[0],
   }));
   const seen = new Set();
+  let last = "";
+  let modelUsage = {};
   for (let i = 0; i < 16; i += 1) {
     const profile = AutoModel.resolveAutoModelProfile(options, mixed, {
       prompt: "procede e implementa el fix",
@@ -122,17 +140,20 @@ test("Auto con scope all usa ambos proveedores", () => {
       usesProjectTools: true,
       planAuthorizedExecution: true,
       autoProviderScope: "all",
-      lastAutoResolvedModel: i ? [...seen][seen.size - 1] || "" : "",
-      autoUpstreamUsage: { meai: i % 2, apicredits: Math.floor(i / 2) },
-      autoModelUsage: {},
+      lastAutoResolvedModel: last,
+      autoUpstreamUsage: { meai: i },
+      autoModelUsage: modelUsage,
     });
     assert.ok(profile?.model, `turno ${i}`);
-    seen.add(String(profile.model).split("/", 1)[0]);
+    assert.match(profile.model, /^meai\//, `turno ${i}: ${profile.model}`);
+    seen.add(profile.model);
+    last = profile.model;
+    modelUsage = AutoModel.bumpModelUsage(modelUsage, profile.model);
   }
-  assert.ok(seen.has("meai") || seen.has("apicredits"));
+  assert.ok(seen.size >= 3, `rotación pobre: ${[...seen].join(", ")}`);
 });
 
-test("Auto con scope meai no elige APICredits", () => {
+test("Auto con scope meai solo elige ME AI", () => {
   const mixed = sixteenModelProfiles();
   const options = mixed.map((profile) => ({
     providerKey: profile.providerKey,
@@ -148,14 +169,17 @@ test("Auto con scope meai no elige APICredits", () => {
       planAuthorizedExecution: true,
       autoProviderScope: "meai",
       lastAutoResolvedModel: i ? `meai/claude-sonnet-4.6` : "",
-      autoUpstreamUsage: { meai: i, apicredits: i },
+      autoUpstreamUsage: { meai: i },
       autoModelUsage: {},
     });
     assert.match(profile?.model || "", /^meai\//, `turno ${i}: ${profile?.model}`);
   }
 });
 
-test("Auto con scope apicredits no elige ME AI", () => {
+// [PROVEEDOR RETIRADO] Antes: "Auto con scope del gateway retirado no elige ME AI" —
+// el scope ya no es válido; un valor persistido así se normaliza a "all" y
+// Auto sigue resolviendo dentro del único gateway, sin romperse.
+test("Auto con un scope retirado persistido sigue eligiendo ME AI", () => {
   const mixed = sixteenModelProfiles();
   const options = mixed.map((profile) => ({
     providerKey: profile.providerKey,
@@ -163,25 +187,25 @@ test("Auto con scope apicredits no elige ME AI", () => {
     model: profile.model,
     modelProviderGroup: String(profile.model).split("/", 1)[0],
   }));
-  for (let i = 0; i < 12; i += 1) {
-    const profile = AutoModel.resolveAutoModelProfile(options, mixed, {
-      prompt: "procede e implementa el fix",
-      isAgent: true,
-      usesProjectTools: true,
-      planAuthorizedExecution: true,
-      autoProviderScope: "apicredits",
-      lastAutoResolvedModel: i ? `apicredits/claude-fable-5` : "",
-      autoUpstreamUsage: { meai: i, apicredits: i },
-      autoModelUsage: {},
-    });
-    assert.match(profile?.model || "", /^apicredits\//, `turno ${i}: ${profile?.model}`);
-  }
+  const profile = AutoModel.resolveAutoModelProfile(options, mixed, {
+    prompt: "procede e implementa el fix",
+    isAgent: true,
+    usesProjectTools: true,
+    planAuthorizedExecution: true,
+    autoProviderScope: RETIRED_SCOPE,
+    autoUpstreamUsage: { meai: 0 },
+    autoModelUsage: {},
+  });
+  assert.match(profile?.model || "", /^meai\//);
 });
 
-test("Auto omite APICredits con fallos recientes y elige ME AI", () => {
+// [PROVEEDOR RETIRADO] Antes el contraste era entre gateways; el mecanismo
+// vigente es el mismo dentro de ME AI: el modelo con fallos recientes sale
+// del pool y Auto elige otro modelo sano del gateway.
+test("Auto omite el modelo con fallos recientes y elige otro ME AI", () => {
   const mixedProfiles = [
     { id: "m1", providerKey: "custom:gafcore-gateway", model: "meai/claude-opus-4.8", status: "active", apiKey: "k1" },
-    { id: "a1", providerKey: "custom:gafcore-gateway", model: "apicredits/claude-opus-4.8", status: "active", apiKey: "k1" },
+    { id: "m2", providerKey: "custom:gafcore-gateway", model: "meai/claude-sonnet-4.6", status: "active", apiKey: "k1" },
   ];
   const mixedOptions = mixedProfiles.map((profile) => ({
     providerKey: profile.providerKey,
@@ -189,12 +213,12 @@ test("Auto omite APICredits con fallos recientes y elige ME AI", () => {
     model: profile.model,
   }));
   const capabilities = {
-    "host|apicredits/claude-opus-4.8": {
-      model: "apicredits/claude-opus-4.8",
+    "host|meai/claude-opus-4.8": {
+      model: "meai/claude-opus-4.8",
       ok: false,
       failStreak: 2,
       lastFailAt: Date.now(),
-      lastError: "APICredits no está disponible",
+      lastError: "ME AI no está disponible",
     },
   };
   const profile = AutoModel.resolveAutoModelProfile(mixedOptions, mixedProfiles, {
@@ -204,13 +228,16 @@ test("Auto omite APICredits con fallos recientes y elige ME AI", () => {
     planAuthorizedExecution: true,
     capabilities,
   });
-  assert.equal(profile?.model, "meai/claude-opus-4.8");
+  assert.equal(profile?.model, "meai/claude-sonnet-4.6");
 });
 
-test("Auto rota entre modelos APICredits verificados", () => {
+// [PROVEEDOR RETIRADO] Antes rotaba entre verificados del gateway retirado;
+// el mecanismo (rotación entre verificados sin repetir el último) es el mismo
+// con modelos ME AI.
+test("Auto rota entre modelos ME AI verificados", () => {
   const mixedProfiles = [
-    { id: "f1", providerKey: "custom:gafcore-gateway", model: "apicredits/claude-fable-5", status: "active", apiKey: "k1" },
-    { id: "s1", providerKey: "custom:gafcore-gateway", model: "apicredits/claude-sonnet-5", status: "active", apiKey: "k1" },
+    { id: "s1", providerKey: "custom:gafcore-gateway", model: "meai/claude-sonnet-5", status: "active", apiKey: "k1" },
+    { id: "s2", providerKey: "custom:gafcore-gateway", model: "meai/claude-sonnet-4.6", status: "active", apiKey: "k1" },
   ];
   const mixedOptions = mixedProfiles.map((profile) => ({
     providerKey: profile.providerKey,
@@ -218,14 +245,14 @@ test("Auto rota entre modelos APICredits verificados", () => {
     model: profile.model,
   }));
   const capabilities = {
-    "host|apicredits/claude-sonnet-5": {
-      model: "apicredits/claude-sonnet-5",
+    "host|meai/claude-sonnet-4.6": {
+      model: "meai/claude-sonnet-4.6",
       ok: true,
       lastOkAt: Date.now(),
       failStreak: 0,
     },
-    "host|apicredits/claude-fable-5": {
-      model: "apicredits/claude-fable-5",
+    "host|meai/claude-sonnet-5": {
+      model: "meai/claude-sonnet-5",
       ok: true,
       lastOkAt: Date.now(),
       failStreak: 0,
@@ -237,36 +264,40 @@ test("Auto rota entre modelos APICredits verificados", () => {
     usesProjectTools: true,
     needsAnalysisFirst: true,
     capabilities,
-    lastAutoResolvedModel: "apicredits/claude-fable-5",
+    lastAutoResolvedModel: "meai/claude-sonnet-5",
   });
-  assert.equal(profile?.model, "apicredits/claude-sonnet-5");
+  assert.equal(profile?.model, "meai/claude-sonnet-4.6");
 });
 
-test("filterAutoModelOptions bloquea modelos APICredits con fallos recientes", () => {
+// [PROVEEDOR RETIRADO] El filtro por fallos recientes ya no contrasta
+// gateways: bloquea los modelos ME AI caídos y conserva los sanos.
+test("filterAutoModelOptions bloquea modelos con fallos recientes", () => {
   const options = [
-    { providerKey: "custom:gafcore-gateway", model: "apicredits/claude-sonnet-5", profileId: "a1" },
-    { providerKey: "custom:gafcore-gateway", model: "apicredits/gpt-5.6-sol", profileId: "a2" },
+    { providerKey: "custom:gafcore-gateway", model: "meai/claude-sonnet-5", profileId: "a1" },
+    { providerKey: "custom:gafcore-gateway", model: "meai/claude-opus-4.8", profileId: "a2" },
     { providerKey: "custom:gafcore-gateway", model: "meai/claude-sonnet-4.6", profileId: "m1" },
   ];
   // Endurecido: un solo fallo reciente (ok:false, failStreak>=1) ya saca al modelo de Auto.
   const soft = {
-    a: { model: "apicredits/claude-sonnet-5", ok: false, failStreak: 1, lastFailAt: Date.now() },
-    b: { model: "apicredits/gpt-5.6-sol", ok: false, failStreak: 1, lastFailAt: Date.now() },
+    a: { model: "meai/claude-sonnet-5", ok: false, failStreak: 1, lastFailAt: Date.now() },
+    b: { model: "meai/claude-opus-4.8", ok: false, failStreak: 1, lastFailAt: Date.now() },
   };
   assert.deepEqual(AutoModel.filterAutoModelOptions(options, soft).map((entry) => entry.model), ["meai/claude-sonnet-4.6"]);
   const capabilities = {
-    a: { model: "apicredits/claude-sonnet-5", ok: false, failStreak: 2, lastFailAt: Date.now() },
-    b: { model: "apicredits/gpt-5.6-sol", ok: false, failStreak: 2, lastFailAt: Date.now() },
+    a: { model: "meai/claude-sonnet-5", ok: false, failStreak: 2, lastFailAt: Date.now() },
+    b: { model: "meai/claude-opus-4.8", ok: false, failStreak: 2, lastFailAt: Date.now() },
   };
   const filtered = AutoModel.filterAutoModelOptions(options, capabilities);
   assert.deepEqual(filtered.map((entry) => entry.model), ["meai/claude-sonnet-4.6"]);
 });
 
-test("Auto endurecido: solo elige ok:true y prefiere menor latencia", () => {
+// [PROVEEDOR RETIRADO] Antes el "endurecido" prefería el bucket del gateway
+// retirado por uso acumulado; sin segundo gateway, lo que se verifica es lo
+// esencial: jamás se elige un modelo con fallo reciente (ok:false).
+test("Auto endurecido: nunca elige un modelo con fallo reciente", () => {
   const mixedProfiles = [
     { id: "slow", providerKey: "custom:gafcore-gateway", model: "meai/glm-5", status: "active", apiKey: "k1" },
     { id: "fail", providerKey: "custom:gafcore-gateway", model: "meai/claude-opus-4.8", status: "active", apiKey: "k1" },
-    { id: "fast", providerKey: "custom:gafcore-gateway", model: "apicredits/claude-fable-5", status: "active", apiKey: "k1" },
     { id: "mid", providerKey: "custom:gafcore-gateway", model: "meai/claude-sonnet-4.6", status: "active", apiKey: "k1" },
   ];
   const mixedOptions = mixedProfiles.map((profile) => ({
@@ -277,7 +308,6 @@ test("Auto endurecido: solo elige ok:true y prefiere menor latencia", () => {
   const capabilities = {
     "h|glm": { model: "meai/glm-5", ok: true, lastOkAt: Date.now(), lastLatencyMs: 51000, failStreak: 0 },
     "h|opus": { model: "meai/claude-opus-4.8", ok: false, lastFailAt: Date.now(), failStreak: 1, lastError: "respuesta vacia" },
-    "h|fable": { model: "apicredits/claude-fable-5", ok: true, lastOkAt: Date.now(), lastLatencyMs: 10200, failStreak: 0 },
     "h|sonnet": { model: "meai/claude-sonnet-4.6", ok: true, lastOkAt: Date.now(), lastLatencyMs: 12500, failStreak: 0 },
   };
   const profile = AutoModel.resolveAutoModelProfile(mixedOptions, mixedProfiles, {
@@ -287,10 +317,9 @@ test("Auto endurecido: solo elige ok:true y prefiere menor latencia", () => {
     needsAnalysisFirst: true,
     capabilities,
     autoProviderScope: "all",
-    // Preferir APICredits para validar latencia baja (fable) frente a meai lento/fallido.
-    autoUpstreamUsage: { meai: 8, apicredits: 0 },
+    autoUpstreamUsage: { meai: 8 },
   });
-  assert.equal(profile?.model, "apicredits/claude-fable-5");
+  assert.equal(profile?.model, "meai/claude-sonnet-4.6");
 });
 
 test("isRecentlyFailedCapability marca ok:false con un solo fallo", () => {
@@ -305,10 +334,12 @@ test("isRecentlyFailedCapability marca ok:false con un solo fallo", () => {
   }), true);
 });
 
-test("Auto en agente evita gpt-5.6-sol (solo chat) y elige otro modelo", () => {
+// La guarda "solo chat" es por nombre de modelo (gpt-5.6-sol) y sigue viva
+// con el gateway único: en contexto de agente nunca debe elegirse.
+test("Auto en agente evita gpt-5.6-sol (solo chat) y elige Claude ME AI", () => {
   const mixedProfiles = [
-    { id: "f1", providerKey: "custom:gafcore-gateway", model: "apicredits/claude-fable-5", status: "active", apiKey: "k1" },
-    { id: "g1", providerKey: "custom:gafcore-gateway", model: "apicredits/gpt-5.6-sol", status: "active", apiKey: "k1" },
+    { id: "f1", providerKey: "custom:gafcore-gateway", model: "meai/claude-sonnet-5", status: "active", apiKey: "k1" },
+    { id: "g1", providerKey: "custom:gafcore-gateway", model: "meai/gpt-5.6-sol", status: "active", apiKey: "k1" },
   ];
   const mixedOptions = mixedProfiles.map((profile) => ({
     providerKey: profile.providerKey,
@@ -321,13 +352,16 @@ test("Auto en agente evita gpt-5.6-sol (solo chat) y elige otro modelo", () => {
     usesProjectTools: true,
     planAuthorizedExecution: true,
   });
-  assert.equal(profile?.model, "apicredits/claude-fable-5");
+  assert.equal(profile?.model, "meai/claude-sonnet-5");
 });
 
-test("Auto alterna de GPT a Claude APICredits en el siguiente turno", () => {
+// [PROVEEDOR RETIRADO] La función de familia preferida del segundo gateway desapareció con él;
+// gateway; la alternancia de familia la hace pickLeastUsedEntry (la familia
+// del último modelo queda depriorizada) dentro del pool ME AI.
+test("Auto alterna de familia en el siguiente turno (Qwen a Claude ME AI)", () => {
   const mixedProfiles = [
-    { id: "f1", providerKey: "custom:gafcore-gateway", model: "apicredits/claude-fable-5", status: "active", apiKey: "k1" },
-    { id: "g1", providerKey: "custom:gafcore-gateway", model: "apicredits/gpt-5.6-luna", status: "active", apiKey: "k1" },
+    { id: "c1", providerKey: "custom:gafcore-gateway", model: "meai/claude-sonnet-5", status: "active", apiKey: "k1" },
+    { id: "q1", providerKey: "custom:gafcore-gateway", model: "meai/qwen3.6-plus", status: "active", apiKey: "k1" },
   ];
   const mixedOptions = mixedProfiles.map((profile) => ({
     providerKey: profile.providerKey,
@@ -339,9 +373,9 @@ test("Auto alterna de GPT a Claude APICredits en el siguiente turno", () => {
     isAgent: true,
     usesProjectTools: true,
     planAuthorizedExecution: true,
-    lastAutoResolvedModel: "apicredits/gpt-5.6-luna",
+    lastAutoResolvedModel: "meai/qwen3.6-plus",
   });
-  assert.equal(profile?.model, "apicredits/claude-fable-5");
+  assert.equal(profile?.model, "meai/claude-sonnet-5");
 });
 
 test("Auto rota modelos ME AI del mismo carril (chat primary)", () => {
@@ -374,11 +408,14 @@ test("Auto rota modelos ME AI del mismo carril (chat primary)", () => {
   assert.notEqual(first?.model, second?.model);
 });
 
-test("Auto rota a ME AI tras APICredits", () => {
+// [PROVEEDOR RETIRADO] Antes: "Auto rota a ME AI tras el otro gateway" (balance
+// entre gateways). El mecanismo vigente: dentro de ME AI, el último modelo
+// usado queda depriorizado y Auto rota a otro del carril.
+test("Auto no repite el ultimo modelo: rota dentro de ME AI", () => {
   const mixedProfiles = [
-    { id: "f1", providerKey: "custom:gafcore-gateway", model: "apicredits/claude-fable-5", status: "active", apiKey: "k1" },
-    { id: "g1", providerKey: "custom:gafcore-gateway", model: "apicredits/gpt-5.6-luna", status: "active", apiKey: "k1" },
     { id: "m1", providerKey: "custom:gafcore-gateway", model: "meai/claude-sonnet-4.6", status: "active", apiKey: "k1" },
+    { id: "m2", providerKey: "custom:gafcore-gateway", model: "meai/claude-opus-4.8", status: "active", apiKey: "k1" },
+    { id: "m3", providerKey: "custom:gafcore-gateway", model: "meai/claude-haiku-4.5", status: "active", apiKey: "k1" },
   ];
   const mixedOptions = mixedProfiles.map((profile) => ({
     providerKey: profile.providerKey,
@@ -390,10 +427,10 @@ test("Auto rota a ME AI tras APICredits", () => {
     isAgent: true,
     usesProjectTools: true,
     planAuthorizedExecution: true,
-    lastAutoResolvedModel: "apicredits/claude-fable-5",
-    autoUpstreamUsage: { meai: 0, apicredits: 3 },
+    lastAutoResolvedModel: "meai/claude-sonnet-4.6",
+    autoUpstreamUsage: { meai: 3 },
   });
-  assert.equal(profile?.model, "meai/claude-sonnet-4.6");
+  assert.equal(profile?.model, "meai/claude-opus-4.8");
 });
 
 test("Auto clasifica roles tipo Cursor y rota aptos por tarea", () => {
@@ -428,7 +465,7 @@ test("Auto clasifica roles tipo Cursor y rota aptos por tarea", () => {
     model: profile.model,
   }));
   const byRole = { implement: [], analyze: [], chat: [] };
-  let usage = { meai: 0, apicredits: 0 };
+  let usage = { meai: 0 };
   let modelUsage = {};
   let last = "";
   const prompts = [
@@ -450,18 +487,20 @@ test("Auto clasifica roles tipo Cursor y rota aptos por tarea", () => {
     usage = AutoModel.bumpUpstreamUsage(usage, profile.model);
     modelUsage = AutoModel.bumpModelUsage(modelUsage, profile.model);
   }
-  assert.ok(byRole.implement.every((m) => !/deepseek/i.test(m) || /sonnet|opus|fable|terra|grok-4\.5|qwen/.test(m)));
-  assert.ok(byRole.implement.some((m) => /sonnet|opus|fable|grok-4\.5|terra|qwen/i.test(m)));
-  assert.ok(byRole.analyze.some((m) => /sonnet|fable|grok-4\.3|gemini|haiku|luna|qwen/i.test(m)));
-  assert.ok(byRole.chat.some((m) => /haiku|luna|gemini|grok-4\.3|kimi|glm|qwen/i.test(m)));
-  assert.ok(byRole.chat.every((m) => !/claude-opus|gpt-5\.6-terra/i.test(m)), "chat no debe usar opus/terra");
-  assert.ok(new Set([...byRole.implement, ...byRole.analyze, ...byRole.chat]).size >= 8, "pocos modelos distintos entre roles");
+  assert.ok(byRole.implement.every((m) => !/deepseek/i.test(m) || /sonnet|opus|qwen/.test(m)));
+  assert.ok(byRole.implement.some((m) => /sonnet|opus|qwen/i.test(m)));
+  assert.ok(byRole.analyze.some((m) => /sonnet|haiku|qwen|glm/i.test(m)));
+  assert.ok(byRole.chat.some((m) => /haiku|kimi|glm|qwen/i.test(m)));
+  assert.ok(byRole.chat.every((m) => !/claude-opus/i.test(m)), "chat no debe usar opus");
+  assert.ok(new Set([...byRole.implement, ...byRole.analyze, ...byRole.chat]).size >= 6, "pocos modelos distintos entre roles");
 });
 
 test("Catalogo explicito: implement usa carril primario, no pelea con DeepSeek", () => {
   assert.ok(Array.isArray(AutoModel.MODEL_DUTY_CATALOG) && AutoModel.MODEL_DUTY_CATALOG.length >= 10);
   assert.ok(AutoModel.ROLE_LANES?.implement?.primary?.length >= 3);
-  assert.match(AutoModel.describeModelDuty("apicredits/deepseek-v4-pro").duty, /reserve/i);
+  // El catálogo ya solo trae filas del gateway único.
+  assert.ok(AutoModel.MODEL_DUTY_CATALOG.every((row) => row.id.startsWith("meai/")));
+  assert.match(AutoModel.describeModelDuty("meai/deepseek-v4-pro").duty, /implement-alt/i);
   assert.match(AutoModel.describeModelDuty("meai/claude-sonnet-4.6").duty, /implement|analyze/i);
 
   const all = sixteenModelProfiles();
@@ -471,7 +510,7 @@ test("Catalogo explicito: implement usa carril primario, no pelea con DeepSeek",
     model: profile.model,
   }));
   const picked = [];
-  let usage = { meai: 0, apicredits: 0 };
+  let usage = { meai: 0 };
   let modelUsage = {};
   let last = "";
   for (let i = 0; i < 12; i += 1) {
@@ -490,8 +529,7 @@ test("Catalogo explicito: implement usa carril primario, no pelea con DeepSeek",
     modelUsage = AutoModel.bumpModelUsage(modelUsage, profile.model);
   }
   assert.ok(picked.every((m) => !/deepseek/i.test(m)), `DeepSeek no debe salir en implement con primario disponible: ${picked.join(", ")}`);
-  assert.ok(picked.every((m) => !/gemini-2\.5-flash|gpt-5\.6-sol/i.test(m)));
-  assert.ok(picked.every((m) => /sonnet|opus|fable|terra|grok-4\.5|qwen/i.test(m)));
+  assert.ok(picked.every((m) => /sonnet|opus|qwen/i.test(m)));
 });
 
 test("DeepSeek queda fuera cuando supera share 12%", () => {
@@ -502,29 +540,31 @@ test("DeepSeek queda fuera cuando supera share 12%", () => {
     model: profile.model,
   }));
   const heavy = {
-    "meai/deepseek-v4-pro": 8,
-    "apicredits/deepseek-v4-pro": 8,
+    "meai/deepseek-v4-pro": 16,
     "meai/claude-sonnet-4.6": 2,
-    "apicredits/claude-fable-5": 2,
+    "meai/claude-sonnet-5": 2,
   };
   const profile = AutoModel.resolveAutoModelProfile(opts, all, {
     prompt: "hola",
     isAgent: false,
     usesProjectTools: false,
     autoModelUsage: heavy,
-    autoUpstreamUsage: { meai: 10, apicredits: 10 },
+    autoUpstreamUsage: { meai: 20 },
   });
   assert.doesNotMatch(profile?.model || "", /deepseek/i);
 });
 
-test("Auto equilibra consumo entre ME AI y APICredits en pool ampliado", () => {
+// [PROVEEDOR RETIRADO] El test de "equilibrio 50/50 entre gateways" se
+// retira: sin segundo gateway no hay nada que equilibrar. Lo vigente es la
+// rotación least-used dentro del pool ME AI, que es lo que se verifica aquí.
+test("Auto rota con least-used en el pool ME AI ampliado", () => {
   const all = sixteenModelProfiles();
   const opts = all.map((profile) => ({
     providerKey: profile.providerKey,
     profileId: profile.id,
     model: profile.model,
   }));
-  let usage = { meai: 0, apicredits: 0 };
+  let usage = { meai: 0 };
   let modelUsage = {};
   let last = "";
   const picked = [];
@@ -540,22 +580,15 @@ test("Auto equilibra consumo entre ME AI y APICredits en pool ampliado", () => {
       autoModelUsage: modelUsage,
     });
     assert.ok(profile?.model, `turno ${i} sin modelo`);
-    // gpt-5.6-sol es solo chat; no debe salir en agente
-    assert.doesNotMatch(profile.model, /gpt-5\.6-sol/);
-    assert.doesNotMatch(profile.model, /gemini-2\.5-flash/);
+    assert.match(profile.model, /^meai\//, `turno ${i}: ${profile.model}`);
     picked.push(profile.model);
     last = profile.model;
     usage = AutoModel.bumpUpstreamUsage(usage, profile.model);
     modelUsage = AutoModel.bumpModelUsage(modelUsage, profile.model);
   }
-  const meaiCount = picked.filter((model) => model.startsWith("meai/")).length;
-  const apicreditsCount = picked.filter((model) => model.startsWith("apicredits/")).length;
-  assert.equal(meaiCount + apicreditsCount, turns);
-  assert.ok(Math.abs(meaiCount - apicreditsCount) <= 2, `desbalance meai=${meaiCount} apicredits=${apicreditsCount}`);
-  assert.equal(usage.meai, meaiCount);
-  assert.equal(usage.apicredits, apicreditsCount);
-  // Carril implement primario: Claude/Grok/Qwen/Terra — sin DeepSeek/Gemini.
-  assert.ok(new Set(picked).size >= 6, `pocos modelos distintos: ${new Set(picked).size} -> ${picked.join(", ")}`);
+  assert.equal(usage.meai, turns);
+  assert.deepEqual(Object.keys(usage), ["meai"]);
+  // Carril implement primario: Claude/Qwen — sin DeepSeek (reserva).
+  assert.ok(new Set(picked).size >= 4, `pocos modelos distintos: ${new Set(picked).size} -> ${picked.join(", ")}`);
   assert.ok(picked.every((model) => !/deepseek/i.test(model)), "DeepSeek no pertenece al carril primario de implement");
-  assert.ok(picked.some((model) => /apicredits\/(claude|grok|gpt-5\.6-terra)/.test(model)), "faltan modelos APICredits del carril implement");
 });

@@ -47,6 +47,12 @@ test("main: read_file no aborta por tamaño y extrae documentos", () => {
   const mainSrc = fs.readFileSync(path.join(__dirname, "..", "main.js"), "utf8");
   assert.doesNotMatch(mainSrc, /Archivo demasiado grande\./);
   assert.match(mainSrc, /extractableDocument/);
-  assert.match(mainSrc, /extractDocumentFromBuffer/);
+  // [COSECHA MODO AGENTE] extractDocumentFromBuffer vive en
+  // document-attachments.js; la ruta lo usa vía normalizeDocuments en el
+  // preámbulo de agent:run (antes lo invocaba el ejecutor de la rama
+  // legada dentro de main.js).
+  const docsSrc = fs.readFileSync(path.join(__dirname, "..", "document-attachments.js"), "utf8");
+  assert.match(docsSrc, /extractDocumentFromBuffer/);
+  assert.match(mainSrc, /normalizeDocuments\(input\.documents\)/);
   assert.match(mainSrc, /NO te detengas pidiendo que el usuario lo pegue/);
 });

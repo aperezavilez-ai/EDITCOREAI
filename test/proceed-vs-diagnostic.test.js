@@ -20,9 +20,13 @@ const rendererSource = fs.readFileSync(path.join(appRoot, "renderer.js"), "utf8"
 const adapterSource = fs.readFileSync(path.join(appRoot, "runtime", "editcore-claude-adapter.js"), "utf8");
 
 test("F1: planAuthorized anula NO MODIFICAR en authorize", () => {
-  assert.match(mainSource, /authorizedToMutate/);
-  assert.match(mainSource, /planAuthorized === true\s*\?\s*false/);
-  assert.match(mainSource, /readonlyDiagnostic = !authorizedToMutate/);
+  // [COSECHA MODO AGENTE] El authorize() del despachador legado
+  // (authorizedToMutate/readonlyDiagnostic) salió con la rama. En la ruta
+  // del kernel, la ejecución autorizada entra con Acceso completo:
+  // fullAccess y planAuthorizedExecution ligados a permissionHint "full".
+  const agentRun = mainSource.slice(mainSource.indexOf('ipcMain.handle("agent:run"'));
+  assert.match(agentRun, /fullAccess: permissionHint === "full"/);
+  assert.match(agentRun, /planAuthorizedExecution: permissionHint === "full"/);
 });
 
 test("F1b: authorizedPlanExecutionPrompt anula diagnostico y evita .md basura", () => {

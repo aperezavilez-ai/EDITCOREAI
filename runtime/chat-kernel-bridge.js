@@ -145,9 +145,18 @@ async function runKernelChat({
       maxSteps,
     });
 
-    const ok = !out?.blocked;
+    if (out?.error || out?.kind === "ERROR") {
+      const err = new Error(out?.error || out?.text || "Error en ejecución del kernel");
+      err.code = "KERNEL_FAILED";
+      err.threadId = tid;
+      err.kernelFailed = true;
+      throw err;
+    }
+
+    const isStopped = out?.kind === "STOP" || String(out?.text || "").includes("Detenido.");
+    const ok = !out?.blocked && !isStopped;
     const finalText = out?.text
-      || (ok ? "Operación procesada." : "Hay un proceso activo. Envía **detente** para cancelarlo antes de mandar otro mensaje.");
+      || (ok ? "Operación procesada." : (isStopped ? "Detenido." : "Hay un proceso activo. Envía **detente** para cancelarlo antes de mandar otro mensaje."));
 
     return {
       ok,
@@ -156,11 +165,11 @@ async function runKernelChat({
       threadId: out?.threadId || tid,
       kernel: true,
       brain: true,
-      kind: out?.kind,
-      incomplete: !!out?.incomplete,
+      kind: isStopped ? "STOP" : out?.kind,
+      incomplete: isStopped || !!out?.incomplete,
       mutations: out?.mutations,
       usage: out?.usage,
-      report: { completed: ok && !out?.incomplete, role: "assistant" },
+      report: { completed: ok && !out?.incomplete && !isStopped, role: "assistant" },
     };
   } catch (err) {
     const message = String(err?.message || err).slice(0, 400);

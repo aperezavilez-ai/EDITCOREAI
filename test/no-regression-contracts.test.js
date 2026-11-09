@@ -56,14 +56,24 @@ test("C3: PROCEDE ejecuta, no reabre analisis", () => {
   });
   assert.equal(plan.mode, MODES.EXECUTE);
   assert.equal(plan.runProfile.phase, PHASES.EXECUTE);
-  assert.match(mainSource, /analysisMode = input\.planAuthorized === true/);
-  assert.match(mainSource, /\? false/);
+  // [COSECHA MODO AGENTE] La ejecución autorizada ya no pasa por el
+  // analysisMode del adaptador: agent:run entra al kernel con
+  // planAuthorizedExecution ligado a Acceso completo (no reabre análisis).
+  const agentRunC3 = mainSource.slice(mainSource.indexOf('ipcMain.handle("agent:run"'));
+  assert.match(agentRunC3, /handleChatKernel\(\{/);
+  assert.match(agentRunC3, /planAuthorizedExecution: permissionHint === "full"/);
   assert.match(rendererSource, /planAuthorizedExecution[\s\S]{0,80}isAgentAuthorization/);
 });
 
 test("C4: tope duro de minutos e iteraciones (no 25 min / 120 loops)", () => {
-  assert.match(mainSource, /resolveRunDeadlineMs/);
-  assert.match(mainSource, /runtime\/analysis-depth/);
+  // [COSECHA MODO AGENTE] El plazo de la ruta viva ya no es el deadline del
+  // adaptador (resolveRunDeadlineMs cableado en agent:run): es el
+  // KERNEL_TIMEOUT_MS del bridge. El módulo analysis-depth sigue existiendo
+  // y sus topes se verifican abajo como unidad.
+  const agentRunC4 = mainSource.slice(mainSource.indexOf('ipcMain.handle("agent:run"'));
+  assert.doesNotMatch(agentRunC4, /resolveRunDeadlineMs/);
+  const bridgeSource = fs.readFileSync(path.join(appRoot, "runtime", "chat-kernel-bridge.js"), "utf8");
+  assert.match(bridgeSource, /KERNEL_TIMEOUT_MS/);
   assert.doesNotMatch(mainSource, /1_500_000/);
   assert.doesNotMatch(mainSource, /runDeadlineMs = analysisMode \? 600_000 : 1_500_000/);
   const { resolveRunDeadlineMs } = require("../runtime/analysis-depth");
@@ -118,19 +128,26 @@ test("C6: Auto usa el pool verificado completo, no el recorte del picker", () =>
   assert.equal(typeof AutoModel.pickEquitableEntry, "function");
 
   const meai = { model: "meai/claude-haiku-4-5", providerKey: "custom:gafcore-gateway" };
-  const api = { model: "apicredits/claude-sonnet-5", providerKey: "custom:gafcore-gateway" };
-  const usage = { "meai/claude-haiku-4-5": 9, "apicredits/claude-sonnet-5": 0 };
+  // [PROVEEDOR RETIRADO — decisión del dueño 2026-11-09] El contraste ya es
+  // entre dos modelos ME AI: gana el menos usado del pool verificado.
+  const api = { model: "meai/claude-sonnet-5", providerKey: "custom:gafcore-gateway" };
+  const usage = { "meai/claude-haiku-4-5": 9, "meai/claude-sonnet-5": 0 };
   const picked = AutoModel.pickLeastUsedEntry([meai, api], { autoModelUsage: usage });
-  assert.equal(picked.model, "apicredits/claude-sonnet-5");
+  assert.equal(picked.model, "meai/claude-sonnet-5");
 });
 
 test("C7: Acceso completo autoriza proyecto + ruta que el usuario da", () => {
-  assert.match(mainSource, /crossProjectAccess = selectedPermission === "full"/);
-  assert.match(mainSource, /collectFullAccessRoots\(rootPath, task/);
-  assert.match(mainSource, /resolveAccessibleTarget/);
+  // [COSECHA MODO AGENTE] En la ruta del kernel, la ruta que el usuario da
+  // se resuelve con extractAuthorizedPaths y exige Acceso completo cuando
+  // no hay proyecto abierto (antes: collectFullAccessRoots del adaptador,
+  // que sigue existiendo como política en project-path-policy.js).
+  const agentRunC7 = mainSource.slice(mainSource.indexOf('ipcMain.handle("agent:run"'));
+  assert.match(agentRunC7, /extractAuthorizedPaths\(task\)/);
+  assert.match(agentRunC7, /permissionHint !== "full"/);
   const policy = fs.readFileSync(path.join(appRoot, "project-path-policy.js"), "utf8");
   assert.match(policy, /function extractAuthorizedPaths/);
   assert.match(policy, /function collectFullAccessRoots/);
+  assert.match(policy, /resolveAccessibleTarget/);
   assert.match(policy, /ruta absoluta que indiques/);
 });
 

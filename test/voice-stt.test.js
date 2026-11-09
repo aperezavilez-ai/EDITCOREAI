@@ -35,12 +35,15 @@ test("voice-stt: collectWhisperCandidates prioriza meai y excluye aiprimetech", 
     "editcore-provider-profiles": [
       { providerKey: "claude-1", apiKey: "sk-claude", baseUrl: "https://api.meai.cloud", model: "claude" },
       { providerKey: "codex", apiKey: "sk-codex", baseUrl: "https://aiprimetech.io", model: "gpt" },
-      { providerKey: "apicredits", apiKey: "sk-api", baseUrl: "https://api.apicredits.site/v1", model: "gpt" },
+      // [PROVEEDOR RETIRADO — decisión del dueño 2026-11-09] El tercer perfil
+      // era del gateway retirado; hoy el segundo candidato Whisper es un
+      // endpoint OpenAI-compatible cualquiera del usuario.
+      { providerKey: "custom:whisper", apiKey: "sk-api", baseUrl: "https://whisper.example.com/v1", model: "gpt" },
     ],
   };
   const list = voiceStt.collectWhisperCandidates(secure);
   assert.ok(list.some((c) => c.url.includes("meai.cloud")));
-  assert.ok(list.some((c) => c.url.includes("apicredits.site")));
+  assert.ok(list.some((c) => c.url.includes("whisper.example.com")));
   assert.equal(list.some((c) => c.url.includes("aiprimetech")), false);
 });
 

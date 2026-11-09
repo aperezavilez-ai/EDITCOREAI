@@ -88,6 +88,15 @@ test("adapter reintenta y fuerza failover en Unexpected token (hasta 2 reintento
 });
 
 test("main traduce Unexpected token a mensaje accionable", () => {
-  assert.match(mainSource, /unexpected token\|invalid json\|malformed/);
-  assert.match(mainSource, /EditCore reintento en silencio|Escribe CONTINUA/);
+  // [COSECHA MODO AGENTE] La tabla de traducción de errores del proveedor
+  // vivía en el catch de la rama legada (y emitía agent:error). La ruta del
+  // kernel propaga el error real y agent:run lo envuelve con
+  // toUserFacingError: el usuario ve un mensaje accionable y nunca un
+  // éxito falso.
+  const agentRun = mainSource.slice(
+    mainSource.indexOf('ipcMain.handle("agent:run"'),
+    mainSource.indexOf('ipcMain.handle("agent:cancel"'),
+  );
+  assert.match(agentRun, /toUserFacingError\(error\)/);
+  assert.doesNotMatch(agentRun, /unexpected token\|invalid json\|malformed/);
 });

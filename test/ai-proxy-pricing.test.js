@@ -94,8 +94,10 @@ test("Sin uso del proveedor se estima por caracteres (nunca gratis)", async () =
 
 test("Los errores no muestran el nombre del proveedor", async () => {
   const { sanitizeProviderText, normalizeModelName } = await loadPricing();
-  const out = sanitizeProviderText("ME AI Cloud: saldo insuficiente en https://api.meai.cloud/v1 (meai) apicredits");
-  assert.doesNotMatch(out, /me\s?ai|meai|apicredits/i);
+  // [PROVEEDOR RETIRADO — decisión del dueño 2026-11-09] El saneado solo
+  // rastrea al proveedor vigente; el nombre retirado salió del patrón.
+  const out = sanitizeProviderText("ME AI Cloud: saldo insuficiente en https://api.meai.cloud/v1 (meai)");
+  assert.doesNotMatch(out, /me\s?ai|meai/i);
   assert.equal(normalizeModelName("meai/claude-opus-4.8"), "claude-opus-4.8");
 });
 

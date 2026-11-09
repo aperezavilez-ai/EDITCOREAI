@@ -696,9 +696,12 @@ test("Chat conserva analisis de solo lectura y escala cambios al Agente", () => 
   assert.match(source, /isCloseProjectRequest/);
   assert.match(source, /handleCloseProjectFromPrompt/);
   assert.match(source, /onUiCommand/);
-  assert.match(mainSource, /name: "open_project"/);
-  assert.match(mainSource, /name: "close_project"/);
-  assert.match(mainSource, /name: "switch_project"/);
+  // [COSECHA MODO AGENTE] open_project/close_project/switch_project eran
+  // herramientas del despachador legado que duplicaban los comandos de UI
+  // del renderer (openNamedProjectFromPrompt/applyProjectUiCommand, ya
+  // afirmados arriba en este mismo test). La ruta del kernel no registra
+  // herramientas de UI: el canal vive en main vía requestProjectUiAction
+  // y los IPC workspace:* (afirmados abajo).
   assert.match(mainSource, /workspace:close-current/);
   assert.match(mainSource, /workspace:open-folder/);
   assert.match(mainSource, /workspace:switch-project/);
@@ -878,11 +881,20 @@ test("el agente expone y registra la capacidad de crear proyectos", () => {
   assert.match(source, /toolName: step\.name/);
 });
 
-test("agent run conserva taskId y no usa adaptador global", () => {
+test("agent run registra la corrida por runId y no usa adaptador global", () => {
+  // [COSECHA MODO AGENTE] Antes la rama legada creaba la tarea durable
+  // (taskId) y registraba COMPLETION_VALIDATED en el TaskManager. La ruta
+  // viva registra la corrida por runId en activeAgentRuns y su checkpoint
+  // de finalización es saveLastAgentRun (el que consumen peek/undo/review).
   const source = fs.readFileSync(path.join(__dirname, "..", "main.js"), "utf8");
-  assert.match(source, /let taskId = String\(input\.taskId \|\| ""\)\.trim\(\)/);
+  const agentRun = source.slice(
+    source.indexOf('ipcMain.handle("agent:run"'),
+    source.indexOf('ipcMain.handle("agent:cancel"'),
+  );
+  assert.match(agentRun, /activeAgentRuns\.set\(runKey, runState\)/);
+  assert.match(agentRun, /saveLastAgentRun/);
+  assert.doesNotMatch(agentRun, /EditCoreClaudeAdapter/);
   assert.doesNotMatch(source, /getClaudeAdapter\(\)/);
-  assert.match(source, /COMPLETION_VALIDATED/);
 });
 
 test("el reporte del agente proyecta archivos cambiados y verificaciones reales", () => {
@@ -902,8 +914,10 @@ test("el planificador propone y espera autorizacion sin ejecutar", () => {
   assert.match(source, /timeoutMs: AGENT_PLAN_TIMEOUT_MS/);
   assert.match(source, /const planReference = tasks\(\)\.reference\(planText/);
   assert.match(source, /PLAN_CREATED/);
-  assert.match(source, /durableTaskContext = \[/);
-  assert.match(source, /Plan autorizado:\\n\$\{recovered\.plan\.content\}/);
+  // [COSECHA MODO AGENTE] La inyección del contexto durable al reanudar
+  // (durableTaskContext con el plan recuperado vía taskRecovery) vivía en
+  // la rama legada de agent:run y salió con ella; el plan en sí
+  // (agent:plan, afirmado arriba) no cambió.
   assert.doesNotMatch(source, /agent:plan[\s\S]*timeoutMs: 30_000/);
 });
 

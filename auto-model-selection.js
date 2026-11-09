@@ -8,18 +8,18 @@
   const AUTO_MODEL_SELECTION = "__auto__";
   const CAPABILITY_FAIL_TTL_MS = 20 * 60 * 1000;
   const SLOW_MODEL_MS = 90_000;
-  const UPSTREAM_ORDER = ["meai", "apicredits"];
-  const AUTO_SCOPE_LABELS = { all: "Todos", meai: "ME AI", apicredits: "APICredits" };
+  const UPSTREAM_ORDER = ["meai"];
+  const AUTO_SCOPE_LABELS = { all: "Todos", meai: "ME AI" };
 
   function normalizeAutoProviderScope(scope) {
     const value = String(scope || "").trim().toLowerCase();
-    if (value === "meai" || value === "apicredits") return value;
+    if (value === "meai") return value;
     return "all";
   }
 
   function isScopedAutoProvider(scope) {
     const normalized = normalizeAutoProviderScope(scope);
-    return normalized === "meai" || normalized === "apicredits";
+    return normalized === "meai";
   }
 
   function autoSelectionValue(scope = "") {
@@ -53,9 +53,9 @@
     const fromModel = autoRotationBucket(entry?.model);
     if (fromModel) return fromModel;
     const group = String(entry?.modelProviderGroup || "").toLowerCase();
-    if (group === "meai" || group === "apicredits") return group;
+    if (group === "meai") return group;
     const key = String(entry?.providerKey || "").toLowerCase();
-    if (key === "meai" || key === "apicredits") return key;
+    if (key === "meai") return key;
     return "";
   }
 
@@ -131,23 +131,6 @@
     { id: "meai/minimax-m3", family: "minimax", duty: "chat+fast-analyze", purpose: "Chat veloz y lectura rapida." },
     { id: "meai/step-3.7-flash", family: "step", duty: "chat", purpose: "Chat instantaneo de soporte." },
     { id: "meai/mimo-v2.5", family: "mimo", duty: "chat", purpose: "Chat ligero de asistencia." },
-    // APICredits (segundo gateway del administrador; el catálogo solo tenía
-    // filas meai/* y describeModelDuty resolvía los apicredits/* al alias
-    // ME AI con el rol equivocado, p. ej. deepseek-v4-pro como implement-alt
-    // cuando su carril es reserve).
-    { id: "apicredits/claude-fable-5", family: "claude", duty: "implement+analyze", purpose: "Agente principal APICredits: implementar y analizar con tools." },
-    { id: "apicredits/claude-sonnet-5", family: "claude", duty: "implement+analyze", purpose: "Implementacion avanzada con tools." },
-    { id: "apicredits/claude-sonnet-4-6", family: "claude", duty: "implement+analyze", purpose: "Agente principal: editar codigo y analizar runtime." },
-    { id: "apicredits/claude-opus-4-8", family: "claude", duty: "verify+hard-implement", purpose: "Auditorias criticas y refactors dificiles." },
-    { id: "apicredits/claude-opus-4-7", family: "claude", duty: "verify", purpose: "Verificacion e inspeccion de codigo." },
-    { id: "apicredits/claude-haiku-4-5", family: "claude", duty: "chat+fast-analyze", purpose: "Chat corto y analisis rapido de bajo costo." },
-    { id: "apicredits/gpt-5.6-terra", family: "gpt", duty: "implement", purpose: "Implementacion con tools en el carril primario." },
-    { id: "apicredits/gpt-5.6-sol", family: "gpt", duty: "reserve", purpose: "Reserva de maximo razonamiento; fuera de los carriles de implementacion." },
-    { id: "apicredits/gpt-5.6-luna", family: "gpt", duty: "chat+fast-analyze", purpose: "Chat rapido y analisis ligero." },
-    { id: "apicredits/gemini-2.5-flash", family: "gemini", duty: "fast-analyze", purpose: "Analisis rapido; prohibido en implementacion." },
-    { id: "apicredits/grok-4.5", family: "grok", duty: "implement-alt", purpose: "Alternativa de implementacion en carril primario." },
-    { id: "apicredits/grok-4.3", family: "grok", duty: "analyze", purpose: "Analisis y lectura de codigo." },
-    { id: "apicredits/deepseek-v4-pro", family: "deepseek", duty: "reserve", purpose: "Reserva: solo entra si el carril primario no esta disponible." },
   ];
 
   /**
@@ -245,7 +228,7 @@
     ],
   };
   const ROLE_SCORE_BAND = 28;
-  // Tope duro: DeepSeek no puede concentrar el Auto (APICredits key + MEAI).
+  // Tope duro: DeepSeek no puede concentrar el Auto (clave ME AI).
   const DEEPSEEK_MAX_SHARE = 0.12;
   const DEEPSEEK_USAGE_WEIGHT = 3;
 
@@ -290,15 +273,6 @@
     return bare.split(/[-_.]/)[0] || "other";
   }
 
-  function apicreditsModelFamily(model) {
-    const normalized = String(model || "").toLowerCase();
-    if (!normalized.startsWith("apicredits/") && gatewayUpstreamGroup(normalized) === "apicredits") {
-      return modelFamily(normalized);
-    }
-    if (!normalized.startsWith("apicredits/")) return "";
-    return modelFamily(normalized);
-  }
-
   function deepseekUsageShare(context = {}, list = []) {
     const usage = modelUsageMap(context);
     const models = (Array.isArray(list) ? list : [])
@@ -323,10 +297,10 @@
     return deepseekUsageShare(context, list) >= DEEPSEEK_MAX_SHARE;
   }
 
-  /** Buckets de rotacion equitativa: 50% ME AI, 50% APICredits. */
+  /** Buckets de rotacion por upstream: un solo gateway (ME AI). */
   function autoRotationBucket(model) {
     const upstream = gatewayUpstreamGroup(model);
-    if (upstream === "meai" || upstream === "apicredits") return upstream;
+    if (upstream === "meai") return upstream;
     return "";
   }
 
@@ -336,7 +310,6 @@
       : {};
     return {
       meai: Math.max(0, Number(raw.meai) || 0),
-      apicredits: Math.max(0, Number(raw.apicredits) || 0),
     };
   }
 
@@ -497,7 +470,7 @@
 
   /**
    * Elige modelo sin pelea de scores:
-   * 1) balance 50/50 ME AI ↔ APICredits
+   * 1) upstream unico ME AI (o el scope fijado por el usuario)
    * 2) carril explicito del rol (primary → secondary → reserve)
    * 3) least-used / familias dentro del carril elegido
    */
@@ -558,17 +531,6 @@
     if (cap?.capability === "agent" || cap?.toolOK === true) return true;
     if (cap?.capability === "chat" || cap?.toolOK === false) return false;
     return !isChatOnlyModel(entry?.model);
-  }
-
-  function preferredApicreditsFamily(context = {}) {
-    const last = String(context.lastAutoResolvedModel || "").toLowerCase();
-    const lastFamily = apicreditsModelFamily(last.includes("/") ? last : `apicredits/${last}`);
-    if (lastFamily === "claude") return "gpt";
-    if (lastFamily === "gpt") return "gemini";
-    if (lastFamily === "gemini") return "grok";
-    if (lastFamily === "grok") return "deepseek";
-    if (lastFamily === "deepseek") return "claude";
-    return isAgentExecutionContext(context) ? "gpt" : "claude";
   }
 
   function findCapabilityForEntry(entry, capabilities = {}) {
@@ -699,7 +661,7 @@
       else score -= 8;
     }
 
-    // EDITCOREAI: solo proveedores directos (meai / apicredits).
+    // EDITCOREAI: solo el proveedor directo ME AI.
     if (entry?.providerKey === "custom:gafcore-gateway") score -= 200;
     if (verified) score += 16;
     if (isRecentlyFailedCapability(cap)) score -= 120;
@@ -809,10 +771,9 @@
   function bumpUpstreamUsage(usage, model) {
     const next = {
       meai: Math.max(0, Number(usage?.meai) || 0),
-      apicredits: Math.max(0, Number(usage?.apicredits) || 0),
     };
     const bucket = autoRotationBucket(model);
-    if (bucket === "meai" || bucket === "apicredits") next[bucket] += 1;
+    if (bucket === "meai") next[bucket] += 1;
     return next;
   }
 
@@ -850,14 +811,12 @@
     isAutoModelSelection,
     gatewayUpstreamGroup,
     entryUpstreamBucket,
-    apicreditsModelFamily,
     modelFamily,
     isDeepseekModel,
     isChatOnlyModel,
     describeModelDuty,
     autoRotationBucket,
     preferredAutoBucket,
-    preferredApicreditsFamily,
     classifyAutoTaskRole,
     roleFitScore,
     findCapabilityForEntry,

@@ -605,7 +605,7 @@
 
     const hasTranscribe = Boolean(getTranscribeFn());
     const sttInfo = await probeSttAvailability();
-    // Con bridge IPC siempre grabamos para Whisper (meai/apicredits). Windows STT
+    // Con bridge IPC siempre grabamos para Whisper (ME AI). Windows STT
     // solo si NO hay bridge — en esta PC el reconocedor no está instalado y ensucia el chat.
     const useCloudRecorder = hasTranscribe;
     let useWindows = false;

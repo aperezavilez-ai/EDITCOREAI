@@ -499,7 +499,7 @@ test("el adaptador no narra el cambio automatico de modelo tras un fallback", as
   const projectRoot = temporaryProject(t, "editcore-model-fallback-");
   const progress = [];
   const adapter = session([
-    { text: "", toolCalls: [toolCall("read_file", { path: "package.json" })], usage: { total_tokens: 5 }, fallback: { from: { model: "meai/gpt-5.5" }, to: { model: "apicredits/claude-sonnet-5" } } },
+    { text: "", toolCalls: [toolCall("read_file", { path: "package.json" })], usage: { total_tokens: 5 }, fallback: { from: { model: "meai/gpt-5.5" }, to: { model: "meai/claude-sonnet-5" } } },
     { text: JSON.stringify({ type: "final", text: "Listo" }), usage: { total_tokens: 5 } },
   ]);
   await adapter.executeTask({ prompt: "Revisa el proyecto", projectRoot, requireEvidence: true, allowWrite: false, onProgress: (event) => progress.push(event) });

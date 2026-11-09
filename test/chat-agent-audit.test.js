@@ -10,17 +10,20 @@ const {
   resolveInstructionConstraints,
 } = require("../runtime/instruction-obedience");
 
-test("AUDIT Critico: runState se declara antes de mutationCheckpoint en agent:run", () => {
+test("AUDIT Critico: runState se declara antes de registrar la corrida y su checkpoint en agent:run", () => {
+  // [COSECHA MODO AGENTE] La rama legada usaba un checkpoint Git tras
+  // PROCEDE (runState.mutationCheckpoint). La ruta viva es el kernel: la
+  // corrida se registra en activeAgentRuns y su checkpoint es
+  // saveLastAgentRun (snapshots). El riesgo TDZ es el mismo: runState debe
+  // declararse antes de ambos usos.
   const src = fs.readFileSync(path.join(__dirname, "..", "main.js"), "utf8");
   const agentRun = src.slice(src.indexOf('ipcMain.handle("agent:run"'));
   const runStateDecl = agentRun.indexOf("const runState = {");
-  const checkpointUse = agentRun.indexOf("runState.mutationCheckpoint");
+  const registerUse = agentRun.indexOf("activeAgentRuns.set(runKey, runState)");
+  const checkpointUse = agentRun.indexOf("saveLastAgentRun");
   assert.ok(runStateDecl > 0, "debe declarar runState");
-  assert.ok(checkpointUse > 0, "debe usar mutationCheckpoint");
-  assert.ok(
-    runStateDecl < checkpointUse,
-    `TDZ: runState declarado en ${runStateDecl} pero usado en ${checkpointUse}`,
-  );
+  assert.ok(registerUse > runStateDecl, "la corrida se registra tras declarar runState");
+  assert.ok(checkpointUse > runStateDecl, "el checkpoint usa la corrida ya declarada");
 });
 
 test("AUDIT Alto: findOriginalUserRequest prefiere tarea activa sobre historial largo", () => {

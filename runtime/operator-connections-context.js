@@ -2,7 +2,7 @@
 
 /**
  * Memoria operativa de Conexiones (sin secretos).
- * Cuentas: GitHub, Vercel, Supabase, Servidor SSH, proveedores ME AI / APICredits.
+ * Cuentas: GitHub, Vercel, Supabase, Servidor SSH, proveedor ME AI.
  */
 
 const fs = require("node:fs");

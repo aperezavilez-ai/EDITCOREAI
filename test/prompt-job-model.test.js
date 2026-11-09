@@ -20,11 +20,14 @@ const PROVIDERS = {
 
 const VERIFIED_PROFILES = [
   {
-    id: "apicredits:claude-sonnet-4-6",
-    providerKey: "apicredits",
-    baseUrl: "https://api.apicredits.site/v1",
-    apiKey: "sk-apicredits-test",
-    model: "apicredits/claude-sonnet-4-6",
+    // [PROVEEDOR RETIRADO — decisión del dueño 2026-11-09] El primer perfil
+    // verificado era del gateway retirado; se sustituye por un proveedor
+    // directo vigente (OpenAI) con la misma forma.
+    id: "openai:gpt-4o",
+    providerKey: "openai",
+    baseUrl: "https://api.openai.com/v1",
+    apiKey: "sk-openai",
+    model: "gpt-4o",
     status: "active",
   },
   {

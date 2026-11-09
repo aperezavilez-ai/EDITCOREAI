@@ -525,7 +525,8 @@
     }
     
   </style>
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2" defer></script>
+  <script src="./js/cuentas-config.js" defer></script>
+  <script src="./js/cuentas.js" defer></script>
   <script src="./app.js" defer></script>
 </head>
 <body>
@@ -818,7 +819,7 @@
   <div class="download-band" id="download">
     <div class="download-inner">
       <h2>Empieza a construir hoy mismo</h2>
-      <p>25 créditos gratis al crear tu cuenta. Sin tarjeta de crédito requerida.</p>
+      <p>Saldo de bienvenida de 2 USD al crear tu cuenta. Sin tarjeta de crédito requerida.</p>
       <div class="download-btns">
         <a href="/app.html" class="btn-hero btn-hero-primary">
           <span class="btn-hero-icon">🌐</span>
@@ -845,22 +846,11 @@
       <img src="assets/logo.png" alt="EditCore Logo" class="modal-logo-img" />
       <h3 id="authTitle">Acceso a EditCoreAI</h3>
       <p id="authSubtitle">Ingresa para sincronizar tus créditos y proyectos.</p>
-      <form id="authForm">
-        <div class="form-group">
-          <label for="authEmail">Correo Electrónico</label>
-          <input type="email" id="authEmail" required placeholder="tu@correo.com" autocomplete="email" />
-        </div>
-        <div class="form-group">
-          <label for="authPassword">Contraseña</label>
-          <input type="password" id="authPassword" required placeholder="&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;" autocomplete="current-password" />
-        </div>
-        <div id="authMsg" class="auth-msg" hidden></div>
-        <button type="submit" id="authSubmitBtn" class="btn-auth">Iniciar Sesión</button>
-      </form>
-      <div class="auth-toggle">
-        <span id="authToggleText">&#x00BF;No tienes cuenta?</span>
-        <button type="button" id="authToggleBtn">Regístrate gratis (25 créditos)</button>
+      <div class="auth-google">
+        <button type="button" id="authGoogleBtn" class="btn-auth">Continuar con Google</button>
+        <p class="auth-note">Es la misma cuenta, saldo y recargas que en la app de escritorio. Si es tu primera vez, tu cuenta se crea sola y recibes el saldo de bienvenida de 2 USD.</p>
       </div>
+      <div id="authMsg" class="auth-msg" hidden></div>
     </div>
   </div>
 

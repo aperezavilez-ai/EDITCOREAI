@@ -1,9 +1,9 @@
 # EDITCOREAI — MANIFESTO DE AUTOCONOCIMIENTO
 
-Versión producto: **4.4.8**. Este archivo es la fuente de verdad que el agente debe leer (vía system prompt) para saber qué es EDITCOREAI, qué puede hacer y qué no debe re-escanear.
+Versión producto: **4.6.0**. Este archivo es la fuente de verdad que el agente debe leer (vía system prompt) para saber qué es EDITCOREAI, qué puede hacer y qué no debe re-escanear.
 
 ## Qué es
-IDE de escritorio Electron con agente embebido: chat, preview web, explorador, publicar (GitHub/Vercel/Supabase) y alimentación AI vía **ME AI / APICredits**.
+IDE de escritorio Electron con agente embebido: chat, preview web, explorador, publicar (GitHub/Vercel/Supabase) y alimentación AI vía **ME AI**.
 
 ## Arquitectura de directorios (raíz del repo)
 | Ruta | Rol |
@@ -31,7 +31,7 @@ IDE de escritorio Electron con agente embebido: chat, preview web, explorador, p
 - **Chat**: tabs, cola de prompts, progreso fullstack; auto-bind de proyecto activo.
 - **Preview**: `<webview>` + URL bar; fondo sigue tema (`--ec-preview-bg`). Tabs **Web | Móvil | Código** (Monaco; webview se oculta, no se destruye).
 - **Explorer**: árbol del proyecto activo; clic en archivo abre el editor Código.
-- **Conexiones**: GitHub, Vercel, Supabase propio, proveedores ME AI / APICredits, SSH.
+- **Conexiones**: GitHub, Vercel, Supabase propio, proveedor ME AI, SSH.
 - **Branding**: launcher/runtime siempre EditCoreAI (`assets/logo.ico`); never Electron.
 
 ## Herramientas del agente (selección)
@@ -39,7 +39,7 @@ Disco: `list_files`, `read_file`, `search_files`, `write_file`, `replace_in_file
 Workspace: `open_project`, `close_project`, `switch_project`.
 Assets: `generate_image`, `generate_video` → `public/assets/`.
 ERP: `create_project template=enterprise-erp-base`, `add_erp_module` (inventory|payroll|invoicing|crm).
-Nube: `deploy_github`, `deploy_vercel`, `provision_supabase`, `provision_fullstack_project`, `publish_project`, `onboard_project`, `fullstack_deploy`. Modelos: ME AI / APICredits en panel Modelos.
+Nube: `deploy_github`, `deploy_vercel`, `provision_supabase`, `provision_fullstack_project`, `publish_project`, `onboard_project`, `fullstack_deploy`. Modelos: ME AI en panel Modelos.
 Diag: `probe_endpoint`, `test_local_api`, `project_discovery`, `codebase_map`.
 Cerebro: `brain_skill`, `brain_search`, `brain_install_repo`; audit/heal vía `runtime/skill-registry.js`.
 Bodega UI: usable sin proyecto abierto (no NPE `brainSnapshot`). Persistencia web/RAG automática + `run_e2e_pipeline` (reporte 0→100 en `.editcore/e2e-pipeline-report.md`).
@@ -65,3 +65,10 @@ Visión: paste/drop imágenes + auto-route multimodal. Clone: tool `clone_web_pa
 - Tokens de bóveda nunca se imprimen en claro.
 - Supabase propio ≠ proveedores de IA (DB vs modelos).
 - Preview CORS: sesión `persist:editcore-browser` + proxy local `/__editcore_proxy__/`.
+
+## Release v4.6.0 — Convergencia Total
+- **Motor único consolidado**: Convergencia total de `agent:run` y `editcore:chat` sobre `ChatOrchestrator` del kernel; eliminación de despachadores duplicados y neutralización de adaptadores legados.
+- **ME AI único**: Consolidación definitiva en `api.meai.cloud` con clave única protegida en bóveda/entorno, evitando duplicación de proveedores.
+- **Web Portal saneado**: Retiro completo de endpoints legados de checkout, webhooks y chat server-side expuestos; verificación externa con respuesta 404 en rutas retiradas.
+- **Balance y cobro corregidos**: Transacciones y saldo protegidos ante fallos de cobro de IA vía migración y ledger atómico.
+- **Suite de pruebas**: 1067 tests automatizados en verde (0 fallos).

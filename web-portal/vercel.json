@@ -55,10 +55,6 @@
       "destination": "/app.html"
     },
     {
-      "source": "/account",
-      "destination": "/account.html"
-    },
-    {
       "source": "/(download|descargar)",
       "destination": "https://github.com/aperezavilez-ai/EDITCOREAI/releases/latest/download/EDITCOREAI-Setup.exe"
     }

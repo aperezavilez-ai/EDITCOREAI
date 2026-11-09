@@ -9,15 +9,17 @@ const ROOT = path.join(__dirname, "..");
 const { scrubAiProviderNames } = require("../renderer-markdown");
 const { sanitizeChatProviderError } = require("../runtime/chat-error-sanitize");
 const { ELITE_COMMUNICATION_POLICY } = require("../runtime/elite-communication-policy");
-const PROVIDER_RE = /ME\s?AI|meai|API\s?Credits/i;
+// [PROVEEDOR RETIRADO — decisión del dueño 2026-11-09] El saneado ya solo
+// rastrea al proveedor vigente (ME AI); el nombre retirado salió del código.
+const PROVIDER_RE = /ME\s?AI|meai/i;
 
 test("las respuestas nunca muestran los proveedores de IA, sí los modelos", () => {
   const cases = [
-    "**Modelos:** ME AI y APICredits con tus API keys en el panel Modelos.",
-    "Usa Modelos → ME AI / APICredits.",
+    "**Modelos:** ME AI con tu API key en el panel Modelos.",
+    "Usa Modelos → ME AI.",
     "Estoy corriendo en ME AI Cloud con meai/claude-sonnet-4.6.",
-    "El endpoint es https://api.meai.cloud/v1 y también api.apicredits.site.",
-    "Proveedor: MeAI, apicredits.",
+    "El endpoint es https://api.meai.cloud/v1.",
+    "Proveedor: MeAI, meai.",
   ];
   for (const text of cases) assert.doesNotMatch(scrubAiProviderNames(text), PROVIDER_RE, text);
   assert.match(scrubAiProviderNames("Estoy corriendo con meai/claude-sonnet-4.6."), /claude-sonnet-4\.6/);
@@ -25,7 +27,7 @@ test("las respuestas nunca muestran los proveedores de IA, sí los modelos", () 
 });
 
 test("errores del chat sin nombres de proveedores", () => {
-  for (const raw of ["402 sin saldo en APICredits", "ME AI: clave rechazada", "APICredits: modelo raro"]) {
+  for (const raw of ["402 sin saldo en ME AI", "ME AI: clave rechazada", "ME AI: modelo raro"]) {
     assert.doesNotMatch(sanitizeChatProviderError(raw), PROVIDER_RE, raw);
   }
 });
@@ -42,7 +44,7 @@ test("la IA tiene la regla de no nombrar proveedores (IDE y web) y no recibe sus
     "runtime/jarvis-port.js",
   ]) {
     const source = fs.readFileSync(path.join(ROOT, file), "utf8").replace(/^\s*(?:\/\/|\*|\/\*).*$/gm, "");
-    assert.doesNotMatch(source, /ME AI|APICredits/, file);
+    assert.doesNotMatch(source, /ME AI/, file);
   }
 });
 

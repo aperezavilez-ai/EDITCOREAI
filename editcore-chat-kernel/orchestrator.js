@@ -1487,6 +1487,11 @@ class ChatOrchestrator {
 
         messages.push({ role: "assistant", content: cleanText || null, tool_calls: toolCalls.map((c) => ({ id: c.id, type: "function", function: c.function })) });
 
+        if (!this.session?.alive || !this.running || this.abort?.signal?.aborted) {
+          rememberOut("Detenido."); detachLongRunningStreams(steps);
+          return { kind: "STOP", text: "Detenido.", steps, threadId, usage: totalUsage };
+        }
+
         for (const call of toolCalls) {
           const name = call.function?.name;
           let args = {};
@@ -1662,7 +1667,7 @@ class ChatOrchestrator {
           agentCoordination.getCoordination(projectRoot).releaseAllForThread(threadId || "default");
         }
       } catch (_) {}
-      return { kind: "CHAT", text: errText, steps, threadId, usage: totalUsage };
+      return { kind: "ERROR", error: safeMsg, text: errText, steps, threadId, usage: totalUsage };
     } finally {
       this.running = false; this.turnAbort = null;
       try { onProgress?.({ phase: "done", text: "" }); } catch {}

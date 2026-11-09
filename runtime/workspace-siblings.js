@@ -69,7 +69,7 @@ function formatWorkspaceSiblingMap(projectRoot = "", maxChars = 2_200) {
     "WORKSPACE SIBLINGS (lectura permitida sin Acceso completo; escritura en hermanos requiere Acceso completo):",
     `Padre: ${map.parent}`,
     `Activo: ${path.basename(map.primary)}`,
-    "Relación típica: apps hermanas bajo el mismo padre; Supabase propio = DB del proyecto; modelos en ME AI / APICredits.",
+    "Relación típica: apps hermanas bajo el mismo padre; Supabase propio = DB del proyecto; modelos en ME AI.",
     ...map.siblings.slice(0, 28).map((row) => {
       const mark = row.active ? "★" : "·";
       return `${mark} ${row.name} — ${row.role}. ${row.readHint}`;

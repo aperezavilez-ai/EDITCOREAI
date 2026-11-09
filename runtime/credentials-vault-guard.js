@@ -7,7 +7,7 @@
  *
  * PROBLEMA QUE RESUELVE:
  * main.js ejecuta en cada arranque:
- *   - ensureDirectUpstreamProfiles()      → inyecta keys de .apicredits-keys.local / .meai-keys.local
+ *   - ensureDirectUpstreamProfiles()      → inyecta keys de .meai-keys.local
  *   - ensureExpandedMeaiGatewayModels()   → limpia/injecta gateway residual
  *   - importLegacyConnectionsIntoCurrentVault() → copia de carpetas legacy
  *

@@ -710,7 +710,7 @@ function registerAgentCapabilityTools(dispatcher, {
           const snapshot = getOperatorConnectionsSnapshot();
           const service = String(toolInput.service || "").toLowerCase();
           if (!service) return snapshot;
-          if (service === "ai" || service === "meai" || service === "apicredits" || service === "models") {
+          if (service === "ai" || service === "meai" || service === "models") {
             return { aiProvider: snapshot.aiProvider || { configured: false, label: "Modelos de IA" } };
           }
           return { [service]: snapshot[service] || { configured: false } };

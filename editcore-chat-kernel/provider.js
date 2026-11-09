@@ -79,7 +79,6 @@ function orderProfiles(list, now = Date.now(), { vision = false } = {}) {
 
 function providerLabel(host) {
   if (/meai/i.test(host)) return "ME AI";
-  if (/apicredits/i.test(host)) return "APICredits";
   return "Otro proveedor";
 }
 

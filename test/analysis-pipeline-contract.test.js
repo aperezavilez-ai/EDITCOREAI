@@ -29,9 +29,17 @@ test("analisis bloquea lint/eslint/test/build", () => {
 });
 
 test("main no bypassea analysis con cursorParity (candado lint)", () => {
-  const mainSource = require("fs").readFileSync(require("path").join(__dirname, "..", "main.js"), "utf8");
-  assert.match(mainSource, /shouldBlockHeavyVerification/);
-  assert.match(mainSource, /forbidHeavy/);
+  const fs = require("fs");
+  const path = require("path");
+  const mainSource = fs.readFileSync(path.join(__dirname, "..", "main.js"), "utf8");
+  // [COSECHA MODO AGENTE] El cableado main→authorize del candado salió con
+  // la rama legada. El candado vive en command-policy y lo aplica el
+  // adaptador internamente (fuera de la ruta); la ruta viva (kernel) no
+  // eleva permisos con cursorParity.
+  const { shouldBlockHeavyVerification } = require("../command-policy");
+  assert.equal(typeof shouldBlockHeavyVerification, "function");
+  const adapterSource = fs.readFileSync(path.join(__dirname, "..", "runtime", "editcore-claude-adapter.js"), "utf8");
+  assert.match(adapterSource, /forbidHeavy = shouldBlockHeavyVerification/);
   assert.doesNotMatch(mainSource, /cursorParityMode \? "full" : \(analysisMode \? "analysis"/);
 });
 

@@ -148,7 +148,7 @@ export function affordableOutputTokens(price, groupRatio, promptTokens, budgetPa
   return Math.max(0, Math.floor((Number(budgetPanel) - inputCost) / perOutput));
 }
 
-const PROVIDER_NAME_PATTERN = /(?:https?:\/\/)?(?:api|cn)\.meai\.cloud\S*|\bme\s?ai(?:\s?cloud)?\b|\bmeai\b|\bapicredits\b/gi;
+const PROVIDER_NAME_PATTERN = /(?:https?:\/\/)?(?:api|cn)\.meai\.cloud\S*|\bme\s?ai(?:\s?cloud)?\b|\bmeai\b/gi;
 
 export function sanitizeProviderText(text) {
   return String(text || "").replace(PROVIDER_NAME_PATTERN, "EditCoreAI").slice(0, 500);

@@ -31,7 +31,7 @@
   }
 
   async function resolveModel(requested) {
-    const wanted = String(requested || "").replace(/^(?:meai|apicredits)\//i, "").trim();
+    const wanted = String(requested || "").replace(/^(?:meai)\//i, "").trim();
     let list = [];
     try { list = await C.listModels(); } catch { list = []; }
     if (wanted && wanted.toLowerCase() !== "auto" && (!list.length || list.includes(wanted))) return wanted;
@@ -190,6 +190,24 @@
   ];
   const EXTERNAL_TOOLS = new Set(["publish_project"]);
   const toolDefs = (allowWrite) => TOOLS.filter((t) => allowWrite || (!WRITE_TOOLS.has(t.name) && !EXTERNAL_TOOLS.has(t.name))).map((t) => ({ type: "function", function: t }));
+
+  // Compuerta anti-narración: la MISMA regla del kernel de escritorio
+  // (editcore-chat-kernel/orchestrator.js, looksLikePromiseWithoutAction, Entrega 1.1).
+  // Detecta el cierre de turno que solo narra o promete la acción («sigue leyendo el
+  // archivo…», «ahora voy a revisar…», gerundios en español incluidos) sin haber
+  // ejecutado ninguna herramienta: eso nunca es una respuesta final válida.
+  function looksLikePromiseWithoutAction(text = "") {
+    const raw = String(text || "").trim();
+    if (!raw) return false;
+    const promisesFuture = /(?:ahora|voy\s+a|luego|siguiente|empiezo|sigo|continu[oa]|procedo\s+a|voy\s+con|paso\s+a|en\s+el\s+pr[oó]ximo|cuando\s+termine)\s+(?:a\s+)?(?:leer|revisar|ver|abrir|analizar|buscar|escanear|recorrer|inspeccionar|verificar|ejecutar|correr|escribir|crear|editar|implementar)/i.test(raw);
+    if (promisesFuture) return true;
+    const claimsDoneWork = /\b(?:he\s+(?:le[ií]do|creado|escrito|generado|implementado|verificado|ejecutado|analizado)|le[ií]\s+el\s+archivo|ya\s+(?:est[aá]|qu[eé]d[oó])\s+(?:listo|creado|hecho))\b/i.test(raw);
+    if (claimsDoneWork) return true;
+    const narratesOngoing = /^(?:sigue|siguiendo|contin[uú]a|continuando|ahora\s+sigue)\b[^.!?\n]{0,140}\b(?:leyendo|revisando|analizando|buscando|verificando|ejecutando|escribiendo|creando|editando|implementando|inspeccionando|escaneando|abriendo)\b/i.test(raw)
+      || /\b(?:sigue|siguiendo)\s+(?:\w+\s+){0,3}?(?:leyendo|revisando|analizando|buscando|verificando|ejecutando)\b/i.test(raw);
+    if (narratesOngoing) return true;
+    return /(?:d[eé]jame|espera|un\s+momento|voy)\s+(?:revisar|leer|buscar|chequear)/i.test(raw);
+  }
 
   function unifiedDiff(before, after) {
     const lines = [];
@@ -364,11 +382,22 @@
 
   async function run(input = {}) {
     const runId = String(input.runId || `web-run-${Date.now()}`);
-    const root = String(input.projectRoot || "").trim();
+    let root = String(input.projectRoot || "").trim();
+    let autoProject = null;
+    if (!root) {
+      // Primera tarea de agente sin proyecto abierto: el puente crea uno con la
+      // plantilla inicial (y lo recuerda para los turnos siguientes) en vez de
+      // cerrar la tarea con un error. La ruta manual de crear proyecto no cambia.
+      try { autoProject = await window.EditCoreWebBridge?.ensureProjectForAgent?.(input.prompt); } catch { autoProject = null; }
+      if (autoProject?.root) root = String(autoProject.root).trim();
+    }
     if (!root) throw new Error("Abre o crea un proyecto para usar el agente.");
     const controller = new AbortController();
     runs.set(runId, controller);
     const progress = (payload) => emit(sets.progress, { runId, projectId: input.projectId || "", ...payload });
+    if (autoProject?.created) {
+      progress({ phase: "startup", stage: "project", text: `Creé el proyecto «${autoProject.name || root.split("/").pop()}» para trabajar en tu pedido.` });
+    }
     const allowWrite = input.allowWrite !== false && input.permissionMode !== "readonly";
     const ctx = { root, runId, allowWrite, permissionMode: input.permissionMode || "step", planAuthorized: input.planAuthorized === true || input.permissionMode === "full" };
     const projectName = root.split("/").pop();
@@ -380,6 +409,8 @@
     let finalText = "";
     let toolCount = 0;
     let completed = false;
+    let narrationPushes = 0;
+    let narrationFailed = false;
     try {
       for (let step = 0; step < MAX_STEPS; step += 1) {
         if (step > 0) progress({ phase: "narration_reset" });
@@ -394,6 +425,23 @@
         addUsage(usage, res.usage);
         messages.push({ role: "assistant", content: res.content || null, ...(res.toolCalls.length ? { tool_calls: res.toolCalls.map((c) => ({ id: c.id, type: "function", function: { name: c.name, arguments: c.arguments || "{}" } })) } : {}) });
         if (!res.toolCalls.length) {
+          // Compuerta anti-narración (la regla del kernel, Entrega 1.1): run() es la
+          // ruta de AGENTE (la conversación pura va por editcoreChat.chat, sin esta
+          // compuerta). Si todavía no se ejecutó ninguna herramienta y el texto solo
+          // narra o promete la acción, no es una respuesta: se empuja UNA vez a
+          // ejecutar de verdad; si el modelo insiste, el cierre es honesto.
+          if (toolCount === 0 && res.finish !== "cut" && looksLikePromiseWithoutAction(res.content || "")) {
+            if (narrationPushes < 1 && step < MAX_STEPS - 1) {
+              narrationPushes += 1;
+              messages.push({ role: "user", content: "No cierres el turno narrando lo que estás haciendo. Ejecuta AHORA con las herramientas lo que anunciaste (list_files, read_file, write_file, replace_in_file…) y completa la tarea. Si de verdad no necesitas ninguna herramienta, responde la pregunta directamente, sin anunciar acciones futuras." });
+              progress({ phase: "model", text: "Narración sin acción: pidiendo que ejecute con las herramientas" });
+              continue;
+            }
+            narrationFailed = true;
+            completed = false;
+            finalText = "⚠️ No ejecuté ninguna acción en el proyecto en este turno: el modelo solo describió lo que haría, sin usar las herramientas, y ningún archivo fue creado ni modificado. Reformula la tarea o inténtalo de nuevo.";
+            break;
+          }
           completed = res.finish !== "cut";
           finalText = completed ? res.content : `${res.content}\n\n⚠️ La conexión se cortó y la respuesta quedó incompleta. Escribe «continúa» para seguir.`;
           break;
@@ -429,7 +477,7 @@
       if (!String(finalText || "").trim() && changed.size) finalText = `Listo. Cambié ${changed.size === 1 ? "este archivo" : "estos archivos"}:\n\n${[...changed].map((f) => `- \`${f}\``).join("\n")}\n\nLa vista previa ya muestra el resultado.`;
       if (!String(finalText || "").trim() && toolCount) finalText = "Revisé el proyecto y no hizo falta cambiar archivos.";
       if (finalText) progress({ phase: "final_report", text: finalText });
-      const report = { completed: completed || Boolean(finalText), changedFiles: [...changed], toolCount, stopReason: completed ? "" : "step_limit", outcome: "completed" };
+      const report = { completed: !narrationFailed && (completed || Boolean(finalText)), changedFiles: [...changed], toolCount, stopReason: narrationFailed ? "narration_without_action" : (completed ? "" : "step_limit"), outcome: "completed", ...(autoProject?.created ? { autoCreatedProject: { name: autoProject.name || "", root } } : {}) };
       emit(sets.complete, { runId, report, changedFiles: report.changedFiles, completed: report.completed });
       window.EditCoreWebBridge?.notifyBalance?.();
       return { ok: true, runId, taskId: input.taskId || runId, text: finalText, report, usage, steps };
@@ -466,6 +514,52 @@
     }
   }
 
+  // Verificación REAL de un modelo. En la web la única ruta posible es el ai-proxy
+  // del servidor (la misma de chat/agente): se comprueba con dos llamadas mínimas
+  // —una de chat y una pidiendo una herramienta— y el resultado es honesto:
+  // cualquier error, respuesta vacía o tiempo agotado baja la bandera con su
+  // motivo. Jamás se devuelve true por defecto. (Los parámetros de proveedor
+  // directo del escritorio —providerKey/baseUrl/apiKey— no aplican en la web.)
+  const VERIFY_TIMEOUT_MS = 30000;
+  async function verifyModel(input = {}) {
+    const model = await resolveModel(input.model);
+    const out = { chatOK: false, toolOK: false, model };
+    if (!model) { out.error = "No hay modelo que verificar."; return out; }
+    const reason = (e) => (e?.name === "AbortError"
+      ? `La verificación tardó más de ${Math.round(VERIFY_TIMEOUT_MS / 1000)} s.`
+      : (e?.message || String(e)));
+    const attempt = async (args) => {
+      const ctl = new AbortController();
+      const timer = setTimeout(() => ctl.abort(), VERIFY_TIMEOUT_MS);
+      try {
+        return await completion({ ...args, signal: ctl.signal });
+      } finally {
+        clearTimeout(timer);
+      }
+    };
+    try {
+      const res = await attempt({ model, messages: [{ role: "user", content: "Responde únicamente: OK" }] });
+      out.chatOK = Boolean(String(res.content || "").trim());
+      if (!out.chatOK) out.error = "El modelo no devolvió texto.";
+    } catch (error) {
+      out.error = reason(error);
+      return out;
+    }
+    try {
+      const listDef = TOOLS.find((t) => t.name === "list_files");
+      const res = await attempt({
+        model,
+        messages: [{ role: "user", content: "Llama a la herramienta list_files con el parámetro path vacío para listar la raíz del proyecto. No respondas con texto: llama a la herramienta." }],
+        tools: [{ type: "function", function: listDef }],
+      });
+      out.toolOK = res.toolCalls.length > 0;
+      if (!out.toolOK) out.toolError = "El modelo no emitió llamadas a herramientas (respondió solo texto).";
+    } catch (error) {
+      out.toolError = reason(error);
+    }
+    return out;
+  }
+
   const cancelRun = async (input = {}) => {
     const id = String(input?.runId || "");
     if (id && runs.has(id)) runs.get(id).abort();
@@ -477,7 +571,7 @@
     run,
     cancel: cancelRun,
     async steer() { return { ok: false, error: "Escribe tu indicación cuando termine la respuesta actual." }; },
-    async verifyModel(input = {}) { return { chatOK: true, toolOK: true, model: input.model || "" }; },
+    verifyModel,
     async setPermission(mode) { return { ok: true, mode }; },
     async privacyGet() { return { ok: true, mode: "standard" }; },
     async privacySet() { return { ok: true }; },

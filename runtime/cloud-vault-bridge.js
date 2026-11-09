@@ -126,7 +126,7 @@ function createCloudVaultBridge(deps = {}) {
       d.supabaseUrl ? `- Supabase: ${d.supabaseUrl}` : "- Supabase: (sin ligar)",
       d.gafcoreGateway || d.gafcoreProjectId
         ? `- IA (legacy): ${d.gafcoreGateway || gatewayOrigin}${d.gafcoreProjectId ? ` · project=${d.gafcoreProjectId}` : ""}`
-        : "- IA: configura ME AI o APICredits en Modelos del IDE.",
+        : "- IA: configura ME AI en Modelos del IDE.",
       d.liveUrl ? `- Live: ${d.liveUrl}` : "",
     ].filter(Boolean).join("\n");
   }
@@ -247,9 +247,9 @@ function createCloudVaultBridge(deps = {}) {
     });
   }
 
-  /** @deprecated Integración Gateway AI descontinuada — usar ME AI / APICredits en Modelos. */
+  /** @deprecated Integración Gateway AI descontinuada — usar ME AI en Modelos. */
   async function provisionGafcoreAI(_projectName, _aiOptions = {}) {
-    throw new Error("Esta integración ya no está disponible. Configura ME AI o APICredits en Modelos.");
+    throw new Error("Esta integración ya no está disponible. Configura ME AI en Modelos.");
   }
 
   async function provisionFullStackProject(projectRoot, options = {}) {
@@ -269,7 +269,7 @@ function createCloudVaultBridge(deps = {}) {
     const gafcore = {
       ok: true,
       skipped: true,
-      message: "Integración Gateway AI descontinuada. Configura ME AI o APICredits en Modelos.",
+      message: "Integración Gateway AI descontinuada. Configura ME AI en Modelos.",
     };
     return redactDeep({
       ok: deploy?.ok !== false,
