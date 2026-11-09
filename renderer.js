@@ -20,7 +20,7 @@ const PROVIDERS = {
   openai:   { label: "OpenAI",    baseUrl: "https://api.openai.com/v1", model: "gpt-4o" },
   anthropic:{ label: "Anthropic", baseUrl: "https://api.anthropic.com/v1", model: "claude-sonnet-4-6" },
   gemini:   { label: "Gemini",    baseUrl: "https://generativelanguage.googleapis.com/v1beta", model: "gemini-2.5-pro" },
-  meai:     { label: "ME AI Cloud", baseUrl: "https://api.meai.cloud/v1", model: "claude-sonnet-4.6" },
+  meai:     { label: "ME AI Cloud", baseUrl: "https://api.meai.cloud/v1", model: "claude-sonnet-4-6" },
 };
 // Proveedores de IA principales disponibles directamente para el administrador
 const PRIMARY_PROVIDER_KEYS = ["meai"];
@@ -48,40 +48,28 @@ const PROVIDER_MODELS = {
 
 // ME AI: catálogo completo soportado para EditCore
 const MEAI_PROVIDER_MODELS = [
-  "claude-opus-5.5",
-  "claude-opus-5-5",
-  "claude-opus-5",
-  "claude-opus-4.8",
-  "claude-opus-4-8",
-  "claude-opus-4.7",
-  "claude-opus-4-7",
-  "claude-opus-4.7-thinking",
-  "claude-opus-4.6",
-  "claude-opus-4-6",
-  "claude-opus-4.6-thinking",
-  "claude-sonnet-5.5",
+  "minimax-m3",
+  "claude-haiku-4-5",
   "claude-sonnet-5-5",
-  "claude-sonnet-5",
-  "claude-sonnet-4.6",
+  "qwen3.6",
+  "claude-opus-5",
+  "kimi-k2.6",
+  "deepseek-v4",
+  "claude-opus-4-8",
+  "minimax-m2.5",
+  "claude-opus-5-5",
   "claude-sonnet-4-6",
   "claude-haiku-4.5",
-  "claude-haiku-4-5",
-  "claude-haiku-4-5-20251001",
-  "deepseek-v4-pro",
-  "deepseek-v4-flash",
-  "deepseek-v4",
-  "qwen3.6-plus",
-  "qwen3.6",
+  "claude-sonnet-5.5",
+  "claude-opus-5.5",
   "qwen3.5",
   "glm-5.2",
-  "glm-5.1",
-  "glm-5",
-  "kimi-k2.6",
-  "minimax-m3",
-  "minimax-m2.7",
-  "minimax-m2.5",
   "step-3.7-flash",
+  "deepseek-v4-pro",
   "mimo-v2.5",
+  "qwen3.6-plus",
+  "claude-sonnet-5",
+  "deepseek-v4-flash",
 ];
 PROVIDER_MODELS.meai = MEAI_PROVIDER_MODELS;
 
@@ -1539,7 +1527,10 @@ function isKnownProviderProfile(profile) {
 }
 
 function ensureDefaultProviderProfiles(profiles = []) {
-  const current = (Array.isArray(profiles) ? [...profiles] : []).filter((p) => p && isKnownProviderProfile(p));
+  const allowedMeai = new Set(MEAI_PROVIDER_MODELS.map((m) => m.toLowerCase()));
+  const current = (Array.isArray(profiles) ? [...profiles] : [])
+    .filter((p) => p && isKnownProviderProfile(p))
+    .filter((p) => p.providerKey !== "meai" || allowedMeai.has(String(p.model).toLowerCase()));
   const providers = loadJson("editcore-providers", {});
 
   for (const provKey of PRIMARY_PROVIDER_KEYS) {

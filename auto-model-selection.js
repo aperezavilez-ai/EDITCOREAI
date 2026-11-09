@@ -101,16 +101,12 @@
   // Clasifica la tarea → toma el carril del rol → rota least-used SOLO dentro del carril.
   // ---------------------------------------------------------------------------
   const MODEL_DUTY_CATALOG = [
-    // ME AI
+    // ME AI (22 modelos oficiales de la cuenta)
     { id: "meai/claude-opus-5.5", family: "claude", duty: "verify+hard-implement", purpose: "Auditorias criticas, arquitectura, maximo razonamiento." },
     { id: "meai/claude-opus-5-5", family: "claude", duty: "verify+hard-implement", purpose: "Auditorias criticas, arquitectura, maximo razonamiento (alias)." },
     { id: "meai/claude-opus-5", family: "claude", duty: "verify+hard-implement", purpose: "Auditorias y razonamiento avanzado." },
     { id: "meai/claude-opus-4.8", family: "claude", duty: "verify+hard-implement", purpose: "Auditorias criticas, refactors dificiles, cierre de plan con tools." },
     { id: "meai/claude-opus-4-8", family: "claude", duty: "verify+hard-implement", purpose: "Auditorias criticas, refactors dificiles (alias)." },
-    { id: "meai/claude-opus-4.7", family: "claude", duty: "verify", purpose: "Verificacion e inspeccion de codigo." },
-    { id: "meai/claude-opus-4-7", family: "claude", duty: "verify", purpose: "Verificacion e inspeccion de codigo (alias)." },
-    { id: "meai/claude-opus-4.6", family: "claude", duty: "verify", purpose: "Verificacion profunda de seguridad." },
-    { id: "meai/claude-opus-4-6", family: "claude", duty: "verify", purpose: "Verificacion profunda de seguridad (alias)." },
     { id: "meai/claude-sonnet-5.5", family: "claude", duty: "implement+analyze", purpose: "Agente principal de ultima generacion." },
     { id: "meai/claude-sonnet-5-5", family: "claude", duty: "implement+analyze", purpose: "Agente principal de ultima generacion (alias)." },
     { id: "meai/claude-sonnet-5", family: "claude", duty: "implement+analyze", purpose: "Implementacion avanzada con tools." },
@@ -125,10 +121,9 @@
     { id: "meai/qwen3.6", family: "qwen", duty: "implement-alt", purpose: "Implementacion general alternativa." },
     { id: "meai/qwen3.5", family: "qwen", duty: "chat+alt", purpose: "Chat y soporte rapido." },
     { id: "meai/glm-5.2", family: "glm", duty: "implement-alt", purpose: "Alternativa moderna de implementacion." },
-    { id: "meai/glm-5.1", family: "glm", duty: "implement-alt", purpose: "Implementacion y analisis intermedio." },
-    { id: "meai/glm-5", family: "glm", duty: "implement-alt", purpose: "Alternativa de implementacion / analisis medio." },
     { id: "meai/kimi-k2.6", family: "kimi", duty: "chat+alt", purpose: "Chat y contexto extendido; respaldo ligero." },
     { id: "meai/minimax-m3", family: "minimax", duty: "chat+fast-analyze", purpose: "Chat veloz y lectura rapida." },
+    { id: "meai/minimax-m2.5", family: "minimax", duty: "chat+alt", purpose: "Chat ligero y soporte rapido alternativo." },
     { id: "meai/step-3.7-flash", family: "step", duty: "chat", purpose: "Chat instantaneo de soporte." },
     { id: "meai/mimo-v2.5", family: "mimo", duty: "chat", purpose: "Chat ligero de asistencia." },
   ];
