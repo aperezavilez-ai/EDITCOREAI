@@ -121,9 +121,8 @@
     { id: "meai/qwen3.6", family: "qwen", duty: "implement-alt", purpose: "Implementacion general alternativa." },
     { id: "meai/qwen3.5", family: "qwen", duty: "chat+alt", purpose: "Chat y soporte rapido." },
     { id: "meai/glm-5.2", family: "glm", duty: "implement-alt", purpose: "Alternativa moderna de implementacion." },
-    { id: "meai/kimi-k2.6", family: "kimi", duty: "chat+alt", purpose: "Chat y contexto extendido; respaldo ligero." },
     { id: "meai/minimax-m3", family: "minimax", duty: "chat+fast-analyze", purpose: "Chat veloz y lectura rapida." },
-    { id: "meai/minimax-m2.5", family: "minimax", duty: "chat+alt", purpose: "Chat ligero y soporte rapido alternativo." },
+    { id: "meai/minimax-m2.7", family: "minimax", duty: "chat+alt", purpose: "Chat ligero y soporte rapido alternativo." },
     { id: "meai/step-3.7-flash", family: "step", duty: "chat", purpose: "Chat instantaneo de soporte." },
     { id: "meai/mimo-v2.5", family: "mimo", duty: "chat", purpose: "Chat ligero de asistencia." },
   ];
