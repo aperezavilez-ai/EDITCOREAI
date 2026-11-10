@@ -148,6 +148,13 @@ const CHAT_TOOLS_PROMPT = [
   "- Responde directo a la consulta del usuario sin rodeos ni menús de opciones.",
 ].join("\n");
 
+const PROJECTLESS_CHAT_PROMPT = [
+  "MODO CONVERSACIÓN SIN PROYECTO:",
+  "- Todavía NO hay proyecto abierto: no tienes herramientas de disco y no puedes leer ni escribir archivos. No prometas revisar carpetas ni crear archivos en este modo.",
+  "- Tu trabajo es conversar: responder preguntas, ayudar a pensar la idea, proponer arquitectura, funciones y un plan de trabajo.",
+  "- Cuando el usuario decida construir (\"créalo\", \"hazlo\", \"empecemos\"), dile que cambie a modo Agente y lo pida ahí: la app crea el proyecto desde esta misma conversación y el agente construye con todo lo platicado como contexto. No le pidas abrir carpetas a mano ni escribir rutas.",
+].join("\n");
+
 const LIST_ONLY_PROMPT = [
   "MODO LISTADO: Responde brevemente con las carpetas y archivos del primer nivel del path indicado.",
 ].join("\n");
@@ -707,6 +714,13 @@ class ChatOrchestrator {
 
     if (decision.kind === "STOP") return this.stop();
 
+    // Sin proyecto abierto, una orden de construcción (EXECUTE) ya no se
+    // rechaza: se conversa (idea/spec/plan) sin herramientas de disco hasta
+    // que la app cree el proyecto desde esta misma conversación. El resto
+    // (ASK/ANALYZE/CONFIRM…) sí necesita una carpeta real: mantiene la negativa.
+    if (!projectRoot && decision.kind === "EXECUTE") {
+      decision = { kind: "CHAT", label: "Conversación sin proyecto", allowTools: false, allowWrite: false, background: false };
+    }
     if (!projectRoot && decision.kind !== "CHAT" && decision.kind !== "LIST") {
       return { kind: "CHAT", text: "Abrí un proyecto primero y después te ayudo con eso." };
     }
@@ -896,7 +910,7 @@ class ChatOrchestrator {
     if (decision.kind === "CHAT") {
       this.pendingTask = null;
       if (!apiKey) return { kind: "CHAT", text: "EditCoreAI es un IDE con agente autónomo. Abrí un proyecto y pedime un cambio concreto." };
-      return this.runModelTask({ decision, message: text, projectRoot: projectRoot || ".", apiBaseUrl, apiKey, model, memory, onProgress, allowWrite: false, maxSteps: CHAT_MAX_STEPS, helpers, chatOnly: true, images: taskImages });
+      return this.runModelTask({ decision, message: text, projectRoot: projectRoot || ".", apiBaseUrl, apiKey, model, memory, onProgress, allowWrite: false, maxSteps: CHAT_MAX_STEPS, helpers, chatOnly: true, projectless: !projectRoot, images: taskImages });
     }
 
     // LIST directo (sin LLM).
@@ -1092,7 +1106,7 @@ class ChatOrchestrator {
 
   async runModelTask(opts) {
     const { decision, message, projectRoot, apiBaseUrl, apiKey, model, memory, onProgress,
-      allowWrite, maxSteps, helpers, chatOnly, authorizedFromPending,
+      allowWrite, maxSteps, helpers, chatOnly, projectless, authorizedFromPending,
       fullAccess, permissionMode, images: taskImages = [],
       history: taskHistory, threadId: taskThreadId } = opts;
     const threadId = threadCore.resolveThreadId({ threadId: taskThreadId || this._threadId, chatId: this._threadId });
@@ -1164,8 +1178,8 @@ class ChatOrchestrator {
     if (chatOnly || decision?.kind === "CHAT") {
       system = wrapSystemPrompt([
         "Sos EditCoreAI: asistente del IDE. Respondé siempre en español, claro y directo.",
-        MARKDOWN_FORMAT_PROMPT, CHAT_TOOLS_PROMPT,
-        `Proyecto abierto: ${projectRoot || "(ninguno)"}.`,
+        MARKDOWN_FORMAT_PROMPT, projectless ? PROJECTLESS_CHAT_PROMPT : CHAT_TOOLS_PROMPT,
+        projectless ? "Proyecto abierto: ninguno (conversación libre, sin carpeta)." : `Proyecto abierto: ${projectRoot || "(ninguno)"}.`,
       ].filter(Boolean).join("\n\n"));
       turnContext.push(previewBlock, visionHardRule);
     } else if (listOnlyMode) {
@@ -1215,7 +1229,7 @@ class ChatOrchestrator {
     if (!listOnlyMode) turnContext.push(buildBrainContextBlock(projectRoot, this._currentUserText || message));
     if (!listOnlyMode && Array.isArray(this._turnExtras)) turnContext.push(...this._turnExtras.filter((x) => typeof x === "string" && x.trim()));
 
-    const userText = `Proyecto: ${projectRoot}\n${scopeUserMessage(message)}`;
+    const userText = `Proyecto: ${projectless ? "(ninguno)" : projectRoot}\n${scopeUserMessage(message)}`;
     const messages = threadCore.buildMessageList({ system, systemPrefix: listOnlyMode ? "" : SELF_KNOWLEDGE_PROMPT, turnContext: turnContext.filter(Boolean).join("\n\n"), userText, projectRoot, threadId, historyInput, query: String(this._currentUserText || message || ""), images: taskImages });
 
     const steps = [];
@@ -1268,7 +1282,9 @@ class ChatOrchestrator {
           return { kind: "STOP", text: "Detenido.", steps, threadId, usage: totalUsage };
         }
 
-        const availableTools = chatMode
+        const availableTools = projectless
+          ? []
+          : chatMode
           ? (i < stepsLimit - 1
             ? tools.getToolDefinitions({ allowWrite: false, isFullAccess: false, isAnalysis: false })
               .filter((t) => CHAT_READ_TOOLS.has(t.function?.name || t.name))

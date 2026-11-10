@@ -1213,6 +1213,12 @@
       || isProjectBrainstormRequest(prompt)
       || isVagueGreenfieldRequest(prompt)
       || isGreenfieldSpecPrompt(prompt);
+    // Idea/spec de algo NUEVO (brainstorm/greenfield): no exige un proyecto
+    // existente aunque traiga un verbo de cambio ("quiero crear una app de…");
+    // se conversa primero y la app crea el proyecto desde la conversación.
+    const isNewBuildIdea = isProjectBrainstormRequest(prompt)
+      || isVagueGreenfieldRequest(prompt)
+      || isGreenfieldSpecPrompt(prompt);
     const needsBoundProject = !isConceptualOrArchitect && !openNamedProject && !closeProject && !switchProject && !referencedProjectName && (
       explicitChangeRequest
       || (/\b(analiza|audita|diagnostica|revisa|explora|corrige|crea|implementa|listar?|enlista|modifica)\b/i.test(text(prompt))
@@ -1232,7 +1238,7 @@
       switchProject,
       // Analisis/listado en disco exige carpeta; arquitectura/brainstorm/conversacion NO.
       missingProject: !projectOpen && !pathGiven && !openNamedProject && !closeProject && !switchProject && !referencedProjectName
-        && (explicitChangeRequest || needsBoundProject || (isAgent && needsBoundProject)),
+        && ((explicitChangeRequest && !isNewBuildIdea) || needsBoundProject || (isAgent && needsBoundProject)),
     };
   }
 

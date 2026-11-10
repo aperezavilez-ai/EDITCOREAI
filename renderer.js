@@ -13163,6 +13163,58 @@ async function runAgentUntilSettled(input, { targetRun, thinking, runAgent = win
   return result;
 }
 
+function deriveConversationProjectName(prompt, project) {
+  const titled = String(project?.title || "").trim();
+  if (titled && !/^(nuevo chat|proyecto|nuevo proyecto)$/i.test(titled)) return titled.slice(0, 60);
+  let text = String(prompt || "").toLowerCase();
+  text = text.replace(/^(por favor|quiero|quisiera|necesito|vamos a|hay que)[\s,]+/g, " ");
+  text = text.replace(/\b(quiero|quisiera|necesito|crear|crea|créame|creame|hacer|haz|hazme|construir|desarrollar|desarrolla|una|un|el|la|los|las|de|del|para|con|que|se|llame|llamado|llamada|app|aplicación|aplicacion|proyecto|programa|sitio|página|pagina|web|sistema|plataforma)\b/g, " ");
+  const words = text.replace(/[^a-záéíóúñü0-9 ]/gi, " ").split(/\s+/).filter((w) => w.length > 2).slice(0, 4);
+  const name = words.join(" ").trim();
+  if (!name) return "Nuevo proyecto";
+  return name.replace(/\b\w/g, (c) => c.toUpperCase()).slice(0, 60);
+}
+
+// Equivalente de escritorio del ensureProjectForAgent web: el primer trabajo
+// de agente de una conversación SIN proyecto crea el proyecto desde la
+// conversación misma (carpeta en blanco en el catálogo, con el mismo flujo
+// del diálogo Nuevo proyecto) y lo amarra a ESTE chat: la charla pasa a IDE
+// sin perder el historial ni cambiar de hilo.
+async function ensureDesktopProjectForAgent(job) {
+  if (!window.editcoreProject?.create || !window.editcoreProject?.save) return null;
+  const project = state.projects.find((item) => item.id === job?.projectId) || activeProject();
+  const name = deriveConversationProjectName(job?.prompt || "", project);
+  const parentPath = String(window.EDITCORE_WEB_CATALOG || loadJson("editcore-project-parent", "D:\\PROGRAMAS IA") || "").trim();
+  if (!name || !parentPath) return null;
+  let lastError = null;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const candidate = attempt ? `${name} ${attempt + 1}` : name;
+    try {
+      const created = await window.editcoreProject.create({ name: candidate, parentPath, template: "blank", install: false, runId: uid() });
+      if (!created?.root) return null;
+      const saved = await window.editcoreProject.save({ root: created.root, name: created.name });
+      if (!saved?.ok || !saved?.manifest?.root) return null;
+      if (project) {
+        project.projectRoot = created.root;
+        if (!project.title || /^(nuevo chat|proyecto|nuevo proyecto)$/i.test(project.title)) project.title = created.name;
+        project.updatedAt = Date.now();
+      }
+      state.projectRoot = created.root;
+      saveProjects();
+      renderProjects();
+      if ($("projectPathLabel")) $("projectPathLabel").textContent = created.root;
+      if (typeof renderProjectFiles === "function") renderProjectFiles().catch(() => undefined);
+      $("status").textContent = `Proyecto ${created.name} creado desde esta conversación`;
+      return { root: created.root, name: created.name };
+    } catch (error) {
+      lastError = error;
+      if (!/existe|already|EEXIST/i.test(String(error?.message || error))) throw error;
+    }
+  }
+  if (lastError) throw lastError;
+  return null;
+}
+
 async function executePromptJob(job) {
   const prompt = job.prompt;
   const isAgent = job.isAgent;
@@ -13185,6 +13237,15 @@ async function executePromptJob(job) {
       // recuerda y lo reusa en los turnos siguientes.
       const ensured = await window.EditCoreWebBridge.ensureProjectForAgent(job.prompt || prompt);
       if (!ensured?.root) throw new Error("No se pudo crear un proyecto para el agente. Crea uno desde Proyectos.");
+      job.projectRoot = ensured.root;
+      job.autoCreatedProject = ensured;
+    } else if (!window.EDITCORE_IS_WEB && typeof ensureDesktopProjectForAgent === "function") {
+      // Escritorio: primer trabajo de agente de una conversación sin proyecto:
+      // crear el proyecto desde la conversación (como hace la web) y seguir en
+      // el mismo chat, ya con carpeta. Si la creación falla, cae al error de
+      // siempre (ruta absoluta con Acceso completo, o Abrir).
+      const ensured = await ensureDesktopProjectForAgent(job).catch(() => null);
+      if (!ensured?.root) throw new Error("Indica una ruta absoluta (ej. D:\\PROGRAMAS IA) con Acceso completo, o abre un proyecto.");
       job.projectRoot = ensured.root;
       job.autoCreatedProject = ensured;
     } else {
