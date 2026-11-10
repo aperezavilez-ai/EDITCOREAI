@@ -394,7 +394,7 @@ const WRITE_TOOLS = [
   "inspect_preview", "generate_image", "generate_video", "add_erp_module",
   "deploy_one_click", "publish_project", "fullstack_deploy", "connect_project",
   "audit_env", "supabase_migrate", "scaffold_project", "capture_preview",
-  "capture_preview_screenshot", "run_e2e_pipeline", "rollback_last_change",
+  "capture_preview_screenshot", "fetch_stock_photo", "run_e2e_pipeline", "rollback_last_change",
   // Nuevas tools de escritura
   "install_skill", "clone_repo", "ingest_to_brain", "update_roadmap",
   // Del catálogo base del kernel: ejecutan/comprometen el repo y el

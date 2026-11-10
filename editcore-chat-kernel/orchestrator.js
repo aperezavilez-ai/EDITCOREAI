@@ -65,6 +65,11 @@ let repairGuard = null;
 try {
   repairGuard = require("./repair-guard");
 } catch (_) { repairGuard = null; }
+
+let buildBaseGuard = null;
+try {
+  buildBaseGuard = require("./build-base-guard");
+} catch (_) { buildBaseGuard = null; }
 let agentCoordination = null;
 try {
   agentCoordination = require("../runtime/agent-coordination");
@@ -848,6 +853,8 @@ class ChatOrchestrator {
       this._productPipelineExtra = "";
       this._repairExtra = "";
       this._repairTask = false;
+      this._buildBaseExtra = "";
+      this._buildBaseTask = false;
       this._uiTask = false;
       const taskText = String(effectiveText || text || "");
       if (eliteUiPolicy && typeof eliteUiPolicy.isUiTask === "function" && eliteUiPolicy.isUiTask(taskText)) {
@@ -874,6 +881,17 @@ class ChatOrchestrator {
           this._uiTask = true;
         }
       }
+      // [EDITCORE-BUILD-BASE] Construir una web sobre un proyecto vacío
+      // (blank) sin sentar la base profesional sale como un HTML suelto
+      // plano — la landing de Taller Luis. Si el turno es visual/de
+      // construcción y el proyecto es un lienzo, el turno viaja con el
+      // protocolo de base y la compuerta del despachador bloquea una
+      // vez el HTML suelto para que el agente siente la base primero.
+      if (buildBaseGuard && this._uiTask === true && this._repairTask !== true
+        && buildBaseGuard.projectLooksEmpty(projectRoot)) {
+        this._buildBaseTask = true;
+        this._buildBaseExtra = buildBaseGuard.buildBaseProtocolPrompt();
+      }
       if (productPipeline && typeof productPipeline.buildPipelinePrompt === "function") {
         const pipe = productPipeline.buildPipelinePrompt(taskText);
         if (pipe && pipe.active && pipe.prompt) {
@@ -881,7 +899,7 @@ class ChatOrchestrator {
           this._productPipeline = pipe;
         }
       }
-      this._turnExtras.push(this._productPipelineExtra, this._eliteUiExtra, this._repairExtra);
+      this._turnExtras.push(this._productPipelineExtra, this._eliteUiExtra, this._repairExtra, this._buildBaseExtra);
     } catch (e) {
       console.warn("[EDITCORE-ELITE-UI]", e && e.message ? e.message : e);
     }
@@ -1239,6 +1257,7 @@ class ChatOrchestrator {
     let noWriteNudges = 0;
     let verifyNudges = 0;
     let evidenceBlocks = 0;
+    let looseHtmlBlocks = 0;
     let connNudges = 0;
     let narrationRetries = 0;
 
@@ -1692,6 +1711,30 @@ class ChatOrchestrator {
             continue;
           }
 
+          // [EDITCORE-BUILD-BASE] Compuerta de base profesional: en un
+          // turno de construcción sobre un proyecto vacío, el primer
+          // HTML suelto en la raíz se bloquea una vez para que el
+          // agente siente la base (scaffold_project) antes de escribir
+          // la página a mano. Fail-open tras un bloqueo.
+          const blockedLooseHtml = buildBaseGuard && this._buildBaseTask === true
+            ? buildBaseGuard.maybeBlockLooseHtmlWrite({
+              name,
+              args,
+              buildTask: true,
+              projectEmpty: true,
+              scaffolded: steps.some((s) => s.name === "scaffold_project" && s.ok !== false),
+              blocksSoFar: looseHtmlBlocks,
+            })
+            : null;
+          if (blockedLooseHtml) {
+            looseHtmlBlocks += 1;
+            const stepData = { name, input: args, result: blockedLooseHtml, ok: false, blocked: true };
+            steps.push(stepData); this.session.addStep(stepData);
+            onProgress?.({ phase: "tool", stage: "done", name, input: args, result: blockedLooseHtml, ok: false, blocked: true });
+            messages.push({ role: "tool", tool_call_id: call.id, name, content: tools.truncatePayload(blockedLooseHtml, 2000) });
+            continue;
+          }
+
           const readCacheKey = name === "read_file" && args.path
             ? `${String(args.path).replace(/\\/g, "/").toLowerCase()}#${Number(args.startLine) || 1}-${Number(args.endLine) || 0}`
             : "";
@@ -1732,6 +1775,7 @@ class ChatOrchestrator {
               // corran en paralelo sobre el mismo proyecto.
               threadId: threadId || (helpers && helpers.threadId) || "default",
               agentRole: "supervisor",
+              activePreviewUrl: this._activePreviewUrl || (helpers && helpers.activePreviewUrl) || undefined,
               fullAccess: accessFull || (helpers && helpers.fullAccess === true),
               externalActionApproved: accessFull || (helpers && helpers.externalActionApproved === true),
               permissionMode: accessFull ? "full" : (permissionMode || helpers?.permissionMode || "step"),

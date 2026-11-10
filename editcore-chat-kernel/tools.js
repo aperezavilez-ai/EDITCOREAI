@@ -16,6 +16,7 @@ const {
   listSnapshots,
 } = require("./snapshot");
 const { capture_preview_screenshot, DEFAULT_PREVIEW_URL } = require("./vision-inspector");
+const { fetchStockPhoto } = require("./stock-photos");
 const { detectCircularDependencies } = require("./circular-dependency-detector");
 
 const TOOL_RESULT_CAP = 2000;
@@ -1136,6 +1137,37 @@ const DEFINITIONS = [
   {
     type: "function",
     function: {
+      name: "fetch_stock_photo",
+      description: "Busca una fotografía REAL de stock (licencia abierta, vía Openverse) y la descarga a la carpeta assets/ del proyecto, devolviendo su ruta local y el crédito. Úsala para las imágenes de una web (hero, secciones, testimonios): una página profesional necesita fotografía real, no solo cajas CSS y texto. Llama una vez por imagen que necesites, con búsquedas concretas del negocio (p. ej. 'mechanic working car repair', 'barber shop interior'). Si devuelve ok:false, sigue sin esa foto y dilo en tu resumen.",
+      parameters: {
+        type: "object",
+        properties: {
+          query: { type: "string", description: "Qué foto buscar, en inglés da mejores resultados (p. ej. 'auto mechanic changing tire')." },
+          name: { type: "string", description: "Nombre base del archivo (p. ej. 'hero-taller'). Si se omite, se deriva de la búsqueda." },
+          folder: { type: "string", description: "Carpeta del proyecto donde guardar la foto. Por defecto 'assets' (webs sueltas); en proyectos React/Vite usa 'public/assets' para que la foto se sirva como archivo público." }
+        },
+        required: ["query"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "scaffold_project",
+      description: "Sienta la BASE WEB PROFESIONAL de EditCoreAI en el proyecto actual: React + Vite + TypeScript + Tailwind + Framer Motion, con componentes UI (Button, Card, Dialog, Tabs...), layout (Navbar/Footer) y secciones (Hero, Showcase) ya animadas — la misma base del diálogo 'Nuevo proyecto → Web App profesional'. Úsala como PRIMER paso cuando el proyecto esté vacío y vayas a construir una web/app: construir sobre esta base, no sobre un HTML suelto. Se niega si el proyecto ya tiene contenido (no pisa una app existente) salvo force:true cuando el usuario pidió rehacer la base. Después de llamarla, ejecuta npm install con run_command y personaliza src/App.tsx y las secciones.",
+      parameters: {
+        type: "object",
+        properties: {
+          name: { type: "string", description: "Nombre de la app (p. ej. 'Taller Luis'). Si se omite, se usa el nombre de la carpeta del proyecto." },
+          prompt: { type: "string", description: "El pedido original del usuario, para sembrar el contenido inicial de las secciones." },
+          force: { type: "boolean", description: "Sobrescribir aunque el proyecto tenga contenido. Solo si el usuario pidió rehacer la base desde cero." }
+        }
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
       name: "delegate_parallel",
       description: "Delega 2-4 subagentes de SOLO LECTURA que trabajan EN PARALELO (explorer: mapea una zona del proyecto; analyst: responde una pregunta de análisis o revisión sobre el código) y devuelve un informe combinado. Úsala cuando una tarea tenga frentes independientes que convenga investigar a la vez —p. ej. uno mapea el frontend, otro revisa el backend, otro audita la configuración— en vez de explorarlos en serie tú solo. No escribe archivos: con el informe, la construcción la ejecutas tú.",
       parameters: {
@@ -1326,7 +1358,24 @@ async function execute(name, args, root, allowWrite, helpers = {}) {
       case "screenshot_page":
         return await extraTools.screenshotPage(a.url, { viewport: a.viewport, fullPage: a.fullPage === true, helpers });
       case "capture_preview_screenshot":
-        return await capture_preview_screenshot({ url: a.url || undefined, viewport: a.viewport === "mobile" ? "mobile" : "desktop", projectRoot: root });
+        return await capture_preview_screenshot({ url: a.url || helpers?.activePreviewUrl || undefined, viewport: a.viewport === "mobile" ? "mobile" : "desktop", projectRoot: root });
+      case "fetch_stock_photo":
+        return await fetchStockPhoto({ query: a.query || "", name: a.name || "", folder: a.folder || "", projectRoot: root });
+      case "scaffold_project": {
+        const { projectLooksEmpty } = require("./build-base-guard");
+        if (a.force !== true && !projectLooksEmpty(root)) {
+          return { ok: false, error: "El proyecto ya tiene contenido (package.json o estructura): scaffold_project no pisa una app existente. Si el usuario pidió rehacer la base desde cero, repite con force:true." };
+        }
+        const { scaffoldGreenfieldApp } = require("../runtime/greenfield-builder");
+        const built = scaffoldGreenfieldApp(root, {
+          prompt: String(a.prompt || ""),
+          appName: String(a.name || "").trim() || path.basename(root),
+        });
+        return {
+          ...built,
+          nextSteps: "Base sentada. Ahora: (1) ejecuta npm install con run_command; (2) personaliza src/App.tsx, src/components/sections/Hero.tsx y Showcase.tsx con el contenido real del negocio; (3) fotos reales con fetch_stock_photo en public/assets; (4) verifica con capture_preview_screenshot.",
+        };
+      }
       case "search_brain":
         return await extraTools.searchBrain(root, a.query || "", helpers, a.limit);
       case "check_connections":

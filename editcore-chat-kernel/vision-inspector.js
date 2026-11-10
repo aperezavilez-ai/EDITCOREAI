@@ -175,6 +175,57 @@ async function withPlaywright(url, size, outPath) {
 }
 
 /**
+ * Motor principal en la app instalada: una ventana Electron fuera de
+ * pantalla del propio proceso principal. Puppeteer y Playwright son
+ * dependencias de desarrollo que NO viajan en el instalador, así que
+ * pedirlas como requisito dejaba al agente CIEGO en producción
+ * (landing de Taller Luis, 2026-11-10: "Cannot find module
+ * 'playwright'" y la página se cerró sin una sola captura). Electron
+ * siempre está: es la app misma. Fuera de Electron (tests, CLI) este
+ * motor se descarta en silencio y sigue la cadena de respaldo.
+ */
+async function withElectron(url, size, outPath) {
+  let BrowserWindow = null;
+  try {
+    const electron = require("electron");
+    BrowserWindow = electron && electron.BrowserWindow;
+  } catch { /* sin Electron en este proceso */ }
+  if (typeof BrowserWindow !== "function") throw new Error("Electron no disponible en este proceso");
+  const win = new BrowserWindow({
+    show: false,
+    width: size.width,
+    height: size.height,
+    webPreferences: { offscreen: true, nodeIntegration: false, contextIsolation: true },
+  });
+  const consoleErrors = [];
+  const onConsole = (_event, level, message) => {
+    if (level >= 2) consoleErrors.push({ type: level >= 3 ? "error" : "warning", text: String(message || "").slice(0, 300) });
+  };
+  win.webContents.on("console-message", onConsole);
+  try {
+    await Promise.race([
+      win.loadURL(url),
+      new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout cargando el preview (35 s)")), 35000)),
+    ]);
+    await new Promise((r) => setTimeout(r, 700));
+    let diagnostics = null;
+    try {
+      diagnostics = await win.webContents.executeJavaScript(`(${collectLayoutDiagnostics.toString()})()`, true);
+    } catch { diagnostics = null; }
+    if (!diagnostics || typeof diagnostics !== "object") {
+      diagnostics = { title: "", empty: true, issues: ["No se pudo evaluar el DOM del preview"], renderOk: false };
+    }
+    diagnostics = mergeConsoleErrors(diagnostics, consoleErrors);
+    const image = await win.webContents.capturePage();
+    fs.writeFileSync(outPath, image.toPNG());
+    return { engine: "electron", diagnostics };
+  } finally {
+    try { win.webContents.removeListener("console-message", onConsole); } catch { /* ignore */ }
+    try { win.destroy(); } catch { /* ignore */ }
+  }
+}
+
+/**
  * Captura el preview activo (por defecto http://127.0.0.1:4568/).
  * @param {object} [opts]
  * @param {string} [opts.url]
@@ -195,57 +246,64 @@ async function capture_preview_screenshot(opts = {}) {
   let diagnostics = null;
   let lastError = null;
 
-  try {
-    const shot = await withPuppeteer(url, size, outPath);
-    engine = shot.engine;
-    diagnostics = shot.diagnostics;
-  } catch (err) {
-    lastError = err;
+  // Cadena de motores: Electron nativo primero (el único garantizado en
+  // la app instalada), luego Puppeteer y Playwright si el entorno los
+  // trae, y al final el helper Electron inyectado por el llamante.
+  const attempts = [
+    () => withElectron(url, size, outPath),
+    () => withPuppeteer(url, size, outPath),
+    () => { require.resolve("playwright"); return withPlaywright(url, size, outPath); },
+  ];
+  for (const attempt of attempts) {
     try {
-      require.resolve("playwright");
-      const shot = await withPlaywright(url, size, outPath);
+      const shot = await attempt();
       engine = shot.engine;
       diagnostics = shot.diagnostics;
-    } catch (err2) {
-      lastError = err2;
-      if (typeof opts.electronCapture === "function") {
-        try {
-          const electronShot = await opts.electronCapture({
+      lastError = null;
+      break;
+    } catch (err) {
+      lastError = err;
+    }
+  }
+
+  if (!engine) {
+    if (typeof opts.electronCapture === "function") {
+      try {
+        const electronShot = await opts.electronCapture({
+          url,
+          viewport: mode,
+        });
+        if (electronShot?.ok !== false && (electronShot?.screenshotPath || electronShot?.imageDataUrl)) {
+          if (electronShot.screenshotPath && fs.existsSync(electronShot.screenshotPath)) {
+            try { fs.copyFileSync(electronShot.screenshotPath, outPath); } catch { /* keep original path */ }
+          } else if (electronShot.imageDataUrl) {
+            const b64 = String(electronShot.imageDataUrl).replace(/^data:image\/\w+;base64,/, "");
+            fs.writeFileSync(outPath, Buffer.from(b64, "base64"));
+          }
+          return {
+            ok: true,
+            engine: "electron",
             url,
             viewport: mode,
-          });
-          if (electronShot?.ok !== false && (electronShot?.screenshotPath || electronShot?.imageDataUrl)) {
-            if (electronShot.screenshotPath && fs.existsSync(electronShot.screenshotPath)) {
-              try { fs.copyFileSync(electronShot.screenshotPath, outPath); } catch { /* keep original path */ }
-            } else if (electronShot.imageDataUrl) {
-              const b64 = String(electronShot.imageDataUrl).replace(/^data:image\/\w+;base64,/, "");
-              fs.writeFileSync(outPath, Buffer.from(b64, "base64"));
-            }
-            return {
-              ok: true,
-              engine: "electron",
-              url,
-              viewport: mode,
-              screenshotPath: electronShot.screenshotPath || path.relative(projectRoot, outPath).replace(/\\/g, "/"),
-              screenshotAbs: outPath,
-              screenshotBytes: fs.existsSync(outPath) ? fs.statSync(outPath).size : electronShot.screenshotBytes || 0,
-              diagnostics: electronShot.diagnostics || { issues: [], renderOk: true },
-              renderOk: electronShot.diagnostics?.renderOk !== false,
-              multimodalHint: buildMultimodalHint(electronShot.diagnostics),
-            };
-          }
-        } catch (err3) {
-          lastError = err3;
+            screenshotPath: electronShot.screenshotPath || path.relative(projectRoot, outPath).replace(/\\/g, "/"),
+            screenshotAbs: outPath,
+            screenshotBytes: fs.existsSync(outPath) ? fs.statSync(outPath).size : electronShot.screenshotBytes || 0,
+            diagnostics: electronShot.diagnostics || { issues: [], renderOk: true },
+            renderOk: electronShot.diagnostics?.renderOk !== false,
+            multimodalHint: buildMultimodalHint(electronShot.diagnostics),
+          };
         }
+      } catch (err3) {
+        lastError = err3;
       }
-      return {
-        ok: false,
-        url,
-        viewport: mode,
-        error: String(lastError?.message || lastError || "No se pudo capturar el preview").slice(0, 500),
-        hint: "Abre el preview (iframe) o instala puppeteer: npm i puppeteer",
-      };
     }
+    return {
+      ok: false,
+      url,
+      viewport: mode,
+      error: String(lastError?.message || lastError || "No se pudo capturar el preview").slice(0, 500),
+      hint: "La captura usa el navegador interno de la app: abre el preview del proyecto y verifica que su servidor local esté corriendo.",
+    };
   }
 
   const bytes = fs.existsSync(outPath) ? fs.statSync(outPath).size : 0;
@@ -295,4 +353,6 @@ module.exports = {
   DEFAULT_PREVIEW_URL,
   assertLocalPreviewUrl,
   visionDir,
+  withElectronCapture: withElectron,
+  mergeConsoleErrors,
 };
