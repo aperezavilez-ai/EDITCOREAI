@@ -2183,7 +2183,7 @@ function renderModelPickerMenu() {
   const autoScopes = isAdmin ? [
     { scope: "all", title: "Auto", hint: "EditCoreAI elige el modelo ideal de ME AI para cada tarea." },
     { scope: "meai", title: "Auto · ME AI", hint: "Solo modelos de ME AI." },
-  ] : [{ scope: "meai", title: "Auto", hint: "EditCoreAI elige automáticamente el modelo ideal de ME AI para cada tarea." }];
+  ] : [{ scope: "meai", title: "Auto", hint: "EditCoreAI elige automáticamente el modelo ideal para cada tarea." }];
   autoScopes.forEach(({ scope, title, hint }) => {
     const autoRow = document.createElement("div");
     autoRow.className = "model-picker-auto-row";
@@ -13395,23 +13395,27 @@ async function executePromptJob(job) {
         project.agentWorkflow.resuming = wasInterrupted;
       }
       saveProjects();
-      const isFull = (job.permissionMode || state.permissionMode) === "full";
-      const effectiveAllowWrite = isFull || ((planAuthorizedExecution || concreteTask) && job.permissionMode !== "readonly")
+      // Manda el permiso VIGENTE del menú, no la foto guardada en el trabajo:
+      // si el usuario cambió Permisos después de encolar, el trabajo traía el
+      // modo anterior y la corrida obedecía ese valor viejo.
+      const currentPermissionMode = state.permissionMode || job.permissionMode || "step";
+      const isFull = currentPermissionMode === "full";
+      const effectiveAllowWrite = isFull || ((planAuthorizedExecution || concreteTask) && currentPermissionMode !== "readonly")
         ? true
-        : (!isAgent || directReadOnly ? false : job.permissionMode !== "readonly");
+        : (!isAgent || directReadOnly ? false : currentPermissionMode !== "readonly");
       const effectiveAnalysisMode = isFull
         ? false
         : (job.orchestratorPlan
           ? job.orchestratorPlan.analysisMode === true && !(planAuthorizedExecution || concreteTask)
           : ((planAuthorizedExecution || concreteTask) ? false : (!isAgent || directReadOnly)));
       const effectivePermissionMode = (() => {
-        const mode = job.permissionMode || state.permissionMode || "step";
+        const mode = currentPermissionMode;
         if (mode === "full") return "full";
         if ((planAuthorizedExecution || concreteTask) && mode !== "readonly") return mode;
         if (!isAgent || directReadOnly) return "readonly";
         return mode;
       })();
-      if ((planAuthorizedExecution || concreteTask) && job.permissionMode === "readonly") {
+      if ((planAuthorizedExecution || concreteTask) && currentPermissionMode === "readonly") {
         const blocked = "El plan esta autorizado pero el permiso es Solo lectura. Cambia a Paso a paso o Acceso completo y escribe procede de nuevo.";
         elapsedSeconds = stopTimer();
         append("assistant", blocked, null, true, elapsedSeconds);

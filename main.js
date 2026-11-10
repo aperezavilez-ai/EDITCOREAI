@@ -1816,10 +1816,15 @@ ipcMain.handle("editcore:chat", async (_event, input = {}) => {
   }
   const rootPath = String(input.projectRoot || "").trim();
   const images = normalizeImages(input.images);
+  // El menú Permisos manda sobre el permissionMode del payload: el renderer
+  // puede traer un valor viejo en un trabajo encolado y pisaba la elección
+  // vigente del usuario. Las corridas internas del Inspector conservan su
+  // modo explícito.
+  const isInternalRun = /^inspector-/.test(String(input.agentId || "")) || String(input.namespace || "") === "inspector";
   const permissionHint = String(
-    input.permissionMode
-    || permissionBySender.get(_event?.sender?.id)
-    || permissionMode
+    (isInternalRun
+      ? (input.permissionMode || permissionBySender.get(_event?.sender?.id) || permissionMode)
+      : (permissionBySender.get(_event?.sender?.id) || permissionMode || input.permissionMode))
     || "",
   ).toLowerCase();
   const fullAccess = permissionHint === "full";
@@ -7143,7 +7148,12 @@ ipcMain.handle("agent:run", async (event, input = {}) => {
     const promptPaths = extractAuthorizedPaths(task)
       .map((item) => resolveAuthorizedRoot(item))
       .filter(Boolean);
-    const permissionHint = String(input.permissionMode || permissionBySender.get(event?.sender?.id) || permissionMode || "");
+    // El menú Permisos manda sobre el payload (ver editcore:chat): un trabajo
+    // encolado con el modo anterior no puede pisar la elección vigente.
+    const isInternalRun = /^inspector-/.test(String(input.agentId || "")) || String(input.namespace || "") === "inspector";
+    const permissionHint = String((isInternalRun
+      ? (input.permissionMode || permissionBySender.get(event?.sender?.id) || permissionMode)
+      : (permissionBySender.get(event?.sender?.id) || permissionMode || input.permissionMode)) || "");
     const requestedRoot = requestedRootRaw || promptPaths[0] || "";
     if (!requestedRoot) {
       throw new Error("Indica una ruta absoluta (ej. D:\\PROGRAMAS IA) con Acceso completo, o abre/crea un proyecto.");

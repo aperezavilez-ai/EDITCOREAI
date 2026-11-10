@@ -1040,10 +1040,28 @@ class ChatOrchestrator {
       onProgress?.({ phase: "start", text: canWrite ? "Ejecutando los cambios de forma autónoma…" : "Modo solo lectura: revisando sin modificar archivos…" });
       this.pendingTask = null;
       const runner = runModelTaskFn || this.runModelTask.bind(this);
+      // La autorización para escribir SIN preguntar solo existe si el usuario
+      // la dio de verdad: Acceso completo, un plan autorizado que llega como
+      // tal, o un mensaje de aprobación/continuación en ESTE turno. Antes se
+      // pasaba authorizedFromPending: canWrite, lo que pre-autorizaba TODA
+      // corrida en modo "Pregunta antes" (step): runModelTask calculaba
+      // acceso completo a partir de ese flag y escribía sin pedir
+      // confirmación nunca, aunque el menú dijera "Pregunta antes".
+      // La compuerta aplica solo cuando el usuario eligió explícitamente
+      // "Pregunta antes" (step). Sin modo declarado (uso directo del kernel
+      // y llamantes internos históricos) se conserva el comportamiento de
+      // siempre: la orden directa del usuario autoriza.
+      const stepGate = String(permissionMode || "").toLowerCase().trim() === "step";
+      const userAuthorized = !stepGate
+        || fullAccess
+        || inputPlanAuth === true
+        || isApprovalText
+        || startsWithContinue
+        || /^INSTRUCCI[OÓ]N AUTORIZADA/i.test(effectiveText);
       return runner({
         decision, message: taskMessage, projectRoot, apiBaseUrl, apiKey, model, memory, onProgress,
-        allowWrite: canWrite, planAuthorizedExecution: canWrite, maxSteps: canWrite ? AUTHORIZED_MAX_STEPS : CHAT_MAX_STEPS,
-        helpers, authorizedFromPending: canWrite, fullAccess,
+        allowWrite: canWrite, planAuthorizedExecution: canWrite && userAuthorized, maxSteps: canWrite ? AUTHORIZED_MAX_STEPS : CHAT_MAX_STEPS,
+        helpers, authorizedFromPending: canWrite && userAuthorized, fullAccess,
         permissionMode: fullAccess ? "full" : permissionMode, images: taskImages,
       });
     }

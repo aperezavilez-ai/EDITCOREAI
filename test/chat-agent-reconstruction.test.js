@@ -731,7 +731,7 @@ test("Chat conserva analisis de solo lectura y escala cambios al Agente", () => 
   assert.match(source, /function applyPermissionMode\(mode\)/);
   assert.match(source, /state\.allowWrite = next !== "readonly"/);
   assert.match(source, /allowWrite: state\.permissionMode !== "readonly"/);
-  assert.match(source, /effectiveAllowWrite[\s\S]*job\.permissionMode !== "readonly"/);
+  assert.match(source, /effectiveAllowWrite[\s\S]*currentPermissionMode !== "readonly"/);
   assert.doesNotMatch(source, /state\.allowWrite = state\.permissionMode === "full"/);
   assert.doesNotMatch(source, /state\.allowWrite = mode === "full"/);
 
