@@ -69,6 +69,11 @@ begin
     on conflict (key) do update set value = excluded.value, updated_at = now();
   end if;
   v_rate := editcoreai.recalc_panel_rate();
+  select * into latest from editcoreai.meai_snapshots order by at desc limit 1;
+  if latest.id is not null then
+    insert into editcoreai.meai_snapshots (at, panel_limit, panel_used, panel_remaining)
+    values (now(), round(latest.panel_limit + p_panel, 4), latest.panel_used, round(latest.panel_remaining + p_panel, 4));
+  end if;
   return jsonb_build_object('ok', true, 'panel_usd_rate', v_rate);
 end;
 $$;

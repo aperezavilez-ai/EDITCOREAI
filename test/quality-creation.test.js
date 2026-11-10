@@ -118,5 +118,5 @@ test("C3: en un turno sin UI las skills de diseño NO se fuerzan", () => {
 test("C2: el renderer crea el proyecto desde la conversación con la plantilla elegida", () => {
   const source = fs.readFileSync(path.join(REPO_ROOT, "renderer.js"), "utf8");
   assert.match(source, /ProjectAnalysis\.pickScaffoldTemplate\(templateText\)/);
-  assert.match(source, /template, install: template !== "blank"/);
+  assert.match(source, /template, install: false/);
 });

@@ -1050,14 +1050,14 @@
       const li = document.createElement("li");
       const date = document.createElement("span");
       date.className = "mx-history-date";
-      date.textContent = new Date(t.created_at).toLocaleDateString("es-MX", { day: "numeric", month: "short", year: "numeric" });
+      date.textContent = new Date(t.created_at || t.at).toLocaleDateString("es-MX", { day: "numeric", month: "short", year: "numeric" });
       const what = document.createElement("span");
-      const sym = MEAI_CURRENCY_SYMBOL[t.currency] || `${t.currency} `;
-      what.textContent = `${sym}${fmtNum(t.amount_local ?? t.real_usd)} → ${fmtNum(t.panel_usd)} de panel${t.note ? ` · ${t.note}` : ""}`;
+      const sym = MEAI_CURRENCY_SYMBOL[t.currency] || `${t.currency || "¥"} `;
+      what.textContent = `${sym}${fmtNum(t.amount_local ?? t.real_cost_usd ?? t.real_usd)} → ${fmtNum(t.panel_usd ?? t.panel_amount)} de panel${t.note ? ` · ${t.note}` : ""}`;
       const real = document.createElement("span");
       real.className = "mx-history-real";
-      real.textContent = `${fmtUsd(t.real_usd)} USD`;
-      real.title = t.currency === "USD" ? "" : `Tipo de cambio: 1 ${sym} = US$${Number(t.fx_usd)}`;
+      real.textContent = `${fmtUsd(t.real_usd ?? t.real_cost_usd)} USD`;
+      real.title = t.currency === "USD" ? "" : `Tipo de cambio: 1 ${sym} = US$${Number(t.fx_usd ?? t.usd_per_cny ?? 1)}`;
       const del = document.createElement("button");
       del.type = "button";
       del.className = "mx-btn mx-btn-icon";
@@ -1091,7 +1091,7 @@
     Object.assign(meaiState, { rate, markup, cnyUsd: Number(s.cny_usd) || meaiState.cnyUsd });
     const markupInput = $("adminMeaiMarkup");
     if (markupInput && document.activeElement !== markupInput) markupInput.value = String(markup);
-    renderMeaiTopups(Array.isArray(s.topups) ? s.topups : []);
+    renderMeaiTopups(Array.isArray(s.topups) ? s.topups : (Array.isArray(s.topups_history) ? s.topups_history : []));
     updateMeaiTopupPreview();
 
     const offset = Number(s.offset_panel) || 0;

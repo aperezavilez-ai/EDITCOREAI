@@ -160,12 +160,18 @@ class CreditLedger extends EventEmitter {
   /** Registra una compra en ME AI: dólares de panel recibidos, monto pagado, moneda y tipo de cambio a USD. */
   async adminMeaiTopup({ panel, amount, currency = "CNY", fx = 1, note = "" } = {}) {
     try {
+      const numPanel = Number(panel);
+      const numAmount = Number(amount);
+      const numFx = Number(fx);
       return fromServer(await this.auth.rpc("editcoreai_admin_meai_topup", {
-        p_panel: Number(panel),
-        p_amount: Number(amount),
+        p_panel: numPanel,
+        p_amount: numAmount,
         p_currency: String(currency || "USD").toUpperCase(),
-        p_fx_usd: Number(fx),
+        p_fx_usd: numFx,
         p_note: String(note || "") || null,
+        p_real: Number((numAmount * numFx).toFixed(4)),
+        p_cny_rate: numAmount,
+        p_usd_per_cny: numFx,
       }));
     } catch (error) {
       return failure(error);

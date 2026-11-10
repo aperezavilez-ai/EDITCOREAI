@@ -13291,7 +13291,7 @@ async function ensureDesktopProjectForAgent(job) {
   for (let attempt = 0; attempt < 3; attempt++) {
     const candidate = attempt ? `${name} ${attempt + 1}` : name;
     try {
-      const created = await window.editcoreProject.create({ name: candidate, parentPath, template, install: template !== "blank", runId: uid() });
+      const created = await window.editcoreProject.create({ name: candidate, parentPath, template, install: false, runId: uid() });
       if (!created?.root) return null;
       const saved = await window.editcoreProject.save({ root: created.root, name: created.name });
       if (!saved?.ok || !saved?.manifest?.root) return null;
@@ -13316,62 +13316,20 @@ async function ensureDesktopProjectForAgent(job) {
   return null;
 }
 
+// Corre una promesa con temporizador: si tarda demasiado, rechaza con un
+// error legible en vez de colgar el turno en silencio (la creación del
+// proyecto desde la conversación se colgó así en vivo, v4.6.5-v4.7.0).
+function withTimeout(promise, ms, label) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => setTimeout(() => reject(new Error(`Tiempo agotado (${Math.round(ms / 1000)} s) al ${label}.`)), ms)),
+  ]);
+}
+
 async function executePromptJob(job) {
   const prompt = job.prompt;
   const isAgent = job.isAgent;
   const usesProjectTools = job.usesProjectTools;
-  // Sin raíz, un trabajo de agente crea su proyecto desde la conversación.
-  // También un trabajo CON herramientas cuyo plan es construir algo nuevo
-  // (greenfield): si solo se cubriera isAgent, la vía de análisis con
-  // herramientas llegaba al proceso principal sin raíz y heredaba el
-  // último proyecto abierto (la landing terminó dentro de VIXERAI).
-  if ((isAgent || (usesProjectTools && job.orchestratorPlan?.greenfieldCreate)) && !job.projectRoot) {
-    const hints = typeof ProjectAnalysis.extractAbsolutePathHints === "function"
-      ? ProjectAnalysis.extractAbsolutePathHints(job.prompt || prompt)
-      : [];
-    const fromPrompt = String(hints[0] || "").trim();
-    if (fromPrompt) {
-      if (state.permissionMode !== "full" && job.permissionMode !== "full") {
-        throw new Error("Para usar una ruta sin proyecto abierto, activa Acceso completo.");
-      }
-      job.projectRoot = fromPrompt;
-      job.ephemeralRoot = true;
-    } else if (window.EDITCORE_IS_WEB && typeof window.EditCoreWebBridge?.ensureProjectForAgent === "function") {
-      // Solo web (EDITCORE_IS_WEB lo define el puente web; en escritorio esta rama
-      // nunca se toma y el comportamiento no cambia): la primera tarea de agente
-      // sin proyecto crea uno con la plantilla inicial del puente, que además lo
-      // recuerda y lo reusa en los turnos siguientes.
-      const ensured = await window.EditCoreWebBridge.ensureProjectForAgent(job.prompt || prompt);
-      if (!ensured?.root) throw new Error("No se pudo crear un proyecto para el agente. Crea uno desde Proyectos.");
-      job.projectRoot = ensured.root;
-      job.autoCreatedProject = ensured;
-    } else if (!window.EDITCORE_IS_WEB && typeof ensureDesktopProjectForAgent === "function") {
-      // Escritorio: primer trabajo de agente de una conversación sin proyecto:
-      // crear el proyecto desde la conversación (como hace la web) y seguir en
-      // el mismo chat, ya con carpeta. Si la creación falla, cae al error de
-      // siempre (ruta absoluta con Acceso completo, o Abrir).
-      const ensured = await ensureDesktopProjectForAgent(job).catch(() => null);
-      if (!ensured?.root) throw new Error("Indica una ruta absoluta (ej. D:\\PROGRAMAS IA) con Acceso completo, o abre un proyecto.");
-      job.projectRoot = ensured.root;
-      job.autoCreatedProject = ensured;
-    } else {
-      // Nunca abrir el dialogo de carpeta automaticamente: el usuario debe Abrir o escribir la ruta.
-      throw new Error("Indica una ruta absoluta (ej. D:\\PROGRAMAS IA) con Acceso completo, o abre un proyecto.");
-    }
-  }
-  if (job.ephemeralRoot && state.permissionMode !== "full" && job.permissionMode !== "full") {
-    throw new Error("Para usar una ruta sin proyecto abierto, activa Acceso completo.");
-  }
-  // La carpeta catalogo (D:\PROGRAMAS IA) no se abre como "proyecto UI", pero SI puede
-  // usarse como raiz efimera cuando el usuario la pide con Acceso completo.
-  if (
-    isAgent
-    && !job.ephemeralRoot
-    && normalizeProjectRoot(job.projectRoot) === normalizeProjectRoot(projectCatalogParent())
-  ) {
-    throw new Error("El agente necesita un proyecto concreto. Abre uno desde Proyectos o con el boton Abrir.");
-  }
-
   const pendingAuthorization = isAgent && isAgentAuthorization(prompt);
   const projectForJob = state.projects.find((item) => item.id === job.projectId)
     || state.projects.find((item) => normalizeProjectRoot(item.projectRoot) === normalizeProjectRoot(job.projectRoot))
@@ -13411,6 +13369,58 @@ async function executePromptJob(job) {
   }
 
   try {
+  // Sin raíz, un trabajo de agente crea su proyecto desde la conversación.
+  // También un trabajo CON herramientas cuyo plan es construir algo nuevo
+  // (greenfield): si solo se cubriera isAgent, la vía de análisis con
+  // herramientas llegaba al proceso principal sin raíz y heredaba el
+  // último proyecto abierto (la landing terminó dentro de VIXERAI).
+  if ((isAgent || (usesProjectTools && job.orchestratorPlan?.greenfieldCreate)) && !job.projectRoot) {
+    const hints = typeof ProjectAnalysis.extractAbsolutePathHints === "function"
+      ? ProjectAnalysis.extractAbsolutePathHints(job.prompt || prompt)
+      : [];
+    const fromPrompt = String(hints[0] || "").trim();
+    if (fromPrompt) {
+      if (state.permissionMode !== "full" && job.permissionMode !== "full") {
+        throw new Error("Para usar una ruta sin proyecto abierto, activa Acceso completo.");
+      }
+      job.projectRoot = fromPrompt;
+      job.ephemeralRoot = true;
+    } else if (window.EDITCORE_IS_WEB && typeof window.EditCoreWebBridge?.ensureProjectForAgent === "function") {
+      // Solo web (EDITCORE_IS_WEB lo define el puente web; en escritorio esta rama
+      // nunca se toma y el comportamiento no cambia): la primera tarea de agente
+      // sin proyecto crea uno con la plantilla inicial del puente, que además lo
+      // recuerda y lo reusa en los turnos siguientes.
+      const ensured = await window.EditCoreWebBridge.ensureProjectForAgent(job.prompt || prompt);
+      if (!ensured?.root) throw new Error("No se pudo crear un proyecto para el agente. Crea uno desde Proyectos.");
+      job.projectRoot = ensured.root;
+      job.autoCreatedProject = ensured;
+    } else if (!window.EDITCORE_IS_WEB && typeof ensureDesktopProjectForAgent === "function") {
+      // Escritorio: primer trabajo de agente de una conversación sin proyecto:
+      // crear el proyecto desde la conversación (como hace la web) y seguir en
+      // el mismo chat, ya con carpeta. Si la creación falla, cae al error de
+      // siempre (ruta absoluta con Acceso completo, o Abrir).
+      const ensured = await withTimeout(ensureDesktopProjectForAgent(job), 90000, "crear el proyecto de esta conversación");
+      if (!ensured?.root) throw new Error("No se pudo crear el proyecto de esta conversación. Crea uno desde Proyectos y pide la tarea dentro de él.");
+      job.projectRoot = ensured.root;
+      job.autoCreatedProject = ensured;
+    } else {
+      // Nunca abrir el dialogo de carpeta automaticamente: el usuario debe Abrir o escribir la ruta.
+      throw new Error("Indica una ruta absoluta (ej. D:\\PROGRAMAS IA) con Acceso completo, o abre un proyecto.");
+    }
+  }
+  if (job.ephemeralRoot && state.permissionMode !== "full" && job.permissionMode !== "full") {
+    throw new Error("Para usar una ruta sin proyecto abierto, activa Acceso completo.");
+  }
+  // La carpeta catalogo (D:\PROGRAMAS IA) no se abre como "proyecto UI", pero SI puede
+  // usarse como raiz efimera cuando el usuario la pide con Acceso completo.
+  if (
+    isAgent
+    && !job.ephemeralRoot
+    && normalizeProjectRoot(job.projectRoot) === normalizeProjectRoot(projectCatalogParent())
+  ) {
+    throw new Error("El agente necesita un proyecto concreto. Abre uno desde Proyectos o con el boton Abrir.");
+  }
+
     $("status").textContent = usesProjectTools ? (isAgent ? "Agente trabajando..." : "Analizando proyecto...") : "Pensando...";
     if (usesProjectTools) {
       try {

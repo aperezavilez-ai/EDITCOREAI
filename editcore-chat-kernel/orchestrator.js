@@ -161,6 +161,7 @@ const PROJECTLESS_CHAT_PROMPT = [
   "MODO CONVERSACIÓN SIN PROYECTO:",
   "- Todavía NO hay proyecto abierto: no tienes herramientas de disco y no puedes leer ni escribir archivos. No prometas revisar carpetas ni crear archivos en este modo.",
   "- Tu trabajo es conversar: responder preguntas, ayudar a pensar la idea, proponer arquitectura, funciones y un plan de trabajo.",
+  "- Si te piden analizar, corregir o abrir un proyecto existente, di con claridad que no hay ninguno abierto y ofrece dos salidas: abrirlo desde Proyectos o crear uno nuevo en modo Agente desde esta conversación. Nunca finjas que lo analizaste.",
   "- Cuando el usuario decida construir (\"créalo\", \"hazlo\", \"empecemos\"), dile que cambie a modo Agente y lo pida ahí: la app crea el proyecto desde esta misma conversación y el agente construye con todo lo platicado como contexto. No le pidas abrir carpetas a mano ni escribir rutas.",
 ].join("\n");
 
@@ -794,7 +795,7 @@ class ChatOrchestrator {
     // rechaza: se conversa (idea/spec/plan) sin herramientas de disco hasta
     // que la app cree el proyecto desde esta misma conversación. El resto
     // (ASK/ANALYZE/CONFIRM…) sí necesita una carpeta real: mantiene la negativa.
-    if (!projectRoot && decision.kind === "EXECUTE") {
+    if (!projectRoot && (decision.kind === "EXECUTE" || decision.kind === "ASK" || decision.kind === "ANALYZE")) {
       decision = { kind: "CHAT", label: "Conversación sin proyecto", allowTools: false, allowWrite: false, background: false };
     }
     if (!projectRoot && decision.kind !== "CHAT" && decision.kind !== "LIST") {
