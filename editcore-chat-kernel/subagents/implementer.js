@@ -6,7 +6,10 @@ const { snapshotBeforeWrite } = require("../snapshot");
 /**
  * Implementer quirúrgico: snapshot previo + replace_in_file preferente.
  */
-async function runImplementer({ projectRoot, path: rel, content, oldText, newText, onProgress }) {
+async function runImplementer({ projectRoot, path: rel, content, oldText, newText, onProgress, threadId }) {
+  // Identidad de coordinación de la corrida dueña: los locks por
+  // archivo distinguen a ESTE agente de otros en paralelo.
+  const coordCtx = { threadId: threadId || "default", agentRole: "implementer" };
   if (!rel) return { role: "implementer", ok: false, error: "Falta path" };
   onProgress?.({ phase: "subagent", name: "implementer", text: `Editando ${rel}...` });
 
@@ -20,7 +23,7 @@ async function runImplementer({ projectRoot, path: rel, content, oldText, newTex
   });
 
   if (oldText != null && newText != null) {
-    const result = tools.replaceInFile(projectRoot, rel, String(oldText), String(newText));
+    const result = tools.replaceInFile(projectRoot, rel, String(oldText), String(newText), coordCtx);
     onProgress?.({ phase: "tool", stage: "done", name: "replace_in_file", ok: result.ok, input: { path: rel } });
     return {
       role: "implementer",
@@ -33,7 +36,7 @@ async function runImplementer({ projectRoot, path: rel, content, oldText, newTex
 
   const existing = tools.readFile(projectRoot, rel, 50);
   if (existing.ok && content != null) {
-    const result = tools.writeFile(projectRoot, rel, content);
+    const result = tools.writeFile(projectRoot, rel, content, coordCtx);
     onProgress?.({ phase: "tool", stage: "done", name: "write_file", ok: result.ok, input: { path: rel } });
     return {
       role: "implementer",
@@ -44,7 +47,7 @@ async function runImplementer({ projectRoot, path: rel, content, oldText, newTex
     };
   }
 
-  const result = tools.writeFile(projectRoot, rel, content ?? "");
+  const result = tools.writeFile(projectRoot, rel, content ?? "", coordCtx);
   onProgress?.({ phase: "tool", stage: "done", name: "write_file", ok: result.ok, input: { path: rel } });
   return {
     role: "implementer",

@@ -70,7 +70,13 @@ function collectLayoutDiagnostics() {
     .map((n) => (n.textContent || "").trim().slice(0, 120));
   const horizontalOverflow = root.scrollWidth > root.clientWidth + 1 || body.scrollWidth > body.clientWidth + 1;
   const textLen = (body.innerText || "").trim().length;
+  let overlayText = "";
+  try {
+    const overlay = document.querySelector("vite-error-overlay");
+    overlayText = String(overlay?.shadowRoot?.textContent || "").replace(/\s+/g, " ").trim().slice(0, 600);
+  } catch { /* overlay sin acceso */ }
   const issues = [];
+  if (overlayText) issues.push(`Error visible en pantalla (overlay): ${overlayText.slice(0, 220)}`);
   if (textLen < 20 && interactive.length < 1) issues.push("Página casi vacía o sin contenido visible");
   if (horizontalOverflow) issues.push("Overflow horizontal detectado (posible error de maquetación)");
   if (clipped.length) issues.push(`Controles recortados: ${clipped.length}`);
@@ -85,9 +91,29 @@ function collectLayoutDiagnostics() {
     clippedControls: clipped.slice(0, 15),
     headings,
     bodyTextLength: textLen,
+    overlayText,
     issues,
     renderOk: issues.length === 0,
   };
+}
+
+/**
+ * Los errores de consola/runtime son LA evidencia en un turno de
+ * reparación: sin ellos la captura solo decía "página vacía" y el agente
+ * tenía que pedirle al usuario que pegara la imagen del error (sesión
+ * VIXERAI, 2026-11-10). Los errores (no los warnings) marcan renderOk
+ * en falso y entran a issues; la lista viaja en diagnostics.
+ */
+function mergeConsoleErrors(diagnostics, consoleErrors) {
+  if (!diagnostics || !Array.isArray(consoleErrors)) return diagnostics;
+  diagnostics.consoleErrors = consoleErrors.slice(0, 10);
+  const errs = consoleErrors.filter((e) => e && e.type !== "warning").slice(0, 10);
+  if (errs.length) {
+    diagnostics.issues = Array.isArray(diagnostics.issues) ? diagnostics.issues : [];
+    diagnostics.issues.push(`Errores de consola/runtime: ${errs[0].text.slice(0, 220)}`);
+    diagnostics.renderOk = false;
+  }
+  return diagnostics;
 }
 
 async function withPuppeteer(url, size, outPath) {
@@ -100,10 +126,18 @@ async function withPuppeteer(url, size, outPath) {
       args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"],
     });
     const page = await browser.newPage();
+    const consoleErrors = [];
+    page.on("console", (msg) => {
+      try {
+        const t = msg.type();
+        if (t === "error" || t === "warning") consoleErrors.push({ type: t, text: String(msg.text() || "").slice(0, 300) });
+      } catch { /* ignore */ }
+    });
+    page.on("pageerror", (err) => { consoleErrors.push({ type: "error", text: String(err?.message || err).slice(0, 300) }); });
     await page.setViewport({ width: size.width, height: size.height, deviceScaleFactor: 1 });
     await page.goto(url, { waitUntil: "networkidle2", timeout: 35000 });
     await new Promise((r) => setTimeout(r, 600));
-    const diagnostics = await page.evaluate(collectLayoutDiagnostics);
+    const diagnostics = mergeConsoleErrors(await page.evaluate(collectLayoutDiagnostics), consoleErrors);
     await page.screenshot({ path: outPath, fullPage: false, type: "png" });
     return { engine: "puppeteer", diagnostics };
   } finally {
@@ -120,9 +154,17 @@ async function withPlaywright(url, size, outPath) {
   try {
     browser = await chromium.launch({ headless: true });
     const page = await browser.newPage({ viewport: { width: size.width, height: size.height } });
+    const consoleErrors = [];
+    page.on("console", (msg) => {
+      try {
+        const t = msg.type();
+        if (t === "error" || t === "warning") consoleErrors.push({ type: t, text: String(msg.text() || "").slice(0, 300) });
+      } catch { /* ignore */ }
+    });
+    page.on("pageerror", (err) => { consoleErrors.push({ type: "error", text: String(err?.message || err).slice(0, 300) }); });
     await page.goto(url, { waitUntil: "networkidle", timeout: 35000 });
     await new Promise((r) => setTimeout(r, 500));
-    const diagnostics = await page.evaluate(collectLayoutDiagnostics);
+    const diagnostics = mergeConsoleErrors(await page.evaluate(collectLayoutDiagnostics), consoleErrors);
     await page.screenshot({ path: outPath, type: "png" });
     return { engine: "playwright", diagnostics };
   } finally {

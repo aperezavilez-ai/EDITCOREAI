@@ -29,7 +29,12 @@ test("C1: el recuadro se vacia al enviar, antes de await", () => {
   assert.ok(clearAt < firstAwait, "el input debe vaciarse ANTES del primer await");
 });
 
-test("C2: nudges mid-run hacen steer; un solo agente por projectRoot", () => {
+test("C2: nudges mid-run hacen steer; escritores en serie por chat, en paralelo entre chats", () => {
+  // Contrato ACTUALIZADO a propósito (multiagente, 2026-11-10): el
+  // candado dejó de ser "un agente por projectRoot" — dos chats
+  // distintos del mismo proyecto trabajan en paralelo con locks por
+  // archivo; el mismo chat sigue en serie. Antes esto afirmaba el
+  // candado por proyecto.
   assert.equal(ProjectAnalysis.shouldSteerLiveAgent("PROCEDE"), true);
   assert.equal(ProjectAnalysis.shouldSteerLiveAgent("alto"), true);
   assert.equal(ProjectAnalysis.shouldSteerLiveAgent("PORQUE NO AVANZAS?"), true);
@@ -42,7 +47,7 @@ test("C2: nudges mid-run hacen steer; un solo agente por projectRoot", () => {
     rendererSource.indexOf("function canLaunchPromptJob"),
   );
   assert.match(parallel, /countActiveAgents\(active\) < MAX_PARALLEL_AGENTS/);
-  assert.match(parallel, /sameProject/);
+  assert.match(parallel, /String\(job\.chatId\) === String\(next\.chatId\)/);
   assert.match(parallel, /normalizeProjectRoot\(job\.projectRoot/);
 });
 

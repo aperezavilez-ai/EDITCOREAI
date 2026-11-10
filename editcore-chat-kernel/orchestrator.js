@@ -61,6 +61,10 @@ try {
 try {
   productPipeline = require("../runtime/product-pipeline");
 } catch (_) { productPipeline = null; }
+let repairGuard = null;
+try {
+  repairGuard = require("./repair-guard");
+} catch (_) { repairGuard = null; }
 let agentCoordination = null;
 try {
   agentCoordination = require("../runtime/agent-coordination");
@@ -275,6 +279,73 @@ function formatVerifyBlock(reports = []) {
     return `- \`${r.path}\`: ⚠️ ${r.note || "check no pasó (sin rollback)"}`;
   });
   return `\n\n## 🔍 Verificación post-escritura\n\n${lines.join("\n")}\n`;
+}
+
+// [EDITCORE-REPAIR] Verificación REAL al cerrar el turno. La ligera por
+// archivo no prueba que la app funciona: en la sesión VIXERAI el agente
+// declaró "corregido" tres veces con la ligera en verde mientras el CSS
+// no compilaba. Aquí se comprueba contra el proyecto corriendo (captura
+// del preview activo, con errores de consola) o compilado (npm run
+// build), y el resultado manda sobre la narrativa del modelo.
+async function runRealVerification(projectRoot, opts = {}) {
+  const previewUrl = String(opts.previewUrl || "").trim();
+  if (previewUrl) {
+    try {
+      const shot = await capture_preview_screenshot({ url: previewUrl, projectRoot });
+      if (shot && shot.ok) {
+        const errs = Array.isArray(shot.diagnostics?.consoleErrors)
+          ? shot.diagnostics.consoleErrors.filter((e) => e && e.type !== "warning")
+          : [];
+        const ok = shot.renderOk === true && errs.length === 0;
+        return {
+          kind: "preview",
+          ok,
+          detail: ok ? "" : String(errs[0]?.text || (shot.diagnostics?.issues || [])[0] || "El preview no renderiza correctamente.").slice(0, 400),
+        };
+      }
+    } catch { /* sin captura: cae al build */ }
+  }
+  let hasBuild = false;
+  try {
+    const pkg = JSON.parse(require("fs").readFileSync(path.join(projectRoot, "package.json"), "utf8"));
+    hasBuild = Boolean(pkg?.scripts?.build);
+  } catch { /* sin package.json o ilegible */ }
+  if (!hasBuild) return null;
+  const run = await Promise.race([
+    tools.execute("run_command", { command: "npm run build" }, projectRoot, true, {}),
+    new Promise((resolve) => setTimeout(() => resolve({ ok: false, softTimeout: true }), 150_000)),
+  ]);
+  if (run?.softTimeout) return { kind: "build", ok: false, softTimeout: true, detail: "El build no concluyó en 150 s." };
+  const blob = `${run?.stderr || ""}\n${run?.output || ""}`;
+  const errLine = blob.split(/\r?\n/).map((l) => l.trim()).filter((l) => /error|failed|cannot|✗/i.test(l))[0] || "";
+  return { kind: "build", ok: run?.ok === true, detail: run?.ok ? "" : String(errLine || run?.error || "El build falló.").slice(0, 400) };
+}
+
+function formatRealVerifyBlock(rv) {
+  const what = rv.kind === "preview" ? "Captura del preview activo (render + errores de consola)" : "`npm run build`";
+  if (rv.ok) return `\n\n## ✅ Verificación real\n\n- ${what}: **aprobada** — el resultado de este turno quedó confirmado contra el proyecto corriendo/compilado, no solo contra los archivos editados.\n`;
+  if (rv.softTimeout) return `\n\n## ⏱️ Verificación real\n\n- ${what}: no concluyó a tiempo — el resultado de este turno queda **sin confirmar**.\n`;
+  return `\n\n## ❌ Verificación real\n\n- ${what}: **FALLÓ** — ${rv.detail}\n`;
+}
+
+function formatRealVerifyBanner(rv) {
+  const what = rv.kind === "preview" ? "la captura del preview activo" : "el build del proyecto";
+  return `## ⚠️ OJO: LA VERIFICACIÓN REAL FALLÓ — EL PROBLEMA SIGUE\n\nLa comprobación automática posterior a los cambios (${what}) falló: ${rv.detail}\n\nLo que sigue es la explicación del modelo, pero el proyecto **todavía no funciona**. No lo des por corregido.\n\n---\n\n`;
+}
+
+async function appendRealVerification(projectRoot, written, steps, textOut, onProgress, opts = {}) {
+  try {
+    if (!Array.isArray(written) || !written.length || !projectRoot) return textOut;
+    const buildAffecting = repairGuard ? written.some((p) => repairGuard.isBuildAffectingPath(p)) : false;
+    if (opts.repairTask !== true && !buildAffecting) return textOut;
+    if (repairGuard && repairGuard.turnHasPassingRealVerification(steps)) return textOut;
+    onProgress?.({ phase: "subagent", name: "verifier", text: "Verificación real: capturando el preview o compilando el proyecto…" });
+    const rv = await runRealVerification(projectRoot, { previewUrl: opts.previewUrl });
+    if (!rv) return textOut;
+    const block = formatRealVerifyBlock(rv);
+    if (rv.ok || rv.softTimeout) return String(textOut || "") + block;
+    return formatRealVerifyBanner(rv) + String(textOut || "") + block;
+  } catch { return textOut; }
 }
 
 
@@ -775,6 +846,8 @@ class ChatOrchestrator {
     try {
       this._eliteUiExtra = "";
       this._productPipelineExtra = "";
+      this._repairExtra = "";
+      this._repairTask = false;
       this._uiTask = false;
       const taskText = String(effectiveText || text || "");
       if (eliteUiPolicy && typeof eliteUiPolicy.isUiTask === "function" && eliteUiPolicy.isUiTask(taskText)) {
@@ -787,6 +860,20 @@ class ChatOrchestrator {
         if (!this._eliteUiExtra) this._eliteUiExtra = eliteUiPolicy.eliteUiSystemPrompt();
       }
       if (this._eliteUiExtra) this._uiTask = true;
+      // [EDITCORE-REPAIR] Un turno de reparación también tiene ojos: sin
+      // la herramienta de captura el agente diagnostica de memoria (así
+      // nació el falso "gap-2" de la sesión VIXERAI). Y viaja con el
+      // protocolo de reparación como instrucción del turno.
+      if (repairGuard && typeof repairGuard.isRepairTask === "function" && repairGuard.isRepairTask(taskText)) {
+        this._repairTask = true;
+        this._repairExtra = repairGuard.repairProtocolPrompt();
+        // Ojos solo si hay algo que mirar: el daño es visible/render o
+        // el proyecto es web. Una reparación de lógica pura en el
+        // servidor verifica con build/tests, sin pagar la captura.
+        if (repairGuard.isVisualRepairTask(taskText) || repairGuard.projectLooksWeb(projectRoot)) {
+          this._uiTask = true;
+        }
+      }
       if (productPipeline && typeof productPipeline.buildPipelinePrompt === "function") {
         const pipe = productPipeline.buildPipelinePrompt(taskText);
         if (pipe && pipe.active && pipe.prompt) {
@@ -794,7 +881,7 @@ class ChatOrchestrator {
           this._productPipeline = pipe;
         }
       }
-      this._turnExtras.push(this._productPipelineExtra, this._eliteUiExtra);
+      this._turnExtras.push(this._productPipelineExtra, this._eliteUiExtra, this._repairExtra);
     } catch (e) {
       console.warn("[EDITCORE-ELITE-UI]", e && e.message ? e.message : e);
     }
@@ -1150,6 +1237,8 @@ class ChatOrchestrator {
     const deadline = Date.now() + globalTimeoutMs;
     let promiseRetries = 0;
     let noWriteNudges = 0;
+    let verifyNudges = 0;
+    let evidenceBlocks = 0;
     let connNudges = 0;
     let narrationRetries = 0;
 
@@ -1173,6 +1262,7 @@ class ChatOrchestrator {
       : "";
 
     const previewUrl = String(helpers?.previewUrl || "").trim();
+    this._activePreviewUrl = previewUrl;
     const previewBlock = previewUrl ? `PREVIEW ACTIVO DEL IDE: ${previewUrl}` : "";
     const visionHardRule = (Array.isArray(taskImages) && taskImages.length) ? "VISION: Hay imágenes adjuntas. Analizalas directamente en este turno." : "";
     const noConfirmBlock = (accessFull || authorizedFromPending)
@@ -1493,6 +1583,27 @@ class ChatOrchestrator {
             continue;
           }
 
+          // [EDITCORE-REPAIR] Sin verificación real no hay "corregido":
+          // un turno de reparación que editó archivos no puede cerrarse
+          // apoyado solo en la comprobación ligera por archivo (así se
+          // declararon tres éxitos falsos en la sesión VIXERAI). Se le
+          // devuelve el turno UNA vez para que verifique de verdad; si
+          // aun así cierra, la finalización adjunta la verificación
+          // real automática con su veredicto.
+          const unverifiedRepair = this._repairTask === true
+            && !chatOnly && decision?.kind !== "CHAT" && !listOnlyMode && !analysisMode
+            && successfulWritePaths(steps).length > 0
+            && !(repairGuard && repairGuard.turnHasPassingRealVerification(steps))
+            && verifyNudges < 1
+            && i < stepsLimit - 2;
+          if (unverifiedRepair) {
+            verifyNudges += 1;
+            messages.push({ role: "assistant", content: cleanText || null });
+            messages.push({ role: "user", content: "ALTO: todavía no hay una verificación REAL aprobada en este turno (captura del preview activo con renderOk y sin errores de consola, o build del proyecto en verde). No des el problema por corregido. Ejecuta AHORA la verificación que corresponde (capture_preview_screenshot sobre el PREVIEW ACTIVO de tu contexto, o run_command con el build), lee su resultado y actúa según él: si falla, sigue corrigiendo desde ese error exacto; si pasa, cierra citando esa evidencia." });
+            onProgress?.({ phase: "model", text: "Sin verificación real: pidiendo verificar antes de cerrar…" });
+            continue;
+          }
+
           this.session.kill();
           const written = successfulWritePaths(steps);
           let textOut = cleanText;
@@ -1515,6 +1626,7 @@ class ChatOrchestrator {
             try {
               const verifyReports = await runPostWriteVerify(projectRoot, written, onProgress);
               textOut = String(textOut || "") + formatVerifyBlock(verifyReports);
+              textOut = await appendRealVerification(projectRoot, written, steps, textOut, onProgress, { repairTask: this._repairTask === true, previewUrl: this._activePreviewUrl || "" });
             } catch (_) { /* verify no debe tumbar el turno */ }
           }
           textOut = formatAgentVisibleText(textOut);
@@ -1563,6 +1675,23 @@ class ChatOrchestrator {
             continue;
           }
 
+          // [EDITCORE-REPAIR] Compuerta de evidencia: en un turno de
+          // reparación no se escribe ni una línea sin haber capturado
+          // antes el fallo real en el propio turno (captura del preview
+          // o build/dev). Acotada: un intento de evidencia —aunque
+          // falle— o dos bloqueos la desactivan (fail-open).
+          const blockedEvidence = repairGuard && this._repairTask === true
+            ? repairGuard.maybeBlockWriteBeforeEvidence(name, steps, evidenceBlocks)
+            : null;
+          if (blockedEvidence) {
+            evidenceBlocks += 1;
+            const stepData = { name, input: args, result: blockedEvidence, ok: false, blocked: true };
+            steps.push(stepData); this.session.addStep(stepData);
+            onProgress?.({ phase: "tool", stage: "done", name, input: args, result: blockedEvidence, ok: false, blocked: true });
+            messages.push({ role: "tool", tool_call_id: call.id, name, content: tools.truncatePayload(blockedEvidence, 2000) });
+            continue;
+          }
+
           const readCacheKey = name === "read_file" && args.path
             ? `${String(args.path).replace(/\\/g, "/").toLowerCase()}#${Number(args.startLine) || 1}-${Number(args.endLine) || 0}`
             : "";
@@ -1598,6 +1727,11 @@ class ChatOrchestrator {
           } else {
             const effectiveHelpers = {
               ...(helpers || {}),
+              // Identidad de coordinación de ESTA corrida: los locks por
+              // archivo de tools distinguen a este agente de otros que
+              // corran en paralelo sobre el mismo proyecto.
+              threadId: threadId || (helpers && helpers.threadId) || "default",
+              agentRole: "supervisor",
               fullAccess: accessFull || (helpers && helpers.fullAccess === true),
               externalActionApproved: accessFull || (helpers && helpers.externalActionApproved === true),
               permissionMode: accessFull ? "full" : (permissionMode || helpers?.permissionMode || "step"),
@@ -1658,6 +1792,7 @@ class ChatOrchestrator {
         try {
           const verifyReports = await runPostWriteVerify(projectRoot, written, onProgress);
           textOut = String(textOut || "") + formatVerifyBlock(verifyReports);
+          textOut = await appendRealVerification(projectRoot, written, steps, textOut, onProgress, { repairTask: this._repairTask === true, previewUrl: this._activePreviewUrl || "" });
         } catch (_) { /* verify no debe tumbar el turno */ }
       }
       textOut = formatAgentVisibleText(textOut);

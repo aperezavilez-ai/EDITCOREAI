@@ -182,7 +182,29 @@ function readFile(root, rel, maxChars = TOOL_RESULT_CAP, opts = {}) {
   return result;
 }
 
-function writeFile(root, rel, content) {
+/**
+ * Lock por archivo con identidad DE LA CORRIDA (threadId/rol que llegan
+ * por helpers), no solo el global del proceso: con dos corridas en
+ * paralelo sobre el mismo proyecto, el global __editcoreCoord lo pisa
+ * la última corrida que arranca y los locks dejan de distinguir
+ * dueños — los agentes se pisan. El global queda como respaldo para
+ * las rutas viejas que no propagan contexto. Devuelve el resultado de
+ * bloqueo si otro agente tiene el archivo, o null si se puede seguir.
+ */
+function acquireWriteLock(root, rel, op, coordCtx) {
+  try {
+    const { getCoordination } = require("../runtime/agent-coordination");
+    const coord = getCoordination(root);
+    const g = global.__editcoreCoord || {};
+    const threadId = String(coordCtx?.threadId || g.threadId || "default");
+    const agentRole = String(coordCtx?.agentRole || g.agentRole || "implementer");
+    const lock = coord.acquireLock(threadId, agentRole, rel, op);
+    if (!lock.ok) return { ok: false, error: lock.error, locked: true };
+    return null;
+  } catch { return null; /* coordinación no instalada → continuar */ }
+}
+
+function writeFile(root, rel, content, coordCtx) {
   const file = safe(root, rel);
   const body = String(content ?? "");
   try {
@@ -195,20 +217,8 @@ function writeFile(root, rel, content) {
     }
   } catch { /* stack no instalado → continuar */ }
   
-  let _coord = null;
-  let _coordThread = "default";
-  let _coordAgent = "implementer";
-  try {
-    const { getCoordination } = require("../runtime/agent-coordination");
-    _coord = getCoordination(root);
-    const g = global.__editcoreCoord || {};
-    _coordThread = g.threadId || "default";
-    _coordAgent = g.agentRole || "implementer";
-    const lock = _coord.acquireLock(_coordThread, _coordAgent, rel, "write_file");
-    if (!lock.ok) {
-      return { ok: false, error: lock.error, locked: true };
-    }
-  } catch { /* coordinación no instalada → continuar */ }
+  const lockBlock = acquireWriteLock(root, rel, "write_file", coordCtx);
+  if (lockBlock) return lockBlock;
   
   let _beforeForReview = "";
   try {
@@ -352,9 +362,14 @@ function locateOldText(current, oldText) {
   };
 }
 
-function replaceInFile(root, rel, oldText, newText) {
+function replaceInFile(root, rel, oldText, newText, coordCtx) {
   const file = safe(root, rel);
   if (!fs.existsSync(file)) return { ok: false, error: `No existe: ${rel}`, soft: true };
+  // replace_in_file NO tenía lock (solo write_file): era la puerta
+  // trasera por la que dos agentes en paralelo se pisaban el mismo
+  // archivo. Mismo lock e identidad que write_file.
+  const lockBlock = acquireWriteLock(root, rel, "replace_in_file", coordCtx);
+  if (lockBlock) return lockBlock;
   const current = fs.readFileSync(file, "utf8");
   const located = locateOldText(current, oldText);
   if (!located.ok) {
@@ -1121,6 +1136,32 @@ const DEFINITIONS = [
   {
     type: "function",
     function: {
+      name: "delegate_parallel",
+      description: "Delega 2-4 subagentes de SOLO LECTURA que trabajan EN PARALELO (explorer: mapea una zona del proyecto; analyst: responde una pregunta de análisis o revisión sobre el código) y devuelve un informe combinado. Úsala cuando una tarea tenga frentes independientes que convenga investigar a la vez —p. ej. uno mapea el frontend, otro revisa el backend, otro audita la configuración— en vez de explorarlos en serie tú solo. No escribe archivos: con el informe, la construcción la ejecutas tú.",
+      parameters: {
+        type: "object",
+        properties: {
+          tasks: {
+            type: "array",
+            description: "Subtareas independientes (máximo 4).",
+            items: {
+              type: "object",
+              properties: {
+                role: { type: "string", enum: ["explorer", "analyst"], description: "explorer mapea una zona; analyst responde una pregunta de análisis/revisión." },
+                target: { type: "string", description: "Zona o ruta a mapear (rol explorer)." },
+                question: { type: "string", description: "Pregunta que debe responder (rol analyst)." }
+              },
+              required: ["role"]
+            }
+          }
+        },
+        required: ["tasks"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
       name: "deploy_one_click",
       description: "Publica o despliega el proyecto actual (ej. Vercel o servidor configurado).",
       parameters: {
@@ -1185,6 +1226,9 @@ function resolveListPath(root, requested) {
 
 async function execute(name, args, root, allowWrite, helpers = {}) {
   const a = args || {};
+  // Identidad de coordinación de ESTA corrida para los locks por
+  // archivo (la propagan el orquestador y el implementer por helpers).
+  const coordCtx = { threadId: helpers?.threadId || null, agentRole: helpers?.agentRole || null };
   try {
     switch (name) {
       case "list_files": {
@@ -1216,10 +1260,28 @@ async function execute(name, args, root, allowWrite, helpers = {}) {
       case "search_files": return searchFiles(root, a.query || "");
       case "write_file":
         if (!allowWrite) return { ok: false, error: "Escritura no permitida (Modo Solo Lectura)." };
-        return writeFile(root, a.path, a.content);
+        return writeFile(root, a.path, a.content, coordCtx);
       case "replace_in_file":
         if (!allowWrite) return { ok: false, error: "Escritura no permitida (Modo Solo Lectura)." };
-        return replaceInFile(root, a.path, a.oldText, a.newText);
+        return replaceInFile(root, a.path, a.oldText, a.newText, coordCtx);
+      case "delegate_parallel": {
+        // Subagentes de solo lectura EN PARALELO (explorer/analyst
+        // reales, requeridos aquí dentro para no crear un ciclo de
+        // módulos: los subagentes a su vez requieren tools).
+        const { runDelegatedTasks } = require("./parallel-delegate");
+        const { runExplorer } = require("./subagents/explorer");
+        const { runAnalyst } = require("./subagents/analyst");
+        return await runDelegatedTasks({
+          projectRoot: root,
+          tasks: a.tasks,
+          threadId: coordCtx.threadId || "default",
+          signal: helpers?.abortSignal || null,
+          runners: {
+            explorer: (task) => runExplorer({ projectRoot: root, target: task.target || ".", signal: helpers?.abortSignal || null }),
+            analyst: (task) => runAnalyst({ projectRoot: root, userMessage: task.question || "", signal: helpers?.abortSignal || null }),
+          },
+        });
+      }
       case "run_command":
         if (!allowWrite) return { ok: false, error: "Comandos no permitidos en modo lectura." };
         return runCommand(root, a.command, {

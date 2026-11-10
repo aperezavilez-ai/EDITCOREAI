@@ -62,10 +62,13 @@ test("H2c: eco del prompt se rechaza", () => {
   assert.match(adapterSource, /looksLikePromptEcho/);
 });
 
-test("H3: un agente por projectRoot + steer de nudges", () => {
+test("H3: un escritor por chat (paralelo entre chats) + steer de nudges", () => {
+  // Contrato ACTUALIZADO a propósito (multiagente, 2026-11-10): el
+  // candado por projectRoot se sustituyó por arbitraje por chat con
+  // locks por archivo. Antes esto afirmaba el candado por proyecto.
   assert.equal(ProjectAnalysis.shouldSteerLiveAgent("PORQUE NO AVANZAS"), true);
-  assert.match(rendererSource, /sameProject/);
-  assert.match(rendererSource, /un solo agente con tools por projectRoot/);
+  assert.match(rendererSource, /Concurrencia entre escritores: se arbitra POR CHAT/);
+  assert.match(rendererSource, /chatId: project\?\.activeChatId/);
 });
 
 test("H3b: analisis no pone skipBrain", () => {

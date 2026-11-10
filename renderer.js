@@ -12828,6 +12828,9 @@ function buildPromptJob(prompt) {
     // principal NUNCA les herede el último workspace abierto.
     projectlessConversation: Boolean(project && !String(project.projectRoot || "").trim() && !String(state.projectRoot || "").trim()),
     projectId: activeProject()?.id || "",
+    // El chat donde nació el trabajo: la concurrencia entre escritores
+    // se arbitra POR CHAT (ver canLaunchParallelAgent).
+    chatId: project?.activeChatId || activeProject()?.activeChatId || "",
     agentId: activeProject()?.activeAgentId || state.activeAgentId || "",
     allowWrite: state.permissionMode !== "readonly",
     permissionMode: state.permissionMode,
@@ -13122,12 +13125,27 @@ function countActiveAgents(active = []) {
 
 function canLaunchParallelAgent(next, active = []) {
   if (!next?.usesProjectTools) return false;
-  // Candado: un solo agente con tools por projectRoot (evita 2º agente ciego).
   const nextRoot = normalizeProjectRoot(next.projectRoot || "");
   const nextWrite = next.isAgent && !next.directReadOnly && !next.readOnlyChat;
-  const sameProject = active.some((job) => job.usesProjectTools && job.isAgent && !job.directReadOnly && !job.readOnlyChat
-    && normalizeProjectRoot(job.projectRoot || "") === nextRoot);
-  if (sameProject && !next.isSubAgent && nextWrite) return false;
+  if (nextWrite) {
+    // Concurrencia entre escritores: se arbitra POR CHAT, no por
+    // proyecto. La conversación de UN chat es serie (sus mensajes y su
+    // contexto no se entrelazan con otra corrida del mismo chat), pero
+    // DOS CHATS DISTINTOS del mismo proyecto sí trabajan en paralelo:
+    // los locks por archivo de agent-coordination (identidad por
+    // corrida) arbitran los archivos compartidos y replace_in_file
+    // exige el texto exacto, así que una pisada se detecta, no se
+    // aplica en silencio. Sin chat identificado en cualquiera de los
+    // dos lados no se puede probar que sean chats distintos: se
+    // conserva el candado histórico de un escritor por proyecto.
+    // (La exención vieja por isSubAgent lanzaba en paralelo incluso
+    // dentro del mismo chat y sin locks fiables debajo: se retira.)
+    const isWriter = (job) => job.usesProjectTools && job.isAgent && !job.directReadOnly && !job.readOnlyChat
+      && normalizeProjectRoot(job.projectRoot || "") === nextRoot;
+    const conflict = active.some((job) => isWriter(job)
+      && (!job.chatId || !next.chatId || String(job.chatId) === String(next.chatId)));
+    if (conflict) return false;
+  }
   return countActiveAgents(active) < MAX_PARALLEL_AGENTS;
 }
 

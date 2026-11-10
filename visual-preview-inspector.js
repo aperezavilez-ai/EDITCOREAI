@@ -23,6 +23,10 @@ async function capturePreview({ BrowserWindow, url, viewport = "desktop", output
   try {
     inspectionWindow.setContentSize(size.width, size.height);
     await inspectionWindow.webContents.session.setProxy({ mode: "direct" });
+    const consoleErrors = [];
+    inspectionWindow.webContents.on("console-message", (_event, level, message) => {
+      if (level >= 2) consoleErrors.push({ type: level >= 3 ? "error" : "warning", text: String(message || "").slice(0, 300) });
+    });
     const probe = await inspectionWindow.webContents.session.fetch(url, { method: "GET" });
     if (!probe.ok) throw new Error(`La sesion Electron no pudo abrir el preview local (HTTP ${probe.status}).`);
     await Promise.race([
@@ -55,8 +59,17 @@ async function capturePreview({ BrowserWindow, url, viewport = "desktop", output
         clippedControls: clippedControls.slice(0, 20),
         headings,
         bodyTextLength: (body.innerText || '').trim().length,
+        overlayText: (() => { try { return (document.querySelector('vite-error-overlay')?.shadowRoot?.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 600); } catch { return ''; } })(),
       };
     })()`);
+    diagnostics.consoleErrors = consoleErrors.slice(0, 10);
+    const consoleErrs = consoleErrors.filter((e) => e.type === "error");
+    if (consoleErrs.length || diagnostics.overlayText) {
+      diagnostics.issues = Array.isArray(diagnostics.issues) ? diagnostics.issues : [];
+      if (diagnostics.overlayText) diagnostics.issues.push(`Error visible en pantalla (overlay): ${diagnostics.overlayText.slice(0, 220)}`);
+      if (consoleErrs.length) diagnostics.issues.push(`Errores de consola/runtime: ${consoleErrs[0].text.slice(0, 220)}`);
+      diagnostics.renderOk = false;
+    }
     const image = await inspectionWindow.webContents.capturePage();
     const png = image.toPNG();
     if (png.length < 1000) throw new Error("La captura visual esta vacia o incompleta.");

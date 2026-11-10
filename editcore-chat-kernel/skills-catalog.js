@@ -17,6 +17,8 @@ const MANIFEST_NAMES = ["SKILL.md", "README.md", "CLAUDE.md", "mcp.json"];
 // ("créame una landing para mi taller"), así que por ranking nunca entraban.
 let eliteUiPolicyForSkills = null;
 try { eliteUiPolicyForSkills = require("../runtime/elite-ui-policy"); } catch (_) { eliteUiPolicyForSkills = null; }
+let repairGuardForSkills = null;
+try { repairGuardForSkills = require("./repair-guard"); } catch (_) { repairGuardForSkills = null; }
 const DESIGN_SKILL_IDS = ["antislop-ui", "frontend-design"];
 function forcedDesignSkills(message, valid) {
   const text = String(message || "");
@@ -29,6 +31,19 @@ function forcedDesignSkills(message, valid) {
   } catch (_) { uiOrBuild = false; }
   if (!uiOrBuild) return [];
   return DESIGN_SKILL_IDS.map((id) => valid.find((s) => s.id === id)).filter(Boolean);
+}
+const REPAIR_SKILL_IDS = ["as-debugging-and-error-recovery"];
+function forcedRepairSkills(message, valid) {
+  const text = String(message || "");
+  if (!text || !Array.isArray(valid) || !valid.length) return [];
+  let repair = false;
+  try {
+    repair = !!(repairGuardForSkills
+      && typeof repairGuardForSkills.isRepairTask === "function"
+      && repairGuardForSkills.isRepairTask(text));
+  } catch (_) { repair = false; }
+  if (!repair) return [];
+  return REPAIR_SKILL_IDS.map((id) => valid.find((s) => s.id === id)).filter(Boolean);
 }
 const NESTED_SCAN_DIRS = [".claude", "plugins", "src"];
 const MAX_SKILLS_IN_PROMPT = 4;
@@ -540,6 +555,11 @@ function selectSkillsForTurn(projectRoot, kind, message, limit = MAX_SKILLS_IN_P
   if (forced.length) {
     const rest = selected.filter((s) => !forced.some((f) => f.id === s.id));
     selected = [...forced, ...rest].slice(0, limit);
+  }
+  const forcedRepair = forcedRepairSkills(message, valid);
+  if (forcedRepair.length) {
+    const rest = selected.filter((s) => !forcedRepair.some((f) => f.id === s.id));
+    selected = [...forcedRepair, ...rest].slice(0, limit);
   }
   return selected.map((s) => ({ id: s.id, score: scoreSkill(s, message, kind), manifestPath: s.manifestPath }));
 }
