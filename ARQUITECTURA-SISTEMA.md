@@ -8,7 +8,7 @@
 Cada carpeta es un proyecto independiente con:
 - Repositorio Git (conectado a GitHub `aperezavilez-ai/*`)
 - Deploy en Vercel (auto-deploy desde GitHub)
-- Base de datos en Supabase (`supabase.gafcore.com`)
+- Base de datos en Supabase Cloud oficial (un proyecto por app; el servidor self-hosted `supabase.gafcore.com` fue dado de baja)
 
 ### Ejemplo de proyecto típico
 ```
@@ -36,8 +36,8 @@ D:\PROGRAMAS IA\TAXIDRIV\
 - **Deploy:** Push a `main` → auto-deploy
 
 ### Supabase
-- **Host:** `supabase.gafcore.com`
-- **Projects:** Un proyecto por app
+- **Host:** Supabase Cloud oficial (`*.supabase.co`)
+- **Projects:** Un proyecto oficial por app
 - **Auth:** Service keys en vault
 - **Acceso:** `runtime/supabase-manager.js` (`supabaseHealth`, `checkMigrationDrift`, `manageSupabaseProject`)
 

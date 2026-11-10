@@ -38,7 +38,7 @@ metadata:
 **Connections:**
 - **GitHub:** All repos under `aperezavilez-ai/*`
 - **Vercel:** Auto-deploy from GitHub main branch
-- **Supabase:** `supabase.gafcore.com` (self-hosted)
+- **Supabase:** Supabase Cloud oficial, un proyecto por app (el self-hosted `supabase.gafcore.com` fue dado de baja)
 
 **Why:** User has 26+ projects all interconnected. EDITCOREAI broke one project's login and didn't know how to restore it because it doesn't understand the ecosystem.
 

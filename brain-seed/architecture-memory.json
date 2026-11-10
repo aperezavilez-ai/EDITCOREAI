@@ -5,8 +5,9 @@
     "projectsRoot": "D:\\PROGRAMAS IA\\",
     "connectionMode": "cloud_vault_bridge",
     "selfHostedServices": {
-      "supabase": "https://supabase.gafcore.com",
-      "ownServer": "detected-from-connections"
+      "supabase": "",
+      "ownServer": "decommissioned",
+      "note": "El Supabase self-hosted gafcore fue dado de baja; cada proyecto usa su propio proyecto oficial de Supabase Cloud. Las cuentas de EditCoreAI viven en https://ycftycizdgbboojfdtkz.supabase.co"
     },
     "githubNamespace": "aperezavilez-ai",
     "vercelDefault": true,

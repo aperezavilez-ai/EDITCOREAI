@@ -76,16 +76,14 @@ If you break something:
 - NEVER hardcode credentials
 - NEVER commit .env files
 
-### 6b. BACKEND GAFCORE (SELF-HOSTED, $0/mes)
-**PROHIBIDO usar Supabase Cloud (`https://*.supabase.co`) o crear infraestructura cloud de pago.**
-- Public Supabase URL: `https://supabase.gafcore.com`
-- Local Kong API: `http://127.0.0.1:54321`
-- Direct PostgreSQL: `127.0.0.1:54322` (credenciales en `.env.local`)
-- Supabase Studio: `http://localhost:54323`
-- Anon key: `NEXT_PUBLIC_SUPABASE_ANON_KEY` en `.env.local`. Service role: `SUPABASE_SERVICE_ROLE_KEY` en `.env.local` (solo servidor, nunca en el cliente ni en archivos versionados).
-- Cada proyecto de `D:\PROGRAMAS IA\` necesita `project-infra.json` (`isolationMode: "dedicated_supabase"`, `supabase.schema: <project_slug>`), migraciones en `supabase/migrations/` aplicadas en su schema dedicado.
+### 6b. BACKEND: SUPABASE CLOUD OFICIAL, UN PROYECTO POR APP
+El servidor self-hosted GAFCORE (`supabase.gafcore.com`, `api-editcoreai.gafcore.com`) fue DADO DE BAJA: ya no responde y está prohibido apuntar producción o configuraciones a cualquier dominio `*.gafcore.com`.
+- Cada proyecto usa su PROPIO proyecto oficial de Supabase Cloud (`https://<ref>.supabase.co`), con sus migraciones en `supabase/migrations/`.
+- Anon key y service role viven en el `.env.local` de cada proyecto (nunca en el cliente ni en archivos versionados); la service role solo en el servidor.
+- Cada proyecto de `D:\PROGRAMAS IA\` necesita `project-infra.json` con la referencia de SU proyecto cloud.
 - Backups y dumps: `D:\PROGRAMAS IA\Z RESPALDOS\`.
-- **Cuentas de EditCoreAI:** servidor Supabase propio y separado (proyecto CLI `editcoreai`; API `127.0.0.1:55321`, público `https://api-editcoreai.gafcore.com`; Postgres `55322`; Studio `55323`). Login solo con Google; rol, saldo y códigos los decide el servidor (`public.editcoreai_*`). Arranque: `npm run cuentas:start`; dar admin: `npm run cuentas:admin -- correo`.
+- La pila local (`npm run cuentas:start`; API `127.0.0.1:55321`, Postgres `55322`, Studio `55323`) es SOLO un entorno de desarrollo local, nunca producción.
+- **Cuentas de EditCoreAI:** proyecto oficial de Supabase Cloud `ycftycizdgbboojfdtkz` (`https://ycftycizdgbboojfdtkz.supabase.co`), exclusivo de cuentas. Login solo con Google; rol, saldo y códigos los decide el servidor (`public.editcoreai_*`). Las Edge Functions `ai-proxy` y `payments` están desplegadas en ese proyecto, y el secreto `MEAI_API_KEY` vive en los secretos de las funciones. Dar admin: `npm run cuentas:admin -- correo`.
 
 ### 7. PROHIBITED ACTIONS
 - ❌ Mentioning "GafCore Gateway" or project keys in chat

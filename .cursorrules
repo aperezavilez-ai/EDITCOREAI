@@ -39,9 +39,9 @@
 - Al terminar un fix de producto: actualizar `ROADMAP.md`, versión en `package.json`, verify script y EXE si el usuario pide release.
 - Versiones: cada parte va de 0 a 9; nunca 10. Después de 4.1.9 sigue 4.2.0; después de 4.9.9 sigue 5.0.0. El gate de pre-empaquetado lo verifica.
 
-## 7. BACKEND GAFCORE (SELF-HOSTED)
-- PROHIBIDO usar Supabase Cloud (`*.supabase.co`) o crear infraestructura cloud de pago.
-- URL pública: `https://supabase.gafcore.com` · Kong local: `http://127.0.0.1:54321` · Postgres: `127.0.0.1:54322` · Studio: `http://localhost:54323`.
+## 7. BACKEND: SUPABASE CLOUD OFICIAL
+- El servidor self-hosted GAFCORE fue DADO DE BAJA (ya no responde): prohibido apuntar producción o configuraciones a `*.gafcore.com`.
+- Cada proyecto usa su propio proyecto oficial de Supabase Cloud, con migraciones en `supabase/migrations/`.
 - La anon key y la service_role viven en `.env.local` (ignorado por git). Nunca las escribas en archivos versionados ni en el cliente.
-- Cada proyecto: `project-infra.json` con su schema dedicado y migraciones en `supabase/migrations/`.
-- EditCoreAI (cuentas, créditos, licencias) usa su **propio** servidor Supabase, separado de todos los proyectos: proyecto CLI `editcoreai`, API `http://127.0.0.1:55321` (público `https://api-editcoreai.gafcore.com`), Postgres `55322`, Studio `55323`. Arranque: `npm run cuentas:start`. Nunca lo conectes a taxidriv, calili ni otro proyecto.
+- La pila local (Kong `127.0.0.1:54321`, Postgres `54322`, Studio `54323`; `npm run cuentas:start`) es solo desarrollo local.
+- EditCoreAI (cuentas, créditos, licencias) usa su proyecto cloud EXCLUSIVO `ycftycizdgbboojfdtkz` (`https://ycftycizdgbboojfdtkz.supabase.co`), con las funciones `ai-proxy` y `payments` desplegadas ahí. No lo mezcles con las bases de otros proyectos (taxidriv, calili, etc.).
