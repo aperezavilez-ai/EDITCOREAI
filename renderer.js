@@ -3365,6 +3365,14 @@ function activeProject() {
   return state.projects.find((p) => p.id === state.activeProjectId) || null;
 }
 
+// La conversación activa nació sin proyecto a propósito (puerta "Chat sin
+// proyecto"): su registro existe y no tiene raíz. Distingue ese estado de
+// "sesión sin hidratar" (sin registro activo), que sí debe rehidratarse.
+function isIntentionalProjectlessConversation() {
+  const project = activeProject();
+  return Boolean(project && !String(project.projectRoot || "").trim() && !String(state.projectRoot || "").trim());
+}
+
 function updateAgentCount() {
   const option = $("runMode")?.querySelector('option[value="agent"]');
   if (option) option.textContent = "Agente";
@@ -12173,7 +12181,13 @@ async function send(event) {
   }
 
   // Welcome / projectRoot vacio: rehidratar activo antes de switch / missingProject.
-  if (!String(state.projectRoot || "").trim()) {
+  // EXCEPCIÓN: una conversación que nació sin proyecto NO se rehidrata —
+  // este amarre incondicional al proyecto reciente era el mecanismo que
+  // terminaba construyendo dentro del último proyecto abierto (VIXERAI)
+  // en las v4.6.3–v4.6.5: corría ANTES de construir el trabajo, así que
+  // ni la creación desde la conversación ni la declaración sin proyecto
+  // llegaban a existir.
+  if (!String(state.projectRoot || "").trim() && !isIntentionalProjectlessConversation()) {
     await ensureActiveProjectBound(effectivePrompt);
   }
 
@@ -12242,7 +12256,12 @@ async function send(event) {
   });
   if (initialModeDecision.missingProject) {
     // Auto-bind: storage / recientes / nombre / EDITCOREAI — sin pedir Abrir si hay candidato.
-    const rebound = await ensureActiveProjectBound(effectivePrompt);
+    // En una conversación que nació sin proyecto tampoco se amarra aquí:
+    // el turno cae a la respuesta honesta de "abre un proyecto o indica su
+    // nombre" en vez de analizar el proyecto equivocado.
+    const rebound = isIntentionalProjectlessConversation()
+      ? false
+      : await ensureActiveProjectBound(effectivePrompt);
     project = activeProject() || project;
     if (rebound && String(state.projectRoot || project?.projectRoot || "").trim()) {
       // Continuar el turno con el workspace rehidratado.
