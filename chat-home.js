@@ -2239,6 +2239,37 @@
     promptEl?.focus();
   }
 
+  function createProjectlessThread() {
+    // Conversación libre sin carpeta: el registro nace sin projectRoot en el
+    // renderer (createThread normal siempre cae en el proyecto activo).
+    let created = null;
+    try {
+      if (typeof window.createProjectlessChatThread === "function") {
+        created = window.createProjectlessChatThread();
+      }
+    } catch (err) {
+      console.warn("[chat-home] createProjectlessThread", err);
+    }
+    const t = {
+      id: created?.id || uid(),
+      title: "Nueva conversación",
+      updatedAt: Date.now(),
+      createdAt: Date.now(),
+    };
+    if (!created) {
+      store.threads.unshift(t);
+    }
+    store.activeId = t.id;
+    saveStore(store);
+    const feed = $("feed");
+    if (feed) feed.replaceChildren();
+    renderThreadList();
+    syncFolderChip();
+    syncCrumb();
+    syncEmptyState();
+    $("chatHomePrompt")?.focus();
+  }
+
   function createThread() {
     let created = null;
     try {
@@ -2917,6 +2948,7 @@
     $("chatHomeIdeBtn")?.addEventListener("click", () => setMode("ide"));
     $("openChatHomeBtn")?.addEventListener("click", () => setMode("chat"));
     $("chatHomeNewBtn")?.addEventListener("click", () => createThread());
+    $("chatHomeProjectlessBtn")?.addEventListener("click", () => createProjectlessThread());
     $("chatHomeNavChats")?.addEventListener("click", () => {
       const search = $("chatHomeSearch");
       if (search) search.value = "";

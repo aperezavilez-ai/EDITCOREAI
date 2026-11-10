@@ -3467,6 +3467,58 @@ function renderChatThreadSelect() {
   renderChatTabs();
 }
 
+function createProjectlessChatThread() {
+  // Puerta que faltaba: una conversación SIN proyecto. createNewChatThread
+  // pasa por ensureProject(), que amarra el chat nuevo al primer proyecto
+  // con carpeta — teniendo proyectos guardados no había forma de abrir en
+  // blanco, aunque el motor soporta conversar sin carpeta desde la v4.6.2.
+  // Aquí el registro nace con projectRoot "" y queda activo.
+  const chat = {
+    id: uid(),
+    title: "Chat 1",
+    messages: [],
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+  };
+  const project = {
+    id: uid(),
+    title: "Nuevo chat",
+    mode: state.mode,
+    model: PROVIDERS[state.mode]?.model || "claude-sonnet-4.6",
+    messages: chat.messages,
+    chats: [chat],
+    activeChatId: chat.id,
+    projectRoot: "",
+    provider: state.mode,
+    permissionMode: state.permissionMode,
+    agents: [],
+    agentState: "idle",
+    brainSnapshot: null,
+    updatedAt: Date.now(),
+  };
+  state.projects.unshift(project);
+  state.activeProjectId = project.id;
+  state.projectRoot = "";
+  state.history = [];
+  state.attachments = [];
+  saveProjects();
+  renderProjects();
+  renderChatTabs();
+  $("feed").replaceChildren();
+  if (document.body.dataset.appMode !== "chat") {
+    append("assistant", "Bienvenido a EditCoreAI. ¿Qué haremos hoy?", null, false);
+  }
+  renderAttachments();
+  renderPromptQueue();
+  scrollFeedToBottom();
+  refreshUndoAgentRunButton();
+  hideWelcomeScreen();
+  if ($("projectPathLabel")) $("projectPathLabel").textContent = "Sin proyecto";
+  $("status").textContent = "Chat sin proyecto";
+  try { window.dispatchEvent(new CustomEvent("editcore:chats-updated", { detail: { activeChatId: chat.id, projectId: project.id } })); } catch {}
+  return chat;
+}
+
 function createNewChatThread() {
   const project = ensureProject();
   ensureProjectChats(project);
@@ -16262,6 +16314,9 @@ $("welcomeOpenBtn")?.addEventListener("click", () => {
 $("welcomeNewBtn")?.addEventListener("click", () => {
   openNewProjectDialog();
 });
+$("welcomeChatBtn")?.addEventListener("click", () => {
+  createProjectlessChatThread();
+});
 $("welcomeViewAllBtn")?.addEventListener("click", () => {
   openProjectsDialog();
 });
@@ -16844,6 +16899,7 @@ $("inspectorSaveBtn")?.addEventListener("click", () => saveEditCoreChanges());
 // Bridge Chat Home ↔ IDE (sin duplicar Agent Core).
 window.reloadEditCoreApp = reloadEditCoreApp;
 window.createNewChatThread = createNewChatThread;
+window.createProjectlessChatThread = createProjectlessChatThread;
 window.switchChatThread = switchChatThread;
 window.closeChatThread = closeChatThread;
 window.deleteChatThread = closeChatThread;
