@@ -67,6 +67,14 @@ function eliteUiSystemPrompt() {
     "o carece de identidad tipográfica/color, NO dar por terminado:",
     "corregir antes de cerrar la tarea.",
     "",
+    "### Protocolo de verificación visual (OBLIGATORIO antes de cerrar una tarea de UI)",
+    "Tienes ojos: la herramienta capture_preview_screenshot. Úsala, no declares la UI terminada a ciegas.",
+    "1. Asegura que el proyecto se esté sirviendo en local (el preview del IDE o el dev server que levantaste con run_command).",
+    "2. Llama a capture_preview_screenshot DOS veces sobre la URL local activa: viewport \"desktop\" y viewport \"mobile\".",
+    "3. Lee los diagnostics y el multimodalHint de cada captura: si reportan overflow horizontal, controles recortados, página vacía o jerarquía débil, CORRIGE el código y repite la captura hasta que salga limpia.",
+    "4. Juzga el resultado contra la lista anti-genérico de arriba (identidad tipográfica/color, espaciado, estados). Si parece plantilla de IA, itera antes de cerrar.",
+    "5. Solo cierra la tarea cuando ambas capturas salgan sin issues. Si la captura falla (sin preview disponible), dilo con honestidad en tu resumen en vez de afirmar que la UI quedó verificada.",
+    "",
     "### Código",
     "- No dejar TODOs de implementación ni archivos a medias",
     "- Preferir componentes con props claras y className componible",
@@ -87,7 +95,7 @@ function isUiTask(text = "") {
  * Detecta si el mensaje pide crear producto / app / web desde cero o grande.
  */
 function isProductBuildTask(text = "") {
-  return /(?:crea(?:r)?|arma(?:r)?|construye|build|desarrolla|haz(?:me)?|genera).{0,40}(?:app|aplicaci[oó]n|web|saas|plataforma|producto|mvp|landing|dashboard|tienda|portal)/i.test(
+  return /(?:cr[eé]a(?:r)?|arma(?:r)?|construye|build|desarrolla|haz(?:me)?|genera).{0,40}(?:app|aplicaci[oó]n|web|saas|plataforma|producto|mvp|landing|dashboard|tienda|portal)/i.test(
     String(text || "")
   ) || /(?:desde\s+cero|greenfield|nuevo\s+proyecto)/i.test(String(text || ""));
 }
@@ -135,6 +143,14 @@ function detectGenericUiSignals(code = "") {
   };
 }
 
+/**
+ * Tarea visual o de construcción de producto: cualquiera de las dos señales
+ * basta para aplicar la política élite completa (incl. verificación visual).
+ */
+function isUiOrBuildTask(text = "") {
+  return isUiTask(text) || isProductBuildTask(text);
+}
+
 function withEliteUiPolicy(systemPrompt = "") {
   const rest = String(systemPrompt || "").trim();
   const elite = eliteUiSystemPrompt();
@@ -151,6 +167,7 @@ module.exports = {
   eliteUiSystemPrompt,
   isUiTask,
   isProductBuildTask,
+  isUiOrBuildTask,
   visualQaChecklist,
   detectGenericUiSignals,
   withEliteUiPolicy,

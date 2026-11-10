@@ -31,12 +31,14 @@ test("Conexiones: el Supabase propio del usuario se respeta tal cual", () => {
   assert.equal(resolved.url, "https://db.cliente.mx");
 });
 
-test("Conexiones: el administrador conserva su servidor por defecto", () => {
+test("Conexiones: ni el administrador recibe un host por defecto (su origen sale de su conexión configurada)", () => {
   defaults.setAdminInfra(true);
   try {
     const root = tempProject();
-    const url = projectOwnedSupabaseUrl(root, "");
-    assert.match(url, /^https:\/\/supabase\.gafcore\.com\/ec-user-conn-/);
+    // Regla del dueño (2026-11-10): sin URL explícita no se inventa ningún
+    // servidor — antes el valor por defecto era el servidor dado de baja.
+    assert.equal(defaults.defaultSupabaseOrigin(), "");
+    assert.equal(projectOwnedSupabaseUrl(root, ""), "");
   } finally {
     defaults.setAdminInfra(false);
   }

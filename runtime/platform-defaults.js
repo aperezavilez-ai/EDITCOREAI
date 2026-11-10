@@ -18,7 +18,13 @@
  * y no existía.
  */
 
-const ADMIN_SUPABASE_ORIGIN = "https://supabase.gafcore.com";
+// Sin host por defecto (regla del dueño, 2026-11-10): solo el administrador
+// usa SU conexión de Supabase (la oficial, configurada explícitamente), y
+// cada usuario conecta sus propias cuentas de Supabase, Vercel y GitHub.
+// Antes el valor era el servidor propio dado de baja (supabase.gafcore.com)
+// y, como origen de reserva, aprovisionar sin URL explícita apuntaba a un
+// dominio muerto. Sin configuración explícita, el origen es "" (cerrado).
+const ADMIN_SUPABASE_ORIGIN = "";
 
 let adminInfra = true;
 

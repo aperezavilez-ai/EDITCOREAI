@@ -12663,6 +12663,7 @@ function buildPromptJob(prompt) {
     directReadOnly: plan.directReadOnly,
     planAuthorizedExecution: plan.planAuthorizedExecution,
     needsAnalysisFirst: plan.needsAnalysisFirst,
+    greenfieldCreate: Boolean(plan.greenfieldCreate),
     requireAgentTools: Boolean(plan.isAgent && plan.usesProjectTools),
     hasAttachments: state.attachments.length > 0,
     hasImages: state.attachments.some((item) => isImageAttachment(item)),
@@ -13180,17 +13181,24 @@ function deriveConversationProjectName(prompt, project) {
 // conversación misma (carpeta en blanco en el catálogo, con el mismo flujo
 // del diálogo Nuevo proyecto) y lo amarra a ESTE chat: la charla pasa a IDE
 // sin perder el historial ni cambiar de hilo.
+const SCAFFOLD_TEMPLATE_NAMES = { blank: "Proyecto vacío", node: "Node.js", "pro-web-app": "Web App profesional", "next-saas": "SaaS profesional Next.js", "enterprise-erp-base": "Enterprise ERP Base" };
 async function ensureDesktopProjectForAgent(job) {
   if (!window.editcoreProject?.create || !window.editcoreProject?.save) return null;
   const project = state.projects.find((item) => item.id === job?.projectId) || activeProject();
   const name = deriveConversationProjectName(job?.prompt || "", project);
   const parentPath = String(window.EDITCORE_WEB_CATALOG || loadJson("editcore-project-parent", "D:\\PROGRAMAS IA") || "").trim();
   if (!name || !parentPath) return null;
+  // Arranque profesional: la plantilla se elige por el tipo de pedido (la
+  // conversación completa es el contexto), no siempre el proyecto vacío.
+  const templateText = `${project?.title || ""} ${job?.prompt || ""}`;
+  const template = (typeof ProjectAnalysis !== "undefined" && typeof ProjectAnalysis.pickScaffoldTemplate === "function")
+    ? ProjectAnalysis.pickScaffoldTemplate(templateText)
+    : "blank";
   let lastError = null;
   for (let attempt = 0; attempt < 3; attempt++) {
     const candidate = attempt ? `${name} ${attempt + 1}` : name;
     try {
-      const created = await window.editcoreProject.create({ name: candidate, parentPath, template: "blank", install: false, runId: uid() });
+      const created = await window.editcoreProject.create({ name: candidate, parentPath, template, install: template !== "blank", runId: uid() });
       if (!created?.root) return null;
       const saved = await window.editcoreProject.save({ root: created.root, name: created.name });
       if (!saved?.ok || !saved?.manifest?.root) return null;
@@ -13204,7 +13212,7 @@ async function ensureDesktopProjectForAgent(job) {
       renderProjects();
       if ($("projectPathLabel")) $("projectPathLabel").textContent = created.root;
       if (typeof renderProjectFiles === "function") renderProjectFiles().catch(() => undefined);
-      $("status").textContent = `Proyecto ${created.name} creado desde esta conversación`;
+      $("status").textContent = `Proyecto ${created.name} creado desde esta conversación (plantilla: ${SCAFFOLD_TEMPLATE_NAMES[template] || template})`;
       return { root: created.root, name: created.name };
     } catch (error) {
       lastError = error;

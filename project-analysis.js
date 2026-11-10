@@ -1176,6 +1176,31 @@
     return `${parent}${sep}${folder}`;
   }
 
+  // Arranque profesional: elige la plantilla del catálogo según el tipo de
+  // pedido, en vez de nacer siempre del proyecto vacío. Las plantillas
+  // profesionales ya existen en project-scaffold-service (pro-web-app trae
+  // React+Vite+TS+Tailwind y componentes; next-saas es el starter real de
+  // Next.js con shadcn/Stripe/roles; enterprise-erp-base trae shell ERP).
+  function pickScaffoldTemplate(text) {
+    const t = String(text || "").toLowerCase();
+    if (!t.trim()) return "blank";
+    // No-web explícito: scripts, CLI, bots, automatización, apps de escritorio.
+    if (/\b(script|python|cli|consola|bot|automatizaci[oó]n|scraping|excel|csv)\b/.test(t)
+      || /\bapp\s+de\s+escritorio\b|\b(tauri|electron)\b/.test(t)) return "blank";
+    // Backend puro (sin cara web): servicio Node.
+    if (/\b(api|backend|microservicio|servicio\s+web|webhook)\b/.test(t)
+      && !/\b(landing|p[aá]gina|sitio|web\s+app|aplicaci[oó]n\s+web|dashboard|panel|frontend|tienda)\b/.test(t)) return "node";
+    // SaaS: suscripciones, pagos, equipos/roles, multiusuario.
+    if (/\b(saas|suscripci[oó]n|suscripciones|membres[ií]a|stripe|pasarela\s+de\s+pago|equipos\s+y\s+roles|multi-?tenant)\b/.test(t)) return "next-saas";
+    // ERP / CRM explícito.
+    if (/\b(erp|crm)\b/.test(t)) return "enterprise-erp-base";
+    // Todo lo demás que sea app/web (landing, sitio, dashboard, tienda,
+    // punto de venta, panel, juego web, app con login…) nace de la plantilla
+    // profesional; nacer en blanco es lo que producía el look de plantilla fea.
+    if (/\b(app|aplicaci[oó]n|web|landing|p[aá]gina|sitio|dashboard|panel|tienda|portal|portafolio|blog|juego|login|inventario|punto\s+de\s+venta|reservas|citas|cat[aá]logo)\b/.test(t)) return "pro-web-app";
+    return "blank";
+  }
+
   function resolveExecutionMode(prompt, options = {}) {
     const requestedAgent = options.requestedAgent === true;
     const projectOpen = options.projectOpen === true;
@@ -1309,5 +1334,6 @@
     recoveryPrompt,
     redactCredentials,
     resolveExecutionMode,
+    pickScaffoldTemplate,
   };
 });

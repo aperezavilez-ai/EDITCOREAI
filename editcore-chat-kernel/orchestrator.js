@@ -775,10 +775,18 @@ class ChatOrchestrator {
     try {
       this._eliteUiExtra = "";
       this._productPipelineExtra = "";
+      this._uiTask = false;
       const taskText = String(effectiveText || text || "");
       if (eliteUiPolicy && typeof eliteUiPolicy.isUiTask === "function" && eliteUiPolicy.isUiTask(taskText)) {
         this._eliteUiExtra = eliteUiPolicy.eliteUiSystemPrompt();
       }
+      // Construcción de producto (crear app/web/saas) también es tarea visual:
+      // aplica la política élite completa y habilita la verificación con capturas.
+      if (eliteUiPolicy && typeof eliteUiPolicy.isProductBuildTask === "function" && eliteUiPolicy.isProductBuildTask(taskText)) {
+        this._uiTask = true;
+        if (!this._eliteUiExtra) this._eliteUiExtra = eliteUiPolicy.eliteUiSystemPrompt();
+      }
+      if (this._eliteUiExtra) this._uiTask = true;
       if (productPipeline && typeof productPipeline.buildPipelinePrompt === "function") {
         const pipe = productPipeline.buildPipelinePrompt(taskText);
         if (pipe && pipe.active && pipe.prompt) {
@@ -1290,7 +1298,10 @@ class ChatOrchestrator {
               .filter((t) => CHAT_READ_TOOLS.has(t.function?.name || t.name))
             : [])
           : tools.getToolDefinitions({ allowWrite: accessFull || orderedWrite, isFullAccess: accessFull, isAnalysis: false })
-            .filter((t) => !["preview_browser_interaction", "browser_page_action", "capture_preview_screenshot", "auto_scaffold_project", "clone_web_page", "images_to_code", "rollback_last_change"].includes(t.function?.name || t.name));
+            .filter((t) => !["preview_browser_interaction", "browser_page_action", "auto_scaffold_project", "clone_web_page", "images_to_code", "rollback_last_change"].includes(t.function?.name || t.name))
+            // Ojos solo donde aportan: la captura del preview se ofrece en tareas
+            // de UI/construcción (this._uiTask lo fija handle); en el resto sigue fuera.
+            .filter((t) => this._uiTask === true || (t.function?.name || t.name) !== "capture_preview_screenshot");
 
         let streamAccum = "";
         let lastVisible = "";

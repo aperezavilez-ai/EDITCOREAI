@@ -10,6 +10,26 @@ const path = require("path");
  */
 
 const MANIFEST_NAMES = ["SKILL.md", "README.md", "CLAUDE.md", "mcp.json"];
+
+// Política élite (runtime): en turnos de UI o de construcción de producto, las
+// skills de diseño se inyectan SIEMPRE. Sus disparadores por palabra clave
+// ("colores", "layout", "gradientes"…) casi nunca aparecen en un pedido normal
+// ("créame una landing para mi taller"), así que por ranking nunca entraban.
+let eliteUiPolicyForSkills = null;
+try { eliteUiPolicyForSkills = require("../runtime/elite-ui-policy"); } catch (_) { eliteUiPolicyForSkills = null; }
+const DESIGN_SKILL_IDS = ["antislop-ui", "frontend-design"];
+function forcedDesignSkills(message, valid) {
+  const text = String(message || "");
+  if (!text || !Array.isArray(valid) || !valid.length) return [];
+  let uiOrBuild = false;
+  try {
+    uiOrBuild = !!(eliteUiPolicyForSkills
+      && typeof eliteUiPolicyForSkills.isUiOrBuildTask === "function"
+      && eliteUiPolicyForSkills.isUiOrBuildTask(text));
+  } catch (_) { uiOrBuild = false; }
+  if (!uiOrBuild) return [];
+  return DESIGN_SKILL_IDS.map((id) => valid.find((s) => s.id === id)).filter(Boolean);
+}
 const NESTED_SCAN_DIRS = [".claude", "plugins", "src"];
 const MAX_SKILLS_IN_PROMPT = 4;
 // CUERPO COMPLETO: las skills se inyectan ENTERAS. El truncado anterior
@@ -516,6 +536,11 @@ function selectSkillsForTurn(projectRoot, kind, message, limit = MAX_SKILLS_IN_P
       .slice(0, limit);
   }
   if (!selected.length) selected = valid.slice(0, Math.min(2, limit));
+  const forced = forcedDesignSkills(message, valid);
+  if (forced.length) {
+    const rest = selected.filter((s) => !forced.some((f) => f.id === s.id));
+    selected = [...forced, ...rest].slice(0, limit);
+  }
   return selected.map((s) => ({ id: s.id, score: scoreSkill(s, message, kind), manifestPath: s.manifestPath }));
 }
 
@@ -532,25 +557,13 @@ function skillsPrompt(projectRoot, kind, messageOrOpts) {
     ].join("\n");
   }
 
-  const ranked = valid
-    .map((skill) => ({ skill, score: scoreSkill(skill, message, kind) }))
-    .sort((a, b) => b.score - a.score || a.skill.id.localeCompare(b.skill.id));
-
-  let selected = ranked.filter((r) => r.score > 0).slice(0, MAX_SKILLS_IN_PROMPT).map((r) => r.skill);
-
-  // Si el mensaje no aporta keywords, caer a preferidos por kind (solo si existen en disco)
-  if (!selected.length) {
-    const preferred = pickSkillsForKind(kind);
-    selected = preferred
-      .map((id) => valid.find((s) => s.id === id))
-      .filter(Boolean)
-      .slice(0, MAX_SKILLS_IN_PROMPT);
-  }
-
-  // Último fallback: primeras skills válidas
-  if (!selected.length) {
-    selected = valid.slice(0, Math.min(2, MAX_SKILLS_IN_PROMPT));
-  }
+  // Selección ÚNICA: la elige selectSkillsForTurn (ranking + fallback por
+  // kind + diseño forzado en UI/construcción). Antes este cuerpo repetía la
+  // misma lógica por su cuenta y las dos copias podían derivar: un arreglo
+  // en una no llegaba a la otra. Aquí solo se construye el texto a inyectar.
+  const selected = selectSkillsForTurn(projectRoot, kind, message, MAX_SKILLS_IN_PROMPT)
+    .map((picked) => valid.find((s) => s.id === picked.id))
+    .filter(Boolean);
 
   const blocks = selected.map((skill) => {
     const body = loadManifestBody(skill.manifestPath);

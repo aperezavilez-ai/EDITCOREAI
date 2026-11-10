@@ -133,6 +133,20 @@
    * primary pelea entre si por least-used; secondary/reserve NO compiten con primary.
    */
   const ROLE_LANES = {
+    build: {
+      purpose: "Crear un producto desde cero (greenfield: app/web/SaaS/landing). La corrida más larga y la que define la calidad percibida: solo modelos fuertes, sin rotación por uso.",
+      primary: [
+        /claude-opus/,
+        /claude-sonnet-5/,
+        /claude-sonnet-4/,
+        /claude-fable/,
+        /gpt-5\.6-terra/,
+        /grok-4\.5/,
+      ],
+      secondary: [/qwen3\.6-plus/, /kimi-k2\.6/, /glm-5/],
+      reserve: [/deepseek-v4-pro/],
+      forbid: [/claude-haiku/, /gemini-2\.5-flash/, /gpt-5\.6-luna/, /gpt-5\.6-sol/, /minimax/, /deepseek-v4-flash/, /qwen3\.5/],
+    },
     implement: {
       purpose: "Crear/editar/arreglar codigo con write_file y tools.",
       primary: [
@@ -197,6 +211,12 @@
 
   // Compat: ROLE_FIT derivado del catalogo (tests / scoreModelForAuto legacy).
   const ROLE_FIT = {
+    build: [
+      [/claude-opus|claude-fable|claude-sonnet-5|claude-sonnet-4|gpt-5\.6-terra|grok-4\.5/i, 100],
+      [/qwen3\.6-plus|kimi-k2\.6|glm-5/i, 70],
+      [/deepseek-v4-pro/i, 40],
+      [/claude-haiku|gemini-2\.5-flash|gpt-5\.6-luna|gpt-5\.6-sol|minimax|deepseek-v4-flash|qwen3\.5/i, 0],
+    ],
     implement: [
       [/claude-opus|claude-fable|claude-sonnet-5|claude-sonnet-4|gpt-5\.6-terra|grok-4\.5|qwen3\.6-plus/i, 100],
       [/kimi-k2\.6|glm-5|grok-4\.3/i, 70],
@@ -320,6 +340,12 @@
     return out;
   }
 
+  function pickHighestTierEntry(list) {
+    const source = (Array.isArray(list) ? list : []).filter(Boolean);
+    if (!source.length) return null;
+    return [...source].sort((a, b) => baseTierScore(b?.model) - baseTierScore(a?.model))[0];
+  }
+
   function pickLeastUsedEntry(list, context = {}) {
     const source = (Array.isArray(list) ? list : []).filter(Boolean);
     if (!source.length) return null;
@@ -412,6 +438,10 @@
 
   function classifyAutoTaskRole(context = {}) {
     const prompt = String(context.prompt || "").toLowerCase();
+    // Copia sin acentos para los verbos: "créame"/"continúa" deben clasificar
+    // igual que "crea"/"continua" (antes el \b con acento los dejaba fuera y
+    // una construcción podía caer al carril de chat/análisis con modelos chicos).
+    const promptPlain = prompt.normalize("NFD").replace(/[̀-ͯ]/g, "");
     const agentExecution = isAgentExecutionContext(context);
     const agentAnalysis = Boolean(context.isAgent && context.usesProjectTools
       && (context.directReadOnly || context.needsAnalysisFirst));
@@ -420,7 +450,14 @@
     if (/verifica|auditor[ií]a|seguridad|producci[oó]n|go\/no-go|root.?cause|incidente/i.test(prompt)) {
       return "verify";
     }
-    if (agentExecution || /\b(crea|crear|implementa|arregla|fix|escribe|edita|aplica|procede|contin[uú]a|refactor)\b/i.test(prompt)) {
+    // Construcción desde cero (greenfield o pedido de producto): es la corrida
+    // que define la calidad; va a su propio carril de modelos fuertes. En modo
+    // Chat (sin tools) no aplica: ahí manda el carril de chat.
+    const productBuild = /(?:crea|creame|crear|construye|construyeme|arma|armame|genera|generame|haz|hazme|desarrolla).{0,40}(?:app|aplicacion|web|saas|plataforma|producto|mvp|landing|dashboard|tienda|portal|pagina|sitio)/i.test(promptPlain);
+    if ((agentExecution || (context.isAgent && context.usesProjectTools)) && (context.greenfieldCreate === true || productBuild)) {
+      return "build";
+    }
+    if (agentExecution || /\b(crea|creame|crear|implementa|arregla|fix|escribe|edita|aplica|procede|continua|refactor|construye|genera)\b/i.test(promptPlain)) {
       return "implement";
     }
     if (agentAnalysis || /\b(analiza|revisa|explica|lee|inspecciona|diagnostica|resume|plan)\b/i.test(prompt)) {
@@ -499,7 +536,10 @@
         if (laneName === "reserve" && deepseekOverShare(context, source)) continue;
         const lanePool = entriesForLane(entries, lanes[laneName] || []);
         if (!lanePool.length) continue;
-        return pickLeastUsedEntry(lanePool, context);
+        // En "build" no hay rotación por uso: gana el modelo de mayor nivel
+        // del carril. Rotar para repartir consumo es justo lo que dejaba
+        // construcciones enteras en modelos chicos.
+        return role === "build" ? pickHighestTierEntry(lanePool) : pickLeastUsedEntry(lanePool, context);
       }
 
       // Si el bucket no tiene ningun carril del rol, no inventar pelea: pasa al otro upstream.
@@ -512,6 +552,7 @@
       !matchesAnyPattern(entry?.model, (ROLE_LANES[role] || {}).forbid || [])
       && !matchesAnyPattern(entry?.model, hardForbid)
     );
+    if (role === "build") return pickHighestTierEntry(allowed.length ? allowed : source);
     return pickLeastUsedEntry(allowed.length ? allowed : source, context);
   }
 

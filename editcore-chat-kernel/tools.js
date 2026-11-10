@@ -1107,6 +1107,20 @@ const DEFINITIONS = [
   {
     type: "function",
     function: {
+      name: "capture_preview_screenshot",
+      description: "Captura el preview local del proyecto y devuelve diagnósticos mecánicos de maquetación (overflow horizontal, controles recortados, página vacía, jerarquía) junto con la ruta del PNG. Úsala tras construir o cambiar UI: captura en desktop y en mobile, corrige lo que los diagnósticos reporten y repite hasta que salga limpia. Solo acepta URLs locales (localhost/127.0.0.1).",
+      parameters: {
+        type: "object",
+        properties: {
+          url: { type: "string", description: "URL local donde corre el proyecto (preview del IDE o dev server). Si se omite, usa el preview por defecto del IDE." },
+          viewport: { type: "string", enum: ["desktop", "mobile"], description: "Tamaño de captura. Llama dos veces: desktop y mobile." }
+        }
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
       name: "deploy_one_click",
       description: "Publica o despliega el proyecto actual (ej. Vercel o servidor configurado).",
       parameters: {
@@ -1249,6 +1263,8 @@ async function execute(name, args, root, allowWrite, helpers = {}) {
         return await extraTools.dockerPs({ all: a.all === true });
       case "screenshot_page":
         return await extraTools.screenshotPage(a.url, { viewport: a.viewport, fullPage: a.fullPage === true, helpers });
+      case "capture_preview_screenshot":
+        return await capture_preview_screenshot({ url: a.url || undefined, viewport: a.viewport === "mobile" ? "mobile" : "desktop", projectRoot: root });
       case "search_brain":
         return await extraTools.searchBrain(root, a.query || "", helpers, a.limit);
       case "check_connections":

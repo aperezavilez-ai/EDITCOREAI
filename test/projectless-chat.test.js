@@ -98,7 +98,7 @@ test("renderer: el agente sin proyecto crea el proyecto desde la conversación (
   const source = fs.readFileSync(path.join(__dirname, "..", "renderer.js"), "utf8");
   assert.match(source, /async function ensureDesktopProjectForAgent\(job\)/);
   assert.match(source, /!window\.EDITCORE_IS_WEB && typeof ensureDesktopProjectForAgent === "function"/);
-  assert.match(source, /window\.editcoreProject\.create\(\{ name: candidate, parentPath, template: "blank", install: false/);
+  assert.match(source, /window\.editcoreProject\.create\(\{ name: candidate, parentPath, template, install: template !== "blank"/);
   assert.match(source, /project\.projectRoot = created\.root/);
   // El error clásico queda como último recurso cuando la creación falla.
   assert.match(source, /Indica una ruta absoluta \(ej\. D:\\\\PROGRAMAS IA\) con Acceso completo, o abre un proyecto\./);
