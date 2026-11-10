@@ -12804,6 +12804,10 @@ function buildPromptJob(prompt) {
     model,
     projectRoot: effectiveProjectRoot,
     ephemeralRoot: Boolean(ephemeralRoot),
+    // La conversación nació sin proyecto (registro sin raíz y sin raíz
+    // global): sus corridas se declaran "projectless" para que el proceso
+    // principal NUNCA les herede el último workspace abierto.
+    projectlessConversation: Boolean(project && !String(project.projectRoot || "").trim() && !String(state.projectRoot || "").trim()),
     projectId: activeProject()?.id || "",
     agentId: activeProject()?.activeAgentId || state.activeAgentId || "",
     allowWrite: state.permissionMode !== "readonly",
@@ -13279,7 +13283,12 @@ async function executePromptJob(job) {
   const prompt = job.prompt;
   const isAgent = job.isAgent;
   const usesProjectTools = job.usesProjectTools;
-  if (isAgent && !job.projectRoot) {
+  // Sin raíz, un trabajo de agente crea su proyecto desde la conversación.
+  // También un trabajo CON herramientas cuyo plan es construir algo nuevo
+  // (greenfield): si solo se cubriera isAgent, la vía de análisis con
+  // herramientas llegaba al proceso principal sin raíz y heredaba el
+  // último proyecto abierto (la landing terminó dentro de VIXERAI).
+  if ((isAgent || (usesProjectTools && job.orchestratorPlan?.greenfieldCreate)) && !job.projectRoot) {
     const hints = typeof ProjectAnalysis.extractAbsolutePathHints === "function"
       ? ProjectAnalysis.extractAbsolutePathHints(job.prompt || prompt)
       : [];
@@ -13560,6 +13569,7 @@ async function executePromptJob(job) {
         images: workflowImages(outgoingImages),
         documents: workflowDocuments(documents),
         projectRoot: job.projectRoot,
+        projectless: Boolean(job.projectlessConversation),
         projectId: project?.id || job.projectId || "",
         agentId: project?.activeAgentId || "",
         allowWrite: effectiveAllowWrite,

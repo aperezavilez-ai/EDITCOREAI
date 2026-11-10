@@ -7144,7 +7144,16 @@ ipcMain.handle("agent:run", async (event, input = {}) => {
     if (!cloudGate.ok && !/local|ollama|lm/i.test(String(baseUrl || ""))) {
       throw new Error(cloudGate.message);
     }
-    const requestedRootRaw = resolveIncomingWorkspaceRoot(event, input, task);
+    // Una corrida declarada sin proyecto (conversación que nació sin
+    // carpeta) NUNCA hereda el último workspace: el respaldo de
+    // resolveIncomingWorkspaceRoot la teletransportaba al proyecto más
+    // reciente y el agente terminaba construyendo dentro de otro proyecto
+    // (la landing del taller dentro de VIXERAI, 2026-11-10). Si llega sin
+    // raíz y sin ruta autorizada en el texto, manda el error de abajo:
+    // fallar fuerte y honesto en vez de trabajar en el proyecto ajeno.
+    const requestedRootRaw = input?.projectless === true
+      ? String(input?.projectRoot || "").trim()
+      : resolveIncomingWorkspaceRoot(event, input, task);
     const promptPaths = extractAuthorizedPaths(task)
       .map((item) => resolveAuthorizedRoot(item))
       .filter(Boolean);
