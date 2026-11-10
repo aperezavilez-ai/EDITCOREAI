@@ -10,6 +10,37 @@ const ACTIVE_STATUSES = new Set(["active", "enabled"]);
 const isSonnet46 = (model) => /^claude-sonnet-4[.-]6$/i.test(String(model || "").trim());
 const keyOf = (value) => String(value || "").trim();
 
+function resolveMeaiEnvKey() {
+  if (process.env.EDITCOREAI_MEAI_API_KEY && keyOf(process.env.EDITCOREAI_MEAI_API_KEY)) {
+    return keyOf(process.env.EDITCOREAI_MEAI_API_KEY);
+  }
+  if (process.env.MEAI_API_KEY && keyOf(process.env.MEAI_API_KEY)) {
+    return keyOf(process.env.MEAI_API_KEY);
+  }
+  try {
+    const fs = require("node:fs");
+    const path = require("node:path");
+    const candidates = [
+      path.join(process.cwd(), ".env.local"),
+      path.join(process.cwd(), ".env"),
+      path.join(__dirname, "..", ".env.local"),
+      path.join(__dirname, "..", ".env"),
+    ];
+    for (const f of candidates) {
+      if (fs.existsSync(f)) {
+        const text = fs.readFileSync(f, "utf8");
+        const match = text.match(/^\s*(?:export\s+)?(?:EDITCOREAI_MEAI_API_KEY|MEAI_API_KEY)\s*=\s*([^\r\n]+)/m);
+        if (match) {
+          let val = keyOf(match[1]);
+          if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) val = val.slice(1, -1).trim();
+          if (val && val.startsWith("sk-")) return val;
+        }
+      }
+    }
+  } catch {}
+  return "";
+}
+
 function pickMeaiKey(provider = {}, profiles = []) {
   if (provider.singleKey === true && keyOf(provider.apiKey)) return keyOf(provider.apiKey);
   const meai = profiles.filter((p) => p && p.providerKey === MEAI_KEY && keyOf(p.apiKey));
@@ -18,7 +49,10 @@ function pickMeaiKey(provider = {}, profiles = []) {
   if (sonnet) return keyOf(sonnet.apiKey);
   if (keyOf(provider.apiKey)) return keyOf(provider.apiKey);
   const active = meai.find((p) => ACTIVE_STATUSES.has(p.status));
-  return keyOf((active || meai[0])?.apiKey);
+  if (active || meai[0]) return keyOf((active || meai[0]).apiKey);
+  const envKey = resolveMeaiEnvKey();
+  if (envKey) return envKey;
+  return "";
 }
 
 function dedupeMeaiProfiles(profiles) {
@@ -98,5 +132,6 @@ module.exports = {
   MEAI_BASE_URL,
   HIDDEN_PROVIDER_KEYS,
   pickMeaiKey,
+  resolveMeaiEnvKey,
   unifyMeaiSecureState,
 };

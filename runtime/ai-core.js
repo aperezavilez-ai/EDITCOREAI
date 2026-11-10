@@ -305,7 +305,7 @@ async function readOpenAiStream(response, onTextDelta, signal, onActivity) {
       try { data = JSON.parse(value.slice(5).trim()); } catch { continue; }
       if (data?.usage) streamUsage = data.usage;
       const delta = data?.choices?.[0]?.delta || data?.choices?.[0]?.message || {};
-      const reasoning = delta.reasoning_content || delta.thought || "";
+      const reasoning = delta.reasoning || delta.reasoning_content || delta.thought || "";
       if (reasoning) {
         try { onTextDelta?.(reasoning, { reasoning: true }); } catch { /* ignore */ }
       }
@@ -463,7 +463,11 @@ function adapterFor(definition) {
       }
       const data = await parseProviderJsonOrThrow(response);
       const message = data?.choices?.[0]?.message || data?.message || {};
-      const textContent = Array.isArray(message.content) ? message.content.map((part) => part.text || "").join("") : String(message.content || data?.text || "");
+      const textContent = Array.isArray(message.content)
+        ? message.content.map((part) => part.text || "").join("")
+        : (message.content != null && message.content !== ""
+          ? String(message.content)
+          : String(message.reasoning || message.reasoning_content || data?.text || ""));
       if (input.onTextDelta && textContent) {
         try { input.onTextDelta(textContent); } catch { /* ignore */ }
       }

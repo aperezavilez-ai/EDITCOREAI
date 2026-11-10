@@ -1811,6 +1811,9 @@ ipcMain.handle("editcore:chat", async (_event, input = {}) => {
   let baseUrl = normalizeBaseUrl(input.baseUrl, input.providerKey || input.provider || input.mode);
   let chatApiKey = apiKey;
   let providerKey = String(input.providerKey || input.provider || input.mode || "");
+  if (providerKey === "meai" && (!chatApiKey || !chatApiKey.startsWith("sk-"))) {
+    chatApiKey = require("./runtime/meai-single-key").pickMeaiKey({ apiKey: chatApiKey }, []) || chatApiKey;
+  }
   const rootPath = String(input.projectRoot || "").trim();
   const images = normalizeImages(input.images);
   const permissionHint = String(
@@ -6828,6 +6831,9 @@ ipcMain.handle("agent:verify-model", async (_event, input = {}) => {
     baseUrl: normalizeBaseUrl(input.baseUrl, input.providerKey),
     apiKey: String(input.apiKey || "").trim(),
   };
+  if (provider.providerKey === "meai" && (!provider.apiKey || !provider.apiKey.startsWith("sk-"))) {
+    provider.apiKey = require("./runtime/meai-single-key").pickMeaiKey(provider, []) || provider.apiKey;
+  }
   const model = String(input.model || "").trim();
   if (!provider.baseUrl || !provider.apiKey || !model) throw new Error("Perfil de modelo incompleto.");
   return verifyOneProviderModel(provider, model, projectRoot);
@@ -8228,6 +8234,24 @@ function ensureDirectUpstreamProfiles() {
           apiKey,
         });
       }
+    }
+
+    const envMeaiKey = require("./runtime/meai-single-key").resolveMeaiEnvKey();
+    if (envMeaiKey && envMeaiKey.startsWith("sk-") && providers.meai?.apiKey !== envMeaiKey) {
+      providers.meai = {
+        ...(providers.meai || {}),
+        baseUrl: "https://api.meai.cloud/v1",
+        apiKey: envMeaiKey,
+        singleKey: true,
+      };
+      for (const p of profiles) {
+        if (p && p.providerKey === "meai") {
+          p.apiKey = envMeaiKey;
+          p.status = "active";
+          p.error = "";
+        }
+      }
+      changed = true;
     }
 
     if (!changed) return false;
