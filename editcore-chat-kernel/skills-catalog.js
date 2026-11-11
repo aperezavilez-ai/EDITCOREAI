@@ -46,13 +46,16 @@ function forcedRepairSkills(message, valid) {
   return REPAIR_SKILL_IDS.map((id) => valid.find((s) => s.id === id)).filter(Boolean);
 }
 const NESTED_SCAN_DIRS = [".claude", "plugins", "src"];
-const MAX_SKILLS_IN_PROMPT = 4;
+const MAX_SKILLS_IN_PROMPT = 6;
 // CUERPO COMPLETO: las skills se inyectan ENTERAS. El truncado anterior
 // (1.600 caracteres por skill y 7.000 para todo el bloque) dejaba fuera la
 // mayor parte de casi todos los SKILL.md de brain-seed (mediana muy por
-// encima de 1.600) y partía la 4ª skill a la mitad: el modelo recibía
-// reglas mutiladas sin saberlo. La selección sigue siendo por relevancia
-// (máx. 4), pero lo seleccionado va completo.
+// encima de 1.600) y partía la skill a la mitad: el modelo recibía reglas
+// mutiladas sin saberlo. La selección sigue siendo por relevancia
+// (máx. 6 inyectadas), pero lo seleccionado va completo, el prompt lista
+// el catálogo entero por nombre y CUALQUIER otra skill puede cargarse
+// completa durante el turno con la herramienta read_skill (contrato de
+// turno): ninguna skill queda fuera del alcance del agente.
 
 /** IDs canónicos conocidos (compatibilidad / fallback de ranking). */
 const SKILL_IDS = [
@@ -596,6 +599,7 @@ function skillsPrompt(projectRoot, kind, messageOrOpts) {
     `SKILLS VÁLIDAS EN DISCO (${availableIds.length}): ${availableIds.join(", ")}`,
     `Inyectadas (${selected.length}/${MAX_SKILLS_IN_PROMPT}) por relevancia al mensaje del usuario (kind=${kind || "n/a"}).`,
     "DIRECTIVA OBLIGATORIA: Aplica de forma inmediata y automática las pautas, patrones y reglas de estas skills activas en tus respuestas y en el código generado por tus tools. No pidas confirmación para seguir sus estándares.",
+    "Cualquier otra skill del catálogo (arriba, por nombre) puede cargarse COMPLETA durante el turno con la herramienta read_skill: si el trabajo toca el tema de una skill no inyectada, cárgala antes de actuar.",
     "Si la skill habla de deploy/conexión, combina con check_connections / connect_project según corresponda.",
     blocks.join("\n\n"),
   ].join("\n\n");
@@ -606,6 +610,7 @@ function skillsPrompt(projectRoot, kind, messageOrOpts) {
 module.exports = {
   SKILL_IDS,
   MANIFEST_NAMES,
+  MAX_SKILLS_IN_PROMPT,
   findSkillManifest,
   getValidLocalSkills,
   resolveSkillsRoots,

@@ -603,6 +603,40 @@ function buildBrainContextBlock(projectRoot, query) {
   } catch { return ""; }
 }
 
+// Consulta AUTOMÁTICA al Cerebro real (brain-service vía helpers.brainSearch)
+// al abrir el turno (contrato de turno): el agente ya no depende de acordarse
+// de llamar search_brain — lo que el usuario instaló/curó en Herramientas →
+// Cerebro (memoria global y del proyecto, conocimiento y skills instaladas)
+// entra al contexto desde el primer mensaje, con presupuesto propio.
+async function buildCerebroServiceBlock(projectRoot, query, helpers) {
+  if (!projectRoot || projectRoot === "." || typeof helpers?.brainSearch !== "function") return "";
+  const q = String(query || "").trim();
+  if (!q) return "";
+  let out = null;
+  try {
+    out = await Promise.race([
+      Promise.resolve(helpers.brainSearch(projectRoot, q, { scope: "all", limit: 5 })),
+      new Promise((resolve) => setTimeout(() => resolve(null), 6_000)),
+    ]);
+  } catch { return ""; }
+  if (!out) return "";
+  const lines = [];
+  for (const m of (Array.isArray(out.memory) ? out.memory : []).slice(0, 4)) {
+    const text = String(m?.content || m?.text || "").trim();
+    if (text) lines.push(`- [memoria] **${String(m?.title || "recuerdo")}**: ${text.slice(0, 500)}`);
+  }
+  for (const k of (Array.isArray(out.knowledge) ? out.knowledge : []).slice(0, 4)) {
+    const text = String(k?.text || k?.content || "").trim();
+    if (text) lines.push(`- [conocimiento] \`${String(k?.path || k?.title || "instalado")}\`: ${text.slice(0, 500)}`);
+  }
+  for (const c of (Array.isArray(out.catalog) ? out.catalog : []).slice(0, 4)) {
+    const name = String(c?.name || c?.id || "").trim();
+    if (name) lines.push(`- [catálogo] **${name}**: ${String(c?.description || "").slice(0, 200)}`);
+  }
+  if (!lines.length) return "";
+  return `## CEREBRO (lo instalado y recordado en EditCoreAI, relevante a este turno)\n${lines.join("\n")}`.slice(0, 3200);
+}
+
 function formatExternalActionResult(name, result) {
   const label = name === "deploy_one_click" ? "Deploy" : name === "connect_project" ? "Conexión del proyecto" : "Publicación";
   const url = result?.url || result?.deployUrl || result?.deploy?.url || "";
@@ -1186,12 +1220,25 @@ class ChatOrchestrator {
         || isApprovalText
         || startsWithContinue
         || /^INSTRUCCI[OÓ]N AUTORIZADA/i.test(effectiveText);
-      return runner({
+      const out = await runner({
         decision, message: taskMessage, projectRoot, apiBaseUrl, apiKey, model, memory, onProgress,
         allowWrite: canWrite, planAuthorizedExecution: canWrite && userAuthorized, maxSteps: canWrite ? AUTHORIZED_MAX_STEPS : CHAT_MAX_STEPS,
         helpers, authorizedFromPending: canWrite && userAuthorized, fullAccess,
         permissionMode: fullAccess ? "full" : permissionMode, images: taskImages,
       });
+      // El Cerebro también APRENDE del turno (contrato de turno): el cierre
+      // de una ejecución se recuerda en el almacén que el usuario ve en
+      // Herramientas → Cerebro, no solo en la memoria interna del hilo.
+      try {
+        if (typeof helpers?.brainRemember === "function" && out && out.text) {
+          Promise.resolve(helpers.brainRemember(projectRoot, {
+            title: "Turno del agente",
+            type: "session",
+            content: `Pedido: ${String(text || "").slice(0, 300)}\nResultado: ${String(out.text).slice(0, 1200)}`,
+          })).catch(() => {});
+        }
+      } catch { /* recordar nunca bloquea el cierre */ }
+      return out;
     }
 
     return { kind: "CHAT", text: "No terminé de entender el pedido. ¿Me lo reformulás?" };
@@ -1245,6 +1292,12 @@ class ChatOrchestrator {
     const readOnlyMode = !accessFull && /^(?:readonly|read-only|solo[\s-]?lectura)$/i.test(String(permissionMode || "").trim());
     // Con Acceso completo se puede escribir sin pedir "procede". En paso a paso hace falta autorización.
     const orderedWrite = !readOnlyMode && (accessFull || (allowWrite === true && authorizedFromPending === true));
+    // CONTRATO DE TURNO (raíz, 2026-11-10): la AUTORIZACIÓN de escritura se
+    // decide UNA sola vez y se aplica SOLO en el despacho. Sin modo "step"
+    // declarado (uso directo del kernel y llamantes internos históricos) la
+    // orden directa del usuario autoriza, como resolvió run() para su ruta.
+    const stepDeclared = String(permissionMode || "").trim().toLowerCase() === "step";
+    const writeAuthorized = accessFull || orderedWrite || (allowWrite === true && !stepDeclared && !readOnlyMode);
 
     this.session.start(decision?.kind || "EXECUTE", projectRoot);
     this.abort = new AbortController();
@@ -1345,6 +1398,10 @@ class ChatOrchestrator {
       } catch { /* no bloquear turno */ }
     }
     if (!listOnlyMode) turnContext.push(buildBrainContextBlock(projectRoot, this._currentUserText || message));
+    if (!listOnlyMode && !chatOnly) {
+      const cerebroBlock = await buildCerebroServiceBlock(projectRoot, this._currentUserText || message, helpers);
+      if (cerebroBlock) turnContext.push(cerebroBlock);
+    }
     if (!listOnlyMode && Array.isArray(this._turnExtras)) turnContext.push(...this._turnExtras.filter((x) => typeof x === "string" && x.trim()));
 
     const userText = `Proyecto: ${projectless ? "(ninguno)" : projectRoot}\n${scopeUserMessage(message)}`;
@@ -1407,7 +1464,14 @@ class ChatOrchestrator {
             ? tools.getToolDefinitions({ allowWrite: false, isFullAccess: false, isAnalysis: false })
               .filter((t) => CHAT_READ_TOOLS.has(t.function?.name || t.name))
             : [])
-          : tools.getToolDefinitions({ allowWrite: accessFull || orderedWrite, isFullAccess: accessFull, isAnalysis: false })
+          // CONTRATO DE TURNO: en modo Agente el modelo ve SIEMPRE el set
+          // completo de herramientas (allowWrite: true SOLO decide la
+          // VISIBILIDAD de las definiciones). Antes, sin autorización previa
+          // el set salía recortado y el agente quedaba sin manos a mitad de
+          // conversación ("no tengo herramienta de escritura directa"),
+          // delegando a ciegas. La escritura sin autorización la corta el
+          // DESPACHO (compuerta única, más abajo), no la vista del modelo.
+          : tools.getToolDefinitions({ allowWrite: true, isFullAccess: accessFull, isAnalysis: false })
             .filter((t) => !["preview_browser_interaction", "browser_page_action", "auto_scaffold_project", "clone_web_page", "images_to_code", "rollback_last_change"].includes(t.function?.name || t.name))
             // Ojos solo donde aportan: la captura del preview se ofrece en tareas
             // de UI/construcción (this._uiTask lo fija handle); en el resto sigue fuera.
@@ -1759,12 +1823,17 @@ class ChatOrchestrator {
           onProgress?.({ phase: "tool", stage: "running", name, input: args });
 
           let result;
-          // Guardia ÚNICA de solo-lectura antes de despachar: cualquier
-          // herramienta de escritura (clasificación de classify.js) se corta
-          // aquí, no solo write_file/replace_in_file como antes. El paso queda
+          // Compuerta ÚNICA de escritura antes de despachar (contrato de
+          // turno): cualquier herramienta de escritura (clasificación de
+          // classify.js) se corta aquí si el turno no está autorizado, no
+          // solo write_file/replace_in_file como antes. El paso queda
           // registrado como bloqueado (ok:false) y el archivo no se toca.
-          if ((readOnlyMode || allowWrite === false) && WRITE_TOOLS.includes(name)) {
-            result = { ok: false, error: "Modo solo lectura: no se ejecutan herramientas de escritura. Pide al usuario que cambie el modo de permisos.", blockedReadOnly: true };
+          // El modelo SÍ ve la herramienta: lo que falta no es la mano, es
+          // la autorización, y el resultado le dice cómo pedirla.
+          if (WRITE_TOOLS.includes(name) && (readOnlyMode || allowWrite === false || !writeAuthorized)) {
+            result = (readOnlyMode || allowWrite === false)
+              ? { ok: false, error: "Modo solo lectura: no se ejecutan herramientas de escritura. Pide al usuario que cambie el modo de permisos.", blockedReadOnly: true }
+              : { ok: false, needsAuthorization: true, error: "Modo paso a paso (Pregunta antes): esta escritura requiere la autorización del usuario. Presenta en el chat el cambio exacto que harías y pide que responda «procede» (o que active Acceso completo). No delegues la escritura ni digas que no tienes la herramienta: la tienes — falta la autorización de este turno." };
           } else if (name === "write_file" || name === "replace_in_file") {
             const impl = await runImplementer({ projectRoot, path: args.path, content: args.content, oldText: args.oldText, newText: args.newText, onProgress, threadId });
             result = impl.result || impl;

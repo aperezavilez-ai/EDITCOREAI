@@ -49,12 +49,30 @@ function toolsKnown(name) {
   return NATIVE.includes(name);
 }
 
+// DESESCAPE DE BLOBS (contrato de turno): cuando el modelo emite la llamada
+// en modo texto con el contenido escapado como una sola línea (los saltos
+// como \n literales), guardar el valor tal cual corrompe el archivo en
+// disco (Footer.tsx/Navbar.tsx, 2026-11-10). Solo se desescapa el patrón
+// inequívoco — sin ningún salto real y con ≥2 secuencias \n — para no
+// tocar código legítimo que contenga "\n" dentro de cadenas o regex.
+function unescapeTextBlob(val) {
+  const v = String(val ?? "");
+  if (v.includes("\n") || (v.match(/\\n/g) || []).length < 2) return v;
+  return v
+    .replace(/\\\\/g, "\u0001")
+    .replace(/\\n/g, "\n")
+    .replace(/\\t/g, "\t")
+    .replace(/\\"/g, "\"")
+    .replace(/\\\//g, "/")
+    .replace(/\u0001/g, "\\");
+}
+
 function assignArg(args, key, val) {
   if (/^(path|file|filepath|file_path)$/i.test(key)) args.path = val;
   else if (/^(command|cmd)$/i.test(key)) args.command = val;
-  else if (/^(content|contents|text)$/i.test(key)) args.content = val;
-  else if (/^(old|old_str|oldText|old_text)$/i.test(key)) args.oldText = val;
-  else if (/^(new|new_str|newText|new_text)$/i.test(key)) args.newText = val;
+  else if (/^(content|contents|text)$/i.test(key)) args.content = unescapeTextBlob(val);
+  else if (/^(old|old_str|oldText|old_text)$/i.test(key)) args.oldText = unescapeTextBlob(val);
+  else if (/^(new|new_str|newText|new_text)$/i.test(key)) args.newText = unescapeTextBlob(val);
   else if (/^(query|pattern|search)$/i.test(key)) args.query = val;
   else if (/^url$/i.test(key)) args.url = val;
   else args[key] = val;
@@ -94,7 +112,14 @@ function parseInnerArgs(body) {
     if (trimmed.startsWith("{")) {
       try {
         const json = JSON.parse(trimmed);
-        if (json && typeof json === "object") Object.assign(args, json);
+        if (json && typeof json === "object") {
+          Object.assign(args, json);
+          // Doble escape: el JSON era válido pero el contenido quedó como
+          // blob de una línea con \n literales tras el parseo.
+          for (const k of ["content", "oldText", "newText"]) {
+            if (typeof args[k] === "string") args[k] = unescapeTextBlob(args[k]);
+          }
+        }
       } catch { /* ignore */ }
     }
   }

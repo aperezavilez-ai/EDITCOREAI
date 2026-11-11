@@ -208,6 +208,20 @@ function acquireWriteLock(root, rel, op, coordCtx) {
 function writeFile(root, rel, content, coordCtx) {
   const file = safe(root, rel);
   const body = String(content ?? "");
+  // COMPUERTA DE INTEGRIDAD (contrato de turno): un archivo de código que
+  // llega en UNA sola línea con escapes literales \n entre sentencias está
+  // corrupto de origen (así quedaron Footer.tsx y Navbar.tsx el 2026-11-10:
+  // el parser de texto guardaba el contenido sin desescapar). Se RECHAZA
+  // antes de tocar el disco: el paso falla en voz alta y el modelo reescribe
+  // con saltos de línea reales. Solo código; JSON/minificados quedan fuera.
+  if (/\.(?:js|jsx|ts|tsx|mjs|cjs|css|scss|html|vue|svelte|py|java|go|rs|php)$/i.test(String(rel || ""))
+    && body.length > 120 && !body.includes("\n") && (body.match(/\\n/g) || []).length >= 2) {
+    return {
+      ok: false,
+      escapedBlob: true,
+      error: `Contenido rechazado en ${rel}: llegó en una sola línea con escapes literales \\n en vez de saltos de línea reales. No se escribió nada. Reescribe el archivo con saltos de línea de verdad.`,
+    };
+  }
   try {
     const { looksIncomplete } = require("../runtime/transactional-engine");
     if (typeof looksIncomplete === "function" && body.trim() && looksIncomplete(body)) {
@@ -500,11 +514,40 @@ function runCommand(root, command, options = {}) {
     const isWin = process.platform === "win32";
     const shell = isWin ? "powershell.exe" : "/bin/sh";
     const args = isWin ? ["-Command", command] : ["-c", command];
-    
+    // TEMPORIZADOR OBLIGATORIO (contrato de turno): antes runCommand ignoraba
+    // el timeoutMs de sus llamadores y un proceso continuo (un dev server)
+    // nunca disparaba "close" — sus procesos hijos heredan las tuberías — y
+    // la corrida quedaba colgada para siempre quemando saldo. Todo comando
+    // tiene ahora un límite; al vencer, se mata el árbol y el paso HABLA.
+    const timeoutMs = Math.min(600_000, Math.max(1_000, Number(options.timeoutMs) || 120_000));
     const child = spawn(shell, args, { cwd: root, windowsHide: true });
     let output = "";
     let stderr = "";
-    
+    let settled = false;
+    const finish = (result) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(result);
+    };
+    const timer = setTimeout(() => {
+      try {
+        if (isWin && child.pid) {
+          spawn("taskkill", ["/pid", String(child.pid), "/T", "/F"], { windowsHide: true });
+        } else {
+          child.kill("SIGKILL");
+        }
+      } catch { /* el proceso ya pudo morir */ }
+      finish({
+        ok: false,
+        timeout: true,
+        code: null,
+        output: output.slice(0, 10000),
+        stderr: stderr.slice(0, 10000),
+        error: `El comando superó el límite de ${Math.round(timeoutMs / 1000)} s y fue terminado. Si es un servidor u otro proceso continuo, no lo dejes en primer plano: usa el preview del IDE o pide un comando que termine.`,
+      });
+    }, timeoutMs);
+
     child.stdout.on("data", (d) => {
       output += d.toString();
       if (options.onChunk) options.onChunk({ stream: "stdout", chunk: d.toString() });
@@ -513,13 +556,13 @@ function runCommand(root, command, options = {}) {
       stderr += d.toString();
       if (options.onChunk) options.onChunk({ stream: "stderr", chunk: d.toString() });
     });
-    
+
     child.on("close", (code) => {
-      resolve({ ok: code === 0, code, output: output.slice(0, 10000), stderr: stderr.slice(0, 10000) });
+      finish({ ok: code === 0, code, output: output.slice(0, 10000), stderr: stderr.slice(0, 10000) });
     });
-    
+
     child.on("error", (err) => {
-      resolve({ ok: false, error: err.message });
+      finish({ ok: false, error: err.message });
     });
   });
 }
@@ -1047,11 +1090,12 @@ const DEFINITIONS = [
     type: "function",
     function: {
       name: "run_command",
-      description: "Ejecuta un comando en la terminal (PowerShell/CMD). Úsalo para compilar, instalar, o hacer git push.",
+      description: "Ejecuta un comando en la terminal (PowerShell/CMD). Úsalo para compilar, instalar, o hacer git push. Todo comando tiene temporizador (defecto 120 s, máx. 600 s): al vencer, el proceso se termina y el resultado lo dice. No lo uses para servidores en primer plano.",
       parameters: {
         type: "object",
         properties: {
-          command: { type: "string", description: "El comando a ejecutar (ej. 'npm run build')." }
+          command: { type: "string", description: "El comando a ejecutar (ej. 'npm run build')." },
+          timeoutMs: { type: "number", description: "Límite en milisegundos (1000 a 600000). Defecto: 120000." }
         },
         required: ["command"]
       }
@@ -1242,6 +1286,20 @@ const DEFINITIONS = [
       description: "Lista las skills disponibles en el sistema.",
       parameters: { type: "object", properties: {} }
     }
+  },
+  {
+    type: "function",
+    function: {
+      name: "read_skill",
+      description: "Carga el contenido COMPLETO de cualquier skill del catálogo por su nombre (incluidas las instaladas desde el Cerebro). Úsala cuando una skill no inyectada en este turno sea relevante: primero mira la lista con list_skills o en el bloque SKILLS del sistema.",
+      parameters: {
+        type: "object",
+        properties: {
+          name: { type: "string", description: "Nombre/id exacto de la skill (ej. 'as-debugging-and-error-recovery')." }
+        },
+        required: ["name"]
+      }
+    }
   }
 ];
 
@@ -1317,6 +1375,7 @@ async function execute(name, args, root, allowWrite, helpers = {}) {
       case "run_command":
         if (!allowWrite) return { ok: false, error: "Comandos no permitidos en modo lectura." };
         return runCommand(root, a.command, {
+          timeoutMs: a.timeoutMs,
           onChunk: typeof helpers.onProcessChunk === "function"
             ? (ev) => helpers.onProcessChunk({ command: a.command, ...ev })
             : null,
@@ -1409,6 +1468,24 @@ async function execute(name, args, root, allowWrite, helpers = {}) {
         return installSkill(root, a.repoUrl, a.skillName);
       case "list_skills":
         return listSkills(root, helpers, a.query);
+      case "read_skill": {
+        const wanted = String(a.name || a.skill || a.id || "").trim();
+        if (!wanted) return { ok: false, error: "read_skill requiere el nombre de la skill." };
+        // Primero el Cerebro (incluye las skills instaladas desde su catálogo);
+        // si no está o falla, el catálogo local del kernel.
+        if (typeof helpers?.brainReadSkill === "function") {
+          try {
+            const s = await helpers.brainReadSkill(root, wanted);
+            if (s && s.content) return { ok: true, name: s.name || wanted, source: s.source || "cerebro", content: String(s.content).slice(0, 30000) };
+          } catch { /* cae al catálogo local */ }
+        }
+        try {
+          const cat = require("./skills-catalog");
+          const hit = cat.loadSkillBody(root, wanted);
+          if (hit && hit.available) return { ok: true, name: wanted, source: "catalogo", content: String(hit.body || "").slice(0, 30000) };
+        } catch { /* sin catálogo */ }
+        return { ok: false, error: `Skill no encontrada: ${wanted}. Revisa los nombres disponibles con list_skills.` };
+      }
       default:
         return { ok: false, error: `Herramienta desconocida: ${name}` };
     }

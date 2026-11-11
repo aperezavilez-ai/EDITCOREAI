@@ -381,7 +381,7 @@ const READ_ONLY_TOOLS = [
   "brain_search", "brain_skill", "brain_tools", "search_brain",
   "search_codebase_semantic", "list_snapshots", "analyze_circular_dependencies",
   // Nuevas tools de solo lectura
-  "web_search", "git_status", "git_log", "git_diff", "list_skills",
+  "web_search", "git_status", "git_log", "git_diff", "list_skills", "read_skill",
   "check_connections", "read_roadmap", "probe_endpoint",
   // Herramientas extra del kernel (extra-tools.js): lectura pura, sin guardia
   // de escritura en el despachador. Faltaban aquí y la clasificación derivaba.

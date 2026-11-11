@@ -18,7 +18,7 @@ const path = require("node:path");
 const REPO_ROOT = path.join(__dirname, "..");
 const ProjectAnalysisRoot = require("../project-analysis");
 const ProjectAnalysisRuntime = require("../runtime/project-analysis");
-const { skillsPrompt, selectSkillsForTurn } = require("../editcore-chat-kernel/skills-catalog");
+const { skillsPrompt, selectSkillsForTurn, MAX_SKILLS_IN_PROMPT } = require("../editcore-chat-kernel/skills-catalog");
 const AutoModel = require("../auto-model-selection");
 const defaults = require("../runtime/platform-defaults");
 
@@ -37,7 +37,7 @@ test("convergencia: lo que inyecta skillsPrompt es exactamente lo que elige sele
     "corrige el error de sintaxis en el servidor de correo",
     "¿qué es una API?",
   ]) {
-    const pickedIds = selectSkillsForTurn(REPO_ROOT, "EXECUTE", message, 4).map((p) => p.id);
+    const pickedIds = selectSkillsForTurn(REPO_ROOT, "EXECUTE", message, MAX_SKILLS_IN_PROMPT).map((p) => p.id);
     const prompt = skillsPrompt(REPO_ROOT, "EXECUTE", message);
     const injectedIds = [...prompt.matchAll(/^SKILL ([a-z0-9-]+) \(/gim)].map((m) => m[1]);
     assert.deepEqual(injectedIds, pickedIds, `mensaje: ${message}`);

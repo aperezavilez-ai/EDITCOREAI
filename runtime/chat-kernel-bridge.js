@@ -12,12 +12,14 @@ const {
 
 const KERNEL_TIMEOUT_MS = 60 * 60 * 1000; // 60 min — el agente nunca se queda sin tiempo en tareas complejas
 
-function buildKernelHelpers({ BrowserWindow, capturePreview, previewUrl, appUserData, onProcessChunk, onProcessSevereError, abortSignal, brainSearch, readConnections, ...extra }) {
+function buildKernelHelpers({ BrowserWindow, capturePreview, previewUrl, appUserData, onProcessChunk, onProcessSevereError, abortSignal, brainSearch, brainRemember, brainReadSkill, readConnections, ...extra }) {
   return {
     ...extra,
     previewUrl: previewUrl || "",
     userDataPath: appUserData || "",
     brainSearch: typeof brainSearch === "function" ? brainSearch : null,
+    brainRemember: typeof brainRemember === "function" ? brainRemember : null,
+    brainReadSkill: typeof brainReadSkill === "function" ? brainReadSkill : null,
     readConnections: typeof readConnections === "function" ? readConnections : null,
     abortSignal: abortSignal || null,
     onProcessChunk: typeof onProcessChunk === "function" ? onProcessChunk : null,

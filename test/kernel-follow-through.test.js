@@ -78,7 +78,12 @@ test("si pidió corregir y el modelo cierra sin tocar archivos, se le exige apli
   assert.match(out.text, /corregí el punto y coma en a\.js/, "la respuesta real del modelo se muestra, no un texto genérico");
 });
 
-test("en modo solo lectura no se ofrecen ni se ejecutan escrituras aunque pida corregir", async () => {
+test("en modo solo lectura las escrituras se OFRECEN pero jamás se ejecutan aunque pida corregir (contrato de turno)", async () => {
+  // Contrato de turno (2026-11-10): la herramienta se VE siempre — lo que el
+  // permiso corta es la EJECUCIÓN, en el despacho. Antes la garantía era la
+  // invisibilidad ("no se ofrecen"), y esa misma invisibilidad dejaba al
+  // agente sin manos en «Pregunta antes». La protección que importa —el
+  // archivo no se toca— se mantiene y se sigue probando aquí.
   calls.length = 0;
   fs.writeFileSync(path.join(projectRoot, "r.js"), "uno\n");
   scripted = [
@@ -86,8 +91,8 @@ test("en modo solo lectura no se ofrecen ni se ejecutan escrituras aunque pida c
     { text: "No puedo escribir en modo solo lectura.", toolCalls: [], usage: {} },
   ];
   await new ChatOrchestrator().handle({ message: "corrige r.js", projectRoot, apiBaseUrl: "http://127.0.0.1:9/v1", apiKey: "k", model: "m", permissionMode: "readonly" });
-  assert.ok(!calls[0].tools.includes("replace_in_file"));
-  assert.equal(fs.readFileSync(path.join(projectRoot, "r.js"), "utf8"), "uno\n");
+  assert.ok(calls[0].tools.includes("replace_in_file"), "la herramienta se ofrece (visibilidad del contrato)");
+  assert.equal(fs.readFileSync(path.join(projectRoot, "r.js"), "utf8"), "uno\n", "pero jamás se ejecuta: el archivo queda intacto");
 });
 
 test("una respuesta que termina en palabra sin punto no se reemplaza por «Decime qué hacer con esta evidencia»", () => {
