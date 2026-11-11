@@ -78,10 +78,91 @@ function buildMessageList({ system, systemPrefix = "", turnContext = "", userTex
   return messages;
 }
 
+// [EDITCORE-CONSOLIDADA] Dieta de contexto: el historial guardado se
+// reinyecta ENTERO en cada turno siguiente (shortHistoryMessages), y
+// las respuestas de los turnos de construcción arrastran diffs
+// completos y el bloque de verificación post-escritura — en vivo,
+// turnos sueltos costaron 189k–250k tokens reenviando ese peso. La
+// dieta actúa SOLO sobre lo que se GUARDA (la respuesta en vivo que ve
+// el usuario no se toca): cada región de diff (cerca ```diff/```patch
+// o diff unificado crudo --- a/ +++ b/ con hunks @@) y el bloque
+// «## 🔍 Verificación post-escritura» se sustituyen por UNA línea
+// resumen con los nombres de archivo. Lo que el hilo necesita recordar
+// es QUÉ archivos cambiaron y que se verificó, no el diff otra vez.
+const VERIFY_BLOCK_HEADER_RE = /^##\s*🔍\s*Verificación post-escritura/i;
+const VERIFY_FILE_LINE_RE = /^-\s+`([^`]+)`\s*:/;
+const VERIFY_TAIL_LINE_RE = /^(?:Falló|Saltada|Verificación ejecutada)\b/;
+const DIFF_FENCE_OPEN_RE = /^```(?:diff|patch)\s*$/i;
+const DIFF_FILE_LINE_RE = /^(?:---|\+\+\+)\s+(\S+)/;
+
+function slimStoredAssistantText(text = "") {
+  const src = String(text || "");
+  if (!src.trim()) return src;
+  const lines = src.split(/\r?\n/);
+  const out = [];
+  let current = null;
+  const begin = () => { if (!current) current = { count: 0, files: new Set() }; };
+  const flush = () => {
+    if (!current) return;
+    const files = [...current.files].slice(0, 6);
+    out.push(`[diff y verificación de ${current.count} líneas omitidos del historial${files.length ? ` — ${files.join(", ")}` : ""}]`);
+    current = null;
+  };
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i];
+    // Bloque de verificación post-escritura: encabezado + su lista.
+    if (VERIFY_BLOCK_HEADER_RE.test(line)) {
+      begin();
+      current.count += 1; i += 1;
+      while (i < lines.length) {
+        const m = lines[i].match(VERIFY_FILE_LINE_RE);
+        if (m) { current.files.add(m[1]); current.count += 1; i += 1; continue; }
+        if (VERIFY_TAIL_LINE_RE.test(lines[i]) || /^\s*$/.test(lines[i]) || /^\s+/.test(lines[i])) { current.count += 1; i += 1; continue; }
+        break;
+      }
+      continue;
+    }
+    // Cerca ```diff / ```patch completa.
+    if (DIFF_FENCE_OPEN_RE.test(line.trim())) {
+      begin();
+      current.count += 1; i += 1;
+      while (i < lines.length && !/^```\s*$/.test(lines[i].trim())) {
+        const m = lines[i].match(DIFF_FILE_LINE_RE);
+        if (m) current.files.add(m[1].replace(/^[ab]\//, ""));
+        current.count += 1; i += 1;
+      }
+      if (i < lines.length) { current.count += 1; i += 1; }
+      continue;
+    }
+    // Diff unificado crudo: --- a/x, +++ b/x y un hunk @@ cerca.
+    if (/^---\s+\S/.test(line) && i + 1 < lines.length && /^\+\+\+\s+\S/.test(lines[i + 1])
+      && lines.slice(i + 2, i + 8).some((l) => /^@@\s/.test(l))) {
+      begin();
+      const m1 = line.match(/^---\s+(\S+)/); if (m1) current.files.add(m1[1].replace(/^[ab]\//, ""));
+      const m2 = lines[i + 1].match(/^\+\+\+\s+(\S+)/); if (m2) current.files.add(m2[1].replace(/^[ab]\//, ""));
+      current.count += 2; i += 2;
+      while (i < lines.length && (/^(?:[+\-@\\]| |---\s|\+{3}\s)/.test(lines[i])
+        || (/^\s*$/.test(lines[i]) && i + 1 < lines.length && /^(?:[+\-@\\]|---\s|\+{3}\s)/.test(lines[i + 1])))) {
+        current.count += 1; i += 1;
+      }
+      continue;
+    }
+    flush();
+    out.push(line);
+    i += 1;
+  }
+  flush();
+  return out.join("\n");
+}
+
 function rememberExchange(projectRoot, threadId, userText, assistantText, meta = {}) {
   const turns = [];
   if (userText) turns.push({ role: "user", content: String(userText), at: Date.now() });
-  if (assistantText) turns.push({ role: "assistant", content: String(assistantText).slice(0, 6_000), at: Date.now() });
+  // [EDITCORE-CONSOLIDADA] La dieta se aplica al guardar, nunca a la
+  // respuesta en vivo: el usuario ve su diff completo; el historial
+  // solo conserva la línea resumen.
+  if (assistantText) turns.push({ role: "assistant", content: slimStoredAssistantText(String(assistantText)).slice(0, 6_000), at: Date.now() });
   if (turns.length) threadMemory.appendTurns(projectRoot, threadId, turns);
 
   if (projectRoot) {
@@ -139,6 +220,7 @@ module.exports = {
   buildMessageList,
   runtimeContextLine,
   rememberExchange,
+  slimStoredAssistantText,
   subagentContext,
   threadMemory,
 };

@@ -234,6 +234,64 @@ function userWantsDiskMutation(message = "") {
 
 const FIX_INTENT_RE = /\b(?:corr[eií][gj](?:e|ir|alo|alos|ala|alas|eme|me|as)?(?:me|lo|la|los|las)?|arregl(?:a|á|ar|alo|alos|ala|alas|ame|as)?(?:me|lo|la|los|las)?|repar(?:a|á|ar|alo|alos|ala|alas|ame|as)?(?:me|lo|la|los|las)?|solucion(?:a|á|ar|alo|alos|ala|alas|ame|as)?(?:me|lo|la|los|las)?|resu[eé]lve(?:lo|la|los|las|me)?|resolver(?:lo|la|los|las|me)?|fix(?:ea)?|implementa(?:r|lo|los|la|las)?|aplica(?:r|lo|los|la|las)?|modifica(?:r|lo|los|la|las)?|modificaciones|agrega(?:r|lo|los|la|las)?|añad[ei]r?)\b/i;
 
+// [EDITCORE-CONSOLIDADA] Léxico de intención de mutación CENTRALIZADO.
+// El suplemento vivía DUPLICADO como regex inline en dos compuertas (el
+// cierre propositivo de presencia y la garantía determinista del
+// «procede»), y ninguna de las dos conocía los verbos de MEJORA: en
+// vivo, «Ahora mejora el hero» no disparó ninguna compuerta y el
+// agente cerró sin proponer ni hacer nada. Ahora hay UNA sola fuente:
+// FIX_INTENT_RE + suplemento histórico + verbos estéticos/de mejora.
+// Los verbos estéticos cuentan como ORDEN, no como hipótesis: en
+// condicional («¿cómo mejoraría…?», «¿qué optimizarías?») no hay
+// pedido de mutación y el helper devuelve false por esa vía — las
+// compuertas conservan además TODOS sus guardas actuales (modo, kind,
+// autorización), que son los que deciden si la intención es accionable.
+const MUTATION_SUPPLEMENT_RE = /\b(?:reescrib\w*|cr(?:e|é)(?:a|á)\w*|constru\w*|elimin\w*|borra\w*|actualiz\w*|instal\w*)\b/i;
+const MUTATION_AESTHETIC_RE = /\b(?:mejor(?:a|á|ar|alo|ala|alos|alas|ame|ando|ado|ada)\w*|optimi\w+|rediseñ\w+|renov\w+|moderni\w+|embelle\w+|pul(?:ir|e|iendo|ido)\w*|ajust\w+\s+visualmente)\b/i;
+const MUTATION_AESTHETIC_CONDITIONAL_RE = /\b(?:mejorarí\w*|optimizarí\w*|rediseñarí\w*|renovarí\w*|modernizarí\w*|embellecerí\w*|pulirí\w*)\b/i;
+
+function hasMutationIntent(text = "") {
+  const t = String(text || "");
+  if (!t.trim()) return false;
+  if (FIX_INTENT_RE.test(t) || MUTATION_SUPPLEMENT_RE.test(t)) return true;
+  if (!MUTATION_AESTHETIC_RE.test(t)) return false;
+  if (MUTATION_AESTHETIC_CONDITIONAL_RE.test(t)) return false;
+  return true;
+}
+
+// [EDITCORE-REVISION-VISUAL] Detector de turnos de REVISIÓN VISUAL: el
+// usuario PREGUNTA por las imágenes o el aspecto de una página que YA
+// existe (no pide construirla ni corregirla). Fallo probado en vivo 3
+// veces (P-3): en un turno así el agente leía archivos y juzgaba por el
+// nombre del archivo y el texto alt, porque capture_preview_screenshot
+// solo se ofrecía en tareas de construcción (_uiTask) y la regla de
+// mirar viajaba con la política de construcción — en un turno de
+// pregunta no había ni ojos ni regla en la sala.
+const VISUAL_SUBJECT_RE = /\b(?:im[áa]gen(?:es)?|fotos?|fotograf[íi]as?|hero|banner|portada|aspecto|apariencia)\b/i;
+const VISUAL_REVIEW_INTENT_RE = /\b(?:corresponde\w*|revisa\w*|mira\w*|mir[áa]\w*|dime\s+si|est[áa]n\s+bien|se\s+ven\s+bien|c[óo]mo\s+se\s+ve|checa\w*|verifica\w*|juzga\w*)\b/i;
+
+function isVisualReviewRequest(message = "") {
+  const text = String(message || "");
+  if (!text.trim()) return false;
+  if (!VISUAL_SUBJECT_RE.test(text) || !VISUAL_REVIEW_INTENT_RE.test(text)) return false;
+  // Construir o corregir NO es revisar: si el pedido trae intención de
+  // mutación manda la acción (construcción y reparación ya tienen sus
+  // propios ojos y protocolos); esto es solo para el juicio sin cambios.
+  if (userWantsDiskMutation(text)) return false;
+  return true;
+}
+
+// [EDITCORE-REVISION-VISUAL] Protocolo del turno de revisión visual: va
+// en el contexto del turno, NO en la política de construcción (que en
+// un turno de pregunta ni siquiera entra). Compacto a propósito.
+const VISUAL_REVIEW_PROTOCOL = [
+  "REVISIÓN VISUAL — este turno PREGUNTA por las imágenes o el aspecto de una página que YA existe. Tu juicio sale de lo que VES, no de lo que lees:",
+  "1) Llama capture_preview_screenshot sobre el PREVIEW ACTIVO del IDE (su URL ya está en tu contexto) y juzga la imagen real: hero, tarjetas y demás secciones.",
+  "2) PROHIBIDO juzgar por el nombre del archivo, el texto alt o los comentarios del código: esas etiquetas las escribió quien eligió las fotos y no prueban nada.",
+  "3) Si la captura falla o no hay preview activo, dilo con esas palabras en vez de certificar: un juicio sin captura queda marcado como no verificado.",
+  "4) Responde con veredicto POR ZONA (hero, tarjetas, resto): qué se ve, si corresponde al negocio y la discrepancia exacta si la hay.",
+].join("\n");
+
 function textClaimsDiskMutation(text = "") {
   const raw = String(text || "");
   if (/<!DOCTYPE\s+html>/i.test(raw)) return true;
@@ -679,6 +737,29 @@ function formatExternalActionResult(name, result) {
   if (result?.ok) {
     return [`## ✅ ${label} completado`, url ? `URL: ${url}` : "", detail].filter(Boolean).join("\n\n");
   }
+  // [EDITCORE-CONSOLIDADA] Producción caída tras el deploy (humo
+  // post-despliegue de deploy-one-click): el texto que reciben el
+  // usuario Y el agente debe decirlo sin anestesia — qué URLs
+  // fallaron y con qué estado, los logs como evidencia y la orden de
+  // reparación. publish_project anida el resultado del deploy en
+  // result.deploy; deploy_one_click lo trae en la raíz.
+  const down = result?.productionDown === true || result?.publishFailed === true
+    ? result
+    : (result?.deploy?.productionDown === true || result?.deploy?.publishFailed === true ? result.deploy : null);
+  if (down) {
+    const smokeLines = (Array.isArray(down.smoke) ? down.smoke : [])
+      .map((s) => `- GET ${s.url} → ${s.status === 0 ? (s.error || "sin respuesta") : `HTTP ${s.status}`}`)
+      .join("\n");
+    return [
+      `## ❌ ${label}: el despliegue terminó pero la aplicación NO responde`,
+      String(down.message || result?.message || "").slice(0, 900),
+      smokeLines ? `### Humo post-despliegue\n\n${smokeLines}` : "",
+      down.logs
+        ? `### Logs del despliegue (evidencia para reparar)\n\n\`\`\`\n${String(down.logs).slice(0, 4000)}\n\`\`\``
+        : (down.logsNote ? `Logs del despliegue: ${down.logsNote}` : ""),
+      "### Qué sigue\n\nEsto es ahora una tarea de **REPARACIÓN PRIORITARIA**: diagnostica la causa desde los logs, corrígela en el código, verifica en local y vuelve a publicar. No des la publicación por buena.",
+    ].filter(Boolean).join("\n\n");
+  }
   return [`## ❌ ${label} no se completó`, detail || "Sin detalle del error.", result?.failedStep ? `Paso que falló: \`${result.failedStep}\`` : ""].filter(Boolean).join("\n\n");
 }
 
@@ -689,6 +770,56 @@ function maybeBlockRoadmapReadFile(name, args, projectRoot) {
   if (!/(^|\/)ROADMAP(\.md)?$/i.test(p) && !/^ROADMAP\.md$/i.test(p)) return null;
   if (!isRoadmapUsable(projectRoot)) return null;
   return { ok: false, blocked: true, error: "El ROADMAP ya está en tu contexto.", guidance: "No hace falta leerlo con `read_file`." };
+}
+
+// [EDITCORE-CONSOLIDADA] Forma de PLAN (no de resultado): el modelo
+// entrega el mapa de lo que HABRÍA que hacer — pasos en infinitivo —
+// en vez de ejecutarlo. En vivo (batería v4.7.5) el turno «Créame una
+// sección nueva de testimonios…» cerró exactamente así: «Mapa UI
+// (testimonios)… Para cumplir lo pedido: Conseguir fotos… Ampliar
+// testimonials… Verificar visualmente…», sin escribir una línea. La
+// compuerta de cierre-plan usa esta forma como gatillo; no intenta
+// juzgar el contenido, solo la silueta del texto.
+function looksLikePlanClose(text = "") {
+  const raw = String(text || "");
+  if (!raw.trim()) return false;
+  if (/para cumplir lo pedido/i.test(raw)) return true;
+  if (/(?:^|\n)\s{0,3}(?:#{1,4}\s*)?(?:mapa|plan|pasos a seguir|qué haré|que haré)\b/i.test(raw)) return true;
+  const infinitiveLed = raw.split(/\r?\n/).filter((line) =>
+    /^\s*(?:[-*•]|\d+[.)])?\s*[A-ZÁÉÍÓÚÑ][\wáéíóúñ]*(?:ar|er|ir)\b/i.test(line)).length;
+  return infinitiveLed >= 2;
+}
+
+// [EDITCORE-CONSOLIDADA] El formato 📁 de listados es SOLO para
+// pedidos de listado (kind LIST). listOnlyMode incluía también los
+// ASK, y la finalización REEMPLAZABA la respuesta del modelo por el
+// directorio siempre que el turno hubiera hecho un list_files: en
+// vivo, «revisa la landing y dime qué secciones tiene y en qué
+// archivo está cada una» (y la propia P-3) se respondieron con el
+// 📁 aunque el agente había leído los archivos y podía contestar el
+// mapa. Regla nueva: un ASK nunca se aplana a listado, y ni siquiera
+// un LIST lo hace cuando el turno leyó contenido de verdad más allá
+// de list_files y el modelo escribió una respuesta sustantiva —
+// el formato lista es para cuando el usuario pidió LISTAR, no para
+// cuando pidió CONTENIDO (dime / revisa / explica / dónde está).
+const SUBSTANTIVE_READ_TOOLS = new Set([
+  "read_file", "search_files", "search_codebase_semantic", "search_brain",
+  "read_skill", "capture_preview_screenshot", "symbol_search",
+  "dependency_search", "codebase_map", "project_discovery",
+]);
+
+function turnDidSubstantiveReads(steps = []) {
+  return (Array.isArray(steps) ? steps : []).some((s) => s && s.ok !== false && s.result?.ok !== false && SUBSTANTIVE_READ_TOOLS.has(s.name));
+}
+
+function shouldFormatAsListing({ decision, steps = [], cleanText = "" } = {}) {
+  if (decision?.kind !== "LIST") return false;
+  const raw = String(cleanText || "").trim();
+  // El modelo ya respondió EN formato lista: se respeta tal cual.
+  if (/##\s*📁/i.test(raw) && /\*\*Carpetas\s*\(/i.test(raw)) return true;
+  // Leyó contenido de verdad y contestó en serio: su texto manda.
+  if (raw.length >= 160 && turnDidSubstantiveReads(steps)) return false;
+  return true;
 }
 
 function formatListOnlyAnswer(text = "", steps = [], prompt = "") {
@@ -898,6 +1029,13 @@ class ChatOrchestrator {
         if (Array.isArray(picked) && picked.length) {
           this._skillsPickedIds = picked.map((p) => p.id).filter(Boolean);
           this._turnExtras.push(`Skills activas este turno: ${picked.map((p) => p.id).join(", ")}`);
+          // [EDITCORE-CONSOLIDADA] La línea VISIBLE de skills se emite
+          // AQUÍ, en handle(), y ya no en runModelTask: handle es el
+          // tronco común de TODAS las rutas del turno (ejecución,
+          // análisis, ASK, sin proyecto) y en vivo hubo rutas que
+          // cerraban sin que la línea apareciera jamás (el turno de
+          // testimonios de la batería v4.7.5). Una sola vez, al abrir.
+          try { onProgress?.({ phase: "narration", text: `Skills aplicadas este turno: ${this._skillsPickedIds.join(", ")}.` }); } catch { /* la narrativa no tumba el turno */ }
         }
       } catch (err) {
         console.warn("[skills] carga diferida:", err && err.message ? err.message : err);
@@ -928,6 +1066,7 @@ class ChatOrchestrator {
       this._buildBaseExtra = "";
       this._buildBaseTask = false;
       this._uiTask = false;
+      this._visualReviewTask = false;
       const taskText = String(effectiveText || text || "");
       if (eliteUiPolicy && typeof eliteUiPolicy.isUiTask === "function" && eliteUiPolicy.isUiTask(taskText)) {
         this._eliteUiExtra = eliteUiPolicy.eliteUiSystemPrompt();
@@ -964,6 +1103,12 @@ class ChatOrchestrator {
         this._buildBaseTask = true;
         this._buildBaseExtra = buildBaseGuard.buildBaseProtocolPrompt();
       }
+      // [EDITCORE-REVISION-VISUAL] Un turno de PREGUNTA/revisión sobre
+      // las imágenes de una página ya hecha también necesita ojos y
+      // protocolo propios: sin este flag, el filtro de herramientas
+      // dejaba fuera capture_preview_screenshot (solo _uiTask, de
+      // construcción, la ofrecía) y el agente juzgaba por nombre/alt.
+      this._visualReviewTask = isVisualReviewRequest(taskText);
       if (productPipeline && typeof productPipeline.buildPipelinePrompt === "function") {
         const pipe = productPipeline.buildPipelinePrompt(taskText);
         if (pipe && pipe.active && pipe.prompt) {
@@ -1348,6 +1493,8 @@ class ChatOrchestrator {
     let noWriteNudges = 0;
     let verifyNudges = 0;
     let closingNudges = 0;
+    let planNudges = 0;
+    let visualReviewNudges = 0;
     let evidenceBlocks = 0;
     let looseHtmlBlocks = 0;
     let connNudges = 0;
@@ -1427,13 +1574,10 @@ class ChatOrchestrator {
       turnContext.push(agentNetwork.rolePrompt(this._ecRoutedAgent));
     }
     if (this._skillsPrompt) system = `${system}\n\n${this._skillsPrompt}`;
-    // [EDITCORE-PRESENTACION] Prueba VISIBLE de skills: la inyección se
-    // anunciaba solo al MODELO (turnExtras) y el usuario no tenía forma
-    // de confirmar qué skills cargó el turno. Línea compuesta por el
-    // kernel con los ids elegidos en handle(), una vez por turno.
-    if (Array.isArray(this._skillsPickedIds) && this._skillsPickedIds.length) {
-      try { onProgress?.({ phase: "narration", text: `Skills aplicadas este turno: ${this._skillsPickedIds.join(", ")}.` }); } catch { /* la narrativa no tumba el turno */ }
-    }
+    // [EDITCORE-CONSOLIDADA] La línea visible «Skills aplicadas este
+    // turno» ya NO se emite aquí: se movió a handle(), donde se fijan
+    // los _skillsPickedIds, para que la emitan TODAS las rutas del
+    // turno una sola vez (aquí solo la veía el bucle principal).
     if (!listOnlyMode && projectRoot) {
       try {
         const boot = ensureCoreProjectBrain(projectRoot);
@@ -1484,6 +1628,16 @@ class ChatOrchestrator {
     if (!listOnlyMode) {
       const langDirective = turnLanguageDirective(this._currentUserText || message);
       if (langDirective) turnContext.push(langDirective);
+    }
+    // [EDITCORE-REVISION-VISUAL] El protocolo de revisión visual viaja
+    // en el contexto del turno (no en la política de construcción, que
+    // en un turno de pregunta ni entra): juzgar solo desde la captura
+    // del preview activo, nunca del nombre del archivo ni del alt.
+    // OJO: sin excluir listOnlyMode — la pregunta P-3 se clasifica ASK
+    // y ASK cae en listOnlyMode dentro de runModelTask; excluirlo
+    // dejaría fuera justo el caso que se viene a arreglar.
+    if (!chatOnly && this._visualReviewTask === true) {
+      turnContext.push(VISUAL_REVIEW_PROTOCOL);
     }
 
     const userText = `Proyecto: ${projectless ? "(ninguno)" : projectRoot}\n${scopeUserMessage(message)}`;
@@ -1557,7 +1711,11 @@ class ChatOrchestrator {
             .filter((t) => !["preview_browser_interaction", "browser_page_action", "auto_scaffold_project", "clone_web_page", "images_to_code", "rollback_last_change"].includes(t.function?.name || t.name))
             // Ojos solo donde aportan: la captura del preview se ofrece en tareas
             // de UI/construcción (this._uiTask lo fija handle); en el resto sigue fuera.
-            .filter((t) => this._uiTask === true || (t.function?.name || t.name) !== "capture_preview_screenshot");
+            // [EDITCORE-REVISION-VISUAL] También en turnos de revisión
+            // visual (_visualReviewTask): preguntar por las imágenes sin
+            // ofrecer la captura condenaba al agente a juzgar por el
+            // nombre del archivo y el texto alt (P-3, tres veces).
+            .filter((t) => this._uiTask === true || this._visualReviewTask === true || (t.function?.name || t.name) !== "capture_preview_screenshot");
 
         this.turnAbort = new AbortController();
         const turnSignal = (typeof AbortSignal.any === "function" && this.abort?.signal) ? AbortSignal.any([this.abort.signal, this.turnAbort.signal]) : (this.turnAbort.signal || this.abort?.signal);
@@ -1746,6 +1904,31 @@ class ChatOrchestrator {
             continue;
           }
 
+          // [EDITCORE-CONSOLIDADA] Compuerta de CIERRE-PLAN: en un turno
+          // AUTORIZADO con intención de mutación, cerrar con el PLAN
+          // (mapa + pasos en infinitivo) sin haber escrito nada no es
+          // un cierre válido: el usuario pidió el resultado, no el mapa
+          // (así murió el turno de testimonios de la batería v4.7.5, y
+          // ninguna compuerta lo atrapó: la de presencia pide una
+          // propuesta, no la ejecución). Se devuelve el turno UNA vez
+          // ordenando EJECUTAR el plan ahora con las herramientas. En
+          // «Pregunta antes» sin autorización NO aplica: ahí el cierre
+          // correcto es la propuesta + «¿procedo?» (compuerta de
+          // presencia, justo debajo).
+          const planClose = !chatOnly && decision?.kind !== "CHAT" && !listOnlyMode && !analysisMode && !projectless
+            && (accessFull || writeAuthorized)
+            && planNudges < 1 && i < stepsLimit - 2
+            && successfulWritePaths(steps).length === 0
+            && hasMutationIntent(`${this._currentUserText || ""} ${message || ""}`)
+            && looksLikePlanClose(cleanText);
+          if (planClose) {
+            planNudges += 1;
+            messages.push({ role: "assistant", content: cleanText || null });
+            messages.push({ role: "user", content: "No cierres con el plan: estás AUTORIZADO a ejecutar en este turno y el usuario pidió el RESULTADO, no el mapa de lo que harías. EJECUTA AHORA ese plan con las herramientas: lee lo que falte, consigue los recursos con las herramientas del proyecto (fetch_stock_photo, read_file…) y aplica los cambios con write_file / replace_in_file. Si un paso resulta imposible, ejecuta los demás y reporta ese paso con su error exacto al cerrar." });
+            onProgress?.({ phase: "model", text: "Cierre en forma de plan: pidiendo que lo ejecute ahora" });
+            continue;
+          }
+
           // [EDITCORE-PRESENCIA] Cierre propositivo (regla de producto de
           // Luis, 2026-11-10): un turno de Agente NO puede cerrar «mocho» —
           // ni en plan narrado ni en reporte pelado — cuando el pedido
@@ -1767,8 +1950,11 @@ class ChatOrchestrator {
             && !/(?:¿[^?]*\?|\bprocede\b|\bautoriz|\bpropongo\b|siguiente paso|¿quieres|¿puedo|¿sigo)/i.test(cleanText.slice(-600));
           if (closingBare) {
             const userTextForIntent = `${this._currentUserText || ""} ${message || ""}`;
-            const mutationIntent = FIX_INTENT_RE.test(userTextForIntent)
-              || /\b(?:reescrib\w*|crea\w*|construy\w*|elimin\w*|borra\w*|actualiz\w*|instal\w*)\b/i.test(userTextForIntent);
+            // [EDITCORE-CONSOLIDADA] Léxico centralizado (hasMutationIntent):
+            // antes esta fusión vivía duplicada aquí y en la garantía del
+            // «procede», sin los verbos de mejora («mejora el hero» no
+            // disparaba ninguna compuerta).
+            const mutationIntent = hasMutationIntent(userTextForIntent);
             if (mutationIntent && stepDeclared && !writeAuthorized) {
               closingNudges += 1;
               messages.push({ role: "assistant", content: cleanText || null });
@@ -1783,6 +1969,26 @@ class ChatOrchestrator {
               onProgress?.({ phase: "model", text: "Cierre sin propuesta: pidiendo cierre propositivo" });
               continue;
             }
+          }
+
+          // [EDITCORE-REVISION-VISUAL] Compuerta de cierre: en un turno
+          // de revisión visual, cerrar con un juicio sobre las imágenes
+          // sin que ningún paso haya capturado el preview ES el fallo
+          // (P-3, tres veces en vivo: veredictos leídos del nombre del
+          // archivo y del texto alt mientras el hero visible era otra
+          // cosa). Se devuelve el turno UNA vez ordenando mirar; si aun
+          // así cierra sin capturar, la finalización antepone el banner
+          // honesto de «no verificado con la vista».
+          const visualReviewWithoutCapture = this._visualReviewTask === true
+            && !chatOnly && decision?.kind !== "CHAT" && !analysisMode && !projectless
+            && visualReviewNudges < 1 && i < stepsLimit - 2
+            && !steps.some((s) => s.name === "capture_preview_screenshot");
+          if (visualReviewWithoutCapture) {
+            visualReviewNudges += 1;
+            messages.push({ role: "assistant", content: cleanText || null });
+            messages.push({ role: "user", content: "ALTO: este turno es una REVISIÓN VISUAL y todavía no capturaste el preview: un juicio sobre las imágenes no puede salir del nombre del archivo, del texto alt ni de los comentarios del código. Ejecuta AHORA capture_preview_screenshot sobre el PREVIEW ACTIVO de tu contexto, mira lo que se ve (hero, tarjetas y secciones) y cierra con el veredicto por zona apoyado en esa captura. Si la captura falla o no hay preview activo, dilo con esas palabras en vez de certificar." });
+            onProgress?.({ phase: "model", text: "Revisión visual sin captura: pidiendo que mire el preview antes de juzgar…" });
+            continue;
           }
 
           // [EDITCORE-REPAIR] Sin verificación real no hay "corregido":
@@ -1810,7 +2016,10 @@ class ChatOrchestrator {
           const written = successfulWritePaths(steps);
           let textOut = cleanText;
 
-          if (listOnlyMode) {
+          // [EDITCORE-CONSOLIDADA] El 📁 solo cuando el pedido ERA de
+          // listado (shouldFormatAsListing): un ASK con lecturas
+          // reales conserva la respuesta sustantiva del modelo.
+          if (listOnlyMode && shouldFormatAsListing({ decision, steps, cleanText })) {
             textOut = formatListOnlyAnswer(cleanText, steps, message);
           } else if (written.length > 0) {
             if (cleanText && cleanText.trim().length >= 60) textOut = cleanText;
@@ -1837,11 +2046,28 @@ class ChatOrchestrator {
           if (written.length === 0 && !listOnlyMode && !analysisMode && !chatOnly && !projectless
             && decision?.kind !== "CHAT" && stepDeclared && !writeAuthorized) {
             const intentText = `${this._currentUserText || ""} ${message || ""}`;
-            const mutationIntent = FIX_INTENT_RE.test(intentText)
-              || /\b(?:reescrib\w*|crea\w*|construy\w*|elimin\w*|borra\w*|actualiz\w*|instal\w*)\b/i.test(intentText);
+            // [EDITCORE-CONSOLIDADA] Misma fuente única que la compuerta
+            // de cierre: hasMutationIntent (FIX + suplemento + mejora).
+            const mutationIntent = hasMutationIntent(intentText);
             if (mutationIntent && !/(?:¿[^?]*\?|\bprocede\b|\bautoriz)/i.test(String(textOut || "").slice(-800))) {
               textOut = `${String(textOut || "").trim()}\n\n---\n\n**No apliqué ningún cambio**: estoy en modo «Pregunta antes» y este pedido requiere escribir. Si quieres que ejecute el arreglo tal como lo describí, responde **«procede»** y lo hago en este mismo chat.`;
             }
+          }
+
+          // [EDITCORE-REVISION-VISUAL] Banner honesto DETERMINISTA: si
+          // el turno era de revisión visual y ningún paso capturó el
+          // preview, el juicio sobre las imágenes queda marcado al
+          // frente como NO verificado con la vista. Mismo espíritu que
+          // la garantía del «procede» de aquí arriba: lo que el kernel
+          // sabe, el usuario lo lee — el agente no puede certificar en
+          // silencio lo que nunca miró. (Si la herramienta se llamó y
+          // falló, el paso existe y el banner no sale: el propio
+          // resultado de la captura ya cuenta la falla.)
+          if (this._visualReviewTask === true && !analysisMode && !chatOnly && !projectless
+            && decision?.kind !== "CHAT"
+            && !steps.some((s) => s.name === "capture_preview_screenshot")
+            && String(textOut || "").trim()) {
+            textOut = `> ⚠️ **Este juicio sobre las imágenes NO se verificó con la vista: no se capturó el preview en este turno.**\n\n${String(textOut || "").trim()}`;
           }
 
           if (written.length > 0) {
@@ -2115,4 +2341,4 @@ class ChatOrchestrator {
   }
 }
 
-module.exports = { ChatOrchestrator, SKILL_IDS, taskQueue, groundUngroundedClaims, successfulDiskReads };
+module.exports = { ChatOrchestrator, SKILL_IDS, taskQueue, groundUngroundedClaims, successfulDiskReads, hasMutationIntent };
