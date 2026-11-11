@@ -14,6 +14,8 @@ const {
 const PROVIDER_MAX_TOTAL_MS = 10 * 60_000;
 const { logProviderError } = require("../runtime/provider-error-log");
 const { modelSupportsVision } = require("../runtime/vision-intake");
+// [EDITCORE-INTEGRAL-B6] Taxonomía compartida (429/401) + Retry-After.
+const { classifyHttpError, isNoSessionError, SESSION_EXPIRED_MESSAGE } = require("../runtime/http-error-taxonomy");
 
 function messagesHaveImages(messages) {
   return (Array.isArray(messages) ? messages : []).some((m) =>
@@ -41,8 +43,13 @@ function mergeAbortSignals(primary, secondary) {
 function isTransientError(error) {
   if (!error) return false;
   if (error?.code === "AGENT_STEER" || error?.code === "ABORT_ERR") return false;
+  // [EDITCORE-INTEGRAL-B6] Sesión expirada NO es transitoria (hay que
+  // refrescar/re-login, no reintentar a ciegas) y el 429 se clasifica
+  // con la taxonomía compartida: concurrencia = transitorio, cuota no.
+  if (isNoSessionError(error)) return false;
   const status = Number(error?.status || 0);
-  if ([408, 425, 429, 500, 502, 503, 504, 524].includes(status)) return true;
+  if (status === 429) return classifyHttpError({ error, status }).transient === true;
+  if ([408, 425, 500, 502, 503, 504, 524].includes(status)) return true;
   const msg = String(error?.message || error || "").toLowerCase();
   return /timeout|time-?out|aborted|cloudflare|524|504|502|503|429|econnreset|etimedout|enotfound|fetch failed|socket|network|overloaded/i.test(msg);
 }
@@ -200,6 +207,12 @@ async function sendChatRequest({ url, body, apiKey, wantStream, signal, requestS
         text: msg.content || "",
         toolCalls: Array.isArray(msg.tool_calls) ? msg.tool_calls : [],
         usage: streamed?.usage ? normalizeUsage(streamed.usage) : null,
+        // [EDITCORE-INTEGRAL-B6] Parcial declarado + contenido interno
+        // procesado (aunque no haya callback del kernel): el llamador
+        // decide con hechos, no con un EOF limpio disfrazado.
+        partial: streamed?.partial === true,
+        sawContent: streamed?.sawContent === true || Boolean(msg.content) || msg.tool_calls.length > 0,
+        ...(streamed?.streamError ? { streamError: streamed.streamError } : {}),
       };
     }
     if (contentType.includes("text/html")) {
@@ -256,6 +269,12 @@ async function callChat({
   onTextDelta = null,
   fallbackProfiles = [],
   onFallback = null,
+  // [EDITCORE-INTEGRAL-B6] Sesión viva: proveedor de token fresco
+  // inyectado por el puente/main (helpers.refreshAccessToken). Ante
+  // NO_SESSION se re-pide UNA vez y el paso se reintenta con el token
+  // fresco antes de matar el turno.
+  refreshApiKey = null,
+  onSessionRefreshed = null,
 }) {
   const profileList = orderProfiles([
     { apiBaseUrl, apiKey, model },
@@ -268,6 +287,8 @@ async function callChat({
 
   let lastError = null;
   const failures = [];
+  // [EDITCORE-INTEGRAL-B6] Un solo refresco de sesión por llamada.
+  let sessionRefreshed = false;
 
   for (let pIdx = 0; pIdx < profileList.length; pIdx++) {
     const currentProfile = profileList[pIdx];
@@ -292,7 +313,19 @@ async function callChat({
         throw (abortReason || new Error("Operacion cancelada"));
       }
 
+      // [EDITCORE-INTEGRAL-B6] streamedAny INTERNO: el provider cuenta
+      // el contenido procesado AUNQUE el kernel no pase onTextDelta
+      // (la ruta del kernel no lo pasa a propósito). Antes la guarda
+      // «si ya salió texto, no reintentar» estaba muerta en esa ruta y
+      // un fallo tras emitir contenido re-mandaba el prompt entero
+      // cobrando dos veces. Ahora el conteo es propio: callback
+      // interno siempre + banderas del lector de stream.
       let streamedAny = false;
+      const countingDelta = (d, meta) => {
+        if (d && !(meta && meta.reasoning)) streamedAny = true;
+        if (onTextDelta) return onTextDelta(d, meta);
+        return undefined;
+      };
       try {
         const result = await callChatSingleAttempt({
           apiBaseUrl: currentProfile.apiBaseUrl,
@@ -304,15 +337,35 @@ async function callChat({
           toolChoice,
           timeoutMs,
           stream,
-          onTextDelta: onTextDelta ? (d, meta) => { if (d && !(meta && meta.reasoning)) streamedAny = true; return onTextDelta(d, meta); } : null,
+          onTextDelta: countingDelta,
         });
+        if (result?.sawContent) streamedAny = true;
         return result;
       } catch (err) {
         lastError = err;
         if (err?.code === "AGENT_STEER" || signal?.aborted) {
           throw err;
         }
-        if (streamedAny) throw err;
+        if (streamedAny || err?.sawContent === true) throw err;
+        // [EDITCORE-INTEGRAL-B6] NO_SESSION: re-pedir token UNA vez y
+        // reintentar ESTE paso con el token fresco (solo perfil
+        // principal: es la ruta cloud de sesión). Si el refresco
+        // falla, no hay costura o el NO_SESSION persiste tras el
+        // refresco, el error final es de SESIÓN, jamás «API key».
+        if (isNoSessionError(err) && pIdx === 0) {
+          if (!sessionRefreshed && typeof refreshApiKey === "function") {
+            sessionRefreshed = true;
+            let fresh = null;
+            try { fresh = await refreshApiKey(); } catch { fresh = null; }
+            if (fresh && String(fresh) !== String(currentProfile.apiKey)) {
+              currentProfile.apiKey = String(fresh);
+              try { onSessionRefreshed?.(String(fresh)); } catch { /* ignore */ }
+              attempt -= 1; // el reintento con token fresco no consume el presupuesto transitorio
+              continue;
+            }
+          }
+          throw Object.assign(new Error(SESSION_EXPIRED_MESSAGE), { status: 401, code: "NO_SESSION", providerCode: "NO_SESSION" });
+        }
         let host = "";
         try { host = new URL(currentProfile.apiBaseUrl).host; } catch { /* sin host */ }
         logProviderError({
@@ -331,7 +384,12 @@ async function callChat({
           break;
         }
         if (retry) {
-          await delay(800 * (attempt + 1), signal).catch(() => {});
+          // [EDITCORE-INTEGRAL-B6] Retry-After manda cuando el
+          // upstream lo envía (parseado en ai-core desde la cabecera,
+          // con tope de 30 s de la taxonomía); sin cabecera, el
+          // backoff histórico de 800 ms por intento.
+          const waitMs = Number(err?.retryAfterMs) > 0 ? Number(err.retryAfterMs) : 800 * (attempt + 1);
+          await delay(waitMs, signal).catch(() => {});
           continue;
         }
         break;
@@ -352,4 +410,7 @@ module.exports = {
   withCacheControl,
   GATEWAY_TIMEOUT_USER_MESSAGE,
   DEFAULT_PROVIDER_TIMEOUT_MS,
+  // [EDITCORE-INTEGRAL-B6] Clasificación compartida, expuesta a tests.
+  isTransientError,
+  isNoSessionError,
 };

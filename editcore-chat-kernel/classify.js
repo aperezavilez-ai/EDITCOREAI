@@ -386,20 +386,61 @@ const READ_ONLY_TOOLS = [
   // Herramientas extra del kernel (extra-tools.js): lectura pura, sin guardia
   // de escritura en el despachador. Faltaban aquí y la clasificación derivaba.
   "read_pdf", "docker_ps", "screenshot_page",
+  // [EDITCORE-DESBLOQUEOS] capture_preview_screenshot es OBSERVACIÓN, como
+  // screenshot_page: su único efecto en disco es la carpeta de visión del
+  // propio agente (.editcore/vision — contabilidad interna, igual que el
+  // expediente, que se escribe en todo turno). Clasificada como escritura,
+  // la compuerta única del orquestador la mataba en modo solo lectura y un
+  // turno de REVISIÓN VISUAL no podía mirar (P-3 en vivo, dos veces).
+  "capture_preview_screenshot",
+  // [EDITCORE-INTEGRAL-B4] start_preview es LECTURA por el mismo
+  // criterio que la captura: arrancar el preview del PROPIO proyecto no
+  // muta ningún archivo del proyecto — lanza un proceso dev/static del
+  // IDE y devuelve su URL; su único rastro es el log de runtime del
+  // propio IDE (userData), contabilidad interna como .editcore/vision.
+  // Clasificarla como escritura impediría justo la conducta del Bloque
+  // 4 («verifica en el preview» en un turno de revisión en solo
+  // lectura). El proceso que arranca es el dev server del proyecto del
+  // usuario, el mismo que el IDE arranca con su botón de preview.
+  "start_preview",
+  // [EDITCORE-INTEGRAL-B5] delegate_parallel clasificada por fin como
+  // LECTURA: sus subagentes son explorer/analyst de solo lectura por
+  // construcción (parallel-delegate.js no escribe jamás). Antes NO
+  // estaba en ninguna lista: la compuerta no la veía y su permiso
+  // dependía de un olvido, no de una decisión — cualquier rol escritor
+  // futuro habría entrado sin control. Como lectura, pasa la compuerta
+  // también en solo lectura, que es su conducta correcta.
+  "delegate_parallel",
 ];
 const WRITE_TOOLS = [
+  // [EDITCORE-INTEGRAL-B4] rollback_last_change YA estaba en esta lista
+  // (era fantasma: clasificada sin definición ni case); ahora la
+  // herramienta es real en tools.js y sigue siendo ESCRITURA — restaura
+  // el contenido de un archivo — así que pasa por la compuerta única y
+  // por la segunda capa de tools.execute como cualquier escritura.
   "write_file", "replace_in_file", "delete_file", "create_project",
   "clone_web_page", "web_scrape", "images_to_code",
   "run_command", "create_pdf", "create_word", "create_excel", "create_csv",
   "inspect_preview", "generate_image", "generate_video", "add_erp_module",
   "deploy_one_click", "publish_project", "fullstack_deploy", "connect_project",
   "audit_env", "supabase_migrate", "scaffold_project", "capture_preview",
-  "capture_preview_screenshot", "fetch_stock_photo", "run_e2e_pipeline", "rollback_last_change",
+  "fetch_stock_photo", "run_e2e_pipeline", "rollback_last_change",
   // Nuevas tools de escritura
   "install_skill", "clone_repo", "ingest_to_brain", "update_roadmap",
   // Del catálogo base del kernel: ejecutan/comprometen el repo y el
   // despachador las protege con allowWrite; no estaban clasificadas.
   "build_project", "git_commit", "git_push",
+  // [EDITCORE-INTEGRAL-B5] invoke_subagent clasificada por fin como
+  // ESCRITURA: desde el Bloque 1 el rol implementer escribe DE VERDAD
+  // vía applyWrite/applyReplace del orquestador, así que una
+  // herramienta capaz de mutar sin clasificación era una fuga real —
+  // la compuerta única no la veía y pasaba en solo lectura y en step
+  // sin autorización. Como escritura, la compuerta la corta con el
+  // mismo mensaje diferenciado del contrato (blockedReadOnly en solo
+  // lectura; needsAuthorization en step sin autorizar). La segunda capa
+  // de tools.execute sigue siendo consciente del rol (explorer es
+  // lectura), pero POR LA RUTA DEL KERNEL manda esta clasificación.
+  "invoke_subagent",
 ];
 
 // Subconjunto curado para MODO CHARLA: lectura ligera, sin análisis pesado.
@@ -457,6 +498,42 @@ function analyze(input = {}) {
   return classify(prompt, input);
 }
 
+// [EDITCORE-INTEGRAL-B5] Modo efectivo: UNA sola normalización para
+// renderer/main/bridge/kernel. Los alias históricos («read», «solo
+// lectura», «chat») convergen a "readonly"; cualquier valor inválido
+// cae a "step" — el mismo defecto de main (su IPC ya caía a «step»
+// ante un valor inválido) y de applyPermissionMode en el renderer.
+// Antes convivían tres defectos (renderer nacía «full» con
+// allowWrite:false; main nacía «step»; el kernel infería el suyo) y la
+// UI podía decir «full» mientras el kernel aplicaba «step».
+function normalizePermissionMode(raw) {
+  const mode = String(raw || "").toLowerCase().trim();
+  if (["readonly", "read", "read-only", "solo lectura", "solo-lectura", "chat"].includes(mode)) return "readonly";
+  if (mode === "full") return "full";
+  if (mode === "step") return "step";
+  return "step";
+}
+
+// [EDITCORE-INTEGRAL-B5] Anuncio de modo restrictivo al abrir un chat
+// NUEVO: la herencia de modo es por proyecto y persistente; un chat
+// nuevo en un proyecto que quedó en solo lectura (o en paso a paso)
+// lo ANUNCIA en la primera línea del primer turno, con el modo y cómo
+// cambiarlo — antes se heredaba en silencio y el usuario lo descubría
+// chocando con la compuerta (así murió la P-3 dos veces). En «full»
+// no hay anuncio: nada restrictivo que declarar. Devuelve "" si no
+// aplica (chat no nuevo o modo completo).
+function buildModeAnnouncement({ permissionMode, isNewChat } = {}) {
+  if (isNewChat !== true) return "";
+  const mode = normalizePermissionMode(permissionMode);
+  if (mode === "readonly") {
+    return "ℹ️ **Modo de este chat: Solo lectura** (heredado del proyecto). Puedo leer, buscar y analizar, pero no escribir archivos ni ejecutar comandos. Para cambiarlo, usa el botón de **Permisos** del chat y elige «Pregunta antes» o «Acceso completo».";
+  }
+  if (mode === "step") {
+    return "ℹ️ **Modo de este chat: Pregunta antes (paso a paso)** (heredado del proyecto). Antes de escribir o ejecutar te presentaré el cambio y necesitaré tu «procede». Para cambiarlo, usa el botón de **Permisos** del chat.";
+  }
+  return "";
+}
+
 module.exports = {
   classify,
   analyze,
@@ -471,6 +548,9 @@ module.exports = {
   PHASES,
   READ_ONLY_TOOLS,
   WRITE_TOOLS,
+  // [EDITCORE-INTEGRAL-B5] Modo efectivo único + anuncio de chat nuevo.
+  normalizePermissionMode,
+  buildModeAnnouncement,
   CHAT_READ_TOOLS,
   TOOL_ALLOWLIST,
   STOP_RE,

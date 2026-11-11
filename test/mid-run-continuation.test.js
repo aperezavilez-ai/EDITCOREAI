@@ -51,16 +51,6 @@ test("finalizeThinkingAsAssistant no debe borrar narracion en fuente", () => {
   assert.match(source, /persistPartialAnalysis|Analisis parcial|interrupted/);
 });
 
-test("adapter no cierra analisis con Verificacion completada", () => {
-  const source = fs.readFileSync(
-    path.join(__dirname, "..", "runtime", "editcore-claude-adapter.js"),
-    "utf8",
-  );
-  assert.match(source, /neverEvidenceFinalForAnalysis/);
-  assert.match(source, /Emite write_file AHORA/);
-  assert.match(source, /modelIterations|providerCalls >=/);
-});
-
 test("isAnalysisReport rechaza Verificacion meta", () => {
   assert.equal(
     ProjectAnalysis.isAnalysisReport("Verificacion completada con evidencia real del proyecto. Acciones ejecutadas: 40"),

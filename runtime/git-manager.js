@@ -1,24 +1,45 @@
-const { execSync } = require("node:child_process");
+"use strict";
+
+// [EDITCORE-INTEGRAL-B8] UNA SOLA PILA GIT PARA EL AGENTE. Este
+// módulo (el que usan el kernel vía tools.js y los IPC git:* de
+// main.js) converge al patrón seguro ya probado de agent-git.js /
+// publish-pipeline / git-utils.js:
+//   - ejecución con argumentos en ARRAY y shell:false (git-utils.git):
+//     ningún mensaje, rama o ruta se interpola jamás en un string de
+//     shell — en Windows %, $(), backticks y saltos ya no inyectan;
+//   - el mensaje de commit viaja por ARCHIVO TEMPORAL con -F, no -m;
+//   - filtro de secretos al stagear: UNA sola implementación,
+//     isSecretPath de publish-pipeline.js (la misma que usa
+//     agent-git.js) — .env/.pem/credentials.json jamás entran en un
+//     commit del agente, ni siquiera con files:["."];
+//   - retry de index.lock ACTIVADO (lockRetries:2, vía
+//     withGitLockRetry de git-utils): el lock NUNCA se borra;
+//   - el error que recibe el modelo/usuario es LEGIBLE: qué comando
+//     falló, con qué código y la salida relevante — no el message
+//     crudo de execSync.
+// Todas las funciones son ahora async (git-utils es async); los
+// llamadores (tools.js, handlers IPC de main.js) ya son async.
+
 const fs = require("node:fs");
 const path = require("node:path");
+const { git: gitRun } = require("./git-utils");
+const { isSecretPath } = require("./publish-pipeline");
 
-function git(args, cwd) {
-  try {
-    const out = execSync(`git ${args}`, {
-      cwd: cwd || process.cwd(),
-      encoding: "utf8",
-      stdio: ["pipe", "pipe", "pipe"],
-      env: { ...process.env, GIT_TERMINAL_PROMPT: "0" },
-    });
-    return { ok: true, stdout: out.trim(), stderr: "" };
-  } catch (error) {
-    return {
-      ok: false,
-      stdout: (error.stdout || "").toString().trim(),
-      stderr: (error.stderr || "").toString().trim(),
-      message: error.message,
-    };
+const LOCK_OPTS = { lockRetries: 2, lockRetryDelayMs: 1500 };
+
+function readableGitError(args, result) {
+  const cmd = `git ${args.join(" ")}`;
+  const detail = String(result?.stderr || result?.stdout || "").trim().slice(-600);
+  return `${cmd} falló (código ${result?.code ?? "?"}).${detail ? ` Salida: ${detail}` : ""}`;
+}
+
+async function git(args, cwd, opts = {}) {
+  const result = await gitRun(cwd, args, { ...LOCK_OPTS, ...opts });
+  if (result.code === 0) {
+    return { ok: true, stdout: result.stdout || "", stderr: result.stderr || "", code: 0 };
   }
+  const message = readableGitError(args, result);
+  return { ok: false, stdout: result.stdout || "", stderr: result.stderr || "", code: result.code, message };
 }
 
 function ensureRepo(cwd) {
@@ -30,10 +51,10 @@ function ensureRepo(cwd) {
   return { ok: true, repo };
 }
 
-function getStatus(cwd) {
+async function getStatus(cwd) {
   const repo = ensureRepo(cwd);
   if (!repo.ok) return repo;
-  const raw = git("status --porcelain=v1 -b", repo.repo);
+  const raw = await git(["status", "--porcelain=v1", "-b"], repo.repo);
   if (!raw.ok) return raw;
   const lines = raw.stdout.split("\n").filter(Boolean);
   const branchLine = lines.find((line) => line.startsWith("## "));
@@ -48,40 +69,85 @@ function getStatus(cwd) {
   return { ok: true, repo: repo.repo, branch, changes };
 }
 
-function stageFiles(files, cwd) {
+// [EDITCORE-INTEGRAL-B8] Expande "." / directorios a la lista real de
+// cambios (porcelain -uall) para poder aplicar el filtro de secretos
+// archivo a archivo: `git add .` a ciegas ya no existe en esta pila.
+async function expandStageCandidates(files, repo) {
+  const wantsAll = files.some((f) => f === "." || f === "./");
+  if (!wantsAll) return files.slice();
+  const status = await git(["status", "--porcelain", "-uall"], repo);
+  if (!status.ok) return null;
+  const fromStatus = status.stdout.split(/\r?\n/).filter(Boolean).map((line) => {
+    const raw = line.slice(3).trim().replace(/^"+|"+$/g, "");
+    return raw.includes(" -> ") ? raw.split(" -> ").pop().trim() : raw;
+  }).filter(Boolean);
+  const explicit = files.filter((f) => f !== "." && f !== "./");
+  return [...new Set([...fromStatus, ...explicit])];
+}
+
+async function stageFiles(files, cwd) {
   const repo = ensureRepo(cwd);
   if (!repo.ok) return repo;
   if (!Array.isArray(files) || files.length === 0) {
     return { ok: false, message: "No se indicaron archivos para stage." };
   }
-  const escaped = files.map((file) => `"${file.replace(/"/g, '\\"')}"`).join(" ");
-  return git(`add ${escaped}`, repo.repo);
+  const candidates = await expandStageCandidates(files.map((f) => String(f || "")).filter(Boolean), repo.repo);
+  if (!candidates) {
+    return { ok: false, message: "git status falló al expandir los archivos para stage." };
+  }
+  // [EDITCORE-INTEGRAL-B8] Filtro de secretos compartido: los
+  // bloqueados no se stagean y, si ya estaban staged de antes, se
+  // retiran del índice (reset), como hace agent-git.
+  const blockedSecrets = candidates.filter((f) => isSecretPath(f));
+  const safe = candidates.filter((f) => !isSecretPath(f));
+  for (const file of blockedSecrets) {
+    await git(["reset", "HEAD", "--", file], repo.repo).catch(() => null);
+  }
+  if (!safe.length) {
+    return {
+      ok: false,
+      message: blockedSecrets.length
+        ? `Stage bloqueado: solo hay rutas sensibles (${blockedSecrets.slice(0, 4).join(", ")}), que nunca se commitean.`
+        : "No hay archivos para stage.",
+      staged: [],
+      blockedSecrets,
+    };
+  }
+  const res = await git(["add", "--", ...safe], repo.repo);
+  return { ...res, staged: res.ok ? safe : [], blockedSecrets };
 }
 
-function unstageFiles(files, cwd) {
+async function unstageFiles(files, cwd) {
   const repo = ensureRepo(cwd);
   if (!repo.ok) return repo;
   if (!Array.isArray(files) || files.length === 0) {
     return { ok: false, message: "No se indicaron archivos para unstage." };
   }
-  const escaped = files.map((file) => `"${file.replace(/"/g, '\\"')}"`).join(" ");
-  return git(`restore --staged ${escaped}`, repo.repo);
+  return git(["restore", "--staged", "--", ...files.map((f) => String(f))], repo.repo);
 }
 
-function commit(message, cwd) {
+async function commit(message, cwd) {
   const repo = ensureRepo(cwd);
   if (!repo.ok) return repo;
   if (!message || typeof message !== "string") {
     return { ok: false, message: "El mensaje de commit es obligatorio." };
   }
-  const escaped = `"${message.replace(/"/g, '\\"')}"`;
-  return git(`commit -m ${escaped}`, repo.repo);
+  // [EDITCORE-INTEGRAL-B8] Mensaje vía -F (archivo temporal): comillas,
+  // %, $() y saltos del mensaje son DATOS, nunca shell.
+  const msgFile = path.join(repo.repo, ".git", "EDITCOREAI_COMMIT_MSG.tmp");
+  fs.writeFileSync(msgFile, `${message}\n`, "utf8");
+  try {
+    const res = await git(["commit", "-F", msgFile], repo.repo);
+    return res.ok ? { ...res, message: res.stdout || "Commit creado." } : res;
+  } finally {
+    try { fs.unlinkSync(msgFile); } catch { /* ignore */ }
+  }
 }
 
-function getBranches(cwd) {
+async function getBranches(cwd) {
   const repo = ensureRepo(cwd);
   if (!repo.ok) return repo;
-  const raw = git("branch --list --all", repo.repo);
+  const raw = await git(["branch", "--list", "--all"], repo.repo);
   if (!raw.ok) return raw;
   const branches = raw.stdout
     .split("\n")
@@ -90,34 +156,30 @@ function getBranches(cwd) {
   return { ok: true, repo: repo.repo, branches };
 }
 
-function createBranch(name, cwd) {
+async function createBranch(name, cwd) {
   const repo = ensureRepo(cwd);
   if (!repo.ok) return repo;
   if (!name || typeof name !== "string") {
     return { ok: false, message: "El nombre de rama es obligatorio." };
   }
-  const escaped = `"${name.replace(/"/g, '\\"')}"`;
-  return git(`branch ${escaped}`, repo.repo);
+  return git(["branch", name], repo.repo);
 }
 
-function checkoutBranch(name, cwd) {
+async function checkoutBranch(name, cwd) {
   const repo = ensureRepo(cwd);
   if (!repo.ok) return repo;
   if (!name || typeof name !== "string") {
     return { ok: false, message: "El nombre de rama es obligatorio." };
   }
-  const escaped = `"${name.replace(/"/g, '\\"')}"`;
-  return git(`checkout ${escaped}`, repo.repo);
+  return git(["checkout", name], repo.repo);
 }
 
-function getDiff(files, cwd) {
+async function getDiff(files, cwd) {
   const repo = ensureRepo(cwd);
   if (!repo.ok) return repo;
-  const target = Array.isArray(files) && files.length > 0
-    ? ` -- ${files.map((file) => `"${file.replace(/"/g, '\\"')}"`).join(" ")}`
-    : "";
-  const staged = git(`diff --cached${target}`, repo.repo);
-  const unstaged = git(`diff${target}`, repo.repo);
+  const target = Array.isArray(files) && files.length > 0 ? ["--", ...files.map((f) => String(f))] : [];
+  const staged = await git(["diff", "--cached", ...target], repo.repo);
+  const unstaged = await git(["diff", ...target], repo.repo);
   return {
     ok: staged.ok && unstaged.ok,
     repo: repo.repo,
@@ -128,11 +190,11 @@ function getDiff(files, cwd) {
   };
 }
 
-function getCommitHistory(limit, cwd) {
+async function getCommitHistory(limit, cwd) {
   const repo = ensureRepo(cwd);
   if (!repo.ok) return repo;
-  const count = typeof limit === "number" && Number.isFinite(limit) ? limit : 20;
-  const raw = git(`log --oneline -n ${count}`, repo.repo);
+  const count = typeof limit === "number" && Number.isFinite(limit) ? Math.max(1, Math.floor(limit)) : 20;
+  const raw = await git(["log", "--oneline", "-n", String(count)], repo.repo);
   if (!raw.ok) return raw;
   const commits = raw.stdout
     .split("\n")
@@ -144,36 +206,34 @@ function getCommitHistory(limit, cwd) {
   return { ok: true, repo: repo.repo, commits };
 }
 
-function push(remote, branch, cwd) {
+async function push(remote, branch, cwd) {
   const repo = ensureRepo(cwd);
   if (!repo.ok) return repo;
   const remoteName = typeof remote === "string" && remote.trim() ? remote : "origin";
   let branchName = typeof branch === "string" && branch.trim() ? branch : "";
   if (!branchName) {
-    const status = getStatus(repo.repo);
+    const status = await getStatus(repo.repo);
     if (status.ok && status.branch) {
       branchName = status.branch.split("...")[0].trim();
     }
   }
-  const target = branchName ? `"${branchName.replace(/"/g, '\\"')}"` : "";
-  const args = branchName ? `push "${remoteName}" ${target}` : `push "${remoteName}"`;
+  const args = branchName ? ["push", remoteName, branchName] : ["push", remoteName];
   return git(args, repo.repo);
 }
 
-function pull(remote, branch, cwd) {
+async function pull(remote, branch, cwd) {
   const repo = ensureRepo(cwd);
   if (!repo.ok) return repo;
   const remoteName = typeof remote === "string" && remote.trim() ? remote : "origin";
   const branchName = typeof branch === "string" && branch.trim() ? branch : "";
-  const target = branchName ? `"${branchName.replace(/"/g, '\\"')}"` : "";
-  const args = branchName ? `pull "${remoteName}" ${target}` : `pull "${remoteName}"`;
+  const args = branchName ? ["pull", remoteName, branchName] : ["pull", remoteName];
   return git(args, repo.repo);
 }
 
-function detectLocalChanges(cwd) {
+async function detectLocalChanges(cwd) {
   const repo = ensureRepo(cwd);
   if (!repo.ok) return repo;
-  const status = getStatus(repo.repo);
+  const status = await getStatus(repo.repo);
   if (!status.ok) return status;
   const hasChanges = status.changes.length > 0;
   return {
@@ -198,4 +258,7 @@ module.exports = {
   push,
   pull,
   detectLocalChanges,
+  // [EDITCORE-INTEGRAL-B8] Costuras para pruebas de comportamiento.
+  isSecretPath,
+  readableGitError,
 };

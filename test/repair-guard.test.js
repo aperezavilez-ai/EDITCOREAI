@@ -55,7 +55,12 @@ test("isBuildAffectingPath cubre CSS, configs y entradas; no componentes comunes
 });
 
 test("la evidencia del turno: captura o build cuentan; leer archivos no", () => {
-  assert.equal(guard.turnHasEvidence([{ name: "capture_preview_screenshot", result: { ok: false } }]), true);
+  // [EDITCORE-INTEGRAL-B1] Actualizado A PROPÓSITO: antes una captura
+  // FALLIDA (result ok:false) contaba como evidencia y liberaba la
+  // compuerta — el comportamiento roto que el Bloque 1 corrige. Ahora
+  // solo una captura con éxito es evidencia; la fallida NO libera.
+  assert.equal(guard.turnHasEvidence([{ name: "capture_preview_screenshot", result: { ok: false } }]), false);
+  assert.equal(guard.turnHasEvidence([{ name: "capture_preview_screenshot", result: { ok: true } }]), true);
   assert.equal(guard.turnHasEvidence([{ name: "run_command", input: { command: "npm run build" }, result: { ok: false } }]), true);
   assert.equal(guard.turnHasEvidence([{ name: "run_command", input: { command: "npm ls tailwindcss" }, result: { ok: true } }]), false);
   assert.equal(guard.turnHasEvidence([{ name: "read_file", input: { path: "src/index.css" }, result: { ok: true } }]), false);

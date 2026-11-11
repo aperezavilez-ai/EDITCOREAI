@@ -2,6 +2,11 @@
 
 const { classifyModelCapability } = require("../agent-runtime");
 const { logWorkflow } = require("./workflow-logger");
+// [EDITCORE-INTEGRAL-B6] Taxonomía compartida del 429: el 429 del
+// ai-proxy es CONCURRENCIA, no cuota/saldo — no debe marcar cooldown
+// de facturación ni saltar de modelo como si faltara saldo. Solo un
+// 429 cuyo cuerpo/código declare cuota conserva el trato de cuota.
+const { classifyHttpError, isConcurrencyError } = require("./http-error-taxonomy");
 
 const RECOVERABLE_MODEL_PATTERNS = [
   /timeout|timed out|ETIMEDOUT|ECONNRESET|ENOTFOUND|socket|network|fetch failed/i,
@@ -17,7 +22,11 @@ const RECOVERABLE_MODEL_PATTERNS = [
 ];
 
 const BILLING_QUOTA_PATTERNS = [
-  /402|payment required|insufficient (?:funds|balance|credit)|saldo insuficiente|sin saldo|out of credits|quota exceeded|credit(?:s)? exhausted|billing|usage limit|plan limit|exceeded your current quota|rate limit|too many requests|429/i,
+  // [EDITCORE-INTEGRAL-B6] Fuera «rate limit|too many requests|429» a
+  // secas: eso es concurrencia (taxonomía compartida), no cuota. La
+  // cuota exige marcadores propios (insufficient_quota, quota
+  // exceeded, saldo, billing…).
+  /402|payment required|insufficient (?:funds|balance|credit)|insufficient_quota|saldo insuficiente|sin saldo|out of credits|quota exceeded|credit(?:s)? exhausted|billing|usage limit|plan limit|exceeded your current quota/i,
 ];
 
 const PROVIDER_COOLDOWN_MS = 60 * 60 * 1000;
@@ -46,8 +55,14 @@ function providerCooldownKey(profile = {}) {
 
 function isBillingOrQuotaError(error) {
   if (!error) return false;
+  // [EDITCORE-INTEGRAL-B6] Criterio compartido: un 429 solo es cuota
+  // si la taxonomía lo clasifica como tal; el 429 de concurrencia del
+  // proxy NO es facturación (no cooldown de 1 h, no salto por saldo).
+  if (isConcurrencyError(error)) return false;
+  const cls = classifyHttpError({ error, status: Number(error.status || 0) || 0 });
+  if (cls.kind === "quota" || cls.kind === "billing") return true;
   const status = Number(error.status || 0);
-  if (status === 402 || status === 429) return true;
+  if (status === 402) return true;
   const message = String(error?.message || error || "");
   return BILLING_QUOTA_PATTERNS.some((pattern) => pattern.test(message));
 }
@@ -427,6 +442,9 @@ module.exports = {
   ModelFailoverCoordinator,
   isRecoverableModelError,
   isBillingOrQuotaError,
+  // [EDITCORE-INTEGRAL-B6] Concurrencia (429 del proxy) como criterio
+  // compartido, distinguible de la cuota.
+  isConcurrencyError,
   isTaskLevelError,
   hasRequiredCapability,
   modelProfileKey,

@@ -36,10 +36,40 @@ function runCapture(command, args, { cwd, env, timeoutMs = 120_000, shell = fals
   });
 }
 
+// [EDITCORE-DESBLOQUEOS] Contención de index.lock: git se niega a arrancar
+// si otro proceso tiene .git/index.lock («Unable to create '…/index.lock':
+// File exists» / «Another git process seems to be running»). Ese fallo
+// significa que el comando NO se ejecutó, así que reintentarlo tras una
+// espera corta es seguro. JAMÁS se borra el lock: si un proceso vivo lo
+// tiene, borrarlo corrompe el índice.
+const GIT_INDEX_LOCK_RE = /index\.lock/i;
+
+function isGitIndexLockError(result) {
+  if (!result || result.code === 0) return false;
+  return GIT_INDEX_LOCK_RE.test(`${result.stderr || ""}\n${result.stdout || ""}`);
+}
+
+const sleepMs = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+async function withGitLockRetry(run, { retries = 0, delayMs = 1500, sleepFn = sleepMs } = {}) {
+  let result = await run();
+  for (let attempt = 0; attempt < retries && isGitIndexLockError(result); attempt += 1) {
+    await sleepFn(delayMs);
+    result = await run();
+  }
+  return result;
+}
+
 async function git(cwd, args, opts = {}) {
   // Nunca shell:true con git en Windows — destroza -m / pathspecs.
   const bin = process.platform === "win32" ? "git.exe" : "git";
-  return runCapture(bin, args, { cwd, shell: false, ...opts, shell: false });
+  // [EDITCORE-DESBLOQUEOS] lockRetries es opt-in (defecto 0 = comportamiento
+  // histórico intacto para todos los consumidores de git()); solo la ruta
+  // de publicación lo activa.
+  const { lockRetries = 0, lockRetryDelayMs = 1500, ...captureOpts } = opts || {};
+  const run = () => runCapture(bin, args, { cwd, shell: false, ...captureOpts, shell: false });
+  if (lockRetries > 0) return withGitLockRetry(run, { retries: lockRetries, delayMs: lockRetryDelayMs });
+  return run();
 }
 
 function findGitRoot(startPath) {
@@ -74,4 +104,7 @@ module.exports = {
   findGitRoot,
   detectBranch,
   hasUpstream,
+  // [EDITCORE-DESBLOQUEOS]
+  isGitIndexLockError,
+  withGitLockRetry,
 };

@@ -6,6 +6,10 @@
  */
 
 const { scrubAiProviderNames } = require("../renderer-markdown");
+// [EDITCORE-INTEGRAL-B6] Taxonomía compartida del 401/429: una sesión
+// expirada (NO_SESSION) NO es un problema de API key, y el 429 del
+// proxy es concurrencia, no cuota. Ver runtime/http-error-taxonomy.js.
+const { classifyHttpError, isNoSessionError, SESSION_EXPIRED_MESSAGE } = require("./http-error-taxonomy");
 
 const TRANSIENT_PROVIDER_RE = /no est[aá] disponible|tard[oó] demasiado|PROVIDER_TEMPORARILY_UNAVAILABLE|temporarily unavailable|reintenta en \d+|502|503|504|408|425|429|timeout|timed?\s*out|ECONNRESET|ETIMEDOUT|ENOTFOUND|fetch failed|socket|overloaded|rate.?limit|try again|cloudflare|524|gateway time-?out|circuit.?breaker|POOL_EXHAUSTED|sin cuentas disponibles/i;
 
@@ -33,7 +37,13 @@ function stripGafcoreMentions(text = "") {
 
 function isTransientProviderFailure(message = "", status = 0) {
   const code = Number(status) || 0;
-  if ([408, 425, 429, 500, 502, 503, 504, 524].includes(code)) return true;
+  // [EDITCORE-INTEGRAL-B6] El 429 de concurrencia SÍ es transitorio;
+  // el de cuota/saldo NO (clasificación compartida). Una sesión
+  // expirada nunca es «transitoria»: hay que volver a iniciar sesión.
+  if (isNoSessionError({ message: String(message || "") }, code)) return false;
+  const cls429 = code === 429 ? classifyHttpError({ status: code, message: String(message || "") }) : null;
+  if (cls429) return cls429.transient === true;
+  if ([408, 425, 500, 502, 503, 504, 524].includes(code)) return true;
   const text = String(message || "");
   if (BILLING_RE.test(text) || HARD_AUTH_RE.test(text)) return false;
   return TRANSIENT_PROVIDER_RE.test(text);
@@ -53,12 +63,27 @@ function shouldQuarantineModelForAuto(message = "", status = 0) {
     || /EMPTY_PROVIDER|respuesta vacia|modelo .* no permitido|not allowed|permitido en la API/i.test(String(message || ""));
 }
 
-function sanitizeChatProviderError(errorOrMessage, { status } = {}) {
+function sanitizeChatProviderError(errorOrMessage, { status, code: errorCode } = {}) {
   const raw = typeof errorOrMessage === "string"
     ? errorOrMessage
-    : String(errorOrMessage?.message || errorOrMessage || "");
+    : String(errorOrMessage?.providerRaw || errorOrMessage?.message || errorOrMessage || "");
   const code = Number(status || errorOrMessage?.status || 0) || 0;
   const cleaned = scrubInternalProviderNames(raw);
+
+  // [EDITCORE-INTEGRAL-B6] PRIMERO la taxonomía compartida: sesión
+  // (NO_SESSION) ≠ API key, y 429 de concurrencia ≠ cuota. El objeto
+  // de error puede traer el código del proxy en .code/.providerCode;
+  // también se busca NO_SESSION en el texto crudo (el cuerpo del
+  // proxy lo incluye antes de sanearse).
+  const cls = classifyHttpError({
+    status: code,
+    code: errorCode || (errorOrMessage && typeof errorOrMessage === "object" ? (errorOrMessage.code || errorOrMessage.providerCode || "") : ""),
+    message: raw,
+    error: errorOrMessage && typeof errorOrMessage === "object" ? errorOrMessage : { message: raw },
+  });
+  if (cls.kind === "session") return SESSION_EXPIRED_MESSAGE;
+  if (cls.kind === "concurrency") return cls.message;
+  if (cls.kind === "quota") return cls.message;
 
   if (!cleaned) {
     return "No pude completar la respuesta. Intenta de nuevo.";
@@ -105,4 +130,8 @@ module.exports = {
   isHardProviderFailure,
   shouldQuarantineModelForAuto,
   sanitizeChatProviderError,
+  // [EDITCORE-INTEGRAL-B6] Re-exportada para consumidores que ya
+  // dependen de este módulo (main/ai-core): sesión ≠ API key.
+  isNoSessionError,
+  SESSION_EXPIRED_MESSAGE,
 };

@@ -1,5 +1,15 @@
 "use strict";
 
+// [EDITCORE-INTEGRAL-B10] NOTA DE MIGRACIÓN POR RIESGO: igual que
+// test/projectless-rebind.test.js, estos tests son VIGILANCIA
+// ESTRUCTURAL SECUNDARIA (regex sobre renderer.js/main.js): el
+// contrato que fijan vive en clausuras del renderer y en el handler
+// de main, sin costura pura ejecutable en la suite. La prueba de
+// comportamiento que manda sobre el mismo camino es
+// test/projectless-chat.test.js (kernel sin/con proyecto con
+// proveedor falso) junto con test/turno-chat-b7.test.js (resolvedor
+// puro de propiedad del turno, runtime/chat-turn-ownership.js).
+
 // La teletransportación al último proyecto (hallazgo en vivo de Luis,
 // 2026-11-10, dos veces): una corrida con herramientas nacida en una
 // conversación sin proyecto llegaba al proceso principal SIN raíz, y

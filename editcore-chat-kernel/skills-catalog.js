@@ -47,15 +47,17 @@ function forcedRepairSkills(message, valid) {
 }
 const NESTED_SCAN_DIRS = [".claude", "plugins", "src"];
 const MAX_SKILLS_IN_PROMPT = 6;
-// CUERPO COMPLETO: las skills se inyectan ENTERAS. El truncado anterior
-// (1.600 caracteres por skill y 7.000 para todo el bloque) dejaba fuera la
-// mayor parte de casi todos los SKILL.md de brain-seed (mediana muy por
-// encima de 1.600) y partía la skill a la mitad: el modelo recibía reglas
-// mutiladas sin saberlo. La selección sigue siendo por relevancia
-// (máx. 6 inyectadas), pero lo seleccionado va completo, el prompt lista
-// el catálogo entero por nombre y CUALQUIER otra skill puede cargarse
-// completa durante el turno con la herramienta read_skill (contrato de
-// turno): ninguna skill queda fuera del alcance del agente.
+// [EDITCORE-INTEGRAL-B2] ÍNDICE, NO CUERPOS: hasta la v4.8.x las skills
+// seleccionadas se inyectaban ENTERAS y se re-pagaban en CADA llamada del
+// bucle (~85.243 caracteres por llamada, ~85% del costo fijo medido por la
+// auditoría 2026-11-11). Desde el Bloque 2 la inyección por turno es un
+// ÍNDICE acotado por skill (nombre + cuándo usarla + extracto con tope
+// duro SKILL_INDEX_EXTRACT_MAX_CHARS) y el cuerpo COMPLETO solo llega
+// bajo demanda con la herramienta read_skill, que ya existía (contrato
+// de turno v4.7.2) y sigue devolviendo el cuerpo entero. La selección
+// sigue siendo por relevancia (máx. MAX_SKILLS_IN_PROMPT en el índice).
+const SKILL_INDEX_EXTRACT_MAX_CHARS = 600;
+const SKILL_INDEX_WHEN_MAX_CHARS = 260;
 
 /** IDs canónicos conocidos (compatibilidad / fallback de ranking). */
 const SKILL_IDS = [
@@ -567,7 +569,64 @@ function selectSkillsForTurn(projectRoot, kind, message, limit = MAX_SKILLS_IN_P
   return selected.map((s) => ({ id: s.id, score: scoreSkill(s, message, kind), manifestPath: s.manifestPath }));
 }
 
-function skillsPrompt(projectRoot, kind, messageOrOpts) {
+// [EDITCORE-INTEGRAL-B2] Helpers del ÍNDICE de skills: separan el
+// frontmatter (de ahí sale el «cuándo usarla» declarado por la propia
+// skill) y extraen las primeras líneas útiles con tope duro.
+function splitSkillFrontmatter(raw) {
+  const text = String(raw || "");
+  if (!text.startsWith("---")) return { description: "", body: text };
+  const end = text.indexOf("\n---", 3);
+  if (end < 0) return { description: "", body: text };
+  const fm = text.slice(3, end);
+  const m = fm.match(/^\s*description\s*:\s*"?([^"\n]+)"?\s*$/im);
+  return { description: m ? m[1].trim() : "", body: text.slice(end + 4) };
+}
+
+function extractSkillExcerpt(rawBody, maxChars = SKILL_INDEX_EXTRACT_MAX_CHARS) {
+  const cap = Math.max(80, Number(maxChars) || SKILL_INDEX_EXTRACT_MAX_CHARS);
+  const { body } = splitSkillFrontmatter(rawBody);
+  const lines = [];
+  let used = 0;
+  for (const rawLine of String(body || "").split(/\r?\n/)) {
+    const line = rawLine.trimEnd();
+    if (!lines.length && !line.trim()) continue;
+    if (used + line.length + 1 > cap) {
+      const room = cap - used - 1;
+      if (room > 40) lines.push(`${line.slice(0, room).trimEnd()}…`);
+      used = cap;
+      break;
+    }
+    lines.push(line);
+    used += line.length + 1;
+    if (used >= cap) break;
+  }
+  return lines.join("\n").trim();
+}
+
+function skillWhenToUse(skill, description) {
+  if (description) return String(description).slice(0, SKILL_INDEX_WHEN_MAX_CHARS);
+  const mapped = SKILL_KEYWORD_MAP[skill?.id] || [];
+  if (mapped.length) return `Aplica cuando el pedido toca: ${mapped.slice(0, 8).join(", ")}`.slice(0, SKILL_INDEX_WHEN_MAX_CHARS);
+  return "Aplica cuando el tema del pedido coincide con el nombre de la skill.";
+}
+
+// [EDITCORE-INTEGRAL-B2] Entrada de ÍNDICE para una skill: nombre +
+// cuándo usarla + extracto acotado (≤ SKILL_INDEX_EXTRACT_MAX_CHARS).
+// El cuerpo completo NO se incluye nunca aquí: va solo por read_skill.
+function buildSkillIndexEntry(skill) {
+  const body = loadManifestBody(skill.manifestPath);
+  if (!body) return null;
+  const { description } = splitSkillFrontmatter(body);
+  const excerpt = extractSkillExcerpt(body);
+  return [
+    `SKILL ${skill.id} (${skill.manifestName}) — ÍNDICE:`,
+    `Cuándo usarla: ${skillWhenToUse(skill, description)}`,
+    `Extracto: ${excerpt}`,
+    `El cuerpo COMPLETO de esta skill no viaja en el prompt: si el trabajo la necesita, cárgalo con read_skill(name: "${skill.id}") antes de actuar.`,
+  ].join("\n");
+}
+
+function skillsPrompt(projectRoot, kind, messageOrOpts, opts = {}) {
   const message = typeof messageOrOpts === "string"
     ? messageOrOpts
     : String(messageOrOpts?.message || messageOrOpts?.prompt || "");
@@ -584,22 +643,33 @@ function skillsPrompt(projectRoot, kind, messageOrOpts) {
   // kind + diseño forzado en UI/construcción). Antes este cuerpo repetía la
   // misma lógica por su cuenta y las dos copias podían derivar: un arreglo
   // en una no llegaba a la otra. Aquí solo se construye el texto a inyectar.
-  const selected = selectSkillsForTurn(projectRoot, kind, message, MAX_SKILLS_IN_PROMPT)
-    .map((picked) => valid.find((s) => s.id === picked.id))
-    .filter(Boolean);
+  // [EDITCORE-INTEGRAL-B2] Si el llamador ya seleccionó (opts.selectedIds),
+  // se respeta ESA selección y no se vuelve a seleccionar: una sola
+  // selección por turno, compartida entre el índice y la narrativa.
+  const limit = Math.max(1, Number(opts?.limit) || MAX_SKILLS_IN_PROMPT);
+  let selected;
+  if (Array.isArray(opts?.selectedIds) && opts.selectedIds.length) {
+    // Se conserva el ORDEN de la selección recibida (ranking), no el del disco.
+    selected = opts.selectedIds
+      .map((id) => valid.find((s) => s.id === String(id)))
+      .filter(Boolean)
+      .slice(0, limit);
+  } else {
+    selected = selectSkillsForTurn(projectRoot, kind, message, limit)
+      .map((picked) => valid.find((s) => s.id === picked.id))
+      .filter(Boolean);
+  }
 
-  const blocks = selected.map((skill) => {
-    const body = loadManifestBody(skill.manifestPath);
-    if (!body) return null;
-    return `SKILL ${skill.id} (${skill.manifestName}):\n${body}`;
-  }).filter(Boolean);
+  // [EDITCORE-INTEGRAL-B2] Lo inyectado es el ÍNDICE (ver constantes
+  // SKILL_INDEX_*), no los cuerpos: el cuerpo completo solo vía read_skill.
+  const blocks = selected.map((skill) => buildSkillIndexEntry(skill)).filter(Boolean);
 
   const availableIds = valid.map((s) => s.id);
   const prompt = [
     `SKILLS VÁLIDAS EN DISCO (${availableIds.length}): ${availableIds.join(", ")}`,
-    `Inyectadas (${selected.length}/${MAX_SKILLS_IN_PROMPT}) por relevancia al mensaje del usuario (kind=${kind || "n/a"}).`,
-    "DIRECTIVA OBLIGATORIA: Aplica de forma inmediata y automática las pautas, patrones y reglas de estas skills activas en tus respuestas y en el código generado por tus tools. No pidas confirmación para seguir sus estándares.",
-    "Cualquier otra skill del catálogo (arriba, por nombre) puede cargarse COMPLETA durante el turno con la herramienta read_skill: si el trabajo toca el tema de una skill no inyectada, cárgala antes de actuar.",
+    `Índice de skills activas (${selected.length}/${MAX_SKILLS_IN_PROMPT}) por relevancia al mensaje del usuario (kind=${kind || "n/a"}).`,
+    "DIRECTIVA OBLIGATORIA: las skills activas viajan como ÍNDICE (nombre, cuándo usarlas y un extracto acotado). Antes de aplicar las pautas de una skill activa, carga su cuerpo COMPLETO con la herramienta read_skill y sigue ese cuerpo, no solo el extracto. No pidas confirmación para seguir sus estándares.",
+    "Cualquier otra skill del catálogo (arriba, por nombre) puede cargarse COMPLETA durante el turno con la herramienta read_skill: si el trabajo toca el tema de una skill no activada, cárgala antes de actuar.",
     "Si la skill habla de deploy/conexión, combina con check_connections / connect_project según corresponda.",
     blocks.join("\n\n"),
   ].join("\n\n");
@@ -607,10 +677,28 @@ function skillsPrompt(projectRoot, kind, messageOrOpts) {
   return prompt;
 }
 
+// [EDITCORE-INTEGRAL-B2] UNA sola selección por turno: selecciona una vez
+// y construye el índice con exactamente esa selección, devolviendo también
+// los ids para la narrativa «Skills aplicadas este turno: …» del
+// orquestador (antes handle() seleccionaba dos veces: una dentro de
+// skillsPrompt con tope 6 y otra fuera con tope 4, y podían divergir).
+function buildSkillsTurn(projectRoot, kind, message, limit = MAX_SKILLS_IN_PROMPT) {
+  const picked = selectSkillsForTurn(projectRoot, kind, message, limit);
+  const pickedIds = picked.map((p) => p.id).filter(Boolean);
+  const prompt = skillsPrompt(projectRoot, kind, message, { selectedIds: pickedIds, limit });
+  return { prompt, pickedIds, selected: picked };
+}
+
 module.exports = {
   SKILL_IDS,
   MANIFEST_NAMES,
   MAX_SKILLS_IN_PROMPT,
+  // [EDITCORE-INTEGRAL-B2] topes del índice + constructor de turno (una selección)
+  SKILL_INDEX_EXTRACT_MAX_CHARS,
+  SKILL_INDEX_WHEN_MAX_CHARS,
+  buildSkillIndexEntry,
+  buildSkillsTurn,
+  extractSkillExcerpt,
   findSkillManifest,
   getValidLocalSkills,
   resolveSkillsRoots,

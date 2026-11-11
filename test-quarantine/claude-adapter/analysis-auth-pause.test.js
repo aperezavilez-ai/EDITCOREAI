@@ -1,12 +1,15 @@
 "use strict";
+// [EDITCORE-INTEGRAL-B10] CUARENTENA: este archivo prueba SOLO el adaptador
+// Claude (runtime/editcore-claude-adapter.js), fuera de la suite del producto.
+// Ver test-quarantine/claude-adapter/README.md.
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
-const { ActionRegistry } = require("../runtime/action-registry");
-const { EditCoreClaudeAdapter } = require("../runtime/editcore-claude-adapter");
+const { ActionRegistry } = require("../../runtime/action-registry");
+const { EditCoreClaudeAdapter } = require("../../runtime/editcore-claude-adapter");
 
 function temporaryProject(t, prefix) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), prefix));

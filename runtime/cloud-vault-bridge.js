@@ -136,8 +136,15 @@ function createCloudVaultBridge(deps = {}) {
     if (!root || !fs.existsSync(root)) throw new Error("projectRoot invalido para deploy_github.");
     getVaultCredentials("github");
     const connections = getConnections();
-    const { connectProject } = require("./project-connect");
-    const { publishProject } = require("./publish-pipeline");
+    // [EDITCORE-INTEGRAL-B8] Implementaciones inyectables (costura de
+    // prueba, patrón helpers._externalImpls de B6); en producción son
+    // los módulos reales.
+    const connectProject = typeof deps.connectProjectImpl === "function"
+      ? deps.connectProjectImpl
+      : require("./project-connect").connectProject;
+    const publishProject = typeof deps.publishProjectImpl === "function"
+      ? deps.publishProjectImpl
+      : require("./publish-pipeline").publishProject;
     const linked = await connectProject(root, connections, {
       createGithub: true,
       createVercel: false,
@@ -157,18 +164,32 @@ function createCloudVaultBridge(deps = {}) {
     }
     const githubRemoteUrl = linked?.github?.remoteUrl || linked?.remoteUrl || publish?.remoteUrl || "";
     const githubFullName = linked?.github?.fullName || linked?.repo?.fullName || "";
-    mergeProjectInfra(root, {
-      githubRemoteUrl,
-      githubFullName,
-      notes: [`GitHub sync ${new Date().toISOString().slice(0, 19)}`],
-    });
+    // [EDITCORE-INTEGRAL-B8] ok refleja la realidad: antes era
+    // ok:true incondicional y un push fallido quedaba enterrado en
+    // pushed:false. Sin remote enlazado o con push fallido ⇒ ok:false
+    // con la causa. La infra solo se toca si hay remote real (no se
+    // borra el anterior con una cadena vacía).
+    const pushed = repoOptions.push === false ? false : publish?.ok === true;
+    const ok = Boolean(githubRemoteUrl) && (repoOptions.push === false || pushed);
+    if (githubRemoteUrl) {
+      mergeProjectInfra(root, {
+        githubRemoteUrl,
+        githubFullName,
+        notes: [`GitHub sync ${new Date().toISOString().slice(0, 19)}`],
+      });
+    }
     return redactDeep({
-      ok: true,
+      ok,
       tool: "deploy_github",
       githubRemoteUrl,
       githubFullName,
       linked: Boolean(githubRemoteUrl),
-      pushed: publish?.ok === true,
+      pushed,
+      message: ok
+        ? ""
+        : (!githubRemoteUrl
+          ? "deploy_github no enlazó ningún repositorio remoto."
+          : `El push a GitHub falló: ${publish?.message || "sin detalle"}`),
       vault: { github: true },
     });
   }
@@ -178,9 +199,16 @@ function createCloudVaultBridge(deps = {}) {
     if (!root || !fs.existsSync(root)) throw new Error("projectRoot invalido para deploy_vercel.");
     getVaultCredentials("vercel");
     const connections = getConnections();
-    const { connectProject } = require("./project-connect");
-    const { syncEnvToVercel } = require("./vercel-env-sync");
-    const { deployOneClick } = require("./deploy-one-click");
+    // [EDITCORE-INTEGRAL-B8] Inyectables (ver deployGithub).
+    const connectProject = typeof deps.connectProjectImpl === "function"
+      ? deps.connectProjectImpl
+      : require("./project-connect").connectProject;
+    const syncEnvToVercel = typeof deps.syncEnvToVercelImpl === "function"
+      ? deps.syncEnvToVercelImpl
+      : require("./vercel-env-sync").syncEnvToVercel;
+    const deployOneClick = typeof deps.deployOneClickImpl === "function"
+      ? deps.deployOneClickImpl
+      : require("./deploy-one-click").deployOneClick;
     const linked = await connectProject(root, connections, {
       createGithub: false,
       createVercel: true,
@@ -195,25 +223,55 @@ function createCloudVaultBridge(deps = {}) {
     }
     let deploy = null;
     if (envOptions.deploy !== false) {
+      // [EDITCORE-INTEGRAL-B8] Esquema nuevo (provider/production);
+      // el viejo {target:"vercel"} sigue traducido en deploy-one-click.
       deploy = await deployOneClick(root, {
-        target: "vercel",
+        provider: "vercel",
         production: envOptions.production !== false,
       }, { connections });
     }
-    const vercelUrl = deploy?.url || deploy?.deploymentUrl || linked?.vercel?.url || "";
-    mergeProjectInfra(root, {
+    // [EDITCORE-INTEGRAL-B8] ok refleja el deploy REAL y una URL
+    // vieja jamás se escribe ni se devuelve como liveUrl nueva:
+    // antes deploy.ok===false volvía ok:true con el fracaso en
+    // deployed:false y vercelUrl caía a la URL enlazada anterior,
+    // que se grababa como liveUrl en project-infra.json.
+    const deployRequested = envOptions.deploy !== false;
+    const deployed = deployRequested && deploy?.ok === true;
+    const newUrl = deployed ? String(deploy?.url || deploy?.deploymentUrl || "") : "";
+    const previousUrl = String(readProjectInfra(root)?.data?.liveUrl || linked?.vercel?.url || "");
+    const infraPatch = {
       vercelProjectId: linked?.vercel?.projectId || envSync?.projectId || "",
       vercelProjectName: linked?.vercel?.name || path.basename(root),
-      vercelUrl,
-      liveUrl: vercelUrl,
       notes: [`Vercel sync ${new Date().toISOString().slice(0, 19)}`],
-    });
+    };
+    if (newUrl) {
+      infraPatch.vercelUrl = newUrl;
+      infraPatch.liveUrl = newUrl;
+    } else if (deployRequested) {
+      // [EDITCORE-INTEGRAL-B8] Deploy pedido y fallido: la infra no
+      // conserva la URL anterior como liveUrl «vigente» de esta
+      // corrida — queda vacía hasta que un deploy verificado traiga
+      // una nueva; la anterior solo viaja como previousUrl en el
+      // resultado.
+      infraPatch.vercelUrl = "";
+      infraPatch.liveUrl = "";
+    }
+    mergeProjectInfra(root, infraPatch);
     return redactDeep({
-      ok: true,
+      ok: deployRequested ? deployed : true,
       tool: "deploy_vercel",
-      vercelUrl,
+      vercelUrl: newUrl,
+      liveUrl: newUrl,
+      previousUrl: newUrl ? "" : previousUrl,
       envSynced: envSync?.ok === true,
-      deployed: deploy?.ok === true,
+      deployed,
+      verified: deployed ? deploy?.verified !== false : false,
+      smokeNotVerified: deploy?.smokeNotVerified === true,
+      message: deployRequested && !deployed
+        ? `El deploy de Vercel falló: ${deploy?.message || "sin detalle"}${previousUrl ? ` (sin URL nueva; la anterior era ${previousUrl})` : ""}`
+        : (deploy?.smokeNotVerified
+          ? `Deploy terminado pero NO verificado: ${deploy?.smokeCause || deploy?.message || ""}`
+          : ""),
       vault: { vercel: true },
     });
   }

@@ -12,7 +12,14 @@ const tools = require("../tools");
 const forensic = require("../forensic-checks");
 const { recordSolution, classifyErrorType } = require("../global-memory");
 
-function ensureNextTypesStub(projectRoot) {
+function ensureNextTypesStub(projectRoot, opts = {}) {
+  // [EDITCORE-INTEGRAL-B5] Escribir el stub ES una escritura: queda bajo
+  // la misma autorización que cualquier write_file. Sin autorización
+  // (allowWrite === false: solo lectura o paso a paso sin autorizar) el
+  // verifier NO escribe nada y el llamador lo declara — antes el stub
+  // se escribía en .next/types al margen de la compuerta, en un turno
+  // que el usuario había puesto en «solo lee».
+  if (opts && opts.allowWrite === false) return false;
   const routes = path.join(projectRoot, ".next", "types", "routes.d.ts");
   if (fs.existsSync(routes)) return false;
   const nextEnv = path.join(projectRoot, "next-env.d.ts");
@@ -38,7 +45,9 @@ function ensureNextTypesStub(projectRoot) {
 }
 
 function isTimeoutResult(run) {
-  const blob = `${run?.error || ""} ${run?.stderr || ""} ${run?.stdout || ""}`;
+  // [EDITCORE-INTEGRAL-B1] runCommand devuelve `output`, no `stdout`:
+  // incluirlo o los timeouts/errores que salen por stdout se pierden.
+  const blob = `${run?.error || ""} ${run?.stderr || ""} ${run?.stdout || ""} ${run?.output || ""}`;
   return /timeout|timed?\s*out|AbortError|TimeoutMs/i.test(blob);
 }
 
@@ -74,7 +83,18 @@ async function runVerifier({
   solutionApplied = null,
   learn = true,
   incremental = true,
+  // [EDITCORE-INTEGRAL-B5] Autorización del turno que invoca: la misma
+  // que exige run_command. allowExecution === false → ningún script
+  // del proyecto se ejecuta (ni el comando ligero ni los tests
+  // forenses) y el stub de .next/types no se escribe; el resultado lo
+  // DECLARA (executionOmitted / stubOmitted). Sin el flag (llamadores
+  // históricos y la verificación post-escritura, que ya corre tras una
+  // escritura autorizada) se conserva la conducta de siempre.
+  allowExecution,
+  allowWrite,
 } = {}) {
+  const executionAllowed = allowExecution !== false;
+  const stubAllowed = allowWrite !== false && executionAllowed;
   const steps = [];
   if (signal?.aborted) {
     return { ok: false, aborted: true, result: { error: "Verificación cancelada por el usuario." }, steps };
@@ -90,19 +110,30 @@ async function runVerifier({
     steps.push({ name: "read_file", ok: file.ok, input: { path: rel } });
   }
 
-  const cmd = incremental
-    ? pickLightCommand(projectRoot, command)
-    : (command || pickLightCommand(projectRoot, ""));
+  // [EDITCORE-INTEGRAL-B5] Sin autorización de ejecución el comando
+  // ligero tampoco corre: se cae a la ruta forense ESTÁTICA (lectura),
+  // que declara la omisión en su propio resultado.
+  const cmd = executionAllowed
+    ? (incremental
+      ? pickLightCommand(projectRoot, command)
+      : (command || pickLightCommand(projectRoot, "")))
+    : null;
 
   if (!cmd) {
     onProgress?.({
       phase: "subagent",
       name: "verifier",
-      text: "Sin typecheck: reviso sintaxis e imports y corro los tests del proyecto si existen.",
+      text: executionAllowed
+        ? "Sin typecheck: reviso sintaxis e imports y corro los tests del proyecto si existen."
+        : "Sin autorización de ejecución: reviso sintaxis e imports (los chequeos con ejecución quedan omitidos y declarados).",
     });
     const checks = await forensic.runForensicChecks(projectRoot, {
       runTypecheck: false,
       runTests: true,
+      // [EDITCORE-INTEGRAL-B5] La compuerta de ejecución llega también
+      // a los tests que el verifier pedía por su cuenta.
+      allowExecution: executionAllowed,
+      executionOmittedReason: "modo sin autorización de ejecución",
       testTimeoutMs: Math.max(timeoutMs, 180_000),
       onlyFiles: rel ? [rel] : null,
       onProgress,
@@ -121,6 +152,8 @@ async function runVerifier({
       testsRan,
       forensic: checks,
       report: testsRan ? report : `${report}\n\n_El proyecto no tiene tests: solo se verificó sintaxis e imports._`,
+      // [EDITCORE-INTEGRAL-B5] Declaración de la omisión por permisos.
+      executionOmitted: checks.executionOmitted === true,
       result: {
         ok: checks.ok,
         note: testsRan ? "Sintaxis, imports y tests verificados." : "Sin tests ni typecheck: solo se verificó sintaxis e imports.",
@@ -129,10 +162,21 @@ async function runVerifier({
     };
   }
 
-  try { ensureNextTypesStub(projectRoot); } catch { /* ignore */ }
+  // [EDITCORE-INTEGRAL-B5] El stub solo se escribe con autorización de
+  // escritura (stubAllowed); sin ella no se toca .next/types.
+  let stubWritten = false;
+  try { stubWritten = ensureNextTypesStub(projectRoot, { allowWrite: stubAllowed }); } catch { /* ignore */ }
+  const stubOmitted = !stubAllowed && !stubWritten;
 
-  const run = await tools.runCommand(projectRoot, cmd, { timeoutMs });
+  // [EDITCORE-INTEGRAL-B6] La señal del turno LLEGA al comando: antes
+  // runVerifier recibía `signal` y llamaba runCommand SIN ella, así
+  // que tras Detener el typecheck seguía hasta su timeout. Ahora el
+  // runner (process-runner, Bloque 4) mata el ÁRBOL al abortar.
+  const run = await tools.runCommand(projectRoot, cmd, { timeoutMs, signal: signal || undefined });
   steps.push({ name: "run_command", ok: run.ok, input: { command: cmd } });
+  if (signal?.aborted || run?.aborted) {
+    return { role: "verifier", steps, ok: false, aborted: true, result: { ok: false, aborted: true, error: "Verificación detenida por el usuario (Detener): el proceso en curso fue terminado." } };
+  }
   onProgress?.({ phase: "tool", name: "run_command", ok: run.ok, input: { command: cmd } });
 
   const timedOut = isTimeoutResult(run);
@@ -158,7 +202,12 @@ async function runVerifier({
     };
   }
 
-  const detailBlob = `${run.stderr || ""}\n${run.stdout || ""}\n${run.error || ""}\n${priorError || ""}`;
+  // [EDITCORE-INTEGRAL-B1] LA ⚠️ SIN CAUSA: runCommand (tools.js) devuelve
+  // el texto del comando en `output`, NO en `stdout` — tsc escribe sus
+  // errores por stdout, así que el blob quedaba vacío, result.error salía
+  // en blanco y el bloque ⚠️ no mostraba causa ni el modelo recibía el
+  // error para corregirlo. Se leen TODOS los campos que el runner trae.
+  const detailBlob = `${run.stderr || ""}\n${run.stdout || ""}\n${run.output || ""}\n${run.error || ""}\n${priorError || ""}`;
   const compileFail = !run.ok && /(?:Build error|Failed to compile|error TS\d+|TypeScript error|ELIFECYCLE)/i.test(detailBlob);
 
   let rollback = null;
@@ -198,9 +247,14 @@ async function runVerifier({
     steps,
     ok: run.ok,
     rollback,
+    // [EDITCORE-INTEGRAL-B5] Si el stub no se escribió por permisos, se declara.
+    stubOmitted,
+    stubWritten,
     result: {
       ...run,
-      error: run.ok ? undefined : (detailBlob.slice(0, 1200) || run.error),
+      // [EDITCORE-INTEGRAL-B1] Un blob de solo separadores NO es una causa:
+      // si no hay texto real, se cae a run.error en vez de guardar blanco.
+      error: run.ok ? undefined : (detailBlob.trim() ? detailBlob.trim().slice(0, 1200) : (run.error || undefined)),
       rolledBack: Boolean(rollback?.ok),
       snapshotId: rollback?.snapshotId || null,
     },

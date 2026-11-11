@@ -110,6 +110,21 @@ function attachProcessStreams(child, {
   };
 }
 
+// [EDITCORE-INTEGRAL-B4] Matar el ÁRBOL del proceso (no solo el hijo
+// directo): en Windows con taskkill /T /F y en el resto con SIGKILL.
+// Antes el timeout/aborto de este runner hacía child.kill() a secas y
+// los nietos (npm → node → …) sobrevivían huérfanos.
+function killProcessTree(child) {
+  if (!child || child.exitCode != null) return;
+  try {
+    if (process.platform === "win32" && child.pid) {
+      spawn("taskkill", ["/pid", String(child.pid), "/T", "/F"], { windowsHide: true });
+    } else {
+      child.kill("SIGKILL");
+    }
+  } catch { /* el proceso ya pudo morir */ }
+}
+
 function runProcess({
   cwd,
   command,
@@ -119,6 +134,11 @@ function runProcess({
   onSevereError,
   signal,
   env,
+  // [EDITCORE-INTEGRAL-B4] El run_command del kernel corría en Windows
+  // con powershell.exe (los comandos del modelo usan sintaxis
+  // PowerShell); al converger a ESTE runner único, esa costura se
+  // conserva como opción explícita en vez de perderla con shell:true.
+  usePowerShellOnWindows = false,
 } = {}) {
   let cmd = String(command || "").trim();
   if (!cmd) {
@@ -168,13 +188,23 @@ function runProcess({
     let stderr = "";
     let timedOut = false;
 
-    const child = spawn(cmd, {
-      cwd: root,
-      shell: true,
-      windowsHide: true,
-      stdio: ["ignore", "pipe", "pipe"],
-      env: { ...process.env, FORCE_COLOR: "0", ...(env || {}) },
-    });
+    // [EDITCORE-INTEGRAL-B4] Una sola vía de spawn: shell del sistema por
+    // defecto, o powershell.exe en Windows cuando el llamador lo pide
+    // (run_command del kernel).
+    const child = (usePowerShellOnWindows && process.platform === "win32")
+      ? spawn("powershell.exe", ["-Command", cmd], {
+        cwd: root,
+        windowsHide: true,
+        stdio: ["ignore", "pipe", "pipe"],
+        env: { ...process.env, FORCE_COLOR: "0", ...(env || {}) },
+      })
+      : spawn(cmd, {
+        cwd: root,
+        shell: true,
+        windowsHide: true,
+        stdio: ["ignore", "pipe", "pipe"],
+        env: { ...process.env, FORCE_COLOR: "0", ...(env || {}) },
+      });
 
     const streams = attachProcessStreams(child, {
       onChunk: (ev) => {
@@ -215,7 +245,9 @@ function runProcess({
     if (!longLived && effectiveTimeout > 0) {
       timer = setTimeout(() => {
         timedOut = true;
-        try { child.kill(); } catch {}
+        // [EDITCORE-INTEGRAL-B4] Timeout = matar el ÁRBOL, como hacía el
+        // spawn propio del kernel (taskkill /T /F en Windows).
+        killProcessTree(child);
         finish({
           ok: false,
           error: `Timeout tras ${effectiveTimeout}ms (spawn streaming).`,
@@ -227,7 +259,10 @@ function runProcess({
     let onAbort = null;
     if (signal) {
       onAbort = () => {
-        try { child.kill(); } catch {}
+        // [EDITCORE-INTEGRAL-B4] Aborto = matar el ÁRBOL al instante
+        // (cadena de aborto del kernel, v4.7.5: no arrancar abortado lo
+        // garantiza el llamador; aquí se corta lo que ya corría).
+        killProcessTree(child);
         finish({ ok: false, error: "Abortado", code: null });
       };
       if (signal.aborted) onAbort();
@@ -282,6 +317,9 @@ function runProcess({
 
 module.exports = {
   runProcess,
+  // [EDITCORE-INTEGRAL-B4] Exportada para que el único runner comparta
+  // también su forma de matar el árbol con quien lo necesite.
+  killProcessTree,
   attachProcessStreams,
   isLongRunningCommand,
   isBuildCommand,

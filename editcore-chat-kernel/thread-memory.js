@@ -21,6 +21,13 @@ const MAX_NOTES = 50;
 const MAX_VERIFIED = 20;
 const MAX_DISCARDED = 20;
 const DOSSIER_CHARS = 3_500;
+// [EDITCORE-INTEGRAL-B3] Hechos estructurales del expediente (archivo↔
+// sección/símbolo, asset↔dónde se usa, lecturas): viven en una sección
+// PROPIA con reserva declarada DENTRO del tope de 3.500. Cuando hay que
+// cortar, se corta la prosa; los hechos recientes/relevantes no se
+// amputan por la cola como pasaba con el bloque de retrieveRelevant.
+const MAX_FACTS = 80;
+const FACTS_RESERVE_CHARS = 1_100;
 
 function storeDir(projectRoot) {
   return path.join(String(projectRoot || "."), ".editcore", "chat-memory");
@@ -61,6 +68,8 @@ function emptyProject() {
     files: [],
     verified: [],
     discarded: [],
+    // [EDITCORE-INTEGRAL-B3] Hechos estructurales destilados de los steps.
+    facts: [],
     updatedAt: null,
   };
 }
@@ -131,6 +140,8 @@ function loadProjectState(projectRoot) {
   data.files = Array.isArray(data.files) ? data.files : [];
   data.verified = Array.isArray(data.verified) ? data.verified : [];
   data.discarded = Array.isArray(data.discarded) ? data.discarded : [];
+  // [EDITCORE-INTEGRAL-B3]
+  data.facts = Array.isArray(data.facts) ? data.facts.filter((f) => f && typeof f === "object" && f.kind) : [];
   return data;
 }
 
@@ -144,11 +155,14 @@ function saveProjectState(projectRoot, patch = {}) {
     files: Array.isArray(patch.files) ? patch.files : prev.files,
     verified: Array.isArray(patch.verified) ? patch.verified : prev.verified,
     discarded: Array.isArray(patch.discarded) ? patch.discarded : prev.discarded,
+    // [EDITCORE-INTEGRAL-B3]
+    facts: Array.isArray(patch.facts) ? patch.facts : prev.facts,
     updatedAt: new Date().toISOString(),
   };
   if (next.decisions.length > MAX_DECISIONS) next.decisions = next.decisions.slice(-MAX_DECISIONS);
   if (next.notes.length > MAX_NOTES) next.notes = next.notes.slice(-MAX_NOTES);
   if (next.files.length > 80) next.files = next.files.slice(-80);
+  if (next.facts.length > MAX_FACTS) next.facts = next.facts.slice(-MAX_FACTS);
   if (next.verified.length > MAX_VERIFIED) next.verified = next.verified.slice(-MAX_VERIFIED);
   if (next.discarded.length > MAX_DISCARDED) next.discarded = next.discarded.slice(-MAX_DISCARDED);
   writeJson(projectFile(projectRoot), next);
@@ -162,6 +176,11 @@ function noteVerified(projectRoot, text, ok = true) {
   const clipped = String(text || "").trim().slice(0, 400);
   if (!clipped) return loadProjectState(projectRoot);
   const state = loadProjectState(projectRoot);
+  // [EDITCORE-INTEGRAL-B3] Sin duplicados exactos: el mismo verificado
+  // puede llegar por dos costuras en el mismo cierre (appendRealVerification
+  // y rememberExchange) y no debe ocupar dos huecos del expediente.
+  const bucket = ok === false ? state.discarded : state.verified;
+  if ((bucket || []).some((e) => String(e?.text || "") === clipped)) return state;
   const entry = { t: Date.now(), text: clipped };
   if (ok === false) {
     state.discarded = [...(state.discarded || []), entry];
@@ -178,9 +197,78 @@ function noteDiscarded(projectRoot, text) {
 }
 
 function noteDecision(projectRoot, text) {
+  const clipped = String(text || "").trim().slice(0, 400);
+  if (!clipped) return loadProjectState(projectRoot);
   const state = loadProjectState(projectRoot);
-  state.decisions.push({ t: Date.now(), text: String(text || "").slice(0, 400) });
+  // [EDITCORE-INTEGRAL-B3] Sin duplicados exactos (la misma autorización
+  // destilada en dos cierres no se repite en el expediente).
+  if (state.decisions.some((d) => String(d?.text || "") === clipped)) return state;
+  state.decisions.push({ t: Date.now(), text: clipped });
   return saveProjectState(projectRoot, state);
+}
+
+// [EDITCORE-INTEGRAL-B3] Texto plano de un hecho: es lo que se puntúa en
+// la recuperación y lo que se lista en la sección de hechos del bloque.
+function factText(fact) {
+  if (!fact || typeof fact !== "object") return "";
+  const file = String(fact.file || "").replace(/\\/g, "/");
+  if (fact.kind === "section") {
+    return fact.relation === "renderiza"
+      ? `${file} renderiza/usa la sección/símbolo ${fact.name} (no lo define)`
+      : `${file} contiene la sección/símbolo ${fact.name}`;
+  }
+  if (fact.kind === "asset") {
+    return `${fact.asset} se usa en ${file}${fact.section ? ` (sección ${fact.section})` : ""}`;
+  }
+  if (fact.kind === "read") {
+    return `leído: ${file}${fact.why ? ` — ${fact.why}` : ""}`;
+  }
+  return String(fact.text || "");
+}
+
+function factKey(fact) {
+  return [
+    fact.kind || "",
+    String(fact.file || "").replace(/\\/g, "/").toLowerCase(),
+    normalizeLoose(fact.name || ""),
+    normalizeLoose(fact.asset || ""),
+    fact.relation || "",
+    normalizeLoose(fact.section || ""),
+  ].join("|");
+}
+
+// [EDITCORE-INTEGRAL-B3] Registra hechos estructurales destilados por el
+// kernel (thread-core). Dedupe por clave semántica: si el hecho ya
+// existe, se REFRESCA su marca de tiempo y pasa al final (recencia),
+// sin duplicarlo. Nunca infiere: solo guarda lo que el llamador afirmó.
+function noteFacts(projectRoot, facts) {
+  const incoming = (Array.isArray(facts) ? facts : []).filter((f) => f && typeof f === "object" && f.kind && (f.file || f.text));
+  if (!incoming.length) return loadProjectState(projectRoot);
+  const state = loadProjectState(projectRoot);
+  const byKey = new Map();
+  for (const f of state.facts || []) byKey.set(factKey(f), f);
+  for (const f of incoming) {
+    const clean = {
+      kind: String(f.kind),
+      file: String(f.file || "").replace(/\\/g, "/").slice(0, 200),
+      t: Date.now(),
+    };
+    if (f.name) clean.name = String(f.name).slice(0, 80);
+    if (f.relation) clean.relation = String(f.relation).slice(0, 20);
+    if (f.asset) clean.asset = String(f.asset).replace(/\\/g, "/").slice(0, 200);
+    if (f.section) clean.section = String(f.section).slice(0, 80);
+    if (f.why) clean.why = String(f.why).slice(0, 160);
+    if (f.text) clean.text = String(f.text).slice(0, 300);
+    const key = factKey(clean);
+    byKey.delete(key);
+    byKey.set(key, clean);
+  }
+  state.facts = [...byKey.values()];
+  return saveProjectState(projectRoot, state);
+}
+
+function noteFact(projectRoot, fact) {
+  return noteFacts(projectRoot, [fact]);
 }
 
 function noteWorkingOn(projectRoot, text, threadId) {
@@ -193,40 +281,96 @@ function noteWorkingOn(projectRoot, text, threadId) {
   }
 }
 
-function tokens(text) {
+// [EDITCORE-INTEGRAL-B3] Normalización suelta para comparar hechos y
+// consultas: minúsculas y SIN acentos («está» = «esta», «sección» =
+// «seccion»). La recuperación anterior era subcadena literal sensible a
+// acentos y devolvía el top-6 aunque nada casara (ruido con +1 base).
+function normalizeLoose(text) {
   return String(text || "")
     .toLowerCase()
-    .split(/[^a-záéíóúñ0-9._/-]+/i)
-    .filter((t) => t.length > 2);
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+}
+
+// [EDITCORE-INTEGRAL-B3] Palabras vacías fuera de los tokens de
+// consulta: sin esto, un «del» o un «para» casaba con cualquier texto y
+// el umbral de relevancia no umbralaba nada.
+const QUERY_STOPWORDS = new Set([
+  "del", "los", "las", "una", "unos", "unas", "con", "para", "por", "que",
+  "esta", "este", "esto", "estan", "donde", "como", "cuando", "cuanto",
+  "cuanta", "cual", "cuales", "hay", "fue", "son", "era", "mas", "muy",
+  "sin", "sobre", "entre", "desde", "hasta", "tiene", "tienen",
+]);
+
+function tokens(text) {
+  return normalizeLoose(text)
+    .split(/[^a-z0-9._/-]+/)
+    .filter((t) => t.length > 2 && !QUERY_STOPWORDS.has(t));
+}
+
+// [EDITCORE-INTEGRAL-B3] Sinónimos DECLARADOS y mínimos (bidireccionales):
+// solo equivalencias seguras del dominio de una landing. Nada de stemming
+// general ni de inferencias: si un par no está aquí, no se expande.
+const QUERY_SYNONYMS = {
+  hero: ["portada"],
+  portada: ["hero"],
+  foto: ["imagen"],
+  fotos: ["imagen"],
+  imagen: ["foto"],
+  home: ["inicio"],
+  inicio: ["home"],
+};
+
+function expandQueryTokens(queryTokens) {
+  const out = new Set(queryTokens);
+  for (const t of queryTokens) {
+    for (const syn of QUERY_SYNONYMS[t] || []) out.add(syn);
+  }
+  return [...out];
 }
 
 function scoreText(hay, queryTokens) {
-  const blob = String(hay || "").toLowerCase();
+  const blob = normalizeLoose(hay);
   let score = 0;
   for (const t of queryTokens) {
-    if (blob.includes(t)) score += 2;
+    if (t && blob.includes(t)) score += 2;
   }
   return score;
 }
 
+// [EDITCORE-INTEGRAL-B3] Recuperación con UMBRAL y hechos primero: un
+// hecho solo entra si algún token de la consulta (o su sinónimo
+// declarado) casa con él; la prosa solo entra si casa de verdad (fuera
+// el +1/+2 base que devolvía ruido siempre). Orden: hechos que casan,
+// luego decisiones/notas/turnos que casan.
 function retrieveRelevant(projectRoot, threadId, query, limit = 6) {
-  const q = tokens(query);
+  const q = expandQueryTokens(tokens(query));
+  if (!q.length) return [];
   const thread = loadThread(projectRoot, threadId);
   const project = loadProjectState(projectRoot);
-  const ranked = [];
-  for (const turn of thread.turns) {
-    ranked.push({ source: "thread", role: turn.role, text: turn.content, score: scoreText(turn.content, q) + 1 });
+  const factHits = [];
+  for (const f of project.facts || []) {
+    const text = factText(f);
+    const score = scoreText(text, q);
+    if (text && score > 0) factHits.push({ source: "fact", role: "system", text, fact: f, score });
   }
+  factHits.sort((a, b) => b.score - a.score);
+  const rest = [];
   for (const d of project.decisions) {
-    ranked.push({ source: "decision", role: "system", text: d.text, score: scoreText(d.text, q) + 2 });
+    const score = scoreText(d.text, q);
+    if (score > 0) rest.push({ source: "decision", role: "system", text: d.text, score: score + 1 });
   }
   for (const n of project.notes) {
-    ranked.push({ source: "note", role: "system", text: n.text || n, score: scoreText(n.text || n, q) });
+    const text = n.text || n;
+    const score = scoreText(text, q);
+    if (score > 0) rest.push({ source: "note", role: "system", text, score });
   }
-  return ranked
-    .filter((r) => r.text)
-    .sort((a, b) => b.score - a.score)
-    .slice(0, limit);
+  for (const turn of thread.turns) {
+    const score = scoreText(turn.content, q);
+    if (score > 0) rest.push({ source: "thread", role: turn.role, text: turn.content, score });
+  }
+  rest.sort((a, b) => b.score - a.score);
+  return [...factHits, ...rest].slice(0, Math.max(1, limit));
 }
 
 function shortHistoryMessages(historyInput, projectRoot, threadId, query) {
@@ -259,6 +403,50 @@ function shortHistoryMessages(historyInput, projectRoot, threadId, query) {
     out = out.slice(1);
   }
   return out;
+}
+
+// [EDITCORE-INTEGRAL-B3] Sección de hechos del expediente, compacta y
+// legible (archivo ↔ sección ↔ asset). Orden: primero los hechos que
+// casan con la consulta (recuperación con umbral), después los más
+// recientes. Las lecturas de archivos que ya tienen hecho de sección o
+// de asset no se duplican como línea suelta. La sección ENTERA vive
+// dentro de FACTS_RESERVE_CHARS: si no cabe, salen los hechos menos
+// relevantes/recientes, nunca se desborda sobre la prosa.
+function buildFactsSection(project, query) {
+  const facts = Array.isArray(project?.facts) ? project.facts : [];
+  if (!facts.length) return "";
+  const coveredFiles = new Set();
+  for (const f of facts) {
+    if (f.kind === "section" || f.kind === "asset") coveredFiles.add(String(f.file || "").toLowerCase());
+  }
+  const visible = facts.filter((f) => f.kind !== "read" || !coveredFiles.has(String(f.file || "").toLowerCase()));
+  if (!visible.length) return "";
+  const q = expandQueryTokens(tokens(query || ""));
+  const scored = visible.map((f, idx) => ({ f, idx, score: q.length ? scoreText(factText(f), q) : 0 }));
+  scored.sort((a, b) => (b.score - a.score) || (b.idx - a.idx));
+  const header = "Hechos del expediente (archivo ↔ sección ↔ asset; úsalos en vez de re-explorar):";
+  const lines = [header];
+  let used = header.length;
+  for (const { f } of scored) {
+    let line = "";
+    const file = String(f.file || "").replace(/\\/g, "/");
+    if (f.kind === "section") {
+      line = f.relation === "renderiza"
+        ? `- \`${file}\` renderiza/usa «${f.name}» (no lo define)`
+        : `- \`${file}\` contiene «${f.name}»`;
+    } else if (f.kind === "asset") {
+      line = `- \`${f.asset}\` se usa en \`${file}\`${f.section ? ` (sección ${f.section})` : ""}`;
+    } else if (f.kind === "read") {
+      line = `- leído: \`${file}\`${f.why ? ` — ${f.why}` : ""}`;
+    } else if (f.text) {
+      line = `- ${f.text}`;
+    }
+    if (!line) continue;
+    if (used + line.length + 1 > FACTS_RESERVE_CHARS) continue;
+    lines.push(line);
+    used += line.length + 1;
+  }
+  return lines.length > 1 ? lines.join("\n") : "";
 }
 
 function projectPromptBlock(projectRoot, threadId, query) {
@@ -324,8 +512,19 @@ function projectPromptBlock(projectRoot, threadId, query) {
       }
     }
   } catch { /* el expediente nunca tumba el turno */ }
-  if (!parts.length) return "";
-  return `EXPEDIENTE DEL PROYECTO (memoria persistente — úsalo en vez de re-explorar el proyecto):\n${parts.join("\n\n")}`.slice(0, DOSSIER_CHARS);
+  // [EDITCORE-INTEGRAL-B3] Montaje con reserva protegida: la sección de
+  // hechos se coloca JUSTO tras el encabezado y su espacio se descuenta
+  // del presupuesto de la prosa ANTES de cortar. Antes todo el bloque se
+  // cortaba por la cola a 3.500 y la recuperación (al final de parts) era
+  // lo primero amputado; ahora, si hay que cortar, se corta la PROSA.
+  const factsSection = buildFactsSection(project, query);
+  if (!parts.length && !factsSection) return "";
+  const header = "EXPEDIENTE DEL PROYECTO (memoria persistente — úsalo en vez de re-explorar el proyecto):";
+  const prose = parts.join("\n\n");
+  const fixedChars = header.length + (factsSection ? factsSection.length + 2 : 0);
+  const proseBudget = Math.max(0, DOSSIER_CHARS - fixedChars - (prose ? 2 : 0));
+  const proseClipped = prose.length > proseBudget ? prose.slice(0, proseBudget) : prose;
+  return [header, factsSection, proseClipped].filter(Boolean).join("\n\n").slice(0, DOSSIER_CHARS);
 }
 
 module.exports = {
@@ -338,6 +537,14 @@ module.exports = {
   noteWorkingOn,
   noteVerified,
   noteDiscarded,
+  // [EDITCORE-INTEGRAL-B3]
+  noteFact,
+  noteFacts,
+  factText,
+  buildFactsSection,
+  normalizeLoose,
+  FACTS_RESERVE_CHARS,
+  DOSSIER_CHARS,
   retrieveRelevant,
   shortHistoryMessages,
   projectPromptBlock,

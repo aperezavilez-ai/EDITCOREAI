@@ -325,20 +325,51 @@ async function handleChat(req: Request, uid: string, account: Record<string, unk
     await chargeUsage(uid, model, price, pricing.groupRatio, usageOrEstimate(tracker.usage, promptText, tracker.outputChars), hold);
     release(uid);
   };
-  const passthrough = new TransformStream<Uint8Array, Uint8Array>({
-    transform(chunk, controller) {
-      const text = decoder.decode(chunk, { stream: true });
-      tracker.push(text);
-      const clean = scrubber.push(text);
-      if (clean) controller.enqueue(encoder.encode(clean));
+  // [EDITCORE-INTEGRAL-B6] Parcial NUNCA completo: si el upstream
+  // corta a mitad de stream, el cliente recibía un EOF limpio sin
+  // [DONE] ni marco de error y presentaba la respuesta parcial como
+  // completa (y un tool_call cortado se ejecutaba con args {}). Ahora
+  // la lectura va envuelta: ante un error de transporte del upstream
+  // se emite un marco SSE de error EXPLÍCITO en el formato que el
+  // cliente ya parsea (un evento `data:` con campo `error`, que
+  // runtime/ai-core.js#readOpenAiStream traduce a partial:true):
+  //   data: {"error":{"code":"UPSTREAM_STREAM_CUT","message":"…","partial":true}}
+  // seguido de [DONE] para cerrar el stream de forma ordenada.
+  // (Un pipeTo con .catch(() => {}) no basta: al errorarse el
+  // writable, el flush del transform no garantiza ejecutarse.)
+  const upstreamReader = upstream.body!.getReader();
+  const cutFrame = `data: ${JSON.stringify({ error: { code: "UPSTREAM_STREAM_CUT", message: "El proveedor cortó la respuesta a mitad de la transmisión: la respuesta es parcial.", partial: true, type: "editcoreai_error" } })}\n\ndata: [DONE]\n\n`;
+  const guarded = new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      try {
+        const { done, value } = await upstreamReader.read();
+        if (done) {
+          const rest = scrubber.finish();
+          if (rest) controller.enqueue(encoder.encode(rest));
+          controller.close();
+          void settle();
+          return;
+        }
+        const text = decoder.decode(value, { stream: true });
+        tracker.push(text);
+        const clean = scrubber.push(text);
+        if (clean) controller.enqueue(encoder.encode(clean));
+      } catch {
+        try {
+          const rest = scrubber.finish();
+          if (rest) controller.enqueue(encoder.encode(rest));
+        } catch { /* el resto ya no es recuperable */ }
+        controller.enqueue(encoder.encode(cutFrame));
+        controller.close();
+        void settle();
+      }
     },
-    flush(controller) {
-      const rest = scrubber.finish();
-      if (rest) controller.enqueue(encoder.encode(rest));
+    cancel() {
+      try { upstreamReader.cancel(); } catch { /* ignore */ }
+      void settle();
     },
   });
-  keepAlive(upstream.body!.pipeTo(passthrough.writable).catch(() => {}).finally(settle));
-  return new Response(passthrough.readable, {
+  return new Response(guarded, {
     headers: { "content-type": "text/event-stream", "cache-control": "no-cache" },
   });
 }

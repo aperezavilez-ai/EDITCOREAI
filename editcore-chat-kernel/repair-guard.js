@@ -16,8 +16,9 @@ const path = require("path");
  *  2. maybeBlockWriteBeforeEvidence — en un turno de reparación, la
  *     primera escritura exige evidencia del fallo capturada EN el turno
  *     (captura del preview o build/dev por comando). Acotado y con
- *     salida: tras 2 bloqueos, o tras un intento de evidencia (aunque
- *     falle, p. ej. sin preview corriendo), escribir se libera.
+ *     salida: tras 2 bloqueos (fail-open declarado), escribir se libera.
+ *     [EDITCORE-INTEGRAL-B1] Una captura FALLIDA ya no cuenta como
+ *     evidencia: sin preview no hay evidencia que liberar.
  *  3. turnHasPassingRealVerification — qué cuenta como verificación
  *     REAL aprobada: captura con renderOk y sin errores de consola, o
  *     build/test/typecheck en verde. La comprobación ligera por
@@ -70,7 +71,15 @@ const EVIDENCE_COMMAND_RE = /\b(?:npm|pnpm|yarn|bun)\b[^|;&]*\b(?:build|dev|prev
 
 function stepIsEvidenceAttempt(s) {
   if (!s || s.blocked) return false;
-  if (s.name === "capture_preview_screenshot") return true;
+  if (s.name === "capture_preview_screenshot") {
+    // [EDITCORE-INTEGRAL-B1] Una captura FALLIDA no es evidencia: sin
+    // preview no se capturó el fallo, solo se intentó. Antes un intento
+    // fallido liberaba la compuerta y se editaba de memoria (el patrón
+    // VIXERAI que esta compuerta nació para matar). La compuerta solo se
+    // libera con evidencia real o, fail-open DECLARADO, tras
+    // EVIDENCE_BLOCK_LIMIT bloqueos (maybeBlockWriteBeforeEvidence).
+    return s.ok !== false && s.result?.ok !== false;
+  }
   if (s.name === "run_command" && EVIDENCE_COMMAND_RE.test(String(s.input?.command || ""))) return true;
   return false;
 }
@@ -79,9 +88,38 @@ function turnHasEvidence(steps = []) {
   return (Array.isArray(steps) ? steps : []).some(stepIsEvidenceAttempt);
 }
 
-function turnHasPassingRealVerification(steps = []) {
-  return (Array.isArray(steps) ? steps : []).some((s) => {
+// [EDITCORE-INTEGRAL-B1] ¿El comando de evidencia GUARDA RELACIÓN con el
+// cambio? Un comando verde ajeno (p. ej. los tests de OTRO archivo) no
+// re-prueba el punto del fallo y no puede desbloquear un «corregido».
+// Relación = el comando nombra un archivo tocado (ruta o basename), o es
+// el build/test/typecheck GENÉRICO del proyecto (sin rutas ajenas como
+// argumentos: cubre por construcción los archivos tocados). Sin lista de
+// tocados (llamadas legadas) se conserva el criterio anterior.
+function commandRelatesToChange(command = "", touchedPaths = []) {
+  const touched = (Array.isArray(touchedPaths) ? touchedPaths : []).map((p) => String(p || "").replace(/\\/g, "/").trim().toLowerCase()).filter(Boolean);
+  if (!touched.length) return true;
+  const cmd = String(command || "").replace(/\\/g, "/").toLowerCase();
+  if (!cmd.trim()) return false;
+  for (const rel of touched) {
+    const base = rel.split("/").pop();
+    if (cmd.includes(rel) || (base && cmd.includes(base))) return true;
+  }
+  const mentionsPathArg = /(?:^|\s)(?:\.{0,2}\/)?[\w.-]+(?:\/[\w.-]+)+\.[a-z]{1,5}\b|\b[\w.-]+\.(?:tsx?|jsx?|css|scss|json|html)\b/i.test(cmd);
+  if (mentionsPathArg) return false;
+  return /\b(?:npm|pnpm|yarn|bun)\b[^|;&]*\b(?:build|test|typecheck|check)\b|\btsc\b|\bvite\s+build\b/i.test(cmd);
+}
+
+function turnHasPassingRealVerification(steps = [], touchedPaths = []) {
+  const list = Array.isArray(steps) ? steps : [];
+  // [EDITCORE-INTEGRAL-B1] La verificación debe ser POSTERIOR a la última
+  // escritura del turno: verificar antes de editar no prueba el cambio.
+  let lastWriteIdx = -1;
+  list.forEach((s, i) => {
+    if (s && (s.name === "write_file" || s.name === "replace_in_file" || s.name === "scaffold_project") && s.ok !== false && s.result?.ok !== false) lastWriteIdx = i;
+  });
+  return list.some((s, i) => {
     if (!s || s.blocked) return false;
+    if (lastWriteIdx >= 0 && i <= lastWriteIdx) return false;
     if (s.name === "capture_preview_screenshot") {
       const errs = Array.isArray(s.result?.diagnostics?.consoleErrors)
         ? s.result.diagnostics.consoleErrors.filter((e) => e && e.type !== "warning")
@@ -89,7 +127,7 @@ function turnHasPassingRealVerification(steps = []) {
       return s.result?.renderOk === true && errs.length === 0;
     }
     if (s.name === "run_command" && EVIDENCE_COMMAND_RE.test(String(s.input?.command || ""))) {
-      return s.ok !== false && s.result?.ok === true;
+      return s.ok !== false && s.result?.ok === true && commandRelatesToChange(s.input?.command || "", touchedPaths);
     }
     return false;
   });
@@ -129,6 +167,7 @@ module.exports = {
   isBuildAffectingPath,
   turnHasEvidence,
   turnHasPassingRealVerification,
+  commandRelatesToChange,
   maybeBlockWriteBeforeEvidence,
   repairProtocolPrompt,
   EVIDENCE_BLOCK_LIMIT,

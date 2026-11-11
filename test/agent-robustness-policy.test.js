@@ -18,16 +18,10 @@ test("agentes: politicas permiten recomendar y ser propositivos", () => {
 
 test("agentes: knowledge pack y contrato de trabajo en fuentes", () => {
   const main = fs.readFileSync(path.join(__dirname, "..", "main.js"), "utf8");
-  const adapter = fs.readFileSync(path.join(__dirname, "..", "runtime", "editcore-claude-adapter.js"), "utf8");
   assert.match(main, /EDITCORE_AGENT_KNOWLEDGE_PACK/);
   assert.match(main, /CO-CREACION/);
   assert.match(main, /Jerarquia de conocimiento/);
   assert.doesNotMatch(main, /const skipBrainNow = analysisMode/);
-  assert.match(adapter, /CONTRATO DE TRABAJO/);
-  assert.match(adapter, /Qué falta para que funcione/);
-  assert.match(adapter, /rejectionCounts/);
-  assert.match(adapter, /skillCatalogBlock|brainInventory\?\.skills/);
-  assert.match(adapter, /anti-bucle tokens|coverageRejects/);
 });
 
 test("agentes: guia de profundidad pide recomendacion concreta", () => {

@@ -233,6 +233,8 @@ const { localConversationResponse, isCasualPrompt } = require("./runtime/chat-lo
 const {
   handleChatKernel,
   stopChatKernel,
+  // [EDITCORE-INTEGRAL-B7] Cancelación por runId (sin paro global).
+  cancelChatKernelRun,
   steerChatKernel,
   isChatKernelRunning,
   classifyChatKernel,
@@ -408,7 +410,21 @@ let inspectorService = null;
 const activeAgentRuns = new Map();
 const activePlanRuns = new Map();
 const agentFileLocks = new Map();
+// [EDITCORE-INTEGRAL-B7] Corridas de CHAT por corrida, no por ventana:
+// la clave es `${senderId}:${runId}` — antes el mapa guardaba UNA
+// entrada por ventana y la segunda corrida pisaba a la anterior, así
+// que cancelar era global por construcción. Una entrada por corrida.
 const activeChatRuns = new Map();
+function chatRunKey(senderId, runId) { return `${senderId}:${runId}`; }
+function registerChatRun(senderId, runId, entry) {
+  activeChatRuns.set(chatRunKey(senderId, runId), { ...entry, senderId, runId });
+}
+function unregisterChatRun(senderId, runId) {
+  activeChatRuns.delete(chatRunKey(senderId, runId));
+}
+function chatRunsForSender(senderId) {
+  return [...activeChatRuns.values()].filter((entry) => entry.senderId === senderId);
+}
 const PREVIEW_START_TIMEOUT_MS = 240_000;
 const activeProjectRuns = new Map();
 const activeInspectorRuns = new Map();
@@ -1850,6 +1866,13 @@ ipcMain.handle("editcore:chat", async (_event, input = {}) => {
       chatApiKey = token;
       providerKey = CLOUD_PROVIDER_KEY;
       model = String(input.model || model).trim().replace(/^meai\//i, "");
+    } else {
+      // [EDITCORE-INTEGRAL-B6] Token null tras un pre-chequeo OK =
+      // error de SESIÓN en el acto. Antes el turno arrancaba con la
+      // clave centinela CLOUD_SESSION_KEY como Bearer contra la base
+      // anterior y con fallbacks directos habilitados: fallo críptico
+      // aguas abajo en vez de «tu sesión expiró» aquí mismo.
+      return licenseBlockedRunResult(_event, { ok: false, code: "NO_SESSION", error: "Tu sesión expiró: vuelve a iniciar sesión en EditCoreAI para seguir usando la IA." });
     }
   } else {
     if (!chatApiKey && /localhost|127\.0\.0\.1|0\.0\.0\.0/i.test(baseUrl)) {
@@ -1917,28 +1940,48 @@ ipcMain.handle("editcore:chat", async (_event, input = {}) => {
   }
 
   const sender = _event.sender;
+  // [EDITCORE-INTEGRAL-B7] Declarado fuera del try para poder
+  // desregistrar la corrida también cuando el kernel lanza.
+  let chatRunId = "";
   try {
     const helpers = buildKernelHelpers({
       BrowserWindow,
       capturePreview,
       previewUrl: previewProcesses.get(rootPath)?.url || "",
+      // [EDITCORE-INTEGRAL-B4] Arranque real del preview para la herramienta start_preview del kernel.
+      startPreview: (root) => startProjectPreview(root, _event.sender.id),
       appUserData: app.getPath("userData"),
       brainSearch: (root, query, options) => brain().searchForAgent(root, query, options),
       brainRemember: (root, input) => brain().remember(root, input).catch(() => null),
       brainReadSkill: (root, name) => brain().readSkillForAgent(root, name),
+      // [EDITCORE-INTEGRAL-B6] Sesión viva: el kernel re-pide el token por esta costura ante NO_SESSION.
+      refreshAccessToken: async () => { try { const { authManager } = require("./runtime/auth-manager"); return await authManager.getAccessToken(); } catch { return null; } },
       readConnections,
       fullAccess,
       externalActionApproved: fullAccess,
       permissionMode: permissionHint || permissionMode || "step",
       ...buildKernelProcessHooks(rootPath, _event),
     });
-    // Registro de la corrida activa: editcore:cancel aborta ESTA corrida.
-    // Antes el mapa nunca se poblaba y el cancel no tenía nada que abortar.
-    activeChatRuns.set(sender.id, { abort: () => { try { stopChatKernel(); } catch { /* ignore */ } } });
+    // [EDITCORE-INTEGRAL-B7] Identidad de la corrida de chat: el
+    // renderer la genera y la manda (runId) igual que en la ruta
+    // agente; si no viene, se genera aquí UNA vez. Antes esta ruta
+    // reenviaba el progreso con runId:"" y el renderer lo pintaba en
+    // «la primera tarjeta que hubiera».
+    chatRunId = String(input.runId || "").trim()
+      || `run_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    // Registro de la corrida activa: editcore:cancel aborta ESTA
+    // corrida (por runId), no todas las de la ventana.
+    registerChatRun(sender.id, chatRunId, {
+      chatId: String(input.chatId || input.threadId || ""),
+      abort: () => { try { cancelChatKernelRun(chatRunId); } catch { /* ignore */ } },
+    });
     const out = await handleChatKernel({
     helpers,
       message: effectivePrompt,
       history: Array.isArray(input.history) ? input.history : (Array.isArray(input.messages) ? input.messages : []),
+      // [EDITCORE-INTEGRAL-B7] runId + chatId reales hasta el kernel.
+      runId: chatRunId,
+      queueTimeoutMs: input.queueTimeoutMs,
       threadId: input.chatId || input.threadId || input.conversationId || "",
       chatId: input.chatId || input.threadId || "",
       projectRoot: rootPath,
@@ -1951,21 +1994,39 @@ ipcMain.handle("editcore:chat", async (_event, input = {}) => {
       allowWrite: fullAccess || permissionHint !== "readonly",
       permissionMode: permissionHint || permissionMode || "step",
       fullAccess,
-      planAuthorizedExecution: fullAccess,
+      // [EDITCORE-INTEGRAL-B5] La autorización del «procede» viaja como
+      // DATO desde el renderer hasta el kernel: antes este handler la
+      // ignoraba y pasaba solo fullAccess, así que un «procede» en modo
+      // step moría en la compuerta (bucle de needsAuthorization). Se
+      // aceptan los nombres que el renderer ya manda (planAuthorized /
+      // planAuthorizedExecution) y se reenvía el dato, sin mirar el texto.
+      planAuthorizedExecution: fullAccess
+        || input.planAuthorizedExecution === true
+        || input.planAuthorized === true
+        || input.authorizedContinuation === true,
+      planAuthorized: input.planAuthorized === true || input.planAuthorizedExecution === true,
+      // [EDITCORE-INTEGRAL-B5] Chat nuevo: el kernel anuncia el modo
+      // restrictivo heredado en la primera línea del primer turno.
+      isNewChat: input.isNewChat === true || input.chatIsNew === true,
       onProgress: (p) => {
         try {
+          const progressObj = p && typeof p === "object" ? p : { text: String(p || "") };
           const payload = {
-            runId: String(input.runId || ""),
+            chatId: String(input.chatId || input.threadId || ""),
             projectId: String(input.projectId || ""),
             projectRoot: rootPath,
-            ...(p && typeof p === "object" ? p : { text: String(p || "") }),
+            ...progressObj,
+            // [EDITCORE-INTEGRAL-B7] El runId de ESTA corrida, nunca
+            // "": el bridge ya lo estampa en cada evento; este es el
+            // respaldo final antes de reenviar al renderer.
+            runId: String(progressObj.runId || chatRunId),
           };
           // Solo agent:progress — NO reenviar por editcore:chunk (duplicaba el texto en el chat).
           publishAgentProgress(sender, payload);
         } catch { /* ignore */ }
       },
     });
-    activeChatRuns.delete(sender.id);
+    unregisterChatRun(sender.id, chatRunId);
     const text = String(out?.text || "").trim() || (out?.error ? `[Error de EditCoreAI] ${out.error}` : "Sin respuesta.");
     try {
       if (!sender.isDestroyed()) sender.send("editcore:chunk", { done: true, text });
@@ -1984,18 +2045,42 @@ ipcMain.handle("editcore:chat", async (_event, input = {}) => {
       },
     };
   } catch (error) {
+    // [EDITCORE-INTEGRAL-B7] La corrida fallida también se desregistra.
+    if (chatRunId) unregisterChatRun(sender.id, chatRunId);
     throw new Error(toUserFacingError(error));
   }
 });
 
 
 
-ipcMain.handle("editcore:cancel", (event) => {
+ipcMain.handle("editcore:cancel", (event, input = {}) => {
+  // [EDITCORE-INTEGRAL-B7] Cancelación POR runId/chat: si el llamante
+  // identifica la corrida, se cancela SOLO esa (su entrada en
+  // activeChatRuns + su entrada en la cola/curso del kernel). El paro
+  // global queda SOLO como último recurso declarado, cuando el
+  // llamante no identifica ninguna corrida.
+  const runId = String(input?.runId || "").trim();
+  const targetChatId = String(input?.chatId || "").trim();
+  if (runId || targetChatId) {
+    let cancelled = false;
+    for (const entry of chatRunsForSender(event.sender.id)) {
+      if ((runId && entry.runId === runId) || (targetChatId && entry.chatId === targetChatId)) {
+        try { entry.abort(); } catch { /* ignore */ }
+        unregisterChatRun(event.sender.id, entry.runId);
+        cancelled = true;
+      }
+    }
+    if (runId) {
+      try { if (cancelChatKernelRun(runId)) cancelled = true; } catch { /* ignore */ }
+    }
+    return cancelled;
+  }
+  // Último recurso declarado: sin identificación, paro global histórico.
   try { stopChatKernel(); } catch { /* ignore */ }
-  const controller = activeChatRuns.get(event.sender.id);
-  if (!controller) return true;
-  controller.abort(new Error("Respuesta cancelada por el usuario."));
-  activeChatRuns.delete(event.sender.id);
+  for (const entry of chatRunsForSender(event.sender.id)) {
+    try { entry.abort(); } catch { /* ignore */ }
+    unregisterChatRun(event.sender.id, entry.runId);
+  }
   return true;
 });
 
@@ -2908,10 +2993,14 @@ async function maybeAutoHealPreview(projectRoot, issue) {
       BrowserWindow,
       capturePreview,
       previewUrl: previewProcesses.get(projectRoot)?.url || "",
+      // [EDITCORE-INTEGRAL-B4] Arranque real del preview para start_preview.
+      startPreview: (root) => startProjectPreview(root, null),
       appUserData: app.getPath("userData"),
       brainSearch: (root, query, options) => brain().searchForAgent(root, query, options),
       brainRemember: (root, input) => brain().remember(root, input).catch(() => null),
       brainReadSkill: (root, name) => brain().readSkillForAgent(root, name),
+      // [EDITCORE-INTEGRAL-B6] Sesión viva también en la ruta de auto-heal.
+      refreshAccessToken: async () => { try { const { authManager } = require("./runtime/auth-manager"); return await authManager.getAccessToken(); } catch { return null; } },
       readConnections,
       ...buildKernelProcessHooks(projectRoot),
     });
@@ -3902,8 +3991,7 @@ function mergeConnectionObjects(base = {}, incoming = {}, { preferIncoming = fal
     if (isBlankConnValue(value)) continue;
     if (preferIncoming || isBlankConnValue(merged[key])) merged[key] = value;
   }
-  delete merged.netlifyToken;
-  delete merged.netlifySiteId;
+  // [EDITCORE-INTEGRAL-B8] Netlify YA NO se borra al fusionar conexiones: borrar netlifyToken/netlifySiteId dejaba todo proyecto Netlify «no configurado» para el usuario normal.
   return merged;
 }
 
@@ -5362,8 +5450,7 @@ ipcMain.handle("secure-config:save", async (_event, value) => {
     for (const key of CONNECTION_SECRET_KEYS) {
       if (isBlankConnValue(conn[key]) && !isBlankConnValue(diskConn[key])) conn[key] = diskConn[key];
     }
-    delete conn.netlifyToken;
-    delete conn.netlifySiteId;
+    // [EDITCORE-INTEGRAL-B8] Netlify ya no se borra al guardar conexiones (ver mergeConnectionObjects).
     merged["editcore-connections"] = conn;
   }
 
@@ -6872,134 +6959,14 @@ ipcMain.handle("agent:verify", async (event, input = {}) => {
   };
 });
 
-ipcMain.handle("agent:plan", async (event, input = {}) => {
-  const apiKey = String(input.apiKey || "").trim();
-  const model = String(input.model || "").trim();
-  const baseUrl = normalizeBaseUrl(input.baseUrl, input.providerKey);
-  const task = String(input.prompt || "").trim();
-  const planRunId = String(input.runId || `plan-${crypto.randomUUID()}`);
-  const planController = new AbortController();
-  const planRunKeyValue = planRunKey(event.sender.id, planRunId);
-  activePlanRuns.set(planRunKeyValue, {
-    runId: planRunId,
-    senderId: event.sender.id,
-    controller: planController,
-    startedAt: Date.now(),
-  });
-  const sendPlanProgress = (payload = {}) => {
-    publishAgentProgress(event.sender, {
-      runId: planRunId,
-      projectId: String(input.projectId || ""),
-      stage: "planning",
-      ...payload,
-    });
-  };
-  const persistedTask = String(input.persistedPrompt || redactSensitive(task) || "").trim();
-  if (!apiKey || !model || !task) {
-    activePlanRuns.delete(planRunKeyValue);
-    throw new Error("Faltan datos para analizar la tarea.");
-  }
-  {
-    const planSession = await authManager.getCurrentSession();
-    if (!planSession.isAuthenticated || planSession.user?.status === "suspended") {
-      activePlanRuns.delete(planRunKeyValue);
-      licenseBlockedRunResult(event, { code: planSession.isAuthenticated ? "ACCOUNT_SUSPENDED" : "NO_SESSION" });
-      throw new Error(planSession.isAuthenticated ? "Tu cuenta estÃ¡ suspendida. Contacta al administrador." : "Inicia sesiÃ³n con Google para usar EditCoreAI.");
-    }
-  }
-  const rootPath = assertProjectRoot(String(input.projectRoot || "").trim());
-  let taskId = String(input.taskId || "").trim();
-  try {
-    sendPlanProgress({ phase: "plan_stage", text: "Preparando contexto del proyecto..." });
-    const brainStarted = Date.now();
-    const brainProgressTimer = setInterval(() => {
-      const seconds = Math.floor((Date.now() - brainStarted) / 1000);
-      sendPlanProgress({
-        phase: "plan_stage",
-        text: seconds > 0 ? `Cargando Cerebro... (${seconds}s)` : "Preparando contexto del proyecto...",
-      });
-    }, 2500);
-    let brainCtx = "";
-    try {
-      brainCtx = await brain().assembleContext(rootPath, task).catch(() => "");
-    } finally {
-      clearInterval(brainProgressTimer);
-    }
-    if (planController.signal.aborted) throw planController.signal.reason || new Error("Plan cancelado por el usuario.");
-    const analysisCtx = String(input.analysisContext || "");
-    const messages = [{
-      role: "system",
-      content: [
-        "Eres el planificador de EditCore Agent. Responde siempre en espaÃ±ol.",
-        "Esta fase solo propone: nunca afirmes que ejecutaste, modificaste o verificaste cambios.",
-      "Responde como un colaborador de IDE en markdown estructurado y legible.",
-      "Estructura OBLIGATORIA:",
-      "## Entendimiento",
-      "2-3 frases claras de lo que pediste.",
-      "## Plan paso a paso",
-      "Lista numerada con pasos concretos (1., 2., 3.) â€” quÃ© harÃ¡s, en quÃ© archivos y por quÃ©.",
-      "## Riesgos y verificaciÃ³n",
-      "Riesgos reales y cÃ³mo comprobarÃ¡s el resultado.",
-      "Puedes mencionar archivos concretos dentro de cada paso solo si ya tienes evidencia.",
-      "No muestres nombres internos de herramientas ni inventarios de carpetas.",
-        "No ejecutes y no pidas datos salvo que exista un bloqueo indispensable.",
-        "Termina exactamente con: Cuando autorices procedo con los cambios.",
-        brainCtx ? `\n## Contexto del proyecto\n${brainCtx}` : "",
-        analysisCtx ? `\n## AnÃ¡lisis previo del proyecto\n${analysisCtx}` : "",
-      ].filter(Boolean).join("\n"),
-    }, {
-      role: "user",
-      content: `Solicitud:\n${truncateText(task, 4000)}`,
-    }];
-    if (taskManager) {
-      let current = taskId ? tasks().getTask(taskId) : null;
-      if (!current) {
-        current = tasks().createTask({ taskId: taskId || undefined, projectId: String(input.projectId || ""), projectRoot: rootPath, goal: persistedTask, originalRequest: persistedTask, nextAction: { type: "PLAN", description: "Crear un plan verificable.", status: "RUNNING" } });
-        taskId = current.taskId;
-      }
-      if (current.status === "CREATED") tasks().transition(taskId, "PLANNING");
-      tasks().recordModelEvent(taskId, "MODEL_REQUEST_STARTED", { stage: "planning" });
-    }
-    sendPlanProgress({ phase: "plan_stage", text: "Revisando la solicitud y el contexto durable del proyecto..." });
-    const result = await callProvider({
-      baseUrl, apiKey, model, providerKey: input.providerKey, messages,
-      timeoutMs: AGENT_PLAN_TIMEOUT_MS, maxAttempts: 1,
-      signal: planController.signal,
-      allowProviderFallback: false,
-      onTextDelta: (text) => sendPlanProgress({ phase: "plan_delta", text }),
-    });
-    const text = String(result.text || "").trim();
-    const authorizationLine = "Cuando autorices procedo con los cambios.";
-    const conversationalText = text
-      .replace(/^\s*(?:#{1,6}\s*)?(?:[-*â€¢]|\d+[.)])\s+/gm, "")
-      .replace(/\n{3,}/g, "\n\n")
-      .trim();
-    const planText = conversationalText
-      ? conversationalText.replace(/\s*(Autoriza con ADELANTE, PROCEDE o CONTINUA\.?|Cuando autorices procedo con los cambios\.?)\s*$/i, "").trim()
-      : "Entendi la solicitud. Primero revisare el contexto real del proyecto para ubicar la causa y confirmar que el cambio corresponde a lo que pediste. Despues propondre la correccion concreta y la aplicare solo cuando la autorices. Al terminar comprobare el resultado con una prueba verificable y te informare cualquier bloqueo, sin marcarlo como terminado si la evidencia no existe.";
-    if (taskId && taskManager) {
-      const planReference = tasks().reference(planText, { kind: "agent-plan", taskId, projectId: String(input.projectId || "") });
-      tasks().recordModelEvent(taskId, "MODEL_REQUEST_COMPLETED", { stage: "planning" });
-      tasks().recordRuntimeEvent(taskId, "PLAN_CREATED", { payloadReference: planReference, stage: "planning" });
-      tasks().transition(taskId, "READY", { planReference, nextAction: { type: "AUTHORIZE", description: "Esperar autorizacion del usuario para ejecutar el plan.", status: "WAITING" } });
-      tasks().updateTokenUsage(taskId, "", result.usage || {});
-    }
-    return {
-      taskId,
-      text: `${planText}\n\n${authorizationLine}`,
-      usage: result.usage,
-    };
-  } catch (error) {
-    if (taskId && taskManager && !planController.signal.aborted) {
-      tasks().recordModelEvent(taskId, "MODEL_REQUEST_FAILED", { stage: "planning", metadata: { error: String(error?.message || error).slice(0, 500) } });
-      tasks().markTaskFailed(taskId, error, { recoverable: true, stage: "planning" });
-    }
-    if (planController.signal.aborted) throw planController.signal.reason || new Error("Plan cancelado por el usuario.");
-    throw error;
-  } finally {
-    activePlanRuns.delete(planRunKeyValue);
-  }
-});
+// [EDITCORE-INTEGRAL-B10] El handler "agent:plan" fue RETIRADO: grep
+// completo de consumidores (renderer.js, chat-home.js, index.html,
+// web-portal/) = CERO llamantes de editcoreAgent.plan en toda la UI;
+// la planificación viva ocurre dentro del turno del kernel. El
+// puente preload editcoreAgent.plan también se retiró. La
+// infraestructura activePlanRuns/planRunKey se conserva porque
+// agent:cancel y cancelRunsForSender la consultan (queda siempre
+// vacía: un no-op inofensivo, no un camino vivo).
 
 ipcMain.handle("agent:run", async (event, input = {}) => {
   // Validaciones bÃ¡sicas
@@ -7127,6 +7094,10 @@ ipcMain.handle("agent:run", async (event, input = {}) => {
       apiKey = token;
       providerKey = CLOUD_PROVIDER_KEY;
       model = String(input.model || model).trim().replace(/^meai\//i, "");
+    } else {
+      // [EDITCORE-INTEGRAL-B6] Token null tras pre-chequeo OK = error
+      // de sesión en el acto (sin centinela ni fallbacks directos).
+      return licenseBlockedRunResult(event, { ok: false, code: "NO_SESSION", error: "Tu sesión expiró: vuelve a iniciar sesión en EditCoreAI para seguir usando la IA." });
     }
   } else {
     if (!apiKey && /localhost|127\.0\.0\.1|0\.0\.0\.0/i.test(baseUrl)) {
@@ -7198,10 +7169,14 @@ ipcMain.handle("agent:run", async (event, input = {}) => {
         BrowserWindow,
         capturePreview,
         previewUrl: previewProcesses.get(rootPath)?.url || "",
+        // [EDITCORE-INTEGRAL-B4] Arranque real del preview para start_preview.
+        startPreview: (root) => startProjectPreview(root, event.sender.id),
         appUserData: app.getPath("userData"),
         brainSearch: (root, query, options) => brain().searchForAgent(root, query, options),
         brainRemember: (root, input) => brain().remember(root, input).catch(() => null),
         brainReadSkill: (root, name) => brain().readSkillForAgent(root, name),
+        // [EDITCORE-INTEGRAL-B6] Sesión viva: el kernel re-pide el token por esta costura ante NO_SESSION.
+        refreshAccessToken: async () => { try { const { authManager } = require("./runtime/auth-manager"); return await authManager.getAccessToken(); } catch { return null; } },
         readConnections,
         fullAccess: isFull,
         externalActionApproved: isFull,
@@ -7230,6 +7205,11 @@ ipcMain.handle("agent:run", async (event, input = {}) => {
         skillsPrompt,
         fallbackProfiles: cloudRoute ? [] : fallbackProviderProfiles({ providerKey, baseUrl, model, apiKey }),
         history: Array.isArray(input.history) ? input.history : (Array.isArray(input.messages) ? input.messages : []),
+        // [EDITCORE-INTEGRAL-B7] El runId de ESTA ruta es el que el
+        // renderer conoce (job.runId): viaja al bridge/kernel para que
+        // el progreso y la cancelación hablen de la misma corrida.
+        runId,
+        queueTimeoutMs: input.queueTimeoutMs,
         threadId: input.chatId || input.threadId || input.conversationId || input.runId || "",
         chatId: input.chatId || input.threadId || "",
         projectRoot: rootPath,
@@ -7241,7 +7221,22 @@ ipcMain.handle("agent:run", async (event, input = {}) => {
         allowWrite: permissionHint === "full" || permissionHint !== "readonly",
         permissionMode: permissionHint || "step",
         fullAccess: permissionHint === "full",
-        planAuthorizedExecution: permissionHint === "full",
+        // [EDITCORE-INTEGRAL-B5] LA COSTURA QUE FALTABA (ruta Agente):
+        // el renderer transforma el «procede» en un prompt «AUTORIZACION
+        // DE EJECUCION (PROCEDE): …» y manda planAuthorized:true, pero
+        // este handler no lo leía — recalculaba la autorización solo
+        // desde el modo y el kernel jamás recibía el dato: en step, la
+        // compuerta pedía un «procede» que el usuario ya había dicho y
+        // repetirlo regeneraba el mismo prompt (bucle infinito). Ahora
+        // el flag llega como planAuthorizedExecution hasta handle(),
+        // sin depender de ninguna forma del texto transformado.
+        planAuthorizedExecution: permissionHint === "full"
+          || input.planAuthorized === true
+          || input.planAuthorizedExecution === true
+          || input.authorizedContinuation === true,
+        planAuthorized: input.planAuthorized === true || input.planAuthorizedExecution === true,
+        // [EDITCORE-INTEGRAL-B5] Chat nuevo → anuncio de modo (kernel).
+        isNewChat: input.isNewChat === true || input.chatIsNew === true,
         maxSteps: Math.max(Number(input.maxSteps) || 0, permissionHint === "full" ? 1000 : 200),
         onProgress: (p) => {
           try {
@@ -7404,15 +7399,25 @@ function ensureAgentWriteToolRegistry(rootPath, canWrite, runController) {
 }
 
 ipcMain.handle("agent:cancel", (event, input = {}) => {
-  try { stopChatKernel(); } catch { /* ignore */ }
   const runId = String(input.runId || "").trim();
   const reason = "Detenido.";
-  if (!runId) return cancelRunsForSender(event.sender.id, reason);
+  // [EDITCORE-INTEGRAL-B7] Con runId identificado NO hay paro global:
+  // antes la primera línea era stopChatKernel() incondicional y
+  // detener en un chat mataba el turno del otro. Ahora se cancela la
+  // corrida identificada en sus dos registros (agentRuns del proceso
+  // principal y la cadena del kernel, por runId).
+  if (!runId) {
+    // Último recurso declarado: el llamante no identifica ninguna
+    // corrida — se conserva el paro global histórico.
+    try { stopChatKernel(); } catch { /* ignore */ }
+    return cancelRunsForSender(event.sender.id, reason);
+  }
 
   const planRun = activePlanRuns.get(planRunKey(event.sender.id, runId));
   if (planRun?.controller) {
     planRun.controller.abort(new Error("Plan cancelado por el usuario."));
     activePlanRuns.delete(planRunKey(event.sender.id, runId));
+    try { cancelChatKernelRun(runId); } catch { /* ignore */ }
     return true;
   }
 
@@ -7421,10 +7426,14 @@ ipcMain.handle("agent:cancel", (event, input = {}) => {
     run.requestController?.abort(new Error(reason));
     run.controller.abort(new Error(reason));
     activeAgentRuns.delete(agentRunKey(event.sender.id, run.runId || runId));
+    try { cancelChatKernelRun(runId); } catch { /* ignore */ }
     return true;
   }
 
-  return cancelRunsForSender(event.sender.id, reason);
+  // La corrida puede vivir solo en la cadena del kernel (ruta chat o
+  // corrida en cola): cancelarla por runId sin tocar a las demás.
+  try { if (cancelChatKernelRun(runId)) return true; } catch { /* ignore */ }
+  return false;
 });
 
 ipcMain.handle("agent:peek-last-run", (_event, input = {}) => {
@@ -8107,26 +8116,15 @@ ipcMain.handle("agent:steer", async (event, input = {}) => {
   if (!run && !(kernelResult && kernelResult.accepted)) return { accepted: false };
   if (run) run.steering.push({ instruction, at: Date.now() });
 
-  if (run?.adapterInput) {
-    const steerPlan = resolveUnifiedAgentPlan({
-      prompt: run.adapterInput.prompt,
-      steeringInstruction: instruction,
-      requestedAgent: true,
-      projectOpen: true,
-      allowWrite: run.adapterInput.allowWrite === true,
-      permissionMode: run.adapterInput.permissionMode,
-      planAuthorizedExecution: run.adapterInput.planAuthorized === true,
-      authorizedContinuation: run.adapterInput.planAuthorized === true,
-      hasAttachments: false,
-    });
-    applyRunProfile(run.adapterInput, steerPlan.runProfile);
-    run.adapterInput.orchestratorPlan = steerPlan;
-    run.adapterInput.prompt = instruction;
-    run.adapterInput.runProfile = steerPlan.runProfile;
-    run.adapterInput.promptOnlyMode = steerPlan.promptOnlyMode;
-    run.adapterInput.analysisMode = steerPlan.analysisMode;
-    run.adapterInput.allowFilesystem = steerPlan.runProfile?.allowFilesystem;
-  }
+  // [EDITCORE-INTEGRAL-B10] Rama RETIRADA: este bloque buscaba
+  // run.adapterInput para re-planificar la corrida, pero el runState
+  // actual (agent:run) no tiene ese campo — era inalcanzable. La vía
+  // viva del steer es la de arriba: steerChatKernel(instruction) al
+  // orquestador + run.steering.push + progreso. (Declarado: tampoco
+  // requestController se asigna nunca en el runState actual — nace
+  // null — así que el abort por AGENT_STEER de abajo es igualmente
+  // inalcanzable hoy; se deja como está porque abortar de más sería
+  // un cambio de conducta fuera de este alcance.)
 
   if (!event.sender.isDestroyed()) {
     publishAgentProgress(event.sender, {
@@ -9892,41 +9890,12 @@ ipcMain.handle("ghost-completion:cache", async (_event, prefix, completion, ttlM
 // (Smart Router retirado en la convergencia: tercer router, sin un solo
 // consumidor en el renderer; la selección de modelo vive en UN sitio:
 // auto-model-selection.js para el picker y model-router.js en el kernel.)
-ipcMain.handle("async-agent:enqueue", async (_event, taskConfig) => {
-  try {
-    const { asyncAgentRunner } = require("./runtime/async-agent-runner");
-    return asyncAgentRunner.enqueueTask(taskConfig);
-  } catch (error) {
-    return { ok: false, error: error.message };
-  }
-});
+// [EDITCORE-INTEGRAL-B10] Handlers "async-agent:*" RETIRADOS con su
+// puente preload editcoreAsyncAgent: cero llamantes en toda la UI
+// (grep renderer/chat-home/index/web-portal). El módulo
+// runtime/async-agent-runner.js se queda (sus tests unitarios lo
+// ejercitan directo) pero ya no se expone por IPC.
 
-ipcMain.handle("async-agent:cancel", async (_event, taskId) => {
-  try {
-    const { asyncAgentRunner } = require("./runtime/async-agent-runner");
-    return asyncAgentRunner.cancelTask(taskId);
-  } catch (error) {
-    return false;
-  }
-});
-
-ipcMain.handle("async-agent:get-task", async (_event, taskId) => {
-  try {
-    const { asyncAgentRunner } = require("./runtime/async-agent-runner");
-    return asyncAgentRunner.getTask(taskId);
-  } catch (error) {
-    return null;
-  }
-});
-
-ipcMain.handle("async-agent:list-tasks", async (_event, projectRoot) => {
-  try {
-    const { asyncAgentRunner } = require("./runtime/async-agent-runner");
-    return asyncAgentRunner.listTasks(projectRoot);
-  } catch (error) {
-    return [];
-  }
-});
 
 ipcMain.handle("marketplace:get-catalog", async (_event, category) => {
   try {
@@ -10022,50 +9991,12 @@ ipcMain.handle("lsp-bundler:get-hover", async (_event, filePath, symbol) => {
 // CICLO 30: AGENTES PARALELOS, REGLAS Y HOOKS
 // ==========================================
 
-ipcMain.handle("parallel-agent:spawn", async (_event, spec) => {
-  try {
-    const { parallelAgentRunner } = require("./runtime/parallel-agent-runner");
-    return parallelAgentRunner.spawnAgent(spec);
-  } catch (error) {
-    return { ok: false, error: error.message };
-  }
-});
+// [EDITCORE-INTEGRAL-B10] Handlers "parallel-agent:*" RETIRADOS con
+// su puente preload editcoreParallelAgents: cero llamantes en toda
+// la UI. El módulo runtime/parallel-agent-runner.js se queda (tests
+// directos) pero ya no se expone por IPC. El paralelismo vivo entre
+// chats lo arbitra el renderer (canLaunchParallelAgent), no esto.
 
-ipcMain.handle("parallel-agent:status", async (_event, agentId) => {
-  try {
-    const { parallelAgentRunner } = require("./runtime/parallel-agent-runner");
-    return parallelAgentRunner.getAgent(agentId);
-  } catch (error) {
-    return null;
-  }
-});
-
-ipcMain.handle("parallel-agent:cancel", async (_event, agentId, reason) => {
-  try {
-    const { parallelAgentRunner } = require("./runtime/parallel-agent-runner");
-    return parallelAgentRunner.cancelAgent(agentId, reason);
-  } catch (error) {
-    return false;
-  }
-});
-
-ipcMain.handle("parallel-agent:list", async (_event, filters) => {
-  try {
-    const { parallelAgentRunner } = require("./runtime/parallel-agent-runner");
-    return parallelAgentRunner.listAgents(filters);
-  } catch (error) {
-    return [];
-  }
-});
-
-ipcMain.handle("parallel-agent:cleanup", async (_event, agentId) => {
-  try {
-    const { parallelAgentRunner } = require("./runtime/parallel-agent-runner");
-    return parallelAgentRunner.cleanupAgent(agentId);
-  } catch (error) {
-    return false;
-  }
-});
 
 ipcMain.handle("rules-engine:load", async (_event, projectRoot) => {
   try {
@@ -10618,7 +10549,13 @@ ipcMain.handle("ecosystem:crdt-merge", async (_event, docA, docB) => {
 ipcMain.handle("ecosystem:run-tdd", async (_event, params) => {
   try {
     const { autoTddLoop } = require("./runtime/auto-tdd-loop");
-    return await autoTddLoop.runCycle(params || {});
+    // [EDITCORE-INTEGRAL-B10] Reparado: el handler llamaba a runCycle(),
+    // que NO existe en runtime/auto-tdd-loop.js (caía siempre al catch).
+    // El método real es runTddCycle(params) y su firma (objeto con
+    // testName/spec/targetFile/implementationCode/projectRoot) encaja
+    // con el params que manda el preload. Con esto auto-tdd-loop gana
+    // un llamante real además del adaptador en cuarentena.
+    return await autoTddLoop.runTddCycle(params || {});
   } catch (error) {
     return { error: error.message };
   }
@@ -10627,7 +10564,9 @@ ipcMain.handle("ecosystem:run-tdd", async (_event, params) => {
 ipcMain.handle("ecosystem:scan-refactor", async (_event, projectRoot) => {
   try {
     const { autoTddLoop } = require("./runtime/auto-tdd-loop");
-    return await autoTddLoop.scanAndSuggestRefactors(projectRoot);
+    // [EDITCORE-INTEGRAL-B10] Reparado: scanAndSuggestRefactors() no
+    // existe; el método real es scanForRefactoring(projectRoot).
+    return await autoTddLoop.scanForRefactoring(projectRoot);
   } catch (error) {
     return { totalScanned: 0, suggestions: [], error: error.message };
   }
@@ -11122,15 +11061,11 @@ ipcMain.handle("omega:status", async () => {
 });
 
 // Multi-file Composer Handlers
-ipcMain.handle("composer:plan", async (event, input = {}) => {
-  assertTrustedIpcSender(event, "composer:plan");
-  try {
-    const { multiFileComposer } = require("./runtime/multi-file-composer");
-    return multiFileComposer.createPlan(input);
-  } catch (error) {
-    return { ok: false, error: error?.message || String(error) };
-  }
-});
+// [EDITCORE-INTEGRAL-B10] El handler "composer:plan" fue RETIRADO
+// junto a su puente preload editcoreComposer.plan: cero llamantes en
+// toda la superficie de UI (grep renderer/chat-home/index/web-portal).
+// composer:preview/apply/list se quedan: no estaban en el alcance
+// nombrado y comparten el módulo multi-file-composer.
 
 ipcMain.handle("composer:preview", async (event, input = {}) => {
   assertTrustedIpcSender(event, "composer:preview");

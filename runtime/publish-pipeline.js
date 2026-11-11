@@ -7,6 +7,19 @@ const { appendAuditEvent } = require("./project-audit");
 const { prePublishValidation } = require("./project-maintainer");
 const { git, findGitRoot, detectBranch, hasUpstream, runCapture } = require("./git-utils");
 
+// [EDITCORE-DESBLOQUEOS] Toda la git de ESTA ruta (publicación) reintenta
+// ante contención de index.lock: en vivo el publish murió porque otro
+// proceso (probablemente un git del propio EditCoreAI) tenía el lock y
+// nadie reintentó — el agente terminó dando pasos manuales al usuario.
+// Máximo 2 reintentos con espera de 1.5 s; el lock NUNCA se borra.
+// detectBranch/hasUpstream (rev-parse: no toman el lock del índice) siguen
+// con el git plano de git-utils.
+const gitPublish = (root, args, opts = {}) => git(root, args, { lockRetries: 2, ...opts });
+
+// [EDITCORE-INTEGRAL-B8] Tope propio del extracto de logs que el
+// step resumido de deploy conserva como evidencia (ver deploy_one_click más abajo).
+const DEPLOY_EVIDENCE_LOG_CAP = 1200;
+
 const SECRET_NAME_RE = /(^|[\\/])(\.env([.\\].*)?|.*\.(pem|key|p12|pfx)|credentials\.json|secrets?\.json|id_rsa|id_ed25519)([\\/]|$)/i;
 const ALWAYS_EXCLUDE = [
   "node_modules",
@@ -41,7 +54,7 @@ function resolveEditCoreAsarPaths(runtimeRoot) {
 }
 
 async function stageProjectFiles(gitRoot) {
-  const status = await git(gitRoot, ["status", "--porcelain", "-uall"]);
+  const status = await gitPublish(gitRoot, ["status", "--porcelain", "-uall"]);
   if (status.code !== 0) {
     return { ok: false, message: status.stderr || "git status fallo", staged: [] };
   }
@@ -60,7 +73,7 @@ async function stageProjectFiles(gitRoot) {
       skipped.push(rel);
       continue;
     }
-    const add = await git(gitRoot, ["add", "--", rel]);
+    const add = await gitPublish(gitRoot, ["add", "--", rel]);
     if (add.code === 0) staged.push(rel);
     else skipped.push(rel);
   }
@@ -76,24 +89,24 @@ async function stageEditCoreFiles(gitRoot, runtimeRoot) {
     asarRel && !asarRel.startsWith("..") ? asarRel : "",
   ].filter(Boolean);
   if (!candidates.length) {
-    const addAll = await git(gitRoot, ["add", "-A", "--", "."]);
+    const addAll = await gitPublish(gitRoot, ["add", "-A", "--", "."]);
     return { ok: addAll.code === 0, staged: ["."], skipped: [], message: addAll.stderr || "" };
   }
   const staged = [];
   for (const item of candidates) {
-    const add = await git(gitRoot, ["add", "-A", "--", item]);
+    const add = await gitPublish(gitRoot, ["add", "-A", "--", item]);
     if (add.code === 0) staged.push(item);
   }
-  const status = await git(gitRoot, ["diff", "--cached", "--name-only"]);
+  const status = await gitPublish(gitRoot, ["diff", "--cached", "--name-only"]);
   const cached = status.stdout.split(/\r?\n/).filter(Boolean);
   for (const file of cached) {
-    if (isSecretPath(file)) await git(gitRoot, ["reset", "HEAD", "--", file]);
+    if (isSecretPath(file)) await gitPublish(gitRoot, ["reset", "HEAD", "--", file]);
   }
   return { ok: staged.length > 0 || cached.length > 0, staged, skipped: [], asarRel };
 }
 
 async function commitIfNeeded(gitRoot, message) {
-  const cached = await git(gitRoot, ["diff", "--cached", "--name-only"]);
+  const cached = await gitPublish(gitRoot, ["diff", "--cached", "--name-only"]);
   if (!cached.stdout.trim()) {
     return { ok: true, committed: false, message: "Sin cambios para commit." };
   }
@@ -103,19 +116,19 @@ async function commitIfNeeded(gitRoot, message) {
   fs.writeFileSync(msgFile, `${msg}\n`, "utf8");
   let result;
   try {
-    result = await git(gitRoot, ["commit", "-F", msgFile]);
+    result = await gitPublish(gitRoot, ["commit", "-F", msgFile]);
   } finally {
     try { fs.unlinkSync(msgFile); } catch { /* ignore */ }
   }
   if (result.code !== 0) {
     return { ok: false, committed: false, message: result.stderr || result.stdout || "git commit fallo" };
   }
-  const sha = await git(gitRoot, ["rev-parse", "HEAD"]);
+  const sha = await gitPublish(gitRoot, ["rev-parse", "HEAD"]);
   return { ok: true, committed: true, sha: sha.stdout, message: msg };
 }
 
 async function pushCurrentBranch(gitRoot, branch, { connections = {} } = {}) {
-  const remote = await git(gitRoot, ["remote"]);
+  const remote = await gitPublish(gitRoot, ["remote"]);
   if (!remote.stdout.trim()) {
     return { ok: false, message: "No hay remote git configurado." };
   }
@@ -130,14 +143,14 @@ async function pushCurrentBranch(gitRoot, branch, { connections = {} } = {}) {
     ? ["push", "origin", "HEAD"]
     : ["push", "-u", "origin", "HEAD"];
   if (token) {
-    const withHeader = await git(gitRoot, [
+    const withHeader = await gitPublish(gitRoot, [
       "-c", `http.extraHeader=Authorization: Bearer ${token}`,
       ...args,
     ], { timeoutMs: 300_000, env });
     if (withHeader.code === 0) {
       return { ok: true, branch, message: `Push OK → origin/${branch} (Conexiones GitHub)` };
     }
-    const result = await git(gitRoot, args, { timeoutMs: 300_000, env });
+    const result = await gitPublish(gitRoot, args, { timeoutMs: 300_000, env });
     if (result.code !== 0) {
       return {
         ok: false,
@@ -147,7 +160,7 @@ async function pushCurrentBranch(gitRoot, branch, { connections = {} } = {}) {
     }
     return { ok: true, branch, message: `Push OK → origin/${branch}` };
   }
-  const result = await git(gitRoot, args, { timeoutMs: 300_000, env });
+  const result = await gitPublish(gitRoot, args, { timeoutMs: 300_000, env });
   if (result.code !== 0) {
     return { ok: false, message: result.stderr || result.stdout || "git push fallo", branch };
   }
@@ -155,17 +168,17 @@ async function pushCurrentBranch(gitRoot, branch, { connections = {} } = {}) {
 }
 
 async function rollbackLastCommit(gitRoot, { pushed = false } = {}) {
-  const head = await git(gitRoot, ["rev-parse", "HEAD"]);
-  const parent = await git(gitRoot, ["rev-parse", "HEAD~1"]);
+  const head = await gitPublish(gitRoot, ["rev-parse", "HEAD"]);
+  const parent = await gitPublish(gitRoot, ["rev-parse", "HEAD~1"]);
   if (parent.code !== 0) {
     return { ok: false, message: "No hay commit anterior para revertir." };
   }
-  const revert = await git(gitRoot, ["revert", "HEAD", "--no-edit"]);
+  const revert = await gitPublish(gitRoot, ["revert", "HEAD", "--no-edit"]);
   if (revert.code !== 0) {
     return { ok: false, message: revert.stderr || "git revert fallo" };
   }
   if (pushed) {
-    const push = await git(gitRoot, ["push", "origin", "HEAD"], { timeoutMs: 300_000 });
+    const push = await gitPublish(gitRoot, ["push", "origin", "HEAD"], { timeoutMs: 300_000 });
     if (push.code !== 0) {
       return { ok: false, message: push.stderr || "revert local OK pero push fallo" };
     }
@@ -247,7 +260,18 @@ async function publishProject(projectRoot, {
   preCheck = true,
   rollbackOnDeployFail = true,
   onProgress = null,
+  // [EDITCORE-INTEGRAL-B6] Señal del turno: Detener corta la
+  // publicación entre pasos y llega al deploy; si el deploy ya
+  // salió, el resultado lo declara (cancellationLate).
+  signal = null,
+  // [EDITCORE-INTEGRAL-B8] Costura de prueba: sustituye a
+  // deployOneClick en los tests de comportamiento.
+  deployOneClickImpl = null,
 } = {}) {
+  const abortedNow = () => Boolean(signal?.aborted);
+  const abortedResult = (step, { afterDeploy = false, deployUrl = "" } = {}) => afterDeploy
+    ? { ok: true, completed: true, cancellationLate: true, abortedAfterLaunch: true, mode, projectRoot: path.resolve(String(projectRoot || "")), steps, /* [EDITCORE-INTEGRAL-B8] */ url: deployUrl || "", message: `La cancelación llegó tarde: el despliegue ${deployUrl || ""} sí salió y la publicación se completó antes de detener.`.trim() }
+    : { ok: false, aborted: true, cancelledBeforeLaunch: step !== "deploy_one_click", mode, projectRoot: path.resolve(String(projectRoot || "")), steps: [...steps, { step, ok: false, aborted: true, message: "Publicación detenida por el usuario (Detener)." }], message: `[${step}] Publicación detenida por el usuario (Detener): el despliegue no se lanzó.`, failedStep: step };
   const root = path.resolve(String(projectRoot || ""));
   const steps = [];
   const report = (step, percent, message = "") => {
@@ -277,8 +301,10 @@ async function publishProject(projectRoot, {
     return fail("git", "No hay repositorio git. Inicializa git o abre la raiz del repo.");
   }
 
+  // [EDITCORE-INTEGRAL-B6] Abortada antes de empezar ⇒ nada se publica.
+  if (abortedNow()) return abortedResult("git_status");
   report("git_status", 8, "Revisando cambios…");
-  const status = await git(gitRoot, ["status", "--short"]);
+  const status = await gitPublish(gitRoot, ["status", "--short"]);
   steps.push({ step: "git_status", ok: status.code === 0, message: status.stdout || "(limpio)", code: status.code });
   if (status.code !== 0) return fail("git_status", status.stderr || "git status fallo");
 
@@ -322,6 +348,9 @@ async function publishProject(projectRoot, {
     // No abortar Publicar por lint/tests: el deploy Vercel debe continuar.
   }
 
+  // [EDITCORE-INTEGRAL-B6] Chequeo entre pasos: Detener antes del
+  // commit/push/deploy corta la publicación sin lanzar el despliegue.
+  if (abortedNow()) return abortedResult("git_commit");
   report("git_commit", 38, "Creando commit…");
   const commit = await commitIfNeeded(gitRoot, commitMessage || (
     mode === "editcore"
@@ -407,8 +436,19 @@ async function publishProject(projectRoot, {
       vercelOrgId: String(connections.vercelOrgId || connections.vercelTeamId || ids.orgId || "").trim(),
       vercelTeamId: String(connections.vercelTeamId || connections.vercelOrgId || ids.orgId || "").trim(),
     };
+    // [EDITCORE-INTEGRAL-B6] Última compuerta antes de lanzar: si
+    // Detener llegó hasta aquí, el despliegue NO se lanza.
+    if (abortedNow()) return abortedResult("deploy_one_click");
     report("deploy_one_click", 82, "Deploy en Vercel…");
-    const deployResult = await deployOneClick(root, { provider: "auto", production: true }, { connections: deployConnections });
+    const deployFn = typeof deployOneClickImpl === "function" ? deployOneClickImpl : deployOneClick;
+    const deployResult = await deployFn(root, { provider: "auto", production: true }, { connections: deployConnections, signal });
+    // [EDITCORE-INTEGRAL-B8] El step de deploy CONSERVA la evidencia
+    // (smoke/logs/URL) con TOPE PROPIO declarado: antes el resumen
+    // dejaba solo message + detail y el humo/logs solo sobrevivían
+    // en el objeto de fallo, que el formatStepReport del renderer
+    // ignora. El extracto de logs del step va acotado a
+    // DEPLOY_EVIDENCE_LOG_CAP caracteres (el objeto deploy íntegro
+    // del camino de fallo no se toca).
     steps.push({
       step: "deploy_one_click",
       ok: deployResult.ok === true,
@@ -419,6 +459,18 @@ async function publishProject(projectRoot, {
       projectId: deployResult.projectId || deployConnections.vercelProjectId || "",
       message: deployResult.message || (deployResult.ok ? "Deploy OK" : "Deploy fallo"),
       detail: deployResult.output ? String(deployResult.output).slice(-800) : "",
+      smoke: Array.isArray(deployResult.smoke) ? deployResult.smoke : [],
+      logs: deployResult.logs ? String(deployResult.logs).slice(-DEPLOY_EVIDENCE_LOG_CAP) : (deployResult.logs ?? null),
+      ...(deployResult.logsNote ? { logsNote: deployResult.logsNote } : {}),
+      ...(deployResult.firstLogError ? { firstLogError: deployResult.firstLogError } : {}),
+      publishFailed: deployResult.publishFailed === true,
+      productionDown: deployResult.productionDown === true,
+      // [EDITCORE-INTEGRAL-B8] «Responde» ≠ «verificado» también en el step.
+      verified: deployResult.verified !== false,
+      smokeNotVerified: deployResult.smokeNotVerified === true,
+      ...(deployResult.smokeCause ? { smokeCause: deployResult.smokeCause } : {}),
+      // [EDITCORE-INTEGRAL-B6] La cancelación tardía del deploy sube al resultado de la publicación.
+      ...(deployResult.cancellationLate ? { cancellationLate: true } : {}),
     });
     if (deployResult.ok !== true) {
       let rollback = { ok: false, skipped: true };
@@ -441,6 +493,8 @@ async function publishProject(projectRoot, {
         projectRoot: root,
         gitRoot,
         branch,
+        // [EDITCORE-INTEGRAL-B8] URL también en la raíz en el fallo.
+        url: deployResult.url || "",
         steps,
         rollback,
         failedStep: "deploy_one_click",
@@ -464,18 +518,31 @@ async function publishProject(projectRoot, {
     message: "Publicacion completada",
     steps: steps.map((item) => ({ step: item.step, ok: item.ok !== false })),
   });
+  // [EDITCORE-INTEGRAL-B6] Si Detener llegó cuando el despliegue ya
+  // había salido, la publicación se completó: se declara la
+  // cancelación tardía en el propio resultado, no se oculta.
+  const lateCancel = deploy && deployStep?.ok === true && (abortedNow() || deployStep?.cancellationLate === true);
   return {
     ok: true,
     completed: true,
+    ...(lateCancel ? { cancellationLate: true, abortedAfterLaunch: true } : {}),
     mode,
     projectRoot: root,
     gitRoot,
     branch,
     sha: shaStep?.sha || "",
+    // [EDITCORE-INTEGRAL-B8] La URL del despliegue en la RAÍZ del
+    // resultado: el formateador del agente y el roadmap la leen de
+    // aquí, igual que el botón la rescata de steps — se acabó la
+    // asimetría que grababa despliegues con url:"".
+    url: deployStep?.url || "",
+    deployUrl: deployStep?.url || "",
     steps,
-    message: mode === "editcore"
-      ? `EDITCOREAI publicado en origin/${branch}${shaStep?.sha ? ` (${String(shaStep.sha).slice(0, 7)})` : ""}`
-      : `Proyecto publicado en origin/${branch}${shaStep?.sha ? ` (${String(shaStep.sha).slice(0, 7)})` : ""}`,
+    message: lateCancel
+      ? `La cancelación llegó tarde: el despliegue ${deployStep?.url || ""} sí salió. Publicación completada antes de detener.`
+      : (mode === "editcore"
+        ? `EDITCOREAI publicado en origin/${branch}${shaStep?.sha ? ` (${String(shaStep.sha).slice(0, 7)})` : ""}`
+        : `Proyecto publicado en origin/${branch}${shaStep?.sha ? ` (${String(shaStep.sha).slice(0, 7)})` : ""}`),
   };
 }
 
@@ -488,4 +555,6 @@ module.exports = {
   resolveEditCoreAsarPaths,
   rollbackLastCommit,
   SECRET_NAME_RE,
+  // [EDITCORE-INTEGRAL-B8]
+  DEPLOY_EVIDENCE_LOG_CAP,
 };

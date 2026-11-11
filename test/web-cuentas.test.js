@@ -197,7 +197,13 @@ test("web: el agente usa la misma voz de EditCoreAI que el IDE y trabaja con her
   for (const tool of ["list_files", "read_file", "search_files", "write_file", "replace_in_file", "delete_file"]) {
     assert.match(AGENT, new RegExp(`name: "${tool}"`), `falta la herramienta ${tool}`);
   }
-  assert.match(AGENT, /phase: "narration_delta"/);
+  // [EDITCORE-INTEGRAL-B10] ACTUALIZADO A PROPÓSITO: el agente web ya
+  // NO vuelca los deltas crudos del proveedor como narration_delta
+  // (paridad con el escritorio, donde está muerto por decisión
+  // expresa); su narración es compuesta (phase "narration" + eventos
+  // de herramienta) y la prosa del modelo llega solo como final.
+  assert.doesNotMatch(AGENT, /phase: "narration_delta"/);
+  assert.match(AGENT, /phase: "narration",/);
   assert.match(AGENT, /phase: "tool", name: call\.name, input: args, stage: "done"/);
   assert.match(AGENT, /phase: "final_report"/);
 });

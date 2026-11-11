@@ -1,8 +1,11 @@
 "use strict";
+// [EDITCORE-INTEGRAL-B10] CUARENTENA: este archivo prueba SOLO el adaptador
+// Claude (runtime/editcore-claude-adapter.js), fuera de la suite del producto.
+// Ver test-quarantine/claude-adapter/README.md.
 
 const assert = require("node:assert/strict");
 const test = require("node:test");
-const { EditCoreClaudeAdapter } = require("../runtime/editcore-claude-adapter");
+const { EditCoreClaudeAdapter } = require("../../runtime/editcore-claude-adapter");
 
 test("publishKickoffBriefing emite Avance visible sin esperar al modelo", () => {
   const adapter = new EditCoreClaudeAdapter({ maxIterations: 2, tokenBudget: 1000, logger: { log() {}, warn() {}, error() {} } });

@@ -156,6 +156,159 @@ function slimStoredAssistantText(text = "") {
   return out.join("\n");
 }
 
+// [EDITCORE-INTEGRAL-B3] DESTILACIÓN DE HECHOS desde los steps del turno.
+// El expediente no guardaba NINGÚN hecho estructural: files[] solo llevaba
+// {rel, action:"modified"} de escrituras y las lecturas no dejaban rastro,
+// así que el mapa sección→archivo de un turno moría con los steps (la
+// cadena M-5 de la auditoría). Aquí el KERNEL destila, al cerrar, solo lo
+// que los steps AFIRMAN:
+//  - archivo↔sección/símbolo: un símbolo DEFINIDO en el contenido leído o
+//    escrito («contiene») se distingue de un componente IMPORTADO y
+//    RENDERIZADO («renderiza») — el riesgo (d) del Bloque 3: confundirlos
+//    registraría asociaciones falsas.
+//  - asset↔dónde se usa: toda referencia a un asset (ruta con extensión
+//    de imagen/vídeo) dentro del contenido de un archivo; la sección se
+//    adjunta solo si hay un marcador (definición o <section>) inequívoco
+//    antes de la referencia, o un único candidato en el archivo.
+//  - lecturas: read_file correcto deja hecho «read» (con el para-qué SOLO
+//    si el pedido del usuario nombra el archivo o la sección hallada).
+//  - decisiones: SOLO hechos del USUARIO afirmables por el kernel — su
+//    mensaje de aprobación («procede»…), la opción que eligió con verbo
+//    explícito, o su descarte explícito. NADA se infiere de la prosa del
+//    modelo. Lo demasiado frágil queda fuera a propósito (ver reporte):
+//    p. ej. el para-qué de una escritura no se inventa.
+const ASSET_REF_RE = /([A-Za-z0-9_@][A-Za-z0-9_@.\/-]*\.(?:png|jpe?g|webp|gif|svg|avif|mp4|webm))/gi;
+const DEF_SYMBOL_RE = /(?:export\s+(?:default\s+)?)?(?:function|class)\s+([A-Za-z][A-Za-z0-9_]*)/g;
+const CONST_SYMBOL_RE = /(?:export\s+)?const\s+([A-Z][A-Za-z0-9_]*)\s*(?:=|:)/g;
+const SECTION_TAG_RE = /<section\b[^>]*?(?:id|className|class)\s*=\s*["'`]([^"'`]+)["'`]/gi;
+const IMPORT_DEFAULT_RE = /import\s+([A-Z][A-Za-z0-9_]*)\s*(?:,\s*\{[^}]*\})?\s+from/g;
+const IMPORT_NAMED_RE = /import\s*\{([^}]*)\}\s*from/g;
+const FACT_SCAN_CAP = 20_000;
+
+function looseKey(text) {
+  return String(text || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+}
+
+function contentMarkers(content) {
+  const markers = [];
+  const seen = new Set();
+  const push = (index, name) => {
+    const clean = String(name || "").trim();
+    if (!clean) return;
+    const key = looseKey(clean);
+    if (seen.has(key)) return;
+    seen.add(key);
+    markers.push({ index, name: clean });
+  };
+  for (const m of content.matchAll(DEF_SYMBOL_RE)) push(m.index, m[1]);
+  for (const m of content.matchAll(CONST_SYMBOL_RE)) push(m.index, m[1]);
+  for (const m of content.matchAll(SECTION_TAG_RE)) push(m.index, String(m[1] || "").split(/\s+/)[0]);
+  markers.sort((a, b) => a.index - b.index);
+  return markers;
+}
+
+function importedComponents(content) {
+  const names = new Set();
+  for (const m of content.matchAll(IMPORT_DEFAULT_RE)) names.add(m[1]);
+  for (const m of content.matchAll(IMPORT_NAMED_RE)) {
+    for (const part of String(m[1] || "").split(",")) {
+      const name = part.trim().split(/\s+as\s+/).pop().trim();
+      if (/^[A-Z]/.test(name)) names.add(name);
+    }
+  }
+  return names;
+}
+
+function factsFromContent(file, content, facts) {
+  const text = String(content || "").slice(0, FACT_SCAN_CAP);
+  if (!text.trim()) return;
+  const rel = String(file || "").replace(/\\/g, "/");
+  if (!rel) return;
+  const markers = contentMarkers(text);
+  const definedKeys = new Set(markers.map((mk) => looseKey(mk.name)));
+  for (const mk of markers) {
+    facts.push({ kind: "section", file: rel, name: mk.name, relation: "contiene" });
+  }
+  // «renderiza»: componente importado Y usado como JSX en ESTE archivo y
+  // NO definido en él. Sin import + uso no se afirma nada.
+  for (const name of importedComponents(text)) {
+    if (definedKeys.has(looseKey(name))) continue;
+    if (new RegExp(`<${name}[\\s/>]`).test(text)) {
+      facts.push({ kind: "section", file: rel, name, relation: "renderiza" });
+    }
+  }
+  for (const m of text.matchAll(ASSET_REF_RE)) {
+    const asset = String(m[1] || "").replace(/^\.\//, "");
+    if (!asset || asset.toLowerCase() === rel.toLowerCase()) continue;
+    let section = "";
+    const before = markers.filter((mk) => mk.index < m.index);
+    if (before.length) section = before[before.length - 1].name;
+    else if (markers.length === 1) section = markers[0].name;
+    const fact = { kind: "asset", file: rel, asset };
+    if (section) fact.section = section;
+    facts.push(fact);
+  }
+}
+
+const APPROVAL_TURN_RE = /^\s*(?:procede|procedo|adelante|hazlo|autorizado|s[ií]|ok|dale|va)\b/i;
+const USER_CHOICE_RE = /(?:elijo|escojo|me quedo con|quiero la|hagamos la|va la)\s+(?:opci[óo]n\s+)?([^.,;\n]{2,60})/i;
+// Descarte explícito del usuario, ACOTADO a verbos de descarte/reversión:
+// los verbos de edición ordinarios («quita», «elimina») NO cuentan — son
+// instrucciones de cambio, no hipótesis descartadas, y registrarlos
+// ensuciaría la sección de descartados del expediente.
+const USER_DISCARD_RE = /(?:descarta(?:r)?|desecha(?:r)?|no uses?|no usar|revert[ií](?:r)?|revertir|deshaz|deshacer)\b[:\s]+([^.,;\n]{3,80})/i;
+
+function distillTurnFacts(steps = [], context = {}) {
+  const facts = [];
+  const decisions = [];
+  const discarded = [];
+  const userText = String(context.userText || "");
+  const list = Array.isArray(steps) ? steps : [];
+  for (const s of list) {
+    if (!s || s.ok === false || s.result?.ok === false || s.blocked) continue;
+    const file = String(s.input?.path || s.result?.path || "").replace(/\\/g, "/");
+    if (s.name === "read_file" && file) {
+      const content = String(s.result?.content || s.result?.text || "");
+      const beforeCount = facts.length;
+      factsFromContent(file, content, facts);
+      // Para-qué de la lectura: solo si el pedido del usuario nombra el
+      // archivo o alguna sección/símbolo hallado en él en este turno.
+      const stem = looseKey(file.split("/").pop().replace(/\.[a-z0-9]+$/i, ""));
+      const userLoose = looseKey(userText);
+      const namesHere = facts.slice(beforeCount).filter((f) => f.kind === "section").map((f) => looseKey(f.name));
+      const why = userText && (userLoose.includes(stem) || namesHere.some((n) => n && userLoose.includes(n)))
+        ? `pedido del turno: «${userText.trim().slice(0, 110)}»`
+        : "";
+      const readFact = { kind: "read", file };
+      if (why) readFact.why = why;
+      facts.push(readFact);
+    } else if (s.name === "write_file" && file) {
+      factsFromContent(file, String(s.input?.content || ""), facts);
+    } else if (s.name === "replace_in_file" && file) {
+      // Solo el texto NUEVO afirma lo que el archivo pasa a contener/usar;
+      // el viejo afirma lo contrario y no se registra.
+      factsFromContent(file, String(s.input?.newText || ""), facts);
+    }
+  }
+  // Decisiones: solo hechos del usuario que el kernel puede afirmar.
+  const rawUser = userText.trim();
+  if (rawUser) {
+    const authorizedMarker = /INSTRUCCI[OÓ]N AUTORIZADA DEL USUARIO/i.test(rawUser);
+    if ((rawUser.length <= 60 && APPROVAL_TURN_RE.test(rawUser)) || (context.userAuthorized === true && authorizedMarker)) {
+      decisions.push("Autorización: el usuario aceptó ejecutar con un mensaje de aprobación («procede») en este hilo.");
+    }
+    const choice = rawUser.match(USER_CHOICE_RE);
+    if (choice) decisions.push(`Opción elegida por el usuario: ${choice[1].trim()}`);
+    const discard = rawUser.match(USER_DISCARD_RE);
+    if (discard) {
+      const target = discard[1].trim();
+      discarded.push(`Descartado por el usuario (su mensaje lo dice): ${target}`);
+      decisions.push(`El usuario descartó: ${target}`);
+    }
+  }
+  return { facts, decisions, discarded };
+}
+
 function rememberExchange(projectRoot, threadId, userText, assistantText, meta = {}) {
   const turns = [];
   if (userText) turns.push({ role: "user", content: String(userText), at: Date.now() });
@@ -198,6 +351,21 @@ function rememberExchange(projectRoot, threadId, userText, assistantText, meta =
           threadMemory.noteDiscarded(projectRoot, meta.discarded);
         }
       }
+      // [EDITCORE-INTEGRAL-B3] Hechos destilados de los steps de ESTE
+      // turno (la misma fuente que el resumen factual del Bloque 1):
+      // archivo↔sección, asset↔uso y lecturas quedan persistidos, y las
+      // decisiones afirmables alimentan noteDecision — que hasta ahora
+      // tenía 0 llamadores en producción y las «decisiones» del
+      // expediente estaban vacías en uso real.
+      if (meta && Array.isArray(meta.steps) && typeof threadMemory.noteFacts === "function") {
+        const distilled = distillTurnFacts(meta.steps, {
+          userText: String(userText || ""),
+          userAuthorized: meta.userAuthorized === true,
+        });
+        if (distilled.facts.length) threadMemory.noteFacts(projectRoot, distilled.facts);
+        for (const d of distilled.decisions) threadMemory.noteDecision(projectRoot, d);
+        for (const d of distilled.discarded) threadMemory.noteDiscarded(projectRoot, d);
+      }
     } catch { /* ignore */ }
   }
 }
@@ -220,6 +388,8 @@ module.exports = {
   buildMessageList,
   runtimeContextLine,
   rememberExchange,
+  // [EDITCORE-INTEGRAL-B3]
+  distillTurnFacts,
   slimStoredAssistantText,
   subagentContext,
   threadMemory,

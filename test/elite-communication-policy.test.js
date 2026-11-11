@@ -100,12 +100,6 @@ test("inyeccion: main.js chat usa withEliteCommunicationPolicy", () => {
   assert.match(src, /defaultChatSystemPrompt/);
 });
 
-test("inyeccion: adapter agente envuelve system prompt", () => {
-  const src = fs.readFileSync(path.join(__dirname, "..", "runtime", "editcore-claude-adapter.js"), "utf8");
-  assert.match(src, /withEliteCommunicationPolicy\(`/);
-  assert.match(src, /stripEliteFiller/);
-});
-
 test("inyeccion: intent-orchestrator hints elite + index.html carga el modulo", () => {
   const orch = fs.readFileSync(path.join(__dirname, "..", "runtime", "intent-orchestrator.js"), "utf8");
   assert.match(orch, /elite-communication-policy/);

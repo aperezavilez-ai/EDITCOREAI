@@ -38,8 +38,6 @@ test("main no bypassea analysis con cursorParity (candado lint)", () => {
   // eleva permisos con cursorParity.
   const { shouldBlockHeavyVerification } = require("../command-policy");
   assert.equal(typeof shouldBlockHeavyVerification, "function");
-  const adapterSource = fs.readFileSync(path.join(__dirname, "..", "runtime", "editcore-claude-adapter.js"), "utf8");
-  assert.match(adapterSource, /forbidHeavy = shouldBlockHeavyVerification/);
   assert.doesNotMatch(mainSource, /cursorParityMode \? "full" : \(analysisMode \? "analysis"/);
 });
 
@@ -135,29 +133,6 @@ test("doc noise: reportes/estado .md no cuentan como evidencia de codigo", () =>
   assert.match(grounded.text, /Qu[eé] s[ií] funcion[oó]/i);
 });
 
-test("adapter nunca shippea Verificacion meta en analisis", () => {
-  const adapterSrc = require("fs").readFileSync(
-    require("path").join(__dirname, "..", "runtime", "editcore-claude-adapter.js"),
-    "utf8",
-  );
-  assert.match(adapterSrc, /Verificacion completada con evidencia real/);
-  assert.match(adapterSrc, /isHollowAnalysisReport/);
-  assert.match(adapterSrc, /ROADMAP|COVERAGE_MAP/i);
-});
-
-test("walker cobertura: adapter usa nextAnalysisWalkActions + COVERAGE_MAP", () => {
-  const adapterSrc = require("fs").readFileSync(
-    require("path").join(__dirname, "..", "runtime", "editcore-claude-adapter.js"),
-    "utf8",
-  );
-  assert.match(adapterSrc, /nextAnalysisWalkActions/);
-  assert.match(adapterSrc, /formatCoverageBlock/);
-  assert.match(adapterSrc, /COVERAGE_MAP/);
-  const depth = require("../runtime/analysis-depth").resolveAnalysisDepth("analisis forense");
-  assert.equal(depth.maxWalkDirs >= 18, true);
-  assert.equal(depth.minListedDirs >= 6, true);
-});
-
 test("diagnostico acotado: typecheck permitido solo con flag; lint sigue bloqueado", () => {
   const {
     parseAnalysisCommand,
@@ -223,4 +198,14 @@ test("cola de fixes: narracion sin mutacion se rechaza; typecheck exige verify",
   assert.equal(okReport.ok, true, okReport.reasons.join("; "));
   const findings = extractDiagnosticFindings(withDiag);
   assert.ok(findings.some((f) => /TS2322/.test(f.label) && /other\.ts/.test(f.path)));
+});
+
+// [EDITCORE-INTEGRAL-B10] La mitad viva del antiguo test «walker
+// cobertura» (la profundidad que exige analysis-depth) queda como
+// comportamiento del módulo vivo; la mitad del adaptador salió a
+// cuarentena (extracted-analysis-pipeline-contract.test.js).
+test("walker cobertura: analysis-depth exige cobertura amplia en forense", () => {
+  const depth = resolveAnalysisDepth("analisis forense");
+  assert.equal(depth.maxWalkDirs >= 18, true);
+  assert.equal(depth.minListedDirs >= 6, true);
 });

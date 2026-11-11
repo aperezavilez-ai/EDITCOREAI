@@ -1,22 +1,25 @@
 "use strict";
+// [EDITCORE-INTEGRAL-B10] CUARENTENA: este archivo prueba SOLO el adaptador
+// Claude (runtime/editcore-claude-adapter.js), fuera de la suite del producto.
+// Ver test-quarantine/claude-adapter/README.md.
 
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const test = require("node:test");
-const { EditCoreClaudeAdapter } = require("../runtime/editcore-claude-adapter");
-const { ActionRegistry } = require("../runtime/action-registry");
-const { ToolDispatcher } = require("../runtime/tool-dispatcher");
-const { TaskStore } = require("../runtime/task-store");
-const { TaskManager } = require("../runtime/task-manager");
-const { WorkflowOrchestrator } = require("../runtime/workflow-orchestrator");
-const { WorkerSupervisor } = require("../runtime/worker-supervisor");
+const { EditCoreClaudeAdapter } = require("../../runtime/editcore-claude-adapter");
+const { ActionRegistry } = require("../../runtime/action-registry");
+const { ToolDispatcher } = require("../../runtime/tool-dispatcher");
+const { TaskStore } = require("../../runtime/task-store");
+const { TaskManager } = require("../../runtime/task-manager");
+const { WorkflowOrchestrator } = require("../../runtime/workflow-orchestrator");
+const { WorkerSupervisor } = require("../../runtime/worker-supervisor");
 const {
   ModelFailoverCoordinator,
   recordIntraTurnFallback,
   modelProfileKey,
-} = require("../runtime/model-failover");
+} = require("../../runtime/model-failover");
 
 function profile(id, extra = {}) {
   return {

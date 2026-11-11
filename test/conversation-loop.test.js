@@ -1,5 +1,13 @@
 "use strict";
 
+// [EDITCORE-INTEGRAL-B10] ARCHIVO MIXTO DECLARADO: se queda en la
+// suite porque partirlo es inseguro — casi todos sus tests usan el
+// adaptador en cuarentena como arnés del protocolo de conversación,
+// pero también cubre módulos VIVOS (normalizadores de ai-core,
+// ConversationLog, ActionRegistry y contratos de main.js) sin otra
+// cobertura equivalente. Sus tests del adaptador NO cuentan como
+// cobertura del motor del producto (el kernel).
+
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const os = require("node:os");

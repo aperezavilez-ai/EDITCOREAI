@@ -7,6 +7,17 @@
 // La autorización sin preguntar solo puede venir de: Acceso completo, un
 // plan autorizado que llega como tal, o un mensaje de aprobación del
 // usuario en ese turno ("procede").
+//
+// [EDITCORE-INTEGRAL-B5] ACTUALIZADO A PROPÓSITO: la auditoría señaló que
+// inyectar planAuthorizedExecution directo en handle() era «un camino que
+// la UI nunca producía». Desde B5 ese flag ES la ruta real: el renderer
+// lo manda (como planAuthorized en agent:run y como
+// planAuthorizedExecution en ambas rutas), main.js lo lee y lo reenvía
+// en editcore:chat y agent:run, y el bridge lo normaliza hasta handle().
+// La conducta de extremo a extremo por la ruta de datos (prompt
+// transformado sin la palabra suelta → escritura a la primera) vive en
+// test/permisos-flujo-b5.test.js (B5-a1/a2/a4); estas pruebas siguen
+// vigilando la costura del kernel que ese cableado alimenta.
 
 const { test } = require("node:test");
 const assert = require("node:assert/strict");

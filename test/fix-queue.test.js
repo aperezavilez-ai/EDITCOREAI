@@ -50,12 +50,9 @@ test("syncFixQueueWithSteps avanza mutado → verificado y FOCO", () => {
   assert.match(prompt, /DISPATCHER DE COLA/);
 });
 
-test("adapter y workflow exponen cola durable", () => {
+test("workflow y task-ipc exponen cola durable [EDITCORE-INTEGRAL-B10: la parte del adaptador salió a cuarentena]", () => {
   const fs = require("node:fs");
   const path = require("node:path");
-  const adapter = fs.readFileSync(path.join(__dirname, "..", "runtime", "editcore-claude-adapter.js"), "utf8");
-  assert.match(adapter, /refreshFixQueueFocus/);
-  assert.match(adapter, /FIX_QUEUE_DURABLE|formatFixQueueBlock/);
   const wf = fs.readFileSync(path.join(__dirname, "..", "runtime", "workflow-orchestrator.js"), "utf8");
   assert.match(wf, /buildFixQueueFromReport/);
   assert.match(wf, /fixQueue/);

@@ -2,7 +2,8 @@
 
 const fs = require("fs");
 const path = require("path");
-const { spawn } = require("child_process");
+// [EDITCORE-INTEGRAL-B4] `spawn` ya no se importa aquí: el único spawn
+// del kernel vive en process-runner.js (run_command delega en él).
 const { execFile } = require("child_process");
 const { promisify } = require("util");
 const execFileAsync = promisify(execFile);
@@ -13,8 +14,15 @@ const extraTools = require("./extra-tools");
 const {
   snapshotBeforeWrite,
   rollbackLastChange,
+  // [EDITCORE-INTEGRAL-B4] Reversión de UN archivo desde su snapshot.
+  rollbackFileChange,
   listSnapshots,
 } = require("./snapshot");
+// [EDITCORE-INTEGRAL-B4] run_command CONVERGE al runner único del kernel
+// (process-runner.js): conservación de COLA, detección de errores
+// severos y spawn en un solo sitio. El spawn propio duplicado que vivía
+// en este archivo desaparece.
+const { runProcess } = require("./process-runner");
 const { capture_preview_screenshot, DEFAULT_PREVIEW_URL } = require("./vision-inspector");
 const { fetchStockPhoto } = require("./stock-photos");
 const { detectCircularDependencies } = require("./circular-dependency-detector");
@@ -77,10 +85,131 @@ function safe(root, rel) {
   return target;
 }
 
-function truncatePayload(value, max = TOOL_RESULT_CAP) {
-  const text = typeof value === "string" ? value : JSON.stringify(value ?? {});
-  if (text.length <= max) return text;
-  return `${text.slice(0, max)}\n…[respuesta de la herramienta recortada: ${text.length - max} caracteres más. Es un límite del chat, no un problema del archivo]`;
+// [EDITCORE-INTEGRAL-B4] POLÍTICA DE TRUNCAMIENTO POR HERRAMIENTA.
+// Antes TODO resultado se cortaba a 2.000 caracteres POR LA CABEZA al
+// insertarlo en el bucle: la evidencia crítica vive al FINAL de las
+// salidas (el error final de npm/tsc/Vite, el stderr tras el output, la
+// cola de read_skill, los diagnostics de la captura) y ese corte la
+// eliminaba sistemáticamente. Ahora:
+//  - Cada herramienta tiene su PROPIO tope declarado (abajo).
+//  - El corte, cuando hace falta, es CABEZA+COLA con elipsis declarada
+//    («[… N caracteres omitidos …]»): se conserva el principio Y el
+//    final del payload.
+//  - Para las herramientas con campos críticos, la serialización pone
+//    esos campos PRIMERO (ver shapeToolPayload): run_command serializa
+//    stderr ANTES que output (ambos llegan) y capture_preview_screenshot
+//    serializa diagnostics/renderOk primero.
+//  - publish_project / deploy_one_click / connect_project NO se
+//    reordenan: su objeto de fallo trae un orden de claves DELIBERADO
+//    (diseño del humo, INTOCABLE) y su tope amplio (12.000) deja pasar
+//    íntegro el fallo típico (veredicto + smoke + firstLogError + logs
+//    ≤4.000); si alguna vez lo supera, cabeza+cola conserva el
+//    veredicto del principio y la cola de los logs del final.
+const TOOL_PAYLOAD_CAPS = {
+  default: 4000,
+  read_file: READ_FILE_PAYLOAD_CAP,
+  run_command: 12000,
+  build_project: 12000,
+  git_diff: 12000,
+  git_log: 6000,
+  git_status: 6000,
+  // read_skill es el canal de cuerpo completo BAJO DEMANDA del Bloque 2:
+  // su presupuesto propio (~30.000 de contenido) se respeta entero.
+  read_skill: 32000,
+  // delegate_parallel: hasta 4 informes de ≤4.000; el conjunto conserva
+  // cada informe (ver shapeToolPayload: se descarta el `text` duplicado).
+  delegate_parallel: 20000,
+  capture_preview_screenshot: 10000,
+  search_files: 8000,
+  web_search: 8000,
+  search_brain: 8000,
+  publish_project: 12000,
+  deploy_one_click: 12000,
+  connect_project: 12000,
+};
+
+function headTailText(text, max) {
+  const src = String(text ?? "");
+  const cap = Math.max(200, Number(max) || TOOL_RESULT_CAP);
+  if (src.length <= cap) return src;
+  // Elipsis DECLARADA con el conteo exacto de caracteres omitidos; se
+  // itera dos veces para que el conteo impreso sea el real tras contar
+  // la propia elipsis dentro del tope.
+  let omitted = src.length - cap;
+  let marker = "";
+  let headLen = 0;
+  let tailLen = 0;
+  for (let i = 0; i < 3; i += 1) {
+    marker = `\n…[… ${omitted} caracteres omitidos …]\n[respuesta de la herramienta recortada: es un límite del chat, no un problema del archivo]\n`;
+    const room = Math.max(0, cap - marker.length);
+    headLen = Math.ceil(room * 0.55);
+    tailLen = Math.max(0, room - headLen);
+    const realOmitted = src.length - headLen - tailLen;
+    if (realOmitted === omitted) break;
+    omitted = realOmitted;
+  }
+  return `${src.slice(0, headLen)}${marker}${tailLen ? src.slice(-tailLen) : ""}`;
+}
+
+function reorderKeys(obj, priority) {
+  const out = {};
+  for (const key of priority) {
+    if (Object.prototype.hasOwnProperty.call(obj, key)) out[key] = obj[key];
+  }
+  for (const key of Object.keys(obj)) {
+    if (!Object.prototype.hasOwnProperty.call(out, key)) out[key] = obj[key];
+  }
+  return out;
+}
+
+// [EDITCORE-INTEGRAL-B4] Forma del payload SEGÚN la herramienta: qué
+// campos van primero al serializar (los críticos), antes de cualquier
+// corte cabeza+cola. Sin reorden para el resto (en particular, el
+// fallo de deploy/publish conserva su orden deliberado intacto).
+function shapeToolPayload(value, toolName = "") {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return value;
+  switch (String(toolName || "")) {
+    case "run_command":
+    case "build_project":
+      // stderr ANTES que output: con el corte único por la cabeza,
+      // output se comía el cupo y stderr NUNCA llegaba al modelo.
+      return reorderKeys(value, ["ok", "code", "error", "severeError", "timeout", "aborted", "streaming", "stderr", "output", "stdout", "command"]);
+    case "capture_preview_screenshot":
+      // diagnostics y el veredicto (renderOk) PRIMERO: iban casi al
+      // final del objeto y el corte por la cabeza los perdía siempre.
+      return reorderKeys(value, ["diagnostics", "renderOk", "ok", "error", "url", "screenshotPath", "viewport", "engine", "multimodalHint"]);
+    case "delegate_parallel": {
+      // El resultado trae los informes DOS veces (results[].text y el
+      // `text` combinado). En el payload al modelo se conserva results
+      // íntegro (cada informe con su tope de 4.000) y del combinado
+      // solo su línea resumen: nada de información se pierde y el
+      // conjunto ya no se aplasta.
+      if (!Array.isArray(value.results)) return reorderKeys(value, ["ok", "delegated", "completed", "error", "notes", "results"]);
+      const shaped = reorderKeys(value, ["ok", "delegated", "completed", "error", "notes", "results"]);
+      if (typeof value.text === "string") shaped.text = value.text.split(/\r?\n/)[0];
+      return shaped;
+    }
+    case "read_skill":
+      // content AL FINAL a propósito: el corte cabeza+cola conserva el
+      // inicio de la skill y, sobre todo, su COLA (antes se perdía).
+      return reorderKeys(value, ["ok", "error", "name", "source", "content"]);
+    case "git_diff":
+      return reorderKeys(value, ["ok", "error", "diff"]);
+    default:
+      return value;
+  }
+}
+
+function truncatePayload(value, max, toolName = "") {
+  // [EDITCORE-INTEGRAL-B4] Firma compatible: truncatePayload(valor) y
+  // truncatePayload(valor, tope) siguen valiendo; con nombre de
+  // herramienta y sin tope explícito manda la política por herramienta.
+  const hasExplicitMax = Number(max) > 0;
+  const cap = hasExplicitMax ? Number(max) : (TOOL_PAYLOAD_CAPS[String(toolName || "")] || TOOL_PAYLOAD_CAPS.default);
+  const shaped = shapeToolPayload(value, toolName);
+  const text = typeof shaped === "string" ? shaped : JSON.stringify(shaped ?? {});
+  if (text.length <= cap) return text;
+  return headTailText(text, cap);
 }
 
 function listFiles(root, rel = ".", max = 80, opts = {}) {
@@ -205,6 +334,46 @@ function acquireWriteLock(root, rel, op, coordCtx) {
   } catch { return null; /* coordinación no instalada → continuar */ }
 }
 
+// [EDITCORE-INTEGRAL-B9] Ciclo de vida REAL del lock por archivo:
+// (i) write_file/replace_in_file LIBERAN su lock al terminar CADA
+// escritura (el releaseAllForThread del cierre del turno queda solo
+// como red de seguridad para locks de operaciones compuestas);
+// (ii) la identidad ya es la corrida (agent-coordination), así que
+// liberar con cualquier rol de la misma corrida funciona.
+function releaseWriteLock(root, rel, coordCtx) {
+  try {
+    const { getCoordination } = require("../runtime/agent-coordination");
+    const coord = getCoordination(root);
+    const g = global.__editcoreCoord || {};
+    const threadId = String(coordCtx?.threadId || g.threadId || "default");
+    const agentRole = String(coordCtx?.agentRole || g.agentRole || "implementer");
+    coord.releaseLock(threadId, agentRole, rel);
+  } catch { /* liberar nunca tumba la escritura ya hecha */ }
+}
+
+// [EDITCORE-INTEGRAL-B9] Lock de CONJUNTO para operaciones que
+// escriben muchos archivos de una vez (scaffold_project): se toman
+// los locks de las rutas destino ANTES de escribir la primera; si
+// alguna está tomada por OTRA corrida, no se escribe nada y la
+// herramienta falla explicando el lock. Devuelve { release } o
+// { blocked }.
+function acquireWriteLockSet(root, rels, op, coordCtx) {
+  const acquired = [];
+  for (const rel of rels) {
+    const blocked = acquireWriteLock(root, rel, op, coordCtx);
+    if (blocked) {
+      for (const done of acquired) releaseWriteLock(root, done, coordCtx);
+      return { blocked };
+    }
+    acquired.push(rel);
+  }
+  return {
+    release() {
+      for (const rel of acquired) releaseWriteLock(root, rel, coordCtx);
+    },
+  };
+}
+
 function writeFile(root, rel, content, coordCtx) {
   const file = safe(root, rel);
   const body = String(content ?? "");
@@ -234,7 +403,10 @@ function writeFile(root, rel, content, coordCtx) {
   
   const lockBlock = acquireWriteLock(root, rel, "write_file", coordCtx);
   if (lockBlock) return lockBlock;
-  
+  // [EDITCORE-INTEGRAL-B9] Toda salida posterior a adquirir libera
+  // el lock de ESTA escritura (ver releaseWriteLock).
+  const finish = (r) => { releaseWriteLock(root, rel, coordCtx); return r; };
+
   let _beforeForReview = "";
   try {
     if (fs.existsSync(file) && fs.statSync(file).isFile()) {
@@ -243,7 +415,7 @@ function writeFile(root, rel, content, coordCtx) {
   } catch { _beforeForReview = ""; }
   try {
     if (_beforeForReview === body) {
-      return { ok: true, unchanged: true, path: rel, note: `${rel} ya tenía exactamente ese contenido: no hubo cambios.` };
+      return finish({ ok: true, unchanged: true, path: rel, note: `${rel} ya tenía exactamente ese contenido: no hubo cambios.` });
     }
   } catch { /* si no se puede leer, se escribe normal */ }
   const snap = snapshotBeforeWrite(root, rel, "write_file");
@@ -309,8 +481,8 @@ function writeFile(root, rel, content, coordCtx) {
     updateFileInIndex(root, rel, body);
     out.indexUpdated = true;
   } catch { /* no bloquear */ }
-  
-  return out;
+
+  return finish(out); // [EDITCORE-INTEGRAL-B9] libera el lock de esta escritura
 }
 
 function locateOldText(current, oldText) {
@@ -385,23 +557,25 @@ function replaceInFile(root, rel, oldText, newText, coordCtx) {
   // archivo. Mismo lock e identidad que write_file.
   const lockBlock = acquireWriteLock(root, rel, "replace_in_file", coordCtx);
   if (lockBlock) return lockBlock;
+  // [EDITCORE-INTEGRAL-B9] Toda salida posterior libera el lock.
+  const finish = (r) => { releaseWriteLock(root, rel, coordCtx); return r; };
   const current = fs.readFileSync(file, "utf8");
   const located = locateOldText(current, oldText);
   if (!located.ok) {
-    return {
+    return finish({
       ok: false,
       error: located.error,
       soft: true,
       path: rel,
       hint: located.hint || "Relee el archivo y reintenta replace_in_file.",
       preview: current.slice(0, 1200),
-    };
+    });
   }
   const eol = current.includes("\r\n") ? "\r\n" : "\n";
   const normNew = String(newText ?? "").replace(/\r\n|\n/g, eol);
   const next = current.replace(located.match, () => normNew);
   if (next === current) {
-    return { ok: false, soft: true, unchanged: true, path: rel, error: `El reemplazo no cambia nada en ${rel} (oldText y newText son iguales). No se escribió nada.`, hint: "Escribe en newText el código corregido, distinto del actual." };
+    return finish({ ok: false, soft: true, unchanged: true, path: rel, error: `El reemplazo no cambia nada en ${rel} (oldText y newText son iguales). No se escribió nada.`, hint: "Escribe en newText el código corregido, distinto del actual." });
   }
 
   let syntaxCheck = null;
@@ -412,13 +586,13 @@ function replaceInFile(root, rel, oldText, newText, coordCtx) {
     if (syntaxCheck && !syntaxCheck.ok) syntaxBefore = validateSyntax(rel, current);
   } catch {}
   if (syntaxCheck && !syntaxCheck.ok && syntaxBefore?.ok) {
-    return {
+    return finish({
       ok: false,
       soft: true,
       path: rel,
       error: `El reemplazo rompería la sintaxis de ${rel}: ${syntaxCheck.message}. No se escribió nada.`,
       hint: "Relee el archivo con read_file e incluye en oldText/newText el bloque completo (llaves de apertura y cierre).",
-    };
+    });
   }
 
   const snap = snapshotBeforeWrite(root, rel, "replace_in_file");
@@ -468,7 +642,7 @@ function replaceInFile(root, rel, oldText, newText, coordCtx) {
     updateFileInIndex(root, rel, next);
     out.indexUpdated = true;
   } catch { /* no bloquear */ }
-  return out;
+  return finish(out); // [EDITCORE-INTEGRAL-B9] libera el lock de esta escritura
 }
 
 function isSoftToolFailure(name, result, args = {}) {
@@ -485,119 +659,233 @@ function isSoftToolFailure(name, result, args = {}) {
   return false;
 }
 
-function searchFiles(root, query, maxHits = 30) {
+// [EDITCORE-INTEGRAL-B4] search_files: dos modos DECLARADOS, búsqueda
+// también por NOMBRE/RUTA, extensiones del proyecto, evidencia
+// localizable y truncamiento declarado.
+//  - mode "literal" (defecto): coincidencia literal de contenido o de
+//    nombre/ruta. ".env" cuenta como patrón de nombre cuando la query
+//    parece nombre de archivo (sin espacios y con punto o *), así un
+//    asset se encuentra por su nombre («hero-taller.jpg»).
+//  - mode "regex": la query se compila como expresión regular (sin
+//    flags añadidas: el patrón manda) y se aplica a contenido y a
+//    nombre/ruta. Un patrón inválido devuelve ok:false con el error
+//    de compilación, nunca 0 hits mudos.
+// Los archivos de texto se buscan por contenido Y por nombre; los
+// binarios (imágenes, fuentes, etc.) NO se abren como texto pero su
+// NOMBRE/RUTA sí se busca — antes un asset era invisible salvo que un
+// archivo de la whitelist lo referenciara.
+const SEARCH_TEXT_EXTS = new Set([
+  "js", "mjs", "cjs", "ts", "tsx", "jsx", "json", "md", "mdx", "css", "scss", "less",
+  "sql", "html", "htm", "vue", "svelte", "py", "env", "txt", "xml", "yml", "yaml",
+  "toml", "ini", "sh", "bash", "php", "rb", "go", "rs", "java", "c", "h", "cpp",
+]);
+function searchFileExt(name) {
+  const base = String(name || "");
+  if (/^\.env(?:\..+)?$/i.test(base)) return "env";
+  const m = base.match(/\.([a-z0-9]+)$/i);
+  return m ? m[1].toLowerCase() : "";
+}
+
+function searchFiles(root, query, maxHits = 30, opts = {}) {
+  const q = String(query || "");
+  const limit = Math.max(1, Number(opts.maxHits || maxHits) || 30);
+  const mode = String(opts.mode || "literal").toLowerCase() === "regex" ? "regex" : "literal";
+  let regex = null;
+  if (mode === "regex") {
+    try {
+      regex = new RegExp(q);
+    } catch (err) {
+      return { ok: false, query: q, mode, error: `Expresión regular inválida: ${String(err?.message || err)}`, hits: [], total: 0, truncated: false };
+    }
+  }
+  const matchesName = (relPath, baseName) => {
+    if (regex) return regex.test(relPath) || regex.test(baseName);
+    // Literal por nombre: coincidencia parcial insensible a mayúsculas
+    // sobre la ruta completa («public/assets/hero» encuentra el asset).
+    const needle = q.toLowerCase();
+    return relPath.toLowerCase().includes(needle) || baseName.toLowerCase().includes(needle);
+  };
   const hits = [];
+  let total = 0;
   const skip = new Set(["node_modules", ".git", "dist", ".next", ".editcore", "out", "build"]);
+  function record(hit) {
+    total += 1;
+    if (hits.length < limit) hits.push(hit);
+  }
   function walk(dir, depth) {
-    if (hits.length >= maxHits || depth > 6) return;
+    if (depth > 6) return;
     let entries = [];
     try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
     for (const e of entries) {
       if (skip.has(e.name)) continue;
       const full = path.join(dir, e.name);
-      if (e.isDirectory()) walk(full, depth + 1);
-      else if (/\.(js|ts|tsx|jsx|json|md|css|sql)$/i.test(e.name)) {
-        try {
-          const text = fs.readFileSync(full, "utf8");
-          if (text.includes(query)) hits.push(path.relative(root, full).replace(/\\/g, "/"));
-        } catch { /* ignore */ }
+      const rel = path.relative(root, full).replace(/\\/g, "/");
+      if (e.isDirectory()) { walk(full, depth + 1); continue; }
+      if (!e.isFile()) continue;
+      // 1) Por NOMBRE/RUTA (cualquier archivo, binarios incluidos).
+      if (q && matchesName(rel, e.name)) {
+        record({ path: rel, match: "name", line: null, snippet: e.name });
+        continue;
+      }
+      // 2) Por CONTENIDO (solo extensiones de texto del proyecto). La
+      // coincidencia es sobre el contenido COMPLETO (como siempre):
+      // una query literal multilínea — la que la vía texto desescapa
+      // con unescapeTextBlob — casa entre líneas, y una query con \n
+      // literales casa con un archivo-blob, que es una sola línea con
+      // esas secuencias. La línea del hit se calcula desde el índice.
+      if (!q || !SEARCH_TEXT_EXTS.has(searchFileExt(e.name))) continue;
+      let text = "";
+      try { text = fs.readFileSync(full, "utf8"); } catch { continue; }
+      let idx = -1;
+      if (regex) {
+        const m = regex.exec(text);
+        idx = m ? m.index : -1;
+      } else {
+        idx = text.indexOf(q);
+      }
+      if (idx >= 0) {
+        const lineNo = text.slice(0, idx).split(/\r?\n/).length;
+        const lineText = text.split(/\r?\n/)[lineNo - 1] || "";
+        record({ path: rel, match: "content", line: lineNo, snippet: lineText.trim().slice(0, 160) });
       }
     }
   }
   walk(path.resolve(root), 0);
-  return { ok: true, query, hits };
+  // `hits` conserva la forma histórica (lista de rutas) por compatibilidad
+  // con consumidores viejos; la evidencia localizable va en `results`.
+  return {
+    ok: true,
+    query: q,
+    mode,
+    hits: hits.map((h) => h.path),
+    results: hits,
+    total,
+    truncated: total > hits.length,
+  };
 }
 
-// REEMPLAZO DE PROCESS-RUNNER CON CHILD_PROCESS NATIVO
-function runCommand(root, command, options = {}) {
-  return new Promise((resolve) => {
-    const isWin = process.platform === "win32";
-    const shell = isWin ? "powershell.exe" : "/bin/sh";
-    const args = isWin ? ["-Command", command] : ["-c", command];
-    // TEMPORIZADOR OBLIGATORIO (contrato de turno): antes runCommand ignoraba
-    // el timeoutMs de sus llamadores y un proceso continuo (un dev server)
-    // nunca disparaba "close" — sus procesos hijos heredan las tuberías — y
-    // la corrida quedaba colgada para siempre quemando saldo. Todo comando
-    // tiene ahora un límite; al vencer, se mata el árbol y el paso HABLA.
-    const timeoutMs = Math.min(600_000, Math.max(1_000, Number(options.timeoutMs) || 120_000));
-    // DETENER de verdad (1/2): si la corrida ya fue detenida, el comando
-    // ni siquiera arranca.
-    if (options.signal && options.signal.aborted) {
-      resolve({ ok: false, aborted: true, code: null, output: "", stderr: "", error: "Comando no ejecutado: la corrida ya estaba detenida por el usuario." });
-      return;
-    }
-    const child = spawn(shell, args, { cwd: root, windowsHide: true });
-    let output = "";
-    let stderr = "";
-    let settled = false;
-    let onAbort = null;
-    const finish = (result) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      if (onAbort && options.signal && typeof options.signal.removeEventListener === "function") {
-        try { options.signal.removeEventListener("abort", onAbort); } catch { /* ignore */ }
+// [EDITCORE-INTEGRAL-B4] run_command SOBRE EL RUNNER ÚNICO: esta
+// función ya NO spawnea por su cuenta — delega en process-runner.js
+// (runProcess), que es la ÚNICA implementación de spawn del kernel:
+// conserva la COLA de stdout/stderr (slice(-12000), no la cabeza),
+// detecta errores severos en vivo y entiende procesos largos. Aquí
+// solo se adapta su resultado a la forma histórica de run_command
+// ({ ok, code, output, stderr }) que consumen el verificador, la
+// verificación real y el bucle. Se conservan intactos los contratos
+// previos: temporizador obligatorio (defecto 120 s, máx. 600 s), no
+// arrancar abortado, y matar el ÁRBOL al abortar/expirar (eso último
+// vive ahora en killProcessTree de process-runner).
+async function runCommand(root, command, options = {}) {
+  const timeoutMs = Math.min(600_000, Math.max(1_000, Number(options.timeoutMs) || 120_000));
+  // DETENER de verdad (1/2): si la corrida ya fue detenida, el comando
+  // ni siquiera arranca (no se delega al runner: ni un spawn breve).
+  if (options.signal && options.signal.aborted) {
+    return { ok: false, aborted: true, code: null, output: "", stderr: "", error: "Comando no ejecutado: la corrida ya estaba detenida por el usuario." };
+  }
+  // [EDITCORE-INTEGRAL-B4] El onSevereError que execute() ya pasaba se
+  // LEE y se ACTÚA: antes runCommand ni lo miraba y el error severo
+  // detectado en vivo se perdía. Ahora el primer issue queda en el
+  // resultado (severeError) además de notificarse al llamador.
+  let severeError = null;
+  const result = await runProcess({
+    cwd: root,
+    command: String(command || ""),
+    timeoutMs,
+    signal: options.signal || undefined,
+    usePowerShellOnWindows: true,
+    onChunk: typeof options.onChunk === "function" ? options.onChunk : undefined,
+    onSevereError: (issue) => {
+      if (!severeError) severeError = issue;
+      if (typeof options.onSevereError === "function") {
+        try { options.onSevereError(issue); } catch { /* el aviso nunca tumba el comando */ }
       }
-      resolve(result);
-    };
-    const killTree = () => {
-      try {
-        if (isWin && child.pid) {
-          spawn("taskkill", ["/pid", String(child.pid), "/T", "/F"], { windowsHide: true });
-        } else {
-          child.kill("SIGKILL");
-        }
-      } catch { /* el proceso ya pudo morir */ }
-    };
-    const timer = setTimeout(() => {
-      killTree();
-      finish({
-        ok: false,
-        timeout: true,
-        code: null,
-        output: output.slice(0, 10000),
-        stderr: stderr.slice(0, 10000),
-        error: `El comando superó el límite de ${Math.round(timeoutMs / 1000)} s y fue terminado. Si es un servidor u otro proceso continuo, no lo dejes en primer plano: usa el preview del IDE o pide un comando que termine.`,
-      });
-    }, timeoutMs);
-    // DETENER de verdad (2/2): execute() ya pasaba helpers.abortSignal en
-    // las opciones, pero runCommand lo IGNORABA — el comando corría hasta
-    // su timeout aunque el usuario hubiera pulsado Detener, y el bucle
-    // del agente quedaba estacionado esperándolo (así se vivió la
-    // corrida colgada de TALLE PRUEBA). Ahora la señal mata el árbol al
-    // instante y el paso HABLA: la corrida se desenrolla en el acto.
-    onAbort = () => {
-      killTree();
-      finish({
-        ok: false,
-        aborted: true,
-        code: null,
-        output: output.slice(0, 10000),
-        stderr: stderr.slice(0, 10000),
-        error: "Comando detenido por el usuario con el botón Detener.",
-      });
-    };
-    if (options.signal && typeof options.signal.addEventListener === "function") {
-      options.signal.addEventListener("abort", onAbort, { once: true });
-    }
-
-    child.stdout.on("data", (d) => {
-      output += d.toString();
-      if (options.onChunk) options.onChunk({ stream: "stdout", chunk: d.toString() });
-    });
-    child.stderr.on("data", (d) => {
-      stderr += d.toString();
-      if (options.onChunk) options.onChunk({ stream: "stderr", chunk: d.toString() });
-    });
-
-    child.on("close", (code) => {
-      finish({ ok: code === 0, code, output: output.slice(0, 10000), stderr: stderr.slice(0, 10000) });
-    });
-
-    child.on("error", (err) => {
-      finish({ ok: false, error: err.message });
-    });
+    },
   });
+  const output = String(result.stdout || "");
+  const stderr = String(result.stderr || "");
+  const base = {
+    ok: result.ok === true,
+    code: result.code ?? null,
+    output,
+    stderr,
+    ...(severeError ? { severeError } : {}),
+    ...(result.streaming ? { streaming: true, detach: result.detach || null } : {}),
+  };
+  if (result.timedOut) {
+    // [EDITCORE-INTEGRAL-B4] El texto de timeout remite a start_preview
+    // (la herramienta de preview del kernel, que SÍ puede llamar el
+    // agente), no a «el preview del IDE» inalcanzable de antes.
+    return {
+      ...base,
+      ok: false,
+      timeout: true,
+      error: `El comando superó el límite de ${Math.round(timeoutMs / 1000)} s y fue terminado. Si es un servidor u otro proceso continuo, no lo dejes en primer plano con run_command: arranca el preview con la herramienta start_preview o pide un comando que termine.`,
+    };
+  }
+  if (options.signal && options.signal.aborted) {
+    return { ...base, ok: false, aborted: true, error: "Comando detenido por el usuario con el botón Detener." };
+  }
+  if (!result.ok && result.error && !/^Exit code\b/.test(String(result.error))) {
+    return { ...base, error: String(result.error) };
+  }
+  return base;
+}
+
+// [EDITCORE-INTEGRAL-B4] rollback_last_change REAL (por archivo): la
+// herramienta existía en la clasificación y en el autoconocimiento
+// pero no tenía definición ni case («Herramienta desconocida»). Restaura
+// el snapshot previo de UN archivo (snapshot.js#rollbackFileChange):
+// revierte solo la última escritura DE ESE archivo, sin tocar otros
+// archivos modificados después. Como escritura que es, pasa por la
+// compuerta única y por la segunda capa (allowWrite en execute).
+function rollbackFileTool(root, rel) {
+  const target = String(rel || "").trim();
+  if (!target) return { ok: false, error: "rollback_last_change requiere path: el archivo cuya última escritura quieres revertir." };
+  const result = rollbackFileChange(root, target);
+  if (result?.ok) invalidateReadCache(safe(root, target));
+  return result;
+}
+
+// [EDITCORE-INTEGRAL-B4] start_preview: el kernel no tenía NINGUNA
+// herramienta para arrancar el preview/dev server (manage_process vive
+// en el dispatcher que el chat no usa y startProjectPreview es IPC de
+// main para la UI), así que el modelo improvisaba Start-Process porque
+// era la única vía. Esta herramienta envuelve, vía el helper inyectado
+// por el llamador (helpers.startPreview — main lo conecta a su
+// startProjectPreview; el bridge lo expone también como startPreview),
+// el arranque REAL del preview del IDE y devuelve su URL/estado
+// reales. Sin helper, responde HONESTAMENTE que el preview no está
+// disponible en esta ruta: nada de éxito falso.
+async function startPreviewTool(root, helpers = {}) {
+  const starter = typeof helpers?.startPreview === "function"
+    ? helpers.startPreview
+    : (typeof helpers?.startProjectPreview === "function" ? helpers.startProjectPreview : null);
+  if (!starter) {
+    // Sin arranque posible, una URL ya activa en el contexto del turno
+    // sigue siendo información real y útil para capturar.
+    const activeUrl = String(helpers?.activePreviewUrl || helpers?.previewUrl || "").trim();
+    if (activeUrl) {
+      return { ok: true, alreadyRunning: true, url: activeUrl, previewUrl: activeUrl, note: "Ya hay un preview activo en esta sesión; no hizo falta arrancarlo. Captúralo con capture_preview_screenshot." };
+    }
+    return { ok: false, previewUnavailable: true, error: "El preview no está disponible en esta ruta: el llamador no proporcionó el arranque del preview del IDE (helpers.startPreview). No inventes una URL ni uses Start-Process: dilo y sigue con la verificación por build (build_project / run_command)." };
+  }
+  try {
+    const started = await starter(root);
+    const url = String(started?.url || started?.previewUrl || "").trim();
+    if (started?.ok === false || started?.available === false || !url) {
+      return { ok: false, error: String(started?.message || started?.error || "El preview del IDE no pudo arrancar para este proyecto."), ...(url ? { url } : {}) };
+    }
+    return {
+      ok: true,
+      url,
+      previewUrl: url,
+      started: started?.started !== false,
+      ...(started?.message ? { message: String(started.message) } : {}),
+      note: "Preview arrancado. Ya puedes verificar con capture_preview_screenshot sobre esta URL.",
+    };
+  } catch (err) {
+    return { ok: false, error: `El preview del IDE no pudo arrancar: ${String(err?.message || err).slice(0, 300)}` };
+  }
 }
 
 function auditEnv(root) {
@@ -721,13 +1009,26 @@ async function runSupabaseSql(root, sqlPath) {
   };
 }
 
-async function cloneRepo(root, repoUrl, destRel) {
+async function cloneRepo(root, repoUrl, destRel, coordCtx) {
   const url = String(repoUrl || "").trim();
   if (!/^https?:\/\/|^git@/i.test(url)) {
     return { ok: false, error: "URL de repositorio inválida (usa https://github.com/...)" };
   }
   const dest = String(destRel || "").trim()
     || path.join(".editcore", "repos", path.basename(url.replace(/\.git$/i, ""), path.sep));
+  // [EDITCORE-INTEGRAL-B9] clone_repo escribe en el proyecto: lock
+  // sobre la carpeta destino ANTES de clonar, liberado al terminar.
+  const lockRel = dest.replace(/\\/g, "/");
+  const lockBlock = acquireWriteLock(root, lockRel, "clone_repo", coordCtx);
+  if (lockBlock) return lockBlock;
+  try {
+    return await cloneRepoLocked(root, url, dest);
+  } finally {
+    releaseWriteLock(root, lockRel, coordCtx);
+  }
+}
+
+async function cloneRepoLocked(root, url, dest) {
   const abs = safe(root, dest);
   if (fs.existsSync(abs) && fs.readdirSync(abs).length) {
     return { ok: true, path: dest.replace(/\\/g, "/"), note: "El destino ya existe; no se clonó de nuevo." };
@@ -882,13 +1183,18 @@ async function gitDiff(root, options = {}) {
 
 async function gitCommit(root, options = {}) {
   try {
+    // [EDITCORE-INTEGRAL-B8] git-manager es ahora async y seguro
+    // (array + shell:false, -F, filtro de secretos compartido y
+    // retry de lock): el commit del kernel usa la MISMA pila que
+    // agent-git/publish-pipeline. Los secretos bloqueados al stagear
+    // se declaran en el resultado, nunca se commitean en silencio.
     const gitMgr = require("../runtime/git-manager");
     const files = Array.isArray(options.files) && options.files.length ? options.files : ["."];
-    const stage = gitMgr.stageFiles(files, root);
-    if (!stage.ok && stage.message) return { ok: false, error: stage.message, stderr: stage.stderr };
+    const stage = await gitMgr.stageFiles(files, root);
+    if (!stage.ok) return { ok: false, error: stage.message || stage.stderr, blockedSecrets: stage.blockedSecrets || [] };
     const msg = String(options.message || "update from editcoreai").trim();
-    const res = gitMgr.commit(msg, root);
-    return { ok: res.ok, output: res.stdout || res.message, error: res.stderr || res.message };
+    const res = await gitMgr.commit(msg, root);
+    return { ok: res.ok, output: res.stdout || res.message, error: res.ok ? "" : (res.message || res.stderr), blockedSecrets: stage.blockedSecrets || [], staged: stage.staged || [] };
   } catch (e) {
     return { ok: false, error: String(e?.message || e).slice(0, 400) };
   }
@@ -899,8 +1205,8 @@ async function gitPush(root, options = {}) {
     const gitMgr = require("../runtime/git-manager");
     const remote = String(options.remote || "origin").trim();
     const branch = String(options.branch || "").trim();
-    const res = gitMgr.push(remote, branch, root);
-    return { ok: res.ok, output: res.stdout || res.message, error: res.stderr || res.message };
+    const res = await gitMgr.push(remote, branch, root);
+    return { ok: res.ok, output: res.stdout || res.message, error: res.ok ? "" : (res.message || res.stderr) };
   } catch (e) {
     return { ok: false, error: String(e?.message || e).slice(0, 400) };
   }
@@ -939,10 +1245,24 @@ async function buildProject(root, options = {}) {
   return await runCommand(root, buildCmd, { timeoutMs: 900000, signal: options.signal || null });
 }
 
-async function installSkill(root, repoUrl, skillName) {
+async function installSkill(root, repoUrl, skillName, coordCtx) {
   const url = String(repoUrl || "").trim();
   const name = String(skillName || "").trim().replace(/[^a-zA-Z0-9._-]/g, "_");
   if (!url || !name) return { ok: false, error: "install_skill requiere repoUrl y skillName" };
+  // [EDITCORE-INTEGRAL-B9] install_skill escribe en el proyecto:
+  // toma el lock de su carpeta destino ANTES de clonar y lo libera
+  // al terminar (éxito o fracaso). Antes escribía sin lock.
+  const lockRel = `.editcore/skills/${name}`;
+  const lockBlock = acquireWriteLock(root, lockRel, "install_skill", coordCtx);
+  if (lockBlock) return lockBlock;
+  try {
+    return await installSkillLocked(root, url, name);
+  } finally {
+    releaseWriteLock(root, lockRel, coordCtx);
+  }
+}
+
+async function installSkillLocked(root, url, name) {
   if (!/^https?:\/\/|^git@/i.test(url)) return { ok: false, error: "URL inválida (usa https://...)" };
   const skillsRoot = path.join(root, ".editcore", "skills");
   const target = path.join(skillsRoot, name);
@@ -1109,14 +1429,46 @@ const DEFINITIONS = [
     type: "function",
     function: {
       name: "search_files",
-      description: "Busca una cadena de texto o código dentro de los archivos del proyecto.",
+      // [EDITCORE-INTEGRAL-B4] Definición honesta de los DOS modos: la
+      // anterior prometía «texto o expresión» pero la implementación
+      // era solo literal.
+      description: "Busca dentro de los archivos del proyecto, por CONTENIDO y también por NOMBRE/RUTA (un asset se encuentra por su nombre de archivo, p. ej. 'hero-taller.jpg', aunque sea binario). Dos modos: mode='literal' (defecto, coincidencia exacta de texto) y mode='regex' (la query se interpreta como expresión regular). Devuelve resultados con archivo, línea y fragmento, conteo total y truncated:true si superan el límite.",
       parameters: {
         type: "object",
         properties: {
-          query: { type: "string", description: "Texto o expresión a buscar." }
+          query: { type: "string", description: "Texto literal a buscar, o la expresión regular si mode='regex'." },
+          mode: { type: "string", enum: ["literal", "regex"], description: "Modo de búsqueda declarado: 'literal' (defecto) o 'regex'." }
         },
         required: ["query"]
       }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "rollback_last_change",
+      // [EDITCORE-INTEGRAL-B4] Definición REAL de la herramienta que
+      // classify.js ya clasificaba como escritura y self-knowledge ya
+      // anunciaba: antes no existía aquí y el despacho la rechazaba.
+      description: "Revierte la ÚLTIMA escritura de UN archivo concreto restaurando su snapshot previo (cada write_file/replace_in_file guarda un snapshot antes de tocar el disco). Solo afecta a ese archivo: no deshace cambios posteriores en otros archivos. Úsala cuando el usuario pida deshacer el último cambio de un archivo en vez de reescribirlo entero.",
+      parameters: {
+        type: "object",
+        properties: {
+          path: { type: "string", description: "Ruta del archivo cuya última escritura se revierte." }
+        },
+        required: ["path"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "start_preview",
+      // [EDITCORE-INTEGRAL-B4] Herramienta de preview del kernel:
+      // envuelve el arranque del preview del IDE (startProjectPreview
+      // de main, vía helpers.startPreview inyectado por el llamador).
+      description: "Arranca el preview/dev server del proyecto en el IDE y devuelve su URL real. Úsala cuando necesites verificar en el preview y no haya uno activo, ANTES de capture_preview_screenshot. No uses run_command ni Start-Process para servidores: run_command tiene temporizador y mata el árbol. Si el preview no está disponible en esta ruta, la herramienta lo dice honestamente (ok:false).",
+      parameters: { type: "object", properties: {} }
     }
   },
   {
@@ -1158,12 +1510,45 @@ const DEFINITIONS = [
   {
     type: "function",
     function: {
-      name: "git_commit",
-      description: "Hace un commit de los cambios actuales en Git.",
+      // [EDITCORE-INTEGRAL-B4] git_log/git_diff tenían función y
+      // clasificación de lectura pero ni definición ni case: fantasmas.
+      // Se exponen de verdad (solo lectura).
+      name: "git_log",
+      description: "Muestra el historial reciente de commits de Git.",
       parameters: {
         type: "object",
         properties: {
-          message: { type: "string", description: "Mensaje del commit." }
+          maxCount: { type: "integer", description: "Número máximo de commits (defecto 15)." }
+        }
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "git_diff",
+      description: "Muestra el diff de Git de los cambios sin commitear (o el staged con staged:true). La evidencia llega cabeza+cola: el principio y el FINAL del diff.",
+      parameters: {
+        type: "object",
+        properties: {
+          staged: { type: "boolean", description: "Si es true, muestra el diff de lo staged." }
+        }
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "git_commit",
+      description: "Hace un commit de los cambios actuales en Git. Los archivos sensibles (.env, .pem, credentials.json…) se excluyen SIEMPRE al stagear, también con files omitido.",
+      parameters: {
+        type: "object",
+        properties: {
+          message: { type: "string", description: "Mensaje del commit." },
+          // [EDITCORE-INTEGRAL-B8] files real: antes la definición solo
+          // exponía message y todo caía a ["."] sin que el modelo
+          // pudiera acotar el commit.
+          files: { type: "array", items: { type: "string" }, description: "Archivos a incluir (opcional; por defecto, todos los cambios). Los sensibles se excluyen siempre." }
         },
         required: ["message"]
       }
@@ -1272,11 +1657,16 @@ const DEFINITIONS = [
     type: "function",
     function: {
       name: "deploy_one_click",
-      description: "Publica o despliega el proyecto actual (ej. Vercel o servidor configurado).",
+      // [EDITCORE-INTEGRAL-B8] Esquema alineado con extra-tools.js:
+      // deployOneClick lee provider/production, no `target`. El viejo
+      // {target:"vercel"} sigue funcionando: deploy-one-click lo
+      // traduce (compatibilidad declarada allí).
+      description: "Publica o despliega el proyecto actual (Vercel o Netlify, con los tokens de Conexiones).",
       parameters: {
         type: "object",
         properties: {
-          target: { type: "string", description: "Destino del deploy (ej. 'vercel', 'production')." }
+          provider: { type: "string", enum: ["vercel", "netlify"], description: "Proveedor del deploy (opcional; por defecto se detecta del proyecto)." },
+          production: { type: "boolean", description: "true = producción; false = preview." }
         }
       }
     }
@@ -1285,11 +1675,18 @@ const DEFINITIONS = [
     type: "function",
     function: {
       name: "invoke_subagent",
-      description: "Despacha un subagente especializado para una tarea puntual.",
+      // [EDITCORE-INTEGRAL-B1] Solo se ofrecen los roles que EXISTEN de
+      // verdad: explorer (exploración de solo lectura) e implementer
+      // (parches acotados que escriben vía applyWrite/applyReplace con
+      // lock). Los antiguos security/database/ui_ux/devops/analyst/
+      // verifier degradaban en silencio a exploración: retirados de la
+      // oferta; si se piden igual, execute() lo ANUNCIA en el resultado.
+      description: "Despacha un subagente para una tarea puntual. Roles reales: explorer (solo lectura) e implementer (parches acotados con patches en el task). NO existen subagentes especialistas de seguridad, base de datos, UI/UX, DevOps, análisis ni verificación: pedirlos devuelve exploración de solo lectura, anunciado como tal.",
       parameters: {
         type: "object",
         properties: {
-          role: { type: "string", enum: ["explorer", "implementer", "analyst", "verifier", "security", "database", "ui_ux", "devops"], description: "Rol del subagente." },
+          role: { type: "string", enum: ["explorer", "implementer"], description: "Rol del subagente (solo existen explorer e implementer)." },
+          patches: { type: "array", description: "Solo rol implementer: parches acotados [{path, content}] o [{path, oldText, newText}] (máx. 5). Sin patches, el implementer no puede aplicar nada.", items: { type: "object" } },
           task: { type: "string", description: "Instrucción para el subagente." },
           target: { type: "string", description: "Archivo o ruta objetivo." }
         },
@@ -1352,6 +1749,16 @@ async function execute(name, args, root, allowWrite, helpers = {}) {
   // Identidad de coordinación de ESTA corrida para los locks por
   // archivo (la propagan el orquestador y el implementer por helpers).
   const coordCtx = { threadId: helpers?.threadId || null, agentRole: helpers?.agentRole || null };
+  // [EDITCORE-INTEGRAL-B9] Latido de locks SIN temporizadores: cada
+  // despacho de herramienta de esta corrida renueva los locks que
+  // la corrida aún retiene (operaciones compuestas), para que no
+  // venzan a los 120 s con el dueño trabajando en su turno.
+  try {
+    if (coordCtx.threadId) {
+      const { getCoordination } = require("../runtime/agent-coordination");
+      getCoordination(root).renewThreadLocks(String(coordCtx.threadId));
+    }
+  } catch { /* coordinación opcional */ }
   try {
     switch (name) {
       case "list_files": {
@@ -1380,7 +1787,16 @@ async function execute(name, args, root, allowWrite, helpers = {}) {
         return listed;
       }
       case "read_file": return readFile(root, a.path, READ_FILE_TOOL_CAP, { startLine: a.startLine, endLine: a.endLine });
-      case "search_files": return searchFiles(root, a.query || "");
+      // [EDITCORE-INTEGRAL-B4] search_files recibe su modo declarado.
+      case "search_files": return searchFiles(root, a.query || "", 30, { mode: a.mode || "literal", maxHits: a.maxHits });
+      // [EDITCORE-INTEGRAL-B4] rollback_last_change REAL: segunda capa
+      // de la compuerta en el despachador, como toda escritura.
+      case "rollback_last_change":
+        if (!allowWrite) return { ok: false, error: "Escritura no permitida (Modo Solo Lectura)." };
+        return rollbackFileTool(root, a.path);
+      // [EDITCORE-INTEGRAL-B4] start_preview: envuelve helpers.startPreview.
+      case "start_preview":
+        return await startPreviewTool(root, helpers);
       case "write_file":
         if (!allowWrite) return { ok: false, error: "Escritura no permitida (Modo Solo Lectura)." };
         return writeFile(root, a.path, a.content, coordCtx);
@@ -1422,6 +1838,11 @@ async function execute(name, args, root, allowWrite, helpers = {}) {
         return await buildProject(root, { ...a, signal: helpers.abortSignal || null });
       case "git_status":
         return await gitStatus(root);
+      // [EDITCORE-INTEGRAL-B4] Cases reales para git_log/git_diff.
+      case "git_log":
+        return await gitLog(root, a);
+      case "git_diff":
+        return await gitDiff(root, a);
       case "git_commit":
         if (!allowWrite) return { ok: false, error: "git_commit requiere modo escritura." };
         return await gitCommit(root, a);
@@ -1452,21 +1873,48 @@ async function execute(name, args, root, allowWrite, helpers = {}) {
       case "capture_preview_screenshot":
         return await capture_preview_screenshot({ url: a.url || helpers?.activePreviewUrl || undefined, viewport: a.viewport === "mobile" ? "mobile" : "desktop", projectRoot: root });
       case "fetch_stock_photo":
-        return await fetchStockPhoto({ query: a.query || "", name: a.name || "", folder: a.folder || "", projectRoot: root });
+        // [EDITCORE-INTEGRAL-B6] La señal del turno llega a la foto:
+        // sin ella, la descarga escribía el archivo caiga el turno o no.
+        // [EDITCORE-INTEGRAL-B9] Y el lock del archivo destino: la
+        // foto toma el lock de la ruta exacta que va a escribir
+        // (carpeta/nombre.ext, conocida tras la descarga) ANTES de
+        // tocar disco; si otra corrida lo retiene, no escribe.
+        return await fetchStockPhoto({
+          query: a.query || "", name: a.name || "", folder: a.folder || "", projectRoot: root,
+          signal: helpers?.abortSignal || helpers?.signal || null,
+          acquireLock: (relPath) => {
+            const blocked = acquireWriteLock(root, relPath, "fetch_stock_photo", coordCtx);
+            if (blocked) return { ok: false, error: blocked.error };
+            return { ok: true, release: () => releaseWriteLock(root, relPath, coordCtx) };
+          },
+        });
       case "scaffold_project": {
         const { projectLooksEmpty } = require("./build-base-guard");
         if (a.force !== true && !projectLooksEmpty(root)) {
           return { ok: false, error: "El proyecto ya tiene contenido (package.json o estructura): scaffold_project no pisa una app existente. Si el usuario pidió rehacer la base desde cero, repite con force:true." };
         }
-        const { scaffoldGreenfieldApp } = require("../runtime/greenfield-builder");
-        const built = scaffoldGreenfieldApp(root, {
-          prompt: String(a.prompt || ""),
-          appName: String(a.name || "").trim() || path.basename(root),
-        });
-        return {
-          ...built,
-          nextSteps: "Base sentada. Ahora: (1) ejecuta npm install con run_command; (2) personaliza src/App.tsx, src/components/sections/Hero.tsx y Showcase.tsx con el contenido real del negocio; (3) fotos reales con fetch_stock_photo en public/assets; (4) verifica con capture_preview_screenshot.",
-        };
+        // [EDITCORE-INTEGRAL-B9] scaffold escribe ~25 archivos de una
+        // vez con writeFileSync directo en greenfield-builder: toma
+        // ANTES los locks de las rutas núcleo que va a sentar; si
+        // otra corrida retiene alguna, falla explicando el lock y no
+        // escribe nada a medias. Los locks se liberan al terminar.
+        const scaffoldLocks = acquireWriteLockSet(root,
+          ["package.json", "index.html", "vite.config.ts", "src/App.tsx", "src/main.tsx", "src/index.css"],
+          "scaffold_project", coordCtx);
+        if (scaffoldLocks.blocked) return scaffoldLocks.blocked;
+        try {
+          const { scaffoldGreenfieldApp } = require("../runtime/greenfield-builder");
+          const built = scaffoldGreenfieldApp(root, {
+            prompt: String(a.prompt || ""),
+            appName: String(a.name || "").trim() || path.basename(root),
+          });
+          return {
+            ...built,
+            nextSteps: "Base sentada. Ahora: (1) ejecuta npm install con run_command; (2) personaliza src/App.tsx, src/components/sections/Hero.tsx y Showcase.tsx con el contenido real del negocio; (3) fotos reales con fetch_stock_photo en public/assets; (4) verifica con capture_preview_screenshot.",
+          };
+        } finally {
+          scaffoldLocks.release();
+        }
       }
       case "search_brain":
         return await extraTools.searchBrain(root, a.query || "", helpers, a.limit);
@@ -1486,19 +1934,50 @@ async function execute(name, args, root, allowWrite, helpers = {}) {
       case "invoke_subagent": {
         const { runSubagent } = require("../runtime/subagent-runner");
         const subRole = String(a.role || "explorer").toLowerCase();
+        // [EDITCORE-INTEGRAL-B5] Mapa ÚNICO de clasificación: la
+        // compuerta del orquestador clasifica invoke_subagent como
+        // ESCRITURA en classify.js (WRITE_TOOLS) y la corta entera en
+        // solo lectura / step sin autorizar — por la ruta del kernel
+        // este case ni se alcanza sin autorización. Esta segunda capa
+        // del despachador deriva del MISMO classify.js (WRITE_TOOL_SET
+        // se construye de WRITE_TOOLS, sin lista propia divergente) y
+        // aquí solo distingue el rol para los llamadores directos del
+        // despachador: el implementer exige escritura; el explorer es
+        // lectura y delegate_parallel (LECTURA en classify) ni pasa
+        // por una guarda de escritura.
         if ((subRole === "implementer" || subRole === "writer") && !allowWrite) {
           return { ok: false, error: "Subagente implementer requiere modo escritura." };
         }
-        return await runSubagent(root, {
+        // [EDITCORE-INTEGRAL-B1] Rol especialista NO implementado: no se
+        // disfraza — el resultado ANUNCIA que ese rol no existe y que lo
+        // que sigue es exploración de solo lectura (el cierre del
+        // orquestador además lo audita y lo declara en el resumen).
+        const degradedRoles = new Set(["security", "database", "ui_ux", "devops", "analyst", "verifier"]);
+        const degraded = degradedRoles.has(subRole);
+        const subResult = await runSubagent(root, {
           role: subRole,
           task: a.task,
           target: a.target,
           query: a.task,
+          patches: Array.isArray(a.patches) ? a.patches : undefined,
         }, helpers);
+        if (degraded) {
+          return {
+            ...subResult,
+            ok: subResult?.ok !== false,
+            requestedRole: subRole,
+            effectiveRole: "explorer",
+            degradedRole: true,
+            roleNotice: `El rol «${subRole}» no existe como subagente especialista en EditCoreAI: lo ejecutado fue exploración de solo lectura, NO una tarea de ${subRole}. Repórtalo así, no como una auditoría ni un trabajo especializado.`,
+          };
+        }
+        return { ...subResult, requestedRole: subRole, effectiveRole: subRole === "writer" ? "implementer" : subRole };
       }
       case "install_skill":
         if (!allowWrite) return { ok: false, error: "install_skill requiere modo escritura." };
-        return installSkill(root, a.repoUrl, a.skillName);
+        // [EDITCORE-INTEGRAL-B9] La identidad de la corrida viaja a
+        // installSkill para su lock de destino.
+        return installSkill(root, a.repoUrl, a.skillName, coordCtx);
       case "list_skills":
         return listSkills(root, helpers, a.query);
       case "read_skill": {
@@ -1590,13 +2069,20 @@ function resetToolStats() { _ecToolStats.clear(); _ecToolRateBuckets.clear(); }
 module.exports = {
   TOOL_RESULT_CAP,
   READ_FILE_PAYLOAD_CAP,
+  // [EDITCORE-INTEGRAL-B4] Política de truncamiento por herramienta.
+  TOOL_PAYLOAD_CAPS,
   truncatePayload,
+  headTailText,
+  shapeToolPayload,
   listFiles,
   readFile,
   writeFile,
   replaceInFile,
   searchFiles,
   runCommand,
+  // [EDITCORE-INTEGRAL-B4] Herramientas nuevas/reales del Bloque 4.
+  rollbackFileTool,
+  startPreviewTool,
   auditEnv,
   runSupabaseSql,
   cloneRepo,

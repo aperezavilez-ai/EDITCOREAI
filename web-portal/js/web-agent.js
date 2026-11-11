@@ -414,12 +414,29 @@
     try {
       for (let step = 0; step < MAX_STEPS; step += 1) {
         if (step > 0) progress({ phase: "narration_reset" });
+        // [EDITCORE-INTEGRAL-B10] Paridad mínima con el escritorio:
+        // NADA de deltas crudos del proveedor como narración (antes
+        // onDelta volcaba cada delta.content como narration_delta y el
+        // usuario leía la prosa/razonamiento del modelo en streaming).
+        // En escritorio narration_delta está muerto por decisión
+        // expresa: la narración visible es COMPUESTA (líneas de acción
+        // por herramienta/estado — aquí, los eventos phase:"tool" de
+        // abajo y esta línea de paso) y la prosa del modelo llega SOLO
+        // como respuesta final (finalText → final_report / retorno).
+        progress({
+          phase: "narration",
+          text: step === 0
+            ? "Trabajando en tu pedido: reviso el proyecto y ejecuto los pasos con las herramientas."
+            : "Sigo con los siguientes pasos del pedido.",
+          index: step,
+        });
         const res = await completionWithRetry({
           model,
           messages,
           tools: toolDefs(allowWrite),
           signal: controller.signal,
-          onDelta: (text) => progress({ phase: "narration_delta", text, index: step }),
+          // Sin onDelta a propósito (ver arriba): completion() sigue
+          // acumulando el contenido para la respuesta final.
         });
         usage.provider_calls += 1;
         addUsage(usage, res.usage);

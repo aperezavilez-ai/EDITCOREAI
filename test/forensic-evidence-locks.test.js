@@ -17,7 +17,6 @@ const ProjectAnalysis = require("../project-analysis");
 
 const appRoot = path.join(__dirname, "..");
 const rendererSource = fs.readFileSync(path.join(appRoot, "renderer.js"), "utf8");
-const adapterSource = fs.readFileSync(path.join(appRoot, "runtime", "editcore-claude-adapter.js"), "utf8");
 const evidenceSource = fs.readFileSync(path.join(appRoot, "runtime", "evidence-grounding.js"), "utf8");
 
 test("E1: preservacion incluye FORENSIC_EXCERPTS no solo contentLength", () => {
@@ -96,12 +95,6 @@ test("E2b: groundAnalysisReport reemplaza informe hueco si hubo lecturas", () =>
   assert.equal(grounded.replaced, true);
   assert.match(grounded.text, /FORENSIC_EXCERPTS|Qué sí funcionó/);
   assert.doesNotMatch(grounded.text, /Falta información en el contexto\.\nFalta información/);
-});
-
-test("E2c: adapter rechaza informe hueco con nudge", () => {
-  assert.match(adapterSource, /hollowReportNudgeSent/);
-  assert.match(adapterSource, /Informe HUECO rechazado/);
-  assert.match(evidenceSource, /isHollowAnalysisReport/);
 });
 
 test("E3: propuesta no es changeRequest y responde local", () => {

@@ -184,31 +184,72 @@ async function runExternalAction(name, args, root, helpers = {}) {
       message: "Acción externa: requiere confirmación explícita del usuario antes de ejecutarse.",
     };
   }
+  // [EDITCORE-INTEGRAL-B6] La señal del turno llega por helpers
+  // (abortSignal, como ya viaja a run_command/delegate_parallel):
+  // abortada ANTES de lanzar ⇒ la acción NO se ejecuta. Las
+  // implementaciones son inyectables por helpers._externalImpls
+  // (costura de prueba); en producción son los módulos reales.
+  const signal = helpers?.signal || helpers?.abortSignal || null;
+  if (signal?.aborted) {
+    return { ok: false, aborted: true, cancelledBeforeLaunch: true, action: name, message: "Acción externa cancelada antes de lanzarse (Detener): no se publicó nada." };
+  }
+  const impls = (helpers && typeof helpers === "object" && helpers._externalImpls) || {};
   const connections = typeof helpers.readConnections === "function" ? (helpers.readConnections() || {}) : {};
+  let result;
   if (name === "deploy_one_click") {
-    const { deployOneClick } = require("../runtime/deploy-one-click");
-    return deployOneClick(root, args, { connections });
-  }
-  if (name === "connect_project") {
-    const { connectProject } = require("../runtime/project-connect");
-    const out = await connectProject(root, connections, {
-      createGithub: args.createGithub !== false,
-      createVercel: args.createVercel !== false,
-      linkSupabase: args.linkSupabase !== false,
-      repoName: String(args.repoName || ""),
-    });
+    if (typeof impls.deployOneClick === "function") {
+      result = await impls.deployOneClick(root, args, { connections, signal });
+    } else {
+      const { deployOneClick } = require("../runtime/deploy-one-click");
+      result = await deployOneClick(root, args, { connections, signal });
+    }
+  } else if (name === "connect_project") {
+    let out;
+    if (typeof impls.connectProject === "function") {
+      out = await impls.connectProject(root, connections, { signal });
+    } else {
+      const { connectProject } = require("../runtime/project-connect");
+      out = await connectProject(root, connections, {
+        createGithub: args.createGithub !== false,
+        createVercel: args.createVercel !== false,
+        linkSupabase: args.linkSupabase !== false,
+        repoName: String(args.repoName || ""),
+        signal,
+      });
+    }
     const failed = (out.steps || []).find((s) => s.ok === false && !s.skipped);
-    return { ...out, failedStep: failed?.step || "", url: out.assessment?.remoteUrl || "" };
+    result = { ...out, failedStep: failed?.step || "", url: out.url || out.assessment?.remoteUrl || "" };
+  } else {
+    if (typeof impls.publishProject === "function") {
+      result = await impls.publishProject(root, { connections, signal });
+    } else {
+      const { publishProject } = require("../runtime/publish-pipeline");
+      result = await publishProject(root, {
+        mode: String(args.mode || "project"),
+        connections,
+        deploy: args.deploy !== false,
+        supabasePush: args.supabasePush !== false,
+        commitMessage: String(args.commitMessage || ""),
+        skipPush: args.skipPush === true,
+        signal,
+      });
+    }
   }
-  const { publishProject } = require("../runtime/publish-pipeline");
-  return publishProject(root, {
-    mode: String(args.mode || "project"),
-    connections,
-    deploy: args.deploy !== false,
-    supabasePush: args.supabasePush !== false,
-    commitMessage: String(args.commitMessage || ""),
-    skipPush: args.skipPush === true,
-  });
+  // [EDITCORE-INTEGRAL-B6] Si Detener llegó con el request ya fuera y
+  // la acción terminó, la cancelación tardía se DECLARA en el
+  // resultado (patrón del riesgo (d)): nunca un «cancelado» que oculte
+  // un despliegue que sí salió. Si la implementación ya lo declaró,
+  // su declaración manda.
+  if (signal?.aborted && result && result.cancellationLate !== true) {
+    const url = result.url || result.deploy?.url || "";
+    const wentOut = result.ok === true || Boolean(url);
+    if (wentOut) {
+      result = { ...result, cancellationLate: true, abortedAfterLaunch: true, message: `La cancelación llegó tarde: el despliegue ${url || ""} sí salió. ${String(result.message || "")}`.trim() };
+    } else {
+      result = { ...result, aborted: true };
+    }
+  }
+  return result;
 }
 
 const EXTRA_DEFINITIONS = [

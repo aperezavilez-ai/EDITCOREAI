@@ -88,22 +88,43 @@ test("la herramienta delegate_parallel existe en la caja del agente", () => {
   assert.match(toolsSource, /case "delegate_parallel": \{/);
 });
 
-test("los locks distinguen corridas: otro chat no puede pisar el archivo, el dueño sí", () => {
+test("los locks distinguen corridas: con el lock RETENIDO por otra corrida no se pisa; liberado, sí", () => {
+  // ACTUALIZADO A PROPÓSITO [EDITCORE-INTEGRAL-B9]: la versión
+  // anterior asumía la conducta rota — write_file RETENÍA el lock
+  // hasta el cierre del turno, así que la escritura de chat-1
+  // bloqueaba a chat-2 «para siempre». Ahora cada escritura libera
+  // su lock al terminar: el invariante que se vigila es el mismo
+  // (un chat no pisa a otro MIENTRAS el otro retiene el lock) y se
+  // ejerce reteniendo el lock con la coordinación directamente.
+  const { getCoordination } = require(path.join(root, "runtime", "agent-coordination.js"));
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "ec-locks-"));
   const w = tools.writeFile(tmp, "nota.txt", "contenido original", { threadId: "chat-1", agentRole: "supervisor" });
   assert.equal(w.ok, true);
-  const blocked = tools.replaceInFile(tmp, "nota.txt", "contenido original", "pisado", { threadId: "chat-2", agentRole: "supervisor" });
+  // [B9] La escritura de chat-1 YA liberó su lock: chat-2 puede
+  // escribir a continuación sin esperar al cierre del turno.
+  const after = tools.replaceInFile(tmp, "nota.txt", "contenido original", "de chat-2", { threadId: "chat-2", agentRole: "supervisor" });
+  assert.equal(after.ok, true, "tras liberar por escritura, otro chat adquiere de inmediato");
+  // Con el lock RETENIDO por chat-1 (operación en curso), chat-2
+  // sigue bloqueado: el invariante entre chats no cambió.
+  const coord = getCoordination(tmp);
+  const held = coord.acquireLock("chat-1", "supervisor", "nota.txt", "write_file");
+  assert.equal(held.ok, true);
+  const blocked = tools.replaceInFile(tmp, "nota.txt", "de chat-2", "pisado", { threadId: "chat-2", agentRole: "supervisor" });
   assert.equal(blocked.ok, false);
   assert.equal(blocked.locked, true);
-  assert.equal(fs.readFileSync(path.join(tmp, "nota.txt"), "utf8"), "contenido original");
-  const own = tools.replaceInFile(tmp, "nota.txt", "contenido original", "actualizado", { threadId: "chat-1", agentRole: "supervisor" });
+  assert.equal(fs.readFileSync(path.join(tmp, "nota.txt"), "utf8"), "de chat-2");
+  coord.releaseLock("chat-1", "supervisor", "nota.txt");
+  const own = tools.replaceInFile(tmp, "nota.txt", "de chat-2", "actualizado", { threadId: "chat-1", agentRole: "supervisor" });
   assert.equal(own.ok, true);
   assert.equal(fs.readFileSync(path.join(tmp, "nota.txt"), "utf8"), "actualizado");
 });
 
 test("la identidad de la corrida viaja: orquestador e implementer la propagan", () => {
   assert.match(orchestrator, /threadId: threadId \|\| \(helpers && helpers\.threadId\) \|\| "default",\s*\n\s*agentRole: "supervisor",/);
-  assert.match(implementer, /const coordCtx = \{ threadId: threadId \|\| "default", agentRole: "implementer" \};/);
+  // [EDITCORE-INTEGRAL-B9] UNA sola identidad por corrida: el
+  // implementer ya no usa una segunda identidad de lock
+  // («implementer») distinta de la del supervisor de su corrida.
+  assert.match(implementer, /const coordCtx = \{ threadId: threadId \|\| "default", agentRole: "supervisor" \};/);
   assert.match(toolsSource, /function acquireWriteLock\(root, rel, op, coordCtx\)/);
 });
 

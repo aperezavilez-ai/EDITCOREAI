@@ -10,8 +10,18 @@ const { spawn } = require("node:child_process");
  * Sin APIs de pago: usa la cuenta del usuario en Conexiones.
  */
 
-function runProcess(command, args, { cwd, env, timeoutMs = 300_000, shell = false } = {}) {
+function runProcess(command, args, { cwd, env, timeoutMs = 300_000, shell = false, signal = null } = {}) {
   return new Promise((resolve, reject) => {
+    // [EDITCORE-INTEGRAL-B6] Detener llega al proceso del deploy: si
+    // la señal ya viene abortada, el proceso ni nace; si aborta en
+    // curso, se mata el hijo y el llamador declara la cancelación.
+    if (signal?.aborted) {
+      const err = new Error("Deploy cancelado antes de lanzarse (Detener).");
+      err.code = "DEPLOY_ABORTED";
+      err.aborted = true;
+      reject(err);
+      return;
+    }
     const child = spawn(command, args, {
       cwd,
       env: { ...process.env, ...env },
@@ -20,7 +30,17 @@ function runProcess(command, args, { cwd, env, timeoutMs = 300_000, shell = fals
     });
     let stdout = "";
     let stderr = "";
+    const onAbort = () => {
+      try { child.kill(); } catch {}
+      const err = new Error("Deploy detenido por el usuario (Detener) mientras el proceso corría.");
+      err.code = "DEPLOY_ABORTED";
+      err.aborted = true;
+      clearTimeout(timer);
+      reject(err);
+    };
+    if (signal) signal.addEventListener("abort", onAbort, { once: true });
     const timer = setTimeout(() => {
+      if (signal) { try { signal.removeEventListener("abort", onAbort); } catch {} }
       try { child.kill(); } catch {}
       reject(new Error(`Timeout deploy (${timeoutMs}ms)`));
     }, timeoutMs);
@@ -28,10 +48,12 @@ function runProcess(command, args, { cwd, env, timeoutMs = 300_000, shell = fals
     child.stderr.on("data", (chunk) => { stderr += String(chunk); });
     child.on("error", (error) => {
       clearTimeout(timer);
+      if (signal) { try { signal.removeEventListener("abort", onAbort); } catch {} }
       reject(error);
     });
     child.on("close", (code) => {
       clearTimeout(timer);
+      if (signal) { try { signal.removeEventListener("abort", onAbort); } catch {} }
       resolve({ code: Number(code) || 0, stdout, stderr });
     });
   });
@@ -213,6 +235,34 @@ function firstLogErrorLine(logs = "") {
   return String(hit || lines[lines.length - 1]).slice(0, 300);
 }
 
+// [EDITCORE-INTEGRAL-B8] El humo distingue «responde» de «es la
+// app»: 401/403/404 en la RUTA PRINCIPAL ya no cuentan como sano.
+//   - down:        status 0 (sin respuesta) o >= 500 en cualquier ruta.
+//   - notVerified: la ruta principal responde 401 (SSO), 403 (WAF) o
+//                  404 (esa ruta no es la app): hay un servidor, pero
+//                  la publicación NO queda verificada.
+//   - verified:    la ruta principal responde 2xx/3xx y nada está down.
+// Las rutas secundarias conservan su trato: su 401/403/404 no
+// desverifica (pueden ser rutas con su propia auth); su caída
+// (0/5xx) sí sigue contando como down, como hasta ahora.
+const SMOKE_NOT_VERIFIED_STATUSES = [401, 403, 404];
+
+function classifySmoke(smoke = []) {
+  const list = Array.isArray(smoke) ? smoke : [];
+  const down = list.filter((s) => s.status === 0 || s.status >= 500);
+  if (down.length) return { state: "down", verified: false, down, notVerified: [] };
+  const main = list[0];
+  if (main && SMOKE_NOT_VERIFIED_STATUSES.includes(main.status)) {
+    const cause = main.status === 404
+      ? `la ruta principal devolvió 404: responde un servidor pero no es la app`
+      : main.status === 401
+        ? `la ruta principal devolvió 401: responde un servidor pero la app queda tras autenticación (p. ej. SSO de Vercel), no se pudo verificar`
+        : `la ruta principal devolvió 403: responde un servidor pero un WAF/proxy bloquea la verificación`;
+    return { state: "notVerified", verified: false, down: [], notVerified: [main], cause };
+  }
+  return { state: "verified", verified: true, down: [], notVerified: [] };
+}
+
 async function verifyProductionDeploy({ url, routes = [], provider = "", token = "", projectId = "", orgId = "", deps = {} } = {}) {
   const fetchImpl = typeof deps?.fetchImpl === "function" ? deps.fetchImpl : ((...a) => fetch(...a));
   const sleep = typeof deps?.sleepImpl === "function" ? deps.sleepImpl : ((ms) => new Promise((r) => setTimeout(r, ms)));
@@ -246,7 +296,15 @@ async function verifyProductionDeploy({ url, routes = [], provider = "", token =
     await sleep(SMOKE_RETRY_DELAY_MS);
     smoke = await checkAll();
   }
-  if (!isDown()) return { ok: true, smoke };
+  if (!isDown()) {
+    // [EDITCORE-INTEGRAL-B8] Responder no basta: 401/403/404 en la
+    // ruta principal = NO verificado (la causa viaja en el resultado).
+    const verdict = classifySmoke(smoke);
+    if (verdict.state === "notVerified") {
+      return { ok: true, verified: false, smokeNotVerified: true, smokeCause: verdict.cause, smoke };
+    }
+    return { ok: true, verified: true, smoke };
+  }
   let logs = null;
   let logsNote = "";
   if (provider === "vercel") {
@@ -265,9 +323,24 @@ async function applyPostDeployVerification(base, { provider = "", production = t
     verdict = await verifyProductionDeploy({ url: base.url, routes, provider, token, projectId, orgId, deps });
   } catch { verdict = null; }
   if (!verdict) {
-    return { ...base, smoke: [], smokeNote: "La verificación post-despliegue (humo) no pudo ejecutarse; el deploy terminó pero su salud no quedó comprobada." };
+    return { ...base, verified: false, smoke: [], smokeNote: "La verificación post-despliegue (humo) no pudo ejecutarse; el deploy terminó pero su salud no quedó comprobada." };
   }
-  if (verdict.ok) return { ...base, smoke: verdict.smoke };
+  if (verdict.ok && verdict.smokeNotVerified) {
+    // [EDITCORE-INTEGRAL-B8] El deploy SÍ terminó y la URL responde,
+    // pero no es verificable como la app: NO es productionDown (eso
+    // sigue siendo >=500/sin respuesta, con su camino intacto) y NO
+    // se declara «publicación verificada». ok queda en true porque
+    // el despliegue ocurrió; verified:false dice la verdad del humo.
+    return {
+      ...base,
+      verified: false,
+      smokeNotVerified: true,
+      smokeCause: verdict.smokeCause || "",
+      smoke: verdict.smoke,
+      message: `Deploy terminado y la URL responde, pero la publicación NO quedó verificada: ${verdict.smokeCause || "la ruta principal no devolvió la app"}. No la des por verificada: revisa la protección de acceso (SSO/WAF) o que la ruta principal sea la de la app.`,
+    };
+  }
+  if (verdict.ok) return { ...base, verified: true, smoke: verdict.smoke };
   const bad = verdict.smoke.filter((s) => s.status === 0 || s.status >= 500);
   const states = bad.map((s) => `GET ${s.url} → ${s.status === 0 ? (s.error || "sin respuesta") : `HTTP ${s.status}`}`).join("; ");
   const firstError = firstLogErrorLine(verdict.logs || "");
@@ -283,6 +356,8 @@ async function applyPostDeployVerification(base, { provider = "", production = t
     ok: false,
     publishFailed: true,
     productionDown: production === true,
+    // [EDITCORE-INTEGRAL-B8] Caído = tampoco verificado.
+    verified: false,
     message,
     smoke: verdict.smoke,
     ...(firstError ? { firstLogError: firstError } : {}),
@@ -298,12 +373,27 @@ async function applyPostDeployVerification(base, { provider = "", production = t
   };
 }
 
-async function deployOneClick(projectRoot, input = {}, { connections = {}, deps = {} } = {}) {
+async function deployOneClick(projectRoot, input = {}, { connections = {}, deps = {}, signal = null } = {}) {
   const run = typeof deps?.runProcessImpl === "function" ? deps.runProcessImpl : runProcess;
+  // [EDITCORE-INTEGRAL-B6] La señal del turno viaja también en
+  // input/deps por las costuras de prueba; una sola fuente efectiva.
+  const turnSignal = signal || input?.signal || deps?.signal || null;
   const root = path.resolve(String(projectRoot || ""));
   if (!root || !fs.existsSync(root)) throw new Error("deploy_one_click requiere projectRoot valido.");
-  const provider = detectProvider(root, input.provider);
-  const production = input.production !== false;
+  // [EDITCORE-INTEGRAL-B8] Compatibilidad declarada: el esquema viejo
+  // del kernel definía un único parámetro `target` y hay llamadores
+  // vivos con {target:"vercel"} (cloud-vault-bridge). Se traduce aquí,
+  // en el consumidor: target="vercel"|"netlify" ⇒ provider;
+  // target="production" ⇒ production:true. El esquema nuevo
+  // (provider/production) manda cuando viene presente.
+  const legacyTarget = typeof input?.target === "string" ? input.target.trim().toLowerCase() : "";
+  const provider = detectProvider(root, input.provider || (legacyTarget === "vercel" || legacyTarget === "netlify" ? legacyTarget : ""));
+  const production = input.production !== undefined ? input.production !== false : legacyTarget !== "preview";
+  // [EDITCORE-INTEGRAL-B6] Abortada ANTES de lanzar ⇒ no publica.
+  if (turnSignal?.aborted) {
+    return { ok: false, aborted: true, cancelledBeforeLaunch: true, available: true, provider, message: "Deploy cancelado antes de lanzarse (Detener): no se publicó nada." };
+  }
+  let deployLaunched = false;
 
   if (provider === "vercel") {
     const token = String(connections.vercelToken || process.env.VERCEL_TOKEN || "").trim();
@@ -346,9 +436,11 @@ async function deployOneClick(projectRoot, input = {}, { connections = {}, deps 
       shell = false;
     }
     try {
+      deployLaunched = true;
       const result = await run(command, commandArgs, {
         cwd: deployRoot,
         shell,
+        signal: turnSignal || undefined,
         env: sanitizeEnv((() => {
           const envExtra = { VERCEL_TOKEN: token };
           // Vercel exige ORG_ID + PROJECT_ID juntos; si falta uno, no enviar ninguno
@@ -378,6 +470,13 @@ async function deployOneClick(projectRoot, input = {}, { connections = {}, deps 
           ? (cleanUrl ? `Deploy OK → ${cleanUrl}` : "Deploy OK")
           : summarizeDeployFailure(combined, result.code),
       };
+      // [EDITCORE-INTEGRAL-B6] El request YA salió cuando la
+      // cancelación llega tras el proceso: no se puede «des-enviar»
+      // — el resultado lo DICE (riesgo (d) del Bloque 6), nunca lo
+      // oculta tras un «cancelado» a secas.
+      if (turnSignal?.aborted && deployLaunched) {
+        return { ...base, cancellationLate: true, abortedAfterLaunch: true, message: `La cancelación llegó tarde: el despliegue ${cleanUrl || "de Vercel"} sí salió. ${base.message}` };
+      }
       // [EDITCORE-CONSOLIDADA] Humo post-despliegue: la CLI puede
       // decir «OK» con la app caída (error de runtime, no de build).
       if (ok && cleanUrl) {
@@ -394,6 +493,12 @@ async function deployOneClick(projectRoot, input = {}, { connections = {}, deps 
       return base;
     } catch (error) {
       const msg = String(error?.message || error).slice(0, 400);
+      // [EDITCORE-INTEGRAL-B6] Aborto en curso: el proceso se mató,
+      // pero el request pudo haber llegado ya al proveedor — se
+      // declara la incertidumbre en vez de prometer «no salió».
+      if (error?.aborted || error?.code === "DEPLOY_ABORTED" || turnSignal?.aborted) {
+        return { ok: false, aborted: true, abortedAfterLaunch: deployLaunched, available: true, provider: "vercel", deployRoot, projectId: ids.projectId, message: deployLaunched ? "Deploy detenido a mitad de proceso: el proceso local se mató, pero el despliegue pudo haber llegado ya a Vercel — verifícalo en el panel antes de reintentar." : "Deploy cancelado antes de lanzarse (Detener): no se publicó nada." };
+      }
       return {
         ok: false,
         available: true,
@@ -423,6 +528,7 @@ async function deployOneClick(projectRoot, input = {}, { connections = {}, deps 
     if (connections.netlifySiteId) args.push("--site", String(connections.netlifySiteId));
     args.push("--dir", String(input.dir || "dist"));
     try {
+      deployLaunched = true;
       const result = await run(
         process.platform === "win32" ? (process.env.ComSpec || "cmd.exe") : "netlify",
         process.platform === "win32"
@@ -431,6 +537,7 @@ async function deployOneClick(projectRoot, input = {}, { connections = {}, deps 
         {
           cwd: root,
           shell: false,
+          signal: turnSignal || undefined,
           env: sanitizeEnv({ NETLIFY_AUTH_TOKEN: token }),
         },
       );
@@ -445,6 +552,10 @@ async function deployOneClick(projectRoot, input = {}, { connections = {}, deps 
         output: combined.slice(-4000),
         message: result.code === 0 ? "Deploy OK" : summarizeDeployFailure(combined, result.code),
       };
+      // [EDITCORE-INTEGRAL-B6] Cancelación tardía declarada (Netlify).
+      if (turnSignal?.aborted && deployLaunched) {
+        return { ...base, cancellationLate: true, abortedAfterLaunch: true, message: `La cancelación llegó tarde: el despliegue ${base.url || "de Netlify"} sí salió. ${base.message}` };
+      }
       // [EDITCORE-CONSOLIDADA] Humo post-despliegue también en Netlify
       // (sin logs automáticos: verifyProductionDeploy lo anota).
       if (base.ok && base.url) {
@@ -457,6 +568,10 @@ async function deployOneClick(projectRoot, input = {}, { connections = {}, deps 
       }
       return base;
     } catch (error) {
+      // [EDITCORE-INTEGRAL-B6] Aborto en curso (Netlify).
+      if (error?.aborted || error?.code === "DEPLOY_ABORTED" || turnSignal?.aborted) {
+        return { ok: false, aborted: true, abortedAfterLaunch: deployLaunched, available: true, provider: "netlify", message: deployLaunched ? "Deploy detenido a mitad de proceso: el proceso local se mató, pero el despliegue pudo haber llegado ya a Netlify — verifícalo en el panel antes de reintentar." : "Deploy cancelado antes de lanzarse (Detener): no se publicó nada." };
+      }
       return {
         ok: false,
         available: true,
@@ -478,4 +593,7 @@ module.exports = {
   // [EDITCORE-CONSOLIDADA] Verificación post-despliegue (probable).
   verifyProductionDeploy,
   fetchVercelDeploymentLogs,
+  // [EDITCORE-INTEGRAL-B8] Clasificación del humo (responde ≠ es la app).
+  classifySmoke,
+  SMOKE_NOT_VERIFIED_STATUSES,
 };

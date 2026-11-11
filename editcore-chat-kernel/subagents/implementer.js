@@ -7,9 +7,14 @@ const { snapshotBeforeWrite } = require("../snapshot");
  * Implementer quirúrgico: snapshot previo + replace_in_file preferente.
  */
 async function runImplementer({ projectRoot, path: rel, content, oldText, newText, onProgress, threadId }) {
-  // Identidad de coordinación de la corrida dueña: los locks por
-  // archivo distinguen a ESTE agente de otros en paralelo.
-  const coordCtx = { threadId: threadId || "default", agentRole: "implementer" };
+  // [EDITCORE-INTEGRAL-B9] Identidad de coordinación ÚNICA de la
+  // corrida dueña: el implementer escribe con la MISMA identidad
+  // que el supervisor de su corrida («supervisor»), no con una
+  // segunda identidad que se autobloqueaba contra la primera al
+  // tocar el mismo archivo. La distinción de rol sigue existiendo
+  // en el resultado/progreso (role: "implementer"); la identidad
+  // de LOCK es la corrida.
+  const coordCtx = { threadId: threadId || "default", agentRole: "supervisor" };
   if (!rel) return { role: "implementer", ok: false, error: "Falta path" };
   onProgress?.({ phase: "subagent", name: "implementer", text: `Editando ${rel}...` });
 

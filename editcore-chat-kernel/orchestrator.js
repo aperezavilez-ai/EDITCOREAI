@@ -12,11 +12,14 @@ const {
   SUB_AGENTS,
   APPROVAL_RE,
   isContinuePhrase,
+  // [EDITCORE-INTEGRAL-B5] Modo efectivo único + anuncio de chat nuevo.
+  normalizePermissionMode,
+  buildModeAnnouncement,
 } = require("./classify");
 const { searchBrainDocs, ensureCoreProjectBrain, listBrainDocs } = require("./brain-ingest");
 const { ChatSession } = require("./session");
 const { PersistentMemory } = require("./memory");
-const { skillsPrompt, SKILL_IDS, selectSkillsForTurn } = require("./skills-catalog");
+const { skillsPrompt, SKILL_IDS, buildSkillsTurn } = require("./skills-catalog");
 const { runExplorer } = require("./subagents/explorer");
 const { runAnalyst } = require("./subagents/analyst");
 const { runImplementer } = require("./subagents/implementer");
@@ -74,10 +77,9 @@ let agentCoordination = null;
 try {
   agentCoordination = require("../runtime/agent-coordination");
 } catch (_) { agentCoordination = null; }
-let agentParallel = null;
-try {
-  agentParallel = require("../runtime/agent-parallel");
-} catch (_) { agentParallel = null; }
+// [EDITCORE-INTEGRAL-B9] agent-parallel ya NO se importa en el
+// orquestador: «Fase 8» salió del camino vivo (ver la nota en
+// _handleCore). El módulo sigue existiendo para uso explícito.
 let activeEditorContext = null;
 try {
   activeEditorContext = require("../runtime/active-editor-context");
@@ -101,12 +103,17 @@ try {
 const { parseTextToolCalls, stripTextToolMarkup, toRelativePath, visibleNarrationText } = require("./parse-text-tools");
 const tools = require("./tools");
 const { callChat } = require("./provider");
+// [EDITCORE-INTEGRAL-B6] Sesión viva: detección NO_SESSION y mensaje
+// de sesión compartidos (nunca el consejo de la API key).
+const { isNoSessionError, SESSION_EXPIRED_MESSAGE } = require("../runtime/http-error-taxonomy");
 const { capture_preview_screenshot, DEFAULT_PREVIEW_URL } = require("./vision-inspector");
 const globalMemory = require("./global-memory");
 const taskQueue = require("./task-queue");
 const threadCore = require("./thread-core");
 const { pickModel } = require("./model-router");
-const agentBus = require("./agent-bus");
+// [EDITCORE-INTEGRAL-B9] agent-bus ya no se importa aquí: el
+// orquestador dejó de escribir el bus por turno (solo escritura,
+// nadie lo leía). El módulo queda para uso explícito.
 const { SELF_KNOWLEDGE_PROMPT, CONNECT_GUIDE_PROMPT, wantsConnectGuide } = require("./self-knowledge");
 
 let projectMapApi = null;
@@ -130,9 +137,69 @@ const HEARTBEAT_INTERVAL_MS = 5_000;
 const ROADMAP_MIN_LENGTH = 500;
 const MAX_PROMISE_RETRIES = 3;
 const MAX_NO_WRITE_NUDGES = 2;
+// [EDITCORE-INTEGRAL-B1] Compuertas de cierre PERSISTENTES: ya no son de un
+// solo disparo ni se apagan en las dos últimas iteraciones; pueden empujar
+// hasta MAX_CLOSE_NUDGES veces mientras quede al menos una iteración.
+const MAX_CLOSE_NUDGES = 3;
 // Análisis forense/quirúrgico exhaustivo
 const ANALYSIS_MAX_STEPS = 200;
 const ANALYSIS_TIMEOUT_MS = 1_800_000; // 30 min por turno en análisis
+
+// [EDITCORE-INTEGRAL-B2] PRESUPUESTO AGREGADO DE turnContext. Cada bloque
+// ya tenía su propio tope (Cerebro del proyecto ≤2.150, Cerebro service
+// ≤3.200, memoria semántica ≤3.000, memoria global ≤1.200, extras del
+// turno ~7.600, más roadmap/conexiones/cognitivo sin tope conjunto), pero
+// la SUMA podía pasar de 20.000 caracteres y se re-pagaba en cada llamada
+// del bucle. El presupuesto agregado es 16.000: cubre lo esencial del
+// turno (protocolo/roadmap/errores verificados/idioma ≈ 4.000) + la
+// política élite completa (~6.300) + un bloque de memoria grande, y corta
+// el apilado patológico de TODOS los bloques a la vez. El expediente
+// (≤3.500) NO entra en este presupuesto: buildMessageList lo antepone y
+// es esencial — nunca lo amputa este corte. Al exceder, se conservan los
+// bloques por prioridad (esencial → normal → accesorio) y se corta del
+// FINAL con la marca declarada TURN_CONTEXT_TRUNCATION_MARKER.
+const TURN_CONTEXT_MAX_CHARS = 16_000;
+const TURN_CONTEXT_TRUNCATION_MARKER = "[contexto recortado por presupuesto]";
+const CTX_TIER_ESSENTIAL = 0;
+const CTX_TIER_NORMAL = 1;
+const CTX_TIER_ACCESSORY = 2;
+
+// [EDITCORE-INTEGRAL-B2] Aplica el presupuesto agregado a los bloques de
+// contexto del turno. Entrada: [{ text, tier }] (o strings sueltos, que se
+// tratan como tier normal). Salida: el texto unido, ≤ maxChars (salvo un
+// único bloque esencial mayor que el presupuesto, que se corta también
+// con marca: el tope es DURO). El orden final es por prioridad con orden
+// de inserción estable dentro de cada tier; el contenido esencial jamás
+// se amputa antes que el accesorio.
+function applyTurnContextBudget(blocks, maxChars = TURN_CONTEXT_MAX_CHARS) {
+  const cap = Math.max(500, Number(maxChars) || TURN_CONTEXT_MAX_CHARS);
+  const entries = (Array.isArray(blocks) ? blocks : [])
+    .map((b, idx) => {
+      if (typeof b === "string") return { text: b, tier: CTX_TIER_NORMAL, idx };
+      return { text: String(b?.text || ""), tier: Number.isFinite(b?.tier) ? b.tier : CTX_TIER_NORMAL, idx };
+    })
+    .filter((e) => e.text && e.text.trim())
+    .sort((a, b) => (a.tier - b.tier) || (a.idx - b.idx));
+  const joined = entries.map((e) => e.text).join("\n\n");
+  if (joined.length <= cap) return joined;
+  const marker = `\n\n${TURN_CONTEXT_TRUNCATION_MARKER}`;
+  const room = Math.max(0, cap - marker.length);
+  const kept = [];
+  let used = 0;
+  for (const entry of entries) {
+    const sep = kept.length ? 2 : 0;
+    if (used + sep + entry.text.length <= room) {
+      kept.push(entry.text);
+      used += sep + entry.text.length;
+      continue;
+    }
+    // Bloque frontera: se conserva su cabeza y el resto se corta.
+    const partialRoom = room - used - sep;
+    if (partialRoom > 120) kept.push(entry.text.slice(0, partialRoom).trimEnd());
+    break;
+  }
+  return `${kept.join("\n\n")}${marker}`;
+}
 
 const LEADERSHIP_PROMPT = [
   "Eres EditCoreAI. Si la orden requiere cambios en disco o comandos, ejecútalos directamente con las herramientas disponibles (write_file, replace_in_file, run_command).",
@@ -305,7 +372,105 @@ function successfulWritePaths(steps = []) {
     .filter(Boolean);
 }
 
-async function runPostWriteVerify(projectRoot, writtenPaths, onProgress) {
+// [EDITCORE-INTEGRAL-B1] Resumen FACTUAL del kernel: los hechos del cierre
+// (qué archivo cambió y qué hunk real se aplicó) los construye el KERNEL
+// desde los steps — args oldText/newText/content que ya viajan en cada paso
+// de escritura — no la prosa libre del modelo. El texto del modelo puede
+// acompañar, pero si exagera («cambié el fondo principal» habiendo tocado
+// otra capa) el lector ve primero el hunk real. Extiende el patrón de los
+// banners deterministas existentes; no los sustituye.
+function summarizeHunkText(value, max = 90) {
+  const flat = String(value ?? "").replace(/\s+/g, " ").trim();
+  if (!flat) return "(vacío)";
+  return flat.length > max ? `${flat.slice(0, max)}…` : flat;
+}
+
+const SPECIALIST_ROLES_NOT_IMPLEMENTED = new Set(["security", "database", "ui_ux", "devops", "analyst"]);
+
+// [EDITCORE-INTEGRAL-B1] Auditoría de pasos delegados al cerrar: un patch
+// planned:true del implementer delegado JAMÁS es un hecho aplicado, y un
+// rol especialista no implementado (que degrada a exploración) se declara
+// como exploración, nunca como la auditoría/especialidad pedida.
+function auditSubagentSteps(steps = []) {
+  const findings = [];
+  for (const s of Array.isArray(steps) ? steps : []) {
+    if (!s || (s.name !== "invoke_subagent" && s.name !== "delegate_parallel")) continue;
+    const result = s.result || {};
+    const requestedRole = String(s.input?.role || result.requestedRole || "").toLowerCase();
+    if (Array.isArray(result.applied)) {
+      for (const patch of result.applied) {
+        if (patch?.planned === true) {
+          findings.push(`invoke_subagent${requestedRole ? ` (rol «${requestedRole}»)` : ""}: el patch en \`${patch.path || "?"}\` quedó **PLANIFICADO, NO aplicado** — ningún archivo cambió por esa delegación.`);
+        }
+      }
+    }
+    if (result.planned === true) {
+      findings.push(`invoke_subagent${requestedRole ? ` (rol «${requestedRole}»)` : ""}: el resultado quedó **PLANIFICADO, NO aplicado**.`);
+    }
+    const degraded = result.degradedRole === true
+      || (s.name === "invoke_subagent" && SPECIALIST_ROLES_NOT_IMPLEMENTED.has(requestedRole) && result.mode === "parallel-explore");
+    if (degraded) {
+      findings.push(`invoke_subagent (rol «${requestedRole}»): ese rol **no existe como especialista** en EditCoreAI; lo que corrió fue exploración de solo lectura, no la tarea especializada pedida.`);
+    }
+    if (s.name === "delegate_parallel" && Array.isArray(result.results)) {
+      const failed = result.results.filter((r) => r && r.ok === false).length;
+      if (failed > 0) findings.push(`delegate_parallel: ${failed} subagente(s) delegado(s) NO entregaron informe; su parte no está hecha.`);
+    }
+  }
+  return findings;
+}
+
+function buildKernelFactSummary(steps = []) {
+  const lines = [];
+  const seenWrites = new Set();
+  for (const s of Array.isArray(steps) ? steps : []) {
+    if (!s) continue;
+    if ((s.name === "write_file" || s.name === "replace_in_file" || s.name === "scaffold_project") && s.ok !== false && s.result?.ok !== false && !s.result?.unchanged) {
+      const rel = String(s.input?.path || s.result?.path || s.result?.projectRoot || "").replace(/\\/g, "/");
+      if (!rel) continue;
+      const key = `${s.name}:${rel}:${summarizeHunkText(s.input?.oldText || "", 40)}:${summarizeHunkText(s.input?.newText || s.input?.content || "", 40)}`;
+      if (seenWrites.has(key)) continue;
+      seenWrites.add(key);
+      if (s.name === "replace_in_file" && (s.input?.oldText != null || s.input?.newText != null)) {
+        lines.push(`- \`${rel}\`: «${summarizeHunkText(s.input?.oldText)}» → «${summarizeHunkText(s.input?.newText)}»`);
+      } else if (s.name === "scaffold_project") {
+        lines.push(`- \`${rel}\`: base del proyecto sentada con scaffold_project`);
+      } else {
+        const body = String(s.input?.content ?? "");
+        lines.push(`- \`${rel}\`: archivo escrito por el kernel (${body ? `${body.split(/\r?\n/).length} líneas, ${body.length} caracteres` : "sin contenido registrado en el paso"})`);
+      }
+    }
+    // [EDITCORE-INTEGRAL-B4] Una reversión aplicada también es un hecho
+    // del turno: el archivo volvió a su snapshot previo.
+    if (s.name === "rollback_last_change" && s.ok !== false && s.result?.ok === true) {
+      const rel = String(s.result?.path || s.input?.path || "").replace(/\\/g, "/");
+      if (rel) lines.push(`- \`${rel}\`: última escritura revertida desde el snapshot ${s.result?.snapshotId || ""} (rollback_last_change)`);
+    }
+    // Escrituras REALES hechas por el implementer delegado (vía applyWrite/
+    // applyReplace cableadas a tools con lock): son hechos, con su origen.
+    if (s.name === "invoke_subagent" && Array.isArray(s.result?.applied)) {
+      for (const patch of s.result.applied) {
+        if (patch?.ok === true && patch?.planned !== true && patch?.path) {
+          lines.push(`- \`${String(patch.path).replace(/\\/g, "/")}\`: cambio aplicado por el subagente implementer delegado (${patch.mode || "write"})`);
+        }
+      }
+    }
+  }
+  const audit = auditSubagentSteps(steps);
+  if (!lines.length && !audit.length) return "";
+  const out = ["## 🧾 Hechos del turno (kernel)", ""];
+  if (lines.length) {
+    out.push("Cambios que el kernel SÍ aplicó en disco (desde los pasos reales, no desde el relato):", "", ...lines, "");
+  } else {
+    out.push("El kernel no registró ninguna escritura aplicada en este turno.", "");
+  }
+  if (audit.length) {
+    out.push("Auditoría de lo delegado:", "", ...audit.map((f) => `- ${f}`), "");
+  }
+  return out.join("\n").trim();
+}
+
+async function runPostWriteVerify(projectRoot, writtenPaths, onProgress, opts = {}) {
   const paths = [...new Set((Array.isArray(writtenPaths) ? writtenPaths : []).map((p) => String(p || "").replace(/\\/g, "/").trim()).filter(Boolean))].slice(0, 3);
   if (!paths.length || !projectRoot) return [];
   const reports = [];
@@ -320,11 +485,19 @@ async function runPostWriteVerify(projectRoot, writtenPaths, onProgress) {
         autoRollback: false,
         incremental: true,
         learn: true,
+        // [EDITCORE-INTEGRAL-B6] La señal del turno llega al verifier
+        // también en la verificación post-escritura.
+        signal: opts.signal || undefined,
       });
-      const note = String(v?.result?.note || v?.result?.error || "").slice(0, 280);
+      // [EDITCORE-INTEGRAL-B1] La causa concreta manda: si la verificación
+      // falló, la note genérica («Sintaxis, imports y tests verificados»)
+      // NO tapa result.error — primero el error real. Y un timeout blando
+      // NO computa como ok a efectos de «verificado» (se muestra ⏱️).
+      const failed = v?.ok === false || v?.result?.ok === false;
+      const note = String((failed ? (v?.result?.error || v?.result?.note) : (v?.result?.note || v?.result?.error)) || "").slice(0, 280);
       reports.push({
         path: rel,
-        ok: v?.ok !== false && v?.result?.ok !== false,
+        ok: !failed && v?.softTimeout !== true,
         softTimeout: v?.softTimeout === true,
         note,
       });
@@ -353,6 +526,9 @@ function formatVerifyBlock(reports = []) {
 // build), y el resultado manda sobre la narrativa del modelo.
 async function runRealVerification(projectRoot, opts = {}) {
   const previewUrl = String(opts.previewUrl || "").trim();
+  // [EDITCORE-INTEGRAL-B6] Señal del llamador para la rama de build
+  // (debajo): abortar MATA el proceso en curso, no abandona la promesa.
+  const turnSignal = opts.signal || null;
   if (previewUrl) {
     try {
       const shot = await capture_preview_screenshot({ url: previewUrl, projectRoot });
@@ -375,10 +551,29 @@ async function runRealVerification(projectRoot, opts = {}) {
     hasBuild = Boolean(pkg?.scripts?.build);
   } catch { /* sin package.json o ilegible */ }
   if (!hasBuild) return null;
-  const run = await Promise.race([
-    tools.execute("run_command", { command: "npm run build" }, projectRoot, true, {}),
-    new Promise((resolve) => setTimeout(() => resolve({ ok: false, softTimeout: true }), 150_000)),
-  ]);
+  // [EDITCORE-INTEGRAL-B6] Antes: Promise.race de 150 s que ABANDONABA
+  // la promesa sin matar el proceso (el build seguía tras Detener).
+  // Ahora el timeout y la señal del turno abortan un AbortController
+  // propio cuyo abortSignal llega a run_command → process-runner, que
+  // MATA el árbol; la promesa perdedora ya no deja nada corriendo.
+  const runCtrl = new AbortController();
+  const onTurnAbort = () => { try { runCtrl.abort(); } catch { /* ignore */ } };
+  if (turnSignal) {
+    if (turnSignal.aborted) runCtrl.abort();
+    else turnSignal.addEventListener("abort", onTurnAbort, { once: true });
+  }
+  let runTimer = null;
+  let run;
+  try {
+    run = await Promise.race([
+      tools.execute("run_command", { command: "npm run build" }, projectRoot, true, { abortSignal: runCtrl.signal }),
+      new Promise((resolve) => { runTimer = setTimeout(() => { try { runCtrl.abort(); } catch { /* ignore */ } resolve({ ok: false, softTimeout: true }); }, 150_000); }),
+    ]);
+  } finally {
+    if (runTimer) clearTimeout(runTimer);
+    if (turnSignal) { try { turnSignal.removeEventListener("abort", onTurnAbort); } catch { /* ignore */ } }
+  }
+  if (turnSignal?.aborted || run?.aborted) return { kind: "build", ok: false, aborted: true, detail: "Verificación real detenida por el usuario (Detener): el proceso fue terminado." };
   if (run?.softTimeout) return { kind: "build", ok: false, softTimeout: true, detail: "El build no concluyó en 150 s." };
   const blob = `${run?.stderr || ""}\n${run?.output || ""}`;
   const errLine = blob.split(/\r?\n/).map((l) => l.trim()).filter((l) => /error|failed|cannot|✗/i.test(l))[0] || "";
@@ -401,10 +596,35 @@ async function appendRealVerification(projectRoot, written, steps, textOut, onPr
   try {
     if (!Array.isArray(written) || !written.length || !projectRoot) return textOut;
     const buildAffecting = repairGuard ? written.some((p) => repairGuard.isBuildAffectingPath(p)) : false;
+    // [EDITCORE-INTEGRAL-B3] Si el propio turno YA trae una verificación
+    // real aprobada (posterior a la escritura y relacionada con el
+    // cambio, el criterio del Bloque 1), el hecho se ESCRIBE en el
+    // expediente TAMBIÉN en turnos de CREACIÓN: antes esta vía devolvía
+    // en silencio y noteVerified solo se alimentaba en reparación o en
+    // rutas build-affecting, así que un turno normal de creación no
+    // generaba ni verificado ni descartado. Un intento con timeout
+    // blando (softTimeout) JAMÁS se registra — ni como verificado ni
+    // como descartado —: el criterio del expediente sobre verificaciones
+    // blandas es intocable y aquí se respeta igual.
+    // [EDITCORE-INTEGRAL-B3] Los pasos marcados softTimeout se EXCLUYEN
+    // de la comprobación: aunque un resultado tardío trajera ok:true,
+    // una verificación que no concluyó no afirma nada.
+    const stepsForVerified = (Array.isArray(steps) ? steps : []).filter((s) => !(s && (s.softTimeout === true || s.result?.softTimeout === true)));
+    if (repairGuard && repairGuard.turnHasPassingRealVerification(stepsForVerified, written)) {
+      try {
+        const tm = threadCore && threadCore.threadMemory;
+        if (tm && typeof tm.noteVerified === "function") {
+          const usedCapture = stepsForVerified.some((s) => s && s.name === "capture_preview_screenshot" && s.result?.renderOk === true);
+          const what = usedCapture ? "captura del preview" : "verificación real del turno (build/test/typecheck)";
+          tm.noteVerified(projectRoot, `Verificado (${what}): OK — ${String(written.slice(0, 3).join(", "))}`, true);
+        }
+      } catch { /* el expediente nunca tumba el turno */ }
+      return textOut;
+    }
     if (opts.repairTask !== true && !buildAffecting) return textOut;
-    if (repairGuard && repairGuard.turnHasPassingRealVerification(steps)) return textOut;
     onProgress?.({ phase: "subagent", name: "verifier", text: "Verificación real: capturando el preview o compilando el proyecto…" });
-    const rv = await runRealVerification(projectRoot, { previewUrl: opts.previewUrl });
+    // [EDITCORE-INTEGRAL-B6] La señal del turno viaja a la verificación real.
+    const rv = await runRealVerification(projectRoot, { previewUrl: opts.previewUrl, signal: opts.signal || null });
     if (!rv) return textOut;
     // [EDITCORE-DOSSIER] La verificación real se ESCRIBE en el expediente:
     // si pasó, el próximo turno no la re-verifica; si falló, la hipótesis
@@ -597,6 +817,9 @@ function formatToolActionNarration(name, args = {}) {
   if (name === "read_skill") { const s = String(args.name || args.skill || args.id || "").slice(0, 40); return s ? `Consulto la skill \`${s}\`.` : "Consulto una skill."; }
   if (name === "search_brain") return "Consulto el Cerebro.";
   if (name === "capture_preview_screenshot") return "Capturo el preview para verificar con la vista.";
+  // [EDITCORE-INTEGRAL-B4] Narración de las herramientas nuevas/reales.
+  if (name === "start_preview") return "Arranco el preview del proyecto en el IDE.";
+  if (name === "rollback_last_change") return file ? `Revierte la última escritura de \`${file}\` desde su snapshot.` : "Revierte el último cambio desde su snapshot.";
   if (name === "git_status" || name === "git_log" || name === "git_diff") return "Inspecciono git.";
   if (name === "git_commit") return `Creo commit Git: "${String(args.message || "").slice(0, 50)}".`;
   if (name === "git_push") return "Envío cambios con git push.";
@@ -730,12 +953,48 @@ async function buildCerebroServiceBlock(projectRoot, query, helpers) {
   return `## CEREBRO (lo instalado y recordado en EditCoreAI, relevante a este turno)\n${lines.join("\n")}`.slice(0, 3200);
 }
 
+// [EDITCORE-INTEGRAL-B6] Disciplina de las esperas previas al primer
+// paso: la MISMA que el bloque del Cerebro (race con timeout de 6 s,
+// fail-open declarado) MÁS chequeo de la señal de aborto. Antes
+// memory/globalMemory.promptBlockSemantic() se esperaban sin tope ni
+// señal: si el vector store se colgaba, el turno nunca arrancaba y
+// Detener parecía muerto. Ahora, vencido el plazo o con stop, el
+// turno arranca SIN ese bloque.
+const SEMANTIC_MEMORY_TIMEOUT_MS = 6_000;
+async function raceSemanticBlock(factory, { signal = null, timeoutMs = SEMANTIC_MEMORY_TIMEOUT_MS } = {}) {
+  if (signal?.aborted) return "";
+  let timer = null;
+  let onAbort = null;
+  try {
+    return await Promise.race([
+      Promise.resolve().then(factory),
+      new Promise((resolve) => { timer = setTimeout(() => resolve(""), timeoutMs); }),
+      ...(signal ? [new Promise((resolve) => {
+        onAbort = () => resolve("");
+        signal.addEventListener("abort", onAbort, { once: true });
+      })] : []),
+    ]);
+  } catch { return ""; } finally {
+    if (timer) clearTimeout(timer);
+    if (signal && onAbort) { try { signal.removeEventListener("abort", onAbort); } catch { /* ignore */ } }
+  }
+}
+
 function formatExternalActionResult(name, result) {
   const label = name === "deploy_one_click" ? "Deploy" : name === "connect_project" ? "Conexión del proyecto" : "Publicación";
-  const url = result?.url || result?.deployUrl || result?.deploy?.url || "";
+  // [EDITCORE-INTEGRAL-B8] publish_project ya trae la URL en la raíz
+  // (publish-pipeline); liveUrl queda como respaldo de otras rutas.
+  const url = result?.url || result?.deployUrl || result?.liveUrl || result?.deploy?.url || "";
   const detail = String(result?.message || result?.error || "").slice(0, 600);
   if (result?.ok) {
-    return [`## ✅ ${label} completado`, url ? `URL: ${url}` : "", detail].filter(Boolean).join("\n\n");
+    // [EDITCORE-INTEGRAL-B8] Completado ≠ verificado: si el humo no
+    // pudo verificar la app (401/403/404 en la ruta principal), el
+    // texto lo declara aunque el deploy haya terminado.
+    const notVerified = result?.smokeNotVerified === true ? result : (result?.deploy?.smokeNotVerified === true ? result.deploy : null);
+    const warn = notVerified
+      ? `⚠️ Publicación NO verificada: ${notVerified.smokeCause || "la ruta principal respondió pero no se pudo comprobar que fuera la app"}.`
+      : "";
+    return [`## ✅ ${label} completado`, url ? `URL: ${url}` : "", warn, detail].filter(Boolean).join("\n\n");
   }
   // [EDITCORE-CONSOLIDADA] Producción caída tras el deploy (humo
   // post-despliegue de deploy-one-click): el texto que reciben el
@@ -878,18 +1137,21 @@ class ChatOrchestrator {
   async runPendingExternal(pending, { helpers, onProgress } = {}) {
     const { name, args, projectRoot } = pending;
     this.running = true;
+    // [EDITCORE-INTEGRAL-B6] Controlador propio para esta ejecución:
+    // stop() lo aborta y la señal viaja a la acción externa.
+    if (!this.abort || this.abort.signal.aborted) this.abort = new AbortController();
     const step = { name, input: args, result: null, ok: false };
     try {
       onProgress?.({ phase: "start", text: name === "deploy_one_click" ? "Desplegando…" : name === "connect_project" ? "Conectando el proyecto…" : "Publicando…" });
       onProgress?.({ phase: "tool", stage: "running", name, input: args });
-      const result = await tools.execute(name, args, projectRoot, true, { ...(helpers || {}), externalActionApproved: true });
+      const result = await tools.execute(name, args, projectRoot, true, { ...(helpers || {}), externalActionApproved: true, abortSignal: this.abort?.signal || null });
       step.result = result;
       step.ok = result?.ok !== false;
       onProgress?.({ phase: "tool", stage: "done", name, input: args, result, ok: step.ok });
       if (step.ok && name !== "connect_project") {
         try {
           const sync = require("../runtime/roadmap-sync").createRoadmapSync();
-          const url = result?.url || result?.deployUrl || "";
+          const url = result?.url || result?.deployUrl || result?.liveUrl || result?.deploy?.url || ""; // [EDITCORE-INTEGRAL-B8] misma lectura que el formateador
           sync.recordDeploy(projectRoot, { type: name === "deploy_one_click" ? (result?.provider || "deploy") : "publish", status: "success", url });
         } catch { /* el roadmap es opcional */ }
       }
@@ -903,11 +1165,59 @@ class ChatOrchestrator {
     }
   }
 
+  // [EDITCORE-INTEGRAL-B5] handle() es ahora la ENVOLTURA del turno: su
+  // único trabajo extra es el ANUNCIO de modo restrictivo en un chat
+  // nuevo (costura del Bloque 5b). El modo es por proyecto y se hereda
+  // en silencio; si este chat es nuevo (isNewChat/chatIsNew, dato que
+  // traen renderer→main→bridge) y el modo efectivo es restrictivo, la
+  // línea de estado abre el turno: se emite por onProgress al abrir y
+  // se ANTEPONE al texto final, para que sea la primera línea visible
+  // del primer turno diga el modo y cómo cambiarlo. En modo completo
+  // no hay anuncio. El cuerpo histórico vive en _handleCore sin tocar.
   async handle(input = {}) {
+    const safeInput = input && typeof input === "object" ? input : {};
+    const isNewChat = safeInput.isNewChat === true || safeInput.chatIsNew === true || safeInput.newChat === true;
+    const modeForAnnouncement = String(safeInput.permissionMode || "").trim()
+      ? normalizePermissionMode(safeInput.permissionMode)
+      : (safeInput.allowWrite === false ? "readonly" : "");
+    const announcement = modeForAnnouncement
+      ? buildModeAnnouncement({ permissionMode: modeForAnnouncement, isNewChat })
+      : "";
+    if (announcement) {
+      try { safeInput.onProgress?.({ phase: "narration", text: announcement }); } catch { /* el anuncio no tumba el turno */ }
+    }
+    const out = await this._handleCore(safeInput);
+    if (announcement && out && typeof out === "object") {
+      out.modeAnnouncement = announcement;
+      if (typeof out.text === "string" && out.text.trim() && !out.text.includes(announcement)) {
+        out.text = `${announcement}\n\n${out.text}`;
+      }
+    }
+    return out;
+  }
+
+  async _handleCore(input = {}) {
     const { message, projectRoot, apiBaseUrl, apiKey, model, images, onProgress, helpers,
       autoHeal, background, runModelTaskFn, allowWrite: inputAllowWrite, permissionMode,
-      permissionFull, fullAccess: inputFullAccess, planAuthorizedExecution: inputPlanAuth,
+      permissionFull, fullAccess: inputFullAccess, planAuthorizedExecution: inputPlanAuthRaw,
+      // [EDITCORE-INTEGRAL-B5] La autorización viaja como DATO con el
+      // nombre de CADA ruta: el renderer la manda como planAuthorized
+      // (agent:run) y como planAuthorizedExecution (chat); main y el
+      // bridge la normalizan a planAuthorizedExecution, y el kernel
+      // acepta AMBOS nombres aquí, en un solo punto. Antes handle()
+      // solo leía planAuthorizedExecution y main ni siquiera lo
+      // reenviaba (recalculaba desde el modo): el «procede» del
+      // renderer —transformado en un prompt que empieza «AUTORIZACION
+      // DE EJECUCION (PROCEDE): …»— no cumplía ninguna de las formas
+      // de texto que el kernel reconocía y la compuerta pedía un
+      // «procede» que el usuario YA había dicho: bucle infinito de
+      // needsAuthorization en la ruta Agente en modo step.
+      planAuthorized: inputPlanAuthorizedRaw,
+      authorizedContinuation: inputAuthorizedContinuation,
       history, messages: inputMessages, threadId: inputThreadId, chatId, maxSteps } = input;
+    const inputPlanAuth = inputPlanAuthRaw === true
+      || inputPlanAuthorizedRaw === true
+      || inputAuthorizedContinuation === true;
 
     const rawText = typeof message === "object" && message?.text ? message.text : String(message || "");
     const taskImages = Array.isArray(images) ? images.filter(Boolean) : [];
@@ -1022,13 +1332,19 @@ class ChatOrchestrator {
     if (!this._skillsPrompt) {
       try {
         const kindForSkills = String(decision?.kind || "EXECUTE");
-        this._skillsPrompt = skillsPrompt(projectRoot, kindForSkills, effectiveText || text || "");
-        const picked = typeof selectSkillsForTurn === "function"
-          ? selectSkillsForTurn(projectRoot, kindForSkills, effectiveText || text || "", 4)
-          : [];
-        if (Array.isArray(picked) && picked.length) {
-          this._skillsPickedIds = picked.map((p) => p.id).filter(Boolean);
-          this._turnExtras.push(`Skills activas este turno: ${picked.map((p) => p.id).join(", ")}`);
+        // [EDITCORE-INTEGRAL-B2] UNA sola selección por turno: buildSkillsTurn
+        // selecciona una vez y construye el ÍNDICE con esa misma selección;
+        // los ids devueltos alimentan _skillsPickedIds y la narrativa. Antes
+        // se seleccionaba dos veces (dentro de skillsPrompt con tope 6 y aquí
+        // con tope 4) y ambas selecciones podían divergir.
+        const skillsTurn = typeof buildSkillsTurn === "function"
+          ? buildSkillsTurn(projectRoot, kindForSkills, effectiveText || text || "")
+          : { prompt: skillsPrompt(projectRoot, kindForSkills, effectiveText || text || ""), pickedIds: [] };
+        this._skillsPrompt = String(skillsTurn.prompt || "");
+        const pickedIds = Array.isArray(skillsTurn.pickedIds) ? skillsTurn.pickedIds.filter(Boolean) : [];
+        if (pickedIds.length) {
+          this._skillsPickedIds = pickedIds;
+          this._turnExtras.push(`Skills activas este turno: ${pickedIds.join(", ")}`);
           // [EDITCORE-CONSOLIDADA] La línea VISIBLE de skills se emite
           // AQUÍ, en handle(), y ya no en runModelTask: handle es el
           // tronco común de TODAS las rutas del turno (ejecución,
@@ -1142,35 +1458,26 @@ class ChatOrchestrator {
     }
     // [/EDITCORE-COORD]
 
-    // [EDITCORE-PARALLEL] Fase 8 — fan-out de jobs por scope
-    try {
-      this._parallelBatch = null;
-      if (agentParallel && projectRoot && typeof agentParallel.shouldUseParallel === "function") {
-        const taskText = String(effectiveText || text || "");
-        const batchRunner = agentParallel.createParallelBatch(projectRoot, {
-          threadId: threadId || "default",
-        });
-        const activeBatch = batchRunner.batch;
-        if (activeBatch && activeBatch.status !== "closed" && batchRunner.nextPendingJob()) {
-          this._parallelBatch = batchRunner;
-          const nextJob = batchRunner.nextPendingJob();
-          batchRunner.beginJob(nextJob.id);
-          this._turnExtras.push(batchRunner.getCurrentJobPrompt());
-        } else if (agentParallel.shouldUseParallel(taskText)) {
-          batchRunner.createBatch(taskText);
-          this._parallelBatch = batchRunner;
-          this._turnExtras.push(batchRunner.getParallelPrompt());
-          const first = batchRunner.nextPendingJob();
-          if (first) {
-            batchRunner.beginJob(first.id);
-            this._turnExtras.push(batchRunner.getCurrentJobPrompt());
-          }
-        }
-      }
-    } catch (e) {
-      console.warn("[EDITCORE-PARALLEL]", e && e.message ? e.message : e);
-    }
-    // [/EDITCORE-PARALLEL]
+    // [EDITCORE-INTEGRAL-B9] «Fase 8» RETIRADA del camino vivo.
+    // El bloque anterior creaba un ParallelBatch NUEVO por turno,
+    // nunca llamaba loadLatest() (la rama de «batch activo» era
+    // inalcanzable), sobrescribía .editcore/parallel/LATEST.json,
+    // hacía beginJob() solo del job 1 e inyectaba su prompt:
+    // completeJob/failJob/fanIn tenían 0 llamadores en el árbol
+    // vivo, así que los jobs 2..N jamás empezaban y el fan-in
+    // jamás ocurría — no era paralelo ni serie, era 1 job fantasma
+    // por turno pagando contexto. Completar el ciclo exigiría
+    // mapear steps reales a jobs heurísticos que no corresponden a
+    // pasos del bucle (los jobs son scopes propuestos por regex,
+    // no unidades de trabajo ejecutadas), así que la decisión es
+    // RETIRAR la inyección: runtime/agent-parallel.js queda como
+    // módulo fuera del turno, usable solo por un llamador explícito
+    // que sí conduzca su ciclo de vida. Los LATEST.json/batches
+    // previos en disco quedan ABANDONADOS sin migración: nadie los
+    // leía (loadLatest no tenía llamadores vivos), y desde ahora
+    // tampoco se sobrescriben.
+    this._parallelBatch = null;
+    // [/EDITCORE-INTEGRAL-B9]
 
     // [EDITCORE-EDITOR-CTX] archivo activo + cola de review
     try {
@@ -1198,13 +1505,8 @@ class ChatOrchestrator {
         const _r = await agentNetwork.route(String(text || "").slice(0, 500));
         this._ecRoutedAgent = _r && _r.agent || null;
         this._ecRoutedScore = _r && _r.score || 0;
-        try {
-          agentBus.record(projectRoot || ".", threadId, {
-            agent: this._ecRoutedAgent,
-            summary: `routed (score ${Number(this._ecRoutedScore || 0).toFixed(2)})`,
-            phase: "routing",
-          });
-        } catch (_) {}
+        // [EDITCORE-INTEGRAL-B9] Sin agentBus.record: el bus dejó de
+        // escribirse por turno (ver la nota en la ruta ASK/ANALYZE).
       }
     } catch (_) { /* no-op */ }
     // [/EDITCORE-ADD]
@@ -1224,13 +1526,7 @@ class ChatOrchestrator {
           name: specialist.name,
           text: `Subagente especialista asignado: ${specialist.name}`,
         });
-        try {
-          agentBus.record(projectRoot || ".", threadId, {
-            agent: specialist.name,
-            summary: `Subagente especialista activado: ${specialist.name}`,
-            phase: "specialist",
-          });
-        } catch (_) {}
+        // [EDITCORE-INTEGRAL-B9] Sin agentBus.record por turno.
       }
     } catch (e) {
       console.warn("[EDITCORE-SPECIALIST]", e && e.message ? e.message : e);
@@ -1275,8 +1571,16 @@ class ChatOrchestrator {
       }
       const target = extractListTarget(text, projectRoot) || ".";
       this.session.start(decision.kind, projectRoot);
-      const out = agentBus.wrapSubagentResult(projectRoot, this._threadId, "explorer",
-        await runExplorer({ projectRoot, target, onProgress, threadId: this._threadId, signal: this.abort?.signal }));
+      // [EDITCORE-INTEGRAL-B9] agent-bus: SE DEJA DE ESCRIBIR por
+      // turno. Era un tablero de SOLO escritura: el orquestador
+      // llamaba record()/wrapSubagentResult() cada turno y
+      // promptBlock/readMessages/postMessage tenían 0 llamadores —
+      // ningún prompt reinyectaba .editcore/chat-memory/bus-*.json.
+      // Leerlo ahora costaría hasta ~2.200 caracteres por turno del
+      // presupuesto agregado del Bloque 2 para duplicar lo que el
+      // expediente (thread-memory, Bloque 3) ya trae con hechos; no
+      // cabe sin inflar. El módulo queda para uso EXPLÍCITO.
+      const out = await runExplorer({ projectRoot, target, onProgress, threadId: this._threadId, signal: this.abort?.signal });
       this.session.kill();
       if (memory) memory.note(`listó ${out.target || target}`);
 
@@ -1302,12 +1606,32 @@ class ChatOrchestrator {
       const maxReads = scope === "broad" ? 18 : scope === "action" ? 12 : 10;
       const deep = scope === "broad" || DEEP_FORENSIC_REQUEST.test(text);
       onProgress?.({ phase: "start", text: deep ? "Ejecutando chequeos reales: sintaxis, imports, tipos y tests…" : "Ejecutando chequeos reales: sintaxis e imports…" });
+      // [EDITCORE-INTEGRAL-B5] Los chequeos con EJECUCIÓN del ANALYZE
+      // (npm test / typecheck / build vía spawn) pasan por la MISMA
+      // autorización que run_command: en solo lectura no se ejecuta
+      // ningún script del proyecto, y en paso a paso tampoco sin la
+      // autorización como dato de ESTE turno (full o plan autorizado).
+      // Sin modo declarado (uso directo del kernel) se conserva la
+      // conducta histórica, igual que en la ruta EXECUTE. Los chequeos
+      // estáticos (sintaxis/imports, lectura de disco) sí corren, y la
+      // omisión queda DECLARADA en el resultado (executionOmitted).
+      const forensicMode = normalizePermissionMode(permissionMode);
+      const forensicStepGate = String(permissionMode || "").toLowerCase().trim() === "step";
+      const forensicExecutionAllowed = forensicMode !== "readonly"
+        && inputAllowWrite !== false
+        && (!forensicStepGate || fullAccess || inputPlanAuth);
+      const forensicOmittedReason = forensicMode === "readonly" || inputAllowWrite === false
+        ? "modo solo lectura"
+        : "modo paso a paso sin autorización";
       let verified = null;
       try {
         verified = await forensic.runForensicChecks(projectRoot, {
           runTests: deep,
           runTypecheck: deep,
           runBuild: deep && BUILD_REQUEST.test(text),
+          // [EDITCORE-INTEGRAL-B5] Compuerta de ejecución (ver arriba).
+          allowExecution: forensicExecutionAllowed,
+          executionOmittedReason: forensicOmittedReason,
           onProgress,
         });
         forensic.saveForensic(projectRoot, verified);
@@ -1319,8 +1643,7 @@ class ChatOrchestrator {
       const verifiedMd = verified ? forensic.formatForensicMarkdown(verified) : "";
       onProgress?.({ phase: "start", text: "Reuniendo evidencia del proyecto…" });
       if (!this.abort || this.abort.signal.aborted) this.abort = new AbortController();
-      const out = agentBus.wrapSubagentResult(projectRoot, this._threadId, "analyst",
-        await runAnalyst({ projectRoot, onProgress, maxReads, userMessage: text, threadId: this._threadId, signal: this.abort?.signal }));
+      const out = await runAnalyst({ projectRoot, onProgress, maxReads, userMessage: text, threadId: this._threadId, signal: this.abort?.signal }); // [EDITCORE-INTEGRAL-B9] sin wrap del bus
       const testsRun = (verified?.checks || []).find((c) => c.id === "tests" && (c.status === "pass" || c.status === "fail"));
       if (testsRun && typeof out?.report === "string") {
         out.report = out.report.replace(
@@ -1365,8 +1688,17 @@ class ChatOrchestrator {
     if (decision.kind === "VERIFY") {
       this.session.start("VERIFY", projectRoot);
       if (!this.abort || this.abort.signal.aborted) this.abort = new AbortController();
-      const out = agentBus.wrapSubagentResult(projectRoot, this._threadId, "verifier",
-        await runVerifier({ projectRoot, onProgress, timeoutMs: 60_000, threadId: this._threadId, signal: this.abort?.signal }));
+      // [EDITCORE-INTEGRAL-B5] El verifier recibe la MISMA autorización
+      // de ejecución/escritura que el resto del turno: en solo lectura
+      // (o paso a paso sin autorizar) no ejecuta scripts ni escribe el
+      // stub de .next/types — verifica lo estático y declara la
+      // omisión. Sin modo declarado se conserva la conducta histórica.
+      const verifyMode = normalizePermissionMode(permissionMode);
+      const verifyStepGate = String(permissionMode || "").toLowerCase().trim() === "step";
+      const verifyExecutionAllowed = verifyMode !== "readonly"
+        && inputAllowWrite !== false
+        && (!verifyStepGate || fullAccess || inputPlanAuth);
+      const out = await runVerifier({ projectRoot, onProgress, timeoutMs: 60_000, threadId: this._threadId, signal: this.abort?.signal, allowExecution: verifyExecutionAllowed, allowWrite: verifyExecutionAllowed }); // [EDITCORE-INTEGRAL-B9] sin wrap del bus
       this.session.kill();
       if (out?.forensic) {
         const previous = forensic.loadForensic(projectRoot);
@@ -1502,6 +1834,21 @@ class ChatOrchestrator {
 
     const toolHistory = new Map();
     const readCache = new Map();
+    // [EDITCORE-INTEGRAL-B6] Estado de sesión/parcial del turno: la
+    // apiKey puede refrescarse UNA vez por turno ante NO_SESSION y
+    // viaja actualizada en los pasos siguientes; un paso parcial
+    // (stream cortado) se declara al cerrar, nunca se disfraza.
+    let currentApiKey = apiKey;
+    let sessionRefreshUsed = false;
+    let turnWasPartial = false;
+    const refreshSessionSeam = (helpers && (typeof helpers.refreshAccessToken === "function" || typeof helpers.refreshSessionToken === "function" || typeof helpers.getAccessToken === "function"))
+      ? async () => {
+        const fn = helpers.refreshAccessToken || helpers.refreshSessionToken || helpers.getAccessToken;
+        const fresh = await fn();
+        return fresh ? String(fresh) : null;
+      }
+      : null;
+    const sessionExpiredError = () => Object.assign(new Error(SESSION_EXPIRED_MESSAGE), { status: 401, code: "NO_SESSION", providerCode: "NO_SESSION" });
 
     const listOnlyMode = decision?.kind === "LIST" || decision?.kind === "ASK";
     const analysisMode = decision?.kind === "ANALYZE";
@@ -1530,20 +1877,28 @@ class ChatOrchestrator {
     // El system lleva instrucciones (fijas por modo y proyecto, más las skills): el proveedor cachea por prefijo exacto,
     // y los datos que cambian entre turnos (roadmap, mapa, Cerebro, conexiones, rol) van en turnContext, en el mensaje del turno.
     let system;
+    // [EDITCORE-INTEGRAL-B2] turnContext acumula { text, tier }: al cerrar
+    // se le aplica el presupuesto agregado por prioridades (esencial →
+    // normal → accesorio) con applyTurnContextBudget.
     const turnContext = [];
+    const pushTurnContext = (tier, ...texts) => {
+      for (const t of texts) {
+        if (typeof t === "string" && t.trim()) turnContext.push({ text: t, tier });
+      }
+    };
     if (chatOnly || decision?.kind === "CHAT") {
       system = wrapSystemPrompt([
         "Sos EditCoreAI: asistente del IDE. Respondé siempre en español, claro y directo.",
         MARKDOWN_FORMAT_PROMPT, projectless ? PROJECTLESS_CHAT_PROMPT : CHAT_TOOLS_PROMPT,
         projectless ? "Proyecto abierto: ninguno (conversación libre, sin carpeta)." : `Proyecto abierto: ${projectRoot || "(ninguno)"}.`,
       ].filter(Boolean).join("\n\n"));
-      turnContext.push(previewBlock, visionHardRule);
+      pushTurnContext(CTX_TIER_ESSENTIAL, previewBlock, visionHardRule);
     } else if (listOnlyMode) {
       system = wrapSystemPrompt([
         LIST_ONLY_PROMPT, MARKDOWN_FORMAT_PROMPT,
         `Proyecto: ${projectRoot || "(ninguno)"}.`,
       ].filter(Boolean).join("\n\n"));
-      turnContext.push(previewBlock, visionHardRule);
+      pushTurnContext(CTX_TIER_ESSENTIAL, previewBlock, visionHardRule);
     } else if (analysisMode) {
       system = wrapSystemPrompt([
         "Sos EditCoreAI. Estas haciendo un analisis de proyecto.",
@@ -1554,7 +1909,7 @@ class ChatOrchestrator {
         "NO uses write_file / replace_in_file (modo solo lectura).",
         `Proyecto: ${projectRoot}.`,
       ].filter(Boolean).join("\n\n"));
-      turnContext.push(
+      pushTurnContext(CTX_TIER_ESSENTIAL,
         opts.verifiedShown ? "La tabla de chequeos reales y la lista completa de hallazgos verificados YA se muestran al usuario arriba de tu respuesta. NO las copies: prioriza los errores verificados, explica la causa probable de cada uno citando archivo:línea y propone el arreglo. Tus observaciones propias van en la sección de hipótesis." : "",
         previewBlock,
       );
@@ -1566,12 +1921,16 @@ class ChatOrchestrator {
         "REGLA CRÍTICA: si el usuario pide corregir/arreglar, el trabajo son llamadas reales a replace_in_file/write_file, no texto. Nunca digas que aplicaste un cambio que no hiciste con una tool. Nunca inventes límites ('se me acabaron los tokens', 'se acabó mi turno'): mientras queden errores, sigue corrigiendo; si se agota el turno, EditCore se lo avisa al usuario. Cierra solo cuando terminaste o cuando necesites una decisión del usuario.",
         "Respondé siempre en español al usuario.",
       ].filter(Boolean).join("\n\n"));
-      turnContext.push(roadmapFirstBlock, previewBlock, visionHardRule, cognitiveBlock, connectionsBlock, pendingVerifiedBlock);
+      // [EDITCORE-INTEGRAL-B2] Prioridades: roadmap/preview/visión y los
+      // errores verificados pendientes son ESENCIALES; el mapa cognitivo y
+      // las conexiones son normales (ceden antes si falta presupuesto).
+      pushTurnContext(CTX_TIER_ESSENTIAL, roadmapFirstBlock, previewBlock, visionHardRule, pendingVerifiedBlock);
+      pushTurnContext(CTX_TIER_NORMAL, cognitiveBlock, connectionsBlock);
     }
 
-    if (!listOnlyMode && wantsConnectGuide(this._currentUserText || message)) turnContext.push(CONNECT_GUIDE_PROMPT);
+    if (!listOnlyMode && wantsConnectGuide(this._currentUserText || message)) pushTurnContext(CTX_TIER_ESSENTIAL, CONNECT_GUIDE_PROMPT);
     if (!chatOnly && decision?.kind !== "CHAT" && !listOnlyMode && !analysisMode && this._ecRoutedAgent && typeof agentNetwork?.rolePrompt === "function") {
-      turnContext.push(agentNetwork.rolePrompt(this._ecRoutedAgent));
+      pushTurnContext(CTX_TIER_ACCESSORY, agentNetwork.rolePrompt(this._ecRoutedAgent));
     }
     if (this._skillsPrompt) system = `${system}\n\n${this._skillsPrompt}`;
     // [EDITCORE-CONSOLIDADA] La línea visible «Skills aplicadas este
@@ -1586,11 +1945,11 @@ class ChatOrchestrator {
         }
       } catch { /* no bloquear turno */ }
     }
-    if (!listOnlyMode) turnContext.push(buildBrainContextBlock(projectRoot, this._currentUserText || message));
+    if (!listOnlyMode) pushTurnContext(CTX_TIER_NORMAL, buildBrainContextBlock(projectRoot, this._currentUserText || message));
     if (!listOnlyMode && !chatOnly) {
       const cerebroBlock = await buildCerebroServiceBlock(projectRoot, this._currentUserText || message, helpers);
       if (cerebroBlock) {
-        turnContext.push(cerebroBlock);
+        pushTurnContext(CTX_TIER_NORMAL, cerebroBlock);
         // [EDITCORE-PRESENTACION] Prueba VISIBLE de uso: la conexión del
         // Cerebro existía desde la v4.7.2 pero nada en la narrativa lo
         // demostraba — el usuario no podía confirmar que se consultó.
@@ -1611,23 +1970,35 @@ class ChatOrchestrator {
     // Solo en turnos con proyecto y con trabajo real (no CHAT/LIST ni sin
     // proyecto): en conversación libre no hay expediente que consultar.
     if (!listOnlyMode && !chatOnly && decision?.kind !== "CHAT" && projectRoot && !projectless) {
+      // [EDITCORE-INTEGRAL-B6] Ambas esperas semánticas con race de
+      // timeout (6 s, patrón Cerebro) y señal: fail-open DECLARADO —
+      // si vencen o hay stop, el turno arranca sin ese bloque.
       try {
         if (memory && typeof memory.promptBlockSemantic === "function") {
-          const memBlock = await memory.promptBlockSemantic(String(this._currentUserText || message || ""));
-          if (memBlock && memBlock.trim()) turnContext.push(String(memBlock).slice(0, 3000));
+          const memBlock = await raceSemanticBlock(
+            () => memory.promptBlockSemantic(String(this._currentUserText || message || "")),
+            { signal: this.abort?.signal || null, timeoutMs: Number(helpers?.semanticMemoryTimeoutMs) > 0 ? Number(helpers.semanticMemoryTimeoutMs) : SEMANTIC_MEMORY_TIMEOUT_MS },
+          );
+          if (memBlock && memBlock.trim()) pushTurnContext(CTX_TIER_ACCESSORY, String(memBlock).slice(0, 3000));
         }
       } catch { /* memoria semántica opcional: nunca tumba el turno */ }
       try {
         if (globalMemory && typeof globalMemory.promptBlockSemantic === "function") {
-          const globBlock = await globalMemory.promptBlockSemantic(String(this._currentUserText || message || ""));
-          if (globBlock && globBlock.trim()) turnContext.push(String(globBlock).slice(0, 1200));
+          const globBlock = await raceSemanticBlock(
+            () => globalMemory.promptBlockSemantic(String(this._currentUserText || message || "")),
+            { signal: this.abort?.signal || null, timeoutMs: Number(helpers?.semanticMemoryTimeoutMs) > 0 ? Number(helpers.semanticMemoryTimeoutMs) : SEMANTIC_MEMORY_TIMEOUT_MS },
+          );
+          if (globBlock && globBlock.trim()) pushTurnContext(CTX_TIER_ACCESSORY, String(globBlock).slice(0, 1200));
         }
       } catch { /* memoria global opcional: nunca tumba el turno */ }
     }
-    if (!listOnlyMode && Array.isArray(this._turnExtras)) turnContext.push(...this._turnExtras.filter((x) => typeof x === "string" && x.trim()));
+    // [EDITCORE-INTEGRAL-B2] Los extras del turno (políticas élite/reparación/
+    // base, pipeline, coordinación, especialista) son tier NORMAL: contienen
+    // protocolos, pero ceden tras lo esencial y antes que lo accesorio.
+    if (!listOnlyMode && Array.isArray(this._turnExtras)) pushTurnContext(CTX_TIER_NORMAL, ...this._turnExtras.filter((x) => typeof x === "string" && x.trim()));
     if (!listOnlyMode) {
       const langDirective = turnLanguageDirective(this._currentUserText || message);
-      if (langDirective) turnContext.push(langDirective);
+      if (langDirective) pushTurnContext(CTX_TIER_ESSENTIAL, langDirective);
     }
     // [EDITCORE-REVISION-VISUAL] El protocolo de revisión visual viaja
     // en el contexto del turno (no en la política de construcción, que
@@ -1637,11 +2008,13 @@ class ChatOrchestrator {
     // y ASK cae en listOnlyMode dentro de runModelTask; excluirlo
     // dejaría fuera justo el caso que se viene a arreglar.
     if (!chatOnly && this._visualReviewTask === true) {
-      turnContext.push(VISUAL_REVIEW_PROTOCOL);
+      pushTurnContext(CTX_TIER_ESSENTIAL, VISUAL_REVIEW_PROTOCOL);
     }
 
     const userText = `Proyecto: ${projectless ? "(ninguno)" : projectRoot}\n${scopeUserMessage(message)}`;
-    const messages = threadCore.buildMessageList({ system, systemPrefix: listOnlyMode ? "" : SELF_KNOWLEDGE_PROMPT, turnContext: turnContext.filter(Boolean).join("\n\n"), userText, projectRoot, threadId, historyInput, query: String(this._currentUserText || message || ""), images: taskImages });
+    // [EDITCORE-INTEGRAL-B2] El contexto del turno sale SIEMPRE por el
+    // presupuesto agregado: por prioridades y con marca declarada si corta.
+    const messages = threadCore.buildMessageList({ system, systemPrefix: listOnlyMode ? "" : SELF_KNOWLEDGE_PROMPT, turnContext: applyTurnContextBudget(turnContext), userText, projectRoot, threadId, historyInput, query: String(this._currentUserText || message || ""), images: taskImages });
 
     const steps = [];
     const runMutations = [];
@@ -1672,6 +2045,12 @@ class ChatOrchestrator {
         threadCore.rememberExchange(projectRoot, threadId, this._currentUserText || message, textOut, {
           steps,
           written: successfulWritePaths(steps),
+          // [EDITCORE-INTEGRAL-B3] Señal de autorización del turno para
+          // la destilación de decisiones en thread-core: solo vale como
+          // hecho si el mensaje del usuario fue una aprobación o trae la
+          // marca de instrucción autorizada que handle() genera desde
+          // esa aprobación; el flag solo nunca crea la decisión.
+          userAuthorized: authorizedFromPending === true,
           ...extra,
         });
       } catch { /* ignore */ }
@@ -1708,7 +2087,12 @@ class ChatOrchestrator {
           // delegando a ciegas. La escritura sin autorización la corta el
           // DESPACHO (compuerta única, más abajo), no la vista del modelo.
           : tools.getToolDefinitions({ allowWrite: true, isFullAccess: accessFull, isAnalysis: false })
-            .filter((t) => !["preview_browser_interaction", "browser_page_action", "auto_scaffold_project", "clone_web_page", "images_to_code", "rollback_last_change"].includes(t.function?.name || t.name))
+            // [EDITCORE-INTEGRAL-B4] rollback_last_change SALE de esta
+            // lista de filtradas: la herramienta ya es real (definición
+            // + case sobre snapshot.js) y la compuerta única decide su
+            // ejecución como con cualquier escritura — filtrarla aquí
+            // era el tercer candado que la hacía fantasma.
+            .filter((t) => !["preview_browser_interaction", "browser_page_action", "auto_scaffold_project", "clone_web_page", "images_to_code"].includes(t.function?.name || t.name))
             // Ojos solo donde aportan: la captura del preview se ofrece en tareas
             // de UI/construcción (this._uiTask lo fija handle); en el resto sigue fuera.
             // [EDITCORE-REVISION-VISUAL] También en turnos de revisión
@@ -1769,13 +2153,25 @@ class ChatOrchestrator {
           // usa el bridge para arneses/pruebas; en producción no viene y se
           // usa el callChat real del proveedor.
           const chatCaller = (helpers && typeof helpers.callChat === "function") ? helpers.callChat : callChat;
-          turn = await chatCaller({
-            apiBaseUrl, apiKey, model: routedModel, messages,
+          // [EDITCORE-INTEGRAL-B6] Paso con SESIÓN VIVA: si el proxy
+          // responde NO_SESSION (el token de 1 h venció a mitad de un
+          // turno largo), se re-pide el token UNA vez por la costura
+          // inyectada (helpers.refreshAccessToken, que main conecta a
+          // authManager.getAccessToken) y el paso se reintenta con el
+          // token fresco ANTES de matar el turno. El provider real
+          // recibe la misma costura (refreshApiKey) para refrescar
+          // dentro de su propio reintento; su aviso marca el refresco
+          // como usado para no pedir dos veces. Si el refresco falla
+          // o el NO_SESSION persiste: error de SESIÓN.
+          const invokeModel = () => chatCaller({
+            apiBaseUrl, apiKey: currentApiKey, model: routedModel, messages,
             tools: availableTools,
             signal: turnSignal,
             stream: true,
             timeoutMs: turnTimeoutMs,   // ← 180s en análisis
             fallbackProfiles: this._fallbackProfiles || [],
+            refreshApiKey: refreshSessionSeam,
+            onSessionRefreshed: (fresh) => { currentApiKey = String(fresh); sessionRefreshUsed = true; },
             onFallback: ({ model: fallbackModel }) => { try { onProgress?.({ phase: "heartbeat", text: `Cambiando a ${fallbackModel}…` }); } catch {} },
             // [EDITCORE-PRESENTACION] SIN onTextDelta a propósito: antes los
             // deltas del modelo se volcaban CRUDOS a la narrativa del chat
@@ -1790,6 +2186,26 @@ class ChatOrchestrator {
             // final, una sola vez. El texto completo del paso sigue
             // llegando en turn.text (parseo de tool calls intacto).
           });
+          // [EDITCORE-INTEGRAL-B6] Ejecución del paso con el
+          // reintento de sesión descrito arriba (invokeModel).
+          try {
+            turn = await invokeModel();
+          } catch (firstErr) {
+            if (!isNoSessionError(firstErr)) throw firstErr;
+            if (sessionRefreshUsed || !refreshSessionSeam) throw sessionExpiredError();
+            sessionRefreshUsed = true;
+            let fresh = null;
+            try { fresh = await refreshSessionSeam(); } catch { fresh = null; }
+            if (!fresh) throw sessionExpiredError();
+            currentApiKey = String(fresh);
+            try { onProgress?.({ phase: "heartbeat", text: "Sesión renovada: reintentando el paso…" }); } catch { /* ignore */ }
+            try {
+              turn = await invokeModel();
+            } catch (secondErr) {
+              if (isNoSessionError(secondErr)) throw sessionExpiredError();
+              throw secondErr;
+            }
+          }
         } catch (callErr) {
           if (callErr?.code === "AGENT_STEER" || String(callErr?.message || "").includes("Nueva instruccion") || (Array.isArray(this.steering) && this.steering.length > 0)) {
             // Reorientación sin romper el avance: capturar la nueva orden del usuario y continuar el bucle
@@ -1804,6 +2220,9 @@ class ChatOrchestrator {
           clearInterval(hb); this.turnAbort = null;
         }
         addUsage(turn?.usage || {});
+        // [EDITCORE-INTEGRAL-B6] Paso parcial (stream cortado): queda
+        // registrado y el cierre lo declara; no se presenta completo.
+        if (turn?.partial === true) turnWasPartial = true;
 
         let toolCalls = Array.isArray(turn.toolCalls) ? turn.toolCalls : [];
         if (!toolCalls.length && turn.text) toolCalls = parseTextToolCalls(turn.text, { projectRoot });
@@ -1836,7 +2255,7 @@ class ChatOrchestrator {
           const promisesAction = !chatOnly && decision?.kind !== "CHAT" && !analysisMode
             && looksLikePromiseWithoutAction(cleanText)
             && promiseRetries < MAX_PROMISE_RETRIES
-            && i < stepsLimit - 2
+            && i < stepsLimit - 1
             && successfulWritePaths(steps).length === 0;
 
           if (promisesAction) {
@@ -1852,7 +2271,7 @@ class ChatOrchestrator {
             && /(?:---|\+\+\+|@@)\s+[ab]\/|```(?:diff|patch)/i.test(cleanText)
             && successfulWritePaths(steps).length === 0
             && noWriteNudges < MAX_NO_WRITE_NUDGES
-            && i < stepsLimit - 2;
+            && i < stepsLimit - 1;
           if (textDiffWithoutWrite) {
             noWriteNudges += 1;
             messages.push({ role: "assistant", content: cleanText || null });
@@ -1866,7 +2285,7 @@ class ChatOrchestrator {
             && FIX_INTENT_RE.test(`${this._currentUserText || ""} ${message || ""}`)
             && successfulWritePaths(steps).length === 0
             && noWriteNudges < MAX_NO_WRITE_NUDGES
-            && i < stepsLimit - 2;
+            && i < stepsLimit - 1;
           if (fixWithoutWrites) {
             noWriteNudges += 1;
             messages.push({ role: "assistant", content: cleanText || null });
@@ -1917,7 +2336,7 @@ class ChatOrchestrator {
           // presencia, justo debajo).
           const planClose = !chatOnly && decision?.kind !== "CHAT" && !listOnlyMode && !analysisMode && !projectless
             && (accessFull || writeAuthorized)
-            && planNudges < 1 && i < stepsLimit - 2
+            && planNudges < MAX_CLOSE_NUDGES && i < stepsLimit - 1
             && successfulWritePaths(steps).length === 0
             && hasMutationIntent(`${this._currentUserText || ""} ${message || ""}`)
             && looksLikePlanClose(cleanText);
@@ -1944,7 +2363,7 @@ class ChatOrchestrator {
           //      (las compuertas de aplicación ya empujaron a ejecutar;
           //      esta es la red final del cierre).
           const closingBare = !chatOnly && decision?.kind !== "CHAT" && !listOnlyMode && !analysisMode && !projectless
-            && closingNudges < 1 && i < stepsLimit - 2
+            && closingNudges < MAX_CLOSE_NUDGES && i < stepsLimit - 1
             && successfulWritePaths(steps).length === 0
             && cleanText.trim().length >= 60
             && !/(?:¿[^?]*\?|\bprocede\b|\bautoriz|\bpropongo\b|siguiente paso|¿quieres|¿puedo|¿sigo)/i.test(cleanText.slice(-600));
@@ -1981,7 +2400,7 @@ class ChatOrchestrator {
           // honesto de «no verificado con la vista».
           const visualReviewWithoutCapture = this._visualReviewTask === true
             && !chatOnly && decision?.kind !== "CHAT" && !analysisMode && !projectless
-            && visualReviewNudges < 1 && i < stepsLimit - 2
+            && visualReviewNudges < MAX_CLOSE_NUDGES && i < stepsLimit - 1
             && !steps.some((s) => s.name === "capture_preview_screenshot");
           if (visualReviewWithoutCapture) {
             visualReviewNudges += 1;
@@ -2001,9 +2420,9 @@ class ChatOrchestrator {
           const unverifiedRepair = this._repairTask === true
             && !chatOnly && decision?.kind !== "CHAT" && !listOnlyMode && !analysisMode
             && successfulWritePaths(steps).length > 0
-            && !(repairGuard && repairGuard.turnHasPassingRealVerification(steps))
-            && verifyNudges < 1
-            && i < stepsLimit - 2;
+            && !(repairGuard && repairGuard.turnHasPassingRealVerification(steps, successfulWritePaths(steps)))
+            && verifyNudges < MAX_CLOSE_NUDGES
+            && i < stepsLimit - 1;
           if (unverifiedRepair) {
             verifyNudges += 1;
             messages.push({ role: "assistant", content: cleanText || null });
@@ -2030,6 +2449,29 @@ class ChatOrchestrator {
             }
           } else {
             textOut = groundUngroundedClaims(cleanText, steps, message, decision, Number(opts.evidenceReads) || 0);
+          }
+
+          // [EDITCORE-INTEGRAL-B1] Resumen factual del KERNEL antepuesto al
+          // relato: los hechos (archivos + hunks reales + auditoría de lo
+          // delegado) salen de los steps, no de la prosa del modelo. Si el
+          // modelo exagera, el lector contrasta arriba qué cambió de verdad.
+          if (!listOnlyMode && !analysisMode && !chatOnly && decision?.kind !== "CHAT") {
+            const factSummary = buildKernelFactSummary(steps);
+            if (factSummary) textOut = `${factSummary}\n\n---\n\n${String(textOut || "").trim()}`;
+          }
+
+          // [EDITCORE-INTEGRAL-B1] Garantía ESTRUCTURAL (sin regex sobre la
+          // prosa): pedido con intención de mutación + turno AUTORIZADO +
+          // CERO escrituras registradas = el kernel lo dice él mismo,
+          // suene como suene el cierre del modelo. Extiende la garantía
+          // determinista del «procede» (abajo, para «Pregunta antes») al
+          // caso autorizado: aquí no falta autorización, falta el cambio.
+          if (written.length === 0 && !listOnlyMode && !analysisMode && !chatOnly && !projectless
+            && decision?.kind !== "CHAT" && writeAuthorized) {
+            const intentText = `${this._currentUserText || ""} ${message || ""}`;
+            if (hasMutationIntent(intentText)) {
+              textOut = `${String(textOut || "").trim()}\n\n---\n\n**Nota del kernel:** este pedido implicaba cambios y estabas autorizado a escribir, pero el kernel **no registró ninguna escritura** en este turno. Nada quedó aplicado: pide que se ejecute el cambio o revisa el motivo exacto arriba.`;
+            }
           }
 
           // [EDITCORE-PRESENTACION] Garantía DETERMINISTA del «¿procedo?»:
@@ -2073,10 +2515,16 @@ class ChatOrchestrator {
           if (written.length > 0) {
             textOut = await this.appendBeforeAfter(projectRoot, written, textOut, onProgress);
             try {
-              const verifyReports = await runPostWriteVerify(projectRoot, written, onProgress);
+              const verifyReports = await runPostWriteVerify(projectRoot, written, onProgress, { signal: this.abort?.signal || null }); // [EDITCORE-INTEGRAL-B6]
               textOut = String(textOut || "") + formatVerifyBlock(verifyReports);
-              textOut = await appendRealVerification(projectRoot, written, steps, textOut, onProgress, { repairTask: this._repairTask === true, previewUrl: this._activePreviewUrl || "" });
+              textOut = await appendRealVerification(projectRoot, written, steps, textOut, onProgress, { repairTask: this._repairTask === true, previewUrl: this._activePreviewUrl || "", signal: this.abort?.signal || null }); // [EDITCORE-INTEGRAL-B6]
             } catch (_) { /* verify no debe tumbar el turno */ }
+          }
+          // [EDITCORE-INTEGRAL-B6] Cierre con parcial DECLARADO: si
+          // algún paso llegó cortado (partial), la respuesta no se
+          // presenta como completa.
+          if (turnWasPartial) {
+            textOut = `${String(textOut || "").trim()}\n\n> ⚠️ **Respuesta parcial:** el proveedor cortó la transmisión en este turno; lo de arriba puede estar incompleto. Pide «continúa» si falta algo.`;
           }
           textOut = formatAgentVisibleText(textOut);
           persistKernelRoadmap(projectRoot, { task: this._currentUserText || message, steps, kind: decision?.kind, text: textOut, completed: true });
@@ -2088,7 +2536,7 @@ class ChatOrchestrator {
             }
           } catch (_) {}
           // [/EDITCORE-ADD]
-          return { kind: decision?.kind || "CHAT", text: textOut, steps, mutations: runMutations, incomplete: false, report: { completed: true }, threadId, usage: totalUsage };
+          return { kind: decision?.kind || "CHAT", text: textOut, steps, mutations: runMutations, incomplete: false, partial: turnWasPartial || undefined, report: { completed: true }, threadId, usage: totalUsage };
         }
 
         messages.push({ role: "assistant", content: cleanText || null, tool_calls: toolCalls.map((c) => ({ id: c.id, type: "function", function: c.function })) });
@@ -2101,7 +2549,25 @@ class ChatOrchestrator {
         for (const call of toolCalls) {
           const name = call.function?.name;
           let args = {};
-          try { args = JSON.parse(call.function?.arguments || "{}"); } catch { args = {}; }
+          // [EDITCORE-INTEGRAL-B6] tool_call TRUNCADO: si los
+          // argumentos no parsean (o el lector de stream los marcó
+          // truncados), la herramienta NO se ejecuta con {} en
+          // silencio — el paso queda marcado con error explícito y
+          // el modelo recibe el motivo para reintentar completo.
+          // Una cadena vacía sí es «sin argumentos» (válido).
+          const rawArgsText = String(call.function?.arguments ?? "");
+          let argsTruncated = call.argumentsTruncated === true || call.function?.argumentsTruncated === true;
+          if (!argsTruncated) {
+            try { args = JSON.parse(rawArgsText.trim() ? rawArgsText : "{}"); } catch { argsTruncated = true; }
+          }
+          if (argsTruncated) {
+            const truncatedResult = { ok: false, toolCallTruncated: true, error: `tool_call truncado: los argumentos de «${name}» llegaron incompletos y no se ejecutó la herramienta. Vuelve a emitir la llamada completa.` };
+            const stepData = { name, input: {}, result: truncatedResult, ok: false, toolCallTruncated: true };
+            steps.push(stepData); this.session.addStep(stepData);
+            onProgress?.({ phase: "tool", stage: "done", name, input: {}, result: truncatedResult, ok: false });
+            messages.push({ role: "tool", tool_call_id: call.id, name, content: tools.truncatePayload(truncatedResult, 2000) });
+            continue;
+          }
           if (args.path) args.path = toRelativePath(projectRoot, args.path);
 
           const actionLine = formatToolActionNarration(name, args);
@@ -2127,11 +2593,19 @@ class ChatOrchestrator {
           // [EDITCORE-REPAIR] Compuerta de evidencia: en un turno de
           // reparación no se escribe ni una línea sin haber capturado
           // antes el fallo real en el propio turno (captura del preview
-          // o build/dev). Acotada: un intento de evidencia —aunque
-          // falle— o dos bloqueos la desactivan (fail-open).
+          // o build/dev). [EDITCORE-INTEGRAL-B1] Una captura FALLIDA no
+          // cuenta como evidencia; la compuerta solo se libera con
+          // evidencia real o tras dos bloqueos (fail-open DECLARADO en
+          // la narrativa, justo debajo, para que no pase en silencio).
           const blockedEvidence = repairGuard && this._repairTask === true
             ? repairGuard.maybeBlockWriteBeforeEvidence(name, steps, evidenceBlocks)
             : null;
+          if (!blockedEvidence && repairGuard && this._repairTask === true
+            && evidenceBlocks >= repairGuard.EVIDENCE_BLOCK_LIMIT
+            && !repairGuard.turnHasEvidence(steps)
+            && (name === "write_file" || name === "replace_in_file" || name === "scaffold_project")) {
+            onProgress?.({ phase: "model", text: "Compuerta de evidencia: fail-open DECLARADO tras agotar los bloqueos — se permite escribir SIN evidencia capturada en este turno." });
+          }
           if (blockedEvidence) {
             evidenceBlocks += 1;
             const stepData = { name, input: args, result: blockedEvidence, ok: false, blocked: true };
@@ -2178,12 +2652,30 @@ class ChatOrchestrator {
           }
 
           const callKey = `${name}:${JSON.stringify(args)}`;
-          const execCount = toolHistory.get(callKey) || 0;
-          if (execCount >= 1) {
-            messages.push({ role: "tool", tool_call_id: call.id, name, content: tools.truncatePayload({ ok: false, error: "Límite alcanzado para esta acción repetida." }) });
-            continue;
+          // [EDITCORE-DESBLOQUEOS] El historial guarda el RESULTADO de la
+          // llamada idéntica anterior, no solo el conteo: si tuvo ÉXITO, el
+          // bloqueo se mantiene (nada de duplicar publicaciones ni commits);
+          // si FALLÓ, se permite UN reintento (máximo 2 ejecuciones
+          // idénticas por turno). Antes no se distinguía éxito de fracaso y
+          // un publish_project que fallaba a mitad no podía reintentarse:
+          // el agente terminaba en rodeos manuales con Git. El mensaje de
+          // bloqueo dice qué pasó con el intento anterior para que el
+          // modelo cambie de estrategia en vez de insistir a ciegas.
+          const prevCall = toolHistory.get(callKey);
+          if (prevCall && prevCall.count >= 1) {
+            const prevFailed = prevCall.lastOk === false;
+            if (!prevFailed || prevCall.count >= 2) {
+              const detail = prevCall.lastOk === true
+                ? "La misma acción con los mismos argumentos YA se ejecutó con ÉXITO en este turno: repetirla duplicaría su efecto. No la llames de nuevo; trabaja con su resultado o cambia los argumentos."
+                : prevFailed
+                  ? `La misma acción con los mismos argumentos ya FALLÓ ${prevCall.count} veces en este turno${prevCall.lastError ? ` (último error: «${prevCall.lastError}»)` : ""} y el reintento permitido se agotó. No insistas con la llamada idéntica: diagnostica la causa, cambia los argumentos o busca otra vía.`
+                  : "La misma acción con los mismos argumentos ya se ejecutó en este turno. No la repitas; trabaja con su resultado o cambia los argumentos.";
+              messages.push({ role: "tool", tool_call_id: call.id, name, content: tools.truncatePayload({ ok: false, error: `Límite alcanzado para esta acción repetida. ${detail}`, repeatedActionBlocked: true }) });
+              continue;
+            }
+            // prevFailed && count === 1 → reintento permitido: sigue al registro.
           }
-          toolHistory.set(callKey, execCount + 1);
+          toolHistory.set(callKey, { count: (prevCall?.count || 0) + 1, lastOk: prevCall?.lastOk, lastError: prevCall?.lastError });
 
           onProgress?.({ phase: "tool", stage: "running", name, input: args });
 
@@ -2216,6 +2708,28 @@ class ChatOrchestrator {
               // orquestador no la ponía — Detener no cortaba lo que el
               // turno estaba ejecutando.
               abortSignal: this.abort?.signal || null,
+              // [EDITCORE-INTEGRAL-B1] Cableado del implementer delegado:
+              // invoke_subagent → runSubagent → runBoundedImplement recibe
+              // applyWrite/applyReplace apuntando a las MISMAS funciones
+              // con lock que usa el supervisor (tools.writeFile /
+              // tools.replaceInFile con la identidad de coordinación de
+              // esta corrida). Solo se ofrecen si el turno está AUTORIZADO
+              // a escribir: sin autorización, el delegado devuelve
+              // planned:true y la auditoría de cierre lo declara.
+              // [EDITCORE-INTEGRAL-B9] UNA sola identidad de lock por
+              // corrida: el delegado escribe con la MISMA identidad
+              // que el supervisor («supervisor» = la corrida), no con
+              // una segunda («implementer») que se autobloqueaba.
+              applyWrite: writeAuthorized ? async (rel, content) => {
+                const r = tools.writeFile(projectRoot, rel, content, { threadId: threadId || "default", agentRole: "supervisor" });
+                if (!r || r.ok === false) throw new Error(r?.error || "applyWrite rechazado por tools.writeFile");
+                return r;
+              } : undefined,
+              applyReplace: writeAuthorized ? async (rel, oldText, newText) => {
+                const r = tools.replaceInFile(projectRoot, rel, oldText, newText, { threadId: threadId || "default", agentRole: "supervisor" });
+                if (!r || r.ok === false) throw new Error(r?.error || "applyReplace rechazado por tools.replaceInFile");
+                return r;
+              } : undefined,
               activePreviewUrl: this._activePreviewUrl || (helpers && helpers.activePreviewUrl) || undefined,
               fullAccess: accessFull || (helpers && helpers.fullAccess === true),
               externalActionApproved: accessFull || (helpers && helpers.externalActionApproved === true),
@@ -2255,9 +2769,25 @@ class ChatOrchestrator {
           }
 
           const stepData = { name, input: args, result, ok: result?.ok !== false };
+          // [EDITCORE-DESBLOQUEOS] Registrar el RESULTADO de esta ejecución
+          // en el historial de repeticiones: la compuerta de arriba lo lee
+          // si el modelo repite la llamada idéntica. Las rutas que salen con
+          // `continue` ANTES de la compuerta (evidencia, base profesional,
+          // caché de lectura) nunca llegan aquí: no cuentan como ejecución.
+          const histEntry = toolHistory.get(callKey);
+          if (histEntry) {
+            histEntry.lastOk = stepData.ok;
+            histEntry.lastError = stepData.ok ? "" : String(result?.error || result?.message || result?.stderr || "").slice(0, 160);
+          }
           steps.push(stepData); this.session.addStep(stepData);
           onProgress?.({ phase: "tool", stage: "done", name, input: args, result, ok: stepData.ok });
-          messages.push({ role: "tool", tool_call_id: call.id, name, content: tools.truncatePayload(result || {}, name === "read_file" ? tools.READ_FILE_PAYLOAD_CAP : 2000) });
+          // [EDITCORE-INTEGRAL-B4] El payload que recibe el modelo sale
+          // de la POLÍTICA POR HERRAMIENTA de tools.truncatePayload
+          // (topes propios, campos críticos primero, cabeza+cola con
+          // elipsis declarada), no del corte único de 2.000 por la
+          // cabeza que eliminaba stderr, las colas con el error final,
+          // la cola de read_skill y los diagnostics de la captura.
+          messages.push({ role: "tool", tool_call_id: call.id, name, content: tools.truncatePayload(result || {}, name === "read_file" ? tools.READ_FILE_PAYLOAD_CAP : undefined, name) });
         }
       }
 
@@ -2276,9 +2806,9 @@ class ChatOrchestrator {
       if (written.length > 0) {
         textOut = await this.appendBeforeAfter(projectRoot, written, textOut, onProgress);
         try {
-          const verifyReports = await runPostWriteVerify(projectRoot, written, onProgress);
+          const verifyReports = await runPostWriteVerify(projectRoot, written, onProgress, { signal: this.abort?.signal || null }); // [EDITCORE-INTEGRAL-B6]
           textOut = String(textOut || "") + formatVerifyBlock(verifyReports);
-          textOut = await appendRealVerification(projectRoot, written, steps, textOut, onProgress, { repairTask: this._repairTask === true, previewUrl: this._activePreviewUrl || "" });
+          textOut = await appendRealVerification(projectRoot, written, steps, textOut, onProgress, { repairTask: this._repairTask === true, previewUrl: this._activePreviewUrl || "", signal: this.abort?.signal || null }); // [EDITCORE-INTEGRAL-B6]
         } catch (_) { /* verify no debe tumbar el turno */ }
       }
       textOut = formatAgentVisibleText(textOut);
@@ -2341,4 +2871,4 @@ class ChatOrchestrator {
   }
 }
 
-module.exports = { ChatOrchestrator, SKILL_IDS, taskQueue, groundUngroundedClaims, successfulDiskReads, hasMutationIntent };
+module.exports = { ChatOrchestrator, SKILL_IDS, taskQueue, groundUngroundedClaims, successfulDiskReads, hasMutationIntent, buildKernelFactSummary, auditSubagentSteps, runPostWriteVerify, formatVerifyBlock, applyTurnContextBudget, TURN_CONTEXT_MAX_CHARS, TURN_CONTEXT_TRUNCATION_MARKER, CTX_TIER_ESSENTIAL, CTX_TIER_NORMAL, CTX_TIER_ACCESSORY, /* [EDITCORE-INTEGRAL-B3] */ appendRealVerification, /* [EDITCORE-INTEGRAL-B5] */ normalizePermissionMode, buildModeAnnouncement, /* [EDITCORE-INTEGRAL-B6] */ raceSemanticBlock, SEMANTIC_MEMORY_TIMEOUT_MS, runRealVerification, /* [EDITCORE-INTEGRAL-B8] */ formatExternalActionResult, /* [EDITCORE-INTEGRAL-B9] */ buildCerebroServiceBlock, buildBrainContextBlock };

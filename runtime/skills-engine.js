@@ -80,6 +80,13 @@ const NESTED_SKILL_MAX_DEPTH = 4;
 const NESTED_SKILL_MAX_FILES = 200;
 const NESTED_SKIP_DIRS = new Set([".git", "node_modules", "dist", "build", ".next", "vendor"]);
 const SKILL_BODY_MAX_CHARS = 8_000;
+// [EDITCORE-INTEGRAL-B2] Tope duro del extracto que assembleSkillsSystemPrompt
+// inyecta por skill: esta era la OTRA vía que metía cuerpos completos en el
+// prompt (la ruta agent:run de main.js la pasa como skillsPrompt al kernel).
+// Ahora inyecta un extracto acotado; el cuerpo completo (con su propio tope
+// declarado SKILL_BODY_MAX_CHARS en lecturas bajo demanda vía loadSkillBody)
+// se obtiene con read_skill. Mismo criterio que el índice del kernel (600).
+const SKILL_PROMPT_EXTRACT_MAX_CHARS = 600;
 
 function skillFileIn(dir) {
   for (const name of ["SKILL.md", "skill.md"]) {
@@ -408,11 +415,22 @@ function assembleSkillsSystemPrompt(activeSkills = []) {
 
   const sections = [
     "## 🧠 Habilidades especializadas activas (Skills automáticas)",
-    "DIRECTIVA OBLIGATORIA PARA EL AGENTE: Aplica de forma inmediata y automática las pautas, mejores prácticas, patrones de código, estándares de diseño y flujos de trabajo detallados en las siguientes habilidades especializadas para resolver la solicitud del usuario. No ignores estas instrucciones ni preguntes al usuario si debe aplicarlas: ejecútalas directamente en tu razonamiento y en las herramientas que uses.",
+    // [EDITCORE-INTEGRAL-B2] Directiva ajustada al índice: el extracto
+    // orienta, pero las pautas se aplican desde el cuerpo completo, que el
+    // agente carga con read_skill cuando la skill es relevante al trabajo.
+    "DIRECTIVA OBLIGATORIA PARA EL AGENTE: estas habilidades viajan como ÍNDICE (descripción + extracto acotado). Antes de aplicar las pautas de una de ellas, carga su cuerpo COMPLETO con la herramienta read_skill y ejecútalo directamente en tu razonamiento y en las herramientas que uses. No ignores estas habilidades ni preguntes al usuario si debe aplicarlas.",
   ];
   for (const skill of activeSkills) {
     const origin = skill.scope === "brain" && skill.repo ? ` (repo ${skill.repo})` : "";
-    sections.push(`### Skill activa: ${skill.name}${origin}\n**Descripción:** ${skill.description}\n\n${loadSkillBody(skill)}`);
+    // [EDITCORE-INTEGRAL-B2] Extracto acotado (≤ SKILL_PROMPT_EXTRACT_MAX_CHARS)
+    // en vez del cuerpo completo; si el cuerpo era mayor, queda la marca
+    // «skill recortada» + la vía para cargarlo entero (read_skill).
+    const fullBody = loadSkillBody(skill);
+    const extract = fullBody.slice(0, SKILL_PROMPT_EXTRACT_MAX_CHARS);
+    const cutNote = fullBody.length > SKILL_PROMPT_EXTRACT_MAX_CHARS
+      ? `\n…[skill recortada en el prompt: el cuerpo completo se obtiene con read_skill(name: "${skill.name}"); archivo completo: ${skill.filePath || skill.name}]`
+      : "";
+    sections.push(`### Skill activa: ${skill.name}${origin}\n**Descripción:** ${skill.description}\n\n${extract}${cutNote}`);
   }
   return sections.join("\n\n");
 }
@@ -425,6 +443,7 @@ module.exports = {
   parseLearnPrompt,
   matchSkillsForPrompt,
   assembleSkillsSystemPrompt,
+  SKILL_PROMPT_EXTRACT_MAX_CHARS,
   loadSkillBody,
   scanBrainStoreSkills,
   scanSkillDir,

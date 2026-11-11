@@ -1,6 +1,18 @@
 "use strict";
 
 /**
+ * [EDITCORE-INTEGRAL-B10] CUARENTENA DECLARADA (2026-11-11): este
+ * adaptador NO es el motor del producto y sus tests ya NO cuentan como
+ * cobertura del producto (salieron de test/ a
+ * test-quarantine/claude-adapter/). Su ÚNICA instanciación productiva
+ * es la aceptación headless por argv en main.js
+ * (--editcore-agent-acceptance-report=…), que queda como está. No se
+ * borra porque esa aceptación completa contra el kernel que lo
+ * sustituya aún no existe; la semilla vive en
+ * scripts/acceptance-kernel.mjs. Huérfanos que solo este módulo
+ * consume: runtime/auto-fix-loop.js y runtime/agent-memory.js
+ * (AgentMemory) — declarados, no borrados.
+ *
  * [LEGADO NO USADO EN RUTA VIVA]
  * EDITCORE-CLAUDE-ADAPTER (CONVERSACIONAL)
  *

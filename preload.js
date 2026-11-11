@@ -15,7 +15,10 @@ contextBridge.exposeInMainWorld("editcoreChat", {
     await new Promise((resolve) => setTimeout(resolve, 0));
     return result;
   },
-  cancel: () => ipcRenderer.invoke("editcore:cancel"),
+  // [EDITCORE-INTEGRAL-B7] El cancel acepta { runId, chatId } para
+  // cancelar SOLO esa corrida; sin argumentos queda el paro global
+  // como último recurso declarado en main.
+  cancel: (input = {}) => ipcRenderer.invoke("editcore:cancel", input),
 });
 
 contextBridge.exposeInMainWorld("editcoreProject", {
@@ -210,7 +213,7 @@ contextBridge.exposeInMainWorld("editcoreWindow", {
 });
 
 contextBridge.exposeInMainWorld("editcoreAgent", {
-  plan: (input) => ipcRenderer.invoke("agent:plan", input),
+  // [EDITCORE-INTEGRAL-B10] plan: retirado — el handler agent:plan no tenía llamantes de UI.
   run: (input) => ipcRenderer.invoke("agent:run", input),
   verify: (input) => ipcRenderer.invoke("agent:verify", input),
   verifyModel: (input) => ipcRenderer.invoke("agent:verify-model", input),
@@ -435,7 +438,7 @@ contextBridge.exposeInMainWorld("editcoreInlineEdit", {
   mockProposal: (prompt, originalText) => ipcRenderer.invoke("inline-edit:mock-proposal", prompt, originalText),
 });
 contextBridge.exposeInMainWorld("editcoreComposer", {
-  plan: (input = {}) => ipcRenderer.invoke("composer:plan", input),
+  // [EDITCORE-INTEGRAL-B10] plan: retirado — composer:plan sin llamantes de UI.
   preview: (input = {}) => ipcRenderer.invoke("composer:preview", input),
   apply: (input = {}) => ipcRenderer.invoke("composer:apply", input),
   list: (input = {}) => ipcRenderer.invoke("composer:list", input),
@@ -745,12 +748,7 @@ contextBridge.exposeInMainWorld("editcoreGhostCompletion", {
   cache: (prefix, completion, ttlMs) => ipcRenderer.invoke("ghost-completion:cache", prefix, completion, ttlMs),
 });
 
-contextBridge.exposeInMainWorld("editcoreAsyncAgent", {
-  enqueue: (taskConfig) => ipcRenderer.invoke("async-agent:enqueue", taskConfig),
-  cancel: (taskId) => ipcRenderer.invoke("async-agent:cancel", taskId),
-  getTask: (taskId) => ipcRenderer.invoke("async-agent:get-task", taskId),
-  listTasks: (projectRoot) => ipcRenderer.invoke("async-agent:list-tasks", projectRoot),
-});
+// [EDITCORE-INTEGRAL-B10] editcoreAsyncAgent RETIRADO: cero llamantes de UI y sus handlers async-agent:* salieron de main.js.
 
 contextBridge.exposeInMainWorld("editcoreMarketplace", {
   getCatalog: (category) => ipcRenderer.invoke("marketplace:get-catalog", category),
@@ -768,13 +766,7 @@ contextBridge.exposeInMainWorld("editcoreLspBundler", {
   getHover: (filePath, symbol) => ipcRenderer.invoke("lsp-bundler:get-hover", filePath, symbol),
 });
 
-contextBridge.exposeInMainWorld("editcoreParallelAgents", {
-  spawn: (spec) => ipcRenderer.invoke("parallel-agent:spawn", spec),
-  status: (agentId) => ipcRenderer.invoke("parallel-agent:status", agentId),
-  cancel: (agentId, reason) => ipcRenderer.invoke("parallel-agent:cancel", agentId, reason),
-  list: (filters) => ipcRenderer.invoke("parallel-agent:list", filters),
-  cleanup: (agentId) => ipcRenderer.invoke("parallel-agent:cleanup", agentId),
-});
+// [EDITCORE-INTEGRAL-B10] editcoreParallelAgents RETIRADO: cero llamantes de UI y sus handlers parallel-agent:* salieron de main.js.
 
 contextBridge.exposeInMainWorld("editcoreRulesEngine", {
   load: (projectRoot) => ipcRenderer.invoke("rules-engine:load", projectRoot),

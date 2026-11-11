@@ -32,23 +32,3 @@ test("lee carpeta (sin listar) NO es listOnly — puede ser FOCO carpeta", () =>
   assert.equal(orch.isListOnlyRequest("lee solamente la carpeta api y dime que contiene"), false);
 });
 
-test("finalizeExecutionText no sustituye listado por Sin cambios reales", () => {
-  const {
-    formatListOnlyAnswerFromSteps,
-    looksLikeNoMutationMessage,
-  } = require("../runtime/editcore-claude-adapter");
-  const steps = [{
-    name: "list_files",
-    ok: true,
-    input: { path: "api" },
-    result: [
-      { name: "public", path: "api/public", kind: "directory" },
-      { name: "index.js", path: "api/index.js", kind: "file" },
-    ],
-  }];
-  const listing = formatListOnlyAnswerFromSteps(steps, "D:/TAXIDRIV", "LISTA solamente la carpeta api");
-  assert.match(listing, /public/);
-  assert.match(listing, /index\.js/);
-  assert.doesNotMatch(listing, /Sin cambios reales/);
-  assert.equal(looksLikeNoMutationMessage("## Sin cambios reales en disco\nNo hubo write_file"), true);
-});

@@ -157,6 +157,45 @@ class AgentCoordination {
     this.state.threads[threadId].updatedAt = row.at;
   }
 
+  // [EDITCORE-INTEGRAL-B9] Identidad de lock ÚNICA por corrida: el
+  // dueño de un lock es la CORRIDA (threadId), no el rol. Antes el
+  // mismo turno usaba DOS identidades («implementer» en write/replace
+  // y «supervisor» en el resto) y el refresco exigía owner===rol &&
+  // threadId: una escritura por la ruta supervisor sobre un archivo
+  // ya tocado por el implementer del MISMO chat se autobloqueaba
+  // como si fuera un extraño. El rol se conserva solo como dato
+  // informativo (lock.role); jamás distingue dueños.
+  _lockOwnerId(threadId) {
+    return String(threadId || "default");
+  }
+
+  // [EDITCORE-INTEGRAL-B9] Renovación sin temporizadores: renueva
+  // TODOS los locks vivos de la corrida. Se llama desde los puntos
+  // de paso que ya existen (adquirir cualquier lock del mismo thread
+  // y el latido renewThreadLocks que tools.execute invoca en cada
+  // despacho): mientras el dueño sigue trabajando dentro de su
+  // turno, sus locks no vencen a los 120 s a sus espaldas. Un lock
+  // de una corrida que dejó de trabajar sí expira (purga normal).
+  _renewOwnLocks(ownerId, t) {
+    let renewed = 0;
+    for (const lock of Object.values(this.state.locks || {})) {
+      if (lock.threadId === ownerId && lock.expiresAt > t) {
+        lock.expiresAt = t + this.lockTtlMs;
+        renewed += 1;
+      }
+    }
+    return renewed;
+  }
+
+  renewThreadLocks(threadId) {
+    const ownerId = this._lockOwnerId(threadId);
+    const t = now();
+    this._purgeStale(this.state);
+    const renewed = this._renewOwnLocks(ownerId, t);
+    if (renewed) this._save();
+    return { ok: true, renewed };
+  }
+
   /**
    * Intenta adquirir lock de archivo para escritura.
    * @returns {{ ok: boolean, error?: string, lock?: object }}
@@ -165,13 +204,19 @@ class AgentCoordination {
     const rel = normalizeRel(this.projectRoot, relPath);
     const t = now();
     this._purgeStale(this.state);
+    const ownerId = this._lockOwnerId(threadId);
+    // [EDITCORE-INTEGRAL-B9] Latido: adquirir renueva los demás
+    // locks de ESTA corrida (ver _renewOwnLocks).
+    this._renewOwnLocks(ownerId, t);
 
     const existing = this.state.locks[rel];
     if (existing && existing.expiresAt > t) {
-      // mismo dueño puede refrescar
-      if (existing.owner === agentRole && existing.threadId === String(threadId || "default")) {
+      // [EDITCORE-INTEGRAL-B9] Mismo dueño = misma CORRIDA (el rol
+      // no cuenta): puede refrescar su propio lock.
+      if (existing.threadId === ownerId) {
         existing.expiresAt = t + this.lockTtlMs;
         existing.op = op;
+        existing.role = String(agentRole || existing.role || "implementer");
         existing.at = new Date().toISOString();
         this._save();
         return { ok: true, lock: existing, refreshed: true };
@@ -184,8 +229,9 @@ class AgentCoordination {
     }
 
     const lock = {
-      owner: String(agentRole || "implementer"),
-      threadId: String(threadId || "default"),
+      owner: ownerId,
+      role: String(agentRole || "implementer"),
+      threadId: ownerId,
       path: rel,
       op,
       at: new Date().toISOString(),
@@ -206,7 +252,11 @@ class AgentCoordination {
     const rel = normalizeRel(this.projectRoot, relPath);
     const existing = this.state.locks[rel];
     if (!existing) return { ok: true, released: false };
-    if (existing.owner !== agentRole && existing.threadId !== String(threadId || "default")) {
+    // [EDITCORE-INTEGRAL-B9] Solo libera el dueño-CORRIDA (threadId);
+    // el rol no autoriza ni bloquea la liberación dentro de la misma
+    // corrida. (Antes la condición con && dejaba liberar a un extraño
+    // que coincidiera en rol O en thread por separado.)
+    if (existing.threadId !== this._lockOwnerId(threadId)) {
       return { ok: false, error: "No eres el dueño del lock" };
     }
     delete this.state.locks[rel];

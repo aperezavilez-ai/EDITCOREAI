@@ -89,8 +89,15 @@ const state = {
     externalCallsAvoided: 0,
     byModel: {},
   },
-  allowWrite: false,
-  permissionMode: "full",
+  // [EDITCORE-INTEGRAL-B5] Defectos CONVERGENTES con main: el renderer
+  // nacía «full» con allowWrite:false (contradictorios entre sí) y main
+  // nacía «step» — la UI podía decir «full» mientras el kernel aplicaba
+  // «step» hasta que el setPermission de arranque los alineaba. Ahora
+  // ambos nacen en «step» (allowWrite coherente: step sí escribe, con
+  // confirmación), que es también el valor al que cae cualquier modo
+  // inválido en las dos capas.
+  allowWrite: true,
+  permissionMode: "step",
   attachments: [],
   activeAgentId: "",
   inspectorSnapshot: null,
@@ -133,6 +140,13 @@ const activePlanStreams = new Map();
 const activeAgentThinkingRuns = new Map();
 const pendingPromptFingerprints = new Set();
 const pendingAgentApprovalCards = new Map();
+// [EDITCORE-INTEGRAL-B7] Tarjetas de corridas VIVAS desacopladas al
+// cambiar de chat: clave `${projectId}:${chatId}` → Set de nodos.
+// Cambiar de chat ya no destruye el DOM del turno: los nodos se
+// retiran del feed saliente SIN asentarse y se re-atan al volver a su
+// chat si su corrida sigue viva; si la corrida terminó en ausencia,
+// su texto ya quedó persistido en el chat de origen (historial).
+const detachedThinkingByChat = new Map();
 /** Tras ALTO/CANCEL: ignorar progress que reencendería bolitas/Pensamiento. */
 let agentUiHardStopUntil = 0;
 let promptProcessorRunning = false;
@@ -1121,8 +1135,7 @@ async function saveConnections() {
   });
 
   // Limpiar servicios y claves obsoletas
-  delete data.netlifyToken;
-  delete data.netlifySiteId;
+  // [EDITCORE-INTEGRAL-B8] Netlify ya no se borra al guardar/fusionar conexiones.
   delete data.supabaseCloudToken;
   delete data.supabaseOrgId;
   delete data.supabaseManagementToken;
@@ -3504,6 +3517,12 @@ function createProjectlessChatThread() {
     brainSnapshot: null,
     updatedAt: Date.now(),
   };
+  // [EDITCORE-INTEGRAL-B7] Desacoplar tarjetas vivas del chat saliente.
+  try {
+    const outP = activeProject();
+    const outC = outP ? activeChat(outP) : null;
+    if (outP && outC) stashLiveThinkingCards(outP.id, outC.id);
+  } catch { /* ignore */ }
   state.projects.unshift(project);
   state.activeProjectId = project.id;
   state.projectRoot = "";
@@ -3537,6 +3556,12 @@ function createNewChatThread() {
     createdAt: Date.now(),
     updatedAt: Date.now(),
   };
+  // [EDITCORE-INTEGRAL-B7] Desacoplar tarjetas vivas del chat saliente
+  // (quedan guardadas bajo su chat y se re-atan al volver a él).
+  try {
+    const outC = activeChat(project);
+    if (outC && outC.id !== chat.id) stashLiveThinkingCards(project.id, outC.id);
+  } catch { /* ignore */ }
   project.chats.unshift(chat);
   project.activeChatId = chat.id;
   project.messages = chat.messages;
@@ -3559,7 +3584,90 @@ function createNewChatThread() {
   return chat;
 }
 
+// [EDITCORE-INTEGRAL-B7] Costura de desacoplar/re-atar tarjetas
+// vivas. Una tarjeta es «viva» si su corrida sigue en
+// activeAgentThinkingRuns o en un trabajo activo: esas NO se asientan
+// ni se pierden al cambiar de chat — se guardan y se re-atan al
+// volver. El progreso sigue llegando a su nodo por runId (el mapa de
+// corridas apunta al mismo objeto esté o no en el DOM).
+function thinkingCardKey(projectId, chatId) {
+  return `${String(projectId || "")}:${String(chatId || "")}`;
+}
+
+function stashLiveThinkingCards(projectId, chatId) {
+  const feed = $("feed");
+  if (!feed) return;
+  const liveNodes = new Set();
+  for (const entry of activeAgentThinkingRuns.values()) {
+    if (entry?.thinking) liveNodes.add(entry.thinking);
+  }
+  for (const job of activePromptRequests.values()) {
+    if (job.thinking) liveNodes.add(job.thinking);
+  }
+  const key = thinkingCardKey(projectId, chatId);
+  for (const node of [...feed.querySelectorAll(".thinking-msg, .is-thinking-live")]) {
+    if (!liveNodes.has(node)) continue;
+    node.remove();
+    if (!detachedThinkingByChat.has(key)) detachedThinkingByChat.set(key, new Set());
+    detachedThinkingByChat.get(key).add(node);
+  }
+}
+
+function reattachThinkingCards(projectId, chatId) {
+  const key = thinkingCardKey(projectId, chatId);
+  const stashed = detachedThinkingByChat.get(key);
+  if (!stashed || !stashed.size) return;
+  detachedThinkingByChat.delete(key);
+  const feed = $("feed");
+  if (!feed) return;
+  for (const node of stashed) {
+    const runId = String(node._runId || node.dataset?.runId || "").trim();
+    // Solo se re-atan tarjetas cuya corrida SIGUE viva. Si terminó en
+    // ausencia, su respuesta ya está persistida en este chat y el
+    // historial recién pintado la muestra: re-atarla duplicaría.
+    if (runId && !activeAgentThinkingRuns.has(runId)) continue;
+    if (!runId && !node.classList.contains("thinking-msg") && !node.classList.contains("is-thinking-live")) continue;
+    feed.appendChild(node);
+  }
+  scrollFeedToBottom();
+}
+
+// [EDITCORE-INTEGRAL-B7] Destino de persistencia/pintado de un trabajo:
+// SIEMPRE su chat de origen (job.chatId/job.projectId), nunca el
+// activo al terminar. Las decisiones puras viven en
+// runtime/chat-turn-ownership.js (window.EditCoreChatTurnOwnership).
+function turnTargetForJob(job) {
+  return {
+    projectId: String(job?.projectId || ""),
+    chatId: String(job?.chatId || ""),
+  };
+}
+
+function isTurnFeedVisible(job) {
+  const Ownership = window.EditCoreChatTurnOwnership;
+  const project = activeProject();
+  const chat = project ? activeChat(project) : null;
+  if (Ownership?.isOriginFeedVisible) {
+    return Ownership.isOriginFeedVisible({
+      originProjectId: job?.projectId || "",
+      originChatId: job?.chatId || "",
+      activeProjectId: project?.id || "",
+      activeChatId: chat?.id || "",
+    });
+  }
+  if (!job?.chatId) return true;
+  return String(job.chatId) === String(chat?.id || "");
+}
+
 async function switchChatThread(chatId, targetProjectId = "") {
+  // [EDITCORE-INTEGRAL-B7] Antes de tocar nada: desacoplar las
+  // tarjetas de corridas vivas del feed saliente (sin asentarlas).
+  // El feed que se ve en este instante es el del chat saliente.
+  try {
+    const outgoingProject = activeProject();
+    const outgoingChat = outgoingProject ? activeChat(outgoingProject) : null;
+    if (outgoingProject && outgoingChat) stashLiveThinkingCards(outgoingProject.id, outgoingChat.id);
+  } catch { /* el desacople nunca bloquea el cambio de chat */ }
   let project = activeProject() || ensureProject();
   ensureProjectChats(project);
   let chat = project.chats.find((item) => item.id === String(chatId || ""));
@@ -3596,6 +3704,10 @@ async function switchChatThread(chatId, targetProjectId = "") {
       append(message.role, message.content, message.usage, false, null, message.images || [], message.documents || []);
     }
   }
+  // [EDITCORE-INTEGRAL-B7] Re-atar las tarjetas vivas de ESTE chat
+  // (las que se desacoplaron al salir de él): la corrida sigue en
+  // curso y su progreso vuelve a verse donde pertenece.
+  try { reattachThinkingCards(project.id, chat.id); } catch { /* ignore */ }
   renderAttachments();
   scrollFeedToBottom(true);
   $("status").textContent = `Chat: ${chat.title || "sin titulo"}`;
@@ -7671,27 +7783,70 @@ function openImageLightbox(src, alt = "") {
   return item;
 }
 
-function appendMessage(role, text, usage = { local_response: true }) {
+function appendMessage(role, text, usage = { local_response: true }, target = null) {
   const content = String(text || "").trim();
   if (!content) return null;
   const item = append(role, content, usage, true, 0);
-  rememberMessage(role, content, usage);
+  rememberMessage(role, content, usage, [], [], target);
   return item;
 }
 
-function rememberMessage(role, content, usage, images = [], documents = []) {
-  const project = ensureProject();
-  ensureProjectChats(project);
-  const chat = activeChat(project);
-  project.mode = state.mode;
-  project.model = $("model").value.trim() || PROVIDERS[state.mode]?.model || "";
+// [EDITCORE-INTEGRAL-B7] rememberMessage acepta el DESTINO del turno
+// ({ projectId, chatId } del trabajo que lo originó): la persistencia
+// va SIEMPRE contra el chat de origen, nunca contra el activo al
+// terminar. Sin destino (flujos locales síncronos del chat visible)
+// se conserva la conducta histórica contra el chat activo. Si el
+// chat de origen ya no existe, el resolvedor puro cae al activo
+// (respaldo declarado en runtime/chat-turn-ownership.js).
+function rememberMessage(role, content, usage, images = [], documents = [], target = null) {
+  let project = null;
+  let chat = null;
+  const Ownership = window.EditCoreChatTurnOwnership;
+  if (target && (target.chatId || target.projectId) && Ownership?.resolveChatDestination) {
+    const active = activeProject();
+    const dest = Ownership.resolveChatDestination(state.projects || [], {
+      originProjectId: target.projectId || "",
+      originChatId: target.chatId || "",
+      activeProjectId: active?.id || "",
+      activeChatId: active ? (activeChat(active)?.id || "") : "",
+    });
+    if (dest?.project && dest?.chat) {
+      project = dest.project;
+      chat = dest.chat;
+      ensureProjectChats(project);
+    }
+  }
+  if (!project || !chat) {
+    project = ensureProject();
+    ensureProjectChats(project);
+    chat = activeChat(project);
+  }
+  // ¿El destino es el chat visible? Solo entonces se sincronizan el
+  // estado de la vista (history / proyecto activo / messages): tocar
+  // eso para un chat de fondo secuestraba la vista del usuario.
+  const viewProject = activeProject();
+  // Sin destino declarado (flujos locales del chat visible) la
+  // conducta histórica manda: el destino ES la vista.
+  const isViewChat = !target
+    ? true
+    : Boolean(viewProject && project === viewProject && chat === activeChat(viewProject));
+  if (isViewChat) {
+    project.mode = state.mode;
+    project.model = $("model").value.trim() || PROVIDERS[state.mode]?.model || "";
+  }
   let cleanedContent = repairMojibakeText(content);
   if (role === "assistant" && typeof stripAgentToolXml === "function") {
     cleanedContent = stripAgentToolXml(cleanedContent, { trim: false });
   }
   const entry = { role, content: cleanedContent, usage: usage || null, images, documents };
   chat.messages.push(entry);
-  project.messages = chat.messages;
+  // [EDITCORE-INTEGRAL-B7] project.messages / state.history /
+  // state.activeProjectId solo se sincronizan si el destino es el
+  // chat VISIBLE: persistir en un chat de fondo no debe mover la
+  // vista ni el puntero de mensajes del proyecto activo.
+  if (isViewChat) {
+    project.messages = chat.messages;
+  }
   if (role === "user") {
     const titleSeed = content.replace(/\s+/g, " ").trim().slice(0, 44) || "Nuevo chat";
     if (!project.title || project.title === "Nuevo chat") project.title = titleSeed;
@@ -7701,9 +7856,11 @@ function rememberMessage(role, content, usage, images = [], documents = []) {
   }
   chat.updatedAt = Date.now();
   project.updatedAt = Date.now();
-  state.history = [...chat.messages];
+  if (isViewChat) {
+    state.history = [...chat.messages];
+    state.activeProjectId = project.id;
+  }
   state.projects.sort((a, b) => b.updatedAt - a.updatedAt);
-  state.activeProjectId = project.id;
   saveProjects();
   renderProjects();
   renderChatThreadSelect();
@@ -7711,13 +7868,42 @@ function rememberMessage(role, content, usage, images = [], documents = []) {
 
 // ── Thinking indicator ────────────────────────────────────────────────────────
 
-function appendThinking(statusText = "Pensando / razonando...", isAgent = false, runLabel = "") {
+function appendThinking(statusText = "Pensando / razonando...", isAgent = false, runLabel = "", identity = {}) {
+  // [EDITCORE-INTEGRAL-B7] Antes, crear una tarjeta ASENTABA todas
+  // las tarjetas vivas: lanzar el trabajo B cerraba visualmente la
+  // del A aunque A siguiera corriendo. Ahora solo se asientan las de
+  // la PROPIA corrida/chat según el predicado puro de
+  // chat-turn-ownership (misma corrida, o legadas sin identidad entre
+  // sí); las de otras corridas quedan vivas e intactas.
+  const Ownership = window.EditCoreChatTurnOwnership;
   document.querySelectorAll?.(".thinking-msg, .is-thinking-live")?.forEach?.((el) => {
+    const cardIdentity = {
+      runId: String(el._runId || el.dataset?.runId || ""),
+      chatId: String(el._chatId || el.dataset?.chatId || ""),
+    };
+    const nextIdentity = {
+      runId: String(identity?.runId || ""),
+      chatId: String(identity?.chatId || ""),
+    };
+    const maySettle = Ownership?.shouldSettleCardOnNewThinking
+      ? Ownership.shouldSettleCardOnNewThinking(cardIdentity, nextIdentity)
+      : (!cardIdentity.runId && !nextIdentity.runId);
+    if (!maySettle) return;
     try { settleAgentTurnChrome(el, { failed: false, force: true }); } catch {}
   });
   const item = document.createElement("article");
   item.className = "msg assistant thinking-msg agent-execution-card";
   item.dataset.agentCard = "1";
+  // [EDITCORE-INTEGRAL-B7] La tarjeta nace con la identidad de su
+  // corrida/chat: el progreso y el desacople la encuentran por ella.
+  if (identity?.runId) {
+    item._runId = String(identity.runId);
+    item.dataset.runId = String(identity.runId);
+  }
+  if (identity?.chatId) {
+    item._chatId = String(identity.chatId);
+    item.dataset.chatId = String(identity.chatId);
+  }
   const head = document.createElement("div");
   head.className = "msg-head";
   head.textContent = runLabel ? `EditCoreAI · ${runLabel}` : "EditCoreAI";
@@ -12956,8 +13142,15 @@ function renderPromptQueue() {
     const label = document.createElement("span");
     label.className = "queue-chip-label";
     if (!job.running) queuedIndex += 1;
+    // [EDITCORE-INTEGRAL-B7] Honestidad de la promesa: el motor del
+    // kernel ejecuta DE UNO EN UNO (serialización declarada en el
+    // programa). Un trabajo lanzado pero aún en la cola del kernel
+    // se etiqueta «en cola», nunca «ejecutando»; y la etiqueta de
+    // concurrencia cuenta turnos activos, no «agentes en paralelo».
     label.textContent = job.running
-      ? `${mode} ejecutando${countActiveAgents(activeRows) > 1 ? ` (${countActiveAgents(activeRows)}/${MAX_PARALLEL_AGENTS})` : ""}: ${job.prompt.slice(0, 96)}`
+      ? (job.kernelQueued
+        ? `${mode} en cola (el motor ejecuta de uno en uno): ${job.prompt.slice(0, 96)}`
+        : `${mode} ejecutando${countActiveAgents(activeRows) > 1 ? ` · ${countActiveAgents(activeRows)} turnos activos, de uno en uno` : ""}: ${job.prompt.slice(0, 96)}`)
       : `${queuedIndex}. ${mode} despues: ${job.prompt.slice(0, 96)}`;
     row.appendChild(label);
     if (job.running) {
@@ -13108,10 +13301,20 @@ async function cancelActiveResponse() {
   const project = activeProject();
   if (project?.agentWorkflow?.runId) runIds.add(project.agentWorkflow.runId);
 
+  // [EDITCORE-INTEGRAL-B7] Detener cancela las corridas IDENTIFICADAS
+  // de esta ventana, una a una (agente y chat por su runId): ya no se
+  // dispara el paro global por defecto. El cancel sin runId queda
+  // solo como último recurso cuando no hay ninguna corrida
+  // identificada que cancelar.
+  const chatRunIds = active.filter((job) => !job.usesProjectTools && job.runId).map((job) => job.runId);
   await Promise.all([
     ...[...runIds].map((id) => window.editcoreAgent.cancel({ runId: id }).catch(() => false)),
-    window.editcoreAgent.cancel({ runId: "" }).catch(() => false),
-    window.editcoreChat.cancel().catch(() => false),
+    ...(chatRunIds.length
+      ? chatRunIds.map((id) => window.editcoreChat.cancel({ runId: id }).catch(() => false))
+      : []),
+    ...(runIds.size || chatRunIds.length
+      ? []
+      : [window.editcoreChat.cancel().catch(() => false)]),
   ]);
   forceKillAllAgentUi("Detenido.");
   renderPromptQueue();
@@ -13182,7 +13385,10 @@ async function processPromptQueue() {
     setRunningControls();
     const parallelCount = countActiveAgents([...activePromptRequests.values()]);
     if (parallelCount > 1) {
-      $("status").textContent = `${parallelCount} agentes en paralelo (max ${MAX_PARALLEL_AGENTS})`;
+      // [EDITCORE-INTEGRAL-B7] La verdad del motor: hay varios turnos
+      // activos en la UI, pero el kernel los ejecuta de uno en uno y
+      // el resto espera en cola (con plazo, ver chat-kernel index).
+      $("status").textContent = `${parallelCount} turnos activos: el motor ejecuta de uno en uno, el resto espera en cola`;
     }
   }
 }
@@ -13337,10 +13543,21 @@ async function executePromptJob(job) {
 
   const outgoingImages = job.images || [];
   const documents = job.documents || [];
+  // [EDITCORE-INTEGRAL-B7] El turno pertenece a su chat: destino de
+  // persistencia fijado AQUÍ, al nacer la ejecución, con el chat de
+  // origen del trabajo — jamás se resuelve contra el activo al
+  // terminar. Y la corrida tiene runId en AMBAS rutas (también chat).
+  const turnTarget = turnTargetForJob(job);
+  job.runId = job.runId || uid();
   if (!job.userMessageDisplayed) {
     const visiblePrompt = ProjectAnalysis.redactCredentials(job.displayPrompt || job.prompt);
-    appendUserWithImages(visiblePrompt, job.images || [], job.documents || []);
-    rememberMessage("user", visiblePrompt, null, job.images || [], job.documents || []);
+    // Pintar la burbuja del usuario solo si su chat es el visible; si
+    // el trabajo arrancó tras un cambio de chat, el mensaje queda
+    // persistido en su chat y se ve al volver (no en el feed ajeno).
+    if (isTurnFeedVisible(job)) {
+      appendUserWithImages(visiblePrompt, job.images || [], job.documents || []);
+    }
+    rememberMessage("user", visiblePrompt, null, job.images || [], job.documents || [], turnTarget);
     job.userMessageDisplayed = true;
   }
 
@@ -13351,21 +13568,37 @@ async function executePromptJob(job) {
   const thinkingStart = usesProjectTools
     ? (isAgent ? "Preparando herramientas..." : "Preparando analisis...")
     : "Pensando...";
-  const thinking = appendThinking(thinkingStart, showAgentLog, parallelLabel);
+  const thinking = appendThinking(thinkingStart, showAgentLog, parallelLabel, { runId: job.runId, chatId: job.chatId || "" });
   const stopTimer = showAgentLog ? startResponseTimer(thinking.querySelector(".msg-head")) : () => 0;
   let elapsedSeconds = 0;
   if (showAgentLog) {
-    job.runId = job.runId || uid();
     thinking._runId = job.runId;
     if (thinking.dataset) thinking.dataset.runId = job.runId;
+    thinking._chatId = job.chatId || "";
+    if (thinking.dataset) thinking.dataset.chatId = job.chatId || "";
     job.thinking = thinking;
     if (!(job.cancelled || Date.now() < agentUiHardStopUntil)) {
       activeAgentThinkingRuns.set(job.runId, {
         thinking,
         projectId: job.projectId || projectForJob?.id || "",
+        chatId: job.chatId || "",
       });
     }
     // No meter el mismo texto otra vez en el log: ya esta junto a las bolitas.
+  } else {
+    // [EDITCORE-INTEGRAL-B7] Ruta CHAT: la tarjeta también se registra
+    // por runId — su progreso se enruta a ESTA tarjeta, nunca a «la
+    // primera que haya» en el feed.
+    thinking._chatId = job.chatId || "";
+    if (thinking.dataset) thinking.dataset.chatId = job.chatId || "";
+    job.thinking = thinking;
+    if (!(job.cancelled || Date.now() < agentUiHardStopUntil)) {
+      activeAgentThinkingRuns.set(job.runId, {
+        thinking,
+        projectId: job.projectId || projectForJob?.id || "",
+        chatId: job.chatId || "",
+      });
+    }
   }
 
   try {
@@ -13497,8 +13730,10 @@ async function executePromptJob(job) {
           elapsedSeconds = stopTimer();
           removeThinking(thinking);
           const noTask = "No hay una tarea pendiente. Describe qué quieres analizar o corregir en el proyecto.";
-          append("assistant", noTask, null, true, elapsedSeconds);
-          rememberMessage("assistant", noTask);
+          // [EDITCORE-INTEGRAL-B7] Pintar solo en el feed de origen;
+          // persistir siempre en el chat de origen.
+          if (isTurnFeedVisible(job)) append("assistant", noTask, null, true, elapsedSeconds);
+          rememberMessage("assistant", noTask, null, [], [], turnTarget);
           $("status").textContent = "Sin tarea pendiente";
           return;
         }
@@ -13543,7 +13778,7 @@ async function executePromptJob(job) {
         thinking._runId = runId;
         if (thinking.dataset) thinking.dataset.runId = runId;
         job.thinking = thinking;
-        activeAgentThinkingRuns.set(runId, { thinking, projectId: project?.id || job.projectId || "" });
+        activeAgentThinkingRuns.set(runId, { thinking, projectId: project?.id || job.projectId || "", chatId: job.chatId || "" });
       }
       job.agentExecuting = true;
       renderPromptQueue();
@@ -13595,8 +13830,10 @@ async function executePromptJob(job) {
       if ((planAuthorizedExecution || concreteTask) && currentPermissionMode === "readonly") {
         const blocked = "El plan esta autorizado pero el permiso es Solo lectura. Cambia a Paso a paso o Acceso completo y escribe procede de nuevo.";
         elapsedSeconds = stopTimer();
-        append("assistant", blocked, null, true, elapsedSeconds);
-        rememberMessage("assistant", blocked);
+        // [EDITCORE-INTEGRAL-B7] Pintar solo en el feed de origen;
+        // persistir siempre en el chat de origen.
+        if (isTurnFeedVisible(job)) append("assistant", blocked, null, true, elapsedSeconds);
+        rememberMessage("assistant", blocked, null, [], [], turnTarget);
         $("status").textContent = "Permiso insuficiente para ejecutar correcciones";
         return;
       }
@@ -13618,6 +13855,9 @@ async function executePromptJob(job) {
         projectRoot: job.projectRoot,
         projectless: Boolean(job.projectlessConversation),
         projectId: project?.id || job.projectId || "",
+        // [EDITCORE-INTEGRAL-B7] El chat de origen viaja también en la
+        // ruta agente: main lo ata al threadId del kernel.
+        chatId: job.chatId || "",
         agentId: project?.activeAgentId || "",
         allowWrite: effectiveAllowWrite,
         permissionMode: effectivePermissionMode,
@@ -13632,6 +13872,17 @@ async function executePromptJob(job) {
         // Acceso completo NO implica plan autorizado: un "analiza..." nuevo debe crear analisis,
         // no entrar a recordPlanApproval (que exige planId).
         planAuthorized: Boolean(planAuthorizedExecution || concreteTask),
+        // [EDITCORE-INTEGRAL-B5] La MISMA autorización con el nombre de
+        // la costura del kernel, como DATO estructurado del IPC: main
+        // la reenvía tal cual a handle() (planAuthorizedExecution) y la
+        // escritura en step se ejecuta a la primera tras UN «procede»,
+        // sin depender de que el prompt transformado
+        // («AUTORIZACION DE EJECUCION (PROCEDE): …») contenga ninguna
+        // forma de texto reconocible. isNewChat: primer turno de un
+        // chat sin historial → el kernel anuncia el modo restrictivo
+        // heredado en la primera línea.
+        planAuthorizedExecution: Boolean(planAuthorizedExecution || concreteTask),
+        isNewChat: !(Array.isArray(job.history) && job.history.some((m) => m && (m.role === "user" || m.sender === "user"))),
         fixQueue: (planAuthorizedExecution || concreteTask)
           ? (project?.agentWorkflow?.fixQueue || project?.durableWorkflow?.fixQueue || [])
           : [],
@@ -13820,7 +14071,9 @@ async function executePromptJob(job) {
         || (result.report?.stopReason ? `## Resultado\n\n${result.report.stopReason}\n\nEscribe **CONTINUA** para profundizar.` : "")
         || extractThinkingNarrativeFallback(thinking)
         || "## Resultado\n\nEl agente termino sin generar un reporte visible. Escribe **CONTINUA** para reintentar.";
-      rememberMessage("assistant", finalText, result.usage);
+      // [EDITCORE-INTEGRAL-B7] Éxito de AGENTE: persiste en el chat
+      // de origen del trabajo, aunque el visible ahora sea otro.
+      rememberMessage("assistant", finalText, result.usage, [], [], turnTarget);
       // Persistir análisis también si el informe final quedó en el chat (cualquier modo).
       if (project && (ProjectAnalysis.isAnalysisReport?.(finalText) || ProjectAnalysis.isPendingAnalysisPlan?.(finalText)
         || (Array.isArray(result.steps) && result.steps.length > 0))) {
@@ -13858,8 +14111,10 @@ async function executePromptJob(job) {
         refreshUndoAgentRunButton(true);
         if (report.review?.files?.length) {
           renderAgentDiffReview(report.review);
-        } else {
-          appendMessage("assistant", "_Puedes escribir `DESHACER` en el chat para revertir esta corrida._");
+        } else if (isTurnFeedVisible(job)) {
+          // [EDITCORE-INTEGRAL-B7] La nota auxiliar solo se pinta (y
+          // persiste) en el chat de origen visible.
+          appendMessage("assistant", "_Puedes escribir `DESHACER` en el chat para revertir esta corrida._", { local_response: true }, turnTarget);
         }
       } else {
         refreshUndoAgentRunButton();
@@ -13881,6 +14136,10 @@ async function executePromptJob(job) {
           const text = typeof chunk === "string" ? chunk : (chunk?.text || chunk?.delta || "");
           if (!text) return;
           if (streamEl === null) {
+            // [EDITCORE-INTEGRAL-B7] Sin feed de origen visible no se
+            // crea burbuja en el feed ajeno: el texto final llega por
+            // result.text y queda persistido en el chat de origen.
+            if (!isTurnFeedVisible(job)) return;
             removeThinking(thinking);
             const s = appendStreaming();
             streamEl = s.item;
@@ -13899,9 +14158,20 @@ async function executePromptJob(job) {
         providerKey: job.providerKey || "",
         images: outgoingImages,
         projectRoot: job.projectRoot || "",
-        projectId: activeProject()?.id || "",
+        projectId: job.projectId || activeProject()?.id || "",
+        // [EDITCORE-INTEGRAL-B7] Ruta CHAT con identidad como la de
+        // agente: runId + chatId de origen viajan a main, que los
+        // reenvía al kernel y estampa el progreso con ese runId.
+        runId: job.runId,
+        chatId: job.chatId || "",
         agentId: activeProject()?.activeAgentId || state.activeAgentId || "",
         permissionMode: job.permissionMode || state.permissionMode || "step",
+        // [EDITCORE-INTEGRAL-B5] Ruta chat: la autorización también
+        // viaja como dato (no solo como la palabra suelta en el texto)
+        // y el primer turno de un chat nuevo anuncia el modo heredado.
+        planAuthorized: Boolean(job.planAuthorizedExecution),
+        planAuthorizedExecution: Boolean(job.planAuthorizedExecution),
+        isNewChat: !(Array.isArray(job.history) && job.history.some((m) => m && (m.role === "user" || m.sender === "user"))),
         history: job.history,
         systemPrompt: [
           job.chatConversationHint,
@@ -13935,11 +14205,16 @@ async function executePromptJob(job) {
           meta.textContent = usageMetaText(finalUsage);
           streamEl.appendChild(meta);
         }
-      } else {
+      } else if (isTurnFeedVisible(job)) {
+        // [EDITCORE-INTEGRAL-B7] Solo se pinta en el feed de origen;
+        // si el usuario cambió de chat, la respuesta vive persistida
+        // en su chat y se ve al volver.
         append("assistant", result.text, result.usage, true, elapsedSeconds);
       }
 
-      rememberMessage("assistant", accumulated || result.text, result.usage);
+      // [EDITCORE-INTEGRAL-B7] Éxito de CHAT: persiste en el chat de
+      // origen del trabajo, aunque el visible ahora sea otro.
+      rememberMessage("assistant", accumulated || result.text, result.usage, [], [], turnTarget);
       if (result.usage) recordUsage(result.usage);
       notifyVoiceAssistant(accumulated || result.text || result?.text);
       updateStatus();
@@ -13970,11 +14245,14 @@ async function executePromptJob(job) {
         saveProjects();
       }
     }
-    rememberMessage("assistant", message);
+    // [EDITCORE-INTEGRAL-B7] ERROR del turno: persiste en el chat de
+    // origen; el pintado en feed ajeno queda prohibido igual que en
+    // los éxitos.
+    rememberMessage("assistant", message, null, [], [], turnTarget);
     if (usesProjectTools && thinking) {
       finalizeThinkingAsAssistant(thinking, message, null, elapsedSeconds, { preserveNarrative: true });
     }
-    else append("assistant", message, null, true, elapsedSeconds);
+    else if (isTurnFeedVisible(job)) append("assistant", message, null, true, elapsedSeconds);
     notifyVoiceAssistant(message);
     handleProviderFailureForAuto(message, job).catch(() => undefined);
     $("status").textContent = cancelled ? "Cancelado" : "Error";
@@ -14742,7 +15020,15 @@ async function bootBackground({
     }
     window.editcoreAgent.setPermission(bootPermission).then((mode) => {
       applyPermissionMode(mode);
-    }).catch(() => undefined);
+    }).catch((error) => {
+      // [EDITCORE-INTEGRAL-B5] El fallo del setPermission de arranque ya
+      // NO se traga en silencio: se aplica el modo local como efectivo
+      // (la UI muestra lo que cree aplicar) y la barra de estado avisa
+      // de que la sincronización con main falló, para que una
+      // divergencia UI↔kernel nunca sea invisible.
+      applyPermissionMode(bootPermission);
+      $("status").textContent = `No se pudo sincronizar el permiso de arranque (${error?.message || error}); modo efectivo en esta ventana: ${bootPermission}`;
+    });
     syncProjectsToMaintenanceScheduler();
     window.editcoreProject?.onMaintenanceCompleted?.((result) => {
       if (!result || result.ok) return;
@@ -15912,6 +16198,23 @@ window.editcoreAgent.onProgress((progress) => {
       for (const file of progress.changedFiles || []) activeInspectorRepairRun.changedFiles.add(file);
       setInspectorProgress(Math.min(72, 30 + Number(progress.index || 0) * 4), `Reparando EditCore: ${progress.name || "accion"}...`, "running");
       return;
+    }
+
+    // [EDITCORE-INTEGRAL-B7] Estado de cola del kernel en la burbuja
+    // del propio trabajo: «en cola» mientras el motor atiende a otro
+    // turno; al llegar cualquier fase de ejecución, sale de la cola.
+    if (progress?.runId) {
+      const queuedJob = [...activePromptRequests.values()].find((j) => String(j.runId || "") === String(progress.runId));
+      if (queuedJob) {
+        if (progress.phase === "queued" && !queuedJob.kernelQueued) {
+          queuedJob.kernelQueued = true;
+          renderPromptQueue();
+          if (queuedJob.thinking) setThinkingStatus(queuedJob.thinking, "En cola: el motor ejecuta de uno en uno…");
+        } else if (queuedJob.kernelQueued && ["start", "tool", "model", "narration", "delta"].includes(String(progress.phase || ""))) {
+          queuedJob.kernelQueued = false;
+          renderPromptQueue();
+        }
+      }
     }
 
     const liveRun = activeAgentThinkingRuns.get(progress?.runId);

@@ -635,18 +635,56 @@ class EditCoreBrainService {
   async searchMemory(root, query, limit = 20) {
     const records = await this.collectMemory(root);
     const pid = root ? projectId(assertRoot(root)) : "";
+    // [EDITCORE-INTEGRAL-B9] Indexación incremental por HUELLAS:
+    // antes CADA búsqueda hacía upsertMemory FTS de CADA registro
+    // de collectMemory() (~200 globales + ~200 tech + proyecto).
+    // Ahora cada servicio recuerda la huella (sha256 de
+    // tipo/título/contenido/fuente) del último upsert por registro
+    // y solo re-upserta lo que CAMBIÓ: dos búsquedas seguidas sin
+    // cambios en disco no repiten el trabajo (medible contando
+    // upserts en memoryStore). La huella vive en memoria de la
+    // instancia: tras reiniciar, la primera búsqueda re-upserta
+    // todo una vez, que es lo correcto.
+    if (!this._memoryUpsertHashes) this._memoryUpsertHashes = new Map();
     for (const record of records) {
+      const fingerprint = crypto.createHash("sha256")
+        .update(`${record.type || ""}\n${record.title || ""}\n${record.content || ""}\n${record.source || ""}`)
+        .digest("hex");
+      const key = `${record.source === "global" ? "global" : pid}|${record.id}`;
+      if (this._memoryUpsertHashes.get(key) === fingerprint) continue;
       this.memoryStore.upsertMemory({
         id: record.id, scope: record.source === "global" ? "global" : "project", projectId: pid,
         type: record.type, title: record.title, content: record.content, source: record.source,
         updatedAt: record.timestamp, importance: ["architecture", "decision", "preference"].includes(record.type) ? 0.8 : 0.55,
       });
+      this._memoryUpsertHashes.set(key, fingerprint);
     }
     return this.memoryStore.searchMemories(pid, query, limit);
   }
 
   async walkProject(root) {
     const files = [];
+    // [EDITCORE-INTEGRAL-B9] UN SOLO conocimiento por proyecto: lo
+    // ingerido en .editcore/rag (brain-ingest) entra en el MISMO
+    // índice que la consulta automática (searchForAgent →
+    // searchKnowledge) lee. Antes walkProject saltaba .editcore
+    // entero y collectMemory no leía .editcore/rag: dos cerebros
+    // disjuntos. La excepción es SOLO rag/ (documentos .md/.txt
+    // ingeridos, sin _index.json ni marcadores internos); el resto
+    // de .editcore sigue fuera del índice, como siempre.
+    const walkRag = async (dir, depth = 0) => {
+      if (files.length >= MAX_INDEX_FILES || depth > 4) return;
+      let entries; try { entries = await fs.promises.readdir(dir, { withFileTypes: true }); } catch { return; }
+      for (const e of entries) {
+        if (files.length >= MAX_INDEX_FILES) break;
+        if (e.isSymbolicLink()) continue;
+        const abs = path.join(dir, e.name);
+        if (e.isDirectory()) { await walkRag(abs, depth + 1); continue; }
+        if (e.name.startsWith("_") || SENSITIVE_FILE_NAMES.has(e.name.toLowerCase())) continue;
+        if (!TEXT_EXTENSIONS.has(path.extname(e.name).toLowerCase())) continue;
+        try { const stat = await fs.promises.stat(abs); if (stat.isFile() && stat.size <= MAX_FILE_BYTES) files.push({ absolute: abs, relative: path.relative(root, abs).replace(/\\/g, "/"), fingerprint: `${stat.mtimeMs}:${stat.size}` }); } catch { /* siguiente */ }
+      }
+    };
     const walk = async (dir) => {
       if(files.length>=MAX_INDEX_FILES) return;
       let entries; try { entries=await fs.promises.readdir(dir,{withFileTypes:true}); } catch { return; }
@@ -654,9 +692,11 @@ class EditCoreBrainService {
         if(files.length>=MAX_INDEX_FILES) break;
         if(e.isSymbolicLink()) continue;
         const abs = path.join(dir, e.name);
-        // [FIX] Se eliminó la condición duplicada (`.editcore || .editcore`) — sin cambio de
-        // comportamiento, solo limpieza del chequeo redundante.
-        if(e.isDirectory()) { if(SKIP_DIRS.has(e.name)||e.name===".editcore") continue; await walk(abs); continue; }
+        if(e.isDirectory()) {
+          if(e.name===".editcore") { await walkRag(path.join(abs, "rag")); continue; }
+          if(SKIP_DIRS.has(e.name)) continue;
+          await walk(abs); continue;
+        }
         const ln = e.name.toLowerCase();
         if(SENSITIVE_FILE_NAMES.has(ln)||ln.startsWith(".env.")||/^service-account.*\.json$/.test(ln)) continue;
         if(!TEXT_EXTENSIONS.has(path.extname(e.name).toLowerCase())) continue;
@@ -696,9 +736,25 @@ class EditCoreBrainService {
     // solo aplica si este proyecto ya fue indexado alguna vez.
     const databaseReady = Boolean(previous) && this.memoryStore.stats(projectId(ws)).knowledgeChunks > 0;
     if(!options.force&&databaseReady&&previous&&JSON.stringify(previous.fileHashes||{})===JSON.stringify(fingerprints)&&fs.existsSync(indexPath)) return { ...previous, changedFiles:0, durationMs:Date.now()-startedAt, mode:"cached" };
+    // [EDITCORE-INTEGRAL-B9] Reindexación INCREMENTAL de verdad:
+    // cuando las huellas difieren, antes se re-leían y re-trozaban
+    // TODOS los archivos (hasta 4.000). Ahora los chunks del índice
+    // previo se reutilizan para los archivos cuya huella
+    // (mtime:tamaño) no cambió y solo se procesan los nuevos o
+    // cambiados. (La vía "cached" de arriba sigue cubriendo el
+    // caso sin cambios: ni siquiera se llega aquí.)
+    const previousChunks = previous ? await readJson(indexPath, { chunks: [] }) : { chunks: [] };
+    const reusableByPath = new Map();
+    for (const chunk of (previousChunks.chunks || [])) {
+      if (!chunk?.path) continue;
+      if (!reusableByPath.has(chunk.path)) reusableByPath.set(chunk.path, []);
+      reusableByPath.get(chunk.path).push(chunk);
+    }
     const chunks=[];
     for(const file of files) {
       if(chunks.length>=MAX_INDEX_CHUNKS) break;
+      const unchanged = previous?.fileHashes?.[file.relative] === file.fingerprint && reusableByPath.has(file.relative);
+      if (unchanged) { chunks.push(...reusableByPath.get(file.relative).slice(0, MAX_INDEX_CHUNKS - chunks.length)); continue; }
       try { const content=redact(await fs.promises.readFile(file.absolute,"utf8"),MAX_FILE_BYTES); chunks.push(...this.chunkFile(file.relative,content).slice(0,MAX_INDEX_CHUNKS-chunks.length)); } catch (err) { console.debug("[Brain] Error silenciado:", err?.message || err); }
     }
     await writeJson(indexPath, { version:1, chunks });
@@ -710,6 +766,16 @@ class EditCoreBrainService {
     return meta;
   }
 
+  // [EDITCORE-INTEGRAL-B9] DECLARADO: searchKnowledge indexa SOLO
+  // el proyecto abierto (ahora incluyendo su .editcore/rag). El
+  // código de los repos instalados en la Bodega
+  // (globalBrainRoot()/repos/) NO se indexa como conocimiento
+  // consultable: hacerlo bien exige un ámbito global en el FTS
+  // (project_id propio, topes y ciclo de vida al desinstalar) que
+  // es un subsistema nuevo, fuera de este bloque. De la Bodega
+  // solo cruzan al turno el catálogo (nombre/descripción) y las
+  // skills vía read_skill; ningún texto del panel debe prometer
+  // búsqueda sobre el código de un repo instalado.
   async searchKnowledge(root, query, limit = 12) {
     if(!root) return [];
     const ws = assertRoot(root);

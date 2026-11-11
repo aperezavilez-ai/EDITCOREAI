@@ -61,13 +61,22 @@ function slugify(text, fallback = "foto") {
   return slug || fallback;
 }
 
-async function fetchWithTimeout(fetcher, url, timeoutMs, headers) {
+async function fetchWithTimeout(fetcher, url, timeoutMs, headers, turnSignal = null) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
+  // [EDITCORE-INTEGRAL-B6] La señal del TURNO se combina con el
+  // timeout propio: si el usuario detiene, la descarga aborta ya,
+  // no cuando venza su temporizador (~115 s en la cadena completa).
+  const onTurnAbort = () => { try { controller.abort(); } catch { /* ignore */ } };
+  if (turnSignal) {
+    if (turnSignal.aborted) controller.abort();
+    else turnSignal.addEventListener("abort", onTurnAbort, { once: true });
+  }
   try {
     return await fetcher(url, { signal: controller.signal, headers: headers || {} });
   } finally {
     clearTimeout(timer);
+    if (turnSignal) { try { turnSignal.removeEventListener("abort", onTurnAbort); } catch { /* ignore */ } }
   }
 }
 
@@ -78,13 +87,21 @@ async function fetchStockPhoto(opts = {}) {
   const fetcher = typeof opts.fetcher === "function" ? opts.fetcher : globalThis.fetch;
   if (typeof fetcher !== "function") return { ok: false, error: "Este entorno no tiene fetch disponible." };
   const headers = { "User-Agent": "EditCoreAI/1.0 (buscador de fotos de stock)", Accept: "application/json" };
+  // [EDITCORE-INTEGRAL-B6] Señal del turno (opts.signal): si el turno
+  // fue detenido, NO se escribe el archivo — antes la foto aterrizaba
+  // en el proyecto caiga el turno o no (mutación tras el stop).
+  const turnSignal = opts.signal || null;
+  const abortedResult = { ok: false, aborted: true, error: "Foto cancelada: el turno fue detenido por el usuario (Detener). No se escribió ningún archivo." };
+  if (turnSignal?.aborted) return abortedResult;
 
   let payload;
   try {
-    const res = await fetchWithTimeout(fetcher, buildSearchUrl(query), Number(opts.timeoutMs || 15000), headers);
+    const res = await fetchWithTimeout(fetcher, buildSearchUrl(query), Number(opts.timeoutMs || 15000), headers, turnSignal);
     if (!res || !res.ok) return { ok: false, error: `El buscador de fotos respondió ${res ? res.status : "sin respuesta"}.` };
     payload = await res.json();
   } catch (error) {
+    // [EDITCORE-INTEGRAL-B6] Aborto del turno durante la búsqueda.
+    if (turnSignal?.aborted) return abortedResult;
     return { ok: false, error: `No se pudo buscar fotos: ${String(error?.message || error).slice(0, 200)}` };
   }
 
@@ -101,17 +118,36 @@ async function fetchStockPhoto(opts = {}) {
   let lastError = "";
   for (const candidate of candidates.slice(0, 5)) {
     try {
-      const res = await fetchWithTimeout(fetcher, candidate.url, Number(opts.downloadTimeoutMs || 20000), { "User-Agent": headers["User-Agent"] });
+      if (turnSignal?.aborted) return abortedResult;
+      const res = await fetchWithTimeout(fetcher, candidate.url, Number(opts.downloadTimeoutMs || 20000), { "User-Agent": headers["User-Agent"] }, turnSignal);
       if (!res || !res.ok) { lastError = `HTTP ${res ? res.status : "?"}`; continue; }
       const type = String(res.headers?.get?.("content-type") || "").split(";")[0].trim().toLowerCase();
       const ext = EXT_BY_TYPE[type];
       if (!ext) { lastError = `Tipo no soportado: ${type || "desconocido"}`; continue; }
       const buffer = Buffer.from(await res.arrayBuffer());
       if (buffer.length < MIN_IMAGE_BYTES) { lastError = "Imagen demasiado pequeña"; continue; }
+      // [EDITCORE-INTEGRAL-B6] Chequeo JUSTO antes de escribir: si el
+      // stop llegó durante la descarga, el archivo no aterriza.
+      if (turnSignal?.aborted) return abortedResult;
       fs.mkdirSync(assetsDir, { recursive: true });
       let fileName = `${base}${ext}`;
       for (let n = 2; fs.existsSync(path.join(assetsDir, fileName)); n++) fileName = `${base}-${n}${ext}`;
-      fs.writeFileSync(path.join(assetsDir, fileName), buffer);
+      // [EDITCORE-INTEGRAL-B9] Lock del archivo destino ANTES de
+      // escribir (costura inyectada por tools.execute con la
+      // identidad de la corrida): si otra corrida lo retiene, la
+      // foto no se escribe y el resultado explica el lock.
+      let lockHandle = null;
+      if (typeof opts.acquireLock === "function") {
+        lockHandle = opts.acquireLock(`${folderName}/${fileName}`);
+        if (!lockHandle || lockHandle.ok === false) {
+          return { ok: false, locked: true, error: `Foto no escrita: ${String(lockHandle?.error || "el archivo destino está bloqueado por otra corrida")}` };
+        }
+      }
+      try {
+        fs.writeFileSync(path.join(assetsDir, fileName), buffer);
+      } finally {
+        try { lockHandle?.release?.(); } catch { /* liberar no tumba el resultado */ }
+      }
       return {
         ok: true,
         path: `${folderName}/${fileName}`,

@@ -107,7 +107,14 @@ async function executeFullStackDeploy(projectRoot, connections = {}, {
   rollbackOnFail = true,
   mode = "full",
   onProgress = null,
+  // [EDITCORE-INTEGRAL-B8] Implementaciones inyectables (costura de
+  // prueba de comportamiento); en producción, los módulos reales.
+  deps = {},
 } = {}) {
+  const connectImpl = typeof deps.connectProjectImpl === "function" ? deps.connectProjectImpl : connectProject;
+  const syncEnvImpl = typeof deps.syncEnvToVercelImpl === "function" ? deps.syncEnvToVercelImpl : syncEnvToVercel;
+  const manageSupabaseImpl = typeof deps.manageSupabaseProjectImpl === "function" ? deps.manageSupabaseProjectImpl : manageSupabaseProject;
+  const publishImpl = typeof deps.publishProjectImpl === "function" ? deps.publishProjectImpl : publishProject;
   const root = path.resolve(String(projectRoot || ""));
   const isUpdate = String(mode || "full").toLowerCase() === "update";
   const stages = (isUpdate ? UPDATE_STAGES : STAGES).map((s) => ({ ...s, status: "pending", message: "" }));
@@ -185,7 +192,7 @@ async function executeFullStackDeploy(projectRoot, connections = {}, {
 
   if (!isUpdate) {
     setStage("github", "running", "Inicializando repo y remote…");
-    const connected = await connectProject(root, connections, {
+    const connected = await connectImpl(root, connections, {
       createGithub: true,
       createVercel: true,
       linkSupabase: true,
@@ -202,7 +209,7 @@ async function executeFullStackDeploy(projectRoot, connections = {}, {
     setStage("vercel", "running", "Enlazando Vercel y sincronizando envs…");
     vercelStep = (connected.steps || []).find((s) => s.step === "vercel_project") || {};
     if (String(connections.vercelToken || "").trim()) {
-      vercelEnv = await syncEnvToVercel(root, connections, {
+      vercelEnv = await syncEnvImpl(root, connections, {
         projectId: vercelStep.projectId || prevInfra.vercelProjectId || "",
         projectName: repoName || vercelStep.projectName || path.basename(root),
       });
@@ -230,7 +237,7 @@ async function executeFullStackDeploy(projectRoot, connections = {}, {
         VITE_SUPABASE_ANON_KEY: supabaseKey,
       });
       try {
-        supabaseManage = await manageSupabaseProject(root, connections, { ensureBucket: true });
+        supabaseManage = await manageSupabaseImpl(root, connections, { ensureBucket: true });
       } catch (error) {
         supabaseManage = { ok: false, message: error?.message || String(error) };
       }
@@ -261,7 +268,7 @@ async function executeFullStackDeploy(projectRoot, connections = {}, {
     vercelOrgId: String(connections.vercelOrgId || connections.vercelTeamId || "").trim(),
     vercelTeamId: String(connections.vercelTeamId || connections.vercelOrgId || "").trim(),
   };
-  const publish = await publishProject(root, {
+  const publish = await publishImpl(root, {
     mode: "project",
     connections: publishConnections,
     deploy: skipDeploy !== true,
@@ -332,16 +339,33 @@ async function executeFullStackDeploy(projectRoot, connections = {}, {
       notes: infra.data.notes,
     });
   }
-  steps.push({ step: "project_infra", ok: true, paths: infra.paths, liveUrl });
-  const finalUrl = liveUrl || prevInfra.liveUrl || "";
-  setStage("live", "done", finalUrl || "Sin URL pública detectada", { url: finalUrl });
+  // [EDITCORE-INTEGRAL-B8] La URL anterior JAMÁS se presenta como
+  // recién publicada: antes, con skipDeploy o sin URL nueva,
+  // finalUrl caía a prevInfra.liveUrl, la etapa live se marcaba
+  // done y el resultado era ok:true con «Publicado: <URL vieja>».
+  // Ahora liveUrl del RESULTADO es solo la URL NUEVA de esta
+  // corrida; la anterior viaja como previousLiveUrl (dato, no
+  // logro) y el mensaje lo dice. project-infra.json conserva la
+  // anterior como dato histórico del proyecto (era su URL viva
+  // hasta hoy), pero nada en esta corrida la declara nueva.
+  const previousLiveUrl = String(prevInfra.liveUrl || "");
+  steps.push({ step: "project_infra", ok: true, paths: infra.paths, liveUrl, previousLiveUrl });
+  const deployedNow = Boolean(liveUrl);
+  const noNewUrlMessage = skipDeploy === true
+    ? `Pipeline completado SIN deploy (omitido): no hay URL nueva en esta corrida${previousLiveUrl ? `; la anterior era ${previousLiveUrl} y no se presenta como recién publicada` : ""}.`
+    : `Pipeline completado sin URL nueva: el despliegue no devolvió URL en esta corrida${previousLiveUrl ? `; la anterior era ${previousLiveUrl} y no se presenta como recién publicada` : ""}.`;
+  if (deployedNow) {
+    setStage("live", "done", liveUrl, { url: liveUrl });
+  } else {
+    setStage("live", "skipped", noNewUrlMessage, { url: "", previousLiveUrl });
+  }
 
   appendAuditEvent(root, {
     action: isUpdate ? "update_publication" : "fullstack_deploy",
     ok: true,
     branch: publish.branch || "",
     sha: publish.sha || "",
-    url: finalUrl,
+    url: liveUrl,
     message: isUpdate ? "Publicación actualizada" : "Full-stack publish completado",
     steps: steps.map((item) => ({ step: item.step, ok: item.ok !== false })),
   });
@@ -359,26 +383,31 @@ async function executeFullStackDeploy(projectRoot, connections = {}, {
       percent: stagePercentOf(s.status, s.percent),
       url: s.url || "",
     })),
-    liveUrl: finalUrl,
-    message: finalUrl
-      ? (isUpdate ? `Actualizado: ${finalUrl}` : `Publicado: ${finalUrl}`)
-      : (isUpdate ? "Actualización completada." : "Pipeline completado."),
+    liveUrl,
+    previousLiveUrl,
+    deployed: deployedNow,
+    message: deployedNow
+      ? (isUpdate ? `Actualizado: ${liveUrl}` : `Publicado: ${liveUrl}`)
+      : noNewUrlMessage,
   });
 
   return {
     ok: true,
     completed: true,
+    deployed: deployedNow,
     mode: isUpdate ? "update" : "full",
     projectRoot: root,
     stages,
     steps,
     branch: publish.branch || "",
     sha: publish.sha || "",
-    liveUrl: finalUrl,
+    liveUrl,
+    url: liveUrl,
+    previousLiveUrl,
     infra: infra.data,
-    message: finalUrl
-      ? (isUpdate ? `Publicación actualizada · ${finalUrl}` : `Full-stack listo · ${finalUrl}`)
-      : (isUpdate ? "Publicación actualizada." : "Full-stack listo."),
+    message: deployedNow
+      ? (isUpdate ? `Publicación actualizada · ${liveUrl}` : `Full-stack listo · ${liveUrl}`)
+      : noNewUrlMessage,
     durationMs: Date.now() - startedAt,
   };
 }

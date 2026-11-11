@@ -76,11 +76,21 @@ async function parseProviderJsonOrThrow(response) {
   if (!response?.ok) {
     let rawMsg = data?.error?.message || data?.message || raw || `HTTP ${status}`;
     const providerRaw = String(rawMsg).slice(0, 500);
+    // [EDITCORE-INTEGRAL-B6] El código del proxy (p. ej. NO_SESSION,
+    // TOO_MANY_REQUESTS) y Retry-After SOBREVIVEN al parseo: antes el
+    // sanitizador recibía solo el texto y un 401 NO_SESSION salía como
+    // «revisa tu API key», pisando el mensaje accionable del proxy.
+    const providerCode = String(data?.error?.code || data?.code || "").trim().toUpperCase();
+    let retryAfterMs = null;
+    try {
+      const { parseRetryAfterMs } = require("./http-error-taxonomy");
+      retryAfterMs = parseRetryAfterMs(response?.headers);
+    } catch { /* ignore */ }
     try {
       const { sanitizeChatProviderError } = require("./chat-error-sanitize");
-      rawMsg = sanitizeChatProviderError(rawMsg, { status });
+      rawMsg = sanitizeChatProviderError(rawMsg, { status, code: providerCode || undefined });
     } catch { /* ignore */ }
-    const err = Object.assign(new Error(rawMsg), { status, providerRaw });
+    const err = Object.assign(new Error(rawMsg), { status, providerRaw, ...(providerCode ? { providerCode } : {}), ...(providerCode === "NO_SESSION" || providerCode === "SESSION_EXPIRED" || providerCode === "TOO_MANY_REQUESTS" ? { code: providerCode } : {}), ...(retryAfterMs != null ? { retryAfterMs } : {}) });
     if (status === 524 || isGatewayHtmlBody(String(err.message || ""))) {
       throw createGatewayTimeoutError(status || 524, err.message);
     }
@@ -128,6 +138,18 @@ function normalizeToolCallsOut(toolCalls = []) {
       const fn = call.function || call;
       const rawArgs = fn.arguments ?? fn.input ?? "{}";
       const sanitized = sanitizeToolCallArguments(rawArgs);
+      // [EDITCORE-INTEGRAL-B6] Argumentos TRUNCADOS detectables: si el
+      // JSON crudo no parsea y el saneado cae a «{}» habiendo contenido
+      // real, la llamada queda MARCADA (argumentsTruncated) en vez de
+      // disfrazarse de llamada válida sin argumentos: el orquestador
+      // la rechaza con error explícito y la herramienta NO corre.
+      let argumentsTruncated = call?.argumentsTruncated === true || fn?.argumentsTruncated === true;
+      if (!argumentsTruncated && typeof rawArgs === "string") {
+        const rawTrim = rawArgs.trim();
+        if (rawTrim && rawTrim !== "{}" && sanitized === "{}") {
+          try { JSON.parse(rawTrim); } catch { argumentsTruncated = true; }
+        }
+      }
       if (sanitized === "{}" && rawArgs !== null && rawArgs !== undefined) {
         const raw = typeof rawArgs === "string" ? rawArgs.trim() : String(rawArgs ?? "").trim();
         if (raw && raw !== "{}" && raw.length > 10 && !raw.startsWith("{")) {
@@ -141,9 +163,11 @@ function normalizeToolCallsOut(toolCalls = []) {
       return {
         id: call.id || `call_${fn.name || "tool"}_${index}`,
         type: "function",
+        ...(argumentsTruncated ? { argumentsTruncated: true } : {}),
         function: {
           name: String(fn.name || ""),
           arguments: sanitized,
+          ...(argumentsTruncated ? { argumentsTruncated: true } : {}),
         },
       };
     });
@@ -294,15 +318,31 @@ async function readOpenAiStream(response, onTextDelta, signal, onActivity) {
     if (signal.aborted) onAbort();
     else signal.addEventListener("abort", onAbort, { once: true });
   }
+  // [EDITCORE-INTEGRAL-B6] Parcial NUNCA completo: se registra si el
+  // stream cerró con [DONE], si llegó un marco de error del proxy
+  // (data: {"error":{...}}) y si se procesó contenido real. Un EOF
+  // sin [DONE] con contenido = respuesta PARCIAL, declarada como tal.
+  let sawDone = false;
+  let streamError = null;
+  let sawContent = false;
   const consume = (chunk, flush = false) => {
     pending += chunk;
     const lines = pending.split(/\r?\n/);
     pending = flush ? "" : (lines.pop() || "");
     for (const line of lines) {
       const value = line.trim();
-      if (!value.startsWith("data:") || value === "data: [DONE]") continue;
+      if (value === "data: [DONE]") { sawDone = true; continue; }
+      if (!value.startsWith("data:")) continue;
       let data;
       try { data = JSON.parse(value.slice(5).trim()); } catch { continue; }
+      if (data?.error) {
+        streamError = {
+          code: String(data.error.code || "UPSTREAM_STREAM_CUT"),
+          message: String(data.error.message || "El proveedor cortó la respuesta."),
+          partial: data.error.partial === true || data.partial === true,
+        };
+        continue;
+      }
       if (data?.usage) streamUsage = data.usage;
       const delta = data?.choices?.[0]?.delta || data?.choices?.[0]?.message || {};
       const reasoning = delta.reasoning || delta.reasoning_content || delta.thought || "";
@@ -347,7 +387,13 @@ async function readOpenAiStream(response, onTextDelta, signal, onActivity) {
     }
     if (signal?.aborted) throw abortReasonToError(signal, "Solicitud cancelada.");
     if (pending) consume("\n", true);
-    return { text, toolCalls: normalizeToolCallsOut([...toolCalls.values()].filter((call) => call.function.name)), usage: usage(streamUsage) };
+    // [EDITCORE-INTEGRAL-B6] partial: EOF sin [DONE], o marco de error
+    // del proxy, con contenido ya procesado ⇒ la respuesta es parcial
+    // y así viaja al provider/orquestador (sawContent interno: sirve
+    // también para la guarda de no-reintento del provider).
+    sawContent = Boolean(text) || toolCalls.size > 0;
+    const partial = Boolean(streamError) || (!sawDone && sawContent);
+    return { text, toolCalls: normalizeToolCallsOut([...toolCalls.values()].filter((call) => call.function.name)), usage: usage(streamUsage), partial, sawDone, sawContent, ...(streamError ? { streamError } : {}) };
   } finally {
     if (signal) signal.removeEventListener("abort", onAbort);
   }

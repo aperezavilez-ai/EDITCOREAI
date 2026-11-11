@@ -157,10 +157,6 @@ test("Paso6b: allowlist expone git pull/push y onboard", () => {
   assert.ok(CURSOR_PARITY_ALLOWLIST.includes("git_push"));
   assert.ok(CURSOR_PARITY_ALLOWLIST.includes("git_pull"));
   assert.ok(CURSOR_PARITY_ALLOWLIST.includes("onboard_project"));
-  const adapter = fs.readFileSync(path.join(__dirname, "..", "runtime", "editcore-claude-adapter.js"), "utf8");
-  assert.match(adapter, /tool\("git_push"/);
-  assert.match(adapter, /tool\("git_pull"/);
-  assert.match(adapter, /fixQueue: resultFixQueue/);
 });
 
 test("Paso7: aislamiento de conexiones por project-infra", () => {

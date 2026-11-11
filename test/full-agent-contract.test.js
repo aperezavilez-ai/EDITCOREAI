@@ -82,12 +82,3 @@ test("targets explicitos del prompt se pueden leer sin list_files previo", () =>
   assert.throws(() => ledger.assertReadable("resources/app/runtime/no-existe-xyz.js"));
 });
 
-test("adapter: ROADMAP no corta analisis; named diagnostic existe", () => {
-  const src = fs.readFileSync(path.join(__dirname, "../runtime/editcore-claude-adapter.js"), "utf8");
-  assert.match(src, /seedNamedDiagnosticTargets/);
-  assert.match(src, /isNamedFileDiagnosticPrompt/);
-  assert.match(src, /PROHIBIDO cerrar el analisis solo con ROADMAP/);
-  assert.match(src, /permissionFullNow/);
-  assert.match(src, /CONTRATO ACCESO TOTAL/);
-  assert.doesNotMatch(src, /ROADMAP precargado\. Es el punto de partida/);
-});

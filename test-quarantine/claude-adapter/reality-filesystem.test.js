@@ -1,4 +1,7 @@
 "use strict";
+// [EDITCORE-INTEGRAL-B10] CUARENTENA: este archivo prueba SOLO el adaptador
+// Claude (runtime/editcore-claude-adapter.js), fuera de la suite del producto.
+// Ver test-quarantine/claude-adapter/README.md.
 
 /**
  * Tests de REALIDAD: filesystem real + tool evidence.
@@ -11,17 +14,17 @@ const os = require("node:os");
 const path = require("node:path");
 const test = require("node:test");
 
-const { EditCoreClaudeAdapter } = require("../runtime/editcore-claude-adapter");
-const { ActionRegistry } = require("../runtime/action-registry");
-const { WorkflowOrchestrator } = require("../runtime/workflow-orchestrator");
-const { TaskStore } = require("../runtime/task-store");
-const { TaskManager } = require("../runtime/task-manager");
+const { EditCoreClaudeAdapter } = require("../../runtime/editcore-claude-adapter");
+const { ActionRegistry } = require("../../runtime/action-registry");
+const { WorkflowOrchestrator } = require("../../runtime/workflow-orchestrator");
+const { TaskStore } = require("../../runtime/task-store");
+const { TaskManager } = require("../../runtime/task-manager");
 const {
   collectToolEvidence,
   verifyMutationsOnDisk,
   hasMutationEvidence,
   buildExecutionEvidenceReport,
-} = require("../runtime/evidence-grounding");
+} = require("../../runtime/evidence-grounding");
 
 const REALITY_TOKEN = "EDITCORE_REAL_PROJECT_TEST_839271";
 const BUG_APP = "function suma(a, b) {\n  return a - b;\n}\n";
@@ -344,5 +347,5 @@ test("REALITY 6: proyecto pequeno (1 archivo fuente) no exige 3 lecturas arbitra
   ], "/tmp/small");
   assert.equal(evidence.requiredConcreteReads, 1);
   assert.equal(evidence.realFileReadCount, 1);
-  assert.equal(require("../runtime/evidence-grounding").analysisEvidenceSufficient(evidence).ok, true);
+  assert.equal(require("../../runtime/evidence-grounding").analysisEvidenceSufficient(evidence).ok, true);
 });

@@ -61,14 +61,6 @@ test("guia de profundidad: ROADMAP lo actualiza EDITCOREAI, no se ignora del tod
   assert.doesNotMatch(String(deep.orchestrationHint || ""), /\bIGNORA ROADMAP\b/i);
 });
 
-test("adapter limita a 1 tool en analysisMode y emite avance", () => {
-  const adapterSrc = fs.readFileSync(path.join(__dirname, "..", "runtime", "editcore-claude-adapter.js"), "utf8");
-  assert.match(adapterSrc, /SERIAL_ANALYSIS: solo 1 herramienta por turno/);
-  assert.match(adapterSrc, /emitAnalysisStepProgress/);
-  assert.match(adapterSrc, /bootstrap ligero|SERIAL como Cursor/i);
-  assert.doesNotMatch(adapterSrc, /actions\.slice\(0,\s*4\)/);
-});
-
 test("coverage map sigue exigiendo profundidad (no baja calidad)", () => {
   const depthProfile = resolveAnalysisDepth("reporte completo del proyecto");
   assert.ok(depthProfile.minCodeReads >= 6);

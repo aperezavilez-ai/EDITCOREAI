@@ -67,9 +67,8 @@ test("harness analisis compacta mas agresivo", () => {
   assert.ok(analysis.maxParallelReads <= full.maxParallelReads);
 });
 
-test("main y adapter cablean checkpoint ROADMAP + compact mid-run", () => {
+test("main cablea checkpoint ROADMAP + compact mid-run [EDITCORE-INTEGRAL-B10: la parte del adaptador salió a cuarentena]", () => {
   const mainSrc = fs.readFileSync(path.join(__dirname, "..", "main.js"), "utf8");
-  const adapterSrc = fs.readFileSync(path.join(__dirname, "..", "runtime", "editcore-claude-adapter.js"), "utf8");
   // [COSECHA MODO AGENTE] El checkpoint de análisis del adaptador
   // (onAnalysisCheckpoint cableado en main → ROADMAP) salió con la rama
   // legada de agent:run. El checkpoint de la ruta viva es saveLastAgentRun
@@ -77,6 +76,4 @@ test("main y adapter cablean checkpoint ROADMAP + compact mid-run", () => {
   // (buildRoadmapSyncFromRun). El adaptador conserva su mecanismo interno.
   assert.match(mainSrc, /saveLastAgentRun/);
   assert.match(mainSrc, /buildRoadmapSyncFromRun/);
-  assert.match(adapterSrc, /maybeCompactAndCheckpointAnalysis/);
-  assert.match(adapterSrc, /onAnalysisCheckpoint/);
 });

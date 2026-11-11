@@ -334,12 +334,28 @@ async function connectProject(projectRoot, connections = {}, {
   createVercel = true,
   linkSupabase = true,
   repoName = "",
+  // [EDITCORE-INTEGRAL-B6] Señal del turno: Detener corta la
+  // conexión entre pasos; lo ya creado fuera se declara.
+  signal = null,
 } = {}) {
   const root = path.resolve(String(projectRoot || ""));
   const steps = [];
   if (!root || !fs.existsSync(root)) {
     return { ok: false, completed: false, message: "projectRoot invalido.", steps };
   }
+  let externalLaunched = false;
+  const abortedResult = (step) => ({
+    ok: false,
+    completed: false,
+    aborted: true,
+    cancelledBeforeLaunch: !externalLaunched,
+    ...(externalLaunched ? { cancellationLate: true, abortedAfterLaunch: true } : {}),
+    message: externalLaunched
+      ? `Conexión detenida por el usuario (Detener) en el paso ${step}: algún recurso externo ya pudo haberse creado — verifícalo en GitHub/Vercel antes de reintentar.`
+      : "Conexión cancelada antes de lanzarse (Detener): no se creó ningún recurso externo.",
+    steps,
+  });
+  if (signal?.aborted) return abortedResult("assess");
 
   const assessment = await assessProjectConnections(root, connections);
   steps.push({ step: "assess", ok: true, assessment });
@@ -350,8 +366,11 @@ async function connectProject(projectRoot, connections = {}, {
     return { ok: false, completed: false, message: gitEnsure.message, steps };
   }
 
+  // [EDITCORE-INTEGRAL-B6] Chequeo entre pasos externos.
+  if (signal?.aborted) return abortedResult("github_remote");
   let github = { ok: true, skipped: true };
   if (createGithub) {
+    externalLaunched = true;
     github = await ensureGithubRemote(gitEnsure.gitRoot, connections, {
       createIfMissing: true,
       repoName: repoName || path.basename(root),
@@ -362,8 +381,10 @@ async function connectProject(projectRoot, connections = {}, {
     }
   }
 
+  if (signal?.aborted) return abortedResult("vercel_project");
   let vercel = { ok: true, skipped: true };
   if (createVercel) {
+    externalLaunched = true;
     vercel = await ensureVercelProject(root, connections, { name: repoName || path.basename(root) });
     const vercelOk = vercel.skipped === true || Boolean(vercel.projectId);
     steps.push({
@@ -385,6 +406,7 @@ async function connectProject(projectRoot, connections = {}, {
     }
   }
 
+  if (signal?.aborted) return abortedResult("supabase_env");
   let supabase = { ok: true, skipped: true };
   if (linkSupabase) {
     supabase = await ensureSupabaseEnv(root, connections);

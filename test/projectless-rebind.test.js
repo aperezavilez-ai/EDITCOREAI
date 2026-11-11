@@ -1,5 +1,24 @@
 "use strict";
 
+// [EDITCORE-INTEGRAL-B10] NOTA DE MIGRACIÓN POR RIESGO: estos tres
+// tests son VIGILANCIA ESTRUCTURAL SECUNDARIA (regex sobre el texto
+// de renderer.js). La guarda que vigilan
+// (isIntentionalProjectlessConversation) es una clausura del renderer
+// sobre su estado global (activeProject/state) SIN costura pura
+// ejecutable: no existe un módulo puro que la exponga — el resolvedor
+// puro del Bloque 7 (runtime/chat-turn-ownership.js) resuelve el
+// DESTINO del turno, no esta guarda de rehidratación. Por eso el
+// archivo se queda como vigilancia secundaria y NO es la prueba que
+// manda. Las pruebas de COMPORTAMIENTO que mandan sobre este camino:
+//   - test/projectless-chat.test.js (el kernel sin proyecto conversa
+//     y con proyecto ejecuta, con proveedor falso),
+//   - test/projectless-workspace.test.js (la declaración sin proyecto
+//     llega a agent:run y main no hereda el último workspace),
+//   - test/turno-chat-b7.test.js (comportamiento del resolvedor puro
+//     de propiedad del turno con costuras inyectadas).
+// Si este archivo y uno de comportamiento discrepan, manda el de
+// comportamiento.
+
 // El amarre incondicional (hallazgo en vivo de Luis, TRES veces:
 // v4.6.3, v4.6.4 y v4.6.5): send() abría con «si no hay raíz global,
 // rehidrata el activo» llamando a ensureActiveProjectBound() SIN

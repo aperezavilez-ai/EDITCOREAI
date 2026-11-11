@@ -812,20 +812,35 @@ function detectTranspiled(pkg) {
  * @param {boolean} [opts.runLint=false]
  * @param {boolean} [opts.runBuild=false]
  * @param {string[]} [opts.onlyFiles] limita los chequeos estáticos a esos archivos (rutas relativas).
+ * @param {boolean} [opts.allowExecution=true] [EDITCORE-INTEGRAL-B5] si es
+ *   false, NO se ejecuta ningún script del proyecto (tests/typecheck/lint/
+ *   build vía spawn): quedan omitidos y DECLARADOS en el resultado
+ *   (executionOmitted). Es la misma autorización que exige run_command:
+ *   quien eligió «solo lee» (o está en paso a paso sin autorizar) no
+ *   consintió ejecución. Los chequeos estáticos (sintaxis/imports sobre
+ *   el disco) sí corren: son lectura.
+ * @param {string} [opts.executionOmittedReason] motivo legible de la
+ *   omisión («modo solo lectura», «modo paso a paso sin autorización»).
  */
 async function runForensicChecks(projectRoot, opts = {}) {
   const root = path.resolve(String(projectRoot || ""));
   const started = Date.now();
   const {
-    runTests = true,
-    runTypecheck = true,
-    runLint = false,
-    runBuild = false,
     testTimeoutMs = 300_000,
     commandTimeoutMs = 240_000,
     onProgress,
     onlyFiles = null,
   } = opts;
+  // [EDITCORE-INTEGRAL-B5] La autorización de ejecución manda sobre los
+  // flags individuales: sin ella, ningún script corre aunque el llamador
+  // pidiera tests/typecheck/build.
+  const allowExecution = opts.allowExecution !== false;
+  const runTests = allowExecution && opts.runTests !== false;
+  const runTypecheck = allowExecution && opts.runTypecheck !== false;
+  const runLint = allowExecution && opts.runLint === true;
+  const runBuild = allowExecution && opts.runBuild === true;
+  const executionOmitted = !allowExecution && Boolean(opts.runTests || opts.runTypecheck || opts.runLint || opts.runBuild);
+  const executionOmittedReason = String(opts.executionOmittedReason || "sin autorización de ejecución").trim();
   const pkg = readJson(path.join(root, "package.json"));
   const config = loadProjectConfig(root, pkg);
   const walked = walkProject(root, config.skip);
@@ -876,7 +891,20 @@ async function runForensicChecks(projectRoot, opts = {}) {
     findings,
     counts,
     notRun,
+    // [EDITCORE-INTEGRAL-B5] Declaración de la omisión por permisos:
+    // el informe y el bloque de evidencia la muestran (ver
+    // formatForensicMarkdown / formatForensicPromptBlock), para que ni
+    // el usuario ni el modelo crean que los scripts corrieron.
+    executionOmitted,
+    executionOmittedReason: executionOmitted ? executionOmittedReason : "",
   };
+}
+
+// [EDITCORE-INTEGRAL-B5] Línea de declaración ÚNICA de la omisión, la
+// misma en el informe visible y en el bloque que lee el modelo.
+function executionOmittedLine(result) {
+  if (!result?.executionOmitted) return "";
+  return `⚠️ Chequeos con ejecución omitidos en ${result.executionOmittedReason || "este modo"}: no se ejecutó ningún script del proyecto (tests, typecheck, build). Correrán cuando el turno tenga autorización de ejecución.`;
 }
 
 // ---------------------------------------------------------------------------
@@ -957,6 +985,9 @@ function formatForensicMarkdown(result, { maxFindings = 80 } = {}) {
   out.push("", `## ⚠️ Advertencias verificadas (${warnings.length})`);
   out.push(...(warnings.length ? warnings.slice(0, maxFindings).map(findingLine) : ["- Ninguna."]));
   if (warnings.length > maxFindings) out.push(`- … y ${warnings.length - maxFindings} más.`);
+  // [EDITCORE-INTEGRAL-B5] La omisión por permisos se declara en el informe.
+  const omittedLine = executionOmittedLine(result);
+  if (omittedLine) out.push("", omittedLine);
   const notRun = [...(result.notRun || [])];
   if (result.filesTruncated) notRun.push(`solo se revisaron los primeros ${MAX_FILES} archivos`);
   if (notRun.length) out.push("", `_No ejecutado en esta corrida: ${notRun.join(", ")}._`);
@@ -990,6 +1021,8 @@ function formatForensicPromptBlock(result, { maxFindings = 80 } = {}) {
     `Hallazgos verificados: ${result.counts.error} errores, ${result.counts.warning} advertencias.`,
     ...(lines.length ? lines : ["- Ningún hallazgo en los chequeos ejecutados."]),
     result.findings.length > maxFindings ? `- … y ${result.findings.length - maxFindings} más (ver informe).` : "",
+    // [EDITCORE-INTEGRAL-B5] El modelo también ve la omisión declarada.
+    executionOmittedLine(result),
     (result.notRun || []).length ? `No ejecutado: ${result.notRun.join(", ")} (no afirmes nada sobre eso como verificado).` : "",
     "REGLAS: la tabla de chequeos y la lista de hallazgos verificados YA se muestran al usuario arriba de tu respuesta: NO las copies ni repitas sus resultados. En tu sección de errores verificados prioriza CADA hallazgo (sin quitar ni suavizar ninguno) con causa y arreglo; si no hay hallazgos, una sola línea. Cualquier otra observación tuya va en una sección aparte de HIPÓTESIS (no verificadas). No contradigas un chequeo que pasó.",
   ].filter(Boolean).join("\n");
@@ -1016,6 +1049,8 @@ function formatComparisonMarkdown(cmp) {
 
 module.exports = {
   runForensicChecks,
+  // [EDITCORE-INTEGRAL-B5] Declaración de omisión por permisos.
+  executionOmittedLine,
   scanModuleSpecifiers,
   parseTestOutput,
   parseTscOutput,

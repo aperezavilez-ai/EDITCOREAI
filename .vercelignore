@@ -14,6 +14,7 @@
 !/runtime/auto-router-transparent-protocol.js
 !/runtime/request-scope-policy.js
 !/runtime/chat-stream-preserve.js
+!/runtime/chat-turn-ownership.js
 !/runtime/cursor-parity.js
 !/runtime/intent-orchestrator.js
 !/runtime/intent-unified.js

@@ -1,5 +1,16 @@
 "use strict";
 
+// [EDITCORE-INTEGRAL-B10] ARCHIVO MIXTO DECLARADO: se queda en la
+// suite porque partirlo es inseguro — su arnés session() instancia el
+// adaptador en cuarentena como vehículo, pero una parte sustancial de
+// sus tests prueba módulos VIVOS y compartidos (ToolDispatcher,
+// agent-parser, AiCore, TaskManager/TaskStore, command-policy,
+// agent-runtime, project-analysis, external-agent-foundation) que no
+// tienen otra cobertura equivalente. Sus tests del adaptador NO deben
+// leerse como cobertura del motor del producto (el kernel); la
+// cobertura del kernel vive en los tests del kernel y en
+// scripts/acceptance-kernel.mjs.
+
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const os = require("node:os");
@@ -773,7 +784,16 @@ test("Chat conserva analisis de solo lectura y escala cambios al Agente", () => 
   const executionFlow = source.slice(executionStart, source.indexOf("window.editcoreAgent.onProgress", executionStart));
   assert.ok(executionFlow.indexOf("const thinking = appendThinking") < executionFlow.indexOf("await ensureAgentModelCapability(job)"));
   assert.match(source, /job\.planRunId \|\| job\.runId/);
-  assert.match(source, /window\.editcoreAgent\.cancel\(\{ runId: "" \}\)/);
+  // [EDITCORE-INTEGRAL-B7] Actualizado A PROPÓSITO: esta aserción
+  // certificaba el cancel GLOBAL del renderer
+  // (editcoreAgent.cancel({ runId: "" }) incondicional en
+  // cancelActiveResponse), que era exactamente el problema 7 de la
+  // auditoría §9 («Detener en un chat detiene el turno del otro»).
+  // El contrato nuevo: Detener cancela las corridas IDENTIFICADAS
+  // por su runId, una a una, en ambas rutas.
+  assert.doesNotMatch(source, /window\.editcoreAgent\.cancel\(\{ runId: "" \}\)/);
+  assert.match(source, /window\.editcoreAgent\.cancel\(\{ runId: id \}\)/);
+  assert.match(source, /window\.editcoreChat\.cancel\(\{ runId: id \}\)/);
 });
 
 test("procede despues de analisis activa reparacion autorizada", () => {
@@ -906,19 +926,20 @@ test("el reporte del agente proyecta archivos cambiados y verificaciones reales"
 });
 
 test("el planificador propone y espera autorizacion sin ejecutar", () => {
+  // [EDITCORE-INTEGRAL-B10] ACTUALIZADO A PROPÓSITO: este test
+  // afirmaba el contenido del handler agent:plan en main.js. Ese
+  // handler era un IPC fantasma (cero llamantes de UI en
+  // renderer/chat-home/index/web-portal) y el Bloque 10 lo RETIRÓ con
+  // su puente preload. La planificación viva ocurre dentro del turno
+  // del kernel (modo step: la compuerta presenta el cambio y espera
+  // «procede», cubierto por test/permisos-flujo-b5.test.js). Lo que
+  // este test vigila ahora es la retirada misma.
   const source = fs.readFileSync(path.join(__dirname, "..", "main.js"), "utf8");
-  assert.match(source, /Esta fase solo propone: nunca afirmes que ejecutaste/);
-  assert.match(source, /No muestres nombres internos de herramientas/);
-  assert.match(source, /Cuando autorices procedo con los cambios\./);
-  assert.match(source, /const AGENT_PLAN_TIMEOUT_MS = 180_000;/);
-  assert.match(source, /timeoutMs: AGENT_PLAN_TIMEOUT_MS/);
-  assert.match(source, /const planReference = tasks\(\)\.reference\(planText/);
-  assert.match(source, /PLAN_CREATED/);
-  // [COSECHA MODO AGENTE] La inyección del contexto durable al reanudar
-  // (durableTaskContext con el plan recuperado vía taskRecovery) vivía en
-  // la rama legada de agent:run y salió con ella; el plan en sí
-  // (agent:plan, afirmado arriba) no cambió.
-  assert.doesNotMatch(source, /agent:plan[\s\S]*timeoutMs: 30_000/);
+  assert.doesNotMatch(source, /ipcMain\.handle\("agent:plan"/);
+  const preload = fs.readFileSync(path.join(__dirname, "..", "preload.js"), "utf8");
+  assert.doesNotMatch(preload, /ipcRenderer\.invoke\("agent:plan"/);
+  const renderer = fs.readFileSync(path.join(__dirname, "..", "renderer.js"), "utf8");
+  assert.doesNotMatch(renderer, /editcoreAgent\.plan\(/);
 });
 
 test("la verificacion de modelo no bloquea la fase de plan", () => {

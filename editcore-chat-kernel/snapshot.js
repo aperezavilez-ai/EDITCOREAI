@@ -214,6 +214,54 @@ function rollbackLastChange(projectRoot, snapshotId = null) {
   };
 }
 
+// [EDITCORE-INTEGRAL-B4] Rollback de UN solo archivo: busca desde el
+// snapshot MÁS RECIENTE hacia atrás el primero que contenga una entrada
+// para `relPath` y restaura SOLO ese archivo (si no existía en ese
+// snapshot, lo elimina: era creación de esa escritura). Los demás
+// archivos de ese mismo snapshot NO se tocan — a diferencia de
+// rollbackLastChange, que revierte el snapshot entero. La captura y la
+// poda de snapshots no se tocan: esto solo LEE el manifiesto existente.
+function rollbackFileChange(projectRoot, relPath) {
+  const root = path.resolve(projectRoot || "");
+  const rel = String(relPath || "").replace(/\\/g, "/").replace(/^\.\//, "").trim();
+  if (!root || !rel) return { ok: false, error: "rollback_last_change requiere la ruta del archivo (path)." };
+  let resolved;
+  try {
+    resolved = safeRel(root, rel);
+  } catch (err) {
+    return { ok: false, error: String(err.message || err) };
+  }
+  const snapRoot = snapshotsRoot(root);
+  if (!fs.existsSync(snapRoot)) return { ok: false, error: `No hay snapshots para revertir ${rel}.` };
+  const dirs = fs.readdirSync(snapRoot, { withFileTypes: true })
+    .filter((e) => e.isDirectory())
+    .map((e) => e.name)
+    .sort()
+    .reverse();
+  for (const id of dirs) {
+    const packed = readManifest(root, id);
+    if (!packed?.manifest) continue;
+    const entry = (packed.manifest.files || []).find((f) => String(f.path || "").replace(/\\/g, "/") === resolved.rel);
+    if (!entry) continue;
+    if (entry.existed && entry.backup) {
+      const backupAbs = path.join(packed.dir, entry.backup);
+      if (!fs.existsSync(backupAbs)) continue;
+      fs.mkdirSync(path.dirname(resolved.abs), { recursive: true });
+      fs.copyFileSync(backupAbs, resolved.abs);
+      return { ok: true, snapshotId: id, path: resolved.rel, restored: [resolved.rel], deleted: [], reason: packed.manifest.reason || "", createdAt: packed.manifest.createdAt || "" };
+    }
+    if (!entry.existed) {
+      // El archivo NACIÓ en esa escritura: revertirla es eliminarlo.
+      let deletedFile = false;
+      if (fs.existsSync(resolved.abs)) {
+        try { fs.unlinkSync(resolved.abs); deletedFile = true; } catch { /* ignore */ }
+      }
+      return { ok: true, snapshotId: id, path: resolved.rel, restored: [], deleted: deletedFile ? [resolved.rel] : [], reason: packed.manifest.reason || "", createdAt: packed.manifest.createdAt || "" };
+    }
+  }
+  return { ok: false, error: `No hay ningún snapshot con el estado previo de ${rel}: no se puede revertir ese archivo.` };
+}
+
 function listSnapshots(projectRoot, limit = 20) {
   const root = snapshotsRoot(projectRoot);
   if (!fs.existsSync(root)) return { ok: true, snapshots: [] };
@@ -247,6 +295,8 @@ module.exports = {
   createSnapshot,
   snapshotBeforeWrite,
   rollbackLastChange,
+  // [EDITCORE-INTEGRAL-B4] Reversión por archivo (ver arriba).
+  rollbackFileChange,
   listSnapshots,
   getLatestSnapshotId,
   snapshotsRoot,

@@ -31,6 +31,8 @@ const NATIVE = [
   "list_files", "read_file", "write_file", "replace_in_file", "search_files",
   "run_command", "audit_env", "supabase_migrate", "scaffold_project", "capture_preview",
   "capture_preview_screenshot",
+  // [EDITCORE-INTEGRAL-B4] start_preview reconocida también por la vía texto.
+  "start_preview", "git_log", "git_diff",
   "web_scrape", "ingest_to_brain", "list_brain", "clone_repo",
   "rollback_last_change", "list_snapshots",
 ];
@@ -73,7 +75,11 @@ function assignArg(args, key, val) {
   else if (/^(content|contents|text)$/i.test(key)) args.content = unescapeTextBlob(val);
   else if (/^(old|old_str|oldText|old_text)$/i.test(key)) args.oldText = unescapeTextBlob(val);
   else if (/^(new|new_str|newText|new_text)$/i.test(key)) args.newText = unescapeTextBlob(val);
-  else if (/^(query|pattern|search)$/i.test(key)) args.query = val;
+  // [EDITCORE-INTEGRAL-B4] query recibe el MISMO unescapeTextBlob que
+  // content/oldText/newText: sin esto, buscar por la vía texto el
+  // literal \n de un archivo-blob llegaba como secuencia escapada sin
+  // desescapar y search_files jamás lo encontraba.
+  else if (/^(query|pattern|search)$/i.test(key)) args.query = unescapeTextBlob(val);
   else if (/^url$/i.test(key)) args.url = val;
   else args[key] = val;
 }
@@ -116,7 +122,8 @@ function parseInnerArgs(body) {
           Object.assign(args, json);
           // Doble escape: el JSON era válido pero el contenido quedó como
           // blob de una línea con \n literales tras el parseo.
-          for (const k of ["content", "oldText", "newText"]) {
+          // [EDITCORE-INTEGRAL-B4] query también se desescapa aquí.
+          for (const k of ["content", "oldText", "newText", "query"]) {
             if (typeof args[k] === "string") args[k] = unescapeTextBlob(args[k]);
           }
         }

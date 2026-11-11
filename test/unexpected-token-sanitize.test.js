@@ -12,7 +12,6 @@ const {
 } = require("../agent-parser");
 const { normalizeForAnthropic, normalizeToolCallsOut } = require("../runtime/ai-core");
 
-const adapterSource = fs.readFileSync(path.join(__dirname, "..", "runtime", "editcore-claude-adapter.js"), "utf8");
 const mainSource = fs.readFileSync(path.join(__dirname, "..", "main.js"), "utf8");
 
 test("safeParseToolArguments: '}' solo no lanza y devuelve {}", () => {
@@ -79,12 +78,6 @@ test("normalizeToolCallsOut limpia arguments de stream", () => {
     { id: "1", function: { name: "read_file", arguments: "}" } },
   ]);
   assert.equal(calls[0].function.arguments, "{}");
-});
-
-test("adapter reintenta y fuerza failover en Unexpected token (hasta 2 reintentos con autocorrección)", () => {
-  assert.match(adapterSource, /MALFORMED_TOOL_JSON/);
-  assert.match(adapterSource, /forzando failover/);
-  assert.match(adapterSource, /isMalformedToolJson[\s\S]{0,1600}throw apiError/);
 });
 
 test("main traduce Unexpected token a mensaje accionable", () => {

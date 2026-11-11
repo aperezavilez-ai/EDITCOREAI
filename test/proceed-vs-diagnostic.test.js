@@ -17,7 +17,6 @@ const ProjectAnalysis = require("../project-analysis");
 const appRoot = path.join(__dirname, "..");
 const mainSource = fs.readFileSync(path.join(appRoot, "main.js"), "utf8");
 const rendererSource = fs.readFileSync(path.join(appRoot, "renderer.js"), "utf8");
-const adapterSource = fs.readFileSync(path.join(appRoot, "runtime", "editcore-claude-adapter.js"), "utf8");
 
 test("F1: planAuthorized anula NO MODIFICAR en authorize", () => {
   // [COSECHA MODO AGENTE] El authorize() del despachador legado
@@ -75,11 +74,6 @@ test("F3: informe 'sin detalle de linea' es hueco/contradictorio", () => {
   ], "D:/proj");
   const check = detectContradictoryEvidence(hollow, evidence);
   assert.equal(check.ok, false);
-});
-
-test("F3b: adapter fuerza lectura de targets del prompt", () => {
-  assert.match(adapterSource, /resources\/app\/runtime\/\$\{base\}/);
-  assert.match(adapterSource, /analysisTargetCoverage/);
 });
 
 test("F3c: grounded report no recomienda .claude md", () => {

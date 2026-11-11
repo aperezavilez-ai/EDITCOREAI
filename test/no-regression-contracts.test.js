@@ -1,5 +1,23 @@
 "use strict";
 
+// [EDITCORE-INTEGRAL-B10] NOTA DE MIGRACIÓN POR RIESGO: este archivo
+// es MIXTO. Parte es comportamiento contra costuras reales (C3 y C6
+// usan resolveUnifiedAgentPlan y AutoModel; C5b usa
+// validateAgentCompletion) y parte es VIGILANCIA ESTRUCTURAL
+// SECUNDARIA: C1/C2 trocean send() y otras funciones de renderer.js
+// por indexOf+regex porque el camino renderer↔main no tiene costura
+// ejecutable en la suite (exige DOM/Electron). Esa vigilancia se
+// queda como secundaria y NO es la prueba que manda. Las pruebas de
+// comportamiento que mandan, por riesgo, son:
+//   - «procede»/permisos: test/permisos-flujo-b5.test.js (la
+//     autorización como DATO por el bridge→kernel, camino completo);
+//   - propiedad del turno / projectless: test/turno-chat-b7.test.js
+//     y test/projectless-chat.test.js;
+//   - publicación: test/publicacion-b8.test.js y
+//     test/publicacion-verificada.test.js (costuras inyectadas).
+// Además, la parte del adaptador que quedaba en C4 salió a
+// test-quarantine/claude-adapter/ (Bloque 10).
+
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
@@ -8,7 +26,6 @@ const path = require("node:path");
 const appRoot = path.join(__dirname, "..");
 const rendererSource = fs.readFileSync(path.join(appRoot, "renderer.js"), "utf8");
 const mainSource = fs.readFileSync(path.join(appRoot, "main.js"), "utf8");
-const adapterSource = fs.readFileSync(path.join(appRoot, "runtime", "editcore-claude-adapter.js"), "utf8");
 const ProjectAnalysis = require("../project-analysis");
 const AutoModel = require("../auto-model-selection");
 const { resolveUnifiedAgentPlan, MODES, PHASES } = require("../runtime/intent-orchestrator");
@@ -86,8 +103,6 @@ test("C4: tope duro de minutos e iteraciones (no 25 min / 120 loops)", () => {
   assert.equal(resolveRunDeadlineMs({ analysisMode: true, prompt: "analiza el proyecto" }), 720_000);
   assert.equal(resolveRunDeadlineMs({ analysisMode: false }), 480_000);
   assert.ok(resolveRunDeadlineMs({ analysisMode: true, prompt: "forense" }) <= 900_000);
-  assert.match(adapterSource, /const hardCap = listOnly/);
-  assert.doesNotMatch(adapterSource, /input\.allowWrite && input\.analysisMode !== true \? 80 : 36/);
 });
 
 test("C5: npm run lint no es fallo de la herramienta run_command", () => {
