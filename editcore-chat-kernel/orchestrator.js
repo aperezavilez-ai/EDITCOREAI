@@ -536,6 +536,9 @@ function formatToolActionNarration(name, args = {}) {
   if (name === "search_files") { const q = String(args.query || "").slice(0, 40); return q ? `Busco \`${q}\`.` : "Busco."; }
   if (name === "web_search") { const q = String(args.query || "").slice(0, 40); return q ? `Busco en internet: \`${q}\`.` : "Busco en internet."; }
   if (name === "web_scrape") return "Leo URL.";
+  if (name === "read_skill") { const s = String(args.name || args.skill || args.id || "").slice(0, 40); return s ? `Consulto la skill \`${s}\`.` : "Consulto una skill."; }
+  if (name === "search_brain") return "Consulto el Cerebro.";
+  if (name === "capture_preview_screenshot") return "Capturo el preview para verificar con la vista.";
   if (name === "git_status" || name === "git_log" || name === "git_diff") return "Inspecciono git.";
   if (name === "git_commit") return `Creo commit Git: "${String(args.message || "").slice(0, 50)}".`;
   if (name === "git_push") return "Envío cambios con git push.";
@@ -880,6 +883,7 @@ class ChatOrchestrator {
     this._historyInput = historyInput;
     this._fallbackProfiles = Array.isArray(input.fallbackProfiles) ? input.fallbackProfiles : [];
     this._skillsPrompt = String(input.skillsPrompt || "").trim();
+    this._skillsPickedIds = [];
     this._currentUserText = text;
     // Lo que cambia por tarea (pipeline, coordinación, archivo abierto, reviews) va al mensaje del turno, no al system cacheado.
     this._turnExtras = [];
@@ -892,6 +896,7 @@ class ChatOrchestrator {
           ? selectSkillsForTurn(projectRoot, kindForSkills, effectiveText || text || "", 4)
           : [];
         if (Array.isArray(picked) && picked.length) {
+          this._skillsPickedIds = picked.map((p) => p.id).filter(Boolean);
           this._turnExtras.push(`Skills activas este turno: ${picked.map((p) => p.id).join(", ")}`);
         }
       } catch (err) {
@@ -1422,6 +1427,13 @@ class ChatOrchestrator {
       turnContext.push(agentNetwork.rolePrompt(this._ecRoutedAgent));
     }
     if (this._skillsPrompt) system = `${system}\n\n${this._skillsPrompt}`;
+    // [EDITCORE-PRESENTACION] Prueba VISIBLE de skills: la inyección se
+    // anunciaba solo al MODELO (turnExtras) y el usuario no tenía forma
+    // de confirmar qué skills cargó el turno. Línea compuesta por el
+    // kernel con los ids elegidos en handle(), una vez por turno.
+    if (Array.isArray(this._skillsPickedIds) && this._skillsPickedIds.length) {
+      try { onProgress?.({ phase: "narration", text: `Skills aplicadas este turno: ${this._skillsPickedIds.join(", ")}.` }); } catch { /* la narrativa no tumba el turno */ }
+    }
     if (!listOnlyMode && projectRoot) {
       try {
         const boot = ensureCoreProjectBrain(projectRoot);
@@ -1433,7 +1445,18 @@ class ChatOrchestrator {
     if (!listOnlyMode) turnContext.push(buildBrainContextBlock(projectRoot, this._currentUserText || message));
     if (!listOnlyMode && !chatOnly) {
       const cerebroBlock = await buildCerebroServiceBlock(projectRoot, this._currentUserText || message, helpers);
-      if (cerebroBlock) turnContext.push(cerebroBlock);
+      if (cerebroBlock) {
+        turnContext.push(cerebroBlock);
+        // [EDITCORE-PRESENTACION] Prueba VISIBLE de uso: la conexión del
+        // Cerebro existía desde la v4.7.2 pero nada en la narrativa lo
+        // demostraba — el usuario no podía confirmar que se consultó.
+        // La línea la compone el kernel (no el modelo): es un hecho del
+        // turno, no una afirmación del agente.
+        const aportes = (String(cerebroBlock).match(/^- \[/gm) || []).length;
+        if (aportes > 0) {
+          try { onProgress?.({ phase: "narration", text: `Cerebro: consulté lo instalado y recordado — ${aportes} aporte(s) relevantes entraron a este turno.` }); } catch { /* la narrativa no tumba el turno */ }
+        }
+      }
     }
     // [EDITCORE-DOSSIER] La memoria semántica existía pero NADIE la leía:
     // PersistentMemory.promptBlockSemantic y globalMemory.promptBlockSemantic
@@ -1536,8 +1559,6 @@ class ChatOrchestrator {
             // de UI/construcción (this._uiTask lo fija handle); en el resto sigue fuera.
             .filter((t) => this._uiTask === true || (t.function?.name || t.name) !== "capture_preview_screenshot");
 
-        let streamAccum = "";
-        let lastVisible = "";
         this.turnAbort = new AbortController();
         const turnSignal = (typeof AbortSignal.any === "function" && this.abort?.signal) ? AbortSignal.any([this.abort.signal, this.turnAbort.signal]) : (this.turnAbort.signal || this.abort?.signal);
 
@@ -1598,19 +1619,18 @@ class ChatOrchestrator {
             timeoutMs: turnTimeoutMs,   // ← 180s en análisis
             fallbackProfiles: this._fallbackProfiles || [],
             onFallback: ({ model: fallbackModel }) => { try { onProgress?.({ phase: "heartbeat", text: `Cambiando a ${fallbackModel}…` }); } catch {} },
-            onTextDelta: (delta) => {
-              const chunk = String(delta || ""); if (!chunk) return;
-              try {
-                streamAccum += chunk;
-                const visible = visibleNarrationText(streamAccum);
-                let piece = "";
-                if (visible.startsWith(lastVisible)) piece = visible.slice(lastVisible.length);
-                else if (visible !== lastVisible) piece = visible;
-                lastVisible = visible;
-                if (!piece) return;
-                onProgress?.({ phase: "narration_delta", text: piece, index: steps.length, streaming: true });
-              } catch {}
-            },
+            // [EDITCORE-PRESENTACION] SIN onTextDelta a propósito: antes los
+            // deltas del modelo se volcaban CRUDOS a la narrativa del chat
+            // (narration_delta) — el usuario leía el razonamiento interno
+            // en inglés, con sus auto-instrucciones filtradas, y al final
+            // la respuesta REPETÍA la misma evidencia ya volcada (en vivo,
+            // P-3 de la v4.7.4: 27k tokens para un sí/no contado dos
+            // veces). La narrativa visible de un turno ahora es SOLO lo
+            // que el kernel compone: líneas de acción por herramienta,
+            // Cerebro/skills aplicadas, compuertas y el latido con su
+            // temporizador; la única prosa del modelo es su respuesta
+            // final, una sola vez. El texto completo del paso sigue
+            // llegando en turn.text (parseo de tool calls intacto).
           });
         } catch (callErr) {
           if (callErr?.code === "AGENT_STEER" || String(callErr?.message || "").includes("Nueva instruccion") || (Array.isArray(this.steering) && this.steering.length > 0)) {
@@ -1803,6 +1823,27 @@ class ChatOrchestrator {
             textOut = groundUngroundedClaims(cleanText, steps, message, decision, Number(opts.evidenceReads) || 0);
           }
 
+          // [EDITCORE-PRESENTACION] Garantía DETERMINISTA del «¿procedo?»:
+          // la compuerta de cierre (v4.7.4) le DEVUELVE el turno al modelo
+          // una vez, pero en vivo el modelo obedeció una prohibición vieja
+          // de request-scope-policy («PROHIBIDO… '¿procedemos a…?'») y
+          // cerró igual sin preguntar (P-1 de la v4.7.4). La prohibición
+          // ya quedó acotada en su casa; esta es la red que no depende de
+          // obediencia: si el turno es «Pregunta antes», el pedido implica
+          // mutación, no se escribió nada y el cierre sigue sin traer la
+          // pregunta, el KERNEL adjunta el pedido de autorización. No
+          // fabrica la propuesta (esa la escribió el modelo arriba): solo
+          // garantiza que el usuario siempre tenga el «procede» a la vista.
+          if (written.length === 0 && !listOnlyMode && !analysisMode && !chatOnly && !projectless
+            && decision?.kind !== "CHAT" && stepDeclared && !writeAuthorized) {
+            const intentText = `${this._currentUserText || ""} ${message || ""}`;
+            const mutationIntent = FIX_INTENT_RE.test(intentText)
+              || /\b(?:reescrib\w*|crea\w*|construy\w*|elimin\w*|borra\w*|actualiz\w*|instal\w*)\b/i.test(intentText);
+            if (mutationIntent && !/(?:¿[^?]*\?|\bprocede\b|\bautoriz)/i.test(String(textOut || "").slice(-800))) {
+              textOut = `${String(textOut || "").trim()}\n\n---\n\n**No apliqué ningún cambio**: estoy en modo «Pregunta antes» y este pedido requiere escribir. Si quieres que ejecute el arreglo tal como lo describí, responde **«procede»** y lo hago en este mismo chat.`;
+            }
+          }
+
           if (written.length > 0) {
             textOut = await this.appendBeforeAfter(projectRoot, written, textOut, onProgress);
             try {
@@ -1943,6 +1984,12 @@ class ChatOrchestrator {
               // corran en paralelo sobre el mismo proyecto.
               threadId: threadId || (helpers && helpers.threadId) || "default",
               agentRole: "supervisor",
+              // [EDITCORE-PRESENTACION] La señal de ESTA corrida nunca
+              // llegaba a las herramientas: tools.execute la lee de
+              // helpers.abortSignal (run_command, delegate_parallel) y el
+              // orquestador no la ponía — Detener no cortaba lo que el
+              // turno estaba ejecutando.
+              abortSignal: this.abort?.signal || null,
               activePreviewUrl: this._activePreviewUrl || (helpers && helpers.activePreviewUrl) || undefined,
               fullAccess: accessFull || (helpers && helpers.fullAccess === true),
               externalActionApproved: accessFull || (helpers && helpers.externalActionApproved === true),
@@ -1959,6 +2006,7 @@ class ChatOrchestrator {
                 fullAccess: true,
                 externalActionApproved: true,
                 permissionMode: "full",
+                abortSignal: this.abort?.signal || null,
               };
               result = await tools.execute(name, args, projectRoot, true, execHelpers);
             } else {

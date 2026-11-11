@@ -520,17 +520,27 @@ function runCommand(root, command, options = {}) {
     // la corrida quedaba colgada para siempre quemando saldo. Todo comando
     // tiene ahora un límite; al vencer, se mata el árbol y el paso HABLA.
     const timeoutMs = Math.min(600_000, Math.max(1_000, Number(options.timeoutMs) || 120_000));
+    // DETENER de verdad (1/2): si la corrida ya fue detenida, el comando
+    // ni siquiera arranca.
+    if (options.signal && options.signal.aborted) {
+      resolve({ ok: false, aborted: true, code: null, output: "", stderr: "", error: "Comando no ejecutado: la corrida ya estaba detenida por el usuario." });
+      return;
+    }
     const child = spawn(shell, args, { cwd: root, windowsHide: true });
     let output = "";
     let stderr = "";
     let settled = false;
+    let onAbort = null;
     const finish = (result) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
+      if (onAbort && options.signal && typeof options.signal.removeEventListener === "function") {
+        try { options.signal.removeEventListener("abort", onAbort); } catch { /* ignore */ }
+      }
       resolve(result);
     };
-    const timer = setTimeout(() => {
+    const killTree = () => {
       try {
         if (isWin && child.pid) {
           spawn("taskkill", ["/pid", String(child.pid), "/T", "/F"], { windowsHide: true });
@@ -538,6 +548,9 @@ function runCommand(root, command, options = {}) {
           child.kill("SIGKILL");
         }
       } catch { /* el proceso ya pudo morir */ }
+    };
+    const timer = setTimeout(() => {
+      killTree();
       finish({
         ok: false,
         timeout: true,
@@ -547,6 +560,26 @@ function runCommand(root, command, options = {}) {
         error: `El comando superó el límite de ${Math.round(timeoutMs / 1000)} s y fue terminado. Si es un servidor u otro proceso continuo, no lo dejes en primer plano: usa el preview del IDE o pide un comando que termine.`,
       });
     }, timeoutMs);
+    // DETENER de verdad (2/2): execute() ya pasaba helpers.abortSignal en
+    // las opciones, pero runCommand lo IGNORABA — el comando corría hasta
+    // su timeout aunque el usuario hubiera pulsado Detener, y el bucle
+    // del agente quedaba estacionado esperándolo (así se vivió la
+    // corrida colgada de TALLE PRUEBA). Ahora la señal mata el árbol al
+    // instante y el paso HABLA: la corrida se desenrolla en el acto.
+    onAbort = () => {
+      killTree();
+      finish({
+        ok: false,
+        aborted: true,
+        code: null,
+        output: output.slice(0, 10000),
+        stderr: stderr.slice(0, 10000),
+        error: "Comando detenido por el usuario con el botón Detener.",
+      });
+    };
+    if (options.signal && typeof options.signal.addEventListener === "function") {
+      options.signal.addEventListener("abort", onAbort, { once: true });
+    }
 
     child.stdout.on("data", (d) => {
       output += d.toString();
@@ -903,7 +936,7 @@ async function buildProject(root, options = {}) {
       buildCmd = "npm run build";
     }
   }
-  return await runCommand(root, buildCmd, { timeoutMs: 900000 });
+  return await runCommand(root, buildCmd, { timeoutMs: 900000, signal: options.signal || null });
 }
 
 async function installSkill(root, repoUrl, skillName) {
@@ -1386,7 +1419,7 @@ async function execute(name, args, root, allowWrite, helpers = {}) {
         });
       case "build_project":
         if (!allowWrite) return { ok: false, error: "Compilar requiere modo escritura/ejecución." };
-        return await buildProject(root, a);
+        return await buildProject(root, { ...a, signal: helpers.abortSignal || null });
       case "git_status":
         return await gitStatus(root);
       case "git_commit":
