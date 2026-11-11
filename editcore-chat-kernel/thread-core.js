@@ -101,11 +101,20 @@ function rememberExchange(projectRoot, threadId, userText, assistantText, meta =
       if (rawUser && rawUser.length > 5 && !/^(?:contin[uú]a|sigue|ok|si|dale|procede)\b/i.test(rawUser)) {
         threadMemory.noteWorkingOn(projectRoot, rawUser.slice(0, 300), threadId);
       }
-      const rawAssistant = String(assistantText || "").trim();
-      if (rawAssistant && rawAssistant.length > 25) {
-        const firstLine = rawAssistant.split("\n").map((l) => l.trim()).find((l) => l && !l.startsWith("#") && !l.startsWith(">")) || "";
-        if (firstLine && firstLine.length > 15) {
-          threadMemory.noteDecision(projectRoot, firstLine.slice(0, 250));
+      // [EDITCORE-DOSSIER] Antes la PRIMERA línea de cada respuesta del
+      // agente se guardaba como "decisión": el expediente se llenaba de
+      // narrativa ("Listo, corregí…") y la decisión real se perdía entre
+      // ruido. Las decisiones ya no se infieren aquí: solo entran por
+      // noteDecision explícito o por verificación real (noteVerified /
+      // noteDiscarded en el orquestador). Lo verificado y lo descartado
+      // llegan por meta.verified / meta.discarded cuando el llamador los
+      // conoce; si no vienen, no se inventa nada.
+      if (meta && typeof threadMemory.noteVerified === "function") {
+        if (typeof meta.verified === "string" && meta.verified.trim()) {
+          threadMemory.noteVerified(projectRoot, meta.verified, true);
+        }
+        if (typeof meta.discarded === "string" && meta.discarded.trim()) {
+          threadMemory.noteDiscarded(projectRoot, meta.discarded);
         }
       }
     } catch { /* ignore */ }

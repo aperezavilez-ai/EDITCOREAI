@@ -348,6 +348,24 @@ async function appendRealVerification(projectRoot, written, steps, textOut, onPr
     onProgress?.({ phase: "subagent", name: "verifier", text: "Verificación real: capturando el preview o compilando el proyecto…" });
     const rv = await runRealVerification(projectRoot, { previewUrl: opts.previewUrl });
     if (!rv) return textOut;
+    // [EDITCORE-DOSSIER] La verificación real se ESCRIBE en el expediente:
+    // si pasó, el próximo turno no la re-verifica; si falló, la hipótesis
+    // queda descartada y no se reintenta el mismo arreglo a ciegas. Sin
+    // esto, cada turno volvía a diagnosticar desde cero (sesión VIXERAI).
+    try {
+      const tm = threadCore && threadCore.threadMemory;
+      if (tm && typeof tm.noteVerified === "function" && !rv.softTimeout) {
+        const what = rv.kind === "preview" ? "captura del preview" : "npm run build";
+        if (rv.ok === true) {
+          tm.noteVerified(projectRoot, `Verificado (${what}): OK — ${String(written.slice(0, 3).join(", "))}`, true);
+        } else {
+          // La verificación falló: el arreglo intentado queda descartado.
+          // Un timeout blando NO se registra: sin concluir no es ni
+          // verificado ni descartado, y registrarlo mentiría al expediente.
+          tm.noteVerified(projectRoot, `Arreglo descartado (${what}): ${String(rv.detail || "sin detalle").slice(0, 200)}`, false);
+        }
+      }
+    } catch { /* el expediente nunca tumba el turno */ }
     const block = formatRealVerifyBlock(rv);
     if (rv.ok || rv.softTimeout) return String(textOut || "") + block;
     return formatRealVerifyBanner(rv) + String(textOut || "") + block;
@@ -601,6 +619,20 @@ function buildBrainContextBlock(projectRoot, query) {
     const lines = hits.map((h) => `- **${h.title}**: ${String(h.text || "").slice(0, 700)}`);
     return `## CEREBRO DEL PROYECTO (documentos relevantes ya ingeridos)\n${lines.join("\n")}`;
   } catch { return ""; }
+}
+
+// IDIOMA DEL TURNO (presencia, 2026-11-10): el sistema ya decía «respondé
+// siempre en español» y el modelo igual narraba en inglés — una línea fija
+// y genérica no basta, y además EditCoreAI es multilingüe: la regla es
+// ESPEJO del usuario. Se detecta el idioma del mensaje (conteo de palabras
+// función) y se inyecta la directiva como dato del turno, junto al mensaje.
+function turnLanguageDirective(text) {
+  const t = ` ${String(text || "").toLowerCase()} `;
+  const es = (t.match(/\b(?:el|la|los|las|de|del|que|en|un|una|para|con|por|está|están|son|como|más|quiero|necesito|hace|hacer|cuando|donde|esto|esta|este|pero|también|tiene|puedes|debe|sería|hay|muy|ya|si|no|se|su|al|lo|mi|me|te|nos|les|era|han|fue)\b/g) || []).length;
+  const en = (t.match(/\b(?:the|is|are|and|to|of|for|with|on|an|be|this|that|please|make|create|fix|when|where|what|should|would|from|have|has|was|were|will|can|could|not|but|all|any|had|her|his|its|our|their|then|than|too|very|just)\b/g) || []).length;
+  if (es >= 2 && es > en) return "IDIOMA DEL USUARIO: ESPAÑOL. Toda tu salida VISIBLE de este turno va en español: el texto que acompaña a tus herramientas, tu análisis, tus propuestas, tus preguntas y tu cierre. Si tu razonamiento interno surge en otro idioma, al escribir para el usuario va en español — nada de mezclar inglés en el chat.";
+  if (en >= 2 && en > es) return "USER LANGUAGE: ENGLISH. All your VISIBLE output this turn is in English: the text around your tool calls, your analysis, your proposals, your questions and your closing. Do not mix languages in the chat.";
+  return "";
 }
 
 // Consulta AUTOMÁTICA al Cerebro real (brain-service vía helpers.brainSearch)
@@ -1310,6 +1342,7 @@ class ChatOrchestrator {
     let promiseRetries = 0;
     let noWriteNudges = 0;
     let verifyNudges = 0;
+    let closingNudges = 0;
     let evidenceBlocks = 0;
     let looseHtmlBlocks = 0;
     let connNudges = 0;
@@ -1402,7 +1435,33 @@ class ChatOrchestrator {
       const cerebroBlock = await buildCerebroServiceBlock(projectRoot, this._currentUserText || message, helpers);
       if (cerebroBlock) turnContext.push(cerebroBlock);
     }
+    // [EDITCORE-DOSSIER] La memoria semántica existía pero NADIE la leía:
+    // PersistentMemory.promptBlockSemantic y globalMemory.promptBlockSemantic
+    // estaban definidos y sin un solo llamador; la memoria solo se ESCRIBÍA
+    // (note/setReport) y nunca se inyectaba en el turno. Ahora ambas se
+    // consultan con la consulta actual, con tope y fail-open: si el vector
+    // store no cargó o no hay hits, caen al bloque clásico sin romper nada.
+    // Solo en turnos con proyecto y con trabajo real (no CHAT/LIST ni sin
+    // proyecto): en conversación libre no hay expediente que consultar.
+    if (!listOnlyMode && !chatOnly && decision?.kind !== "CHAT" && projectRoot && !projectless) {
+      try {
+        if (memory && typeof memory.promptBlockSemantic === "function") {
+          const memBlock = await memory.promptBlockSemantic(String(this._currentUserText || message || ""));
+          if (memBlock && memBlock.trim()) turnContext.push(String(memBlock).slice(0, 3000));
+        }
+      } catch { /* memoria semántica opcional: nunca tumba el turno */ }
+      try {
+        if (globalMemory && typeof globalMemory.promptBlockSemantic === "function") {
+          const globBlock = await globalMemory.promptBlockSemantic(String(this._currentUserText || message || ""));
+          if (globBlock && globBlock.trim()) turnContext.push(String(globBlock).slice(0, 1200));
+        }
+      } catch { /* memoria global opcional: nunca tumba el turno */ }
+    }
     if (!listOnlyMode && Array.isArray(this._turnExtras)) turnContext.push(...this._turnExtras.filter((x) => typeof x === "string" && x.trim()));
+    if (!listOnlyMode) {
+      const langDirective = turnLanguageDirective(this._currentUserText || message);
+      if (langDirective) turnContext.push(langDirective);
+    }
 
     const userText = `Proyecto: ${projectless ? "(ninguno)" : projectRoot}\n${scopeUserMessage(message)}`;
     const messages = threadCore.buildMessageList({ system, systemPrefix: listOnlyMode ? "" : SELF_KNOWLEDGE_PROMPT, turnContext: turnContext.filter(Boolean).join("\n\n"), userText, projectRoot, threadId, historyInput, query: String(this._currentUserText || message || ""), images: taskImages });
@@ -1665,6 +1724,45 @@ class ChatOrchestrator {
             messages.push({ role: "user", content: "El reporte es demasiado corto. Necesito un análisis completo con las secciones obligatorias (📊 Resumen ejecutivo, 🏗️ Arquitectura, ⚙️ Funcionalidad, ⚠️ Hallazgos, 🎯 Recomendaciones, 📁 Evidencia). Si te falta contexto, usa read_file ANTES de cerrar." });
             onProgress?.({ phase: "model", text: "Reporte corto detectado. Pidiendo análisis completo..." });
             continue;
+          }
+
+          // [EDITCORE-PRESENCIA] Cierre propositivo (regla de producto de
+          // Luis, 2026-11-10): un turno de Agente NO puede cerrar «mocho» —
+          // ni en plan narrado ni en reporte pelado — cuando el pedido
+          // implica mutación y no se escribió nada. La compuerta del
+          // despacho solo habla si el modelo INTENTA escribir; un modelo
+          // cauteloso que nunca intenta moría en el diagnóstico (así cerró
+          // dos veces el turno de la C-1: evidencia correcta, cero
+          // propuesta, cero pedido de autorización). Si el cierre ya trae
+          // pregunta o propuesta, pasa; si no, se devuelve UNA vez:
+          //  (a) en «Pregunta antes» sin autorización: presentar el arreglo
+          //      concreto y pedir el «procede»;
+          //  (b) autorizado: proponer el siguiente paso con nombre propio
+          //      (las compuertas de aplicación ya empujaron a ejecutar;
+          //      esta es la red final del cierre).
+          const closingBare = !chatOnly && decision?.kind !== "CHAT" && !listOnlyMode && !analysisMode && !projectless
+            && closingNudges < 1 && i < stepsLimit - 2
+            && successfulWritePaths(steps).length === 0
+            && cleanText.trim().length >= 60
+            && !/(?:¿[^?]*\?|\bprocede\b|\bautoriz|\bpropongo\b|siguiente paso|¿quieres|¿puedo|¿sigo)/i.test(cleanText.slice(-600));
+          if (closingBare) {
+            const userTextForIntent = `${this._currentUserText || ""} ${message || ""}`;
+            const mutationIntent = FIX_INTENT_RE.test(userTextForIntent)
+              || /\b(?:reescrib\w*|crea\w*|construy\w*|elimin\w*|borra\w*|actualiz\w*|instal\w*)\b/i.test(userTextForIntent);
+            if (mutationIntent && stepDeclared && !writeAuthorized) {
+              closingNudges += 1;
+              messages.push({ role: "assistant", content: cleanText || null });
+              messages.push({ role: "user", content: "No cierres con un reporte pelado. Estás en modo «Pregunta antes» y este pedido requiere escribir: presenta AHORA tu propuesta — el arreglo concreto por archivo, apoyado en la evidencia que ya trajiste — y pide la autorización del usuario para ejecutarlo («¿procedo?»). El usuario decide con tu propuesta a la vista, no con un parte." });
+              onProgress?.({ phase: "model", text: "Cierre sin propuesta: pidiendo que presente el arreglo y pida autorización" });
+              continue;
+            }
+            if (mutationIntent) {
+              closingNudges += 1;
+              messages.push({ role: "assistant", content: cleanText || null });
+              messages.push({ role: "user", content: "No cierres «mocho»: tu cierre debe traer el resultado Y una propuesta concreta del siguiente paso (qué harías ahora, en qué archivos y para qué), o la pregunta exacta que necesitas que el usuario responda. Un usuario que va empezando debe saber qué sigue con solo leerte." });
+              onProgress?.({ phase: "model", text: "Cierre sin propuesta: pidiendo cierre propositivo" });
+              continue;
+            }
           }
 
           // [EDITCORE-REPAIR] Sin verificación real no hay "corregido":

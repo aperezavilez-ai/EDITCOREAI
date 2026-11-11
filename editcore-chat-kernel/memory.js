@@ -115,8 +115,10 @@ class PersistentMemory {
         return `- ${tag} ${String(h.text || "").slice(0, 300)}`;
       });
       const base = this.promptBlock();
-      return (base ? base + "\n\n" : "") +
-        "MEMORIA SEMÁNTICA (más relevante al pedido actual):\n" + lines.join("\n");
+      // [EDITCORE-DOSSIER] Antes la suma base + semántica no tenía tope:
+      // el bloque podía crecer sin control en cada turno. Tope total 3,000.
+      return ((base ? base + "\n\n" : "") +
+        "MEMORIA SEMÁNTICA (más relevante al pedido actual):\n" + lines.join("\n")).slice(0, 3000);
     } catch (_) {
       return this.promptBlock();
     }
