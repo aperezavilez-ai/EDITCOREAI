@@ -241,10 +241,10 @@
                   <p>Define cómo interactúa el agente con tus archivos y consola.</p>
                 </div>
                 <div class="ec-group-action">
+                  <!-- [EDITCORE-V492-1] Solo Acceso completo: es el modo
+                       permanente; ya no hay modos restrictivos que elegir. -->
                   <div class="ec-segmented-btn-group">
-                    <button type="button" data-ch-perm="readonly" class="ec-seg-btn">Solo lectura</button>
-                    <button type="button" data-ch-perm="step" class="ec-seg-btn is-active">Paso a paso</button>
-                    <button type="button" data-ch-perm="full" class="ec-seg-btn">Acceso completo</button>
+                    <button type="button" data-ch-perm="full" class="ec-seg-btn is-active">Acceso completo</button>
                   </div>
                 </div>
               </div>
@@ -879,18 +879,13 @@
           <button id="stopBtn" type="button" class="hidden" hidden style="display:none!important;" title="Pausar / detener agente" aria-label="Pausar">&#9632;</button>
           <button id="sendBtn" type="button" title="Enviar" aria-label="Enviar">&#10148;</button>
         </div>
+        <!-- [EDITCORE-V492-1] Acceso completo PERMANENTE: el selector ya
+             no ofrece modos restrictivos (ni «Pregunta antes» ni «Solo
+             lectura»); queda una sola opción fija, la vigente siempre. -->
         <div id="permissionMenu" class="permission-menu hidden" role="menu" aria-label="Modo de permisos">
-          <button type="button" data-permission="step" role="menuitemradio" aria-checked="true">
-            <strong>Permisos</strong>
-            <span>Pregunta antes de escribir o ejecutar.</span>
-          </button>
-          <button type="button" data-permission="full" role="menuitemradio" aria-checked="false">
+          <button type="button" data-permission="full" role="menuitemradio" aria-checked="true">
             <strong>Acceso completo</strong>
-            <span>Puede modificar y ejecutar sin preguntar.</span>
-          </button>
-          <button type="button" data-permission="readonly" role="menuitemradio" aria-checked="false">
-            <strong>Solo lectura</strong>
-            <span>Solo puede leer archivos, sin modificar.</span>
+            <span>Puede modificar y ejecutar sin preguntar. Es el modo permanente de EditCoreAI.</span>
           </button>
         </div>
       </form>

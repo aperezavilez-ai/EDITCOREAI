@@ -11,6 +11,12 @@
 //        respuesta final), 27k tokens para un sí/no.
 //  (C-2) el Cerebro y las skills se usaban sin dejar prueba visible: el
 //        usuario no podía confirmar que el turno los consultó.
+//        [EDITCORE-V492-2] SUPERADO a propósito: la regla de producto de
+//        Luis (2026-11-11) manda VOZ NATURAL — las líneas-recibo
+//        («Cerebro: consulté lo instalado…», «Skills aplicadas este
+//        turno:…») salen de la superficie y las dos pruebas de C-2 se
+//        invirtieron: ahora fijan que la línea NO aparece y que el
+//        bloque de servicio SÍ sigue llegando al proveedor.
 //  (Detener) la señal de la corrida nunca llegaba a las herramientas y
 //        runCommand ignoraba options.signal: Detener no cortaba nada
 //        hasta que el comando vencía por timeout.
@@ -106,16 +112,20 @@ test("presentación: la narrativa ya NO vuelca el razonamiento crudo del modelo 
   assert.ok(String(out.text || "").includes("creé saludo.txt"), "la respuesta final del modelo llega una sola vez, por el camino final");
 });
 
-test("presentación: el uso del Cerebro deja prueba visible en la narrativa del turno", async () => {
+test("presentación: el Cerebro se consulta SIN línea-recibo visible, y su bloque SÍ llega al proveedor [V492-2]", async () => {
   const root = tmpProject();
   const events = [];
+  const payloads = [];
   const helpers = {
     brainSearch: async () => ({
       memory: [{ title: "preferencia del taller", content: "El cliente prefiere saludos breves y formales." }],
       knowledge: [],
       catalog: [],
     }),
-    callChat: async () => ({ text: "Entendido.", toolCalls: [], usage: {} }),
+    callChat: async (args) => {
+      payloads.push(JSON.stringify(args || {}));
+      return { text: "Entendido.", toolCalls: [], usage: {} };
+    },
   };
 
   const orch = new ChatOrchestrator();
@@ -127,16 +137,28 @@ test("presentación: el uso del Cerebro deja prueba visible en la narrativa del 
   });
 
   assert.ok(
-    events.some((e) => e.phase === "narration" && /Cerebro: consulté lo instalado/.test(String(e.text || ""))),
-    "la narrativa muestra que el Cerebro se consultó y cuántos aportes entraron",
+    !events.some((e) => /Cerebro: consulté lo instalado/.test(String(e.text || ""))),
+    "la línea-recibo del Cerebro ya no aparece en la superficie visible (voz natural)",
+  );
+  assert.ok(
+    !events.some((e) => /aporte\(s\) relevantes entraron/.test(String(e.text || ""))),
+    "ningún contador de aportes del Cerebro se anexa al turno",
+  );
+  assert.ok(
+    payloads.some((p) => p.includes("saludos breves y formales")),
+    "el bloque de servicio del Cerebro SÍ entró al contexto que recibió el proveedor",
   );
 });
 
-test("presentación: las skills aplicadas dejan prueba visible en la narrativa del turno", async () => {
+test("presentación: las skills se aplican SIN línea-recibo visible, y su prompt SÍ llega al proveedor [V492-2]", async () => {
   const root = tmpProject();
   const events = [];
+  const payloads = [];
   const helpers = {
-    callChat: async () => ({ text: "Listo.", toolCalls: [], usage: {} }),
+    callChat: async (args) => {
+      payloads.push(JSON.stringify(args || {}));
+      return { text: "Listo.", toolCalls: [], usage: {} };
+    },
   };
 
   const orch = new ChatOrchestrator();
@@ -147,9 +169,14 @@ test("presentación: las skills aplicadas dejan prueba visible en la narrativa d
     helpers, history: [], onProgress: (ev) => events.push(ev),
   });
 
-  const line = events.find((e) => e.phase === "narration" && /Skills aplicadas este turno:/.test(String(e.text || "")));
-  assert.ok(line, "la narrativa nombra las skills del turno");
-  assert.ok(/antislop-ui|frontend-design/.test(String(line.text || "")), "las skills de diseño del catálogo quedaron nombradas");
+  assert.ok(
+    !events.some((e) => /Skills aplicadas este turno:/.test(String(e.text || ""))),
+    "la línea-recibo de skills ya no aparece en la superficie visible (voz natural)",
+  );
+  assert.ok(
+    payloads.some((p) => /antislop-ui|frontend-design/.test(p)),
+    "el prompt de las skills elegidas SÍ entró al contexto que recibió el proveedor",
+  );
 });
 
 test("presentación: Detener corta un comando en curso al instante (la señal ya no se ignora)", async () => {

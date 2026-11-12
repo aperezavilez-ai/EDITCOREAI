@@ -96,10 +96,13 @@ test("B2-1 turno guionado: el payload al proveedor lleva el ÍNDICE de la skill 
   assert.ok(!payload.includes(BODY_TAIL_MARKER), "la cola del cuerpo completo NO viaja en el prompt");
   assert.ok(!payload.includes(FAKE_BODY.slice(3000, 3600)), "el relleno del cuerpo completo NO viaja en el prompt");
 
-  // La narrativa de skills (v4.8.0) se conserva y nombra la misma selección.
+  // [EDITCORE-V492-2] Actualizado a propósito: la línea-recibo
+  // «Skills aplicadas este turno: …» (v4.8.0) SALE de la superficie por
+  // la regla de voz natural de Luis (2026-11-11). Lo que la B2 protege
+  // — el índice en el payload, ya afirmado arriba — no cambia; la
+  // narrativa-recibo ahora debe contar CERO emisiones.
   const skillLines = events.filter((e) => e.phase === "narration" && /^Skills aplicadas este turno:/.test(String(e.text || "")));
-  assert.equal(skillLines.length, 1, "la línea «Skills aplicadas este turno: …» se emite una sola vez");
-  assert.ok(String(skillLines[0].text).includes(FAKE_SKILL_ID), "la narrativa nombra la skill del índice");
+  assert.equal(skillLines.length, 0, "la línea-recibo de skills ya no se emite (voz natural)");
 });
 
 test("B2-1b selección ÚNICA: el índice inyectado es exactamente la selección devuelta (buildSkillsTurn)", () => {

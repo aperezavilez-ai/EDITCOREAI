@@ -94,6 +94,13 @@ async function runKernelChat({
   authorizedContinuation,
   isNewChat,
   chatIsNew,
+  // [EDITCORE-V492-1] Opt-out EXPLÍCITO del acceso completo permanente:
+  // solo lo pasa main para sus corridas INTERNAS del Inspector
+  // (agentId inspector-* / namespace inspector), que son un subsistema
+  // interno y no la superficie del chat. Sin este flag, TODO turno de
+  // usuario se normaliza aquí a acceso completo (regla de producto de
+  // Luis, 2026-11-11: «que quede con todos los permisos y ya»).
+  respectRestrictiveMode,
   fallbackProfiles,
   skillsPrompt,
   maxSteps,
@@ -115,6 +122,24 @@ async function runKernelChat({
     permissionFull === true ||
     mode === "full"
   );
+
+  // [EDITCORE-V492-1] ACCESO COMPLETO PERMANENTE: esta es la ÚNICA
+  // costura app→kernel, así que la normalización vive aquí y cubre
+  // todas las rutas de usuario (chat y agente): cualquier modo guardado
+  // o heredado («solo lectura»/Charla, «step»/Pregunta antes, por
+  // proyecto, por chat o global) llega al kernel como acceso completo
+  // efectivo. Con el modo efectivo siempre «full», el anuncio de modo
+  // restrictivo del kernel nunca puede dispararse y ninguna
+  // herramienta (write/publish/capture/run) se bloquea por modo. La
+  // maquinaria de compuerta del kernel NO se toca: sigue existiendo y
+  // probada; la app simplemente nunca le entrega un modo restrictivo.
+  // Única excepción: respectRestrictiveMode === true, que main pasa
+  // SOLO para las corridas internas del Inspector.
+  const forceFullAccess = respectRestrictiveMode !== true;
+  const effectivePermissionMode = forceFullAccess ? "full" : permissionMode;
+  const effectiveFullAccess = forceFullAccess ? true : fullAccess;
+  const effectivePermissionFull = forceFullAccess ? true : permissionFull;
+  const effectiveAllowWrite = forceFullAccess ? true : allowWrite;
 
   // threadId estable: si no viene, generar uno (evita hilos huérfanos por mensaje).
   const tid = String(threadId || chatId || "").trim()
@@ -195,10 +220,12 @@ async function runKernelChat({
       onProgress: emitProgress,
       helpers,
       autoHeal,
-      allowWrite,
-      permissionMode,
-      permissionFull,
-      fullAccess,
+      // [EDITCORE-V492-1] Valores EFECTIVOS ya normalizados arriba:
+      // el kernel recibe «full» en toda corrida de usuario.
+      allowWrite: effectiveAllowWrite,
+      permissionMode: effectivePermissionMode,
+      permissionFull: effectivePermissionFull,
+      fullAccess: effectiveFullAccess,
       // [EDITCORE-INTEGRAL-B5] Dato normalizado (ver arriba), no el texto.
       planAuthorizedExecution: planAuthorizedData,
       planAuthorized: planAuthorizedData,

@@ -747,7 +747,10 @@ test("Chat conserva analisis de solo lectura y escala cambios al Agente", () => 
   assert.doesNotMatch(source, /planAuthorized: planAuthorizedExecution \|\| job\.permissionMode === "full"/);
   assert.match(source, /freshAnalysis && effectiveAnalysisMode/);
   assert.match(source, /function applyPermissionMode\(mode\)/);
-  assert.match(source, /state\.allowWrite = next !== "readonly"/);
+  // [EDITCORE-V492-1] Actualizado a propósito: applyPermissionMode ya
+  // no deriva allowWrite del modo — normaliza TODO a acceso completo
+  // permanente (regla de Luis) y la escritura queda siempre permitida.
+  assert.match(source, /function applyPermissionMode\(mode\)[\s\S]{0,600}state\.allowWrite = true;/);
   assert.match(source, /allowWrite: state\.permissionMode !== "readonly"/);
   assert.match(source, /effectiveAllowWrite[\s\S]*currentPermissionMode !== "readonly"/);
   assert.doesNotMatch(source, /state\.allowWrite = state\.permissionMode === "full"/);
@@ -785,7 +788,10 @@ test("Chat conserva analisis de solo lectura y escala cambios al Agente", () => 
   assert.doesNotMatch(source, /Chat no accede al disco ni ejecuta herramientas/);
   assert.doesNotMatch(source, /agent-steps-log/);
   assert.match(source, /agent-narrative-log/);
-  assert.match(source, /const bootPermission = \["readonly", "step", "full"\]\.includes\(state\.permissionMode\) \? state\.permissionMode : "step";/);
+  // [EDITCORE-V492-1] Actualizado a propósito: el arranque ya no
+  // deriva el permiso del estado guardado — nace siempre en acceso
+  // completo permanente (regla de Luis).
+  assert.match(source, /const bootPermission = "full";/);
   assert.doesNotMatch(source, /setPermission\("step"\)\.then/);
   const executionStart = source.indexOf("async function executePromptJob");
   const executionFlow = source.slice(executionStart, source.indexOf("window.editcoreAgent.onProgress", executionStart));

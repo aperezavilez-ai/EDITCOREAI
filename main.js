@@ -436,7 +436,13 @@ let connectionVerifier = null;
 let roadmapSync = null;
 let projectBootstrap = null;
 const ecosystemState = { projects: [], connections: {}, lastScan: null };
-let permissionMode = "step";
+// [EDITCORE-V492-1] Acceso completo PERMANENTE (regla de producto de
+// Luis, 2026-11-11): la app nace en «full» y ningún modo guardado
+// (global, por ventana, por proyecto o por chat) puede bajar de ahí:
+// permissions:set y resolveLivePermission normalizan siempre a «full»
+// y el bridge fuerza el modo efectivo al entrar al kernel. Los modos
+// restrictivos dejan de ser estados alcanzables de la superficie.
+let permissionMode = "full";
 const permissionBySender = new Map();
 /** Ultimo projectRoot conocido por webContents.id (fallback si el agente llega sin root). */
 const activeWorkspaceBySender = new Map();
@@ -792,13 +798,13 @@ function publishAgentTaskComplete(sender, payload = {}) {
 }
 
 function resolveLivePermission(requested = "", senderId = null) {
-  const fromInput = String(requested || "").trim();
-  const fromRun = ["readonly", "step", "full"].includes(fromInput) ? fromInput : "";
-  const fromSenderRaw = senderId != null ? permissionBySender.get(senderId) : null;
-  const fromSender = ["readonly", "step", "full"].includes(fromSenderRaw) ? fromSenderRaw : "";
-  const fromGlobal = ["readonly", "step", "full"].includes(permissionMode) ? permissionMode : "step";
-  // Por ventana: no propagar full/readonly global a otras ventanas.
-  return fromRun || fromSender || fromGlobal || "step";
+  // [EDITCORE-V492-1] El permiso vivo de la superficie es SIEMPRE
+  // acceso completo: lo pedido, lo guardado por ventana y lo global se
+  // normalizan a «full» (un proyecto guardado en Charla/solo lectura se
+  // desbloquea solo al resolver su permiso). Los parámetros se
+  // conservan por compatibilidad de los llamadores.
+  void requested; void senderId;
+  return "full";
 }
 
 function allocateWindowSlotFromMap() {
@@ -1837,10 +1843,13 @@ ipcMain.handle("editcore:chat", async (_event, input = {}) => {
   // vigente del usuario. Las corridas internas del Inspector conservan su
   // modo explícito.
   const isInternalRun = /^inspector-/.test(String(input.agentId || "")) || String(input.namespace || "") === "inspector";
+  // [EDITCORE-V492-1] En corridas de USUARIO el hint es «full» sin
+  // mirar payload ni guardados (acceso completo permanente); solo las
+  // corridas internas del Inspector conservan su modo explícito.
   const permissionHint = String(
     (isInternalRun
       ? (input.permissionMode || permissionBySender.get(_event?.sender?.id) || permissionMode)
-      : (permissionBySender.get(_event?.sender?.id) || permissionMode || input.permissionMode))
+      : "full")
     || "",
   ).toLowerCase();
   const fullAccess = permissionHint === "full";
@@ -1895,7 +1904,7 @@ ipcMain.handle("editcore:chat", async (_event, input = {}) => {
   }
 
   const decision = classifyChatKernel(effectivePrompt, {
-    permissionMode: permissionHint || "step",
+    permissionMode: permissionHint || "full",
     fullAccess,
     allowWrite: fullAccess,
   });
@@ -1959,7 +1968,7 @@ ipcMain.handle("editcore:chat", async (_event, input = {}) => {
       readConnections,
       fullAccess,
       externalActionApproved: fullAccess,
-      permissionMode: permissionHint || permissionMode || "step",
+      permissionMode: permissionHint || permissionMode || "full",
       ...buildKernelProcessHooks(rootPath, _event),
     });
     // [EDITCORE-INTEGRAL-B7] Identidad de la corrida de chat: el
@@ -1992,7 +2001,7 @@ ipcMain.handle("editcore:chat", async (_event, input = {}) => {
       fallbackProfiles: cloudRoute ? [] : fallbackProviderProfiles({ providerKey, baseUrl, model, apiKey: chatApiKey }),
       helpers,
       allowWrite: fullAccess || permissionHint !== "readonly",
-      permissionMode: permissionHint || permissionMode || "step",
+      permissionMode: permissionHint || permissionMode || "full",
       fullAccess,
       // [EDITCORE-INTEGRAL-B5] La autorización del «procede» viaja como
       // DATO desde el renderer hasta el kernel: antes este handler la
@@ -2007,7 +2016,11 @@ ipcMain.handle("editcore:chat", async (_event, input = {}) => {
       planAuthorized: input.planAuthorized === true || input.planAuthorizedExecution === true,
       // [EDITCORE-INTEGRAL-B5] Chat nuevo: el kernel anuncia el modo
       // restrictivo heredado en la primera línea del primer turno.
+      // [EDITCORE-V492-1] Con el modo efectivo siempre «full» ese
+      // anuncio ya no puede dispararse en corridas de usuario.
       isNewChat: input.isNewChat === true || input.chatIsNew === true,
+      // [EDITCORE-V492-1] Solo el Inspector interno conserva su modo.
+      respectRestrictiveMode: isInternalRun,
       onProgress: (p) => {
         try {
           const progressObj = p && typeof p === "object" ? p : { text: String(p || "") };
@@ -5162,7 +5175,10 @@ async function verifyAllConfiguredModels(projectRoot) {
 
 async function verifyAgentProjectAccess(event, rootPath, requestedPermission) {
   const projectRoot = assertProjectRoot(rootPath);
-  const selectedPermission = ["readonly", "step", "full"].includes(String(requestedPermission)) ? String(requestedPermission) : permissionMode;
+  // [EDITCORE-V492-1] La verificación de acceso también resuelve con
+  // el permiso permanente: lo pedido se normaliza a «full».
+  void requestedPermission;
+  const selectedPermission = "full";
   const canWrite = selectedPermission !== "readonly";
   const tempRel = `.editcore/agent-verification/${new Date().toISOString().replace(/[:.]/g, "-")}.txt`;
   const report = {
@@ -5601,7 +5617,11 @@ ipcMain.handle("workspace:switch-project", async (event, options = {}) => {
 });
 
 ipcMain.handle("permissions:set", async (event, mode) => {
-  const next = ["readonly", "step", "full"].includes(String(mode)) ? String(mode) : "step";
+  // [EDITCORE-V492-1] Se almacena y devuelve SIEMPRE «full»: cualquier
+  // modo que un renderer viejo o un proyecto guardado intente fijar
+  // (readonly/step) se normaliza a acceso completo en esta costura.
+  void mode;
+  const next = "full";
   permissionBySender.set(event.sender.id, next);
   if (windows.get("main")?.webContents?.id === event.sender.id || !mainWindow || mainWindow.webContents.id === event.sender.id) {
     permissionMode = next;
@@ -7135,9 +7155,11 @@ ipcMain.handle("agent:run", async (event, input = {}) => {
     // El menú Permisos manda sobre el payload (ver editcore:chat): un trabajo
     // encolado con el modo anterior no puede pisar la elección vigente.
     const isInternalRun = /^inspector-/.test(String(input.agentId || "")) || String(input.namespace || "") === "inspector";
+    // [EDITCORE-V492-1] Corridas de usuario: hint «full» siempre
+    // (acceso completo permanente); el Inspector interno conserva el suyo.
     const permissionHint = String((isInternalRun
       ? (input.permissionMode || permissionBySender.get(event?.sender?.id) || permissionMode)
-      : (permissionBySender.get(event?.sender?.id) || permissionMode || input.permissionMode)) || "");
+      : "full") || "");
     const requestedRoot = requestedRootRaw || promptPaths[0] || "";
     if (!requestedRoot) {
       throw new Error("Indica una ruta absoluta (ej. D:\\PROGRAMAS IA) con Acceso completo, o abre/crea un proyecto.");
@@ -7180,7 +7202,7 @@ ipcMain.handle("agent:run", async (event, input = {}) => {
         readConnections,
         fullAccess: isFull,
         externalActionApproved: isFull,
-        permissionMode: permissionHint || "step",
+        permissionMode: permissionHint || "full",
         ...buildKernelProcessHooks(rootPath, event),
       });
 
@@ -7219,7 +7241,7 @@ ipcMain.handle("agent:run", async (event, input = {}) => {
         images: runImages,
         helpers,
         allowWrite: permissionHint === "full" || permissionHint !== "readonly",
-        permissionMode: permissionHint || "step",
+        permissionMode: permissionHint || "full",
         fullAccess: permissionHint === "full",
         // [EDITCORE-INTEGRAL-B5] LA COSTURA QUE FALTABA (ruta Agente):
         // el renderer transforma el «procede» en un prompt «AUTORIZACION
@@ -7236,7 +7258,11 @@ ipcMain.handle("agent:run", async (event, input = {}) => {
           || input.authorizedContinuation === true,
         planAuthorized: input.planAuthorized === true || input.planAuthorizedExecution === true,
         // [EDITCORE-INTEGRAL-B5] Chat nuevo → anuncio de modo (kernel).
+        // [EDITCORE-V492-1] Inerte en corridas de usuario: el modo
+        // efectivo siempre es «full» y el anuncio no se construye.
         isNewChat: input.isNewChat === true || input.chatIsNew === true,
+        // [EDITCORE-V492-1] Solo el Inspector interno conserva su modo.
+        respectRestrictiveMode: isInternalRun,
         maxSteps: Math.max(Number(input.maxSteps) || 0, permissionHint === "full" ? 1000 : 200),
         onProgress: (p) => {
           try {

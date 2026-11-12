@@ -67,7 +67,7 @@ function buildBaseProtocolPrompt() {
     "2. Ejecuta `npm install` con run_command para dejar el proyecto servible.",
     "3. Personaliza sobre la base: src/App.tsx, src/components/sections/Hero.tsx y Showcase.tsx, Navbar/Footer. Sustituye TODO el contenido de ejemplo por el del negocio (nombre, servicios, precios, testimonios, contacto).",
     "4. Da vida a la página: animaciones de entrada y de scroll (los componentes FadeIn/motion de la base), hover con intención, contadores o marquesinas donde aporten, y fotos reales con fetch_stock_photo guardadas en public/assets.",
-    "5. Verifica con capture_preview_screenshot en desktop y móvil, y corrige lo que veas antes de cerrar.",
+    "5. Verifica con capture_preview_screenshot en desktop (una sola vista por defecto; la móvil solo si el cambio es de layout/responsive), y corrige lo que veas antes de cerrar.",
   ].join("\n");
 }
 

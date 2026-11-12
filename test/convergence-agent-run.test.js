@@ -173,6 +173,15 @@ test("DEMO 3: una tarea en solo-lectura no puede escribir", async () => {
     permissionMode: "readonly",
     fullAccess: false,
     planAuthorizedExecution: false,
+    // [EDITCORE-V492-1] Actualizado a propósito: desde la v4.9.2 la
+    // superficie de la app NUNCA entrega un modo restrictivo al bridge
+    // (acceso completo permanente, regla de Luis) — sin el opt-out, el
+    // bridge normalizaría este turno a «full» y la escritura pasaría
+    // (esa conducta nueva la prueba permisos-permanentes-v492). Esta
+    // demo sigue probando lo suyo — que la COMPUERTA DEL KERNEL corta
+    // una tarea en solo lectura de principio a fin — a través del
+    // opt-out explícito que main reserva a sus corridas internas.
+    respectRestrictiveMode: true,
     helpers: {
       callChat: mockCallChat
     },

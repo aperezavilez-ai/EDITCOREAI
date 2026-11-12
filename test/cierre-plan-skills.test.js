@@ -9,6 +9,12 @@
 //  (a) la línea de skills se emitía dentro de runModelTask y esa ruta
 //      no la alcanzó: ahora se emite en handle(), el tronco común,
 //      una sola vez al abrir el turno.
+//      [EDITCORE-V492-2] La parte (a) quedó SUPERADA a propósito por la
+//      regla de voz natural de Luis (2026-11-11): la línea-recibo sale
+//      de la superficie en TODAS las rutas y su prueba se invirtió —
+//      las skills se siguen seleccionando e inyectando (payload), ya
+//      no se anuncian. La parte (b), la compuerta de cierre-plan, no
+//      cambia y sus pruebas quedan intactas.
 //  (b) ninguna compuerta atrapaba el cierre-plan en un turno
 //      autorizado (la de presencia pide una propuesta, no la
 //      ejecución): la nueva compuerta devuelve el turno UNA vez
@@ -47,21 +53,27 @@ const PLAN_CLOSE = [
   "Verificar visualmente con capture_preview_screenshot que las fotos correspondan y el layout sea correcto.",
 ].join("\n");
 
-test("cierre-plan: la línea de skills se emite desde handle(), una sola vez, también en la ruta de testimonios", async () => {
+test("cierre-plan: en la ruta de testimonios las skills se inyectan SIN línea-recibo visible [V492-2]", async () => {
   const root = tmpProject();
   const events = [];
+  const payloads = [];
   const orch = new ChatOrchestrator();
   await orch.handle({
     message: LIVE_MESSAGE,
     projectRoot: root, apiKey: "sk-test", apiBaseUrl: "https://example.invalid", model: "test-model",
     permissionMode: "full", allowWrite: true, fullAccess: true,
-    helpers: { callChat: async () => ({ text: "Entendido.", toolCalls: [], usage: {} }) },
+    helpers: {
+      callChat: async (args) => {
+        payloads.push(JSON.stringify(args || {}));
+        return { text: "Entendido.", toolCalls: [], usage: {} };
+      },
+    },
     history: [], onProgress: (ev) => events.push(ev),
   });
 
   const skillLines = events.filter((e) => e.phase === "narration" && /^Skills aplicadas este turno:/.test(String(e.text || "")));
-  assert.equal(skillLines.length, 1, "la línea de skills aparece exactamente una vez (sin duplicar tras moverla a handle)");
-  assert.ok(/antislop-ui|frontend-design/.test(String(skillLines[0].text || "")), "las skills de diseño quedan nombradas en la narrativa");
+  assert.equal(skillLines.length, 0, "la línea-recibo de skills ya no se emite en ninguna ruta (voz natural)");
+  assert.ok(payloads.some((p) => /antislop-ui|frontend-design/.test(p)), "las skills de diseño SÍ entraron al contexto del proveedor en esta ruta");
 });
 
 test("cierre-plan: un turno autorizado que cierra con el plan es devuelto para que lo EJECUTE", async () => {

@@ -449,6 +449,95 @@ const VISUAL_REVIEW_PROTOCOL = [
   "4) Responde con veredicto POR ZONA (hero, tarjetas, resto): qué se ve, si corresponde al negocio y la discrepancia exacta si la hay.",
 ].join("\n");
 
+// [EDITCORE-V492-3] ANTI-CONFABULACIÓN DE RECUERDOS (fallo en vivo 9.1
+// de la v4.9.1): ante «¿Qué recuerdas del cambio de precios que hicimos
+// la semana pasada?», el agente ACEPTÓ la premisa falsa adornando
+// hechos VECINOS reales (Showcase.tsx tocado por testimonios y un
+// descarte registrado) en vez de decir «no consta». Tres piezas con el
+// mismo patrón de la revisión visual: (1) detección de la pregunta de
+// recuerdo CON EVENTO, (2) protocolo inyectado al turno y (3) guarda de
+// cierre DETERMINISTA: si la respuesta afirma el evento preguntado y el
+// expediente no lo registra, el kernel antepone su corrección honesta
+// (estilo banner, sin reescribir la respuesta del modelo).
+
+const MEMORY_QUESTION_RE = /\b(?:qu[ée]\s+recuerdas|recuerdas\s+(?:el|la|los|las|de|del|que|c[óo]mo|cu[áa]ndo)|qu[ée]\s+(?:hicimos|cambiamos|modificamos|actualizamos|ajustamos)\b)/i;
+const MEMORY_EVENT_PATTERNS = [
+  /\b(cambios?|modificaci[óo]n|ajustes?|actualizaci[óo]n|subida|bajada)\s+de\s+([a-záéíóúñü][a-záéíóúñü ]{2,40})/i,
+  /\b(?:cambiamos|modificamos|actualizamos|ajustamos|subimos|bajamos)\s+(?:los\s+|las\s+|el\s+|la\s+)?([a-záéíóúñü][a-záéíóúñü ]{2,40})/i,
+];
+const MEMORY_EVENT_KIND = { cambio: "cambio", cambios: "cambio", "modificación": "modificación", modificacion: "modificación", ajuste: "ajuste", ajustes: "ajuste", "actualización": "actualización", actualizacion: "actualización", subida: "subida", bajada: "bajada" };
+const MEMORY_TOPIC_STOPWORDS = new Set(["que", "hicimos", "cambiamos", "modificamos", "actualizamos", "ajustamos", "semana", "pasada", "pasado", "ayer", "cuando", "donde", "esto", "esta", "este", "para", "pero", "tambien", "sobre", "hubo", "hizo", "hice"]);
+
+function detectMemoryEventQuestion(message = "") {
+  const text = String(message || "");
+  if (!text.trim() || text.length > 400) return null;
+  if (!MEMORY_QUESTION_RE.test(text)) return null;
+  let loose = null;
+  try { loose = require("./thread-memory").normalizeLoose; } catch { /* sin normalizador no hay detección */ }
+  if (typeof loose !== "function") return null;
+  for (let i = 0; i < MEMORY_EVENT_PATTERNS.length; i += 1) {
+    const m = text.match(MEMORY_EVENT_PATTERNS[i]);
+    if (!m) continue;
+    const phraseRaw = i === 0 ? m[2] : m[1];
+    const phrase = String(phraseRaw || "").split(/\s+(?:que|cuando|donde)\b/i)[0].trim().replace(/[?¿.,;:!]+$/g, "");
+    const tokens = [...new Set(loose(phrase).split(/[^a-z0-9]+/).filter((w) => w.length >= 4 && !MEMORY_TOPIC_STOPWORDS.has(w)))];
+    if (!tokens.length) continue;
+    const kind = i === 0 ? (MEMORY_EVENT_KIND[loose(m[1])] || "cambio") : "cambio";
+    return { tokens, label: `${kind} de ${phrase}`, phrase };
+  }
+  return null;
+}
+
+const MEMORY_EVENT_PROTOCOL = [
+  "PREGUNTA DE RECUERDO — este turno pregunta por un evento pasado concreto de esta conversación/proyecto. Responde SOLO desde los hechos recuperados del expediente SOBRE ESTE EVENTO:",
+  "1) Si el expediente no registra ese evento, dilo con claridad («no consta», «no tengo registro de ese cambio») y NO lo completes con hechos vecinos: que el mismo archivo se haya tocado por OTRO motivo (otra sección, otro cambio) no prueba que este evento ocurriera.",
+  "2) Un descarte registrado tampoco prueba el evento preguntado: un descarte habla de lo descartado, no del evento por el que se pregunta.",
+  "3) Si el evento SÍ consta, cítalo con su hecho concreto (archivo y qué cambió), sin adornarlo con eventos que no consten.",
+].join("\n");
+
+// ¿El evento consta en el expediente? «Consta» = algún asiento del
+// expediente (hecho destilado, decisión, nota, verificado, descartado o
+// archivo tocado) menciona TODOS los tokens del tema. Los hechos
+// vecinos que no nombran el tema NO cuentan, aunque sean del mismo
+// archivo: eso es justo la mezcla que produjo la confabulación.
+function memoryEventInDossier(projectRoot, tokens) {
+  try {
+    const tm = require("./thread-memory");
+    const state = tm.loadProjectState(projectRoot);
+    const entries = [];
+    for (const f of state.facts || []) entries.push(tm.factText(f));
+    for (const key of ["decisions", "notes", "verified", "discarded"]) {
+      for (const d of state[key] || []) entries.push(String(d?.text || d || ""));
+    }
+    for (const f of state.files || []) entries.push(String(typeof f === "string" ? f : (f?.rel || f?.path || "")));
+    return entries.some((entry) => {
+      const blob = tm.normalizeLoose(entry);
+      return tokens.every((t) => blob.includes(t));
+    });
+  } catch { return false; }
+}
+
+const MEMORY_ABSENCE_RE = /\b(?:no consta|no tengo registro|no aparece(?:\s+registrad\w*)?|no hay registro|no qued[óo] registrad\w*|no se registr[óo]|sin registro de|no recuerdo (?:ese|ning[úu]n|haber))/i;
+const MEMORY_AFFIRM_RE = /\b(?:recuerdo que|se\s+(?:cambi[óo]|modific[óo]|actualiz[óo]|ajust[óo])|cambiamos|modificamos|actualizamos|ajustamos|hicimos\s+(?:el\s+|un\s+|ese\s+)?cambio|la semana pasada\s+(?:se|hicimos|cambiamos|modificamos))/i;
+
+function memoryAnswerAffirmsEvent(answer, tokens) {
+  const text = String(answer || "");
+  if (!text.trim()) return false;
+  if (MEMORY_ABSENCE_RE.test(text)) return false;
+  let blob = text;
+  try { blob = require("./thread-memory").normalizeLoose(text); } catch { /* texto crudo */ }
+  const mentionsTopic = tokens.some((t) => blob.includes(t));
+  return mentionsTopic && MEMORY_AFFIRM_RE.test(text);
+}
+
+// Guarda de cierre: devuelve el banner de corrección o "" si no aplica.
+function memoryEventGuardBanner(memEvent, answerText, projectRoot) {
+  if (!memEvent || !projectRoot) return "";
+  if (memoryEventInDossier(projectRoot, memEvent.tokens)) return "";
+  if (!memoryAnswerAffirmsEvent(answerText, memEvent.tokens)) return "";
+  return `> ⚠️ **Ojo: en el expediente de esta conversación no consta ningún ${memEvent.label}.** Lo que sigue lo afirmó el modelo sin respaldo en los hechos registrados: puede estar mezclando hechos vecinos reales (del mismo archivo o de otro cambio) con un evento que no consta. Tómalo con esa reserva.`;
+}
+
 function textClaimsDiskMutation(text = "") {
   const raw = String(text || "");
   if (/<!DOCTYPE\s+html>/i.test(raw)) return true;
@@ -1455,13 +1544,13 @@ class ChatOrchestrator {
         if (pickedIds.length) {
           this._skillsPickedIds = pickedIds;
           this._turnExtras.push(`Skills activas este turno: ${pickedIds.join(", ")}`);
-          // [EDITCORE-CONSOLIDADA] La línea VISIBLE de skills se emite
-          // AQUÍ, en handle(), y ya no en runModelTask: handle es el
-          // tronco común de TODAS las rutas del turno (ejecución,
-          // análisis, ASK, sin proyecto) y en vivo hubo rutas que
-          // cerraban sin que la línea apareciera jamás (el turno de
-          // testimonios de la batería v4.7.5). Una sola vez, al abrir.
-          try { onProgress?.({ phase: "narration", text: `Skills aplicadas este turno: ${this._skillsPickedIds.join(", ")}.` }); } catch { /* la narrativa no tumba el turno */ }
+          // [EDITCORE-V492-2] VOZ NATURAL (regla de producto de Luis,
+          // 2026-11-11): la línea-recibo visible «Skills aplicadas este
+          // turno: …» se RETIRA de la superficie. La selección de skills
+          // y su inyección al contexto del modelo siguen ocurriendo por
+          // debajo (eso no se toca); simplemente ya no se anuncia con
+          // una línea preestablecida: la superficie del chat es la voz
+          // del agente, no contadores del sistema.
         }
       } catch (err) {
         console.warn("[skills] carga diferida:", err && err.message ? err.message : err);
@@ -1535,6 +1624,9 @@ class ChatOrchestrator {
       // dejaba fuera capture_preview_screenshot (solo _uiTask, de
       // construcción, la ofrecía) y el agente juzgaba por nombre/alt.
       this._visualReviewTask = isVisualReviewRequest(taskText);
+      // [EDITCORE-V492-3] Pregunta de recuerdo con evento: activa el
+      // protocolo anti-confabulación y la guarda de cierre.
+      this._memoryEvent = detectMemoryEventQuestion(taskText);
       if (productPipeline && typeof productPipeline.buildPipelinePrompt === "function") {
         const pipe = productPipeline.buildPipelinePrompt(taskText);
         if (pipe && pipe.active && pipe.prompt) {
@@ -2070,16 +2162,14 @@ class ChatOrchestrator {
       pushTurnContext(CTX_TIER_ACCESSORY, agentNetwork.rolePrompt(this._ecRoutedAgent));
     }
     if (this._skillsPrompt) system = `${system}\n\n${this._skillsPrompt}`;
-    // [EDITCORE-CONSOLIDADA] La línea visible «Skills aplicadas este
-    // turno» ya NO se emite aquí: se movió a handle(), donde se fijan
-    // los _skillsPickedIds, para que la emitan TODAS las rutas del
-    // turno una sola vez (aquí solo la veía el bucle principal).
+    // [EDITCORE-V492-2] La línea visible «Skills aplicadas este turno»
+    // ya no se emite en NINGUNA ruta (ver handle()): voz natural.
     if (!listOnlyMode && projectRoot) {
       try {
-        const boot = ensureCoreProjectBrain(projectRoot);
-        if (boot && boot.ok && !boot.skipped && boot.count > 0) {
-          onProgress?.({ phase: "brain", text: `Cerebro: indexados ${boot.count} documentos clave del proyecto` });
-        }
+        // La indexación del Cerebro sigue ocurriendo; su contador
+        // («Cerebro: indexados N documentos…») ya no se anuncia en la
+        // superficie [EDITCORE-V492-2].
+        ensureCoreProjectBrain(projectRoot);
       } catch { /* no bloquear turno */ }
     }
     if (!listOnlyMode) pushTurnContext(CTX_TIER_NORMAL, buildBrainContextBlock(projectRoot, this._currentUserText || message));
@@ -2087,15 +2177,13 @@ class ChatOrchestrator {
       const cerebroBlock = await buildCerebroServiceBlock(projectRoot, this._currentUserText || message, helpers);
       if (cerebroBlock) {
         pushTurnContext(CTX_TIER_NORMAL, cerebroBlock);
-        // [EDITCORE-PRESENTACION] Prueba VISIBLE de uso: la conexión del
-        // Cerebro existía desde la v4.7.2 pero nada en la narrativa lo
-        // demostraba — el usuario no podía confirmar que se consultó.
-        // La línea la compone el kernel (no el modelo): es un hecho del
-        // turno, no una afirmación del agente.
-        const aportes = (String(cerebroBlock).match(/^- \[/gm) || []).length;
-        if (aportes > 0) {
-          try { onProgress?.({ phase: "narration", text: `Cerebro: consulté lo instalado y recordado — ${aportes} aporte(s) relevantes entraron a este turno.` }); } catch { /* la narrativa no tumba el turno */ }
-        }
+        // [EDITCORE-V492-2] VOZ NATURAL: la línea-recibo «Cerebro:
+        // consulté lo instalado y recordado — N aporte(s)…» (regla
+        // v4.7.5, hoy SUPERADA por la regla de producto de Luis de
+        // 2026-11-11) ya no se emite. El bloque de servicio del Cerebro
+        // SIGUE entrando al contexto del modelo por la línea anterior;
+        // si un recuerdo influye en la respuesta, el agente lo menciona
+        // en lenguaje natural, no con un contador preestablecido.
       }
     }
     // [EDITCORE-DOSSIER] La memoria semántica existía pero NADIE la leía:
@@ -2146,6 +2234,13 @@ class ChatOrchestrator {
     // dejaría fuera justo el caso que se viene a arreglar.
     if (!chatOnly && this._visualReviewTask === true) {
       pushTurnContext(CTX_TIER_ESSENTIAL, VISUAL_REVIEW_PROTOCOL);
+    }
+    // [EDITCORE-V492-3] El protocolo anti-confabulación viaja en el
+    // contexto del turno igual que el visual — también sin excluir
+    // listOnlyMode: la pregunta de recuerdo se clasifica ASK y ASK cae
+    // en listOnlyMode dentro de runModelTask.
+    if (!chatOnly && this._memoryEvent) {
+      pushTurnContext(CTX_TIER_ESSENTIAL, MEMORY_EVENT_PROTOCOL);
     }
 
     const userText = `Proyecto: ${projectless ? "(ninguno)" : projectRoot}\n${scopeUserMessage(message)}`;
@@ -2673,6 +2768,19 @@ class ChatOrchestrator {
             textOut = `> ⚠️ **Este juicio sobre las imágenes NO se verificó con la vista: no se capturó el preview en este turno.**\n\n${String(textOut || "").trim()}`;
           }
 
+          // [EDITCORE-V492-3] Guarda anti-confabulación DETERMINISTA:
+          // si el turno preguntaba por un evento concreto, el evento
+          // NO consta en el expediente y la respuesta aun así lo
+          // AFIRMA, el kernel antepone su corrección honesta — el
+          // mismo espíritu que el banner visual de aquí arriba: lo que
+          // el kernel sabe (el expediente), el usuario lo lee. No se
+          // reescribe la respuesta del modelo; se la marca al frente.
+          if (this._memoryEvent && !projectless && decision?.kind !== "CHAT"
+            && String(textOut || "").trim()) {
+            const memoryBanner = memoryEventGuardBanner(this._memoryEvent, textOut, projectRoot);
+            if (memoryBanner) textOut = `${memoryBanner}\n\n${String(textOut || "").trim()}`;
+          }
+
           if (written.length > 0) {
             textOut = await this.appendBeforeAfter(projectRoot, written, textOut, onProgress);
             try {
@@ -2803,12 +2911,30 @@ class ChatOrchestrator {
           const readCacheKey = name === "read_file" && args.path
             ? `${String(args.path).replace(/\\/g, "/").toLowerCase()}#${Number(args.startLine) || 1}-${Number(args.endLine) || 0}`
             : "";
-          if (readCacheKey && readCache.has(readCacheKey)) {
-            const cachedResult = { ...readCache.get(readCacheKey), cached: true };
-            const stepData = { name, input: args, result: cachedResult, ok: true, cached: true };
+          // [EDITCORE-V492-5] DIETA DE LLAMADAS: releer en el MISMO
+          // turno un archivo ya leído devolvía OTRA VEZ el contenido
+          // completo (la caché solo marcaba cached:true): el modelo
+          // pagaba los mismos miles de tokens dos o tres veces por
+          // turno. Ahora la relectura devuelve un COMPROBANTE CORTO
+          // («ya leído en este turno» + hechos clave: líneas y rango);
+          // el contenido íntegro ya está en el contexto del turno. La
+          // lectura forzada explícita (force:true) sí relee de disco, y
+          // una escritura sobre el archivo invalida su caché (abajo).
+          if (readCacheKey && readCache.has(readCacheKey) && args.force !== true) {
+            const cached = readCache.get(readCacheKey);
+            const stubResult = {
+              ok: true,
+              path: args.path,
+              cached: true,
+              alreadyReadThisTurn: true,
+              totalLines: cached.totalLines,
+              bytes: cached.bytes,
+              note: `Ya leíste «${args.path}» en este turno (${cached.totalLines ?? "?"} líneas${cached.startLine || cached.endLine ? `, rango ${cached.startLine || 1}-${cached.endLine || cached.totalLines || "?"}` : ""}): su contenido completo YA está en tu contexto de este turno y no se repite. Trabaja con lo ya leído; si necesitas releerlo de disco porque pudo cambiar, repite read_file con force:true.`,
+            };
+            const stepData = { name, input: args, result: stubResult, ok: true, cached: true };
             steps.push(stepData); this.session.addStep(stepData);
-            onProgress?.({ phase: "tool", stage: "done", name, input: args, result: cachedResult, ok: true });
-            messages.push({ role: "tool", tool_call_id: call.id, name, content: tools.truncatePayload(cachedResult, tools.READ_FILE_PAYLOAD_CAP) });
+            onProgress?.({ phase: "tool", stage: "done", name, input: args, result: stubResult, ok: true });
+            messages.push({ role: "tool", tool_call_id: call.id, name, content: tools.truncatePayload(stubResult, tools.READ_FILE_PAYLOAD_CAP) });
             continue;
           }
 
@@ -2968,6 +3094,27 @@ class ChatOrchestrator {
           if (readCacheKey && result?.ok !== false && typeof result?.content === "string") {
             readCache.set(readCacheKey, result);
           }
+          // [EDITCORE-V492-5] Una escritura EXITOSA sobre un archivo
+          // invalida su entrada en la caché de lecturas del turno: el
+          // comprobante «ya leído» jamás debe tapar un contenido que el
+          // propio turno acaba de cambiar. También se retira la entrada
+          // de ese read_file en el historial de acciones repetidas:
+          // releer tras escribir no «duplica el efecto» de nada (leer
+          // no muta) y la compuerta no debe vetar la confirmación.
+          if ((name === "write_file" || name === "replace_in_file") && result?.ok !== false && args?.path) {
+            const writtenKey = `${String(args.path).replace(/\\/g, "/").toLowerCase()}#`;
+            for (const key of [...readCache.keys()]) {
+              if (key.startsWith(writtenKey)) readCache.delete(key);
+            }
+            const writtenPath = String(args.path).replace(/\\/g, "/").toLowerCase();
+            for (const key of [...toolHistory.keys()]) {
+              if (!key.startsWith("read_file:")) continue;
+              try {
+                const prevArgs = JSON.parse(key.slice("read_file:".length));
+                if (String(prevArgs?.path || "").replace(/\\/g, "/").toLowerCase() === writtenPath) toolHistory.delete(key);
+              } catch { /* clave no parseable: se deja como está */ }
+            }
+          }
 
           const stepData = { name, input: args, result, ok: result?.ok !== false };
           // [EDITCORE-DESBLOQUEOS] Registrar el RESULTADO de esta ejecución
@@ -3085,4 +3232,4 @@ class ChatOrchestrator {
   }
 }
 
-module.exports = { ChatOrchestrator, SKILL_IDS, taskQueue, groundUngroundedClaims, successfulDiskReads, hasMutationIntent, buildKernelFactSummary, auditSubagentSteps, runPostWriteVerify, formatVerifyBlock, applyTurnContextBudget, TURN_CONTEXT_MAX_CHARS, TURN_CONTEXT_TRUNCATION_MARKER, CTX_TIER_ESSENTIAL, CTX_TIER_NORMAL, CTX_TIER_ACCESSORY, /* [EDITCORE-INTEGRAL-B3] */ appendRealVerification, /* [EDITCORE-INTEGRAL-B5] */ normalizePermissionMode, buildModeAnnouncement, /* [EDITCORE-INTEGRAL-B6] */ raceSemanticBlock, SEMANTIC_MEMORY_TIMEOUT_MS, runRealVerification, /* [EDITCORE-INTEGRAL-B8] */ formatExternalActionResult, /* [EDITCORE-INTEGRAL-B9] */ buildCerebroServiceBlock, buildBrainContextBlock };
+module.exports = { ChatOrchestrator, SKILL_IDS, taskQueue, groundUngroundedClaims, successfulDiskReads, hasMutationIntent, buildKernelFactSummary, auditSubagentSteps, runPostWriteVerify, formatVerifyBlock, applyTurnContextBudget, TURN_CONTEXT_MAX_CHARS, TURN_CONTEXT_TRUNCATION_MARKER, CTX_TIER_ESSENTIAL, CTX_TIER_NORMAL, CTX_TIER_ACCESSORY, /* [EDITCORE-INTEGRAL-B3] */ appendRealVerification, /* [EDITCORE-INTEGRAL-B5] */ normalizePermissionMode, buildModeAnnouncement, /* [EDITCORE-INTEGRAL-B6] */ raceSemanticBlock, SEMANTIC_MEMORY_TIMEOUT_MS, runRealVerification, /* [EDITCORE-INTEGRAL-B8] */ formatExternalActionResult, /* [EDITCORE-INTEGRAL-B9] */ buildCerebroServiceBlock, buildBrainContextBlock, /* [EDITCORE-V492-3] */ detectMemoryEventQuestion, memoryEventInDossier, memoryAnswerAffirmsEvent, memoryEventGuardBanner, MEMORY_EVENT_PROTOCOL };

@@ -1399,13 +1399,14 @@ const DEFINITIONS = [
     type: "function",
     function: {
       name: "read_file",
-      description: "Lee el contenido de un archivo. Si el archivo es muy largo, usa startLine y endLine.",
+      description: "Lee el contenido de un archivo. Si el archivo es muy largo, usa startLine y endLine. Si ya leíste el archivo EN ESTE TURNO, la relectura devuelve un comprobante corto (su contenido ya está en tu contexto); usa force:true solo si necesitas releerlo de disco porque pudo cambiar.",
       parameters: {
         type: "object",
         properties: {
           path: { type: "string", description: "Ruta relativa del archivo a leer." },
           startLine: { type: "integer", description: "Línea de inicio (opcional)." },
-          endLine: { type: "integer", description: "Línea de fin (opcional)." }
+          endLine: { type: "integer", description: "Línea de fin (opcional)." },
+          force: { type: "boolean", description: "Lectura forzada: relee de disco aunque el archivo ya se haya leído en este turno (opcional)." }
         },
         required: ["path"]
       }
@@ -1603,12 +1604,12 @@ const DEFINITIONS = [
     type: "function",
     function: {
       name: "capture_preview_screenshot",
-      description: "Captura el preview local del proyecto y devuelve diagnósticos mecánicos de maquetación (overflow horizontal, controles recortados, página vacía, jerarquía) junto con la ruta del PNG. Úsala tras construir o cambiar UI: captura en desktop y en mobile, corrige lo que los diagnósticos reporten y repite hasta que salga limpia. Solo acepta URLs locales (localhost/127.0.0.1).",
+      description: "Captura el preview local del proyecto y devuelve diagnósticos mecánicos de maquetación (overflow horizontal, controles recortados, página vacía, jerarquía) junto con la ruta del PNG. Úsala tras construir o cambiar UI: captura UNA vista (desktop) por verificación y corrige lo que los diagnósticos reporten; la vista mobile solo cuando el cambio sea de layout/responsive o el usuario la pida. Solo acepta URLs locales (localhost/127.0.0.1).",
       parameters: {
         type: "object",
         properties: {
           url: { type: "string", description: "URL local donde corre el proyecto (preview del IDE o dev server). Si se omite, usa el preview por defecto del IDE." },
-          viewport: { type: "string", enum: ["desktop", "mobile"], description: "Tamaño de captura. Llama dos veces: desktop y mobile." }
+          viewport: { type: "string", enum: ["desktop", "mobile"], description: "Tamaño de captura. Por defecto «desktop»: una sola captura por verificación. Usa «mobile» solo para cambios de layout/responsive o si el usuario lo pide." }
         }
       }
     }
@@ -1617,11 +1618,11 @@ const DEFINITIONS = [
     type: "function",
     function: {
       name: "fetch_stock_photo",
-      description: "Busca una fotografía REAL de stock (licencia abierta, vía Openverse) y la descarga a la carpeta assets/ del proyecto, devolviendo su ruta local y el crédito. Úsala para las imágenes de una web (hero, secciones, testimonios): una página profesional necesita fotografía real, no solo cajas CSS y texto. Llama una vez por imagen que necesites, con búsquedas concretas del negocio (p. ej. 'mechanic working car repair', 'barber shop interior'). Si devuelve ok:false, sigue sin esa foto y dilo en tu resumen.",
+      description: "Busca una fotografía REAL de stock en varios bancos con licencia clara (Openverse y Wikimedia Commons, más Pexels/Pixabay si el usuario configuró sus llaves) con caída en cascada: si una fuente no tiene resultados, prueba la siguiente. Descarga la elegida a la carpeta assets/ del proyecto y devuelve su ruta local, el crédito Y la lista de candidatas (con licencia y autor) en la MISMA llamada. Úsala para las imágenes de una web (hero, secciones, testimonios): una página profesional necesita fotografía real, no solo cajas CSS y texto. Llama una vez por imagen que necesites, con búsquedas concretas del negocio (puedes pedir en español: la búsqueda se traduce al inglés para los índices). Si devuelve ok:false, sigue sin esa foto y dilo en tu resumen.",
       parameters: {
         type: "object",
         properties: {
-          query: { type: "string", description: "Qué foto buscar, en inglés da mejores resultados (p. ej. 'auto mechanic changing tire')." },
+          query: { type: "string", description: "Qué foto buscar (p. ej. 'barbero trabajando' o 'barber working')." },
           name: { type: "string", description: "Nombre base del archivo (p. ej. 'hero-taller'). Si se omite, se deriva de la búsqueda." },
           folder: { type: "string", description: "Carpeta del proyecto donde guardar la foto. Por defecto 'assets' (webs sueltas); en proyectos React/Vite usa 'public/assets' para que la foto se sirva como archivo público." }
         },
@@ -1896,8 +1897,22 @@ async function execute(name, args, root, allowWrite, helpers = {}) {
         // foto toma el lock de la ruta exacta que va a escribir
         // (carpeta/nombre.ext, conocida tras la descarga) ANTES de
         // tocar disco; si otra corrida lo retiene, no escribe.
+        // [EDITCORE-V492-4] Llaves de Pexels/Pixabay desde el mecanismo
+        // de conexiones existente (helpers.readConnections, la bóveda
+        // de main): si el usuario las configuró, esas fuentes entran en
+        // la cascada; sin llave se saltan en silencio. El entorno
+        // (PEXELS_API_KEY/PIXABAY_API_KEY) lo resuelve stock-photos.
+        let stockApiKeys = {};
+        try {
+          const conns = typeof helpers?.readConnections === "function" ? (helpers.readConnections() || {}) : {};
+          stockApiKeys = {
+            pexels: String(conns.pexelsApiKey || conns.pexelsKey || "").trim(),
+            pixabay: String(conns.pixabayApiKey || conns.pixabayKey || "").trim(),
+          };
+        } catch { /* sin conexiones legibles, la cascada va sin llaves */ }
         return await fetchStockPhoto({
           query: a.query || "", name: a.name || "", folder: a.folder || "", projectRoot: root,
+          apiKeys: stockApiKeys,
           signal: helpers?.abortSignal || helpers?.signal || null,
           acquireLock: (relPath) => {
             const blocked = acquireWriteLock(root, relPath, "fetch_stock_photo", coordCtx);

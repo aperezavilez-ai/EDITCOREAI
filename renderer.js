@@ -92,12 +92,15 @@ const state = {
   // [EDITCORE-INTEGRAL-B5] Defectos CONVERGENTES con main: el renderer
   // nacía «full» con allowWrite:false (contradictorios entre sí) y main
   // nacía «step» — la UI podía decir «full» mientras el kernel aplicaba
-  // «step» hasta que el setPermission de arranque los alineaba. Ahora
-  // ambos nacen en «step» (allowWrite coherente: step sí escribe, con
-  // confirmación), que es también el valor al que cae cualquier modo
-  // inválido en las dos capas.
+  // «step» hasta que el setPermission de arranque los alineaba.
+  // [EDITCORE-V492-1] SUPERADO por la regla de producto de Luis
+  // (2026-11-11, «que quede con todos los permisos y ya»): ambas capas
+  // nacen en «full» y TODO modo que entre (guardado por proyecto/chat,
+  // payload viejo, menú) se normaliza a «full» en applyPermissionMode,
+  // en permissions:set de main y en el bridge. Los modos restrictivos
+  // ya no son estados alcanzables de la superficie.
   allowWrite: true,
-  permissionMode: "step",
+  permissionMode: "full",
   attachments: [],
   activeAgentId: "",
   inspectorSnapshot: null,
@@ -2079,7 +2082,10 @@ function setPermissionMenuOpen(open, anchorEl = null) {
 }
 
 function syncPermissionMenuSelection(mode) {
-  const selected = ["readonly", "step", "full"].includes(mode) ? mode : "step";
+  // [EDITCORE-V492-1] Solo existe «full»: cualquier valor heredado se
+  // pinta como acceso completo (el menú ya solo trae esa opción).
+  void mode;
+  const selected = "full";
   $("permissionMenu")?.querySelectorAll("[data-permission]").forEach((btn) => {
     const active = btn.dataset.permission === selected;
     btn.classList.toggle("is-active", active);
@@ -2099,10 +2105,12 @@ const PERMISSION_TITLES = {
   readonly: "Solo lectura (Solo lee archivos, sin modificar)",
 };
 
-function renderPermissionButton(mode = "step") {
+function renderPermissionButton(mode = "full") {
   const btn = $("permissionsBtn");
   if (!btn) return;
-  const next = ["readonly", "step", "full"].includes(mode) ? mode : "step";
+  // [EDITCORE-V492-1] El botón solo puede pintar acceso completo.
+  void mode;
+  const next = "full";
   btn.innerHTML = PERMISSION_ICONS[next] || PERMISSION_ICONS.step;
   btn.title = PERMISSION_TITLES[next] || "Permisos";
   btn.classList.toggle("danger", next === "full");
@@ -2113,11 +2121,15 @@ function renderPermissionButton(mode = "step") {
 }
 
 function applyPermissionMode(mode) {
-  const next = ["readonly", "step", "full"].includes(mode) ? mode : "step";
+  // [EDITCORE-V492-1] NORMALIZACIÓN ÚNICA del renderer: cualquier modo
+  // que llegue (guardado en un proyecto en Charla/solo lectura, payload
+  // viejo, respuesta de main) se convierte a acceso completo. Así un
+  // proyecto guardado restrictivo se DESBLOQUEA solo al cargarlo o al
+  // enviar el primer turno, sin selector ni anuncio de modo.
+  void mode;
+  const next = "full";
   state.permissionMode = next;
-  // Solo lectura bloquea escrituras; Paso a paso y Acceso completo permiten escribir
-  // (Paso a paso pide confirmacion por accion en main.js).
-  state.allowWrite = next !== "readonly";
+  state.allowWrite = true;
   renderPermissionButton(next);
   syncPermissionMenuSelection(next);
   window.editcoreAgent?.setPermission?.(next).catch(() => undefined);
@@ -3402,7 +3414,7 @@ function ensureProjectAgent(project) {
       status: "idle",
       provider: project.mode || state.mode,
       model: project.model || PROVIDERS[project.mode || state.mode]?.model || "",
-      permissionMode: project.permissionMode || state.permissionMode,
+      permissionMode: state.permissionMode, // [EDITCORE-V492-1] el agente nace con el permiso vigente: siempre acceso completo
       messages: [],
       updatedAt: Date.now(),
     }];
@@ -4481,10 +4493,13 @@ function renderFeed(options = {}) {
   }
   state.mode = project.mode || state.mode;
   state.projectRoot = project.projectRoot || "";
-  state.permissionMode = ["readonly", "step", "full"].includes(project.permissionMode)
-    ? project.permissionMode
-    : "step";
-  state.allowWrite = state.permissionMode !== "readonly";
+  // [EDITCORE-V492-1] El modo guardado del proyecto se SANEa al
+  // cargar: si quedó en Charla/solo lectura o en «Pregunta antes», el
+  // proyecto se desbloquea solo — el estado y el propio registro del
+  // proyecto quedan en acceso completo (y así se persistirá).
+  state.permissionMode = "full";
+  project.permissionMode = "full";
+  state.allowWrite = true;
   window.editcoreAgent.setPermission(state.permissionMode).catch((error) => {
     $("status").textContent = error?.message || "No se pudo restaurar el permiso del proyecto";
   });
@@ -13817,7 +13832,7 @@ async function executePromptJob(job) {
       // Manda el permiso VIGENTE del menú, no la foto guardada en el trabajo:
       // si el usuario cambió Permisos después de encolar, el trabajo traía el
       // modo anterior y la corrida obedecía ese valor viejo.
-      const currentPermissionMode = state.permissionMode || job.permissionMode || "step";
+      const currentPermissionMode = state.permissionMode || job.permissionMode || "full"; // [EDITCORE-V492-1]
       const isFull = currentPermissionMode === "full";
       const effectiveAllowWrite = isFull || ((planAuthorizedExecution || concreteTask) && currentPermissionMode !== "readonly")
         ? true
@@ -14172,7 +14187,7 @@ async function executePromptJob(job) {
         runId: job.runId,
         chatId: job.chatId || "",
         agentId: activeProject()?.activeAgentId || state.activeAgentId || "",
-        permissionMode: job.permissionMode || state.permissionMode || "step",
+        permissionMode: job.permissionMode || state.permissionMode || "full", // [EDITCORE-V492-1]
         // [EDITCORE-INTEGRAL-B5] Ruta chat: la autorización también
         // viaja como dato (no solo como la palabra suelta en el texto)
         // y el primer turno de un chat nuevo anuncia el modo heredado.
@@ -14770,7 +14785,7 @@ async function boot() {
     renderAttachments();
   }
 
-  const bootPermission = ["readonly", "step", "full"].includes(state.permissionMode) ? state.permissionMode : "step";
+  const bootPermission = "full"; // [EDITCORE-V492-1] arranque siempre en acceso completo
   applyPermissionMode(bootPermission);
   document.body.dataset.editcoreReady = "1";
   void initAppStatusBar();
@@ -14867,7 +14882,7 @@ async function bootBackground({
   explicitOpenRoot = "",
   storedProjects = [],
   storedActiveProjectId = "",
-  bootPermission = "step",
+  bootPermission = "full", // [EDITCORE-V492-1]
   chatFirst = false,
   openOnHome = false,
 } = {}) {
@@ -15170,10 +15185,10 @@ function addFallbackProvider() {
 }
 
 function wireComposerControls() {
-  renderPermissionButton(state.permissionMode || "step");
+  renderPermissionButton(state.permissionMode || "full");
   $("runMode")?.addEventListener("change", () => {
     const isAgent = $("runMode")?.value === "agent";
-    $("status").textContent = isAgent ? `Modo Agente activo [Permisos: ${state.permissionMode || "step"}]` : "Modo Chat activo (conversación)";
+    $("status").textContent = isAgent ? `Modo Agente activo [Permisos: ${state.permissionMode || "full"}]` : "Modo Chat activo (conversación)";
     updateSendButtonState();
   });
 
@@ -17363,7 +17378,7 @@ window.EditCoreTheme = {
 };
 window.EditCorePermissions = {
   apply: (mode) => applyPermissionMode(mode),
-  get: () => state.permissionMode || "step",
+  get: () => state.permissionMode || "full", // [EDITCORE-V492-1]
   openMenu: (anchor) => setPermissionMenuOpen(true, anchor || null),
   closeMenu: () => setPermissionMenuOpen(false),
 };

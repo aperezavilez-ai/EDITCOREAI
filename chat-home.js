@@ -183,9 +183,9 @@
       if (h4) h4.textContent = dict.permCardTitle;
       if (p) p.textContent = dict.permCardDesc;
       const permBtns = groupCards[2].querySelectorAll(".ec-seg-btn");
-      if (permBtns[0]) permBtns[0].textContent = dict.permReadonly;
-      if (permBtns[1]) permBtns[1].textContent = dict.permStep;
-      if (permBtns[2]) permBtns[2].textContent = dict.permFull;
+      // v4.9.2: queda un solo botón (acceso completo); la etiqueta va por atributo, no por posición.
+      const fullPermBtn = groupCards[2].querySelector('[data-ch-perm="full"]');
+      if (fullPermBtn) fullPermBtn.textContent = dict.permFull;
     }
 
     renderThreadList();
@@ -1050,14 +1050,14 @@
       const li = document.createElement("li");
       const date = document.createElement("span");
       date.className = "mx-history-date";
-      date.textContent = new Date(t.created_at || t.at).toLocaleDateString("es-MX", { day: "numeric", month: "short", year: "numeric" });
+      date.textContent = new Date(t.created_at).toLocaleDateString("es-MX", { day: "numeric", month: "short", year: "numeric" });
       const what = document.createElement("span");
-      const sym = MEAI_CURRENCY_SYMBOL[t.currency] || `${t.currency || "¥"} `;
-      what.textContent = `${sym}${fmtNum(t.amount_local ?? t.real_cost_usd ?? t.real_usd)} → ${fmtNum(t.panel_usd ?? t.panel_amount)} de panel${t.note ? ` · ${t.note}` : ""}`;
+      const sym = MEAI_CURRENCY_SYMBOL[t.currency] || `${t.currency} `;
+      what.textContent = `${sym}${fmtNum(t.amount_local ?? t.real_usd)} → ${fmtNum(t.panel_usd)} de panel${t.note ? ` · ${t.note}` : ""}`;
       const real = document.createElement("span");
       real.className = "mx-history-real";
-      real.textContent = `${fmtUsd(t.real_usd ?? t.real_cost_usd)} USD`;
-      real.title = t.currency === "USD" ? "" : `Tipo de cambio: 1 ${sym} = US$${Number(t.fx_usd ?? t.usd_per_cny ?? 1)}`;
+      real.textContent = `${fmtUsd(t.real_usd)} USD`;
+      real.title = t.currency === "USD" ? "" : `Tipo de cambio: 1 ${sym} = US$${Number(t.fx_usd)}`;
       const del = document.createElement("button");
       del.type = "button";
       del.className = "mx-btn mx-btn-icon";
@@ -1091,7 +1091,7 @@
     Object.assign(meaiState, { rate, markup, cnyUsd: Number(s.cny_usd) || meaiState.cnyUsd });
     const markupInput = $("adminMeaiMarkup");
     if (markupInput && document.activeElement !== markupInput) markupInput.value = String(markup);
-    renderMeaiTopups(Array.isArray(s.topups) ? s.topups : (Array.isArray(s.topups_history) ? s.topups_history : []));
+    renderMeaiTopups(Array.isArray(s.topups) ? s.topups : []);
     updateMeaiTopupPreview();
 
     const offset = Number(s.offset_panel) || 0;
@@ -1538,7 +1538,8 @@
   }
 
   function markActivePermButtons() {
-    const current = window.EditCorePermissions?.get?.() || "step";
+    // [EDITCORE-V492-1] El permiso vigente siempre es acceso completo.
+    const current = window.EditCorePermissions?.get?.() || "full";
     document.querySelectorAll("[data-ch-perm]").forEach((btn) => {
       btn.classList.toggle("is-active", btn.getAttribute("data-ch-perm") === current);
     });
