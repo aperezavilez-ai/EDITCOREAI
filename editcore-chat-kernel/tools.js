@@ -177,7 +177,7 @@ function shapeToolPayload(value, toolName = "") {
     case "capture_preview_screenshot":
       // diagnostics y el veredicto (renderOk) PRIMERO: iban casi al
       // final del objeto y el corte por la cabeza los perdía siempre.
-      return reorderKeys(value, ["diagnostics", "renderOk", "ok", "error", "url", "screenshotPath", "viewport", "engine", "multimodalHint"]);
+      return reorderKeys(value, ["diagnostics", "renderOk", "visionReview", "visionNote", "ok", "error", "url", "screenshotPath", "viewport", "engine", "multimodalHint"]);
     case "delegate_parallel": {
       // El resultado trae los informes DOS veces (results[].text y el
       // `text` combinado). En el payload al modelo se conserva results

@@ -115,7 +115,7 @@ const fs = require("fs");
 // [EDITCORE-V491-A] Visión real: la captura del preview se adjunta al
 // modelo como parte de imagen reutilizando el formato multimodal de
 // los adjuntos del usuario (vision-intake), no como metadatos de texto.
-const { buildOpenAiImageContent, modelSupportsVision } = require("../runtime/vision-intake");
+const { buildOpenAiImageContent, modelSupportsVision, pickVisionModelCandidate } = require("../runtime/vision-intake");
 
 // [EDITCORE-V491-C] PLAN PRESENTADO, PERSISTIDO: cuando el despacho
 // corta una escritura con needsAuthorization («Pregunta antes»), la
@@ -1998,6 +1998,75 @@ class ChatOrchestrator {
     }
   }
 
+  // [EDITCORE-V493] JUICIO VISUAL DELEGADO: cuando el modelo del turno
+  // NO acepta imágenes (la compuerta de la v4.9.1 es un regex sobre el
+  // NOMBRE del modelo y con «Auto» el turno puede caer en un nombre sin
+  // visión: en vivo, P-3 de la v4.9.2, el agente declaró «la captura se
+  // ha hecho… pero no se adjuntó al modelo» y juzgó por texto), la
+  // captura la juzga un modelo CON visión en una llamada acotada y su
+  // dictamen vuelve como TEXTO: entra al resultado de la herramienta
+  // como hecho del turno y el modelo principal responde apoyado en él.
+  // Candidatos, en orden: (1) los perfiles conectados que main pasó al
+  // turno (this._fallbackProfiles: perfiles guardados del usuario +
+  // candidatos verificados por capacidad); (2) si el modelo del turno
+  // pertenece al catálogo ME AI (auto-model-selection), los modelos de
+  // ese catálogo servidos por el MISMO endpoint y la MISMA clave del
+  // turno (la ruta cloud pasa fallbackProfiles vacío: sin esta fuente
+  // la corrección no existiría justo en la configuración en vivo).
+  // La elección la hace pickVisionModelCandidate (vision-intake): solo
+  // nombres que pasan el patrón de visión, con preferencia por los
+  // jueces rápidos conocidos. Sin candidato alcanzable o con la llamada
+  // fallida/vacía devuelve null y el llamador conserva EXACTA la
+  // declaración honesta de la v4.9.1: nunca se finge visión.
+  async _delegatedVisionReview({ abs, captureResult, model, apiBaseUrl, apiKey, chatCaller, signal, addUsage, userText, onProgress }) {
+    try {
+      if (!abs || !fs.existsSync(abs)) return null;
+      const candidates = [];
+      for (const p of (Array.isArray(this._fallbackProfiles) ? this._fallbackProfiles : [])) {
+        if (p && p.model) candidates.push({ model: String(p.model), apiKey: p.apiKey || "", baseUrl: p.baseUrl || p.apiBaseUrl || "" });
+      }
+      const bareModel = String(model || "").replace(/^meai\//i, "").toLowerCase();
+      if (bareModel && apiBaseUrl && apiKey) {
+        let dutyCatalog = null;
+        try { dutyCatalog = require("../auto-model-selection").MODEL_DUTY_CATALOG; } catch { dutyCatalog = null; }
+        if (Array.isArray(dutyCatalog)
+          && dutyCatalog.some((e) => String(e?.id || "").replace(/^meai\//i, "").toLowerCase() === bareModel)) {
+          for (const e of dutyCatalog) {
+            if (e?.id) candidates.push({ model: String(e.id), apiKey, baseUrl: apiBaseUrl });
+          }
+        }
+      }
+      const pick = pickVisionModelCandidate(candidates, String(model || ""));
+      if (!pick || !pick.model) return null;
+      const dataUrl = `data:image/png;base64,${fs.readFileSync(abs).toString("base64")}`;
+      const headings = Array.isArray(captureResult?.diagnostics?.headings) ? captureResult.diagnostics.headings.filter(Boolean).slice(0, 8) : [];
+      const judgePrompt = [
+        "Eres la revisión visual de EditCoreAI. Mira la captura adjunta del preview y dictamina SOLO lo que se ve en la imagen (nunca el nombre del archivo ni el texto alternativo):",
+        "- Qué muestra la imagen principal (el hero): descríbela con concreción.",
+        "- Qué muestran las tarjetas y las secciones visibles, y qué textos se leen.",
+        "- Si la petición del usuario pregunta si las imágenes corresponden al negocio, di a qué tipo de negocio corresponden VISUALMENTE las fotos y si encajan unas con otras.",
+        userText ? `Petición del usuario: «${String(userText).slice(0, 300)}»` : "",
+        headings.length ? `Encabezados detectados en la página: ${headings.join(" · ")}` : "",
+        "Responde en español, breve y concreto: tu dictamen entra como hecho visual al turno principal.",
+      ].filter(Boolean).join("\n");
+      try { onProgress?.({ phase: "heartbeat", text: "Revisión visual: juzgando la captura con un modelo con visión…" }); } catch { /* ignore */ }
+      const judgeKey = pick.apiKey || apiKey;
+      const res = await chatCaller({
+        apiBaseUrl: pick.baseUrl || apiBaseUrl,
+        apiKey: judgeKey,
+        model: String(pick.model),
+        messages: [{ role: "user", content: buildOpenAiImageContent(judgePrompt, [{ name: `captura-${captureResult?.viewport || "desktop"}`, dataUrl }]) }],
+        signal: signal || null,
+        stream: false,
+        timeoutMs: 120000,
+        fallbackProfiles: [],
+      });
+      if (res?.usage && typeof addUsage === "function") { try { addUsage(res.usage); } catch { /* ignore */ } }
+      const verdict = String(res?.text || "").trim();
+      return verdict ? verdict.slice(0, 3000) : null;
+    } catch { return null; }
+  }
+
   async runModelTask(opts) {
     const { decision, message, projectRoot, apiBaseUrl, apiKey, model, memory, onProgress,
       allowWrite, maxSteps, helpers, chatOnly, projectless, authorizedFromPending,
@@ -3069,12 +3138,40 @@ class ChatOrchestrator {
           // sin PNG legible) el resultado lo DECLARA («captura sin
           // visión»): el juicio sale de los diagnósticos de texto y
           // nadie finge haber visto la imagen.
+          // [EDITCORE-V493] Si el modelo del turno NO tiene visión pero
+          // la captura SÍ es legible, antes de declarar la ceguera se
+          // intenta el JUICIO VISUAL DELEGADO (_delegatedVisionReview):
+          // un modelo con visión del catálogo conectado dictamina la
+          // captura y su veredicto entra como hecho (visionReview) en
+          // este mismo resultado. Solo si no hay juez alcanzable queda
+          // la declaración honesta de la v4.9.1, intacta.
           if (name === "capture_preview_screenshot" && result && result.ok !== false) {
             const abs = result.screenshotAbs
               || (result.screenshotPath ? path.resolve(String(projectRoot || ""), String(result.screenshotPath)) : "");
             if (!modelSupportsVision(model)) {
-              result.visionAttached = false;
-              result.visionNote = "captura sin visión: el modelo de este turno no acepta imágenes, así que la captura NO se le adjuntó. Juzga solo con los diagnósticos de texto (renderOk, errores de consola, overflow, encabezados) y no afirmes cómo se ve la imagen.";
+              const delegatedVerdict = (abs && fs.existsSync(abs))
+                ? await this._delegatedVisionReview({
+                  abs,
+                  captureResult: result,
+                  model,
+                  apiBaseUrl,
+                  apiKey: currentApiKey,
+                  chatCaller: (helpers && typeof helpers.callChat === "function") ? helpers.callChat : callChat,
+                  signal: turnSignal,
+                  addUsage,
+                  userText: this._currentUserText || message,
+                  onProgress,
+                })
+                : null;
+              if (delegatedVerdict) {
+                result.visionAttached = false;
+                result.visionDelegated = true;
+                result.visionReview = delegatedVerdict;
+                result.visionNote = "captura con visión delegada: el modelo de este turno no acepta imágenes, así que la captura la juzgó la revisión visual con un modelo con visión. Su dictamen va en el campo visionReview de este resultado: úsalo como el HECHO visual de la captura (qué se ve en el hero, las tarjetas y las secciones) para responder. No digas que no pudiste ver la imagen ni juzgues por el nombre del archivo o el texto alt.";
+              } else {
+                result.visionAttached = false;
+                result.visionNote = "captura sin visión: el modelo de este turno no acepta imágenes, así que la captura NO se le adjuntó. Juzga solo con los diagnósticos de texto (renderOk, errores de consola, overflow, encabezados) y no afirmes cómo se ve la imagen.";
+              }
             } else if (!abs || !fs.existsSync(abs)) {
               result.visionAttached = false;
               result.visionNote = "captura sin visión: no se pudo leer el PNG capturado para adjuntarlo al modelo. Juzga solo con los diagnósticos de texto y no afirmes cómo se ve la imagen.";
