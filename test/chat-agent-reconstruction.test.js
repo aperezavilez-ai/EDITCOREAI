@@ -654,6 +654,11 @@ test("Chat conserva analisis de solo lectura y escala cambios al Agente", () => 
     pathGiven: false,
     openNamedProject: false,
     referencedProjectName: "",
+    // [EDITCORE-V491-B] Campos aditivos de la v4.9.1: la decisión
+    // declara la intención de CREACIÓN de proyecto (antes esta forma
+    // caía en missingProject y la respuesta enlatada del renderer).
+    createProject: false,
+    createProjectName: "",
     closeProject: false,
     switchProject: false,
     missingProject: false,
@@ -668,6 +673,8 @@ test("Chat conserva analisis de solo lectura y escala cambios al Agente", () => 
     pathGiven: false,
     openNamedProject: false,
     referencedProjectName: "",
+    createProject: false,
+    createProjectName: "",
     closeProject: false,
     switchProject: false,
     missingProject: false,

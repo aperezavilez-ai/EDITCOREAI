@@ -1055,6 +1055,55 @@
     return "";
   }
 
+  /**
+   * [EDITCORE-V491-B] Intención de CREACIÓN de proyecto: «Créame un
+   * proyecto nuevo llamado PRUEBA B1…». No es un proyecto EXISTENTE al
+   * que abrir (eso es extractReferencedProjectName): es uno que hay que
+   * CREAR desde la conversación. En vivo (v4.9.0, batería B-1) esta
+   * forma no tenía patrón en ninguna capa: resolveExecutionMode la
+   * marcaba missingProject y el renderer respondía la enlatada «Abre
+   * un proyecto (boton Abrir) o indica su nombre», dejando inalcanzable
+   * la maquinaria de creación (ensureDesktopProjectForAgent).
+   * Detección conservadora: verbo de creación gobernando «proyecto» de
+   * cerca, o «proyecto nuevo/nueva». «Crea un archivo en el proyecto»
+   * NO dispara (el verbo no gobierna a «proyecto»).
+   */
+  function isCreateProjectRequest(value) {
+    const prompt = text(value);
+    if (!prompt) return false;
+    if (isScopedDiskFileRequest(prompt)) return false;
+    if (!/\bproyecto\b/i.test(prompt)) return false;
+    if (/\bproyecto\s+nuev[oa]\b/i.test(prompt)) return true;
+    return /\b(?:cr[eé]a(?:me|r)?|crear|haz(?:me)?|constru(?:ye|ir)|genera(?:r)?)\s+(?:un\s+|una\s+|el\s+)?proyecto\b/i.test(prompt);
+  }
+
+  /**
+   * Nombre EXPLÍCITO de un proyecto a crear: «…llamado PRUEBA B1»,
+   * «…que se llame X», «…de nombre X» / «…con nombre X». Conserva la
+   * capitalización del usuario y corta la cola («… y dentro haz…»).
+   * Devuelve "" si el pedido no trae nombre o no es de creación.
+   */
+  function extractCreateProjectName(value) {
+    const prompt = text(value);
+    if (!prompt) return "";
+    if (!isCreateProjectRequest(prompt)) return "";
+    const tail = "(?=[\"'`]|$|\\s+(?:y|para|con|donde|en\\s+el\\s+que|en\\s+la\\s+que)\\b|[.,;:])";
+    const patterns = [
+      new RegExp(`\\bllamad[oa]\\s+["'\`]?([A-Za-zÁÉÍÓÚÑ0-9][\\wáéíóúñü .-]{0,58}?)${tail}`, "i"),
+      new RegExp(`\\bque\\s+se\\s+llame\\s+["'\`]?([A-Za-zÁÉÍÓÚÑ0-9][\\wáéíóúñü .-]{0,58}?)${tail}`, "i"),
+      new RegExp(`\\b(?:de|con)\\s+nombre\\s+["'\`]?([A-Za-zÁÉÍÓÚÑ0-9][\\wáéíóúñü .-]{0,58}?)${tail}`, "i"),
+    ];
+    for (const pattern of patterns) {
+      const match = prompt.match(pattern);
+      if (!match) continue;
+      const name = cleanProjectPath(match[1] || "").trim().replace(/[.,;:!?]+$/g, "").trim();
+      if (!name || name.length < 2) continue;
+      if (/^(?:proyecto|nuevo|nueva|el|la|un|una)$/i.test(name)) continue;
+      return name;
+    }
+    return "";
+  }
+
   function isOpenNamedProjectRequest(value) {
     if (extractOpenProjectName(value)) return true;
     const prompt = text(value);
@@ -1223,6 +1272,12 @@
     const pathGiven = hasUsableAbsolutePath(prompt);
     const openNamedProject = isOpenNamedProjectRequest(prompt);
     const referencedProjectName = extractReferencedProjectName(prompt);
+    // [EDITCORE-V491-B] Crear ≠ abrir: un pedido de creación (con o sin
+    // nombre) NO es missingProject — la conversación misma crea el
+    // proyecto por el flujo existente (ensureDesktopProjectForAgent) y
+    // el nombre explícito viaja para que la carpeta nazca con ÉL.
+    const createProjectName = extractCreateProjectName(prompt);
+    const createProject = Boolean(createProjectName) || isCreateProjectRequest(prompt);
     const closeProject = isCloseProjectRequest(prompt);
     const switchProject = isSwitchProjectRequest(prompt);
     // Sin proyecto abierto el chat/agente SI puede trabajar si el usuario dio una ruta absoluta,
@@ -1256,10 +1311,13 @@
       pathGiven,
       openNamedProject,
       referencedProjectName,
+      createProject,
+      createProjectName,
       closeProject,
       switchProject,
       // Analisis/listado en disco exige carpeta; arquitectura/brainstorm/conversacion NO.
-      missingProject: !projectOpen && !pathGiven && !openNamedProject && !closeProject && !switchProject && !referencedProjectName
+      // Crear un proyecto tampoco: la carpeta nace del propio pedido.
+      missingProject: !projectOpen && !pathGiven && !openNamedProject && !closeProject && !switchProject && !referencedProjectName && !createProject
         && ((explicitChangeRequest && !isNewBuildIdea) || needsBoundProject || (isAgent && needsBoundProject)),
     };
   }
@@ -1284,6 +1342,8 @@
     hasUsableAbsolutePath,
     extractOpenProjectName,
     extractReferencedProjectName,
+    extractCreateProjectName,
+    isCreateProjectRequest,
     isOpenNamedProjectRequest,
     isPureOpenProjectRequest,
     wantsAuthorizedFinish,

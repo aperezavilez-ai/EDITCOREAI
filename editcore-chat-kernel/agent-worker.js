@@ -115,7 +115,14 @@ async function executeTask({ taskId, taskType, taskData }, signal) {
         command: data.command || null,
         onProgress,
         scope: String(data.scope || ""),
-        autoRollback: data.autoRollback !== false,
+        // [EDITCORE-V491-C] El delegado entraba con autoRollback=true
+        // por defecto: una compilación fallida por un error AJENO al
+        // turno revertía la última escritura global. Ahora es opt-in
+        // explícito, y el verifier además exige que el error implique
+        // los archivos cambiados en este turno (changedFiles viaja con
+        // la invocación del delegado).
+        autoRollback: data.autoRollback === true,
+        changedFiles: Array.isArray(data.changedFiles) ? data.changedFiles : [],
         timeoutMs: Number(data.timeoutMs) || 60_000,
         threadId: data.threadId,
         signal,

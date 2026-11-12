@@ -1191,10 +1191,27 @@ async function gitCommit(root, options = {}) {
     const gitMgr = require("../runtime/git-manager");
     const files = Array.isArray(options.files) && options.files.length ? options.files : ["."];
     const stage = await gitMgr.stageFiles(files, root);
-    if (!stage.ok) return { ok: false, error: stage.message || stage.stderr, blockedSecrets: stage.blockedSecrets || [] };
+    // [EDITCORE-V491-E] El resultado SIEMPRE declara blockedSecrets y
+    // staged en lenguaje accionable: si el stage falló porque TODO lo
+    // pedido era sensible, el error trae la instrucción de reintentar
+    // con el conjunto completo (mensaje de git-manager), no un callejón.
+    if (!stage.ok) return { ok: false, error: stage.message || stage.stderr, blockedSecrets: stage.blockedSecrets || [], staged: stage.staged || [] };
     const msg = String(options.message || "update from editcoreai").trim();
     const res = await gitMgr.commit(msg, root);
-    return { ok: res.ok, output: res.stdout || res.message, error: res.ok ? "" : (res.message || res.stderr), blockedSecrets: stage.blockedSecrets || [], staged: stage.staged || [] };
+    const blockedSecrets = stage.blockedSecrets || [];
+    const staged = stage.staged || [];
+    return {
+      ok: res.ok,
+      output: res.stdout || res.message,
+      error: res.ok ? "" : (res.message || res.stderr),
+      blockedSecrets,
+      staged,
+      note: res.ok
+        ? (blockedSecrets.length
+          ? `Commit creado con ${staged.length} archivo(s): ${staged.slice(0, 8).join(", ")}. Excluidos por sensibles (nunca se commitean): ${blockedSecrets.join(", ")}.`
+          : `Commit creado con ${staged.length} archivo(s): ${staged.slice(0, 8).join(", ")}. Sin rutas sensibles en el conjunto.`)
+        : undefined,
+    };
   } catch (e) {
     return { ok: false, error: String(e?.message || e).slice(0, 400) };
   }
@@ -1540,7 +1557,7 @@ const DEFINITIONS = [
     type: "function",
     function: {
       name: "git_commit",
-      description: "Hace un commit de los cambios actuales en Git. Los archivos sensibles (.env, .pem, credentials.json…) se excluyen SIEMPRE al stagear, también con files omitido.",
+      description: "Hace un commit de los cambios actuales en Git. Los archivos sensibles (.env, .pem, credentials.json…) se excluyen SIEMPRE al stagear, también con files omitido. Ante un pedido de «commit de todos los cambios», llama con el conjunto completo (files omitido o [\".\"]): el filtro excluye los sensibles y commitea el resto. Nunca acotes el commit SOLO al archivo sensible ni reviertas su creación porque el stage lo bloquee: ese bloqueo es parcial y el resultado declara blockedSecrets y staged para que reportes qué entró y qué quedó fuera.",
       parameters: {
         type: "object",
         properties: {

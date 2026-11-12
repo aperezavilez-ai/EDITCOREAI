@@ -13464,6 +13464,13 @@ async function runAgentUntilSettled(input, { targetRun, thinking, runAgent = win
 }
 
 function deriveConversationProjectName(prompt, project) {
+  // [EDITCORE-V491-B] El nombre EXPLÍCITO del pedido manda: «…llamado
+  // PRUEBA B1» crea la carpeta «PRUEBA B1», no un nombre derivado de las
+  // palabras que sobrevivan a la limpieza («Nuevo Dentro Landing…»).
+  const explicitName = (typeof ProjectAnalysis !== "undefined" && typeof ProjectAnalysis.extractCreateProjectName === "function")
+    ? ProjectAnalysis.extractCreateProjectName(prompt || "")
+    : "";
+  if (explicitName) return explicitName.slice(0, 60);
   const titled = String(project?.title || "").trim();
   if (titled && !/^(nuevo chat|proyecto|nuevo proyecto)$/i.test(titled)) return titled.slice(0, 60);
   let text = String(prompt || "").toLowerCase();

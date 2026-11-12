@@ -44,6 +44,34 @@ function ensureNextTypesStub(projectRoot, opts = {}) {
   return true;
 }
 
+// [EDITCORE-V491-C] Un rollback automático solo es justo si el error
+// de compilación IMPLICA un archivo cambiado en ESTE turno. Un error
+// TS preexistente en un archivo no tocado (en vivo, v4.9.0:
+// src/main.tsx(6,17) error TS2339, ajeno a cada turno) revertía
+// cambios sanos cuando el delegado entraba con autoRollback=true.
+// Estas funciones extraen los archivos que el propio error nombra y
+// los cruzan con los cambios del turno.
+function normalizeRelPath(p) {
+  return String(p || "").replace(/\\/g, "/").replace(/^\.\//, "").replace(/^\/+/, "").toLowerCase();
+}
+
+function errorImplicatedFiles(detailBlob) {
+  const files = new Set();
+  for (const line of String(detailBlob || "").split(/\r?\n/)) {
+    if (!/error TS\d+/i.test(line) && !/Failed to compile/i.test(line)) continue;
+    const m = line.match(/([A-Za-z0-9_.\-/\\]+?\.(?:ts|tsx|js|jsx|mts|cts|mjs|cjs))\s*(?:\(|:)/);
+    if (m) files.add(normalizeRelPath(m[1]));
+  }
+  return [...files];
+}
+
+function compileErrorImplicatesChangedFiles(detailBlob, changedFiles) {
+  const changed = (Array.isArray(changedFiles) ? changedFiles : []).map(normalizeRelPath).filter(Boolean);
+  if (!changed.length) return false;
+  const implicated = errorImplicatedFiles(detailBlob);
+  return implicated.some((f) => changed.some((c) => f === c || f.endsWith(`/${c}`) || c.endsWith(`/${f}`)));
+}
+
 function isTimeoutResult(run) {
   // [EDITCORE-INTEGRAL-B1] runCommand devuelve `output`, no `stdout`:
   // incluirlo o los timeouts/errores que salen por stdout se pierden.
@@ -78,6 +106,10 @@ async function runVerifier({
   onProgress,
   timeoutMs = 45_000,
   autoRollback = false,
+  // [EDITCORE-V491-C] Archivos cambiados en el turno que invoca: el
+  // rollback automático (opt-in) solo procede si el error de
+  // compilación implica alguno de ellos.
+  changedFiles = [],
   signal,
   priorError = null,
   solutionApplied = null,
@@ -211,10 +243,22 @@ async function runVerifier({
   const compileFail = !run.ok && /(?:Build error|Failed to compile|error TS\d+|TypeScript error|ELIFECYCLE)/i.test(detailBlob);
 
   let rollback = null;
+  let rollbackSkipped = false;
+  let rollbackSkippedReason = "";
   if (!run.ok && compileFail && autoRollback === true) {
-    onProgress?.({ phase: "subagent", name: "verifier", text: "Error de compilación real. Rollback solo porque está autorizado." });
-    rollback = tools.rollbackLastChange(projectRoot);
-    steps.push({ name: "rollback_last_change", ok: rollback?.ok !== false, result: rollback });
+    // [EDITCORE-V491-C] Aunque el rollback esté autorizado, solo
+    // procede si el error implica archivos cambiados en ESTE turno:
+    // un error preexistente en un archivo no tocado no revierte
+    // trabajo sano. La omisión se declara, no pasa en silencio.
+    if (compileErrorImplicatesChangedFiles(detailBlob, changedFiles)) {
+      onProgress?.({ phase: "subagent", name: "verifier", text: "Error de compilación real en un archivo cambiado en este turno. Rollback solo porque está autorizado." });
+      rollback = tools.rollbackLastChange(projectRoot);
+      steps.push({ name: "rollback_last_change", ok: rollback?.ok !== false, result: rollback });
+    } else {
+      rollbackSkipped = true;
+      rollbackSkippedReason = "el error de compilación no implica ningún archivo cambiado en este turno (o no se declararon los cambios del turno): no se revierte trabajo sano por un error ajeno o preexistente";
+      onProgress?.({ phase: "subagent", name: "verifier", text: "Error de compilación AJENO a los cambios de este turno. No revierto el trabajo." });
+    }
   } else if (!run.ok) {
     onProgress?.({
       phase: "subagent",
@@ -247,6 +291,9 @@ async function runVerifier({
     steps,
     ok: run.ok,
     rollback,
+    // [EDITCORE-V491-C] Rollback omitido por error ajeno al turno: se declara.
+    rollbackSkipped,
+    rollbackSkippedReason: rollbackSkipped ? rollbackSkippedReason : "",
     // [EDITCORE-INTEGRAL-B5] Si el stub no se escribió por permisos, se declara.
     stubOmitted,
     stubWritten,
@@ -256,9 +303,10 @@ async function runVerifier({
       // si no hay texto real, se cae a run.error en vez de guardar blanco.
       error: run.ok ? undefined : (detailBlob.trim() ? detailBlob.trim().slice(0, 1200) : (run.error || undefined)),
       rolledBack: Boolean(rollback?.ok),
+      rollbackSkipped,
       snapshotId: rollback?.snapshotId || null,
     },
   };
 }
 
-module.exports = { runVerifier, ensureNextTypesStub, pickLightCommand };
+module.exports = { runVerifier, ensureNextTypesStub, pickLightCommand, /* [EDITCORE-V491-C] */ compileErrorImplicatesChangedFiles, errorImplicatedFiles };

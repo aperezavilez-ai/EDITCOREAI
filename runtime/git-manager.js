@@ -107,7 +107,13 @@ async function stageFiles(files, cwd) {
     return {
       ok: false,
       message: blockedSecrets.length
-        ? `Stage bloqueado: solo hay rutas sensibles (${blockedSecrets.slice(0, 4).join(", ")}), que nunca se commitean.`
+        // [EDITCORE-V491-E] Conducción: este bloqueo es SOLO sobre las
+        // rutas sensibles pedidas, no sobre el commit en general. En
+        // vivo (v4.9.0, batería B8) el modelo acotó el commit al .env,
+        // leyó «Stage bloqueado» como «commit imposible» y revirtió la
+        // creación del archivo. El mensaje ahora instruye la salida:
+        // commitear el conjunto completo y dejar que el filtro excluya.
+        ? `Stage bloqueado para estas rutas sensibles (${blockedSecrets.slice(0, 4).join(", ")}), que nunca se commitean. Esto NO significa que el commit sea imposible: si el pedido era commitear TODOS los cambios, vuelve a llamar git_commit SIN acotar el commit a estas rutas (files: ["."] o sin files): el filtro excluye las sensibles y commitea el resto. No reviertas la creación de estos archivos por este motivo.`
         : "No hay archivos para stage.",
       staged: [],
       blockedSecrets,

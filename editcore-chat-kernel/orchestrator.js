@@ -111,6 +111,96 @@ const globalMemory = require("./global-memory");
 const taskQueue = require("./task-queue");
 const threadCore = require("./thread-core");
 const { pickModel } = require("./model-router");
+const fs = require("fs");
+// [EDITCORE-V491-A] Visión real: la captura del preview se adjunta al
+// modelo como parte de imagen reutilizando el formato multimodal de
+// los adjuntos del usuario (vision-intake), no como metadatos de texto.
+const { buildOpenAiImageContent, modelSupportsVision } = require("../runtime/vision-intake");
+
+// [EDITCORE-V491-C] PLAN PRESENTADO, PERSISTIDO: cuando el despacho
+// corta una escritura con needsAuthorization («Pregunta antes»), la
+// llamada propuesta (herramienta, archivo y cambio) se guarda asociada
+// a la conversación en .editcore/presented-plan.json. Antes la
+// autorización viajaba como booleano y el turno del «procede»
+// RECONSTRUÍA la tarea desde el historial, re-derivando otro cambio
+// (en vivo, v4.9.0: el «procede» de la C-1 terminó revirtiendo desde
+// un snapshot y quitando un badge que no era lo presentado). Al
+// autorizarse, el turno de ejecución recibe el plan como instrucción
+// VINCULANTE y el cierre declara cualquier escritura fuera del plan.
+const PRESENTED_PLAN_FILE = "presented-plan.json";
+const PRESENTED_PLAN_MAX_CALLS = 12;
+
+function presentedPlanFile(projectRoot) {
+  return path.join(String(projectRoot || ""), ".editcore", PRESENTED_PLAN_FILE);
+}
+
+function loadPresentedPlan(projectRoot, threadId) {
+  if (!projectRoot) return null;
+  try {
+    const all = JSON.parse(fs.readFileSync(presentedPlanFile(projectRoot), "utf8"));
+    const rec = all && typeof all === "object" ? all[String(threadId || "default")] : null;
+    if (!rec || !Array.isArray(rec.calls) || !rec.calls.length) return null;
+    return rec;
+  } catch { return null; }
+}
+
+function savePresentedPlan(projectRoot, threadId, rec) {
+  if (!projectRoot || !rec) return;
+  try {
+    const file = presentedPlanFile(projectRoot);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    let all = {};
+    try { all = JSON.parse(fs.readFileSync(file, "utf8")) || {}; } catch { all = {}; }
+    all[String(threadId || "default")] = rec;
+    fs.writeFileSync(file, JSON.stringify(all, null, 2), "utf8");
+  } catch { /* el plan es una ayuda de fidelidad: nunca tumba el turno */ }
+}
+
+function clearPresentedPlan(projectRoot, threadId) {
+  if (!projectRoot) return;
+  try {
+    const file = presentedPlanFile(projectRoot);
+    const all = JSON.parse(fs.readFileSync(file, "utf8"));
+    if (all && typeof all === "object" && delete all[String(threadId || "default")]) {
+      fs.writeFileSync(file, JSON.stringify(all, null, 2), "utf8");
+    }
+  } catch { /* ignore */ }
+}
+
+function presentedCallFrom(name, args = {}) {
+  const clip = (v, n) => {
+    const s = String(v == null ? "" : v);
+    return s.length > n ? `${s.slice(0, n)}…[recortado]` : s;
+  };
+  return {
+    name: String(name || ""),
+    path: String(args.path || args.file || ""),
+    content: args.content != null ? clip(args.content, 6000) : undefined,
+    oldText: args.oldText != null ? clip(args.oldText, 3000) : undefined,
+    newText: args.newText != null ? clip(args.newText, 3000) : undefined,
+    command: args.command != null ? clip(args.command, 500) : undefined,
+  };
+}
+
+function describePresentedPlan(rec) {
+  const lines = (rec.calls || []).slice(0, PRESENTED_PLAN_MAX_CALLS).map((c, i) => {
+    const bits = [`${i + 1}. ${c.name}${c.path ? ` en \`${c.path}\`` : ""}`];
+    if (c.oldText != null && c.newText != null) bits.push(`cambia «${String(c.oldText).slice(0, 220)}» por «${String(c.newText).slice(0, 220)}»`);
+    else if (c.content != null) bits.push(`escribe este contenido: «${String(c.content).slice(0, 220)}»`);
+    else if (c.command) bits.push(`comando: ${c.command}`);
+    return bits.join(" — ");
+  });
+  const parts = [
+    "PLAN PRESENTADO Y AUTORIZADO POR EL USUARIO (vinculante): en el turno anterior presentaste ESTE cambio exacto y el usuario lo autorizó («procede»). Aplícalo TAL CUAL con las herramientas: no lo re-derives, no lo sustituyas por otro cambio ni escribas archivos fuera de esta lista. Si una llamada ya no aplica porque el archivo cambió desde entonces, dilo con el motivo exacto y detente en ese punto.",
+    ...lines,
+  ];
+  if (rec.presentedText) parts.push(`Así lo presentaste: «${String(rec.presentedText).slice(0, 1200)}»`);
+  return parts.join("\n");
+}
+
+function presentedPlanPaths(rec) {
+  return [...new Set((rec?.calls || []).map((c) => String(c.path || "").replace(/\\/g, "/").replace(/^\.\//, "")).filter(Boolean))];
+}
 // [EDITCORE-INTEGRAL-B9] agent-bus ya no se importa aquí: el
 // orquestador dejó de escribir el bus por turno (solo escritura,
 // nadie lo leía). El módulo queda para uso explícito.
@@ -1044,6 +1134,26 @@ function looksLikePlanClose(text = "") {
   if (!raw.trim()) return false;
   if (/para cumplir lo pedido/i.test(raw)) return true;
   if (/(?:^|\n)\s{0,3}(?:#{1,4}\s*)?(?:mapa|plan|pasos a seguir|qué haré|que haré)\b/i.test(raw)) return true;
+  // [EDITCORE-V491-D] Las formas REALES de propuesta, observadas en
+  // vivo con la v4.9.0 («Ahora mejora el hero» en modo Agente): el
+  // modelo cierra con «**Propuesta: hero más profesional (sin
+  // implementar aún)**», los pasos como infinitivos A MITAD DE LÍNEA
+  // tras encabezados en negrita o tras dos puntos («**Fondo premium:**
+  // conservar…», «Composición más clara: mantener…», «Confianza
+  // visible: convertir…») y el remate «dime "procede" y lo implemento»
+  // — pese a estar AUTORIZADO. Ninguna forma vieja lo veía: el
+  // infinitivo no abría la línea y «Propuesta» no era encabezado
+  // conocido. La compuerta que consume esto (planClose) ya exige
+  // turno autorizado + intención de mutación + cero escrituras, así
+  // que reconocer la propuesta aquí no puede castigar un cierre
+  // legítimo de «Pregunta antes» (ahí la compuerta no aplica).
+  if (/sin implementar(?:\s+a[uú]n)?/i.test(raw)) return true;
+  if (/(?:^|\n)\s{0,3}(?:#{1,4}\s*)?(?:\*\*)?\s*propuesta\b/i.test(raw)) return true;
+  if (/\bdime\s+["«“]?\s*procede/i.test(raw)) return true;
+  const midLineInfinitives = raw.split(/\r?\n/).filter((line) =>
+    /\*\*[^*\n]{2,80}\*\*\s*:?\s*(?:[A-ZÁÉÍÓÚÑ][\wáéíóúñ]*\s+){0,3}?[A-ZÁÉÍÓÚÑ][\wáéíóúñ]*(?:ar|er|ir)\b/.test(line)
+    || /^[^:\n]{3,80}:\s*[a-záéíóúñ][\wáéíóúñ]*(?:ar|er|ir)\b/.test(line)).length;
+  if (midLineInfinitives >= 2) return true;
   const infinitiveLed = raw.split(/\r?\n/).filter((line) =>
     /^\s*(?:[-*•]|\d+[.)])?\s*[A-ZÁÉÍÓÚÑ][\wáéíóúñ]*(?:ar|er|ir)\b/i.test(line)).length;
   return infinitiveLed >= 2;
@@ -1734,11 +1844,28 @@ class ChatOrchestrator {
         || isApprovalText
         || startsWithContinue
         || /^INSTRUCCI[OÓ]N AUTORIZADA/i.test(effectiveText);
+      // [EDITCORE-V491-C] Plan presentado y persistido: si esta
+      // conversación tiene uno y ESTE turno es su ejecución autorizada,
+      // el plan viaja como instrucción vinculante dentro del mensaje y
+      // como dato (presentedPlan) para que el cierre declare cualquier
+      // escritura fuera de él. Se consume al entregarlo: no se
+      // re-aplica en turnos posteriores.
+      let consumedPlan = null;
+      let executionMessage = taskMessage;
+      if (canWrite && userAuthorized) {
+        const rec = loadPresentedPlan(projectRoot, this._threadId);
+        if (rec) {
+          consumedPlan = rec;
+          executionMessage = `${taskMessage}\n\n${describePresentedPlan(rec)}`;
+          clearPresentedPlan(projectRoot, this._threadId);
+        }
+      }
       const out = await runner({
-        decision, message: taskMessage, projectRoot, apiBaseUrl, apiKey, model, memory, onProgress,
+        decision, message: executionMessage, projectRoot, apiBaseUrl, apiKey, model, memory, onProgress,
         allowWrite: canWrite, planAuthorizedExecution: canWrite && userAuthorized, maxSteps: canWrite ? AUTHORIZED_MAX_STEPS : CHAT_MAX_STEPS,
         helpers, authorizedFromPending: canWrite && userAuthorized, fullAccess,
         permissionMode: fullAccess ? "full" : permissionMode, images: taskImages,
+        presentedPlan: consumedPlan,
       });
       // El Cerebro también APRENDE del turno (contrato de turno): el cierre
       // de una ejecución se recuerda en el almacén que el usuario ve en
@@ -1783,6 +1910,7 @@ class ChatOrchestrator {
     const { decision, message, projectRoot, apiBaseUrl, apiKey, model, memory, onProgress,
       allowWrite, maxSteps, helpers, chatOnly, projectless, authorizedFromPending,
       fullAccess, permissionMode, images: taskImages = [],
+      presentedPlan,
       history: taskHistory, threadId: taskThreadId } = opts;
     const threadId = threadCore.resolveThreadId({ threadId: taskThreadId || this._threadId, chatId: this._threadId });
     const historyInput = Array.isArray(taskHistory) && taskHistory.length ? taskHistory : (Array.isArray(this._historyInput) ? this._historyInput : []);
@@ -1833,6 +1961,15 @@ class ChatOrchestrator {
     let narrationRetries = 0;
 
     const toolHistory = new Map();
+    // [EDITCORE-V491-C] Llamadas cortadas por needsAuthorization en
+    // ESTE turno: se persisten como plan presentado en cuanto ocurren
+    // (no al cierre), para que el plan exista aunque el turno termine
+    // por otra vía.
+    const presentedCalls = [];
+    // [EDITCORE-V491-A] Capturas cuyo PNG va adjunto como imagen en el
+    // siguiente mensaje al modelo (se vuelca tras cerrar el lote de
+    // herramientas, nunca entre mensajes tool del mismo lote).
+    const pendingVisionImages = [];
     const readCache = new Map();
     // [EDITCORE-INTEGRAL-B6] Estado de sesión/parcial del turno: la
     // apiKey puede refrescarse UNA vez por turno ante NO_SESSION y
@@ -2435,6 +2572,18 @@ class ChatOrchestrator {
           const written = successfulWritePaths(steps);
           let textOut = cleanText;
 
+          // [EDITCORE-V491-C] La presentación en prosa del plan (lo que
+          // el usuario leyó antes de decir «procede») se anexa al plan
+          // persistido por las llamadas cortadas: el turno de ejecución
+          // recibe también CÓMO se describió el cambio.
+          if (presentedCalls.length) {
+            const recForText = loadPresentedPlan(projectRoot, threadId);
+            if (recForText) {
+              recForText.presentedText = String(cleanText || "").slice(0, 3000);
+              savePresentedPlan(projectRoot, threadId, recForText);
+            }
+          }
+
           // [EDITCORE-CONSOLIDADA] El 📁 solo cuando el pedido ERA de
           // listado (shouldFormatAsListing): un ASK con lecturas
           // reales conserva la respuesta sustantiva del modelo.
@@ -2471,6 +2620,18 @@ class ChatOrchestrator {
             const intentText = `${this._currentUserText || ""} ${message || ""}`;
             if (hasMutationIntent(intentText)) {
               textOut = `${String(textOut || "").trim()}\n\n---\n\n**Nota del kernel:** este pedido implicaba cambios y estabas autorizado a escribir, pero el kernel **no registró ninguna escritura** en este turno. Nada quedó aplicado: pide que se ejecute el cambio o revisa el motivo exacto arriba.`;
+            }
+          }
+
+          // [EDITCORE-V491-C] Ejecución de un plan PRESENTADO: si el
+          // turno escribió archivos FUERA del plan que el usuario
+          // autorizó, el cierre lo declara — el usuario autorizó otra
+          // cosa y tiene derecho a saber que se hizo de más.
+          if (presentedPlan && written.length > 0 && !listOnlyMode && !chatOnly) {
+            const allowedPaths = presentedPlanPaths(presentedPlan);
+            const outside = written.filter((p) => !allowedPaths.some((a) => p === a || p.endsWith(`/${a}`) || a.endsWith(`/${p}`)));
+            if (outside.length) {
+              textOut = `${String(textOut || "").trim()}\n\n---\n\n**Nota del kernel:** este turno ejecutaba el plan presentado y autorizado por el usuario (${allowedPaths.map((a) => `\`${a}\``).join(", ") || "sin archivos declarados"}), pero también escribió FUERA del plan presentado: ${outside.map((p) => `\`${p}\``).join(", ")}. Ese exceso no era lo presentado: revísalo con el usuario antes de darlo por bueno.`;
             }
           }
 
@@ -2764,6 +2925,46 @@ class ChatOrchestrator {
           const softRecover = recoverSoftToolFailure(name, args, result, projectRoot);
           result = softRecover.payload;
 
+          // [EDITCORE-V491-C] Corte por autorización = plan presentado:
+          // la llamada propuesta se persiste asociada a la conversación
+          // para que el «procede» ejecute ESTO, no una re-derivación.
+          if (result?.needsAuthorization === true && presentedCalls.length < PRESENTED_PLAN_MAX_CALLS) {
+            presentedCalls.push(presentedCallFrom(name, args));
+            savePresentedPlan(projectRoot, threadId, {
+              taskText: String(this._currentUserText || message || "").slice(0, 500),
+              createdAt: Date.now(),
+              calls: presentedCalls.slice(),
+            });
+          }
+
+          // [EDITCORE-V491-A] VISIÓN REAL: el PNG de la captura se lee
+          // de disco y queda listo para adjuntarse como parte de imagen
+          // en el siguiente mensaje al modelo. Sin modelo con visión (o
+          // sin PNG legible) el resultado lo DECLARA («captura sin
+          // visión»): el juicio sale de los diagnósticos de texto y
+          // nadie finge haber visto la imagen.
+          if (name === "capture_preview_screenshot" && result && result.ok !== false) {
+            const abs = result.screenshotAbs
+              || (result.screenshotPath ? path.resolve(String(projectRoot || ""), String(result.screenshotPath)) : "");
+            if (!modelSupportsVision(model)) {
+              result.visionAttached = false;
+              result.visionNote = "captura sin visión: el modelo de este turno no acepta imágenes, así que la captura NO se le adjuntó. Juzga solo con los diagnósticos de texto (renderOk, errores de consola, overflow, encabezados) y no afirmes cómo se ve la imagen.";
+            } else if (!abs || !fs.existsSync(abs)) {
+              result.visionAttached = false;
+              result.visionNote = "captura sin visión: no se pudo leer el PNG capturado para adjuntarlo al modelo. Juzga solo con los diagnósticos de texto y no afirmes cómo se ve la imagen.";
+            } else {
+              try {
+                const dataUrl = `data:image/png;base64,${fs.readFileSync(abs).toString("base64")}`;
+                pendingVisionImages.push({ name: `captura-${result.viewport || "desktop"}`, dataUrl });
+                result.visionAttached = true;
+                result.visionNote = "La imagen REAL de esta captura va adjunta como imagen en el siguiente mensaje: júzgala directamente (qué se ve en el hero, las tarjetas y las secciones), no por el nombre del archivo ni el texto alt.";
+              } catch {
+                result.visionAttached = false;
+                result.visionNote = "captura sin visión: no se pudo leer el PNG capturado para adjuntarlo al modelo. Juzga solo con los diagnósticos de texto y no afirmes cómo se ve la imagen.";
+              }
+            }
+          }
+
           if (readCacheKey && result?.ok !== false && typeof result?.content === "string") {
             readCache.set(readCacheKey, result);
           }
@@ -2788,6 +2989,19 @@ class ChatOrchestrator {
           // cabeza que eliminaba stderr, las colas con el error final,
           // la cola de read_skill y los diagnostics de la captura.
           messages.push({ role: "tool", tool_call_id: call.id, name, content: tools.truncatePayload(result || {}, name === "read_file" ? tools.READ_FILE_PAYLOAD_CAP : undefined, name) });
+        }
+
+        // [EDITCORE-V491-A] Cerrado el lote de herramientas (los
+        // mensajes tool ya quedaron en su sitio, pegados a su
+        // assistant), las capturas del lote se adjuntan como UN mensaje
+        // de usuario multimodal: es el siguiente mensaje que el modelo
+        // recibe en este mismo turno, con la imagen real.
+        if (pendingVisionImages.length) {
+          const shots = pendingVisionImages.splice(0, pendingVisionImages.length);
+          messages.push({
+            role: "user",
+            content: buildOpenAiImageContent(`📷 Captura(s) real(es) del preview de este turno (${shots.length}): mírala(s) directamente y juzga lo que se ve — hero, tarjetas y secciones — antes de cerrar tu veredicto.`, shots.map((s) => ({ name: s.name, dataUrl: s.dataUrl }))),
+          });
         }
       }
 
