@@ -2911,6 +2911,16 @@ class ChatOrchestrator {
     // sin emitir ninguna línea-recibo a la superficie.
     const askLane = (decision?.kind === "ASK") ? (this._askLane || null) : null;
     this._askLane = null;
+    // [EDITCORE-V514-P2] TURNO DEL CARRIL DE ORIENTACIÓN: responde
+    // desde el bloque de memoria compartida y la conversación — no
+    // explora archivos. Abajo, la selección de herramientas de este
+    // turno le deja solo search_brain (consulta de MEMORIA, no de
+    // disco) y el filtro de despacho descarta cualquier llamada a
+    // una herramienta no ofrecida: la medición del primer turno
+    // (v5.1.3) demostró que con herramientas de lectura disponibles
+    // el modelo verifica en disco antes de responder, aunque el
+    // bloque ya traiga la respuesta.
+    const orientationLane = askLane?.lane === "orientation";
     if (askLane) {
       steps.push({
         name: askLane.lane === "orientation" ? "orientation_first" : "ask_explorer",
@@ -3008,6 +3018,16 @@ class ChatOrchestrator {
           // era la mitad del payload medido. Un turno EXECUTE jamás
           // cae aquí (ver readOnlyQuestionTurn): su set completo y su
           // compuerta de despacho quedan intactos.
+          // [EDITCORE-V514-P2] Carril de orientación: SIN herramientas
+          // de lectura/exploración de archivos. El set de preguntas
+          // (QUESTION_READ_TOOLS) queda intacto FUERA del carril — la
+          // revisión visual delegada v4.9.3 lo necesita tal cual en
+          // los demás turnos de pregunta —; en ESTE turno solo puede
+          // viajar search_brain, que consulta la memoria (el Cerebro),
+          // no el disco: la respuesta sale del bloque compartido.
+          : orientationLane
+          ? tools.getToolDefinitions({ allowWrite: false, isFullAccess: false, isAnalysis: false })
+              .filter((t) => (t.function?.name || t.name) === "search_brain")
           : readOnlyQuestionTurn
           ? tools.getToolDefinitions({ allowWrite: false, isFullAccess: false, isAnalysis: false })
               .filter((t) => QUESTION_READ_TOOLS.has(t.function?.name || t.name))
@@ -3209,6 +3229,17 @@ class ChatOrchestrator {
         let toolCalls = Array.isArray(turn.toolCalls) ? turn.toolCalls : [];
         if (!toolCalls.length && turn.text) toolCalls = parseTextToolCalls(turn.text, { projectRoot });
         if (chatMode) toolCalls = availableTools.length ? toolCalls.filter((c) => CHAT_READ_TOOLS.has(c.function?.name)) : [];
+        // [EDITCORE-V514-P2] Invariante del carril de orientación:
+        // una llamada a una herramienta NO ofrecida en este turno
+        // NO se ejecuta — se descarta antes del despacho, con el
+        // mismo patrón del filtro de CHAT de arriba. Cubre también
+        // las llamadas que parseTextToolCalls sintetiza desde el
+        // texto: en el carril solo puede ejecutarse lo ofrecido
+        // (search_brain), y lo demás muere aquí, sin paso asentado.
+        if (orientationLane) {
+          const offeredNames = new Set(availableTools.map((t) => t.function?.name || t.name));
+          toolCalls = toolCalls.filter((c) => offeredNames.has(c.function?.name));
+        }
         const cleanText = stripTextToolMarkup(turn.text || "");
 
         // [EDITCORE-V500-A5] La respuesta del paso se registra en el

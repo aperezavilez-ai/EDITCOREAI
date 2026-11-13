@@ -9,6 +9,13 @@
 //  (i)   el payload de un turno ASK no contiene definiciones de
 //        herramientas de escritura y sí las de lectura (set de solo
 //        lectura, la maquinaria del filtro de CHAT).
+//        [V514] La (i) se re-delimitó con la v5.1.4 — justificación
+//        completa junto a la prueba: su fixture ejerce el CARRIL DE
+//        ORIENTACIÓN, y la P2 de la v5.1.4 dejó ese carril sin
+//        herramientas de lectura/exploración a propósito (responde
+//        desde el bloque compartido). La premisa «en ASK viaja el
+//        set de lectura» sigue viva FUERA del carril y la afirma la
+//        nueva (i-bis); dentro del carril manda el invariante nuevo.
 //  (ii)  dos turnos de orientación seguidos: la entrada archivada del
 //        usuario es su texto ORIGINAL (sin el catálogo ni el bloque
 //        compartido dentro) y el payload del turno 2 no arrastra una
@@ -102,6 +109,55 @@ test("(i) un turno ASK viaja con el set de SOLO LECTURA: sin herramientas de esc
     projectRoot: root, threadId: "hilo-v512-i", helpers,
   });
   assert.ok((res.steps || []).some((s) => s.name === "orientation_first"), "el turno fue por el carril de orientación");
+  assert.ok(captures.length >= 1, "el turno llegó al modelo");
+  const names = captures[0].tools.map((t) => t.function?.name || t.name).filter(Boolean);
+  for (const name of names) {
+    assert.ok(QUESTION_READ_TOOLS.has(name), `la definición ofrecida es de solo lectura: ${name}`);
+    assert.ok(!WRITE_TOOLS.includes(name), `ninguna definición de escritura viaja en ASK: ${name}`);
+  }
+  // [EDITCORE-V514-P2] JUSTIFICACIÓN DEL RE-DELIMITADO (precedente:
+  // la A2 de cache-dieta-v500 en la propia v5.1.2): esta prueba
+  // afirmaba que en ESTE turno — que va por el carril de
+  // orientación — viajaban read_file/list_files y
+  // capture_preview_screenshot. Esa premisa era la dieta de la
+  // v5.1.2 para los turnos de pregunta EN GENERAL; la v5.1.4 la
+  // supera PARA EL CARRIL: la medición del primer turno probó que
+  // con herramientas de lectura disponibles el modelo verifica en
+  // disco antes de responder aunque el bloque ya traiga la
+  // respuesta, así que el carril quedó SIN herramientas de
+  // lectura/exploración (solo puede viajar search_brain, consulta
+  // de memoria). El invariante que SÍ manda desde la v5.1.2 sigue
+  // afirmado arriba (ninguna escritura viaja en ASK; todo lo
+  // ofrecido es del set de preguntas) y el set completo de lectura
+  // fuera del carril lo afirma la (i-bis) nueva, con la captura del
+  // preview donde el protocolo de visión (v4.9.3) la ejerce.
+  for (const name of ["list_files", "read_file", "search_files", "git_status", "git_log", "git_diff", "read_pdf", "capture_preview_screenshot"]) {
+    assert.ok(!names.includes(name), `en el CARRIL de orientación ya NO viaja ${name} (v5.1.4-P2: responde desde el bloque)`);
+  }
+  assert.ok(names.every((n) => n === "search_brain"), `en el carril solo puede viajar search_brain (memoria); viajaron: ${names.join(", ") || "ninguna"}`);
+  assert.ok(!names.includes("write_file") && !names.includes("replace_in_file") && !names.includes("run_command"), "write_file / replace_in_file / run_command NO viajan en un turno de pregunta");
+});
+
+// ------------------------------------------------------------ (i-bis)
+test("(i-bis) fuera del carril, el turno ASK conserva el set de solo lectura COMPLETO (lectura + captura del preview)", async () => {
+  // La (i) ejerce el carril de orientación; la premisa original de
+  // la v5.1.2 — en ASK viaja el set de preguntas entero — sigue
+  // viva en los demás turnos de pregunta. Aquí: pregunta de código
+  // por el carril del explorador (ask_explorer).
+  const root = emptyProject({
+    "package.json": JSON.stringify({ name: "demo" }),
+    "src/total.js": "export function calcularTotal(items) { return items.reduce((a, b) => a + b.precio, 0); }\n",
+  });
+  const captures = [];
+  const { helpers } = capturingHelpers([
+    { text: "El total se calcula en src/total.js, en la función calcularTotal.", toolCalls: [], usage: USAGE },
+    { text: "El total se calcula en src/total.js.", toolCalls: [], usage: USAGE },
+  ], captures);
+  const res = await new ChatOrchestrator().handle({
+    ...BASE_ARGS, message: "¿dónde se calcula el total de la compra?",
+    projectRoot: root, threadId: "hilo-v512-i-bis", helpers,
+  });
+  assert.ok((res.steps || []).some((s) => s.name === "ask_explorer"), "el turno fue por el carril del explorador (fuera del de orientación)");
   assert.ok(captures.length >= 1, "el turno llegó al modelo");
   const names = captures[0].tools.map((t) => t.function?.name || t.name).filter(Boolean);
   assert.ok(names.length > 0, "el turno sí ofrece herramientas (las de lectura)");

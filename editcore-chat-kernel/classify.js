@@ -212,9 +212,32 @@ function classify(message, opts = {}) {
   if (TASK_READ_RE.test(text) || PATHISH_RE.test(text)) {
     return { kind: "ASK", label: "Consulta", allowTools: true, allowWrite: false, background };
   }
+  // [EDITCORE-V514-P1] La forma interrogativa tolera la puntuación
+  // DESPUÉS del signo de cierre: «¿qué queda pendiente?.» — con punto
+  // tras el «?» — seguía siendo una pregunta, pero /\?$/ lo rompía y
+  // la cadena escapaba de esta detección. Y la vía de prefijos admite
+  // el «¿» inicial: anclada a ^, la «¿» la dejaba fuera.
   const isQuestionOrChat = CHAT_INFO_RE.test(text)
-    || /\?$/i.test(text)
-    || /^(?:qu[eé]\s+(?:skills|es|hace|son|hay|opinas|diferencia|cambi[oó]|pasa)|cu[aá]l(?:es)?|c[oó]mo|por\s*qu[eé]|qui[eé]n(?:es)?|cu[aá]ndo|hay\b|ya\s+qued[oó]|qued[oó]|ya\s+quedaron|porque\s+se\s+te\s+acaba|es\s+posible)\b/i.test(text);
+    || /\?\s*[.!]*$/.test(text)
+    || /^\s*¿?\s*(?:qu[eé]\s+(?:skills|es|hace|son|hay|opinas|diferencia|cambi[oó]|pasa)|cu[aá]l(?:es)?|c[oó]mo|por\s*qu[eé]|qui[eé]n(?:es)?|cu[aá]ndo|hay\b|ya\s+qued[oó]|qued[oó]|ya\s+quedaron|porque\s+se\s+te\s+acaba|es\s+posible)\b/i.test(text);
+  // [EDITCORE-V514-P1] FORMA DE ORIENTACIÓN: la lista CERRADA de
+  // preguntas de orientación del Mapa (orientation-map.
+  // isOrientationQuery). Una pregunta de orientación es información
+  // pura TAMBIÉN con acceso completo: no puede caer a EXECUTE por el
+  // fallback de la rama full (incidente en vivo de la v5.1.3:
+  // «¿qué queda pendiente?.» se ejecutó como tarea y pagó 47.057
+  // tokens explorando para responder desde un Mapa que ya traía la
+  // respuesta; el carril de orientación de la rama ASK quedó
+  // inalcanzable). GUARDA SIMÉTRICA: la vía es SOLO esta lista
+  // cerrada, no cualquier interrogante — una orden con «?» retórico
+  // o con punto final («¿puedes corregir el error del login?»,
+  // «corrige el error del login.») sigue siendo EXECUTE: TASK_FIX_RE
+  // ya la devuelve como ejecución en la prioridad 3, antes de esta
+  // rama, y la guarda de isPureInfo lo repite abajo. REGLA DE
+  // CONVIVENCIA: si en el mismo mensaje conviven una forma de
+  // orientación y un verbo de cambio/orden, MANDA LA ORDEN.
+  let orientationForm = false;
+  try { orientationForm = require("./orientation-map").isOrientationQuery(text) === true; } catch { orientationForm = false; }
 
   if (PURE_GREETING_RE.test(text)) {
     return { kind: "CHAT", label: "Chat", allowTools: false, allowWrite: false, background: false };
@@ -222,7 +245,10 @@ function classify(message, opts = {}) {
 
   // En Modo Agente o Acceso Total: NUNCA degradar a CHAT sin herramientas ni pedir cambiar permisos
   if (full) {
-    const isPureInfo = isQuestionOrChat && !TASK_FIX_RE.test(text);
+    // [EDITCORE-V514-P1] Información pura = forma interrogativa O
+    // forma de orientación (lista cerrada), siempre que no conviva
+    // un verbo de cambio: si lo hay, manda la orden (EXECUTE).
+    const isPureInfo = (isQuestionOrChat || orientationForm) && !TASK_FIX_RE.test(text);
     return {
       kind: isPureInfo ? "ASK" : "EXECUTE",
       label: isPureInfo ? "Consulta en Modo Agente" : "Ejecución (Acceso completo)",
