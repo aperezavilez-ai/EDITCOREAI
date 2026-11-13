@@ -167,6 +167,77 @@ function retireJudgedCaptureImages(messages, verdictText = "") {
   return retired;
 }
 
+// [EDITCORE-V517-C2] STUBS PROGRESIVOS DE RESULTADOS VIEJOS (solo
+// EXECUTE; la puerta por clase está en el sitio de llamada, dentro
+// del bucle). Medición M3 §0/§6-C2: los resultados de herramientas
+// del turno en curso se reenvían ÍNTEGROS en todas las llamadas
+// posteriores (recompra ×16,4 en el fixture) y ningún presupuesto
+// los retira por debajo del acantilado de la compactación declarada
+// (180.000 tok estimados). La dieta continua: cuando un resultado
+// tool ya tiene ≥6 pasos más nuevos tras él, su contenido en el
+// historial del turno se sustituye por un stub determinista y breve
+// (herramienta, tamaño original, titular y vía de relectura).
+// Reglas duras:
+//  - el emparejamiento tool_call_id/rol NO se toca: solo cambia el
+//    contenido del mensaje tool, en su sitio;
+//  - cada resultado se stubbea UNA sola vez (el stub lleva centinela
+//    y la pasada lo reconoce): la ruptura de prefijo por resultado
+//    es única;
+//  - dentro de la ventana reciente de 6 pasos nada se toca;
+//  - solo se sustituye si el stub es MÁS BREVE que el contenido (la
+//    dieta nunca engorda un resultado chico);
+//  - los hechos del kernel leen los steps, no estos mensajes: la
+//    sustitución no los alcanza.
+const TOOL_STUB_WINDOW_STEPS = 6;
+const TOOL_STUB_SENTINEL = "[stub M3 · resultado fuera de la ventana reciente]";
+
+function toolResultHeadline(content) {
+  const firstLine = (s) => String(s || "").split(/\r?\n/).map((l) => l.trim()).find((l) => l) || "";
+  let headline = "";
+  try {
+    const parsed = JSON.parse(content);
+    if (parsed && typeof parsed === "object") {
+      if (typeof parsed.error === "string" && parsed.error) headline = firstLine(parsed.error);
+      else if (typeof parsed.summary === "string" && parsed.summary) headline = firstLine(parsed.summary);
+      else if (typeof parsed.note === "string" && parsed.note) headline = firstLine(parsed.note);
+      else if (typeof parsed.path === "string" && parsed.path) headline = `archivo ${parsed.path}${parsed.ok === false ? " (falló)" : ""}`;
+      else if (typeof parsed.output === "string" && parsed.output) headline = firstLine(parsed.output);
+      else if (typeof parsed.stderr === "string" && parsed.stderr) headline = firstLine(parsed.stderr);
+    }
+  } catch { /* no era JSON: el titular sale de la primera línea cruda */ }
+  if (!headline) headline = firstLine(content);
+  return headline.replace(/\s+/g, " ").slice(0, 120);
+}
+
+function buildToolResultStub(message) {
+  const name = String(message?.name || "herramienta");
+  const originalChars = typeof message?.content === "string" ? message.content.length : 0;
+  const headline = toolResultHeadline(message?.content || "");
+  return `${TOOL_STUB_SENTINEL} ${name} · resultado original de ${originalChars} caracteres, retirado por antigüedad (quedan ≥${TOOL_STUB_WINDOW_STEPS} pasos más nuevos tras él).${headline ? ` Titular: ${headline}.` : ""} Si necesitas el contenido íntegro, vuelve a ejecutar ${name} y volverá completo y reciente (en read_file, force:true salta el comprobante de lectura del turno).`;
+}
+
+// Un «paso» = un mensaje assistant con tool_calls. La pasada recorre
+// el array desde el final contando los pasos más nuevos que quedan
+// tras cada resultado; muta SOLO el contenido de los mensajes tool
+// elegidos y devuelve cuántos stubbeó.
+function stubAgedToolResults(messages, windowSteps = TOOL_STUB_WINDOW_STEPS) {
+  if (!Array.isArray(messages)) return 0;
+  const window = Math.max(0, Number(windowSteps) || 0);
+  let stubbed = 0;
+  let stepsAfter = 0;
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const m = messages[i];
+    if (!m || typeof m !== "object") continue;
+    if (m.role === "assistant" && Array.isArray(m.tool_calls) && m.tool_calls.length) { stepsAfter += 1; continue; }
+    if (m.role !== "tool" || typeof m.content !== "string") continue;
+    if (stepsAfter < window) continue;
+    if (m.content.startsWith(TOOL_STUB_SENTINEL)) continue;
+    const stub = buildToolResultStub(m);
+    if (stub.length < m.content.length) { m.content = stub; stubbed += 1; }
+  }
+  return stubbed;
+}
+
 // [EDITCORE-V491-C] PLAN PRESENTADO, PERSISTIDO: cuando el despacho
 // corta una escritura con needsAuthorization («Pregunta antes»), la
 // llamada propuesta (herramienta, archivo y cambio) se guarda asociada
@@ -3086,12 +3157,20 @@ class ChatOrchestrator {
     // modo y proyecto. Las skills siguen llegando al modelo en el
     // mismo turno y con el mismo texto; solo cambia su sitio.
     // [EDITCORE-V512-R3] En un turno de pregunta sin escritura el
-    // catálogo viaja en su variante SOLO IDS (sin extractos): el
-    // extracto es andamiaje para APLICAR la skill en un turno de
-    // ejecución; en una pregunta basta el nombre (y read_skill sigue
-    // disponible si el tema aparece). Los turnos de ejecución
-    // conservan el índice completo con extractos.
-    const skillsBlockForTurn = (readOnlyQuestionTurn && this._skillsIdsPrompt) ? this._skillsIdsPrompt : this._skillsPrompt;
+    // catálogo viaja en su variante SOLO IDS (sin extractos): en una
+    // pregunta basta el nombre (y read_skill sigue disponible si el
+    // tema aparece).
+    // [EDITCORE-V517-C4] La dieta solo-ids se extiende a las
+    // aperturas EXECUTE reutilizando el mismo flag R3: la medición
+    // M3 preció los extractos en ejecución en 180.852 caracteres por
+    // turno escenario (~5,7 %), pagados en cada llamada, y la vía de
+    // escape (read_skill bajo demanda) ya vive probada en el carril
+    // de preguntas. La cautela de la v5.1.2 («los turnos de ejecución
+    // conservan el índice completo con extractos») era una decisión
+    // de diseño conservadora, no un comportamiento aprobado en vivo;
+    // la re-delimitación de dieta-ask-v512 (iii)→(iii-bis) quedó
+    // aprobada por Lu (2026-11-13) y documentada en esa batería.
+    const skillsBlockForTurn = ((readOnlyQuestionTurn || decision?.kind === "EXECUTE") && this._skillsIdsPrompt) ? this._skillsIdsPrompt : this._skillsPrompt;
     if (skillsBlockForTurn) pushTurnContext(CTX_TIER_NORMAL, skillsBlockForTurn);
     // [EDITCORE-V492-2] La línea visible «Skills aplicadas este turno»
     // ya no se emite en NINGUNA ruta (ver handle()): voz natural.
@@ -3210,7 +3289,11 @@ class ChatOrchestrator {
     // exactamente una vez. En el carril del explorador y en el resto
     // de turnos la copia estándar se conserva intacta.
     const orientationLaneTurn = decision?.kind === "ASK" && this._askLane?.lane === "orientation";
-    let messages = threadCore.buildMessageList({ system, systemPrefix: listOnlyMode ? "" : SELF_KNOWLEDGE_PROMPT, turnContext: applyTurnContextBudget(turnContext), userText, projectRoot, threadId, historyInput, query: String(this._currentUserText || message || ""), images: taskImages, skipDossier: orientationLaneTurn });
+    // [EDITCORE-V517-C3] El presupuesto de verbatim se pasa SOLO en
+    // aperturas EXECUTE (puerta estricta por clase): para cualquier
+    // otro carril va null y buildMessageList selecciona el registro
+    // como siempre, byte a byte.
+    let messages = threadCore.buildMessageList({ system, systemPrefix: listOnlyMode ? "" : SELF_KNOWLEDGE_PROMPT, turnContext: applyTurnContextBudget(turnContext), userText, projectRoot, threadId, historyInput, query: String(this._currentUserText || message || ""), images: taskImages, skipDossier: orientationLaneTurn, verbatimBudget: decision?.kind === "EXECUTE" ? threadCore.EXECUTE_VERBATIM_BUDGET : null });
     // [EDITCORE-V510-B6] La directiva del director (si la detección de
     // _handleCore marcó el turno descomponible) se anexa AQUÍ, al
     // mensaje del turno ya ensamblado: es una orden del harness y no
@@ -3233,11 +3316,19 @@ class ChatOrchestrator {
     // tokens por turno). La premisa que lo justificaba en la Fase A
     // (prefijo byte-exacto para la caché del proveedor) quedó sin
     // valor con la declaración A-1 en vivo: ME AI lee caché 0.
-    // [EDITCORE-V500-A4] Frontera del prefijo cacheable: índice del
-    // último mensaje del historial (lo que el proveedor puede cachear
-    // y leer en el paso/turno siguiente) y cuántos mensajes ya están
-    // «enviados» (congelados para la compactación append-only).
-    const cachePrefixEndIndex = messages.length - 2;
+    // [EDITCORE-V500-A4] Cuántos mensajes ya están «enviados»
+    // (congelados para la compactación append-only).
+    // [EDITCORE-V517-C1] La frontera del prefijo cacheable ya NO se
+    // fija aquí: hasta la v5.1.6 era el índice del último mensaje
+    // del historial de APERTURA (messages.length - 2) y ese mismo
+    // índice se pasaba en todas las llamadas del bucle, así que la
+    // zona de pasos — donde el turno crece — jamás quedaba tras un
+    // breakpoint (medición M3 §2: la fracción leíble de caché
+    // quedaba topada por la cuota de apertura y se diluía llamada a
+    // llamada). Ahora la frontera se calcula EN CADA LLAMADA, en el
+    // sitio de invocación: es el índice del último mensaje enviado
+    // en esa llamada. No cambia el contenido de ningún mensaje de
+    // ningún carril; solo se mueve la marca.
     const turnPrefixCount = Math.max(0, messages.length - 1);
     let sentPrefixCount = turnPrefixCount;
     // [EDITCORE-V500-A5] Dedupe de respuestas vía harness (dueño
@@ -3544,6 +3635,16 @@ class ChatOrchestrator {
           }
         }
 
+        // [EDITCORE-V517-C2] Dieta de la zona de pasos (SOLO
+        // EXECUTE): antes de compactar y enviar, los resultados
+        // tool que ya tienen ≥6 pasos más nuevos tras ellos pasan a
+        // stub. La clase ASK/orientación NO pasa por esta ruta (su
+        // payload está blindado por las baterías del carril y sus
+        // bucles son cortos).
+        if (decision?.kind === "EXECUTE") {
+          try { stubAgedToolResults(messages); } catch { /* la dieta nunca tumba el turno */ }
+        }
+
         // Compactar outputs antiguos de tools para evitar desbordar el contexto del modelo (3.4M tokens)
         // Compactación profunda y poda de contexto (cosechado al kernel en la convergencia)
         // [EDITCORE-V500-A4] APPEND-ONLY: lo ya enviado en este turno
@@ -3624,7 +3725,11 @@ class ChatOrchestrator {
             tools: availableTools,
             // [EDITCORE-V500-A4] Frontera del prefijo cacheable para
             // los breakpoints de caché del proveedor (harness/ai-core).
-            cachePrefixEndIndex,
+            // [EDITCORE-V517-C1] Frontera CRECIENTE: el último mensaje
+            // de ESTA llamada (todo lo enviado hasta aquí es prefijo
+            // byte-idéntico de la siguiente, por la compactación
+            // append-only). Se calcula al invocar, no al abrir.
+            cachePrefixEndIndex: messages.length - 1,
             signal: turnSignal,
             stream: true,
             timeoutMs: turnTimeoutMs,   // ← 180s en análisis
@@ -4821,4 +4926,4 @@ class ChatOrchestrator {
   }
 }
 
-module.exports = { ChatOrchestrator, SKILL_IDS, taskQueue, groundUngroundedClaims, successfulDiskReads, hasMutationIntent, buildKernelFactSummary, auditSubagentSteps, runPostWriteVerify, formatVerifyBlock, applyTurnContextBudget, TURN_CONTEXT_MAX_CHARS, TURN_CONTEXT_TRUNCATION_MARKER, CTX_TIER_ESSENTIAL, CTX_TIER_NORMAL, CTX_TIER_ACCESSORY, /* [EDITCORE-INTEGRAL-B3] */ appendRealVerification, /* [EDITCORE-INTEGRAL-B5] */ normalizePermissionMode, buildModeAnnouncement, /* [EDITCORE-INTEGRAL-B6] */ raceSemanticBlock, SEMANTIC_MEMORY_TIMEOUT_MS, runRealVerification, /* [EDITCORE-INTEGRAL-B8] */ formatExternalActionResult, /* [EDITCORE-INTEGRAL-B9] */ buildCerebroServiceBlock, buildBrainContextBlock, /* [EDITCORE-V492-3] */ detectMemoryEventQuestion, memoryEventInDossier, memoryAnswerAffirmsEvent, memoryEventGuardBanner, MEMORY_EVENT_PROTOCOL, /* [EDITCORE-V510-B2/B3/B4/B6] */ isNarrationOnlyText, closingHasProposalOrTerminus, substantiveFallbackText, progressRenditionText, detectDecomposableTask, /* [EDITCORE-V516-S2/S3/S6/P8] */ computeTaskArtifacts, identityDeviationState, premiseRefutedByEvidence, harvestTurnCredentials, redactHarvestedCredentials };
+module.exports = { ChatOrchestrator, SKILL_IDS, taskQueue, groundUngroundedClaims, successfulDiskReads, hasMutationIntent, buildKernelFactSummary, auditSubagentSteps, runPostWriteVerify, formatVerifyBlock, applyTurnContextBudget, TURN_CONTEXT_MAX_CHARS, TURN_CONTEXT_TRUNCATION_MARKER, CTX_TIER_ESSENTIAL, CTX_TIER_NORMAL, CTX_TIER_ACCESSORY, /* [EDITCORE-INTEGRAL-B3] */ appendRealVerification, /* [EDITCORE-INTEGRAL-B5] */ normalizePermissionMode, buildModeAnnouncement, /* [EDITCORE-INTEGRAL-B6] */ raceSemanticBlock, SEMANTIC_MEMORY_TIMEOUT_MS, runRealVerification, /* [EDITCORE-INTEGRAL-B8] */ formatExternalActionResult, /* [EDITCORE-INTEGRAL-B9] */ buildCerebroServiceBlock, buildBrainContextBlock, /* [EDITCORE-V492-3] */ detectMemoryEventQuestion, memoryEventInDossier, memoryAnswerAffirmsEvent, memoryEventGuardBanner, MEMORY_EVENT_PROTOCOL, /* [EDITCORE-V510-B2/B3/B4/B6] */ isNarrationOnlyText, closingHasProposalOrTerminus, substantiveFallbackText, progressRenditionText, detectDecomposableTask, /* [EDITCORE-V516-S2/S3/S6/P8] */ computeTaskArtifacts, identityDeviationState, premiseRefutedByEvidence, harvestTurnCredentials, redactHarvestedCredentials, /* [EDITCORE-V517-C2] */ stubAgedToolResults, buildToolResultStub, TOOL_STUB_SENTINEL, TOOL_STUB_WINDOW_STEPS };

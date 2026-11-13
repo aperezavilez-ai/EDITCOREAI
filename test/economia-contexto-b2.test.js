@@ -68,10 +68,24 @@ function assertPairsIntact(msgs) {
   for (const id of callIds) assert.ok(resultIds.has(id), `llamada tool sin su resultado: ${id}`);
 }
 
-test("B2-1 turno guionado: el payload al proveedor lleva el ÍNDICE de la skill larga, no su cuerpo", async () => {
+// [EDITCORE-V517-C4 · RE-DELIMITACIÓN DE B2-1, aprobada por Lu el
+// 2026-11-13] El invariante de fondo de B2 se CONSERVA y se refuerza:
+// el payload lleva el ÍNDICE de la skill, no su cuerpo — con C4 viaja
+// aún menos que en la era B2: ni siquiera el extracto. Lo que se
+// re-delimita es UNA aserción: la de que «el extracto acotado de las
+// primeras líneas SÍ viaja» en el turno EXECUTE. Esa era la premisa de
+// la era v5.1.2 (índice con extractos en ejecución), ya re-delimitada
+// en dieta-ask-v512 (iii-bis) y superada por la medición M3: los
+// extractos se re-pagan en CADA llamada del bucle, y la vía del cuerpo
+// sigue siendo read_skill bajo demanda (B2-2, intacto). La política
+// nueva que este caso fija: en EXECUTE el bloque de skills viaja como
+// índice de IDS (la variante solo-ids de la v5.1.2 R3), sin cuerpo y
+// sin extracto, con read_skill presente en el set de herramientas.
+test("B2-1 turno guionado: el payload al proveedor lleva el ÍNDICE DE IDS de la skill larga, no su cuerpo ni su extracto", async () => {
   assert.ok(FAKE_BODY.length > 20_000, "la skill falsa supera los 20.000 caracteres");
   const root = tmpProjectWithFakeSkill();
   const captured = [];
+  const capturedTools = [];
   const events = [];
   const orch = new ChatOrchestrator();
   await orch.handle({
@@ -81,6 +95,7 @@ test("B2-1 turno guionado: el payload al proveedor lleva el ÍNDICE de la skill 
     helpers: {
       callChat: async (args) => {
         captured.push((args.messages || []).map((m) => String(m.content || "")).join("\n"));
+        capturedTools.push((args.tools || []).map((t) => t.function?.name || t.name));
         return { text: "Listo, apliqué la guía pedida para este proyecto.", toolCalls: [], usage: {} };
       },
     },
@@ -89,12 +104,15 @@ test("B2-1 turno guionado: el payload al proveedor lleva el ÍNDICE de la skill 
 
   assert.ok(captured.length >= 1, "el modelo fue llamado");
   const payload = captured[0];
-  assert.ok(payload.includes(`SKILL ${FAKE_SKILL_ID} (`), "el índice nombra a la skill seleccionada");
-  assert.ok(payload.includes("ÍNDICE"), "la entrada se presenta como índice, no como cuerpo");
-  assert.ok(payload.includes(`read_skill(name: "${FAKE_SKILL_ID}")`), "el índice dice cómo cargar el cuerpo completo");
-  assert.ok(payload.includes(FAKE_BODY.slice(300, 420)), "el extracto acotado de las primeras líneas SÍ viaja");
+  assert.ok(payload.includes("SKILLS VÁLIDAS EN DISCO"), "el catálogo de skills viaja en el payload");
+  assert.ok(payload.includes("Skills activas este turno"), "el bloque declara las skills activas del turno");
+  assert.ok(payload.includes(FAKE_SKILL_ID), "el índice de ids nombra a la skill seleccionada");
+  assert.ok(payload.includes("read_skill"), "la directiva del bloque señala read_skill como la vía del cuerpo completo");
+  assert.ok(capturedTools[0].includes("read_skill"), "read_skill está disponible en el set de herramientas del turno");
   assert.ok(!payload.includes(BODY_TAIL_MARKER), "la cola del cuerpo completo NO viaja en el prompt");
   assert.ok(!payload.includes(FAKE_BODY.slice(3000, 3600)), "el relleno del cuerpo completo NO viaja en el prompt");
+  assert.ok(!payload.includes(FAKE_BODY.slice(300, 420)), "el extracto acotado ya NO viaja en el turno de ejecución (viaja el índice de ids)");
+  assert.ok(!payload.includes("Extracto:"), "no hay entradas de índice con extracto en el payload de ejecución");
 
   // [EDITCORE-V492-2] Actualizado a propósito: la línea-recibo
   // «Skills aplicadas este turno: …» (v4.8.0) SALE de la superficie por

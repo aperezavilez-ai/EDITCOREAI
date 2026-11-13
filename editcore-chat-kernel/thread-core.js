@@ -54,9 +54,69 @@ function currentTimeLine(now = new Date()) {
 
 const FAILED_TURN_RE = /^Algo fall[oó] durante la ejecuci[oó]n:/;
 
+// [EDITCORE-V517-C3] PRESUPUESTO DE VERBATIM SOLO EN APERTURAS
+// EXECUTE (medición M3 §1.2/§6-C3): el registro verbatim se reenvía
+// ENTERO en cada llamada de cada turno y su único adelgazamiento
+// llegaba a los 48 mensajes; en un hilo viejo es el segmento que
+// crece sin cota entre turnos. Al abrir un turno de TAREA, lo que
+// entra al payload se acota a los últimos 4 intercambios y ~10.000
+// caracteres, con marca declarada que remite al expediente y al
+// Mapa (que ya viajan en el mensaje del turno). El registro en
+// disco NO cambia; cambia solo lo que buildMessageList selecciona
+// cuando el llamador pasa el presupuesto. Sin presupuesto (ASK,
+// orientación, CHAT, LIST, ANALYZE) la selección es la de siempre,
+// byte a byte: el carril de preguntas queda intacto.
+const EXECUTE_VERBATIM_BUDGET = { maxChars: 10_000, maxExchanges: 4 };
+
+function verbatimBudgetMarker(droppedExchanges) {
+  return `[Historial acotado por presupuesto de apertura (M3): se omitieron ${droppedExchanges} intercambio(s) antiguos de este hilo; el estado vigente del proyecto viaja en el expediente y en el Mapa de orientación dentro del contexto de este turno.]`;
+}
+
+function verbatimEntryChars(m) {
+  if (!m) return 0;
+  if (typeof m.content === "string") return m.content.length;
+  try { return JSON.stringify(m.content ?? "").length; } catch { return 0; }
+}
+
+// Ventana contigua por la cola: el último intercambio entra SIEMPRE
+// entero (la continuidad inmediata manda sobre el presupuesto); los
+// anteriores solo mientras quepan en AMBOS topes. Devuelve también
+// cuántos intercambios (mensajes de usuario) quedaron fuera.
+function applyVerbatimBudget(hist, budget = {}) {
+  const maxChars = Math.max(0, Number(budget.maxChars) || 0);
+  const maxExchanges = Math.max(1, Number(budget.maxExchanges) || 0);
+  const list = Array.isArray(hist) ? hist : [];
+  // Agrupar por intercambios: cada mensaje del usuario abre uno.
+  const groups = [];
+  for (const m of list) {
+    if (!groups.length || m.role === "user") groups.push([m]);
+    else groups[groups.length - 1].push(m);
+  }
+  const totalChars = list.reduce((acc, m) => acc + verbatimEntryChars(m), 0);
+  if (groups.length <= maxExchanges && totalChars <= maxChars) {
+    return { messages: list, droppedExchanges: 0 };
+  }
+  const kept = [];
+  let keptChars = 0;
+  for (let gi = groups.length - 1; gi >= 0; gi -= 1) {
+    const g = groups[gi];
+    const gChars = g.reduce((acc, m) => acc + verbatimEntryChars(m), 0);
+    if (kept.length && (kept.length >= maxExchanges || keptChars + gChars > maxChars)) break;
+    kept.unshift(g);
+    keptChars += gChars;
+  }
+  let messages = kept.flat();
+  // La ventana retenida no puede abrir con una respuesta huérfana
+  // (su pregunta quedó fuera del presupuesto).
+  while (messages.length && messages[0].role !== "user") messages = messages.slice(1);
+  const keptUsers = messages.filter((m) => m.role === "user").length;
+  const totalUsers = list.filter((m) => m.role === "user").length;
+  return { messages, droppedExchanges: Math.max(0, totalUsers - keptUsers) };
+}
+
 // El system es fijo por modo y proyecto; lo que cambia en cada turno
 // (turnContext, hora) va en el último mensaje del usuario.
-function buildMessageList({ system, systemPrefix = "", turnContext = "", userText, projectRoot, threadId, historyInput, query, now, images, skipDossier = false }) {
+function buildMessageList({ system, systemPrefix = "", turnContext = "", userText, projectRoot, threadId, historyInput, query, now, images, skipDossier = false, verbatimBudget = null }) {
   const systemText = `${system}\n\n${stableContextLine(now)}`;
   const messages = [{ role: "system", content: systemPrefix ? `${systemPrefix}\n\n${systemText}` : systemText }];
   // HISTORIAL APPEND-ONLY: si el hilo tiene registro verbatim, el
@@ -77,7 +137,7 @@ function buildMessageList({ system, systemPrefix = "", turnContext = "", userTex
   try { verbatim = projectRoot ? threadMemory.verbatimMessages(projectRoot, threadId) : []; } catch { verbatim = []; }
   if (verbatim.length) {
     const q = String(query || "").trim();
-    const hist = verbatim.filter((m) => !(m.role === "assistant" && typeof m.content === "string" && FAILED_TURN_RE.test(m.content)));
+    let hist = verbatim.filter((m) => !(m.role === "assistant" && typeof m.content === "string" && FAILED_TURN_RE.test(m.content)));
     // La copia final del mensaje actual (si el registro la trajera en
     // crudo) no se duplica: el mensaje del turno se agrega ensamblado.
     while (hist.length && hist[hist.length - 1].role === "user"
@@ -85,7 +145,22 @@ function buildMessageList({ system, systemPrefix = "", turnContext = "", userTex
       && hist[hist.length - 1].content.trim() === q && q) {
       hist.pop();
     }
-    for (const m of hist) messages.push({ role: m.role, content: m.content });
+    // [EDITCORE-V517-C3] Presupuesto de apertura (solo EXECUTE: el
+    // llamador lo pasa; en cualquier otro carril verbatimBudget es
+    // null y esta rama no altera ni un byte de la selección).
+    let droppedExchanges = 0;
+    if (verbatimBudget) {
+      const budgeted = applyVerbatimBudget(hist, verbatimBudget);
+      hist = budgeted.messages;
+      droppedExchanges = budgeted.droppedExchanges;
+    }
+    for (let mi = 0; mi < hist.length; mi += 1) {
+      const m = hist[mi];
+      const content = (mi === 0 && droppedExchanges > 0 && typeof m.content === "string")
+        ? `${verbatimBudgetMarker(droppedExchanges)}\n\n${m.content}`
+        : m.content;
+      messages.push({ role: m.role, content });
+    }
   } else {
     const short = threadMemory.shortHistoryMessages(historyInput, projectRoot, threadId, query);
     for (const m of short) {
@@ -453,6 +528,10 @@ module.exports = {
   incomingHistory,
   seedThreadFromInput,
   buildMessageList,
+  // [EDITCORE-V517-C3]
+  EXECUTE_VERBATIM_BUDGET,
+  applyVerbatimBudget,
+  verbatimBudgetMarker,
   runtimeContextLine,
   rememberExchange,
   // [EDITCORE-INTEGRAL-B3]

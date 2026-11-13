@@ -21,8 +21,15 @@
 //        compartido dentro) y el payload del turno 2 no arrastra una
 //        segunda copia del catálogo desde el historial — el
 //        crecimiento entre turnos queda acotado al par archivado.
-//  (iii) en ASK el bloque de skills trae los ids SIN extractos; en un
-//        turno de ejecución los extractos siguen viajando.
+//  (iii) en ASK el bloque de skills trae los ids SIN extractos.
+//        [V517] (iii-bis): en un turno de ejecución el catálogo
+//        TAMBIÉN viaja solo con ids (C4). La aserción original de
+//        este caso («en ejecución los extractos siguen») fijaba una
+//        cautela de diseño de la v5.1.2, no un comportamiento
+//        aprobado en vivo; la medición M3 la preció en 180.852
+//        caracteres por turno escenario y Lu aprobó la
+//        re-delimitación el 2026-11-13 (justificación completa
+//        junto a la prueba).
 //  (iv)  un hecho centinela del expediente aparece exactamente UNA
 //        vez en el payload de orientación (la copia estándar de
 //        buildMessageList se suprime cuando el bloque compartido ya
@@ -228,8 +235,25 @@ test("(ii) el verbatim archiva las palabras originales y el turno 2 no recompra 
   assert.ok(growth < 6000, `el crecimiento entre turnos es el par archivado, no el andamiaje (Δ=${growth} caracteres)`);
 });
 
-// -------------------------------------------------------------- (iii)
-test("(iii) en ASK las skills viajan solo con ids (sin extractos); en ejecución los extractos siguen", async () => {
+// ------------------------------------------------- (iii) + (iii-bis)
+// [V517 — RE-DELIMITACIÓN APROBADA POR LU, 2026-11-13] Este caso
+// nació en la v5.1.2 con dos aserciones: en ASK el catálogo viaja
+// solo con ids (R3) y en ejecución «los extractos siguen». La
+// segunda era una decisión de diseño CONSERVADORA de la v5.1.2
+// (limitar el radio de R3 por cautela), NO un comportamiento
+// aprobado en vivo por Luis. La medición M3
+// (audit-fase-a-cache/MEDICION-M3.md) la preció: los extractos de
+// skills en EXECUTE cuestan 180.852 caracteres por turno escenario
+// (~5,7 %), pagados en CADA llamada, y la vía de escape (read_skill
+// bajo demanda) ya vive probada en el carril de preguntas. Lu
+// aprobó C4 con esta re-delimitación, al precedente de la v5.1.4
+// ((i) → (i-bis)): la aserción ASK de (iii) queda INTACTA y la
+// aserción EXECUTE se convierte en (iii-bis), que fija la política
+// nueva dentro de este mismo caso: en EXECUTE el catálogo viaja
+// con ids y SIN «Extracto:», read_skill sigue disponible en el set
+// y el set completo de herramientas se conserva (write_file
+// visible, como ya afirmaba el caso).
+test("(iii) en ASK las skills viajan solo con ids (sin extractos); (iii-bis) en EXECUTE también viajan solo con ids (C4, v5.1.7)", async () => {
   const root = emptyProject({ "package.json": JSON.stringify({ name: "demo" }), "src/index.js": "console.log(1);\n" });
   seedFronts(root);
   const capturesAsk = [];
@@ -259,8 +283,13 @@ test("(iii) en ASK las skills viajan solo con ids (sin extractos); en ejecución
   });
   assert.ok(capturesExec.length >= 1, "el turno de ejecución llegó al modelo");
   const execPayload = JSON.stringify(capturesExec[0].messages);
-  assert.ok(execPayload.includes("Extracto:"), "en un turno de ejecución el índice de skills conserva los extractos");
+  // (iii-bis) Política nueva (C4, v5.1.7): en EXECUTE el catálogo
+  // viaja como en ASK — con los ids y SIN extractos — y el cuerpo
+  // completo de una skill se pide con read_skill cuando hace falta.
+  assert.ok(execPayload.includes("SKILLS VÁLIDAS EN DISCO"), "en ejecución el catálogo viaja (con los ids de todas las skills)");
+  assert.ok(!execPayload.includes("Extracto:"), "en ejecución el catálogo NO trae extractos de skills (C4)");
   const execTools = capturesExec[0].tools.map((t) => t.function?.name || t.name);
+  assert.ok(execTools.includes("read_skill"), "read_skill sigue disponible en ejecución como vía de escape bajo demanda");
   assert.ok(execTools.includes("write_file"), "el turno de ejecución conserva el set completo (write_file visible)");
 });
 

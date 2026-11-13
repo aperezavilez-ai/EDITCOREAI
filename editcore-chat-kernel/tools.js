@@ -114,7 +114,12 @@ function safe(root, rel) {
 const TOOL_PAYLOAD_CAPS = {
   default: 4000,
   read_file: READ_FILE_PAYLOAD_CAP,
-  run_command: 12000,
+  // [EDITCORE-V517-C5] run_command baja a 6.000 (medición M3: las
+  // salidas de comando son el resultado que más se recompra en la
+  // zona de pasos). La política de corte no cambia: cabeza+cola con
+  // elipsis declarada y shapeToolPayload pone stderr y el error
+  // ANTES que output, así que la cola crítica nunca se pierde.
+  run_command: 6000,
   build_project: 12000,
   git_diff: 12000,
   git_log: 6000,
