@@ -2897,6 +2897,10 @@ function buildKernelHelpers(projectRootOrOptions = {}, event = null) {
     return {
       ...buildKernelProcessHooks(projectRootOrOptions, event),
       useEditCoreBrain: true,
+      // [EDITCORE-V500-A5] La ResponseCache de main (la del panel de
+      // métricas) viaja al kernel: el harness la usa como dedupe de
+      // respuestas idénticas. Una sola instancia y un solo archivo.
+      responseCache: getResponseCache(),
     };
   }
   if (projectRootOrOptions && typeof projectRootOrOptions === "object") {
@@ -2907,6 +2911,8 @@ function buildKernelHelpers(projectRootOrOptions = {}, event = null) {
       ...buildKernelProcessHooks(root, ev),
       ...projectRootOrOptions,
       useEditCoreBrain: true,
+      // [EDITCORE-V500-A5] Ver la rama de arriba: instancia única.
+      responseCache: getResponseCache(),
     };
   }
   return { useEditCoreBrain: true };

@@ -28,6 +28,23 @@ const DOSSIER_CHARS = 3_500;
 // amputan por la cola como pasaba con el bloque de retrieveRelevant.
 const MAX_FACTS = 80;
 const FACTS_RESERVE_CHARS = 1_100;
+// [EDITCORE-V500-A2] Registro VERBATIM del hilo: los mensajes TAL CUAL
+// se enviaron al proveedor (el user ya ensamblado con su contexto, la
+// respuesta en su forma guardada) para construir el turno siguiente
+// como prefijo guardado + mensaje nuevo, en vez de reconstruir un
+// historial recortado en cada turno. La ventana SOLO se aplica en una
+// compactación declarada: al superar VERBATIM_MAX_MESSAGES entradas,
+// las más viejas se adelgazan una vez y el contador de compactaciones
+// lo deja registrado en el propio archivo del hilo.
+const VERBATIM_MAX_MESSAGES = 48;
+const VERBATIM_KEEP_FULL = 12;
+const VERBATIM_OLD_USER_CHARS = 1_500;
+const VERBATIM_OLD_ASSISTANT_CHARS = 2_000;
+// [EDITCORE-V500-A3] Comprobantes de lectura ENTRE turnos: por archivo
+// y rango, la huella (mtime + tamaño) de la última lectura real. Si el
+// archivo no cambió, read_file responde con el comprobante y no con el
+// contenido otra vez.
+const MAX_READ_RECEIPTS = 80;
 
 function storeDir(projectRoot) {
   return path.join(String(projectRoot || "."), ".editcore", "chat-memory");
@@ -54,6 +71,9 @@ function emptyThread(threadId) {
     updatedAt: null,
     turns: [],
     workingOn: "",
+    // [EDITCORE-V500-A2] Registro verbatim (ver constantes arriba).
+    verbatim: [],
+    verbatimCompactions: 0,
   };
 }
 
@@ -70,6 +90,8 @@ function emptyProject() {
     discarded: [],
     // [EDITCORE-INTEGRAL-B3] Hechos estructurales destilados de los steps.
     facts: [],
+    // [EDITCORE-V500-A3] Comprobantes de lectura entre turnos.
+    readReceipts: [],
     updatedAt: null,
   };
 }
@@ -107,7 +129,98 @@ function normalizeTurn(turn) {
 function loadThread(projectRoot, threadId) {
   const data = readJson(threadFile(projectRoot, threadId), emptyThread(threadId));
   data.turns = Array.isArray(data.turns) ? data.turns.map(normalizeTurn).filter((t) => t.content) : [];
+  data.verbatim = Array.isArray(data.verbatim) ? data.verbatim.map(sanitizeVerbatimEntry).filter(Boolean) : [];
+  data.verbatimCompactions = Number(data.verbatimCompactions) || 0;
   return data;
+}
+
+// [EDITCORE-V500-A2] Entrada del registro verbatim: solo user/assistant
+// con contenido de texto. Las partes de imagen NO se persisten como
+// datos (una data URL por turno hincharía el archivo del hilo y la
+// imagen ya se juzgó en su turno): se sustituyen por una nota de texto
+// declarada, igual que la retirada de capturas del array en vivo.
+function sanitizeVerbatimEntry(entry) {
+  if (!entry || typeof entry !== "object") return null;
+  const role = entry.role === "assistant" ? "assistant" : entry.role === "user" ? "user" : null;
+  if (!role) return null;
+  if (typeof entry.content === "string") {
+    return entry.content ? { role, content: entry.content } : null;
+  }
+  if (Array.isArray(entry.content)) {
+    const parts = [];
+    for (const part of entry.content) {
+      if (part && part.type === "text" && typeof part.text === "string" && part.text) {
+        parts.push({ type: "text", text: part.text });
+      } else if (part && (part.type === "image_url" || part.type === "image")) {
+        parts.push({ type: "text", text: "[imagen adjunta en ese turno: ya se mostró y se juzgó; no se repite en el historial]" });
+      }
+    }
+    if (!parts.length) return null;
+    if (parts.length === 1 && parts[0].type === "text") return { role, content: parts[0].text };
+    return { role, content: parts };
+  }
+  return null;
+}
+
+// [EDITCORE-V500-A2] Compactación DECLARADA del registro verbatim: se
+// ejecuta una sola vez al superar el tope, adelgaza las entradas viejas
+// (conserva íntegras las VERBATIM_KEEP_FULL más recientes) y deja el
+// hecho contado en thread.verbatimCompactions. Fuera de este momento,
+// el registro es append-only byte-exacto.
+function compactVerbatimInPlace(data) {
+  const list = Array.isArray(data.verbatim) ? data.verbatim : [];
+  if (list.length <= VERBATIM_MAX_MESSAGES) return data;
+  const keepFrom = Math.max(0, list.length - VERBATIM_KEEP_FULL);
+  data.verbatim = list.map((entry, idx) => {
+    if (idx >= keepFrom || typeof entry.content !== "string") return entry;
+    const cap = entry.role === "assistant" ? VERBATIM_OLD_ASSISTANT_CHARS : VERBATIM_OLD_USER_CHARS;
+    if (entry.content.length <= cap) return entry;
+    return { role: entry.role, content: `${entry.content.slice(0, cap)}\n[mensaje antiguo adelgazado en una compactación declarada del historial]` };
+  });
+  data.verbatimCompactions = (Number(data.verbatimCompactions) || 0) + 1;
+  return data;
+}
+
+// [EDITCORE-V500-A2] Mensajes del registro verbatim, listos para ser el
+// tramo de historial del payload (copias: el llamador no debe mutar el
+// registro).
+function verbatimMessages(projectRoot, threadId) {
+  const data = loadThread(projectRoot, threadId);
+  return data.verbatim.map((entry) => (Array.isArray(entry.content)
+    ? { role: entry.role, content: entry.content.map((p) => ({ ...p })) }
+    : { role: entry.role, content: entry.content }));
+}
+
+// [EDITCORE-V500-A2] Anexa los mensajes de UN turno ya cerrado al
+// registro (el user tal cual se envió y la respuesta en su forma
+// guardada). Devuelve el hilo actualizado.
+function appendVerbatimTurn(projectRoot, threadId, entries) {
+  const data = loadThread(projectRoot, threadId);
+  const clean = (Array.isArray(entries) ? entries : []).map(sanitizeVerbatimEntry).filter(Boolean);
+  if (!clean.length) return data;
+  data.verbatim = [...data.verbatim, ...clean];
+  compactVerbatimInPlace(data);
+  return saveThread(projectRoot, threadId, data);
+}
+
+// [EDITCORE-V500-A2] Siembra del registro desde el historial que trae
+// el llamador (p. ej. la UI al abrir una conversación que el kernel aún
+// no ha corrido): SOLO si el registro está vacío — una vez que el
+// kernel corre un turno, su registro manda y no se re-siembra.
+function seedVerbatim(projectRoot, threadId, historyInput) {
+  const data = loadThread(projectRoot, threadId);
+  if (data.verbatim.length) return false;
+  const clean = (Array.isArray(historyInput) ? historyInput : [])
+    .map((h) => sanitizeVerbatimEntry({
+      role: h?.role,
+      content: typeof h?.content === "string" ? h.content : (typeof h?.text === "string" ? h.text : ""),
+    }))
+    .filter(Boolean);
+  if (!clean.length) return false;
+  data.verbatim = clean;
+  compactVerbatimInPlace(data);
+  saveThread(projectRoot, threadId, data);
+  return true;
 }
 
 function saveThread(projectRoot, threadId, data) {
@@ -142,7 +255,56 @@ function loadProjectState(projectRoot) {
   data.discarded = Array.isArray(data.discarded) ? data.discarded : [];
   // [EDITCORE-INTEGRAL-B3]
   data.facts = Array.isArray(data.facts) ? data.facts.filter((f) => f && typeof f === "object" && f.kind) : [];
+  // [EDITCORE-V500-A3]
+  data.readReceipts = Array.isArray(data.readReceipts) ? data.readReceipts.filter((r) => r && typeof r === "object" && r.file) : [];
   return data;
+}
+
+// [EDITCORE-V500-A3] Clave de un comprobante de lectura: ruta
+// normalizada (minúsculas, barras /) + rango pedido, la misma
+// normalización que usa la caché de lecturas del turno.
+function readReceiptKey(file, startLine, endLine) {
+  const clean = String(file || "").replace(/\\/g, "/").replace(/^\.\//, "").toLowerCase();
+  return `${clean}#${Number(startLine) || 1}-${Number(endLine) || 0}`;
+}
+
+// [EDITCORE-V500-A3] Registra (o refresca) la huella de una lectura
+// REAL entre turnos: mtime + tamaño + líneas del archivo leído.
+function noteReadReceipt(projectRoot, entry) {
+  if (!projectRoot || !entry || !entry.file) return loadProjectState(projectRoot);
+  const clean = {
+    key: readReceiptKey(entry.file, entry.startLine, entry.endLine),
+    file: String(entry.file).replace(/\\/g, "/").slice(0, 300),
+    startLine: Number(entry.startLine) || 1,
+    endLine: Number(entry.endLine) || 0,
+    mtimeMs: Number(entry.mtimeMs) || 0,
+    size: Number(entry.size) || 0,
+    totalLines: Number(entry.totalLines) || 0,
+    at: Date.now(),
+  };
+  const state = loadProjectState(projectRoot);
+  state.readReceipts = [...(state.readReceipts || []).filter((r) => r.key !== clean.key), clean].slice(-MAX_READ_RECEIPTS);
+  return saveProjectState(projectRoot, state);
+}
+
+// [EDITCORE-V500-A3] Comprobante vigente para un archivo+rango, o null.
+function findReadReceipt(projectRoot, file, startLine, endLine) {
+  if (!projectRoot) return null;
+  const key = readReceiptKey(file, startLine, endLine);
+  const state = loadProjectState(projectRoot);
+  return (state.readReceipts || []).find((r) => r.key === key) || null;
+}
+
+// [EDITCORE-V500-A3] Una escritura sobre el archivo invalida TODOS sus
+// comprobantes: jamás deben tapar el contenido nuevo.
+function invalidateReadReceipts(projectRoot, file) {
+  if (!projectRoot || !file) return loadProjectState(projectRoot);
+  const state = loadProjectState(projectRoot);
+  const prefix = `${String(file).replace(/\\/g, "/").replace(/^\.\//, "").toLowerCase()}#`;
+  const kept = (state.readReceipts || []).filter((r) => !String(r.key || "").startsWith(prefix));
+  if (kept.length === (state.readReceipts || []).length) return state;
+  state.readReceipts = kept;
+  return saveProjectState(projectRoot, state);
 }
 
 function saveProjectState(projectRoot, patch = {}) {
@@ -531,6 +693,16 @@ module.exports = {
   loadThread,
   saveThread,
   appendTurns,
+  // [EDITCORE-V500-A2] Registro verbatim del hilo.
+  verbatimMessages,
+  appendVerbatimTurn,
+  seedVerbatim,
+  VERBATIM_MAX_MESSAGES,
+  // [EDITCORE-V500-A3] Comprobantes de lectura entre turnos.
+  noteReadReceipt,
+  findReadReceipt,
+  invalidateReadReceipts,
+  readReceiptKey,
   loadProjectState,
   saveProjectState,
   noteDecision,

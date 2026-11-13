@@ -96,8 +96,12 @@ test("modo charla: ofrece herramientas de solo lectura, ejecuta list_files y res
 
   const system = calls[0].messages[0].content;
   const user = calls[0].messages.filter((m) => m.role === "user").pop().content;
-  assert.match(system, /SKILL-DE-PRUEBA/);
-  assert.doesNotMatch(String(user), /SKILL-DE-PRUEBA/);
+  // [EDITCORE-V500-A1] La selección de skills del turno ya NO viaja en
+  // el system: lo cambiaba byte a byte entre turnos y anulaba la caché
+  // de prefijo del proveedor (INFORME Fase A §1.2-A). Ahora viaja en
+  // el contexto del turno, dentro del último mensaje del usuario.
+  assert.doesNotMatch(system, /SKILL-DE-PRUEBA/);
+  assert.match(String(user), /SKILL-DE-PRUEBA/);
   assert.match(String(user), /qué skills tienes/);
 });
 

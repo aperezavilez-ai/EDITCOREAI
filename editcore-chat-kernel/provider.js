@@ -132,13 +132,16 @@ async function callChatSingleAttempt({
   timeoutMs = DEFAULT_PROVIDER_TIMEOUT_MS,
   stream = true,
   onTextDelta = null,
+  // [EDITCORE-V500-A4] Índice del último mensaje del historial ya
+  // enviado (frontera del prefijo cacheable); lo calcula el kernel.
+  cachePrefixEndIndex = -1,
 }) {
   require("../runtime/platform-defaults").assertProviderAllowed(apiBaseUrl);
   const url = `${String(apiBaseUrl || "").replace(/\/$/, "")}/chat/completions`;
   const wantStream = stream !== false;
   const safeMessages = Array.isArray(messages) ? messages : [];
   const cachedMessages = typeof withCacheControl === "function"
-    ? withCacheControl(safeMessages)
+    ? withCacheControl(safeMessages, { prefixEndIndex: cachePrefixEndIndex })
     : safeMessages;
   const body = {
     model,
@@ -275,6 +278,8 @@ async function callChat({
   // fresco antes de matar el turno.
   refreshApiKey = null,
   onSessionRefreshed = null,
+  // [EDITCORE-V500-A4] Frontera del prefijo (ver callChatSingleAttempt).
+  cachePrefixEndIndex = -1,
 }) {
   const profileList = orderProfiles([
     { apiBaseUrl, apiKey, model },
@@ -338,6 +343,7 @@ async function callChat({
           timeoutMs,
           stream,
           onTextDelta: countingDelta,
+          cachePrefixEndIndex,
         });
         if (result?.sawContent) streamedAny = true;
         return result;

@@ -132,8 +132,14 @@ test("el contexto por tarea (pipeline, archivo abierto, reviews) va en el mensaj
   scripted = [{ text: "Listo, revisé la landing.", toolCalls: [], usage: {} }];
   await new ChatOrchestrator().handle({ message: "corrige el diseño de la landing page con hero y dashboard", projectRoot, apiBaseUrl: "http://127.0.0.1:9/v1", apiKey: "k", model: "m", skillsPrompt: "SKILLS FIJAS" });
   const system = calls[0].messages[0].content;
-  assert.match(system, /SKILLS FIJAS/);
+  // [EDITCORE-V500-A1] Las skills del turno también son contexto del
+  // turno: antes viajaban pegadas al system y lo cambiaban byte a
+  // byte entre turnos (causa nº 1 del «cache leído 0» del INFORME
+  // Fase A); ahora van en el último mensaje del usuario.
+  assert.doesNotMatch(system, /SKILLS FIJAS/);
   assert.doesNotMatch(system, /landing page con hero/);
+  const user = calls[0].messages.filter((m) => m.role === "user").pop().content;
+  assert.match(String(user), /SKILLS FIJAS/);
 });
 
 test("al agotar los pasos avisa que la tarea no está terminada y que escriba «continúa»", async () => {

@@ -19,6 +19,9 @@ function seedThreadFromInput(projectRoot, threadId, input, currentMessage) {
   const hist = incomingHistory(input);
   if (hist.length) {
     threadMemory.appendTurns(projectRoot, threadId, hist);
+    // [EDITCORE-V500-A2] El registro verbatim se siembra del historial
+    // del llamador SOLO si está vacío; después manda el registro.
+    try { threadMemory.seedVerbatim(projectRoot, threadId, hist); } catch { /* ignore */ }
   }
   if (currentMessage) {
     threadMemory.noteWorkingOn(projectRoot, currentMessage, threadId);
@@ -56,10 +59,33 @@ const FAILED_TURN_RE = /^Algo fall[oó] durante la ejecuci[oó]n:/;
 function buildMessageList({ system, systemPrefix = "", turnContext = "", userText, projectRoot, threadId, historyInput, query, now, images }) {
   const systemText = `${system}\n\n${stableContextLine(now)}`;
   const messages = [{ role: "system", content: systemPrefix ? `${systemPrefix}\n\n${systemText}` : systemText }];
-  const short = threadMemory.shortHistoryMessages(historyInput, projectRoot, threadId, query);
-  for (const m of short) {
-    if (m.role === "assistant" && FAILED_TURN_RE.test(String(m.content || ""))) continue;
-    messages.push({ role: m.role, content: m.content });
+  // [EDITCORE-V500-A2] HISTORIAL APPEND-ONLY: si el hilo tiene registro
+  // verbatim, el historial del payload ES ese registro — los mensajes
+  // tal cual se enviaron, sin recortar ni re-adelgazar en cada turno —
+  // y este payload extiende byte a byte el del turno anterior. La
+  // copia adelgazada del expediente (turns) sigue existiendo para el
+  // bloque de memoria, separada. Sin registro (hilos previos a la
+  // v5.0.0 o sin proyecto), se conserva la reconstrucción corta de
+  // siempre como respaldo.
+  let verbatim = [];
+  try { verbatim = projectRoot ? threadMemory.verbatimMessages(projectRoot, threadId) : []; } catch { verbatim = []; }
+  if (verbatim.length) {
+    const q = String(query || "").trim();
+    const hist = verbatim.filter((m) => !(m.role === "assistant" && typeof m.content === "string" && FAILED_TURN_RE.test(m.content)));
+    // La copia final del mensaje actual (si el registro la trajera en
+    // crudo) no se duplica: el mensaje del turno se agrega ensamblado.
+    while (hist.length && hist[hist.length - 1].role === "user"
+      && typeof hist[hist.length - 1].content === "string"
+      && hist[hist.length - 1].content.trim() === q && q) {
+      hist.pop();
+    }
+    for (const m of hist) messages.push({ role: m.role, content: m.content });
+  } else {
+    const short = threadMemory.shortHistoryMessages(historyInput, projectRoot, threadId, query);
+    for (const m of short) {
+      if (m.role === "assistant" && FAILED_TURN_RE.test(String(m.content || ""))) continue;
+      messages.push({ role: m.role, content: m.content });
+    }
   }
   const hasImages = Array.isArray(images) && images.length > 0;
   let context = String(turnContext || "").trim();
@@ -317,6 +343,24 @@ function rememberExchange(projectRoot, threadId, userText, assistantText, meta =
   // solo conserva la línea resumen.
   if (assistantText) turns.push({ role: "assistant", content: slimStoredAssistantText(String(assistantText)).slice(0, 6_000), at: Date.now() });
   if (turns.length) threadMemory.appendTurns(projectRoot, threadId, turns);
+
+  // [EDITCORE-V500-A2] REGISTRO VERBATIM (separado de la copia
+  // adelgazada de arriba, que sigue alimentando el bloque de memoria):
+  // si el llamador trae el mensaje del usuario TAL CUAL se envió
+  // (meta.sentUserMessage, el último mensaje del payload ya
+  // ensamblado), el intercambio queda registrado verbatim y el turno
+  // siguiente se construye como prefijo guardado + mensaje nuevo. La
+  // respuesta se guarda en su forma almacenada (la misma de turns):
+  // es la forma canónica que el historial siempre ha reenviado.
+  if (projectRoot && meta && meta.sentUserMessage && typeof meta.sentUserMessage === "object") {
+    try {
+      const entries = [{ role: "user", content: meta.sentUserMessage.content }];
+      if (assistantText) {
+        entries.push({ role: "assistant", content: slimStoredAssistantText(String(assistantText)).slice(0, 6_000) });
+      }
+      threadMemory.appendVerbatimTurn(projectRoot, threadId, entries);
+    } catch { /* el registro nunca tumba el cierre del turno */ }
+  }
 
   if (projectRoot) {
     try {

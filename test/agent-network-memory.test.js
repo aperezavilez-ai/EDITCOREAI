@@ -76,9 +76,16 @@ test("caché: el system es idéntico entre turnos aunque cambie el contexto, que
   assert.doesNotMatch(a[0].content, /CEREBRO: nota/);
   assert.match(a[a.length - 1].content, /CONTEXTO DE EDITCOREAI PARA ESTE TURNO[\s\S]*CEREBRO: nota A[\s\S]*hola$/);
 
-  const marked = withCacheControl([...a, { role: "assistant", content: "ok" }, { role: "user", content: "sigue" }]);
+  // [EDITCORE-V500-A4] Los breakpoints van en el system y en el
+  // último mensaje DEL HISTORIAL (el prefijo que crece turno a
+  // turno); el mensaje en curso ya no lleva la marca «rolling» que
+  // antes caía sobre él y nunca podía leerse.
+  const historyPlus = [...a, { role: "assistant", content: "ok" }, { role: "user", content: "sigue" }];
+  const marked = withCacheControl(historyPlus, { prefixEndIndex: historyPlus.length - 2 });
   assert.deepEqual(marked[0].content[0].cache_control, { type: "ephemeral" });
-  assert.equal(marked[marked.length - 1].content[0].cache_control.type, "ephemeral", "el último mensaje del usuario también se marca");
+  assert.equal(marked[marked.length - 2].content[0].cache_control.type, "ephemeral", "el último mensaje del historial se marca");
+  const currentTail = marked[marked.length - 1];
+  assert.ok(!(Array.isArray(currentTail.content) && currentTail.content[0]?.cache_control), "el mensaje en curso no lleva breakpoint rolling");
   assert.ok(JSON.stringify(marked).match(/cache_control/g).length <= 4, "el proveedor admite como máximo 4 marcas");
 });
 

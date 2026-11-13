@@ -39,11 +39,17 @@ try {
 }
 
 let runReadCache = null;
+// [EDITCORE-V500-A] Disciplina de escritura del harness de tokens
+// (dueño único de las métricas cache read/write): tools registra aquí
+// el resultado de cada write_file (no-op idéntico / diff pequeño /
+// escritura completa) para medir el desperdicio de tokens de salida.
+let tokenHarness = null;
 try {
-  const { RunReadCache } = require("../runtime/agent-token-harness");
-  runReadCache = new RunReadCache();
+  tokenHarness = require("../runtime/agent-token-harness");
+  runReadCache = new tokenHarness.RunReadCache();
 } catch {
   runReadCache = null;
+  tokenHarness = null;
 }
 
 function safe(root, rel) {
@@ -408,14 +414,22 @@ function writeFile(root, rel, content, coordCtx) {
   const finish = (r) => { releaseWriteLock(root, rel, coordCtx); return r; };
 
   let _beforeForReview = "";
+  let _fileExisted = false;
   try {
     if (fs.existsSync(file) && fs.statSync(file).isFile()) {
+      _fileExisted = true;
       _beforeForReview = fs.readFileSync(file, "utf8");
     }
   } catch { _beforeForReview = ""; }
   try {
-    if (_beforeForReview === body) {
-      return finish({ ok: true, unchanged: true, path: rel, note: `${rel} ya tenía exactamente ese contenido: no hubo cambios.` });
+    if (_fileExisted && _beforeForReview === body) {
+      // [EDITCORE-V500-A] NO-OP IDÉNTICO DECLARADO (precisión de
+      // Luis: «escribir solo lo justo»): el contenido ya es el que
+      // está en disco — no se escribe, no se crea snapshot, no se
+      // invalida ninguna caché y no cuenta como escritura. Queda
+      // registrado en las métricas del harness de tokens.
+      try { tokenHarness?.noteWriteOutcome?.("identical-noop"); } catch { /* métricas no bloquean */ }
+      return finish({ ok: true, unchanged: true, identicalNoop: true, path: rel, note: `${rel} ya tenía exactamente ese contenido: no se escribió nada (no-op idéntico, comprobante de escritura justa).` });
     }
   } catch { /* si no se puede leer, se escribe normal */ }
   const snap = snapshotBeforeWrite(root, rel, "write_file");
@@ -427,10 +441,32 @@ function writeFile(root, rel, content, coordCtx) {
     const { validateSyntax } = require("../runtime/syntax-validator");
     syntaxCheck = validateSyntax(rel, body);
   } catch {}
+  // [EDITCORE-V500-A] ESCRITURA JUSTA sobre archivo existente: si la
+  // reescritura completa tocó solo una MINORÍA de las líneas, se
+  // aplica igual pero el resultado trae la nota de dirección hacia
+  // replace_in_file y el caso se cuenta en el harness (desperdicio de
+  // tokens de salida medible por turno). Un cambio grande no lleva
+  // nota: reescribir era lo correcto.
+  let _writeDiscipline = null;
+  if (_fileExisted && tokenHarness && typeof tokenHarness.lineDiffStats === "function") {
+    try {
+      const diff = tokenHarness.lineDiffStats(_beforeForReview, body);
+      if (diff.touchedLines > 0 && diff.ratio < tokenHarness.SMALL_DIFF_RATIO) {
+        tokenHarness.noteWriteOutcome("small-diff-full-write", diff);
+        _writeDiscipline = {
+          diffStats: { touchedLines: diff.touchedLines, totalLines: diff.totalLines },
+          directionNote: `Nota de dirección (escritura justa): este write_file reescribió ${rel} entero tocando solo ${diff.touchedLines} de ${diff.totalLines} líneas. Para cambios parciales como este corresponde replace_in_file: misma precisión sin pagar los tokens de salida del archivo completo.`,
+        };
+      } else if (diff.touchedLines > 0) {
+        tokenHarness.noteWriteOutcome("full-write", diff);
+      }
+    } catch { /* la disciplina nunca bloquea la escritura */ }
+  }
   const out = {
     ok: true,
     path: rel,
     snapshotId: snap.ok ? snap.id : null,
+    ...(_writeDiscipline || {}),
     ...(syntaxCheck && !syntaxCheck.ok ? {
       syntaxWarning: syntaxCheck.message,
       selfHealHint: syntaxCheck.hint,

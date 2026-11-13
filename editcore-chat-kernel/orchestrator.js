@@ -117,6 +117,48 @@ const fs = require("fs");
 // los adjuntos del usuario (vision-intake), no como metadatos de texto.
 const { buildOpenAiImageContent, modelSupportsVision, pickVisionModelCandidate } = require("../runtime/vision-intake");
 
+// [EDITCORE-V500-A] DISCIPLINA DE CACHÉ: el DUEÑO ÚNICO es el
+// harness de tokens (runtime/agent-token-harness.js) — precisión de
+// Luis, 2026-11-12. El comprobante de lectura entre turnos (cambio 3)
+// y el dedupe de respuestas con la ResponseCache (cambio 5: existía
+// desde la v4.x con su contabilidad y su rama de recibo «cache local»,
+// pero sin un solo llamador de get/set — estaba muerta) se consultan
+// y se registran a través del harness; el orquestador solo pide y
+// registra en los puntos de despacho y de llamada al modelo.
+const tokenHarness = require("../runtime/agent-token-harness");
+
+// [EDITCORE-V500-A5] RETIRADA DE CAPTURAS YA JUZGADAS: el PNG de una
+// captura viaja como mensaje user multimodal y ANTES se quedaba en el
+// array para siempre — cada paso posterior del turno lo repagaba
+// entero. Tras el paso en que el modelo lo ve (el paso que se está
+// cerrando cuando esta función corre), la imagen se sustituye por su
+// dictamen en texto: la respuesta que el modelo acaba de dar tras
+// verla queda citada como el hecho visual del turno, y las rutas de
+// visión (directa y delegada de la v4.9.3) no cambian: esto ocurre
+// DESPUÉS de juzgar, nunca antes. Solo se tocan los mensajes de
+// captura del preview (su texto los identifica); los adjuntos del
+// usuario no se retiran jamás.
+const CAPTURE_MESSAGE_TEXT_RE = /Captura\(s\) real\(es\) del preview de este turno/;
+function retireJudgedCaptureImages(messages, verdictText = "") {
+  if (!Array.isArray(messages)) return 0;
+  let retired = 0;
+  for (const m of messages) {
+    if (!m || m.role !== "user" || !Array.isArray(m.content)) continue;
+    const hasImage = m.content.some((p) => p && (p.type === "image_url" || p.type === "image"));
+    if (!hasImage) continue;
+    const textPart = m.content.find((p) => p && p.type === "text" && typeof p.text === "string");
+    if (!textPart || !CAPTURE_MESSAGE_TEXT_RE.test(textPart.text)) continue;
+    const verdict = String(verdictText || "").trim();
+    m.content = [
+      textPart.text,
+      "[La imagen de esta captura ya se mostró y se juzgó en el paso anterior: se retiró del contexto para no volver a pagarla en cada paso del turno.]",
+      verdict ? `Dictamen registrado al verla: «${verdict.slice(0, 600)}»` : "",
+    ].filter(Boolean).join("\n\n");
+    retired += 1;
+  }
+  return retired;
+}
+
 // [EDITCORE-V491-C] PLAN PRESENTADO, PERSISTIDO: cuando el despacho
 // corta una escritura con needsAuthorization («Pregunta antes»), la
 // llamada propuesta (herramienta, archivo y cambio) se guarda asociada
@@ -249,6 +291,12 @@ const ANALYSIS_TIMEOUT_MS = 1_800_000; // 30 min por turno en análisis
 // bloques por prioridad (esencial → normal → accesorio) y se corta del
 // FINAL con la marca declarada TURN_CONTEXT_TRUNCATION_MARKER.
 const TURN_CONTEXT_MAX_CHARS = 16_000;
+// [EDITCORE-V500-A4] Techo duro de la compactación append-only: si el
+// contexto estimado de un turno supera esto, se declara UNA
+// compactación mayor que puede reescribir la zona de pasos (nunca el
+// system, el historial ni el mensaje del turno). Por debajo del techo,
+// lo ya enviado queda congelado byte a byte.
+const DECLARED_COMPACTION_TOKENS = 180_000;
 const TURN_CONTEXT_TRUNCATION_MARKER = "[contexto recortado por presupuesto]";
 const CTX_TIER_ESSENTIAL = 0;
 const CTX_TIER_NORMAL = 1;
@@ -2214,7 +2262,7 @@ class ChatOrchestrator {
     } else {
       system = wrapSystemPrompt([
         "Sos EditCoreAI. Hablá como un ingeniero senior al lado del usuario.",
-        LEADERSHIP_PROMPT, LIVE_NARRATION_PROMPT, MARKDOWN_FORMAT_PROMPT, CAPABILITIES_PROMPT, noConfirmBlock,
+        LEADERSHIP_PROMPT, LIVE_NARRATION_PROMPT, MARKDOWN_FORMAT_PROMPT, CAPABILITIES_PROMPT,
         "REGLA CRÍTICA: no cierres un turno diciendo 'ahora leo X' o 'voy a revisar Y'. Si vas a leer algo, llamá la tool en el MISMO turno.",
         "REGLA CRÍTICA: si el usuario pide corregir/arreglar, el trabajo son llamadas reales a replace_in_file/write_file, no texto. Nunca digas que aplicaste un cambio que no hiciste con una tool. Nunca inventes límites ('se me acabaron los tokens', 'se acabó mi turno'): mientras queden errores, sigue corrigiendo; si se agota el turno, EditCore se lo avisa al usuario. Cierra solo cuando terminaste o cuando necesites una decisión del usuario.",
         "Respondé siempre en español al usuario.",
@@ -2222,7 +2270,10 @@ class ChatOrchestrator {
       // [EDITCORE-INTEGRAL-B2] Prioridades: roadmap/preview/visión y los
       // errores verificados pendientes son ESENCIALES; el mapa cognitivo y
       // las conexiones son normales (ceden antes si falta presupuesto).
-      pushTurnContext(CTX_TIER_ESSENTIAL, roadmapFirstBlock, previewBlock, visionHardRule, pendingVerifiedBlock);
+      // [EDITCORE-V500-A1] noConfirmBlock viaja en el contexto del turno,
+      // NO en el system: su texto depende del estado de autorización y
+      // un system que cambia entre turnos rompe el prefijo cacheable.
+      pushTurnContext(CTX_TIER_ESSENTIAL, roadmapFirstBlock, previewBlock, visionHardRule, pendingVerifiedBlock, noConfirmBlock);
       pushTurnContext(CTX_TIER_NORMAL, cognitiveBlock, connectionsBlock);
     }
 
@@ -2230,7 +2281,16 @@ class ChatOrchestrator {
     if (!chatOnly && decision?.kind !== "CHAT" && !listOnlyMode && !analysisMode && this._ecRoutedAgent && typeof agentNetwork?.rolePrompt === "function") {
       pushTurnContext(CTX_TIER_ACCESSORY, agentNetwork.rolePrompt(this._ecRoutedAgent));
     }
-    if (this._skillsPrompt) system = `${system}\n\n${this._skillsPrompt}`;
+    // [EDITCORE-V500-A1] SYSTEM INMUTABLE: la selección de skills del
+    // turno ya NO se anexa al system (era la causa nº 1 del «cache
+    // proveedor leído 0»: dos turnos con distinta selección producían
+    // dos system distintos y ningún prefijo podía acertar jamás). La
+    // selección viaja donde ya viaja todo lo volátil — el contexto del
+    // turno, en el último mensaje — y el system queda compuesto solo
+    // por constantes + proyecto: byte-idéntico entre turnos del mismo
+    // modo y proyecto. Las skills siguen llegando al modelo en el
+    // mismo turno y con el mismo texto; solo cambia su sitio.
+    if (this._skillsPrompt) pushTurnContext(CTX_TIER_NORMAL, this._skillsPrompt);
     // [EDITCORE-V492-2] La línea visible «Skills aplicadas este turno»
     // ya no se emite en NINGUNA ruta (ver handle()): voz natural.
     if (!listOnlyMode && projectRoot) {
@@ -2315,13 +2375,51 @@ class ChatOrchestrator {
     const userText = `Proyecto: ${projectless ? "(ninguno)" : projectRoot}\n${scopeUserMessage(message)}`;
     // [EDITCORE-INTEGRAL-B2] El contexto del turno sale SIEMPRE por el
     // presupuesto agregado: por prioridades y con marca declarada si corta.
-    const messages = threadCore.buildMessageList({ system, systemPrefix: listOnlyMode ? "" : SELF_KNOWLEDGE_PROMPT, turnContext: applyTurnContextBudget(turnContext), userText, projectRoot, threadId, historyInput, query: String(this._currentUserText || message || ""), images: taskImages });
+    // [EDITCORE-V500-A4] `let`, no `const`: el bucle SUSTITUYE el array
+    // por su versión compactada en cada paso. Hasta la v4.9.3 era
+    // `const` y la asignación lanzaba TypeError en cada paso — el
+    // ContextCompactor nunca corría en vivo; solo el respaldo manual
+    // de ese bloque compactaba algo (defecto latente hallado en la
+    // Fase A, corregido aquí porque la compactación append-only
+    // necesita la sustitución real).
+    let messages = threadCore.buildMessageList({ system, systemPrefix: listOnlyMode ? "" : SELF_KNOWLEDGE_PROMPT, turnContext: applyTurnContextBudget(turnContext), userText, projectRoot, threadId, historyInput, query: String(this._currentUserText || message || ""), images: taskImages });
+    // [EDITCORE-V500-A2] El mensaje del usuario TAL CUAL se envía
+    // (ya ensamblado, con la hora y el contexto del turno): al cerrar,
+    // rememberExchange lo guarda en el registro verbatim y el turno
+    // siguiente se construye como prefijo guardado + mensaje nuevo.
+    const sentUserMessage = JSON.parse(JSON.stringify(messages[messages.length - 1] || { role: "user", content: "" }));
+    // [EDITCORE-V500-A4] Frontera del prefijo cacheable: índice del
+    // último mensaje del historial (lo que el proveedor puede cachear
+    // y leer en el paso/turno siguiente) y cuántos mensajes ya están
+    // «enviados» (congelados para la compactación append-only).
+    const cachePrefixEndIndex = messages.length - 2;
+    const turnPrefixCount = Math.max(0, messages.length - 1);
+    let sentPrefixCount = turnPrefixCount;
+    // [EDITCORE-V500-A5] Dedupe de respuestas vía harness (dueño
+    // único): instancia de la ResponseCache para este turno.
+    const stepResponseCache = tokenHarness.resolveResponseCache(helpers);
+    // [EDITCORE-V500-A] Foto de las métricas de escritura justa al
+    // abrir el turno: en el finally se suma el delta a usage.
+    const writeDisciplineAtStart = tokenHarness.writeDisciplineStats();
 
     const steps = [];
     const runMutations = [];
     const chatMode = Boolean(chatOnly || decision?.kind === "CHAT");
     const stepsLimit = Math.max(1, Number(maxSteps) || (chatMode ? CHAT_MAX_STEPS : (fullAccess ? AUTHORIZED_MAX_STEPS : DEFAULT_MAX_STEPS)));
-    const totalUsage = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0, cache_read_input_tokens: 0, cache_creation_input_tokens: 0, cache_write_input_tokens: 0, cachedInputTokens: 0, provider_cache_read_tokens: 0, cached_input_tokens: 0, provider_calls: 0 };
+    const totalUsage = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0, cache_read_input_tokens: 0, cache_creation_input_tokens: 0, cache_write_input_tokens: 0, cachedInputTokens: 0, provider_cache_read_tokens: 0, cached_input_tokens: 0, provider_calls: 0, local_cache_hits: 0, local_cache_saved_estimated_tokens: 0, local_cache_saved_confirmed_tokens: 0, identical_write_noops: 0, small_diff_full_writes: 0 };
+    // [EDITCORE-V500-A5] Un acierto del dedupe local se declara en las
+    // métricas del turno con los nombres que el recibo ya sabe leer
+    // («cache local · N tokens evitados»): tokens evitados confirmados
+    // si la respuesta original traía usage del proveedor; estimados si
+    // la caché solo guardó su estimación.
+    const noteCacheHit = (hit) => {
+      totalUsage.local_cache_hits += 1;
+      totalUsage.local_cache_hit = true;
+      const saved = (Number(hit?.cacheSavedInputTokens) || 0) + (Number(hit?.cacheSavedOutputTokens) || 0);
+      const confirmed = Number(hit?.cacheSavedUsage?.prompt_tokens || hit?.cacheSavedUsage?.input_tokens || 0) > 0;
+      if (confirmed) totalUsage.local_cache_saved_confirmed_tokens += saved;
+      else totalUsage.local_cache_saved_estimated_tokens += saved;
+    };
     const addUsage = (raw = {}) => {
       const input = Number(raw.prompt_tokens || raw.input_tokens || 0);
       const output = Number(raw.completion_tokens || raw.output_tokens || 0);
@@ -2345,6 +2443,9 @@ class ChatOrchestrator {
       try {
         threadCore.rememberExchange(projectRoot, threadId, this._currentUserText || message, textOut, {
           steps,
+          // [EDITCORE-V500-A2] El mensaje del turno tal cual se envió,
+          // para el registro verbatim (historial append-only).
+          sentUserMessage,
           written: successfulWritePaths(steps),
           // [EDITCORE-INTEGRAL-B3] Señal de autorización del turno para
           // la destilación de decisiones en thread-core: solo vale como
@@ -2419,10 +2520,21 @@ class ChatOrchestrator {
 
         // Compactar outputs antiguos de tools para evitar desbordar el contexto del modelo (3.4M tokens)
         // Compactación profunda y poda de contexto (cosechado al kernel en la convergencia)
+        // [EDITCORE-V500-A4] APPEND-ONLY: lo ya enviado en este turno
+        // (system + historial + el mensaje del turno + los pasos ya
+        // despachados) queda CONGELADO y el compactador solo actúa
+        // sobre el sufijo nuevo, para que el prefijo que ve el
+        // proveedor sea byte-idéntico entre pasos y su caché pueda
+        // acertar. Solo si el estimado supera el techo duro se
+        // declara una compactación mayor sobre la zona de pasos
+        // (frozenThrough vuelve a la frontera del turno, nunca menos).
         try {
-          const { ContextCompactor } = require("./context-compactor");
+          const { ContextCompactor, estimateMessagesTokens } = require("./context-compactor");
           const compactor = new ContextCompactor();
-          messages = compactor.compactMessages(messages);
+          const estimatedTokens = estimateMessagesTokens(messages);
+          const frozenThrough = estimatedTokens > DECLARED_COMPACTION_TOKENS ? turnPrefixCount : sentPrefixCount;
+          messages = compactor.compactMessages(messages, { frozenThrough });
+          sentPrefixCount = messages.length;
         } catch (_) {
           if (Array.isArray(messages) && messages.length > 16) {
             let toolSeen = 0;
@@ -2448,8 +2560,24 @@ class ChatOrchestrator {
           }
         }
 
-        let turn;
-        try {
+        // [EDITCORE-V500-A5] DEDUPE DE RESPUESTAS (harness, dueño
+        // único): si este payload exacto ya se respondió (reintento
+        // del mismo paso tras renovar la sesión, doble envío, la
+        // misma pregunta repetida), la ResponseCache lo sirve sin
+        // llamar al proveedor y el acierto queda en las métricas del
+        // turno como cache local. Solo respuestas de texto: un paso
+        // con tool_calls jamás se reproduce desde caché.
+        const stepCacheContext = stepResponseCache
+          ? tokenHarness.stepCacheContext({ apiBaseUrl, model: routedModel, projectRoot, messages, tools: availableTools, userText: this._currentUserText || message || "" })
+          : null;
+        const cachedTurn = stepCacheContext ? tokenHarness.lookupStepResponse(stepResponseCache, stepCacheContext) : null;
+
+        let turn = cachedTurn || null;
+        if (turn) {
+          clearInterval(hb); this.turnAbort = null;
+          noteCacheHit(turn);
+          try { onProgress?.({ phase: "heartbeat", text: "Respuesta servida de la caché local: sin nueva llamada al proveedor." }); } catch { /* ignore */ }
+        } else try {
           // Inyección opcional del llamador de chat (helpers.callChat): la
           // usa el bridge para arneses/pruebas; en producción no viene y se
           // usa el callChat real del proveedor.
@@ -2467,6 +2595,9 @@ class ChatOrchestrator {
           const invokeModel = () => chatCaller({
             apiBaseUrl, apiKey: currentApiKey, model: routedModel, messages,
             tools: availableTools,
+            // [EDITCORE-V500-A4] Frontera del prefijo cacheable para
+            // los breakpoints de caché del proveedor (harness/ai-core).
+            cachePrefixEndIndex,
             signal: turnSignal,
             stream: true,
             timeoutMs: turnTimeoutMs,   // ← 180s en análisis
@@ -2529,6 +2660,22 @@ class ChatOrchestrator {
         if (!toolCalls.length && turn.text) toolCalls = parseTextToolCalls(turn.text, { projectRoot });
         if (chatMode) toolCalls = availableTools.length ? toolCalls.filter((c) => CHAT_READ_TOOLS.has(c.function?.name)) : [];
         const cleanText = stripTextToolMarkup(turn.text || "");
+
+        // [EDITCORE-V500-A5] La respuesta del paso se registra en el
+        // dedupe (harness) SOLO si es texto final: si el paso trae
+        // llamadas (nativas o escritas en texto), reproducirlo desde
+        // caché repetiría efectos; a esos pasos los abarata el
+        // prefijo cacheable, no el dedupe.
+        if (!cachedTurn && turn && stepCacheContext && !toolCalls.length) {
+          try { tokenHarness.storeStepResponse(stepResponseCache, stepCacheContext, turn); } catch { /* ignore */ }
+        }
+        // [EDITCORE-V500-A5] Las capturas que este paso acaba de ver
+        // ya están juzgadas: la imagen sale del array y queda su
+        // dictamen en texto — el PNG no se repaga en cada paso
+        // restante del turno. La revisión delegada (v4.9.3) no se
+        // toca: su dictamen ya viaja como texto en el resultado de la
+        // herramienta (visionReview/visionDelegated intactos).
+        try { retireJudgedCaptureImages(messages, cleanText); } catch { /* ignore */ }
 
         if (!toolCalls.length) {
           // NARRACIÓN COMO RESPUESTA, también en modo CHAT: si TODO el turno
@@ -3007,6 +3154,28 @@ class ChatOrchestrator {
             continue;
           }
 
+          // [EDITCORE-V500-A3] COMPROBANTE DE LECTURA ENTRE TURNOS
+          // (harness de tokens, dueño único de la disciplina): si el
+          // archivo+rango ya se leyó en esta conversación y NO cambió
+          // desde entonces (el harness valida mtime+tamaño contra la
+          // huella guardada en el expediente), read_file responde con
+          // el comprobante corto y el contenido no vuelve a entrar ni
+          // a pagarse. Con force:true o con el archivo cambiado se
+          // lee de verdad (y la huella se refresca al registrarla).
+          if (readCacheKey && args.force !== true && projectRoot) {
+            const receiptStub = tokenHarness.readReceiptStub(projectRoot, args.path, {
+              startLine: Number(args.startLine) || 1,
+              endLine: Number(args.endLine) || 0,
+            });
+            if (receiptStub) {
+              const stepData = { name, input: args, result: receiptStub, ok: true, cached: true };
+              steps.push(stepData); this.session.addStep(stepData);
+              onProgress?.({ phase: "tool", stage: "done", name, input: args, result: receiptStub, ok: true });
+              messages.push({ role: "tool", tool_call_id: call.id, name, content: tools.truncatePayload(receiptStub, tools.READ_FILE_PAYLOAD_CAP) });
+              continue;
+            }
+          }
+
           const callKey = `${name}:${JSON.stringify(args)}`;
           // [EDITCORE-DESBLOQUEOS] El historial guarda el RESULTADO de la
           // llamada idéntica anterior, no solo el conteo: si tuvo ÉXITO, el
@@ -3190,6 +3359,17 @@ class ChatOrchestrator {
 
           if (readCacheKey && result?.ok !== false && typeof result?.content === "string") {
             readCache.set(readCacheKey, result);
+            // [EDITCORE-V500-A3] La lectura REAL se registra en el
+            // expediente a través del harness (mtime+tamaño): es la
+            // huella que el comprobante entre turnos valida después.
+            if (projectRoot) {
+              try {
+                tokenHarness.noteReadReceipt(projectRoot, args.path, {
+                  startLine: Number(args.startLine) || 1,
+                  endLine: Number(args.endLine) || 0,
+                }, result);
+              } catch { /* el comprobante nunca tumba una lectura */ }
+            }
           }
           // [EDITCORE-V492-5] Una escritura EXITOSA sobre un archivo
           // invalida su entrada en la caché de lecturas del turno: el
@@ -3198,10 +3378,18 @@ class ChatOrchestrator {
           // de ese read_file en el historial de acciones repetidas:
           // releer tras escribir no «duplica el efecto» de nada (leer
           // no muta) y la compuerta no debe vetar la confirmación.
-          if ((name === "write_file" || name === "replace_in_file") && result?.ok !== false && args?.path) {
+          // [EDITCORE-V500-A] Un no-op idéntico (unchanged) NO cuenta
+          // como escritura para invalidaciones: nada cambió en disco
+          // y ninguna caché debe perder su entrada por él.
+          if ((name === "write_file" || name === "replace_in_file") && result?.ok !== false && result?.unchanged !== true && args?.path) {
             const writtenKey = `${String(args.path).replace(/\\/g, "/").toLowerCase()}#`;
             for (const key of [...readCache.keys()]) {
               if (key.startsWith(writtenKey)) readCache.delete(key);
+            }
+            // [EDITCORE-V500-A3] También caen los comprobantes entre
+            // turnos de ese archivo (vía harness, dueño único).
+            if (projectRoot) {
+              try { tokenHarness.invalidateReadReceipts(projectRoot, args.path); } catch { /* ignore */ }
             }
             const writtenPath = String(args.path).replace(/\\/g, "/").toLowerCase();
             for (const key of [...toolHistory.keys()]) {
@@ -3324,6 +3512,17 @@ class ChatOrchestrator {
       return { kind: "ERROR", error: safeMsg, text: errText, steps, threadId, usage: totalUsage };
     } finally {
       this.running = false; this.turnAbort = null;
+      // [EDITCORE-V500-A] Métricas de ESCRITURA JUSTA del turno: el
+      // delta de los contadores del harness (dueño único) desde la
+      // foto de apertura — cuántos write_file fueron no-ops idénticos
+      // y cuántos reescribieron un archivo entero por un diff pequeño.
+      // `usage` referencia este mismo objeto en todos los retornos,
+      // así que el delta llega al recibo del turno.
+      try {
+        const wd = tokenHarness.writeDisciplineStats();
+        totalUsage.identical_write_noops = Math.max(0, wd.identicalNoops - writeDisciplineAtStart.identicalNoops);
+        totalUsage.small_diff_full_writes = Math.max(0, wd.smallDiffFullWrites - writeDisciplineAtStart.smallDiffFullWrites);
+      } catch { /* ignore */ }
       try { onProgress?.({ phase: "done", text: "" }); } catch {}
     }
   }

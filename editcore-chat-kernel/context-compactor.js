@@ -88,8 +88,14 @@ class ContextCompactor {
   // primer mensaje del usuario, ni la unidad más reciente), dejando un
   // aviso donde hubo poda. Si aun así no alcanza, achica los resultados
   // tool que quedan (stub en los viejos, cabeza+cola en el mayor).
-  compactByEstimatedSize(messages) {
-    let total = estimateMessagesTokens(messages);
+  // [EDITCORE-V500-A4] opts.baseTokens: tokens estimados del prefijo
+  // CONGELADO que precede a `messages` (no viene en el array pero cuenta
+  // contra el presupuesto). opts.protectHead=false cuando `messages` es
+  // un sufijo sin system: su primera unidad no merece protección absoluta.
+  compactByEstimatedSize(messages, opts = {}) {
+    const baseTokens = Math.max(0, Number(opts.baseTokens) || 0);
+    const protectHead = opts.protectHead !== false;
+    let total = baseTokens + estimateMessagesTokens(messages);
     if (total <= this.maxTotalTokens) return messages;
 
     const units = groupMessageUnits(messages);
@@ -97,9 +103,11 @@ class ContextCompactor {
 
     const firstUserIdx = messages.findIndex((m) => m && m.role === "user");
     const protectedStarts = new Set();
-    protectedStarts.add(units[0].start); // system (o el primer mensaje)
-    const firstUserUnit = units.find((u) => u.indices.includes(firstUserIdx));
-    if (firstUserUnit) protectedStarts.add(firstUserUnit.start);
+    if (protectHead) {
+      protectedStarts.add(units[0].start); // system (o el primer mensaje)
+      const firstUserUnit = units.find((u) => u.indices.includes(firstUserIdx));
+      if (firstUserUnit) protectedStarts.add(firstUserUnit.start);
+    }
     protectedStarts.add(units[units.length - 1].start); // lo más reciente
 
     // Candidatos: viejos y grandes primero (mayor tamaño; empate → más viejo).
@@ -127,7 +135,7 @@ class ContextCompactor {
         if (i === insertNoticeAt) out.push({ role: "user", content: SIZE_COMPACTED_NOTICE });
         if (!removedIndices.has(i)) out.push(messages[i]);
       }
-      total = estimateMessagesTokens(out);
+      total = baseTokens + estimateMessagesTokens(out);
     }
 
     if (total > this.maxTotalTokens) out = this.shrinkLargestContents(out, total);
@@ -184,15 +192,33 @@ class ContextCompactor {
   /**
    * Compacta y prepara los mensajes antes de ser enviados a cualquier LLM.
    * @param {Array} rawMessages
+   * @param {object} [options]
+   * @param {number} [options.frozenThrough] [EDITCORE-V500-A4] Cuántos
+   *   mensajes iniciales YA se enviaron al proveedor en pasos/turnos
+   *   anteriores: ese prefijo se devuelve BYTE-IDÉNTICO (mismas
+   *   referencias, sin clonar ni reescribir) y la compactación actúa
+   *   SOLO sobre el sufijo nuevo. Sin esta opción (0) el comportamiento
+   *   es el histórico completo. Reescribir mensajes ya enviados rompía
+   *   el prefijo de caché en cada paso del turno.
    * @returns {Array} Mensajes listos y seguros para la API
    */
-  compactMessages(rawMessages = []) {
+  compactMessages(rawMessages = [], options = {}) {
     if (!Array.isArray(rawMessages) || rawMessages.length === 0) return [];
 
-    // Clonar profundamente para no mutar el histórico original de la UI
-    const messages = JSON.parse(JSON.stringify(rawMessages));
+    const frozenThrough = Math.max(0, Math.min(
+      rawMessages.length,
+      Math.floor(Number(options?.frozenThrough) || 0),
+    ));
+    const frozen = rawMessages.slice(0, frozenThrough);
+    const baseTokens = estimateMessagesTokens(frozen);
+    const protectHead = frozenThrough === 0;
+
+    // El sufijo se clona profundamente para no mutar el histórico
+    // original de la UI; el prefijo congelado jamás se toca.
+    const messages = JSON.parse(JSON.stringify(rawMessages.slice(frozenThrough)));
 
     // 1. Identificar lecturas de archivos más recientes para marcar lecturas viejas
+    // (solo dentro del sufijo: una lectura ya enviada no se reescribe).
     const latestFileReads = new Map();
     for (let i = messages.length - 1; i >= 0; i--) {
       const m = messages[i];
@@ -216,14 +242,24 @@ class ContextCompactor {
       }
     }
 
-    // 2. Truncar herramientas con respuestas masivas
+    // 2. Truncar herramientas con respuestas masivas.
+    // [EDITCORE-V500-A4] IDEMPOTENTE A LA PRIMERA: cabeza+marca+cola
+    // suman MENOS que el tope (la marca y un margen quedan DENTRO del
+    // presupuesto), así que un segundo paso sobre el mismo mensaje no
+    // vuelve a truncarlo ni cambia un solo byte del prefijo.
     for (const m of messages) {
       if (m.role === "tool" && typeof m.content === "string") {
         if (m.content.length > this.maxToolResultChars) {
-          const head = m.content.slice(0, Math.floor(this.maxToolResultChars * 0.7));
-          const removed = m.content.length - this.maxToolResultChars;
-          const tail = m.content.slice(-Math.floor(this.maxToolResultChars * 0.3));
-          m.content = `${head}${TRUNCATED_MARKER(removed)}${tail}`;
+          const len = m.content.length;
+          let removed = len - this.maxToolResultChars;
+          let marker = TRUNCATED_MARKER(removed);
+          let avail = Math.max(0, this.maxToolResultChars - marker.length - 8);
+          removed = len - avail;
+          marker = TRUNCATED_MARKER(removed);
+          avail = Math.max(0, this.maxToolResultChars - marker.length - 8);
+          const headLen = Math.floor(avail * 0.7);
+          const tailLen = avail - headLen;
+          m.content = `${m.content.slice(0, headLen)}${marker}${tailLen > 0 ? m.content.slice(len - tailLen) : ""}`;
         }
       } else if (m.role === "assistant" && typeof m.content === "string") {
         if (m.content.length > this.maxAssistantChars) {
@@ -234,14 +270,15 @@ class ContextCompactor {
 
     // 3. [EDITCORE-INTEGRAL-B2] Compactación por TAMAÑO ESTIMADO: usa el
     // umbral maxTotalTokens (antes declarado y nunca leído) para podar
-    // también con pocos mensajes pero muy pesados.
-    let compacted = this.compactByEstimatedSize(messages);
+    // también con pocos mensajes pero muy pesados. El prefijo congelado
+    // cuenta contra el presupuesto vía baseTokens pero nunca se poda.
+    let compacted = this.compactByEstimatedSize(messages, { baseTokens, protectHead });
 
-    // 4. Ventana deslizante si hay demasiados mensajes
-    // Preservar system (0) y primer turno usuario (1), podar el centro si supera 40 mensajes
+    // 4. Ventana deslizante si el sufijo tiene demasiados mensajes
+    // Preservar system (0) y primer turno usuario (1) cuando el sufijo
+    // ES el array completo; con prefijo congelado la ventana actúa solo
+    // sobre el sufijo nuevo.
     if (compacted.length > 40) {
-      const system = compacted[0];
-      const initialUser = compacted[1];
       let recent = compacted.slice(-25); // Los últimos 25 mensajes
       // [EDITCORE-INTEGRAL-B2] La ventana no puede abrir con resultados
       // tool huérfanos: se descartan los tool iniciales de `recent` hasta
@@ -253,12 +290,14 @@ class ContextCompactor {
         content: "[EditCoreAI: mensajes intermedios anteriores compactados para mantener estabilidad y memoria óptima. Continúa trabajando en el objetivo actual.]"
       };
 
-      compacted = [system, initialUser, condensedNotice, ...recent];
+      compacted = protectHead
+        ? [compacted[0], compacted[1], condensedNotice, ...recent]
+        : [condensedNotice, ...recent];
       // La ventana puede seguir por encima del umbral estimado: re-aplicar tamaño.
-      compacted = this.compactByEstimatedSize(compacted);
+      compacted = this.compactByEstimatedSize(compacted, { baseTokens, protectHead });
     }
 
-    return compacted;
+    return [...frozen, ...compacted];
   }
 }
 

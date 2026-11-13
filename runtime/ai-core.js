@@ -116,16 +116,39 @@ function usage(raw = {}) {
   };
 }
 
-function withCacheControl(messages) {
-  let rolling = -1;
-  for (let i = messages.length - 1; i > 1; i -= 1) {
-    const m = messages[i];
-    if ((m?.role === "user" || m?.role === "tool") && typeof m.content === "string" && m.content) { rolling = i; break; }
+// [EDITCORE-V500-A4] Breakpoints de caché DONDE SÍ SE LEEN: se marca el
+// system (estable por modo+proyecto) y el ÚLTIMO mensaje del historial
+// ya enviado (el prefijo creciente: system + historial es exactamente
+// lo que la próxima llamada repite byte a byte). El breakpoint
+// «rolling» sobre el mensaje en curso se RETIRA: en el paso siguiente
+// el último mensaje es otro, así que la entrada escrita nunca era el
+// prefijo marcado después — se escribía caché que jamás se leía.
+// El llamador que conoce la frontera historial/turno (el kernel) pasa
+// options.prefixEndIndex; sin ese dato se conserva el legacy mínimo
+// (system + primer user) para las rutas que no conocen la frontera.
+function withCacheControl(messages, options = {}) {
+  const list = Array.isArray(messages) ? messages : [];
+  const prefixEnd = Number.isInteger(options?.prefixEndIndex) ? options.prefixEndIndex : -1;
+  let legacyFirstUser = -1;
+  if (prefixEnd < 0) {
+    for (let i = 0; i < Math.min(2, list.length); i += 1) {
+      if (list[i]?.role === "user") { legacyFirstUser = i; break; }
+    }
   }
-  return messages.map((msg, idx) => {
-    if (typeof msg.content !== "string" || !msg.content) return msg;
-    if (msg.role === "system" || (msg.role === "user" && idx <= 1) || idx === rolling) {
+  return list.map((msg, idx) => {
+    if (!msg || typeof msg !== "object") return msg;
+    const marked = msg.role === "system" || idx === prefixEnd || idx === legacyFirstUser;
+    if (!marked) return msg;
+    if (typeof msg.content === "string" && msg.content) {
       return { ...msg, content: [{ type: "text", text: msg.content, cache_control: { type: "ephemeral" } }] };
+    }
+    if (Array.isArray(msg.content) && msg.content.length) {
+      const parts = msg.content.slice();
+      const last = parts[parts.length - 1];
+      if (last && typeof last === "object") {
+        parts[parts.length - 1] = { ...last, cache_control: { type: "ephemeral" } };
+        return { ...msg, content: parts };
+      }
     }
     return msg;
   });

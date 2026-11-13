@@ -44,7 +44,7 @@ test("el orquestador expone los campos de caché que lee la pantalla", () => {
   assert.match(renderer, /cache proveedor leído \$\{providerCache\} · escrito \$\{providerCacheWrite\}/);
 });
 
-test("withCacheControl marca system, primer user y el último mensaje del bucle de tools", () => {
+test("withCacheControl (Fase A): system + último del historial con prefixEndIndex; sin breakpoint rolling", () => {
   const { withCacheControl } = require("../runtime/ai-core");
   const marked = (m) => Array.isArray(m.content) && m.content[0]?.cache_control?.type === "ephemeral";
   const msgs = [
@@ -55,10 +55,19 @@ test("withCacheControl marca system, primer user y el último mensaje del bucle 
     { role: "assistant", content: null, tool_calls: [{ id: "t2", type: "function", function: { name: "read_file", arguments: "{}" } }] },
     { role: "tool", tool_call_id: "t2", content: "otro archivo" },
   ];
-  const out = withCacheControl(msgs);
-  assert.deepEqual(out.map(marked), [true, true, false, false, false, true]);
+  // [EDITCORE-V500-A4] Antes la tercera marca caía sobre el ÚLTIMO
+  // mensaje del bucle (la herramienta en curso): un breakpoint
+  // «rolling» que nunca podía leerse (INFORME Fase A §1.4). Ahora:
+  // sin frontera declarada se conserva system + primer user y el
+  // mensaje en curso queda SIN marca.
+  const legacy = withCacheControl(msgs);
+  assert.deepEqual(legacy.map(marked), [true, true, false, false, false, false]);
+  // Con frontera de prefijo: system + el último mensaje DEL
+  // HISTORIAL (índice 3); el sufijo en curso (4-5) queda sin marca.
+  const out = withCacheControl(msgs, { prefixEndIndex: 3 });
+  assert.deepEqual(out.map(marked), [true, false, false, true, false, false]);
   assert.equal(out[2].content, null);
-  assert.equal(out[5].tool_call_id, "t2");
+  assert.equal(out[3].tool_call_id, "t1");
   assert.equal(out.filter(marked).length <= 4, true);
 
   const short = withCacheControl([{ role: "system", content: "s" }, { role: "user", content: "u" }]);
