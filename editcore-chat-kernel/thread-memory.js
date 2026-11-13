@@ -28,6 +28,13 @@ const DOSSIER_CHARS = 3_500;
 // amputan por la cola como pasaba con el bloque de retrieveRelevant.
 const MAX_FACTS = 80;
 const FACTS_RESERVE_CHARS = 1_100;
+// [EDITCORE-V513-W2] Frentes del expediente: pendientes/hallazgos
+// sustantivos con procedencia y estado (abierto/cerrado), DISTINTOS
+// del workingOn (que es solo el foco vigente: el último mensaje del
+// usuario). Un frente nace de material estructurado — informes de
+// subagentes destilados o la herramienta del Mapa del agente — nunca
+// de la prosa libre del modelo principal.
+const MAX_FRONTS = 24;
 // [EDITCORE-V500-A2] Registro VERBATIM del hilo: los mensajes TAL CUAL
 // se enviaron al proveedor (el user ya ensamblado con su contexto, la
 // respuesta en su forma guardada) para construir el turno siguiente
@@ -90,6 +97,8 @@ function emptyProject() {
     discarded: [],
     // [EDITCORE-INTEGRAL-B3] Hechos estructurales destilados de los steps.
     facts: [],
+    // [EDITCORE-V513-W2] Frentes abiertos/cerrados del proyecto.
+    fronts: [],
     // [EDITCORE-V500-A3] Comprobantes de lectura entre turnos.
     readReceipts: [],
     updatedAt: null,
@@ -257,6 +266,8 @@ function loadProjectState(projectRoot) {
   data.discarded = Array.isArray(data.discarded) ? data.discarded : [];
   // [EDITCORE-INTEGRAL-B3]
   data.facts = Array.isArray(data.facts) ? data.facts.filter((f) => f && typeof f === "object" && f.kind) : [];
+  // [EDITCORE-V513-W2]
+  data.fronts = Array.isArray(data.fronts) ? data.fronts.filter((f) => f && typeof f === "object" && f.text) : [];
   // [EDITCORE-V500-A3]
   data.readReceipts = Array.isArray(data.readReceipts) ? data.readReceipts.filter((r) => r && typeof r === "object" && r.file) : [];
   return data;
@@ -321,12 +332,15 @@ function saveProjectState(projectRoot, patch = {}) {
     discarded: Array.isArray(patch.discarded) ? patch.discarded : prev.discarded,
     // [EDITCORE-INTEGRAL-B3]
     facts: Array.isArray(patch.facts) ? patch.facts : prev.facts,
+    // [EDITCORE-V513-W2]
+    fronts: Array.isArray(patch.fronts) ? patch.fronts : prev.fronts,
     updatedAt: new Date().toISOString(),
   };
   if (next.decisions.length > MAX_DECISIONS) next.decisions = next.decisions.slice(-MAX_DECISIONS);
   if (next.notes.length > MAX_NOTES) next.notes = next.notes.slice(-MAX_NOTES);
   if (next.files.length > 80) next.files = next.files.slice(-80);
   if (next.facts.length > MAX_FACTS) next.facts = next.facts.slice(-MAX_FACTS);
+  if (next.fronts.length > MAX_FRONTS) next.fronts = next.fronts.slice(-MAX_FRONTS);
   if (next.verified.length > MAX_VERIFIED) next.verified = next.verified.slice(-MAX_VERIFIED);
   if (next.discarded.length > MAX_DISCARDED) next.discarded = next.discarded.slice(-MAX_DISCARDED);
   writeJson(projectFile(projectRoot), next);
@@ -433,6 +447,57 @@ function noteFacts(projectRoot, facts) {
 
 function noteFact(projectRoot, fact) {
   return noteFacts(projectRoot, [fact]);
+}
+
+// [EDITCORE-V513-W2] Clave de un frente: texto normalizado (minúsculas,
+// sin acentos, espacios colapsados) — la misma vara con la que el Mapa
+// deduplica sus frentes por tema.
+function frontKey(text) {
+  return normalizeLoose(text).replace(/\s+/g, " ").trim();
+}
+
+// [EDITCORE-V513-W2] Asienta un FRENTE abierto en el expediente: un
+// pendiente/hallazgo sustantivo con procedencia. Dedupe por texto
+// normalizado: si ya está abierto no se duplica; si estaba cerrado y
+// el material lo trae de nuevo, se REABRE (el pendiente reapareció).
+// Solo lo llaman fuentes estructuradas: el destilador de subagentes
+// (subagent-distill) y la herramienta del Mapa del agente principal.
+function noteFront(projectRoot, text, source = "") {
+  const clipped = String(text || "").trim().slice(0, 300);
+  if (!clipped) return loadProjectState(projectRoot);
+  const state = loadProjectState(projectRoot);
+  const key = frontKey(clipped);
+  const existing = (state.fronts || []).find((f) => f && frontKey(f.text) === key);
+  if (existing && existing.status !== "closed") return state;
+  if (existing) {
+    const reopened = { ...existing, status: "open", t: Date.now(), source: String(source || existing.source || "").slice(0, 160) };
+    delete reopened.closedAt;
+    delete reopened.closedBy;
+    state.fronts = [...(state.fronts || []).filter((f) => f !== existing), reopened];
+    return saveProjectState(projectRoot, state);
+  }
+  state.fronts = [...(state.fronts || []), { t: Date.now(), text: clipped, source: String(source || "").slice(0, 160), status: "open" }];
+  return saveProjectState(projectRoot, state);
+}
+
+// [EDITCORE-V513-W2] Cierra un frente abierto (coincidencia por texto
+// normalizado exacto, o por inclusión con longitud mínima: el agente
+// puede citar el frente con palabras de más o de menos). Devuelve el
+// estado; si no había frente abierto que case, no cambia nada.
+function closeFront(projectRoot, text, closedBy = "") {
+  const key = frontKey(text);
+  if (!key) return loadProjectState(projectRoot);
+  const state = loadProjectState(projectRoot);
+  const idx = (state.fronts || []).findIndex((f) => {
+    if (!f || f.status === "closed") return false;
+    const fk = frontKey(f.text);
+    if (fk === key) return true;
+    return fk.length >= 12 && key.length >= 12 && (fk.includes(key) || key.includes(fk));
+  });
+  if (idx < 0) return state;
+  const closed = { ...state.fronts[idx], status: "closed", closedAt: Date.now(), closedBy: String(closedBy || "").slice(0, 160) };
+  state.fronts = [...state.fronts.slice(0, idx), closed, ...state.fronts.slice(idx + 1)];
+  return saveProjectState(projectRoot, state);
 }
 
 function noteWorkingOn(projectRoot, text, threadId) {
@@ -714,6 +779,9 @@ module.exports = {
   // [EDITCORE-INTEGRAL-B3]
   noteFact,
   noteFacts,
+  // [EDITCORE-V513-W2]
+  noteFront,
+  closeFront,
   factText,
   buildFactsSection,
   normalizeLoose,

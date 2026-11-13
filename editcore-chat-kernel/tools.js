@@ -1752,6 +1752,52 @@ const DEFINITIONS = [
   {
     type: "function",
     function: {
+      name: "open_map_front",
+      // [EDITCORE-V513-W3] La API del Mapa deja de estar muerta: el
+      // agente principal puede asentar un pendiente REAL en la memoria
+      // del proyecto. Es escritura de memoria (clasificada WRITE en
+      // classify.js): no se ofrece en turnos de pregunta.
+      description: "Registra un FRENTE ABIERTO en el Mapa de orientación del proyecto: un pendiente real y concreto que queda asentado en el expediente con procedencia, y que los próximos turnos —incluidos chats nuevos y el conserje— verán como pendiente registrado al preguntar «¿qué queda pendiente?». Úsala cuando en tu trabajo o tu respuesta enumeres un pendiente que NO consta ya en la memoria compartida: regístralo ANTES de cerrar el turno, o morirá en la prosa y habrá que redescubrirlo. Registra solo pendientes concretos con su motivo (qué falta y dónde), nunca la pregunta del usuario ni impresiones sin evidencia.",
+      parameters: {
+        type: "object",
+        properties: {
+          text: { type: "string", description: "El pendiente, concreto y con su motivo (p. ej. 'Asesor IA sin backend completo: falta conectar app.py con templates/ai_agent.html')." }
+        },
+        required: ["text"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "close_map_front",
+      description: "Cierra un FRENTE ABIERTO del Mapa de orientación del proyecto porque ya quedó resuelto (verificado, no solo intentado). El frente pasa a cerrados con procedencia y deja de listarse como pendiente. Úsala al completar y verificar el trabajo de un frente registrado; cita el texto del frente tal como consta en la memoria compartida.",
+      parameters: {
+        type: "object",
+        properties: {
+          text: { type: "string", description: "El texto del frente a cerrar, tal como consta en la memoria compartida." }
+        },
+        required: ["text"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "note_map_decision",
+      description: "Asienta una DECISIÓN vigente del proyecto en el Mapa de orientación: queda en el expediente con procedencia y manda sobre relatos viejos (si contradice a una anterior del mismo tema, la sustituye conservando la procedencia). Úsala cuando el usuario decida algo con efecto duradero (precios, stack, alcance, reglas del proyecto) y ese acuerdo no conste ya en la memoria compartida.",
+      parameters: {
+        type: "object",
+        properties: {
+          text: { type: "string", description: "La decisión, en una frase completa (p. ej. 'El precio del plan Pro queda en $39 al mes')." }
+        },
+        required: ["text"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
       name: "install_skill",
       description: "Instala una skill clonando un repositorio de GitHub.",
       parameters: {
@@ -2048,6 +2094,35 @@ async function execute(name, args, root, allowWrite, helpers = {}) {
           }
         } catch { /* el Mapa nunca tumba la búsqueda */ }
         return brainOut;
+      }
+      // [EDITCORE-V513-W3] Herramientas del Mapa de orientación: la
+      // escritura va a través del expediente (orientation-map escribe
+      // en thread-memory y proyecta al Mapa), así que el asiento
+      // sobrevive al mantenimiento de cierre. Segunda capa de la
+      // compuerta: sin escritura autorizada no se asienta nada.
+      case "open_map_front": {
+        if (!allowWrite) return { ok: false, error: "open_map_front es escritura de memoria: requiere un turno con escritura autorizada." };
+        const frontText = String(a.text || "").trim();
+        if (!frontText) return { ok: false, error: "open_map_front requiere «text» con el pendiente a registrar." };
+        require("./orientation-map").openMapFront(root, frontText, "herramienta del agente · turno principal");
+        return { ok: true, recorded: "front", text: frontText, note: "Frente asentado en el expediente y en el Mapa del proyecto: los próximos turnos lo verán como pendiente registrado." };
+      }
+      case "close_map_front": {
+        if (!allowWrite) return { ok: false, error: "close_map_front es escritura de memoria: requiere un turno con escritura autorizada." };
+        const frontText = String(a.text || "").trim();
+        if (!frontText) return { ok: false, error: "close_map_front requiere «text» con el frente a cerrar." };
+        const om = require("./orientation-map");
+        const before = om.getProjectMap(root).openFronts.length;
+        om.closeMapFront(root, frontText, "herramienta del agente · turno principal");
+        const closed = om.getProjectMap(root).openFronts.length < before;
+        return { ok: true, recorded: "front_closed", text: frontText, closed, note: closed ? "Frente cerrado en el expediente y en el Mapa: ya no se listará como pendiente." : "Ningún frente abierto casaba con ese texto: no se cerró nada." };
+      }
+      case "note_map_decision": {
+        if (!allowWrite) return { ok: false, error: "note_map_decision es escritura de memoria: requiere un turno con escritura autorizada." };
+        const decisionText = String(a.text || "").trim();
+        if (!decisionText) return { ok: false, error: "note_map_decision requiere «text» con la decisión a asentar." };
+        require("./orientation-map").noteMapDecision(root, decisionText, "herramienta del agente · turno principal");
+        return { ok: true, recorded: "decision", text: decisionText, note: "Decisión asentada en el expediente y en el Mapa del proyecto, con procedencia." };
       }
       case "check_connections":
         return await extraTools.checkConnections(root, helpers);

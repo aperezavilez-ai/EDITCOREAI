@@ -30,8 +30,9 @@
  * (handle()): las decisiones nuevas que contradicen a una anterior
  * (misma clave de tema) REEMPLAZAN la vieja conservando la
  * procedencia («sustituye a la del <fecha>»); el estado se reescribe
- * desde los hechos del turno; los frentes rotan con el workingOn del
- * expediente. Topes declarados por capa con poda por
+ * desde los hechos del turno; los frentes son los asientos «frente»
+ * del expediente (desde la v5.1.3: pendientes con procedencia y
+ * estado, ya no el workingOn). Topes declarados por capa con poda por
  * relevancia/antigüedad (lo más reciente manda; lo sustituido sale).
  *
  * Carga: al abrir cada turno el bloque del Mapa entra como tier
@@ -150,13 +151,22 @@ function saveProjectMap(projectRoot, map) {
   return clean;
 }
 
+// [EDITCORE-V513-W3] Las tres funciones de escritura del Mapa
+// escriben A TRAVÉS del expediente: el mantenimiento reconstruye la
+// capa del proyecto desde el expediente (decisiones y, desde la
+// v5.1.3, frentes), así que asentar solo en el Mapa se borraría en el
+// cierre siguiente. El expediente es la fuente; el Mapa, su
+// proyección vigente. Cada función deja además el cambio visible en
+// el Mapa al momento (el turno que la invoca lo lee de vuelta).
 function noteMapDecision(projectRoot, text, source = "turno del agente") {
+  try { threadMemory.noteDecision(projectRoot, clip(text, 400)); } catch { /* el Mapa nunca tumba el turno */ }
   const map = getProjectMap(projectRoot);
   map.decisions = upsertEntry(map.decisions, { text, source }, MAX_MAP_DECISIONS);
   return saveProjectMap(projectRoot, map);
 }
 
 function openMapFront(projectRoot, text, source = "turno del agente") {
+  try { threadMemory.noteFront(projectRoot, text, source); } catch { /* el Mapa nunca tumba el turno */ }
   const map = getProjectMap(projectRoot);
   const clean = clip(text, 160);
   if (clean && !map.openFronts.some((f) => normalizeLoose(f.text) === normalizeLoose(clean))) {
@@ -166,6 +176,7 @@ function openMapFront(projectRoot, text, source = "turno del agente") {
 }
 
 function closeMapFront(projectRoot, text, source = "turno del agente") {
+  try { threadMemory.closeFront(projectRoot, text, source); } catch { /* el Mapa nunca tumba el turno */ }
   const map = getProjectMap(projectRoot);
   const key = normalizeLoose(text);
   const idx = map.openFronts.findIndex((f) => normalizeLoose(f.text) === key || topicKey(f.text) === topicKey(text));
@@ -228,20 +239,39 @@ function maintainProjectMap(projectRoot, { steps = [], finalText = "", userText 
     if (byFile.size) {
       map.keyFiles = [...byFile.entries()].map(([file, role]) => ({ file, role })).slice(-MAX_MAP_KEYFILES).reverse();
     }
-    // Frentes: rotan con el workingOn del expediente — al cambiar el
-    // frente en curso, el anterior se CIERRA con procedencia.
+    // [EDITCORE-V513-W2] Frentes: SOLO los asientos «frente» del
+    // expediente (pendientes/hallazgos con procedencia y estado),
+    // abiertos, deduplicados por tema y al tope de la capa. El
+    // workingOn YA NO se siembra como frente ni entra en la línea de
+    // estado: es el foco vigente del expediente (el último mensaje
+    // del usuario), no un pendiente registrado — sembrarlo convertía
+    // cada pregunta en su propio «frente abierto» (el eco que el
+    // carril de orientación tenía que descartar a mano) y la lista
+    // real de pendientes no tenía ninguna ruta para llegar aquí.
     const front = clip(state.workingOn, 160);
-    if (front && map._lastWorkingOn && normalizeLoose(map._lastWorkingOn) !== normalizeLoose(front)) {
-      const prev = map._lastWorkingOn;
-      map.openFronts = map.openFronts.filter((f) => normalizeLoose(f.text) !== normalizeLoose(prev));
-      map.closedFronts = [{ text: prev, at: new Date().toISOString(), source: "expediente", closedAt: new Date().toISOString(), closedBy: "rotación del frente en curso" }, ...map.closedFronts].slice(0, MAX_MAP_FRONTS);
-    }
-    if (front) {
-      map._lastWorkingOn = front;
-      if (!map.openFronts.some((f) => normalizeLoose(f.text) === normalizeLoose(front))) {
-        map.openFronts = [{ text: front, at: new Date().toISOString(), source: "expediente · frente en curso" }, ...map.openFronts].slice(0, MAX_MAP_FRONTS);
+    if (front) map._lastWorkingOn = front; // compat del artefacto: ya no alimenta frentes
+    const frontSeen = new Set();
+    const openFronts = [];
+    const closedFronts = [];
+    for (const f of Array.isArray(state.fronts) ? state.fronts : []) {
+      const text = clip(f?.text, 160);
+      if (!text) continue;
+      const entry = {
+        text,
+        at: f?.t ? new Date(f.t).toISOString() : new Date().toISOString(),
+        source: f?.source || "expediente del proyecto",
+      };
+      if (f?.status === "closed") {
+        closedFronts.push({ ...entry, closedAt: f?.closedAt ? new Date(f.closedAt).toISOString() : entry.at, closedBy: f?.closedBy || "" });
+        continue;
       }
+      const key = topicKey(text) || normalizeLoose(text);
+      if (key && frontSeen.has(key)) continue;
+      if (key) frontSeen.add(key);
+      openFronts.push(entry);
     }
+    map.openFronts = openFronts.slice(-MAX_MAP_FRONTS).reverse();
+    if (closedFronts.length) map.closedFronts = closedFronts.slice(-MAX_MAP_FRONTS).reverse();
     // Estado VIGENTE: se reescribe desde los hechos de este turno
     // (el destilado B5), no se anexa relato.
     if (Array.isArray(steps) && steps.length) {
@@ -249,9 +279,7 @@ function maintainProjectMap(projectRoot, { steps = [], finalText = "", userText 
       const appliedLine = distilled.split("\n").find((l) => l.startsWith("Aplicado")) || "";
       const verifiedLine = distilled.split("\n").find((l) => l.startsWith("Verificación")) || "";
       const today = new Date().toISOString().slice(0, 10);
-      map.state = clip(`[${today}] ${appliedLine}${verifiedLine ? ` · ${verifiedLine}` : ""}${front ? ` · Frente en curso: ${front}` : ""}`, 420);
-    } else if (front && !map.state) {
-      map.state = clip(`Frente en curso: ${front}`, 420);
+      map.state = clip(`[${today}] ${appliedLine}${verifiedLine ? ` · ${verifiedLine}` : ""}`, 420);
     }
     return saveProjectMap(projectRoot, map);
   } catch { return null; }

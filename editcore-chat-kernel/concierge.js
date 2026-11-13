@@ -61,6 +61,20 @@ async function buildSharedMemoryBlock(projectRoot, threadId, query, helpers) {
     const cerebro = await buildCerebroServiceBlock(projectRoot, query, helpers);
     if (cerebro) parts.push(cerebro);
   } catch { /* fail-open, como al abrir el turno principal */ }
+  // [EDITCORE-V513-W4] Declaración de vacío de frentes: si el Mapa no
+  // trae frentes abiertos, el bloque lo DICE («ninguno registrado»)
+  // en vez de omitir la sección. Sin esa línea, «memoria vacía» y
+  // «memoria no consultada» se veían iguales, y el modelo sustituía
+  // la memoria por lecturas sueltas de archivos para concluir el
+  // estado del proyecto (el fallo en vivo de la v5.1.2). Va justo
+  // tras la pieza del Mapa, dentro del mismo tope de 5.200.
+  try {
+    const om = require("./orientation-map");
+    const fronts = om.getProjectMap(projectRoot)?.openFronts || [];
+    if (!fronts.length) {
+      parts.splice(mapBlock ? 1 : 0, 0, "Frentes abiertos: ninguno registrado en la memoria del proyecto.");
+    }
+  } catch { /* sin declaración no hay bloque roto */ }
   return parts.join("\n\n").slice(0, 5200);
 }
 

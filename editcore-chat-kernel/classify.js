@@ -441,6 +441,15 @@ const WRITE_TOOLS = [
   // de tools.execute sigue siendo consciente del rol (explorer es
   // lectura), pero POR LA RUTA DEL KERNEL manda esta clasificación.
   "invoke_subagent",
+  // [EDITCORE-V513-W3] Herramientas del Mapa de orientación: escribir
+  // la MEMORIA del proyecto es escritura (asienta frentes y decisiones
+  // con procedencia en el expediente), así que van en WRITE_TOOLS: la
+  // compuerta única las corta en solo lectura/paso a paso y el set de
+  // preguntas (QUESTION_READ_TOOLS, derivado de READ_ONLY_TOOLS) jamás
+  // las ofrece — en un turno de pregunta el agente responde DESDE la
+  // memoria sin escribirla; lo que ese turno produzca vía subagentes
+  // entra por el destilador (W1), no por estas herramientas.
+  "open_map_front", "close_map_front", "note_map_decision",
 ];
 
 // Subconjunto curado para MODO CHARLA: lectura ligera, sin análisis pesado.

@@ -551,6 +551,28 @@ const MEMORY_EVENT_PROTOCOL = [
   "3) Si el evento SÍ consta, cítalo con su hecho concreto (archivo y qué cambió), sin adornarlo con eventos que no consten.",
 ].join("\n");
 
+// [EDITCORE-V513-W3] Directiva breve del carril de orientación: la
+// memoria solo sirve si lo que el agente concluye queda asentado. Las
+// herramientas del Mapa (open_map_front / note_map_decision /
+// close_map_front, escritura de memoria) existen desde esta versión:
+// enumerar un pendiente que no consta sin registrarlo lo deja morir
+// en la prosa otra vez. Es directiva interna del turno, no texto para
+// la superficie (sin línea-recibo nueva).
+const MAP_MEMORY_DIRECTIVE = [
+  "DIRECTIVA DE MEMORIA (carril de orientación): respondes desde la memoria compartida de arriba.",
+  "Si en tu respuesta enumeras un pendiente o una decisión del proyecto que NO consta en ese bloque, regístralo ANTES de cerrar con las herramientas del Mapa cuando este turno las ofrezca: open_map_front (pendiente), note_map_decision (decisión), close_map_front (pendiente ya resuelto). Si este turno no las ofrece, dilo en tu respuesta («queda sin registrar en la memoria») en vez de darlo por asentado.",
+].join("\n");
+
+// [EDITCORE-V513-W4] Directiva de vacío, gemela del protocolo
+// anti-confabulación de recuerdos: una memoria de orientación sin
+// sustancia no autoriza a concluir que no hay pendientes — autoriza
+// a declarar el vacío.
+const ORIENTATION_VACUUM_DIRECTIVE = [
+  "MEMORIA DE ORIENTACIÓN VACÍA — la memoria compartida de este proyecto no registra frentes abiertos, decisiones ni hechos sobre su estado:",
+  "1) Decláralo al usuario en tu voz, con claridad («de este proyecto aún no tengo registrado…»), ANTES de consultar archivos: lo que no consta se dice como no registrado, no como inexistente.",
+  "2) Después de declararlo puedes consultar archivos para orientar la respuesta, pero tienes PROHIBIDO concluir «no queda pendiente» (ni equivalente) a partir de una lectura de archivos cuando la pregunta es de orientación/estado del proyecto: que unos archivos no muestren pendientes no prueba que el proyecto no los tenga.",
+].join("\n");
+
 // ¿El evento consta en el expediente? «Consta» = algún asiento del
 // expediente (hecho destilado, decisión, nota, verificado, descartado o
 // archivo tocado) menciona TODOS los tokens del tema. Los hechos
@@ -2087,13 +2109,29 @@ class ChatOrchestrator {
           // Referencia y seguimiento exigen la sustancia EN el bloque:
           // si la memoria no lista frentes/pendientes, no hay de qué
           // responder por este carril y manda el explorador de siempre.
+          // [EDITCORE-V513-W4] La declaración de vacío del bloque
+          // («Frentes abiertos: ninguno registrado», concierge) NO es
+          // sustancia: la guarda mira el bloque sin esa línea.
+          const blockSinVacios = String(sharedBlock || "").replace(/Frentes abiertos:\s*ninguno registrado[^\n]*/gi, "");
           if (sharedBlock
             && (askLaneReason === "referencia_a_pendientes" || askLaneReason === "seguimiento_sobre_lo_ya_dicho")
-            && !/frentes abiertos|pendientes/i.test(sharedBlock)) askLaneReason = "";
+            && !/frentes abiertos|pendientes/i.test(blockSinVacios)) askLaneReason = "";
           if (askLaneReason && sharedBlock) {
             this._askLane = { lane: "orientation", reason: askLaneReason };
             if (memory) memory.note("consulta de orientación respondida desde el Mapa y la memoria compartida (sin mapear el proyecto)");
-            return this.runModelTask({ decision, message: scopeUserMessage(text, sharedBlock), projectRoot, apiBaseUrl, apiKey, model, memory, onProgress, allowWrite: false, maxSteps: 4, helpers, images: taskImages });
+            // [EDITCORE-V513-W4] Sustancia del bloque: frentes
+            // REGISTRADOS, decisiones vigentes o hechos del
+            // expediente. La pregunta de orientación ya NO se exime
+            // de la guarda (la v5.1.1 la eximía y el modelo concluyó
+            // «no queda pendiente» desde dos lecturas de archivos):
+            // sin sustancia el carril se mantiene, pero inyecta la
+            // directiva de vacío junto a la de memoria (W3).
+            const blockHasSubstance = /frentes abiertos/i.test(blockSinVacios)
+              || /Decisiones vigentes/.test(sharedBlock)
+              || /Hechos del expediente/.test(sharedBlock);
+            const laneDirectives = [MAP_MEMORY_DIRECTIVE];
+            if (askLaneReason === "pregunta_de_orientacion" && !blockHasSubstance) laneDirectives.push(ORIENTATION_VACUUM_DIRECTIVE);
+            return this.runModelTask({ decision, message: scopeUserMessage(text, [sharedBlock, ...laneDirectives].join("\n\n")), projectRoot, apiBaseUrl, apiKey, model, memory, onProgress, allowWrite: false, maxSteps: 4, helpers, images: taskImages });
           }
         }
       }
@@ -2110,6 +2148,26 @@ class ChatOrchestrator {
       // cabe sin inflar. El módulo queda para uso EXPLÍCITO.
       const out = await runExplorer({ projectRoot, target, onProgress, threadId: this._threadId, signal: this.abort?.signal });
       this.session.kill();
+      // [EDITCORE-V513-W1] El explorador de ASK entra al circuito de
+      // destilación: su informe ya no muere en el mensaje-evidencia —
+      // sus hallazgos (archivos clave, conclusiones y pendientes
+      // explícitos) quedan en el expediente con su procedencia, como
+      // ya hacían delegate_parallel e invoke_subagent (tools.js).
+      // La procedencia es rol + zona, SIN la pregunta del usuario:
+      // plantarla en el expediente haría «constar» cualquier evento
+      // que el usuario nombre en su pregunta (el eco que la guarda
+      // anti-confabulación combate: «cambio de precios» pasaría a
+      // estar «registrado» por el solo hecho de preguntarlo).
+      try {
+        const { recordSubagentDistillates } = require("./subagent-distill");
+        recordSubagentDistillates(projectRoot, [{
+          role: "explorer",
+          target: out?.target || target,
+          question: "",
+          text: out?.summary || "",
+          ok: out?.ok !== false,
+        }]);
+      } catch { /* la memoria nunca tumba el turno */ }
       if (memory) memory.note(`listó ${out.target || target}`);
 
       if (apiKey) {
@@ -2175,6 +2233,23 @@ class ChatOrchestrator {
       onProgress?.({ phase: "start", text: "Reuniendo evidencia del proyecto…" });
       if (!this.abort || this.abort.signal.aborted) this.abort = new AbortController();
       const out = await runAnalyst({ projectRoot, onProgress, maxReads, userMessage: text, threadId: this._threadId, signal: this.abort?.signal }); // [EDITCORE-INTEGRAL-B9] sin wrap del bus
+      // [EDITCORE-V513-W1] El analyst de ANALYZE entra al circuito de
+      // destilación, igual que el explorador de ASK: sus hallazgos y
+      // los pendientes explícitos de su informe (p. ej. la sección de
+      // pendientes del ROADMAP que leyó) quedan en el expediente con
+      // procedencia, en vez de morir en la evidencia del turno. La
+      // procedencia va sin la pregunta del usuario (ver la nota del
+      // explorador: la pregunta no se planta en el expediente).
+      try {
+        const { recordSubagentDistillates } = require("./subagent-distill");
+        recordSubagentDistillates(projectRoot, [{
+          role: "analyst",
+          target: "",
+          question: "",
+          text: out?.report || "",
+          ok: out?.ok !== false,
+        }]);
+      } catch { /* la memoria nunca tumba el turno */ }
       const testsRun = (verified?.checks || []).find((c) => c.id === "tests" && (c.status === "pass" || c.status === "fail"));
       if (testsRun && typeof out?.report === "string") {
         out.report = out.report.replace(

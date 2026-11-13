@@ -59,19 +59,65 @@ function extractConclusions(text, max = 3) {
   return out;
 }
 
+// [EDITCORE-V513-W2] Pendientes EXPLÍCITOS de un informe de
+// subagente: los informes ya traen hallazgos enumerados, y un frente
+// nace SOLO de ese material estructurado — un ítem de la lista bajo un
+// encabezado de pendientes, o una línea que declara un pendiente —
+// jamás de la prosa libre del modelo principal (ese contrato no se
+// toca: la respuesta del agente oficial NO pasa por este extractor).
+// Las líneas negadas («no queda pendiente», «sin pendientes»), las
+// preguntas y las líneas-etiqueta del mapa del explorador (Archivos:,
+// Carpetas:, …) NO son pendientes: se excluyen por patrón.
+const PENDING_NEGATED_RE = /\b(?:no|sin|ning[úu]n|ninguno|nada)\b[^.\n]{0,40}\bpendientes?\b|\bpendientes?\b[^.\n]{0,24}\b(?:ninguno|ning[úu]n|no hay|no quedan?)\b/i;
+const MAP_LABEL_LINE_RE = /^(?:archivos|carpetas|configs|scripts|stack|ra[íi]z|archivos le[íi]dos|carpetas de c[óo]digo detectadas)\s*:/i;
+function extractFronts(text, max = 6) {
+  const lines = String(text || "").split(/\r?\n/);
+  const out = [];
+  const seen = new Set();
+  const push = (raw) => {
+    const clean = clip(String(raw || "").replace(/^\s*(?:[-*•]|\d+[.)])\s+/, "").replace(/\*\*/g, "").replace(/`/g, "").trim(), 220);
+    if (clean.length < 12 || clean.length > 300) return;
+    if (clean.includes("?") || clean.includes("¿")) return;
+    if (PENDING_NEGATED_RE.test(clean)) return;
+    if (MAP_LABEL_LINE_RE.test(clean)) return;
+    if (/^(?:pregunta|consulta|pedido|instrucci[óo]n)\s*:/i.test(clean)) return;
+    const key = clean.toLowerCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push(clean);
+  };
+  let inSection = false;
+  for (const rawLine of lines) {
+    const line = String(rawLine || "").trim();
+    if (!line) continue;
+    const isHeading = /^#{1,6}\s/.test(line) || /^\*\*[^*]+\*\*:?$/.test(line) || /:\s*$/.test(line);
+    if (/\bpendientes?\b/i.test(line) && (isHeading || /^[-*•]?\s*pendientes?\b/i.test(line))) {
+      inSection = true;
+      continue;
+    }
+    if (isHeading) { inSection = false; continue; }
+    const isBullet = /^(?:[-*•]|\d+[.)])\s+/.test(line);
+    if (inSection && isBullet) { push(line); continue; }
+    if (/\bpendientes?\b/i.test(line)) push(line);
+  }
+  return out.slice(0, max);
+}
+
 /**
  * Destila el informe de UN subagente a asientos del expediente:
  *  - facts: hechos `read` por archivo clave, con procedencia en `why`,
  *    y un hecho-resumen con el texto destilado (kind «subagent»).
  *  - decisionText: la conclusión principal como asiento de decisión
  *    del expediente (noteDecision), con procedencia. Puede ser "".
+ *  - fronts [EDITCORE-V513-W2]: los pendientes EXPLÍCITOS del informe
+ *    (extractFronts), como asientos de frente del expediente.
  */
 function distillSubagentReport({ role = "", target = "", question = "", text = "", ok = true } = {}) {
   const roleName = String(role || "subagente").trim() || "subagente";
   const zone = String(target || "").trim();
   const provenance = `subagente ${roleName}${zone ? ` · ${zone}` : ""}${question ? ` · ${clip(question, 60)}` : ""}`;
   if (ok === false || !String(text || "").trim()) {
-    return { provenance, facts: [], decisionText: "" };
+    return { provenance, facts: [], decisionText: "", fronts: [] };
   }
   const files = extractKeyFiles(text);
   const conclusions = extractConclusions(text);
@@ -92,6 +138,7 @@ function distillSubagentReport({ role = "", target = "", question = "", text = "
     provenance,
     facts,
     decisionText: conclusions.length ? clip(`${provenance}: ${conclusions[0]}`, 400) : "",
+    fronts: extractFronts(text),
   };
 }
 
@@ -117,6 +164,13 @@ function recordSubagentDistillates(projectRoot, results = []) {
       });
       if (d.facts.length) { tm.noteFacts(projectRoot, d.facts); written += d.facts.length; }
       if (d.decisionText) { tm.noteDecision(projectRoot, d.decisionText); written += 1; }
+      // [EDITCORE-V513-W2] Los pendientes explícitos del informe se
+      // asientan como FRENTES del expediente con la procedencia del
+      // subagente: es la ruta que le faltaba a «Asesor IA pendiente»
+      // para terminar como frente abierto del Mapa.
+      if (Array.isArray(d.fronts) && typeof tm.noteFront === "function") {
+        for (const frontText of d.fronts) { tm.noteFront(projectRoot, frontText, d.provenance); written += 1; }
+      }
     }
   } catch { /* la memoria nunca tumba el turno */ }
   return written;
@@ -178,4 +232,6 @@ module.exports = {
   distillTurnForBrain,
   extractKeyFiles,
   extractConclusions,
+  // [EDITCORE-V513-W2]
+  extractFronts,
 };
