@@ -44,7 +44,15 @@ async function runExplorer({ projectRoot, target = ".", onProgress, signal, memo
     ? `${resolvedTarget} (solicitado '${resolveMeta.missing}' no existe)`
     : resolvedTarget;
 
-  onProgress?.({ phase: "subagent", name: "explorer", text: `Mapeando ${label}...` });
+  // [EDITCORE-V511-B] Sin etiqueta a la superficie: este progreso
+  // («Mapeando …») se anunciaba como línea del chat — el renderer lo
+  // prefija con 🧠 — y Luis lo vetó (regla de producto 2026-11-11:
+  // nada de líneas-recibo del sistema; solo la voz del agente). La
+  // exploración y sus fases internas continúan igual; su etiqueta ya
+  // no se anuncia. Mismo criterio con el que en la v4.9.2 se silenció
+  // el contador del Cerebro: el trabajo sigue ocurriendo, el anuncio
+  // no. (`label` se conserva: documenta la resolución del target.)
+  void label;
   const steps = [];
   const res = tools.listFiles(projectRoot, resolvedTarget);
   if (signal?.aborted) {
@@ -142,7 +150,9 @@ async function runExplorer({ projectRoot, target = ".", onProgress, signal, memo
     memoryContext ? `\n## Memoria compartida (expediente + Cerebro + Mapa)\n${String(memoryContext).slice(0, 3200)}` : "",
   ].filter(Boolean).join("\n");
 
-  onProgress?.({ phase: "subagent", name: "explorer", text: "Mapa listo" });
+  // [EDITCORE-V511-B] Tampoco se anuncia «Mapa listo» al cerrar:
+  // sin etiquetas del sistema en la superficie (ver la nota de la
+  // cabecera). El resumen vuelve al llamador como siempre.
   return { summary, steps, map, target: resolvedTarget };
 }
 

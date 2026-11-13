@@ -1958,6 +1958,10 @@ class ChatOrchestrator {
     // vez si el turno avanza sin delegar ni justificar.
     this._decomposeDirective = null;
     this._decomposeDirectiveText = null;
+    // [EDITCORE-V511-A] Carril de la rama ASK (orientación primero vs
+    // explorador): lo decide esta rama y lo consume runModelTask como
+    // paso marcador en los steps del turno.
+    this._askLane = null;
     try {
       if (decision.kind === "EXECUTE") {
         const det = detectDecomposableTask(`${text || ""} ${effectiveText || ""}`);
@@ -2013,6 +2017,78 @@ class ChatOrchestrator {
         onProgress?.({ phase: "start", text: "Analizando la imagen que adjuntaste…" });
         return this.runModelTask({ decision, message: text, projectRoot, apiBaseUrl, apiKey, model, memory, onProgress, allowWrite: false, maxSteps: 8, helpers, images: taskImages, fullAccess: false, permissionMode });
       }
+      // [EDITCORE-V511-A] CARRIL DE ORIENTACIÓN PRIMERO. Una pregunta
+      // de orientación («¿qué queda pendiente?», «¿qué decidimos de
+      // X?») o cuya sustancia ya vive en la memoria compartida (Mapa +
+      // expediente: frentes abiertos, decisiones vigentes, estado —
+      // incluido el seguimiento sobre la respuesta anterior: «¿de
+      // esos pendientes, cuál es el más urgente?») NO se manda a
+      // mapear el proyecto entero con el explorador: va directa al
+      // modelo con el bloque de memoria compartida como evidencia, por
+      // la misma vía que usa el conserje (buildSharedMemoryBlock). En
+      // la v5.1.0 el carril de orientación existía (search_brain con
+      // mapFirst), pero esta rama despachaba el explorador ANTES de
+      // responder cualquier pregunta y la pregunta jamás lo alcanzaba
+      // (defecto en vivo de Luis, 2026-11-13, dos veces seguidas). El
+      // ensamblado de runModelTask no puede suplirlo: para ASK vale
+      // listOnlyMode y el Mapa no entra en su contexto. El carril
+      // elegido queda asentado en los steps (marcador
+      // orientation_first / ask_explorer), sin línea-recibo alguna a
+      // la superficie. Sin clave, o sin memoria con la sustancia, el
+      // camino del explorador queda intacto.
+      if (apiKey) {
+        let askLaneReason = "";
+        // Eco de la propia pregunta: maintainProjectMap espeja el
+        // workingOn del expediente como frente abierto, así que la
+        // pregunta de un turno queda plantada como «frente» y al
+        // repetirla la búsqueda del Mapa «acierta» consigo misma
+        // (r1 explorador, r2 orientación, payloads distintos y el
+        // dedupe roto sin que nada cambiara). Una entrada cuyo texto
+        // ES la pregunta no es sustancia SOBRE la pregunta: se
+        // descarta como acierto.
+        const qNorm = String(text || "").toLowerCase().normalize("NFD").replace(/\p{M}/gu, "").replace(/[^a-z0-9]+/g, " ").trim();
+        const isSelfEcho = (hitText) => {
+          const hNorm = String(hitText || "").toLowerCase().normalize("NFD").replace(/\p{M}/gu, "").replace(/[^a-z0-9]+/g, " ").trim();
+          return qNorm.length >= 10 && hNorm.length >= 10 && (hNorm === qNorm || hNorm.includes(qNorm) || qNorm.includes(hNorm));
+        };
+        try {
+          if (orientationMap.isOrientationQuery(text)) askLaneReason = "pregunta_de_orientacion";
+          // El criterio «el Mapa ya lo sabe» es ESTRICTO a propósito:
+          // solo aciertos de la capa del PROYECTO en decisiones,
+          // frentes o propósito, con solape real (≥2 palabras). La
+          // búsqueda cruda también acierta por ruido — la capa de
+          // usuario trae el índice de OTROS proyectos y la línea de
+          // estado del Mapa es boilerplate autogenerado («Aplicado:
+          // nada… · Frente en curso: <la pregunta anterior>») — y un
+          // falso positivo aquí (a) desvía preguntas de código que son
+          // del explorador y (b) rompe el dedupe de la Fase A: el
+          // bloque de memoria compartida muta en cada turno, así que
+          // dos preguntas idénticas dejarían de ensamblar el payload
+          // idéntico que la ResponseCache sirve sin proveedor (lo
+          // caza la prueba A5 de cache-dieta-v500).
+          else if (orientationMap.searchMap(projectRoot, text, 5).some((h) => h && h.layer === "proyecto" && h.score >= 2 && (h.kind === "decisión" || h.kind === "frente abierto" || h.kind === "propósito") && !isSelfEcho(h.text))) askLaneReason = "el_mapa_ya_lo_sabe";
+          else if (/\bpendientes?\b|\bfrentes?\b/i.test(text)) askLaneReason = "referencia_a_pendientes";
+          else if (/\b(?:de esos|de esas|de los anteriores|cu[aá]l de (?:ellos|esos|ellas|esas)|el m[aá]s urgente|la m[aá]s urgente)\b/i.test(text)) askLaneReason = "seguimiento_sobre_lo_ya_dicho";
+        } catch { askLaneReason = ""; }
+        if (askLaneReason) {
+          let sharedBlock = "";
+          try {
+            const { buildSharedMemoryBlock } = require("./concierge");
+            sharedBlock = await buildSharedMemoryBlock(projectRoot, threadId || this._threadId || "default", text, helpers);
+          } catch { sharedBlock = ""; }
+          // Referencia y seguimiento exigen la sustancia EN el bloque:
+          // si la memoria no lista frentes/pendientes, no hay de qué
+          // responder por este carril y manda el explorador de siempre.
+          if (sharedBlock
+            && (askLaneReason === "referencia_a_pendientes" || askLaneReason === "seguimiento_sobre_lo_ya_dicho")
+            && !/frentes abiertos|pendientes/i.test(sharedBlock)) askLaneReason = "";
+          if (askLaneReason && sharedBlock) {
+            this._askLane = { lane: "orientation", reason: askLaneReason };
+            if (memory) memory.note("consulta de orientación respondida desde el Mapa y la memoria compartida (sin mapear el proyecto)");
+            return this.runModelTask({ decision, message: scopeUserMessage(text, sharedBlock), projectRoot, apiBaseUrl, apiKey, model, memory, onProgress, allowWrite: false, maxSteps: 4, helpers, images: taskImages });
+          }
+        }
+      }
       const target = extractListTarget(text, projectRoot) || ".";
       this.session.start(decision.kind, projectRoot);
       // [EDITCORE-INTEGRAL-B9] agent-bus: SE DEJA DE ESCRIBIR por
@@ -2029,6 +2105,9 @@ class ChatOrchestrator {
       if (memory) memory.note(`listó ${out.target || target}`);
 
       if (apiKey) {
+        // [EDITCORE-V511-A] Pregunta de código/contenido: el carril
+        // del explorador se conserva y queda asentado en los steps.
+        this._askLane = { lane: "explorer", reason: "pregunta_de_codigo_o_contenido" };
         return this.runModelTask({ decision, message: scopeUserMessage(text, out.summary), projectRoot, apiBaseUrl, apiKey, model, memory, onProgress, allowWrite: false, maxSteps: 4, helpers, images: taskImages });
       }
       return { kind: decision.kind, text: out.summary, steps: out.steps };
@@ -2706,6 +2785,22 @@ class ChatOrchestrator {
         name: "director_dispatch",
         input: { zones: decomposeDirective.zones, files: decomposeDirective.files },
         result: { decomposable: true, zones: decomposeDirective.zones, files: decomposeDirective.files, governance: "presupuesto del harness + ámbitos disjuntos (sin tope numérico)" },
+        ok: true,
+      });
+      iterStartSteps = steps.length; // el marcador no es una iteración del bucle
+    }
+    // [EDITCORE-V511-A] El carril de la rama ASK decidido en
+    // _handleCore (orientación primero vs explorador) se consume
+    // aquí y queda asentado en los steps, con el mismo patrón del
+    // marcador del director: auditable en el expediente del turno,
+    // sin emitir ninguna línea-recibo a la superficie.
+    const askLane = (decision?.kind === "ASK") ? (this._askLane || null) : null;
+    this._askLane = null;
+    if (askLane) {
+      steps.push({
+        name: askLane.lane === "orientation" ? "orientation_first" : "ask_explorer",
+        input: { lane: askLane.lane },
+        result: { lane: askLane.lane, reason: askLane.reason || "" },
         ok: true,
       });
       iterStartSteps = steps.length; // el marcador no es una iteración del bucle
