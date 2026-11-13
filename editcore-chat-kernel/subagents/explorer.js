@@ -17,7 +17,7 @@ function loadProjectMap() {
 }
 
 /** Explorer enriquecido: árbol real vía mapa cognitivo + configs clave. */
-async function runExplorer({ projectRoot, target = ".", onProgress, signal }) {
+async function runExplorer({ projectRoot, target = ".", onProgress, signal, memoryContext = "" }) {
   if (signal?.aborted) {
     return { ok: false, aborted: true, summary: "Exploración cancelada por el usuario.", steps: [], target };
   }
@@ -137,6 +137,9 @@ async function runExplorer({ projectRoot, target = ".", onProgress, signal }) {
     `- Configs: ${map.configs.join(", ") || "(ninguna)"}`,
     deps ? `- Scripts: ${Object.keys(deps.scripts).join(", ") || "(ninguno)"}` : "",
     cognitive?.stack?.length ? `- Stack: ${cognitive.stack.join(", ")}` : "",
+    // [EDITCORE-V510-B5] Memoria compartida recibida al despacharse:
+    // el mapa se lee junto al expediente/Cerebro/Mapa del proyecto.
+    memoryContext ? `\n## Memoria compartida (expediente + Cerebro + Mapa)\n${String(memoryContext).slice(0, 3200)}` : "",
   ].filter(Boolean).join("\n");
 
   onProgress?.({ phase: "subagent", name: "explorer", text: "Mapa listo" });

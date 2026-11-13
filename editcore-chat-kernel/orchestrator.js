@@ -126,6 +126,12 @@ const { buildOpenAiImageContent, modelSupportsVision, pickVisionModelCandidate }
 // y se registran a través del harness; el orquestador solo pide y
 // registra en los puntos de despacho y de llamada al modelo.
 const tokenHarness = require("../runtime/agent-token-harness");
+// [EDITCORE-V510-B5] Destilador de subagentes y de cierres: la
+// memoria compartida guarda hechos con procedencia, no relatos.
+const subagentDistill = require("./subagent-distill");
+// [EDITCORE-V510-B5-MAPA] El Mapa de orientación mantenida (la «red
+// neuronal» de Luis): contexto permanente destilado, dos capas.
+const orientationMap = require("./orientation-map");
 
 // [EDITCORE-V500-A5] RETIRADA DE CAPTURAS YA JUZGADAS: el PNG de una
 // captura viaja como mensaje user multimodal y ANTES se quedaba en el
@@ -820,6 +826,12 @@ function formatRealVerifyBanner(rv) {
 }
 
 async function appendRealVerification(projectRoot, written, steps, textOut, onProgress, opts = {}) {
+  // [EDITCORE-V510-B7] Sumidero del veredicto REAL: quien llama pasa
+  // opts.verdictBox y lee al final true/false/null (null = no hubo
+  // verificación real concluyente; un softTimeout tampoco veredicta).
+  // La red de agentes se alimenta de ESTE veredicto, no de un true
+  // fijo por haber llegado al cierre.
+  const setVerdict = (v) => { try { if (opts && opts.verdictBox && typeof opts.verdictBox === "object") opts.verdictBox.value = v; } catch { /* ignore */ } };
   try {
     if (!Array.isArray(written) || !written.length || !projectRoot) return textOut;
     const buildAffecting = repairGuard ? written.some((p) => repairGuard.isBuildAffectingPath(p)) : false;
@@ -846,6 +858,7 @@ async function appendRealVerification(projectRoot, written, steps, textOut, onPr
           tm.noteVerified(projectRoot, `Verificado (${what}): OK — ${String(written.slice(0, 3).join(", "))}`, true);
         }
       } catch { /* el expediente nunca tumba el turno */ }
+      setVerdict(true); // [EDITCORE-V510-B7] el propio turno ya verificó de verdad y pasó
       return textOut;
     }
     if (opts.repairTask !== true && !buildAffecting) return textOut;
@@ -871,6 +884,10 @@ async function appendRealVerification(projectRoot, written, steps, textOut, onPr
         }
       }
     } catch { /* el expediente nunca tumba el turno */ }
+    // [EDITCORE-V510-B7] El veredicto de la verificación real manda:
+    // aprobada = true, fallida = false; timeout blando o aborto no
+    // verifican nada y no alimentan la red ni en un sentido ni otro.
+    if (!rv.softTimeout && !rv.aborted) setVerdict(rv.ok === true);
     const block = formatRealVerifyBlock(rv);
     if (rv.ok || rv.softTimeout) return String(textOut || "") + block;
     return formatRealVerifyBanner(rv) + String(textOut || "") + block;
@@ -989,7 +1006,13 @@ function nextStepsClosingText(projectRoot, writtenFiles = [], steps = []) {
         reviewNote = ` Review pendiente: **${listed.count}** archivo(s).`;
       }
     } catch { /* ignore */ }
-    return "Cambios aplicados." + reviewNote;
+    // [EDITCORE-V510-B3] El respaldo determinista DECLARA EL TÉRMINO
+    // desde los hechos (qué quedó aplicado y que no queda escritura
+    // pendiente registrada): antes era «Cambios aplicados.» pelado.
+    // La PROPUESTA de siguiente paso jamás la inventa el kernel: es
+    // del modelo, vía el empujón de la compuerta de cierre.
+    const listedFiles = writtenFiles.slice(0, 6).map((p) => `\`${p}\``).join(", ");
+    return `Declaro el término de esta tarea desde los hechos: quedaron aplicados ${writtenFiles.length} archivo(s) (${listedFiles}) y no queda ninguna escritura pendiente registrada en este turno.${reviewNote}`;
   }
   if (steps.length > 0) {
     const toolNames = [...new Set(steps.map((s) => s.name).filter(Boolean))].slice(0, 5).join(", ");
@@ -1054,6 +1077,135 @@ function formatToolActionNarration(name, args = {}) {
   if (name === "install_skill") return `Instalo skill \`${String(args.skillName || "")}\`.`;
   if (name === "list_skills") return "Listo skills instaladas.";
   return "";
+}
+
+// =====================================================================
+// [EDITCORE-V510-B2/B3/B4/B6] Guardianes de cierre, de avance y del
+// director — detectores DETERMINISTAS (sin modelo) que las compuertas
+// de runModelTask consultan. Ninguno inventa texto del modelo: o
+// devuelve el turno con una orden, o declara desde los HECHOS.
+// =====================================================================
+
+// [B2] ¿El texto ES solo narración de acciones? El conjunto cerrado
+// de formatToolActionNarration tiene dos formas: líneas fijas y
+// plantillas con el nombre del archivo/comando entre acentos. Una
+// respuesta real trae otras líneas; la narración pura, ninguna.
+const NARRATION_EXACT_LINES = new Set([
+  "Listo la carpeta.", "Busco.", "Busco en internet.", "Leo URL.",
+  "Consulto una skill.", "Consulto el Cerebro.",
+  "Capturo el preview para verificar con la vista.",
+  "Arranco el preview del proyecto en el IDE.", "Inspecciono git.",
+  "Envío cambios con git push.", "Compilando ejecutable del proyecto...",
+  "Listo skills instaladas.", "Creo archivo.", "Edito archivo.", "Leo archivo.",
+  "Ejecuto comando.",
+]);
+const NARRATION_LINE_RES = [
+  /^Creo `[^`]+`\.$/, /^Edito `[^`]+`\.$/, /^Leo `[^`]+`\.$/,
+  /^Ejecuto `[^`]+`\.$/, /^Busco `[^`]+`\.$/, /^Busco en internet: `[^`]+`\.$/,
+  /^Consulto la skill `[^`]+`\.$/, /^Instalo skill `[^`]+`\.$/,
+  /^Creo commit Git: ".*"\\?\.$/, /^Revierte .+\.$/,
+];
+function isNarrationOnlyText(text = "") {
+  const lines = String(text || "").split(/\r?\n/)
+    .map((l) => l.trim().replace(/^[-*•]\s+/, "").trim())
+    .filter(Boolean);
+  if (!lines.length) return true; // cierre vacío: tampoco es respuesta
+  return lines.every((l) => NARRATION_EXACT_LINES.has(l) || NARRATION_LINE_RES.some((re) => re.test(l)));
+}
+
+// [B3] ¿El cierre trae (a) propuesta concreta o (b) declaración
+// explícita de término? Sin ninguna de las dos, un turno de tarea no
+// puede cerrar (veredicto de Luis, 2026-11-12: «no propone nada
+// después de terminar una acción… en caso de darlo por terminado
+// especificarlo»).
+const CLOSING_PROPOSAL_RE = /(?:¿[^?]*\?|\bprocede\b|\bautoriz|\bpropongo\b|te propongo|mi propuesta|siguiente paso|¿quieres|¿puedo|¿sigo|¿lo hago)/i;
+const CLOSING_TERMINUS_RE = /\b(?:doy por terminad[oa]|queda terminad[oa]|tarea terminada|con esto (?:termina|concluye|queda)|declaro (?:el término|terminada)|no (?:hace falta|queda) (?:nada|más)|sin (?:más|otros) cambios (?:pendientes|necesarios)|nada más (?:por hacer|pendiente)|proyecto completo|con esto cierro)\b/i;
+function closingHasProposalOrTerminus(text = "") {
+  const tail = String(text || "").slice(-1600);
+  return CLOSING_PROPOSAL_RE.test(tail) || CLOSING_TERMINUS_RE.test(tail);
+}
+
+// [B2/B3] Respaldo determinista cuando el modelo cierra sin respuesta
+// sustantiva y el empujón ya se gastó: constancia desde los HECHOS
+// del turno (buildKernelFactSummary), declarada como del kernel —
+// jamás prosa inventada en nombre del modelo.
+function substantiveFallbackText(steps = [], writtenFiles = []) {
+  const facts = buildKernelFactSummary(steps);
+  const lines = [
+    "## 🧾 Cierre del kernel (el modelo no dejó respuesta sustantiva)",
+    "",
+    "El modelo cerró este turno sin una respuesta (solo narró sus acciones o cerró en vacío), así que dejo constancia desde los hechos registrados, sin inventar texto en su nombre:",
+    "",
+  ];
+  if (facts) lines.push(facts.replace(/^## 🧾 Hechos del turno \(kernel\)\s*/i, "").trim());
+  else if (writtenFiles.length) lines.push(`- Escrituras aplicadas: ${writtenFiles.map((p) => `\`${p}\``).join(", ")}`);
+  else lines.push("- El kernel no registró escrituras ni verificaciones en este turno.");
+  lines.push("", writtenFiles.length
+    ? "Declaro el término de esta tarea desde esos hechos: lo aplicado quedó en disco y no queda ninguna escritura pendiente registrada."
+    : "Nada quedó aplicado en este turno. Pide la síntesis de nuevo o reformula el pedido y lo retomo con lo ya explorado.");
+  return lines.join("\n");
+}
+
+// [B4] Rendición determinista del guardián de avance: la cuenta
+// exacta del libro (qué se aplicó, qué se exploró, cuánto costaron
+// las vueltas) cuando el turno sigue sin aplicar tras la rendición
+// pedida. Es la confesión que faltó en ALFA LUBES (~20 min colgado).
+function progressRenditionText(book, steps = [], usage = {}) {
+  const applied = successfulWritePaths(steps);
+  const explored = [...new Set((Array.isArray(steps) ? steps : []).map((s) => s?.name).filter(Boolean))].slice(0, 8);
+  const mins = Math.max(1, Math.round(((book?.msSinceApplied ?? 0) / 60000) * 10) / 10);
+  return [
+    "## 🛑 Rendición de avance (kernel)",
+    "",
+    `Detengo este turno por la regla de avance de Luis: ningún turno puede consumir tokens sin convertirlos en algo aplicado. La cuenta del harness:`,
+    "",
+    `- **Aplicado:** ${applied.length ? applied.map((p) => `\`${p}\``).join(", ") : "nada — ninguna escritura ni verificación aprobada en este turno"}.`,
+    `- **Explorado:** ${explored.length ? explored.join(", ") : "sin pasos registrados"} (${book?.stepsIdle ?? 0} paso(s) sin efecto, ${book?.tokensIdle ?? 0} tokens en vueltas; ${book?.tokensApplied ?? 0} en pasos aplicados).`,
+    `- **El atoro:** ${book?.stepsSinceApplied ?? 0} paso(s) seguidos sin aplicar (~${mins} min).`,
+    "",
+    "No sigo cobrando en silencio: dime cómo quieres proceder (otra ruta, otro archivo, o lo dejamos aquí) y retomo con este contexto ya explorado.",
+  ].join("\n");
+}
+
+// [B6] Detección de tarea DESCOMPONIBLE al abrir el turno: ≥2
+// archivos mencionados o ≥2 zonas independientes del producto. Es la
+// señal del director: si la tarea se parte en frentes que no se
+// pisan, el agente oficial debe despachar subagentes gobernados por
+// el harness en vez de quemar el turno en serie.
+const DECOMPOSE_ZONE_GROUPS = [
+  ["landing", /\b(landing|p[aá]gina principal|hero|inicio)\b/i],
+  ["blog", /\bblog\b/i],
+  ["tienda", /\b(tienda|shop|carrito|checkout|cat[aá]logo de productos)\b/i],
+  ["admin", /\b(admin|panel|dashboard|backoffice)\b/i],
+  ["api", /\b(api|backend|servidor|endpoints?)\b/i],
+  ["base de datos", /\b(base de datos|database|supabase|sql|migraci[oó]n)\b/i],
+  ["autenticación", /\b(login|autenticaci[oó]n|auth|registro de usuarios|sesiones)\b/i],
+  ["pagos", /\b(pagos?|stripe|mercado ?pago|facturaci[oó]n)\b/i],
+  ["seo", /\bseo\b/i],
+  ["correos", /\b(correos?|emails?|newsletter|notificaciones)\b/i],
+  ["precios", /\b(precios|pricing|planes)\b/i],
+  ["contacto", /\b(contacto|formulario de contacto)\b/i],
+  ["galería", /\b(galer[ií]a|portafolio|portfolio)\b/i],
+  ["documentación", /\b(documentaci[oó]n|docs|readme)\b/i],
+  ["pruebas", /\b(tests?|pruebas)\b/i],
+];
+const DECOMPOSE_FILE_RE = /(?:^|[\s`"'(])((?:[\w.-]+\/)+[\w.-]+\.[a-z]{2,5}|[\w.-]+\.(?:js|jsx|ts|tsx|mjs|cjs|json|md|css|scss|html|sql))(?=$|[\s`"'),;])/g;
+function detectDecomposableTask(text = "") {
+  const src = String(text || "");
+  const files = [];
+  const seen = new Set();
+  DECOMPOSE_FILE_RE.lastIndex = 0;
+  let m;
+  while ((m = DECOMPOSE_FILE_RE.exec(src)) !== null) {
+    const f = String(m[1] || "").replace(/\\/g, "/").toLowerCase();
+    if (f && !seen.has(f)) { seen.add(f); files.push(f); }
+  }
+  const zones = DECOMPOSE_ZONE_GROUPS.filter(([, re]) => re.test(src)).map(([name]) => name);
+  return {
+    decomposable: files.length >= 2 || zones.length >= 2,
+    files,
+    zones,
+  };
 }
 
 const APPROVAL_WORDS = new Set(["procede", "procedo", "adelante", "hazlo", "autorizado", "continua", "continúa", "ejecuta", "si", "sí", "ok", "dale", "va"]);
@@ -1434,6 +1586,21 @@ class ChatOrchestrator {
       try { safeInput.onProgress?.({ phase: "narration", text: announcement }); } catch { /* el anuncio no tumba el turno */ }
     }
     const out = await this._handleCore(safeInput);
+    // [EDITCORE-V510-B5-MAPA] Mantenimiento agéntico del MAPA al
+    // cierre de CADA turno y de CADA ruta (el expediente ya quedó
+    // destilado por rememberExchange dentro del turno): la capa del
+    // proyecto se sincroniza — decisiones con sustitución por tema y
+    // procedencia, estado reescrito desde los hechos, frentes que
+    // rotan — y el índice de proyectos de la capa usuario se
+    // actualiza con ese estado vigente.
+    try {
+      if (safeInput.projectRoot && out && typeof out === "object") {
+        const maintained = orientationMap.maintainProjectMap(safeInput.projectRoot, {
+          steps: out.steps, finalText: out.text, userText: safeInput.message,
+        });
+        if (maintained) orientationMap.syncUserProjectIndex(safeInput.projectRoot, maintained);
+      }
+    } catch { /* el Mapa nunca tumba el cierre */ }
     if (announcement && out && typeof out === "object") {
       out.modeAnnouncement = announcement;
       if (typeof out.text === "string" && out.text.trim() && !out.text.includes(announcement)) {
@@ -1783,6 +1950,33 @@ class ChatOrchestrator {
     }
     // [/EDITCORE-SPECIALIST]
 
+    // [EDITCORE-V510-B6] DIRECTOR: autodetección de descomposición al
+    // abrir el turno. Si la tarea nombra o implica ≥2 zonas/archivos
+    // independientes, la directiva de despacho entra en el contexto
+    // del turno (los _turnExtras que runModelTask consume) y queda
+    // asentada en los steps; la red de seguridad del bucle empuja una
+    // vez si el turno avanza sin delegar ni justificar.
+    this._decomposeDirective = null;
+    this._decomposeDirectiveText = null;
+    try {
+      if (decision.kind === "EXECUTE") {
+        const det = detectDecomposableTask(`${text || ""} ${effectiveText || ""}`);
+        if (det.decomposable) {
+          this._decomposeDirective = det;
+          // La directiva NO viaja en los _turnExtras: el presupuesto
+          // de contexto del turno puede podar los bloques NORMAL y
+          // perderla. runModelTask la anexa al mensaje del turno ya
+          // ensamblado, donde no compite con el presupuesto.
+          this._decomposeDirectiveText = [
+            "=== DIRECTOR MULTIAGENTE (harness) ===",
+            `Esta tarea se descompone en frentes independientes (${[...det.zones, ...det.files].join(", ")}). El número de subagentes ya no tiene tope fijo: manda el presupuesto del harness y que los ámbitos no se pisen.`,
+            "Despacha con delegate_parallel los frentes independientes: explorer/analyst para mapear y analizar en paralelo; el rol writer SOLO con target exclusivo por tarea y ámbitos disjuntos (las tareas que se pisan se rechazan solas con nota). Tú integras los resultados y cierras; los informes vuelven destilados a la memoria compartida. Si decides NO delegar, justifícalo en tu cierre.",
+            "=== FIN DIRECTOR ===",
+          ].join("\n");
+        }
+      }
+    } catch { /* la detección nunca tumba el turno */ }
+
     if (decision.kind === "CHAT") {
       this.pendingTask = null;
       if (!apiKey) return { kind: "CHAT", text: "EditCoreAI es un IDE con agente autónomo. Abrí un proyecto y pedime un cambio concreto." };
@@ -2015,7 +2209,13 @@ class ChatOrchestrator {
           Promise.resolve(helpers.brainRemember(projectRoot, {
             title: "Turno del agente",
             type: "session",
-            content: `Pedido: ${String(text || "").slice(0, 300)}\nResultado: ${String(out.text).slice(0, 1200)}`,
+            // [EDITCORE-V510-B5] DESTILADO, no relato: el Cerebro
+            // guarda los HECHOS del turno (qué se aplicó, qué se
+            // verificó, qué falló) extraídos de sus pasos por el
+            // destilador — no la copia de la prosa de cierre. Es lo
+            // que el próximo turno, el conserje y los subagentes leen
+            // desde la memoria compartida.
+            content: subagentDistill.distillTurnForBrain({ userText: text, steps: out.steps, finalText: out.text }),
           })).catch(() => {});
         }
       } catch { /* recordar nunca bloquea el cierre */ }
@@ -2168,6 +2368,10 @@ class ChatOrchestrator {
     let looseHtmlBlocks = 0;
     let connNudges = 0;
     let narrationRetries = 0;
+    // [EDITCORE-V510-B2/B6] Empujones de los guardianes nuevos:
+    // respuesta sustantiva (B2) y red del director (B6).
+    let substantiveNudges = 0;
+    let decomposeNudges = 0;
 
     const toolHistory = new Map();
     // [EDITCORE-V491-C] Llamadas cortadas por needsAuthorization en
@@ -2301,7 +2505,25 @@ class ChatOrchestrator {
         ensureCoreProjectBrain(projectRoot);
       } catch { /* no bloquear turno */ }
     }
-    if (!listOnlyMode) pushTurnContext(CTX_TIER_NORMAL, buildBrainContextBlock(projectRoot, this._currentUserText || message));
+    // [EDITCORE-V510-B5-MAPA] EL MAPA entra como contexto permanente
+    // en tier ESENCIAL (capa usuario + capa del proyecto abierto):
+    // es el destilado vigente que orienta el turno — también lo ven
+    // el conserje (su bloque de memoria compartida lo abre) y la
+    // evaluación del director (viaja en este mismo contexto). El
+    // bloque del expediente se DEDUPLICA contra el Mapa: lo que el
+    // Mapa ya trae en su forma vigente no se paga dos veces.
+    let mapBlock = "";
+    if (!listOnlyMode && projectRoot && !projectless) {
+      try { mapBlock = orientationMap.buildMapBlock(projectRoot); } catch { mapBlock = ""; }
+      if (mapBlock) pushTurnContext(CTX_TIER_ESSENTIAL, mapBlock);
+    }
+    if (!listOnlyMode) {
+      let brainBlock = buildBrainContextBlock(projectRoot, this._currentUserText || message);
+      if (brainBlock && mapBlock) {
+        try { brainBlock = orientationMap.dedupeDossierAgainstMap(brainBlock, mapBlock); } catch { /* sin deduplicar, nunca roto */ }
+      }
+      pushTurnContext(CTX_TIER_NORMAL, brainBlock);
+    }
     if (!listOnlyMode && !chatOnly) {
       const cerebroBlock = await buildCerebroServiceBlock(projectRoot, this._currentUserText || message, helpers);
       if (cerebroBlock) {
@@ -2383,6 +2605,17 @@ class ChatOrchestrator {
     // Fase A, corregido aquí porque la compactación append-only
     // necesita la sustitución real).
     let messages = threadCore.buildMessageList({ system, systemPrefix: listOnlyMode ? "" : SELF_KNOWLEDGE_PROMPT, turnContext: applyTurnContextBudget(turnContext), userText, projectRoot, threadId, historyInput, query: String(this._currentUserText || message || ""), images: taskImages });
+    // [EDITCORE-V510-B6] La directiva del director (si la detección de
+    // _handleCore marcó el turno descomponible) se anexa AQUÍ, al
+    // mensaje del turno ya ensamblado: es una orden del harness y no
+    // puede perderse en la poda del presupuesto de contexto.
+    if (this._decomposeDirectiveText) {
+      const lastMsg = messages[messages.length - 1];
+      if (lastMsg && lastMsg.role === "user" && typeof lastMsg.content === "string") {
+        lastMsg.content += `\n\n${this._decomposeDirectiveText}`;
+      }
+      this._decomposeDirectiveText = null;
+    }
     // [EDITCORE-V500-A2] El mensaje del usuario TAL CUAL se envía
     // (ya ensamblado, con la hora y el contexto del turno): al cerrar,
     // rememberExchange lo guarda en el registro verbatim y el turno
@@ -2406,7 +2639,7 @@ class ChatOrchestrator {
     const runMutations = [];
     const chatMode = Boolean(chatOnly || decision?.kind === "CHAT");
     const stepsLimit = Math.max(1, Number(maxSteps) || (chatMode ? CHAT_MAX_STEPS : (fullAccess ? AUTHORIZED_MAX_STEPS : DEFAULT_MAX_STEPS)));
-    const totalUsage = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0, cache_read_input_tokens: 0, cache_creation_input_tokens: 0, cache_write_input_tokens: 0, cachedInputTokens: 0, provider_cache_read_tokens: 0, cached_input_tokens: 0, provider_calls: 0, local_cache_hits: 0, local_cache_saved_estimated_tokens: 0, local_cache_saved_confirmed_tokens: 0, identical_write_noops: 0, small_diff_full_writes: 0 };
+    const totalUsage = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0, cache_read_input_tokens: 0, cache_creation_input_tokens: 0, cache_write_input_tokens: 0, cachedInputTokens: 0, provider_cache_read_tokens: 0, cached_input_tokens: 0, provider_calls: 0, local_cache_hits: 0, local_cache_saved_estimated_tokens: 0, local_cache_saved_confirmed_tokens: 0, identical_write_noops: 0, small_diff_full_writes: 0, /* [EDITCORE-V510-B4] */ applied_step_tokens: 0, idle_step_tokens: 0 };
     // [EDITCORE-V500-A5] Un acierto del dedupe local se declara en las
     // métricas del turno con los nombres que el recibo ya sabe leer
     // («cache local · N tokens evitados»): tokens evitados confirmados
@@ -2437,6 +2670,52 @@ class ChatOrchestrator {
       if (input || output) totalUsage.provider_calls += 1;
     };
 
+    // [EDITCORE-V510-B4] Libro de avance del turno (dueño: el
+    // harness). Cada iteración del bucle se asienta al abrir la
+    // siguiente (o antes del cierre): APLICADA si entre sus pasos
+    // hubo escritura con éxito o verificación aprobada; VUELTA en
+    // caso contrario, con los tokens que costó. El recibo lee los
+    // dos contadores de totalUsage (aplicados / en vueltas).
+    const progressBook = tokenHarness.createProgressBook();
+    let iterStartSteps = 0;
+    let iterStartTokens = 0;
+    const settleIteration = () => {
+      const fresh = steps.slice(iterStartSteps);
+      const tokenDelta = Math.max(0, totalUsage.total_tokens - iterStartTokens);
+      if (!fresh.length && tokenDelta === 0) return; // doble asiento: nada pasó
+      const applied = fresh.some((s) => s && s.ok !== false && (
+        ((s.name === "write_file" || s.name === "replace_in_file" || s.name === "scaffold_project") && s.result?.ok !== false && !s.result?.unchanged)
+        || (s.name === "invoke_subagent" && Array.isArray(s.result?.applied) && s.result.applied.some((p) => p?.ok === true && p?.planned !== true))
+        || (s.name === "capture_preview_screenshot" && s.result?.renderOk === true)
+        || (s.name === "delegate_parallel" && Number(s.result?.appliedCount || 0) > 0)
+      ));
+      tokenHarness.noteStepOutcome(progressBook, { applied, tokens: tokenDelta });
+      if (applied) totalUsage.applied_step_tokens += tokenDelta;
+      else totalUsage.idle_step_tokens += tokenDelta;
+      iterStartSteps = steps.length;
+      iterStartTokens = totalUsage.total_tokens;
+    };
+
+    // [EDITCORE-V510-B6] La detección del director (al abrir el
+    // turno, en _handleCore) se consume aquí: queda asentada en los
+    // steps del turno y arma la red de seguridad del bucle.
+    const decomposeDirective = (!chatOnly && decision?.kind === "EXECUTE") ? (this._decomposeDirective || null) : null;
+    this._decomposeDirective = null;
+    if (decomposeDirective) {
+      steps.push({
+        name: "director_dispatch",
+        input: { zones: decomposeDirective.zones, files: decomposeDirective.files },
+        result: { decomposable: true, zones: decomposeDirective.zones, files: decomposeDirective.files, governance: "presupuesto del harness + ámbitos disjuntos (sin tope numérico)" },
+        ok: true,
+      });
+      iterStartSteps = steps.length; // el marcador no es una iteración del bucle
+    }
+    // [EDITCORE-V510-B4] Latido del lote de herramientas (el de la
+    // llamada al modelo se apaga al volver el paso): vive en esta
+    // variable para que el finally del turno lo apague siempre,
+    // también en los retornos a mitad de lote.
+    let toolsHeartbeat = null;
+
     const routed = pickModel({ requested: model, kind: decision?.kind || "CHAT", hasTools: !(chatOnly || decision?.kind === "CHAT") });
     const routedModel = String(routed.model || model || "").trim();
     const rememberOut = (textOut, extra = {}) => {
@@ -2463,6 +2742,9 @@ class ChatOrchestrator {
 
     try {
       for (let i = 0; i < stepsLimit; i++) {
+        // [EDITCORE-V510-B4] Se asienta la iteración anterior en el
+        // libro de avance antes de cualquier chequeo de cabecera.
+        settleIteration();
         if (Date.now() > deadline) {
           this.session.kill();
           const partial = formatAgentVisibleText("## ⏱️ Tiempo agotado\n\nSe agotó el tiempo límite de este turno y la tarea **no está terminada**. Avance parcial registrado: escribe **continúa** y sigo donde quedé.");
@@ -2472,6 +2754,26 @@ class ChatOrchestrator {
         if (!this.session.alive) {
           rememberOut("Detenido."); detachLongRunningStreams(steps);
           return { kind: "STOP", text: "Detenido.", steps, threadId, usage: totalUsage };
+        }
+        // [EDITCORE-V510-B4] GUARDIÁN DE AVANCE: superados los
+        // umbrales declarados del harness (pasos o minutos sin
+        // aplicar), primero se exige la RENDICIÓN (empujón con la
+        // cuenta); si el turno SIGUE sin aplicar tras rendir, se
+        // cierra con la rendición determinista desde el libro. Un
+        // turno ya no quema 20 minutos ni cobra en silencio.
+        if (!chatMode && !analysisMode && i < stepsLimit - 1) {
+          const stall = tokenHarness.progressStall(progressBook);
+          if (stall.stalled) {
+            if (progressBook.renditions >= 1) {
+              this.session.kill();
+              const rendition = formatAgentVisibleText(progressRenditionText(stall, steps, totalUsage));
+              rememberOut(rendition); detachLongRunningStreams(steps);
+              return { kind: decision?.kind || "EXECUTE", text: rendition, steps, incomplete: true, progressStalled: true, threadId, usage: totalUsage };
+            }
+            tokenHarness.markProgressRendition(progressBook);
+            messages.push({ role: "user", content: `RENDICIÓN DE AVANCE (harness de tokens): llevas ${stall.stepsSinceApplied} paso(s) sin APLICAR nada (${stall.tokensIdle} tokens en vueltas; aplicados: ${stall.stepsApplied} paso(s), ${stall.tokensApplied} tokens). Rinde cuentas en tu próximo paso y ACTÚA: si la tarea puede avanzar, aplica ahora el cambio con las herramientas de escritura; si está bloqueada, declara el bloqueo con su causa exacta y qué necesitas. Seguir explorando sin aplicar no es una opción.` });
+            onProgress?.({ phase: "model", text: "Guardián de avance: demasiado sin aplicar — exigiendo rendición de cuentas" });
+          }
         }
 
         const availableTools = projectless
@@ -2506,7 +2808,25 @@ class ChatOrchestrator {
         this.turnAbort = new AbortController();
         const turnSignal = (typeof AbortSignal.any === "function" && this.abort?.signal) ? AbortSignal.any([this.abort.signal, this.turnAbort.signal]) : (this.turnAbort.signal || this.abort?.signal);
 
-        const hb = setInterval(() => { try { onProgress?.({ phase: "heartbeat", text: "Procesando…" }); } catch {} }, HEARTBEAT_INTERVAL_MS);
+        // [EDITCORE-V510-B4] El latido nombra el paso EN CURSO cuando
+        // supera el umbral de espera declarado del harness (qué
+        // espera y cuánto lleva): un paso colgado ya no dura 20
+        // minutos en silencio — el vigilante confiesa qué está
+        // esperando y desde cuándo. El aviso de espera se repite como
+        // mucho cada 30 s; el resto del tiempo, el latido de siempre.
+        tokenHarness.noteStepStart(progressBook, `paso ${i + 1} · llamada al modelo`);
+        let lastWaitNoticeAt = 0;
+        const hb = setInterval(() => {
+          try {
+            const wait = tokenHarness.currentStepWait(progressBook);
+            if (wait && Date.now() - lastWaitNoticeAt >= 30_000) {
+              lastWaitNoticeAt = Date.now();
+              onProgress?.({ phase: "heartbeat", text: `Sigo en ${wait.name}: lleva ${Math.max(1, Math.round(wait.waitedMs / 1000))} s en curso y todavía no volvió…` });
+              return;
+            }
+            onProgress?.({ phase: "heartbeat", text: "Procesando…" });
+          } catch {}
+        }, HEARTBEAT_INTERVAL_MS);
 
         // Inyectar direcciones/consultas pendientes del usuario antes del turno del modelo
         if (Array.isArray(this.steering) && this.steering.length > 0) {
@@ -2575,6 +2895,7 @@ class ChatOrchestrator {
         let turn = cachedTurn || null;
         if (turn) {
           clearInterval(hb); this.turnAbort = null;
+          tokenHarness.noteStepEnd(progressBook); // [EDITCORE-V510-B4]
           noteCacheHit(turn);
           try { onProgress?.({ phase: "heartbeat", text: "Respuesta servida de la caché local: sin nueva llamada al proveedor." }); } catch { /* ignore */ }
         } else try {
@@ -2652,6 +2973,7 @@ class ChatOrchestrator {
           clearInterval(hb); this.turnAbort = null;
         }
         addUsage(turn?.usage || {});
+        tokenHarness.noteStepEnd(progressBook); // [EDITCORE-V510-B4] la llamada al modelo volvió (o cayó): el paso en curso termina aquí
         // [EDITCORE-INTEGRAL-B6] Paso parcial (stream cortado): queda
         // registrado y el cierre lo declara; no se presenta completo.
         if (turn?.partial === true) turnWasPartial = true;
@@ -2678,6 +3000,24 @@ class ChatOrchestrator {
         try { retireJudgedCaptureImages(messages, cleanText); } catch { /* ignore */ }
 
         if (!toolCalls.length) {
+          // [EDITCORE-V510-B2] GUARDIÁN DE RESPUESTA SUSTANTIVA: si el
+          // texto final es vacío o consiste SOLO en líneas de
+          // narración de acciones (el caso real «Listo la carpeta.»
+          // ante la pregunta consultiva «¿qué podemos mejorar?»), no
+          // es una respuesta y el turno NO cierra así: se devuelve
+          // UNA vez con orden de síntesis SIN herramientas. Si aun
+          // así cierra igual, el ensamblado final deja la constancia
+          // determinista desde los hechos (substantiveFallbackText),
+          // junto al banner anti-confabulación.
+          if (!listOnlyMode && !analysisMode && substantiveNudges < 1 && i < stepsLimit - 1
+            && isNarrationOnlyText(cleanText)) {
+            substantiveNudges += 1;
+            messages.push({ role: "assistant", content: cleanText || null });
+            messages.push({ role: "user", content: "Tu cierre no es una respuesta: es solo la narración de tus acciones (o está vacío) y el usuario se queda sin saber el resultado. Responde AHORA con la síntesis de este turno, SIN herramientas: lo que encontraste o lo que quedó hecho, con los datos concretos que ya tienes (archivos, líneas, valores) — no el relato de tus pasos." });
+            onProgress?.({ phase: "model", text: "Cierre sin respuesta sustantiva: pidiendo la síntesis del turno" });
+            continue;
+          }
+
           // NARRACIÓN COMO RESPUESTA, también en modo CHAT: si TODO el turno
           // es "sigue leyendo… / voy a revisar…" sin herramientas, no es una
           // respuesta, es el modelo narrando a mitad de tarea (pasa cuando el
@@ -2796,6 +3136,21 @@ class ChatOrchestrator {
             continue;
           }
 
+          // [EDITCORE-V510-B6] RED DEL DIRECTOR (patrón planClose): la
+          // tarea se marcó DESCOMPONIBLE al abrir el turno y el modelo
+          // intenta cerrar sin haber delegado ni justificado: empujón
+          // único a despachar los frentes o a justificar la serie.
+          const decomposeStalled = decomposeDirective && !chatOnly && decision?.kind !== "CHAT" && !listOnlyMode && !analysisMode && !projectless
+            && decomposeNudges < 1 && i >= 2 && i < stepsLimit - 1
+            && !steps.some((s) => s.name === "delegate_parallel" || s.name === "invoke_subagent");
+          if (decomposeStalled) {
+            decomposeNudges += 1;
+            messages.push({ role: "assistant", content: cleanText || null });
+            messages.push({ role: "user", content: `DIRECTOR: esta tarea se descompone en frentes independientes (${[...decomposeDirective.zones, ...decomposeDirective.files].join(", ")}) y vas a cerrar sin delegar. Delega AHORA con delegate_parallel los frentes que no se pisan (explorer/analyst en paralelo; writer solo con target exclusivo y ámbitos disjuntos), o cierra justificando por qué la ejecutas en serie.` });
+            onProgress?.({ phase: "model", text: "Director: tarea descomponible sin delegar — empujando a despachar subagentes" });
+            continue;
+          }
+
           // [EDITCORE-PRESENCIA] Cierre propositivo (regla de producto de
           // Luis, 2026-11-10): un turno de Agente NO puede cerrar «mocho» —
           // ni en plan narrado ni en reporte pelado — cuando el pedido
@@ -2810,11 +3165,14 @@ class ChatOrchestrator {
           //  (b) autorizado: proponer el siguiente paso con nombre propio
           //      (las compuertas de aplicación ya empujaron a ejecutar;
           //      esta es la red final del cierre).
+          // [EDITCORE-V510-B3] GENERALIZADA: ya no exige cero
+          // escrituras ni intención de mutación — TODO turno de tarea
+          // cierra con propuesta concreta o declaración de término
+          // (closingHasProposalOrTerminus), haya escrito o no.
           const closingBare = !chatOnly && decision?.kind !== "CHAT" && !listOnlyMode && !analysisMode && !projectless
             && closingNudges < MAX_CLOSE_NUDGES && i < stepsLimit - 1
-            && successfulWritePaths(steps).length === 0
             && cleanText.trim().length >= 60
-            && !/(?:¿[^?]*\?|\bprocede\b|\bautoriz|\bpropongo\b|siguiente paso|¿quieres|¿puedo|¿sigo)/i.test(cleanText.slice(-600));
+            && !closingHasProposalOrTerminus(cleanText);
           if (closingBare) {
             const userTextForIntent = `${this._currentUserText || ""} ${message || ""}`;
             // [EDITCORE-CONSOLIDADA] Léxico centralizado (hasMutationIntent):
@@ -2829,13 +3187,14 @@ class ChatOrchestrator {
               onProgress?.({ phase: "model", text: "Cierre sin propuesta: pidiendo que presente el arreglo y pida autorización" });
               continue;
             }
-            if (mutationIntent) {
-              closingNudges += 1;
-              messages.push({ role: "assistant", content: cleanText || null });
-              messages.push({ role: "user", content: "No cierres «mocho»: tu cierre debe traer el resultado Y una propuesta concreta del siguiente paso (qué harías ahora, en qué archivos y para qué), o la pregunta exacta que necesitas que el usuario responda. Un usuario que va empezando debe saber qué sigue con solo leerte." });
-              onProgress?.({ phase: "model", text: "Cierre sin propuesta: pidiendo cierre propositivo" });
-              continue;
-            }
+            // [EDITCORE-V510-B3] Sin la condición de intención de
+            // mutación: con o sin escrituras, el cierre pelado se
+            // devuelve UNA vez pidiendo propuesta o término.
+            closingNudges += 1;
+            messages.push({ role: "assistant", content: cleanText || null });
+            messages.push({ role: "user", content: "No cierres «mocho»: todo turno de tarea cierra con (a) una PROPUESTA concreta del siguiente paso — qué harías ahora, en qué archivos y para qué — o (b) la DECLARACIÓN explícita de término («doy por terminado X porque Y»). Reescribe tu cierre con el resultado de este turno MÁS la propuesta o la declaración, con nombre propio. Un usuario que va empezando debe saber qué sigue con solo leerte." });
+            onProgress?.({ phase: "model", text: "Cierre sin propuesta ni término declarado: pidiendo cierre propositivo" });
+            continue;
           }
 
           // [EDITCORE-REVISION-VISUAL] Compuerta de cierre: en un turno
@@ -2879,6 +3238,7 @@ class ChatOrchestrator {
             continue;
           }
 
+          settleIteration(); // [EDITCORE-V510-B4] la última iteración también se asienta en el libro
           this.session.kill();
           const written = successfulWritePaths(steps);
           let textOut = cleanText;
@@ -2907,6 +3267,13 @@ class ChatOrchestrator {
               const lista = written.map((p) => `- \`${p}\``).join("\n");
               textOut = `## ✅ Cambios aplicados\n\n${head}Archivos actualizados:\n\n${lista}\n\n${nextStepsClosingText(projectRoot, written, steps)}`;
             }
+          } else if (isNarrationOnlyText(cleanText) && !analysisMode) {
+            // [EDITCORE-V510-B2] Respaldo determinista: ni con el
+            // empujón hubo respuesta sustantiva — constancia desde
+            // los HECHOS, declarada como del kernel (junto a la
+            // guarda anti-confabulación de más abajo, mismo espíritu:
+            // lo que el kernel sabe, el usuario lo lee).
+            textOut = substantiveFallbackText(steps, written);
           } else {
             textOut = groundUngroundedClaims(cleanText, steps, message, decision, Number(opts.evidenceReads) || 0);
           }
@@ -2997,12 +3364,16 @@ class ChatOrchestrator {
             if (memoryBanner) textOut = `${memoryBanner}\n\n${String(textOut || "").trim()}`;
           }
 
+          // [EDITCORE-V510-B7] El veredicto REAL de la verificación
+          // de este cierre se captura en la caja: la red de agentes
+          // se alimenta de él, no de un «true» fijo.
+          const verdictBox = { value: null };
           if (written.length > 0) {
             textOut = await this.appendBeforeAfter(projectRoot, written, textOut, onProgress);
             try {
               const verifyReports = await runPostWriteVerify(projectRoot, written, onProgress, { signal: this.abort?.signal || null }); // [EDITCORE-INTEGRAL-B6]
               textOut = String(textOut || "") + formatVerifyBlock(verifyReports);
-              textOut = await appendRealVerification(projectRoot, written, steps, textOut, onProgress, { repairTask: this._repairTask === true, previewUrl: this._activePreviewUrl || "", signal: this.abort?.signal || null }); // [EDITCORE-INTEGRAL-B6]
+              textOut = await appendRealVerification(projectRoot, written, steps, textOut, onProgress, { repairTask: this._repairTask === true, previewUrl: this._activePreviewUrl || "", signal: this.abort?.signal || null, verdictBox }); // [EDITCORE-INTEGRAL-B6] + [EDITCORE-V510-B7]
             } catch (_) { /* verify no debe tumbar el turno */ }
           }
           // [EDITCORE-INTEGRAL-B6] Cierre con parcial DECLARADO: si
@@ -3014,10 +3385,15 @@ class ChatOrchestrator {
           textOut = formatAgentVisibleText(textOut);
           persistKernelRoadmap(projectRoot, { task: this._currentUserText || message, steps, kind: decision?.kind, text: textOut, completed: true });
           rememberOut(textOut); detachLongRunningStreams(steps);
-          // [EDITCORE-ADD] Feedback de éxito a la red neuronal.
+          // [EDITCORE-ADD] Feedback a la red neuronal.
+          // [EDITCORE-V510-B7] Con el veredicto REAL de la
+          // verificación: si la verificación real concluyente falló,
+          // la red registra FRACASO aunque el relato del modelo suene
+          // a éxito; si pasó, éxito; sin verificación concluyente,
+          // manda si el turno cerró completo o parcial.
           try {
             if (agentNetwork && this._ecRoutedAgent && typeof agentNetwork.recordOutcome === "function") {
-              agentNetwork.recordOutcome(this._ecRoutedAgent, true);
+              agentNetwork.recordOutcome(this._ecRoutedAgent, verdictBox.value === null ? !turnWasPartial : verdictBox.value);
             }
           } catch (_) {}
           // [/EDITCORE-ADD]
@@ -3030,6 +3406,23 @@ class ChatOrchestrator {
           rememberOut("Detenido."); detachLongRunningStreams(steps);
           return { kind: "STOP", text: "Detenido.", steps, threadId, usage: totalUsage };
         }
+
+        // [EDITCORE-V510-B4] Latido del LOTE de herramientas: nombra
+        // la herramienta EN CURSO cuando supera el umbral de espera
+        // (una herramienta colgada tampoco dura en silencio).
+        tokenHarness.noteStepStart(progressBook, `herramientas del paso ${i + 1}`);
+        let lastToolWaitNoticeAt = 0;
+        toolsHeartbeat = setInterval(() => {
+          try {
+            const wait = tokenHarness.currentStepWait(progressBook);
+            if (wait && Date.now() - lastToolWaitNoticeAt >= 30_000) {
+              lastToolWaitNoticeAt = Date.now();
+              onProgress?.({ phase: "heartbeat", text: `Sigo en ${wait.name}: lleva ${Math.max(1, Math.round(wait.waitedMs / 1000))} s en curso y todavía no volvió…` });
+              return;
+            }
+            onProgress?.({ phase: "heartbeat", text: "Procesando…" });
+          } catch {}
+        }, HEARTBEAT_INTERVAL_MS);
 
         for (const call of toolCalls) {
           const name = call.function?.name;
@@ -3260,6 +3653,7 @@ class ChatOrchestrator {
               externalActionApproved: accessFull || (helpers && helpers.externalActionApproved === true),
               permissionMode: accessFull ? "full" : (permissionMode || helpers?.permissionMode || "step"),
             };
+            tokenHarness.noteStepStart(progressBook, name); // [EDITCORE-V510-B4] el latido nombra ESTA herramienta
             result = await tools.execute(name, args, projectRoot, allowWrite, effectiveHelpers);
           }
 
@@ -3423,6 +3817,11 @@ class ChatOrchestrator {
           messages.push({ role: "tool", tool_call_id: call.id, name, content: tools.truncatePayload(result || {}, name === "read_file" ? tools.READ_FILE_PAYLOAD_CAP : undefined, name) });
         }
 
+        // [EDITCORE-V510-B4] Lote cerrado: el latido de herramientas
+        // se apaga y el paso en curso se da por terminado.
+        if (toolsHeartbeat) { clearInterval(toolsHeartbeat); toolsHeartbeat = null; }
+        tokenHarness.noteStepEnd(progressBook);
+
         // [EDITCORE-V491-A] Cerrado el lote de herramientas (los
         // mensajes tool ya quedaron en su sitio, pegados a su
         // assistant), las capturas del lote se adjuntan como UN mensaje
@@ -3511,6 +3910,8 @@ class ChatOrchestrator {
       } catch (_) {}
       return { kind: "ERROR", error: safeMsg, text: errText, steps, threadId, usage: totalUsage };
     } finally {
+      // [EDITCORE-V510-B4] Ningún latido sobrevive al turno.
+      if (toolsHeartbeat) { clearInterval(toolsHeartbeat); toolsHeartbeat = null; }
       this.running = false; this.turnAbort = null;
       // [EDITCORE-V500-A] Métricas de ESCRITURA JUSTA del turno: el
       // delta de los contadores del harness (dueño único) desde la
@@ -3528,4 +3929,4 @@ class ChatOrchestrator {
   }
 }
 
-module.exports = { ChatOrchestrator, SKILL_IDS, taskQueue, groundUngroundedClaims, successfulDiskReads, hasMutationIntent, buildKernelFactSummary, auditSubagentSteps, runPostWriteVerify, formatVerifyBlock, applyTurnContextBudget, TURN_CONTEXT_MAX_CHARS, TURN_CONTEXT_TRUNCATION_MARKER, CTX_TIER_ESSENTIAL, CTX_TIER_NORMAL, CTX_TIER_ACCESSORY, /* [EDITCORE-INTEGRAL-B3] */ appendRealVerification, /* [EDITCORE-INTEGRAL-B5] */ normalizePermissionMode, buildModeAnnouncement, /* [EDITCORE-INTEGRAL-B6] */ raceSemanticBlock, SEMANTIC_MEMORY_TIMEOUT_MS, runRealVerification, /* [EDITCORE-INTEGRAL-B8] */ formatExternalActionResult, /* [EDITCORE-INTEGRAL-B9] */ buildCerebroServiceBlock, buildBrainContextBlock, /* [EDITCORE-V492-3] */ detectMemoryEventQuestion, memoryEventInDossier, memoryAnswerAffirmsEvent, memoryEventGuardBanner, MEMORY_EVENT_PROTOCOL };
+module.exports = { ChatOrchestrator, SKILL_IDS, taskQueue, groundUngroundedClaims, successfulDiskReads, hasMutationIntent, buildKernelFactSummary, auditSubagentSteps, runPostWriteVerify, formatVerifyBlock, applyTurnContextBudget, TURN_CONTEXT_MAX_CHARS, TURN_CONTEXT_TRUNCATION_MARKER, CTX_TIER_ESSENTIAL, CTX_TIER_NORMAL, CTX_TIER_ACCESSORY, /* [EDITCORE-INTEGRAL-B3] */ appendRealVerification, /* [EDITCORE-INTEGRAL-B5] */ normalizePermissionMode, buildModeAnnouncement, /* [EDITCORE-INTEGRAL-B6] */ raceSemanticBlock, SEMANTIC_MEMORY_TIMEOUT_MS, runRealVerification, /* [EDITCORE-INTEGRAL-B8] */ formatExternalActionResult, /* [EDITCORE-INTEGRAL-B9] */ buildCerebroServiceBlock, buildBrainContextBlock, /* [EDITCORE-V492-3] */ detectMemoryEventQuestion, memoryEventInDossier, memoryAnswerAffirmsEvent, memoryEventGuardBanner, MEMORY_EVENT_PROTOCOL, /* [EDITCORE-V510-B2/B3/B4/B6] */ isNarrationOnlyText, closingHasProposalOrTerminus, substantiveFallbackText, progressRenditionText, detectDecomposableTask };

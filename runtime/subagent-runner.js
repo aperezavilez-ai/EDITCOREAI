@@ -85,8 +85,17 @@ async function runParallelExplore(projectRoot, input = {}, { brain = null } = {}
 
 async function runSubagent(projectRoot, input = {}, ctx = {}) {
   const role = String(input.role || "explorer").toLowerCase();
+  // [EDITCORE-V510-B5] Memoria compartida RECIBIDA al despacharse: el
+  // bloque (expediente + Cerebro + Mapa) viaja en el input o en el
+  // ctx y el implementer lo lleva en el contexto de su tarea; el
+  // resultado declara si la recibió (sharedMemory) para que el
+  // despacho y las pruebas puedan verificar la ida.
+  const sharedMemory = String(ctx?.memoryContext || input?.memoryContext || "");
   if (role === "implementer" || role === "writer") {
-    const res = await runBoundedImplement(projectRoot, input, ctx);
+    const taskText = String(input.task || input.goal || input.query || "");
+    const res = await runBoundedImplement(projectRoot, sharedMemory
+      ? { ...input, task: `${taskText}\n\n[Memoria compartida del proyecto — expediente, Cerebro y Mapa]\n${sharedMemory.slice(0, 2400)}` }
+      : input, ctx);
     if (projectRoot && res && res.ok && Array.isArray(res.applied)) {
       try {
         const writtenFiles = res.applied.filter((p) => p.ok).map((p) => p.path);
@@ -98,13 +107,14 @@ async function runSubagent(projectRoot, input = {}, ctx = {}) {
         });
       } catch {}
     }
-    return res;
+    return { ...res, sharedMemory: Boolean(sharedMemory) };
   }
-  return runParallelExplore(projectRoot, {
+  const explored = await runParallelExplore(projectRoot, {
     query: input.query || input.goal || input.task,
     includeGithub: input.includeGithub === true,
     githubQuery: input.githubQuery || "",
   }, ctx);
+  return { ...explored, sharedMemory: Boolean(sharedMemory) };
 }
 
 module.exports = { runParallelExplore, runSubagent, runBoundedImplement };

@@ -3378,7 +3378,16 @@ function usageMetaText(usage) {
     const peak = Number(usage?.peak_request_input_tokens_estimate || 0);
     const compacted = Number(usage?.context_compaction_count || 0);
     const total = Number(usage?.total_tokens || 0) || (confirmedInput + confirmedOutput);
-    return `↑${confirmedInput} ↓${confirmedOutput} tokens · cache proveedor leído ${providerCache} · escrito ${providerCacheWrite} · entrada neta aprox. ${netInput} · total ${total}${calls ? ` · ${calls} llamada(s)` : ""}${peak ? ` · pico contexto est. ${peak}` : ""}${compacted ? ` · contexto compactado ${compacted} vez/veces` : ""}${modelBit}`;
+    // [EDITCORE-V510-B4] El recibo distingue tokens EN PASOS
+    // APLICADOS de tokens EN VUELTAS (regla dura de Luis: nada de
+    // «consume y cobra sin aplicar» invisible). Viaja en el MISMO
+    // texto de métricas de siempre: ninguna línea-recibo nueva.
+    const appliedTokens = Number(usage?.applied_step_tokens || 0);
+    const idleTokens = Number(usage?.idle_step_tokens || 0);
+    const progressBit = (appliedTokens || idleTokens)
+      ? ` · aplicados ${appliedTokens} · en vueltas ${idleTokens}`
+      : "";
+    return `↑${confirmedInput} ↓${confirmedOutput} tokens · cache proveedor leído ${providerCache} · escrito ${providerCacheWrite} · entrada neta aprox. ${netInput} · total ${total}${progressBit}${calls ? ` · ${calls} llamada(s)` : ""}${peak ? ` · pico contexto est. ${peak}` : ""}${compacted ? ` · contexto compactado ${compacted} vez/veces` : ""}${modelBit}`;
   }
   if (estimatedInput || estimatedOutput) {
     return `est. ↑${estimatedInput} ↓${estimatedOutput} tokens · medicion local${modelBit}`;

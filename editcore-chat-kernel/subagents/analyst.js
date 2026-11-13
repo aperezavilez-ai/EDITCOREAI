@@ -78,7 +78,7 @@ const SOURCE_DIRS = [
   "components", "pages", "routes", "handlers", "services",
 ];
 
-async function runAnalyst({ projectRoot, onProgress, maxReads = 14, userMessage = "", signal }) {
+async function runAnalyst({ projectRoot, onProgress, maxReads = 14, userMessage = "", signal, memoryContext = "" }) {
   if (signal?.aborted) {
     return { ok: false, aborted: true, report: "Análisis cancelado por el usuario.", steps: [] };
   }
@@ -198,6 +198,11 @@ async function runAnalyst({ projectRoot, onProgress, maxReads = 14, userMessage 
 
   const report = [
     "# Evidencia base del proyecto",
+    // [EDITCORE-V510-B5] Memoria compartida: el subagente RECIBE el
+    // expediente + Cerebro (y el Mapa) del proyecto al despacharse —
+    // analiza con el mismo conocimiento que el agente oficial, no
+    // desde cero.
+    memoryContext ? `## Memoria compartida (expediente + Cerebro + Mapa)\n${String(memoryContext).slice(0, 3200)}\n` : "",
     `- **Raíz**: ${projectRoot}`,
     `- **Archivos leídos**: ${readCount}`,
     `- **Carpetas de código detectadas**: ${presentSourceDirs.length ? presentSourceDirs.join(", ") : "(ninguna obvia)"}`,

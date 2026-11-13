@@ -262,7 +262,32 @@ async function runKernelChat({
         brain: true,
         kind: "QUEUED",
         incomplete: true,
+        // [EDITCORE-V510-B1b] El aviso de cola es texto de SISTEMA:
+        // su usage viaja marcado para que el recibo no estime ni un
+        // token de salida sobre él (el caso ↓75).
+        usage: out?.usage || { system_notice: true },
         report: { completed: false, role: "assistant", queued: true },
+      };
+    }
+
+    // [EDITCORE-V510-B1b] Entrada vencida FUNDIDA como steering: el
+    // mensaje no se ejecutó como turno propio porque ya lo atiende el
+    // turno en curso. Viaja como resultado informativo con su texto y
+    // usage de sistema (costo cero en el recibo).
+    if (out?.kind === "STEERED" || out?.steered) {
+      return {
+        ok: true,
+        steered: true,
+        text: String(out?.text || "Tu mensaje se fundió con el turno en curso."),
+        steps: [],
+        threadId: tid,
+        runId: rid,
+        kernel: true,
+        brain: true,
+        kind: "STEERED",
+        incomplete: false,
+        usage: out?.usage || { system_notice: true },
+        report: { completed: false, role: "assistant", steered: true },
       };
     }
 

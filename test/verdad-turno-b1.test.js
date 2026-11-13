@@ -40,9 +40,17 @@ test("B1-1 resumen del kernel: el cierre lleva el hunk REAL, no la exageración 
   fs.mkdirSync(path.join(root, "src", "components"), { recursive: true });
   fs.writeFileSync(path.join(root, "src", "components", "Hero.tsx"), "export function Hero() { return <div className=\"hero-overlay-radial\" />; }\n");
 
+  // ACTUALIZADO A PROPÓSITO (v5.1.0, pieza B3): el cierre propositivo
+  // mecánico generalizado devuelve TODO cierre de tarea sin propuesta
+  // ni declaración de término — el cierre exagerado original ya no
+  // llega intacto al ensamblado. El guion gana una tercera respuesta:
+  // el mismo relato exagerado PERO con la declaración de término que
+  // B3 exige; las aserciones de fondo no cambian (los hechos del
+  // kernel van antes que el relato y nombran el hunk real).
   const script = [
     { text: "", toolCalls: [toolCall("replace_in_file", { path: "src/components/Hero.tsx", oldText: "hero-overlay-radial", newText: "hero-overlay-linear-red" })], usage: {} },
     { text: "Listo: cambié el FONDO PRINCIPAL de toda la página por un degradado rojo espectacular y rediseñé la portada completa del sitio, de arriba abajo.", toolCalls: [], usage: {} },
+    { text: "Listo: cambié el FONDO PRINCIPAL de toda la página por un degradado rojo espectacular y rediseñé la portada completa del sitio, de arriba abajo. Doy por terminado el cambio del hero porque el ajuste quedó aplicado en el archivo.", toolCalls: [], usage: {} },
   ];
   const orch = new ChatOrchestrator();
   const out = await orch.runModelTask({

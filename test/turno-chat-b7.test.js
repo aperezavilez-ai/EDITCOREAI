@@ -66,9 +66,21 @@ test("B7-0: el plazo de cola declarado (120 s) es mucho menor que el plazo total
   assert.ok(QUEUE_TIMEOUT_MS < KERNEL_TIMEOUT_MS, "esperar en cola no consume el plazo de ejecución");
 });
 
-// ---------- (1) cola con plazo: el segundo no cuelga ni se ejecuta ----------
+// ---------- (1) cola con plazo: el segundo no cuelga ni se PIERDE ----------
 
-test("B7-1: primero bloqueado en el proveedor ⇒ el segundo resuelve con el resultado honesto de cola y el primero completa después", async () => {
+test("B7-1: primero bloqueado en el proveedor ⇒ la instrucción vencida se FUNDE como steering (v5.1.0: ya no se descarta) y el primero completa después", async () => {
+  // [EDITCORE-V510-B1b] ACTUALIZADO A PROPÓSITO: la versión anterior
+  // afirmaba el contrato del Bloque 7 original — al vencer el plazo,
+  // el segundo resolvía QUEUED y su mensaje se DESCARTABA. Ese es
+  // exactamente el descarte que Luis vivió en vivo (su mensaje
+  // caducó a los 120 s sin ejecutarse) y que la Fase B elimina por
+  // directiva suya: ningún mensaje caduca — se atiende (conserje),
+  // se funde como steering o espera declarado. Esta prueba conserva
+  // el esqueleto (primero bloqueado, segundo con plazo corto,
+  // primero intacto y completa después) y afirma el contrato nuevo:
+  // la instrucción vencida se funde en el turno en curso, con su
+  // identidad, sin llegar al proveedor como turno propio y con el
+  // aviso marcado como texto de sistema (costo cero).
   const gate = deferred();
   let firstCalls = 0;
   let secondCalls = 0;
@@ -92,7 +104,7 @@ test("B7-1: primero bloqueado en el proveedor ⇒ el segundo resuelve con el res
   const second = await handleChat({
     runId: "b7-t1-second",
     chatId: "chat-b",
-    message: CHAT_MSG,
+    message: "agrega también un pie de página con el año al final del sitio",
     projectRoot,
     apiBaseUrl: "https://proxy.example.test/v1",
     apiKey: "k",
@@ -106,14 +118,13 @@ test("B7-1: primero bloqueado en el proveedor ⇒ el segundo resuelve con el res
     },
   });
 
-  assert.equal(second.queued, true, "el segundo resolvió como EN COLA, no colgado ni ejecutado");
-  assert.equal(second.queueTimeout, true);
-  assert.equal(second.kind, "QUEUED");
-  assert.equal(second.runId, "b7-t1-second", "el resultado de cola lleva la identidad de SU corrida");
+  assert.equal(second.kind, "STEERED", "la instrucción vencida se fundió como steering, no se descartó");
+  assert.equal(second.steered, true);
+  assert.equal(second.runId, "b7-t1-second", "el resultado lleva la identidad de SU corrida");
   assert.equal(second.chatId, "chat-b");
-  assert.match(second.text, /sigue en cola/, "la burbuja del segundo dice la verdad: sigue en cola");
-  assert.match(second.text, /no se ejecutó/i);
-  assert.equal(secondCalls, 0, "el turno vencido en cola NUNCA llegó al proveedor");
+  assert.match(second.text, /se fundió con el turno en curso/, "la burbuja del segundo dice la verdad: su mensaje lo atiende el turno en curso");
+  assert.equal(second.usage?.system_notice, true, "el aviso es texto de SISTEMA: cero tokens estimados en el recibo");
+  assert.equal(secondCalls, 0, "el turno vencido NUNCA llegó al proveedor como turno propio");
   assert.equal(await pendingProbe(firstPromise), "pending", "el primero sigue intacto, corriendo");
 
   gate.resolve({ text: "Respuesta del primer turno.", toolCalls: [], usage: {} });

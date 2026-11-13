@@ -22,6 +22,33 @@ function providerCacheReadTokens(usage = {}) {
 
 function normalizeProviderUsage(rawUsage, estimatedInputTokens, outputText, estimateTokens) {
   const usage = rawUsage && typeof rawUsage === "object" ? rawUsage : {};
+  // [EDITCORE-V510-B1b] Texto de SISTEMA (avisos de cola, de fusión
+  // por steering, de proceso activo): no es salida del modelo y NO
+  // se estima ni un token sobre él. El caso real: el aviso de cola de
+  // 297 caracteres se asentaba como ↓75 tokens de «salida» sin que
+  // hubiera llamada alguna (297 ÷ 4 = 75). Regla de Luis: los avisos
+  // del sistema son etiquetas de interfaz con costo CERO.
+  if (usage.system_notice === true || usage.systemNotice === true) {
+    return {
+      ...usage,
+      prompt_tokens: 0,
+      completion_tokens: 0,
+      confirmed_input_tokens: 0,
+      confirmed_output_tokens: 0,
+      provider_cache_read_tokens: 0,
+      cached_input_tokens: 0,
+      reasoning_tokens: 0,
+      total_tokens: 0,
+      cost_usd: null,
+      cost_status: "UNKNOWN",
+      estimated_input_tokens: 0,
+      estimated_output_tokens: 0,
+      telemetry: "system",
+      confirmed: false,
+      estimated: false,
+      timestamp: usage.timestamp || new Date().toISOString(),
+    };
+  }
   const confirmedInput = firstUsageValue(usage, ["confirmed_input_tokens", "prompt_tokens", "input_tokens", "inputTokens", "promptTokenCount"]);
   const confirmedOutput = firstUsageValue(usage, ["confirmed_output_tokens", "completion_tokens", "output_tokens", "outputTokens", "candidatesTokenCount"]);
   const reasoningTokens = firstUsageValue(usage, ["reasoning_tokens", "reasoningTokens"])

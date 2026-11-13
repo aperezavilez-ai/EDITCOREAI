@@ -23,7 +23,13 @@ const orchestrator = fs.readFileSync(path.join(root, "editcore-chat-kernel", "or
 const implementer = fs.readFileSync(path.join(root, "editcore-chat-kernel", "subagents", "implementer.js"), "utf8");
 const toolsSource = fs.readFileSync(path.join(root, "editcore-chat-kernel", "tools.js"), "utf8");
 
-test("delegate_parallel valida roles, exige target/question y topa en 4", () => {
+test("delegate_parallel valida roles y exige target/question; SIN tope numérico de tareas (gobernanza v5.1.0)", () => {
+  // [EDITCORE-V510-B6] ACTUALIZADO A PROPÓSITO: la versión anterior
+  // afirmaba el tope de 4 tareas por llamada. La directiva de Luis
+  // (2026-11-12: «no solo 3, si no los que requiera») lo elimina: la
+  // gobernanza pasa a ser presupuesto del harness (oleadas) +
+  // colisiones de ámbito. MAX_DELEGATE_TASKS queda como tamaño de
+  // oleada por defecto, ya no como tope: las 5 tareas válidas pasan.
   const { tasks, notes } = validateDelegateTasks([
     { role: "explorer", target: "src/" },
     { role: "analyst", question: "¿dónde se calcula el total?" },
@@ -33,7 +39,8 @@ test("delegate_parallel valida roles, exige target/question y topa en 4", () => 
     { role: "explorer", target: "test/" },
     { role: "explorer", target: "extra/" },
   ]);
-  assert.equal(tasks.length, MAX_DELEGATE_TASKS);
+  assert.equal(tasks.length, 5, "las 5 tareas válidas pasan: ya no hay truncado a 4");
+  assert.ok(tasks.length > MAX_DELEGATE_TASKS, "el antiguo tope ya no recorta la lista");
   assert.ok(notes.length >= 2);
 });
 

@@ -1685,19 +1685,20 @@ const DEFINITIONS = [
     type: "function",
     function: {
       name: "delegate_parallel",
-      description: "Delega 2-4 subagentes de SOLO LECTURA que trabajan EN PARALELO (explorer: mapea una zona del proyecto; analyst: responde una pregunta de análisis o revisión sobre el código) y devuelve un informe combinado. Úsala cuando una tarea tenga frentes independientes que convenga investigar a la vez —p. ej. uno mapea el frontend, otro revisa el backend, otro audita la configuración— en vez de explorarlos en serie tú solo. No escribe archivos: con el informe, la construcción la ejecutas tú.",
+      description: "Delega subagentes que trabajan EN PARALELO y devuelve un informe combinado. SIN tope numérico de tareas: la gobernanza es el presupuesto del harness (oleadas) y que los ámbitos no se pisen. Roles: explorer (mapea una zona, solo lectura), analyst (responde una pregunta de análisis/revisión, solo lectura) y writer (implementer acotado que ESCRIBE con parches explícitos dentro de su target, declarado ámbito EXCLUSIVO: dos writers con ámbitos que se pisan se rechazan). Úsala cuando una tarea tenga frentes independientes —p. ej. uno mapea el frontend, otro revisa el backend, otro escribe en una zona disjunta— en vez de hacerlo todo en serie tú solo. Los subagentes reciben la memoria compartida del proyecto y sus informes vuelven destilados al expediente.",
       parameters: {
         type: "object",
         properties: {
           tasks: {
             type: "array",
-            description: "Subtareas independientes (máximo 4).",
+            description: "Subtareas independientes (sin tope numérico; corren en oleadas según el presupuesto del harness).",
             items: {
               type: "object",
               properties: {
-                role: { type: "string", enum: ["explorer", "analyst"], description: "explorer mapea una zona; analyst responde una pregunta de análisis/revisión." },
-                target: { type: "string", description: "Zona o ruta a mapear (rol explorer)." },
-                question: { type: "string", description: "Pregunta que debe responder (rol analyst)." }
+                role: { type: "string", enum: ["explorer", "analyst", "writer"], description: "explorer mapea; analyst analiza; writer escribe parches en su target exclusivo." },
+                target: { type: "string", description: "Zona o ruta (explorer: a mapear; writer: su ámbito exclusivo de escritura)." },
+                question: { type: "string", description: "Pregunta que debe responder (analyst) o instrucción de la tarea (writer)." },
+                patches: { type: "array", description: "Parches explícitos del writer: [{ path, content } para crear/reescribir o { path, oldText, newText } para reemplazar].", items: { type: "object" } }
               },
               required: ["role"]
             }
@@ -1858,22 +1859,63 @@ async function execute(name, args, root, allowWrite, helpers = {}) {
         if (!allowWrite) return { ok: false, error: "Escritura no permitida (Modo Solo Lectura)." };
         return replaceInFile(root, a.path, a.oldText, a.newText, coordCtx);
       case "delegate_parallel": {
-        // Subagentes de solo lectura EN PARALELO (explorer/analyst
-        // reales, requeridos aquí dentro para no crear un ciclo de
-        // módulos: los subagentes a su vez requieren tools).
+        // Subagentes EN PARALELO (explorer/analyst de lectura y, desde
+        // la v5.1.0, writer con ámbito exclusivo), requeridos aquí
+        // dentro para no crear un ciclo de módulos: los subagentes a
+        // su vez requieren tools.
         const { runDelegatedTasks } = require("./parallel-delegate");
         const { runExplorer } = require("./subagents/explorer");
         const { runAnalyst } = require("./subagents/analyst");
-        return await runDelegatedTasks({
+        // [EDITCORE-V510-B5] MEMORIA COMPARTIDA (ida): cada subagente
+        // recibe el bloque del expediente + Cerebro + Mapa acotado,
+        // construido con los temas de ESTA delegación.
+        let memoryContext = "";
+        try {
+          const { buildSharedMemoryBlock } = require("./concierge");
+          const topics = (Array.isArray(a.tasks) ? a.tasks : []).map((t) => `${t?.target || ""} ${t?.question || ""}`).join(" · ").slice(0, 300);
+          memoryContext = await buildSharedMemoryBlock(root, coordCtx.threadId || "default", topics, helpers);
+        } catch { memoryContext = ""; }
+        // [EDITCORE-V510-B6] Gobernanza del harness: su perfil fija
+        // el tamaño de oleada según el presupuesto del turno.
+        let harnessProfile = null;
+        try { harnessProfile = tokenHarness?.resolveHarnessProfile?.(helpers?.depthProfile || {}, helpers?.turnBudget || null, {}) || null; } catch { harnessProfile = null; }
+        const delegated = await runDelegatedTasks({
           projectRoot: root,
           tasks: a.tasks,
           threadId: coordCtx.threadId || "default",
           signal: helpers?.abortSignal || null,
+          harnessProfile,
           runners: {
-            explorer: (task) => runExplorer({ projectRoot: root, target: task.target || ".", signal: helpers?.abortSignal || null }),
-            analyst: (task) => runAnalyst({ projectRoot: root, userMessage: task.question || "", signal: helpers?.abortSignal || null }),
+            explorer: (task) => runExplorer({ projectRoot: root, target: task.target || ".", signal: helpers?.abortSignal || null, memoryContext }),
+            analyst: (task) => runAnalyst({ projectRoot: root, userMessage: task.question || "", signal: helpers?.abortSignal || null, memoryContext }),
+            // [EDITCORE-V510-B6] Writer: el implementer acotado de
+            // siempre, con los locks de coordinación de ESTA corrida
+            // (los helpers traen applyWrite/applyReplace del turno).
+            // Sin autorización de escritura no hay ejecutor: la
+            // tarea se reporta como no corrida, nunca se disfraza.
+            writer: allowWrite ? (task) => {
+              const { runSubagent } = require("../runtime/subagent-runner");
+              return runSubagent(root, {
+                role: "writer",
+                task: task.question || `Aplicar los parches acotados a la zona ${task.target}.`,
+                target: task.target,
+                query: task.question || "",
+                patches: Array.isArray(task.patches) ? task.patches : undefined,
+                memoryContext,
+              }, helpers);
+            } : null,
           },
         });
+        // [EDITCORE-V510-B5] MEMORIA COMPARTIDA (vuelta): el
+        // destilado de los informes entra en el expediente con
+        // procedencia «subagente <rol> · <target>» — el próximo turno
+        // (y el conserje, y otros subagentes) lo leen de ahí.
+        try {
+          const { recordSubagentDistillates } = require("./subagent-distill");
+          const recorded = recordSubagentDistillates(root, delegated?.results || []);
+          if (recorded) delegated.memoryRecorded = recorded;
+        } catch { /* la memoria nunca tumba el despacho */ }
+        return delegated;
       }
       case "run_command":
         if (!allowWrite) return { ok: false, error: "Comandos no permitidos en modo lectura." };
@@ -1984,8 +2026,29 @@ async function execute(name, args, root, allowWrite, helpers = {}) {
           scaffoldLocks.release();
         }
       }
-      case "search_brain":
-        return await extraTools.searchBrain(root, a.query || "", helpers, a.limit);
+      case "search_brain": {
+        const brainOut = await extraTools.searchBrain(root, a.query || "", helpers, a.limit);
+        // [EDITCORE-V510-B5-MAPA] El Mapa es CONSULTABLE por la misma
+        // vía: si la pregunta es de ORIENTACIÓN («¿qué decidimos
+        // de…?», «¿en qué está el proyecto…?»), sus entradas van
+        // PRIMERO en el resultado — son la fuente vigente, antes que
+        // documentos y recuerdos sueltos.
+        try {
+          const om = require("./orientation-map");
+          if (brainOut && typeof brainOut === "object" && om.isOrientationQuery(a.query || "")) {
+            const hits = om.searchMap(root, a.query || "");
+            if (hits.length) {
+              return {
+                ...brainOut,
+                mapFirst: true,
+                map: hits.map((h) => ({ layer: h.layer, kind: h.kind, text: h.text })),
+                note: "Las entradas del MAPA de orientación van primero: son el destilado vigente (decisiones con procedencia, estado, frentes). Respóndelas desde ahí; los documentos/recuerdos de abajo son el respaldo.",
+              };
+            }
+          }
+        } catch { /* el Mapa nunca tumba la búsqueda */ }
+        return brainOut;
+      }
       case "check_connections":
         return await extraTools.checkConnections(root, helpers);
       case "ingest_to_brain": {
@@ -2022,13 +2085,36 @@ async function execute(name, args, root, allowWrite, helpers = {}) {
         // orquestador además lo audita y lo declara en el resumen).
         const degradedRoles = new Set(["security", "database", "ui_ux", "devops", "analyst", "verifier"]);
         const degraded = degradedRoles.has(subRole);
+        // [EDITCORE-V510-B5] MEMORIA COMPARTIDA (ida): el subagente
+        // recibe el bloque del expediente + Cerebro + Mapa acotado.
+        let memoryContext = "";
+        try {
+          const { buildSharedMemoryBlock } = require("./concierge");
+          memoryContext = await buildSharedMemoryBlock(root, coordCtx.threadId || "default", String(a.task || a.target || ""), helpers);
+        } catch { memoryContext = ""; }
         const subResult = await runSubagent(root, {
           role: subRole,
           task: a.task,
           target: a.target,
           query: a.task,
           patches: Array.isArray(a.patches) ? a.patches : undefined,
+          memoryContext,
         }, helpers);
+        // [EDITCORE-V510-B5] MEMORIA COMPARTIDA (vuelta): el
+        // destilado de su informe entra en el expediente con
+        // procedencia, igual que en delegate_parallel.
+        let memoryRecorded = 0;
+        try {
+          const { recordSubagentDistillates } = require("./subagent-distill");
+          const exploredFiles = Array.isArray(subResult?.mergedFiles) ? subResult.mergedFiles.map((f) => String(f?.path || f?.title || "")).filter(Boolean) : [];
+          memoryRecorded = recordSubagentDistillates(root, [{
+            role: degraded ? "explorer" : subRole,
+            target: a.target || "",
+            question: a.task || "",
+            text: String(subResult?.summary || subResult?.report || subResult?.text || exploredFiles.join("\n") || ""),
+            ok: subResult?.ok !== false,
+          }]);
+        } catch { /* la memoria nunca tumba el despacho */ }
         if (degraded) {
           return {
             ...subResult,
@@ -2036,10 +2122,11 @@ async function execute(name, args, root, allowWrite, helpers = {}) {
             requestedRole: subRole,
             effectiveRole: "explorer",
             degradedRole: true,
+            ...(memoryRecorded ? { memoryRecorded } : {}),
             roleNotice: `El rol «${subRole}» no existe como subagente especialista en EditCoreAI: lo ejecutado fue exploración de solo lectura, NO una tarea de ${subRole}. Repórtalo así, no como una auditoría ni un trabajo especializado.`,
           };
         }
-        return { ...subResult, requestedRole: subRole, effectiveRole: subRole === "writer" ? "implementer" : subRole };
+        return { ...subResult, requestedRole: subRole, effectiveRole: subRole === "writer" ? "implementer" : subRole, ...(memoryRecorded ? { memoryRecorded } : {}) };
       }
       case "install_skill":
         if (!allowWrite) return { ok: false, error: "install_skill requiere modo escritura." };

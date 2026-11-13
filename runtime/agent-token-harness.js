@@ -384,11 +384,137 @@ function lineDiffStats(oldText, newText) {
   };
 }
 
+// =====================================================================
+// [EDITCORE-V510-B4] GUARDIÁN DE AVANCE — libro por turno.
+// Regla dura de Luis (2026-11-12): «está consumiendo token y lleva la
+// cuenta, no aplica nada, solo cobra — eso no quiero». El harness, que
+// ya es el dueño de la disciplina de caché y de escritura, lleva ahora
+// también el LIBRO DE AVANCE de cada turno: cada paso del bucle se
+// asienta como APLICADO (escritura con éxito o verificación aprobada)
+// o como VUELTA (lecturas, búsquedas, llamadas sin efecto), con los
+// tokens que costó. El orquestador consulta el libro en la cabecera
+// del bucle: superados N pasos o M minutos sin nada aplicado, dispara
+// la rendición obligatoria; si el atoro persiste tras rendir, cierra
+// con la rendición determinista. El libro también sabe qué paso está
+// EN CURSO y desde cuándo: el latido del turno nombra ese paso cuando
+// supera el umbral de espera declarado — un turno colgado ya no dura
+// 20 minutos en silencio (ALFA LUBES, 2026-11-12: ~20 min esperando
+// algo que nunca volvió, con el contador global clavado).
+// =====================================================================
+
+const PROGRESS_STALL_STEPS = 12;      // pasos seguidos sin aplicar
+const PROGRESS_STALL_MS = 8 * 60_000; // 8 minutos sin aplicar
+const STEP_WAIT_NOTICE_MS = 60_000;   // un paso «en curso» se nombra al pasar 60 s
+
+function createProgressBook(now = Date.now()) {
+  return {
+    startedAt: now,
+    lastAppliedAt: now,
+    stepsTotal: 0,
+    stepsApplied: 0,
+    stepsIdle: 0,
+    stepsSinceApplied: 0,
+    tokensApplied: 0,
+    tokensIdle: 0,
+    renditions: 0,
+    currentStepName: "",
+    currentStepSince: 0,
+    longestStepMs: 0,
+  };
+}
+
+// Asienta el resultado de UNA iteración del bucle (la llamada al
+// modelo + el lote de herramientas que despachó). `applied` lo decide
+// el orquestador desde los pasos reales (successfulWritePaths y las
+// verificaciones aprobadas); aquí solo se lleva la cuenta.
+function noteStepOutcome(book, { applied = false, tokens = 0, now = Date.now() } = {}) {
+  if (!book || typeof book !== "object") return book;
+  const tk = Math.max(0, Number(tokens) || 0);
+  book.stepsTotal += 1;
+  if (applied) {
+    book.stepsApplied += 1;
+    book.tokensApplied += tk;
+    book.stepsSinceApplied = 0;
+    book.lastAppliedAt = now;
+  } else {
+    book.stepsIdle += 1;
+    book.tokensIdle += tk;
+    book.stepsSinceApplied += 1;
+  }
+  return book;
+}
+
+// Paso EN CURSO (la llamada al modelo o una herramienta concreta):
+// el latido lo nombra cuando supera STEP_WAIT_NOTICE_MS.
+function noteStepStart(book, name = "", now = Date.now()) {
+  if (!book || typeof book !== "object") return;
+  book.currentStepName = String(name || "");
+  book.currentStepSince = now;
+}
+
+function noteStepEnd(book, now = Date.now()) {
+  if (!book || typeof book !== "object") return;
+  if (book.currentStepSince) {
+    const spent = now - book.currentStepSince;
+    if (spent > book.longestStepMs) book.longestStepMs = spent;
+  }
+  book.currentStepName = "";
+  book.currentStepSince = 0;
+}
+
+// ¿El paso en curso lleva demasiado esperando? Devuelve su ficha o null.
+function currentStepWait(book, now = Date.now(), noticeMs = STEP_WAIT_NOTICE_MS) {
+  if (!book || !book.currentStepSince || !book.currentStepName) return null;
+  const waitedMs = now - book.currentStepSince;
+  if (waitedMs < noticeMs) return null;
+  return { name: book.currentStepName, waitedMs };
+}
+
+// ¿El turno está atorado? (sin aplicar durante demasiados pasos o
+// demasiado tiempo). Los umbrales son los declarados arriba; el
+// llamador puede sobrescribirlos (pruebas).
+function progressStall(book, { maxIdleSteps = PROGRESS_STALL_STEPS, maxIdleMs = PROGRESS_STALL_MS, now = Date.now() } = {}) {
+  if (!book || typeof book !== "object") return { stalled: false };
+  const msSinceApplied = now - (book.lastAppliedAt || book.startedAt || now);
+  const stalled = book.stepsSinceApplied >= maxIdleSteps || msSinceApplied >= maxIdleMs;
+  return {
+    stalled,
+    stepsSinceApplied: book.stepsSinceApplied || 0,
+    msSinceApplied,
+    stepsApplied: book.stepsApplied || 0,
+    stepsIdle: book.stepsIdle || 0,
+    tokensApplied: book.tokensApplied || 0,
+    tokensIdle: book.tokensIdle || 0,
+    renditions: book.renditions || 0,
+  };
+}
+
+// Marca que la rendición obligatoria ya se exigió en este atoro: la
+// ventana de atoro se reinicia (lo que se mide desde aquí es si el
+// turno SIGUE sin aplicar tras haber rendido cuentas).
+function markProgressRendition(book, now = Date.now()) {
+  if (!book || typeof book !== "object") return;
+  book.renditions = (book.renditions || 0) + 1;
+  book.stepsSinceApplied = 0;
+  book.lastAppliedAt = now;
+}
+
 module.exports = {
   resolveHarnessProfile,
   clipToolResultForHarness,
   buildHarnessSystemNudge,
   RunReadCache,
+  // [EDITCORE-V510-B4] Guardián de avance: libro por turno.
+  createProgressBook,
+  noteStepOutcome,
+  noteStepStart,
+  noteStepEnd,
+  currentStepWait,
+  progressStall,
+  markProgressRendition,
+  PROGRESS_STALL_STEPS,
+  PROGRESS_STALL_MS,
+  STEP_WAIT_NOTICE_MS,
   // [EDITCORE-V500-A] Disciplina de caché (dueño único) + escritura justa.
   readReceiptStub,
   noteReadReceipt,
