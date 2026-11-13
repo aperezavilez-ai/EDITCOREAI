@@ -1153,7 +1153,7 @@ function closingHasProposalOrTerminus(text = "") {
 // sustantiva y el empujón ya se gastó: constancia desde los HECHOS
 // del turno (buildKernelFactSummary), declarada como del kernel —
 // jamás prosa inventada en nombre del modelo.
-function substantiveFallbackText(steps = [], writtenFiles = []) {
+function substantiveFallbackText(steps = [], writtenFiles = [], opts = {}) {
   const facts = buildKernelFactSummary(steps);
   const lines = [
     "## 🧾 Cierre del kernel (el modelo no dejó respuesta sustantiva)",
@@ -1164,9 +1164,16 @@ function substantiveFallbackText(steps = [], writtenFiles = []) {
   if (facts) lines.push(facts.replace(/^## 🧾 Hechos del turno \(kernel\)\s*/i, "").trim());
   else if (writtenFiles.length) lines.push(`- Escrituras aplicadas: ${writtenFiles.map((p) => `\`${p}\``).join(", ")}`);
   else lines.push("- El kernel no registró escrituras ni verificaciones en este turno.");
+  // [EDITCORE-V515-R2] La constancia es el ÚLTIMO recurso: si el
+  // turno pasó por la reanudación de ejecución (R1) y aun así murió
+  // en vacío, sus hechos declaran el intento — la honestidad queda,
+  // pero el balón ya no vuelve al usuario como primera respuesta.
+  if (opts.emptyCloseResumed) lines.push("- El kernel reanudó la ejecución una vez (orden de ejecutar, no de sintetizar) y el modelo volvió a cerrar sin respuesta.");
   lines.push("", writtenFiles.length
     ? "Declaro el término de esta tarea desde esos hechos: lo aplicado quedó en disco y no queda ninguna escritura pendiente registrada."
-    : "Nada quedó aplicado en este turno. Pide la síntesis de nuevo o reformula el pedido y lo retomo con lo ya explorado.");
+    : (opts.emptyCloseResumed
+      ? "Nada quedó aplicado en este turno: la tarea no se ejecutó ni siquiera tras la reanudación. Reformula el pedido o pide que lo retome; ambos cierres en vacío quedan registrados en este turno."
+      : "Nada quedó aplicado en este turno. Pide la síntesis de nuevo o reformula el pedido y lo retomo con lo ya explorado."));
   return lines.join("\n");
 }
 
@@ -2534,6 +2541,10 @@ class ChatOrchestrator {
     // respuesta sustantiva (B2) y red del director (B6).
     let substantiveNudges = 0;
     let decomposeNudges = 0;
+    // [EDITCORE-V515-R1] Reanudación de EJECUCIÓN tras un cierre en
+    // vacío sin un solo paso: contador propio, tope duro de UNA por
+    // turno (el patrón de empujones de un solo uso del kernel: B2=1).
+    let emptyCloseResumes = 0;
 
     const toolHistory = new Map();
     // [EDITCORE-V491-C] Llamadas cortadas por needsAuthorization en
@@ -3221,6 +3232,23 @@ class ChatOrchestrator {
           clearInterval(hb); this.turnAbort = null;
         }
         addUsage(turn?.usage || {});
+        // [EDITCORE-V515-R4] CONTABILIDAD DE INVOCACIONES: addUsage
+        // suma una llamada solo cuando la respuesta trae usage, y el
+        // proveedor admite respuestas con usage nulo — en el
+        // incidente de la v5.1.4 el recibo dijo «1 llamada» y ni
+        // siquiera se pudo probar si la red B2 había corrido. Aquí,
+        // donde se conoce la procedencia de la respuesta, se asienta
+        // la llamada que addUsage no contó: respuesta REAL del
+        // proveedor (no servida por la caché local) cuyo usage no
+        // trae tokens de entrada ni de salida ⇒ es una invocación
+        // más. Los aciertos de la ResponseCache NO son llamadas al
+        // proveedor y no cuentan; los totales de tokens siguen
+        // saliendo del usage cuando existe, como hasta hoy.
+        if (!cachedTurn) {
+          const u = turn?.usage || {};
+          const usageTokens = Number(u.prompt_tokens || u.input_tokens || 0) || Number(u.completion_tokens || u.output_tokens || 0);
+          if (!usageTokens) totalUsage.provider_calls += 1;
+        }
         tokenHarness.noteStepEnd(progressBook); // [EDITCORE-V510-B4] la llamada al modelo volvió (o cayó): el paso en curso termina aquí
         // [EDITCORE-INTEGRAL-B6] Paso parcial (stream cortado): queda
         // registrado y el cierre lo declara; no se presenta completo.
@@ -3259,6 +3287,33 @@ class ChatOrchestrator {
         try { retireJudgedCaptureImages(messages, cleanText); } catch { /* ignore */ }
 
         if (!toolCalls.length) {
+          // [EDITCORE-V515-R1] REANUDACIÓN DE EJECUCIÓN: un turno de
+          // TAREA que cierra en vacío/narración SIN UN SOLO PASO
+          // ejecutado no tiene hechos que sintetizar — la red de B2
+          // (síntesis de texto) presupone un turno que ya ocurrió y
+          // aquí el turno ni siquiera empezó (incidente ALFA LUBES
+          // v5.1.4: tarea muerta en su primera respuesta, 34.527
+          // tokens, 0 aplicados, constancia como primera respuesta).
+          // Disparador ESTRUCTURAL, no de léxico: clase de ejecución
+          // (no CHAT, no LIST/ASK, no ANALYZE), cero pasos reales
+          // (los marcadores director_dispatch / orientation_first /
+          // ask_explorer no son pasos ejecutados) y el detector de
+          // cierre vacío/narración de B2. Acción: re-despachar la
+          // EJECUCIÓN una vez — orden de ejecutar con las
+          // herramientas ofrecidas, iteración ordinaria del bucle.
+          // Reparto: con pasos/hechos manda B2 como siempre; sin
+          // pasos, se reanuda. Tope duro: UNA reanudación por turno.
+          const noExecutedSteps = steps.every((s) => s.name === "director_dispatch" || s.name === "orientation_first" || s.name === "ask_explorer");
+          if (!chatOnly && decision?.kind !== "CHAT" && !listOnlyMode && !analysisMode
+            && noExecutedSteps && emptyCloseResumes < 1 && i < stepsLimit - 1
+            && isNarrationOnlyText(cleanText)) {
+            emptyCloseResumes += 1;
+            messages.push({ role: "assistant", content: cleanText || null });
+            messages.push({ role: "user", content: "Tu respuesta no trajo ninguna llamada a herramienta y este turno de tarea todavía no ha ejecutado NI UN paso: no hay nada que sintetizar. Ejecuta AHORA la tarea pedida usando las herramientas: empieza por la lectura o búsqueda que corresponda y sigue hasta aplicarla o verificarla. No cierres con narración ni con un resumen de intenciones." });
+            onProgress?.({ phase: "model", text: "Cierre en vacío sin pasos: reanudando la ejecución de la tarea" });
+            continue;
+          }
+
           // [EDITCORE-V510-B2] GUARDIÁN DE RESPUESTA SUSTANTIVA: si el
           // texto final es vacío o consiste SOLO en líneas de
           // narración de acciones (el caso real «Listo la carpeta.»
@@ -3501,6 +3556,7 @@ class ChatOrchestrator {
           this.session.kill();
           const written = successfulWritePaths(steps);
           let textOut = cleanText;
+          let emptyCloseFallback = false; // [EDITCORE-V515-R3] este cierre salió por la constancia de vacío
 
           // [EDITCORE-V491-C] La presentación en prosa del plan (lo que
           // el usuario leyó antes de decir «procede») se anexa al plan
@@ -3532,7 +3588,12 @@ class ChatOrchestrator {
             // los HECHOS, declarada como del kernel (junto a la
             // guarda anti-confabulación de más abajo, mismo espíritu:
             // lo que el kernel sabe, el usuario lo lee).
-            textOut = substantiveFallbackText(steps, written);
+            // [EDITCORE-V515-R2/R3] La constancia declara si hubo
+            // reanudación de ejecución (R1/R2) y el retorno del turno
+            // marca el cierre en vacío como INCOMPLETO (R3): ya no
+            // se declara completado un turno que no ejecutó nada.
+            emptyCloseFallback = true;
+            textOut = substantiveFallbackText(steps, written, { emptyCloseResumed: emptyCloseResumes > 0 });
           } else {
             textOut = groundUngroundedClaims(cleanText, steps, message, decision, Number(opts.evidenceReads) || 0);
           }
@@ -3656,7 +3717,13 @@ class ChatOrchestrator {
             }
           } catch (_) {}
           // [/EDITCORE-ADD]
-          return { kind: decision?.kind || "CHAT", text: textOut, steps, mutations: runMutations, incomplete: false, partial: turnWasPartial || undefined, report: { completed: true }, threadId, usage: totalUsage };
+          // [EDITCORE-V515-R3] Contrato honesto: si el cierre salió
+          // por la constancia de vacío, el turno vuelve INCOMPLETO
+          // con la marca emptyClose — el puente (chat-kernel-bridge)
+          // ya deriva su report.completed de incomplete, y los
+          // retornos de rendición/parcial de este mismo método son
+          // el precedente (incomplete: true sin error fatal).
+          return { kind: decision?.kind || "CHAT", text: textOut, steps, mutations: runMutations, incomplete: emptyCloseFallback, emptyClose: emptyCloseFallback || undefined, partial: turnWasPartial || undefined, report: { completed: !emptyCloseFallback, ...(emptyCloseFallback ? { emptyClose: true } : {}) }, threadId, usage: totalUsage };
         }
 
         messages.push({ role: "assistant", content: cleanText || null, tool_calls: toolCalls.map((c) => ({ id: c.id, type: "function", function: c.function })) });
