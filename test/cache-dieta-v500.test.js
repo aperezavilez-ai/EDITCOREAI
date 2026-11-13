@@ -8,8 +8,20 @@
 // (no-op idéntico declarado; diff pequeño con nota de dirección).
 //  (a) A1 system byte-idéntico entre turnos con distinta selección de
 //      skills; las skills viajan en el último mensaje del usuario.
-//  (b) A2 el payload del turno N+1 empieza byte-idéntico al del N en
-//      el tramo de historial (registro verbatim append-only).
+//  (b) A2 el registro verbatim es append-only: las entradas
+//      archivadas no se reescriben entre turnos. [EDITCORE-V512-R2]
+//      ACTUALIZADO A PROPÓSITO en la v5.1.2: la versión original
+//      afirmaba que el payload del turno N+1 empieza byte-idéntico
+//      al del N porque el registro guardaba el mensaje del usuario
+//      YA ENSAMBLADO. Esa premisa (prefijo byte-exacto para la caché
+//      del proveedor) quedó sin valor con la declaración A-1 en vivo
+//      (2026-11-13: ME AI lee caché 0 en dos consultas seguidas), y
+//      el mensaje ensamblado horneaba el andamiaje del turno
+//      (catálogo de skills, bloques de memoria, hora) dentro del
+//      historial, recomprado en cada turno siguiente (+5.638 tok por
+//      turno en vivo). Ahora el registro guarda las palabras
+//      ORIGINALES del usuario; lo que se sigue afirmando es la
+//      propiedad append-only: lo archivado no cambia jamás.
 //  (c) A3 segunda lectura ENTRE turnos sin cambios ⇒ comprobante;
 //      force:true ⇒ contenido; tras escritura ⇒ contenido nuevo.
 //  (d) A4 breakpoints en system + último del historial, sin «rolling»;
@@ -126,7 +138,7 @@ test("A1: el system es byte-idéntico entre dos turnos con distinta selección d
 });
 
 // ---------------------------------------------------------------- (b)
-test("A2: el payload del turno N+1 empieza byte-idéntico al enviado en el N (historial verbatim append-only)", async () => {
+test("A2: el registro verbatim es append-only y archiva las palabras originales del usuario (no el mensaje ensamblado)", async () => {
   const root = emptyProject();
   const snaps1 = [];
   const s1 = scriptedHelpers([{ text: "Un sitemap es el mapa de páginas del sitio.", toolCalls: [], usage: {} }], snaps1);
@@ -144,14 +156,33 @@ test("A2: el payload del turno N+1 empieza byte-idéntico al enviado en el N (hi
   const m1 = JSON.parse(snaps1[0]);
   const m2 = JSON.parse(snaps2[0]);
   assert.ok(m2.length > m1.length, "el segundo turno trae historial además del mensaje nuevo");
-  assert.strictEqual(
-    JSON.stringify(m2.slice(0, m1.length)),
-    JSON.stringify(m1),
-    "el tramo de historial del turno N+1 es byte-idéntico al payload del turno N (sin re-adelgazar ni reescribir)",
-  );
-  assert.equal(m2[m1.length].role, "assistant");
-  assert.equal(m2[m1.length].content, "Un sitemap es el mapa de páginas del sitio.", "la respuesta del turno N se conserva tal cual en el historial");
+  // [EDITCORE-V512-R2] La entrada archivada del usuario son sus
+  // palabras originales — NO el mensaje ensamblado del turno 1 (que
+  // llevaba la hora, el contexto del turno y el catálogo de skills:
+  // ese andamiaje ya no se hornea en el historial).
+  assert.equal(m2[1].role, "user");
+  assert.strictEqual(m2[1].content, "¿qué es un sitemap en una web?", "el historial guarda el texto original del usuario, palabra por palabra");
+  assert.doesNotMatch(String(m2[1].content), /CONTEXTO DE EDITCOREAI|Hora actual|SKILLS/, "la entrada archivada no trae andamiaje del turno");
+  assert.equal(m2[2].role, "assistant");
+  assert.equal(m2[2].content, "Un sitemap es el mapa de páginas del sitio.", "la respuesta del turno N se conserva tal cual en el historial");
   assert.match(String(m2[m2.length - 1].content), /favicon/, "el mensaje nuevo cierra el payload");
+
+  // Append-only de verdad: un tercer turno NO reescribe lo archivado
+  // — el tramo de historial compartido sale idéntico, byte a byte.
+  const snaps3 = [];
+  const s3 = scriptedHelpers([{ text: "Un dominio es el nombre del sitio.", toolCalls: [], usage: {} }], snaps3);
+  await new ChatOrchestrator().handle({
+    ...BASE_ARGS, message: "¿qué es un dominio en una web?", projectRoot: root,
+    threadId: "hilo-a2", helpers: s3.helpers,
+  });
+  const m3 = JSON.parse(snaps3[0]);
+  assert.strictEqual(
+    JSON.stringify(m3.slice(0, m2.length - 1)),
+    JSON.stringify(m2.slice(0, m2.length - 1)),
+    "el tramo archivado (system + pares cerrados) es byte-idéntico entre el turno N+1 y el N+2: append-only",
+  );
+  assert.strictEqual(m3[m2.length - 1].content, "¿qué es un favicon en una web?", "el segundo intercambio también se archivó en palabras originales");
+  assert.equal(m3[m2.length].content, "Un favicon es el icono de la pestaña.");
 });
 
 // ---------------------------------------------------------------- (c)

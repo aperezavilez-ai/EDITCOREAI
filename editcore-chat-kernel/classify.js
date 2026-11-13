@@ -454,6 +454,18 @@ const CHAT_READ_TOOLS = new Set([
   "list_skills", "git_status", "git_log", "git_diff",
   "search_brain", "read_pdf", "screenshot_page", "docker_ps", "check_connections",
 ].filter((name) => READ_ONLY_TOOLS.includes(name)));
+// [EDITCORE-V512-R1] Set de SOLO LECTURA de los TURNOS DE PREGUNTA
+// (allowWrite === false fuera de charla: ASK, análisis, solo lectura).
+// Es el de charla MÁS capture_preview_screenshot: capturar el preview
+// es observación (ya está en READ_ONLY_TOOLS) y el protocolo de
+// revisión visual (v4.9.3, INTOCABLE) exige ofrecerla en los turnos
+// de revisión para que el modelo pueda mirar antes de juzgar. Se
+// deriva de READ_ONLY_TOOLS como el de charla: ninguna herramienta
+// de escritura puede colarse.
+const QUESTION_READ_TOOLS = new Set([
+  ...CHAT_READ_TOOLS,
+  "capture_preview_screenshot",
+].filter((name) => READ_ONLY_TOOLS.includes(name)));
 const ALL_ALLOWED_TOOLS = [...new Set([...READ_ONLY_TOOLS, ...WRITE_TOOLS])];
 
 const TOOL_ALLOWLIST = Object.assign(
@@ -552,6 +564,8 @@ module.exports = {
   normalizePermissionMode,
   buildModeAnnouncement,
   CHAT_READ_TOOLS,
+  // [EDITCORE-V512-R1] Set de solo lectura de los turnos de pregunta.
+  QUESTION_READ_TOOLS,
   TOOL_ALLOWLIST,
   STOP_RE,
   APPROVAL_RE,

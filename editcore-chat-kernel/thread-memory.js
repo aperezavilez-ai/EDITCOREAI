@@ -166,7 +166,9 @@ function sanitizeVerbatimEntry(entry) {
 // ejecuta una sola vez al superar el tope, adelgaza las entradas viejas
 // (conserva íntegras las VERBATIM_KEEP_FULL más recientes) y deja el
 // hecho contado en thread.verbatimCompactions. Fuera de este momento,
-// el registro es append-only byte-exacto.
+// el registro es append-only: las entradas no se reescriben.
+// [EDITCORE-V512-R2] Desde la v5.1.2 la entrada del usuario guarda su
+// texto original, no el mensaje ensamblado (ver rememberExchange).
 function compactVerbatimInPlace(data) {
   const list = Array.isArray(data.verbatim) ? data.verbatim : [];
   if (list.length <= VERBATIM_MAX_MESSAGES) return data;
@@ -192,8 +194,8 @@ function verbatimMessages(projectRoot, threadId) {
 }
 
 // [EDITCORE-V500-A2] Anexa los mensajes de UN turno ya cerrado al
-// registro (el user tal cual se envió y la respuesta en su forma
-// guardada). Devuelve el hilo actualizado.
+// registro (el user en su texto original [EDITCORE-V512-R2] y la
+// respuesta en su forma guardada). Devuelve el hilo actualizado.
 function appendVerbatimTurn(projectRoot, threadId, entries) {
   const data = loadThread(projectRoot, threadId);
   const clean = (Array.isArray(entries) ? entries : []).map(sanitizeVerbatimEntry).filter(Boolean);

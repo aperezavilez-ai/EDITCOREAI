@@ -8,6 +8,8 @@ const {
   resolveExecutionMode,
   MODES,
   CHAT_READ_TOOLS,
+  // [EDITCORE-V512-R1] Set de solo lectura de los turnos de pregunta.
+  QUESTION_READ_TOOLS,
   WRITE_TOOLS,
   SUB_AGENTS,
   APPROVAL_RE,
@@ -1738,6 +1740,11 @@ class ChatOrchestrator {
     this._historyInput = historyInput;
     this._fallbackProfiles = Array.isArray(input.fallbackProfiles) ? input.fallbackProfiles : [];
     this._skillsPrompt = String(input.skillsPrompt || "").trim();
+    // [EDITCORE-V512-R3] Variante solo-ids del catálogo (sin
+    // extractos): solo existe cuando el catálogo lo construye el
+    // kernel en este turno; un skillsPrompt traído por el llamador
+    // viaja tal cual en todos los carriles.
+    this._skillsIdsPrompt = "";
     this._skillsPickedIds = [];
     this._currentUserText = text;
     // Lo que cambia por tarea (pipeline, coordinación, archivo abierto, reviews) va al mensaje del turno, no al system cacheado.
@@ -1755,6 +1762,7 @@ class ChatOrchestrator {
           ? buildSkillsTurn(projectRoot, kindForSkills, effectiveText || text || "")
           : { prompt: skillsPrompt(projectRoot, kindForSkills, effectiveText || text || ""), pickedIds: [] };
         this._skillsPrompt = String(skillsTurn.prompt || "");
+        this._skillsIdsPrompt = String(skillsTurn.idsPrompt || "");
         const pickedIds = Array.isArray(skillsTurn.pickedIds) ? skillsTurn.pickedIds.filter(Boolean) : [];
         if (pickedIds.length) {
           this._skillsPickedIds = pickedIds;
@@ -2481,6 +2489,17 @@ class ChatOrchestrator {
 
     const listOnlyMode = decision?.kind === "LIST" || decision?.kind === "ASK";
     const analysisMode = decision?.kind === "ANALYZE";
+    // [EDITCORE-V512-R1/R3] TURNO DE PREGUNTA SIN ESCRITURA: la clase
+    // del turno (ASK/LIST/ANALYZE) nació sin permiso de escribir y sus
+    // llamadores fijan allowWrite === false por construcción. Estos
+    // turnos reciben la dieta de payload de la v5.1.2 (herramientas de
+    // solo lectura y catálogo de skills solo con ids). OJO: la clase
+    // manda, no el flag suelto — un turno EXECUTE con allowWrite ===
+    // false (Pregunta antes / solo lectura declarada) NO es un turno
+    // de pregunta: conserva el set completo visible, porque su
+    // autorización se decide en el despacho (contrato de turno
+    // v4.7.2; la ruleta de herramientas no vuelve por esta puerta).
+    const readOnlyQuestionTurn = allowWrite === false && (listOnlyMode || analysisMode);
 
     const roadmapFirstBlock = (!chatOnly && decision?.kind !== "CHAT" && !listOnlyMode && !analysisMode) ? buildRoadmapFirstBlock(projectRoot) : "";
     const cognitiveBlock = (!chatOnly && decision?.kind !== "CHAT" && !listOnlyMode && !analysisMode) ? formatCognitiveBlock(projectRoot) : "";
@@ -2573,7 +2592,14 @@ class ChatOrchestrator {
     // por constantes + proyecto: byte-idéntico entre turnos del mismo
     // modo y proyecto. Las skills siguen llegando al modelo en el
     // mismo turno y con el mismo texto; solo cambia su sitio.
-    if (this._skillsPrompt) pushTurnContext(CTX_TIER_NORMAL, this._skillsPrompt);
+    // [EDITCORE-V512-R3] En un turno de pregunta sin escritura el
+    // catálogo viaja en su variante SOLO IDS (sin extractos): el
+    // extracto es andamiaje para APLICAR la skill en un turno de
+    // ejecución; en una pregunta basta el nombre (y read_skill sigue
+    // disponible si el tema aparece). Los turnos de ejecución
+    // conservan el índice completo con extractos.
+    const skillsBlockForTurn = (readOnlyQuestionTurn && this._skillsIdsPrompt) ? this._skillsIdsPrompt : this._skillsPrompt;
+    if (skillsBlockForTurn) pushTurnContext(CTX_TIER_NORMAL, skillsBlockForTurn);
     // [EDITCORE-V492-2] La línea visible «Skills aplicadas este turno»
     // ya no se emite en NINGUNA ruta (ver handle()): voz natural.
     if (!listOnlyMode && projectRoot) {
@@ -2683,7 +2709,15 @@ class ChatOrchestrator {
     // de ese bloque compactaba algo (defecto latente hallado en la
     // Fase A, corregido aquí porque la compactación append-only
     // necesita la sustitución real).
-    let messages = threadCore.buildMessageList({ system, systemPrefix: listOnlyMode ? "" : SELF_KNOWLEDGE_PROMPT, turnContext: applyTurnContextBudget(turnContext), userText, projectRoot, threadId, historyInput, query: String(this._currentUserText || message || ""), images: taskImages });
+    // [EDITCORE-V512-R4] En el carril de orientación el expediente ya
+    // viaja UNA vez — deduplicado contra el Mapa — dentro del bloque
+    // de memoria compartida inyectado en el mensaje; la copia estándar
+    // que buildMessageList antepone se suprime para este carril
+    // (skipDossier) y el contenido del expediente entra al payload
+    // exactamente una vez. En el carril del explorador y en el resto
+    // de turnos la copia estándar se conserva intacta.
+    const orientationLaneTurn = decision?.kind === "ASK" && this._askLane?.lane === "orientation";
+    let messages = threadCore.buildMessageList({ system, systemPrefix: listOnlyMode ? "" : SELF_KNOWLEDGE_PROMPT, turnContext: applyTurnContextBudget(turnContext), userText, projectRoot, threadId, historyInput, query: String(this._currentUserText || message || ""), images: taskImages, skipDossier: orientationLaneTurn });
     // [EDITCORE-V510-B6] La directiva del director (si la detección de
     // _handleCore marcó el turno descomponible) se anexa AQUÍ, al
     // mensaje del turno ya ensamblado: es una orden del harness y no
@@ -2695,11 +2729,17 @@ class ChatOrchestrator {
       }
       this._decomposeDirectiveText = null;
     }
-    // [EDITCORE-V500-A2] El mensaje del usuario TAL CUAL se envía
-    // (ya ensamblado, con la hora y el contexto del turno): al cerrar,
-    // rememberExchange lo guarda en el registro verbatim y el turno
-    // siguiente se construye como prefijo guardado + mensaje nuevo.
-    const sentUserMessage = JSON.parse(JSON.stringify(messages[messages.length - 1] || { role: "user", content: "" }));
+    // [EDITCORE-V512-R2] Ya NO se fotografía el mensaje ensamblado
+    // para el registro: desde la v5.1.2 el verbatim archiva las
+    // PALABRAS ORIGINALES del usuario (this._currentUserText, que
+    // rememberOut pasa como meta.originalUserText), no el mensaje ya
+    // ensamblado con la hora, el contexto del turno, el catálogo de
+    // skills y los bloques de memoria dentro. La forma enviada
+    // horneaba ese andamiaje en el historial y cada turno siguiente
+    // lo recompraba íntegro (medición PAYLOAD-ASK: Δ en vivo +5.638
+    // tokens por turno). La premisa que lo justificaba en la Fase A
+    // (prefijo byte-exacto para la caché del proveedor) quedó sin
+    // valor con la declaración A-1 en vivo: ME AI lee caché 0.
     // [EDITCORE-V500-A4] Frontera del prefijo cacheable: índice del
     // último mensaje del historial (lo que el proveedor puede cachear
     // y leer en el paso/turno siguiente) y cuántos mensajes ya están
@@ -2817,9 +2857,10 @@ class ChatOrchestrator {
       try {
         threadCore.rememberExchange(projectRoot, threadId, this._currentUserText || message, textOut, {
           steps,
-          // [EDITCORE-V500-A2] El mensaje del turno tal cual se envió,
-          // para el registro verbatim (historial append-only).
-          sentUserMessage,
+          // [EDITCORE-V512-R2] El texto ORIGINAL del usuario para el
+          // registro verbatim (historial append-only): el registro
+          // guarda sus palabras, no el mensaje ensamblado del turno.
+          originalUserText: this._currentUserText || "",
           written: successfulWritePaths(steps),
           // [EDITCORE-INTEGRAL-B3] Señal de autorización del turno para
           // la destilación de decisiones en thread-core: solo vale como
@@ -2878,6 +2919,23 @@ class ChatOrchestrator {
             ? tools.getToolDefinitions({ allowWrite: false, isFullAccess: false, isAnalysis: false })
               .filter((t) => CHAT_READ_TOOLS.has(t.function?.name || t.name))
             : [])
+          // [EDITCORE-V512-R1] Turno de pregunta/análisis sin
+          // escritura (ASK/LIST/ANALYZE con allowWrite === false):
+          // viaja el set de SOLO LECTURA, con la MISMA maquinaria del
+          // filtro de CHAT (getToolDefinitions sin escritura + set
+          // blanco derivado de READ_ONLY_TOOLS). El set es
+          // QUESTION_READ_TOOLS (el de charla + capture_preview_
+          // screenshot): la revisión visual v4.9.3 exige ofrecer la
+          // captura del preview en estos turnos para mirar antes de
+          // juzgar. El turno de orientación responde desde la
+          // memoria y el de análisis desde la evidencia: ninguno
+          // puede escribir, y mandar las 30 definiciones completas
+          // era la mitad del payload medido. Un turno EXECUTE jamás
+          // cae aquí (ver readOnlyQuestionTurn): su set completo y su
+          // compuerta de despacho quedan intactos.
+          : readOnlyQuestionTurn
+          ? tools.getToolDefinitions({ allowWrite: false, isFullAccess: false, isAnalysis: false })
+              .filter((t) => QUESTION_READ_TOOLS.has(t.function?.name || t.name))
           // CONTRATO DE TURNO: en modo Agente el modelo ve SIEMPRE el set
           // completo de herramientas (allowWrite: true SOLO decide la
           // VISIBILIDAD de las definiciones). Antes, sin autorización previa

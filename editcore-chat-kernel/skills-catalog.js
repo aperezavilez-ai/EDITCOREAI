@@ -660,11 +660,27 @@ function skillsPrompt(projectRoot, kind, messageOrOpts, opts = {}) {
       .filter(Boolean);
   }
 
+  const availableIds = valid.map((s) => s.id);
+
+  // [EDITCORE-V512-R3] Variante SOLO IDS (opts.idsOnly): el catálogo
+  // viaja con los ids de TODAS las skills y los de las activas, SIN los
+  // extractos del índice. Es la forma que empujan los turnos de
+  // pregunta/análisis sin escritura (rama ASK): ahí el extracto no se
+  // aplica — solo hace falta saber que la skill existe y cargarla
+  // completa con read_skill si el tema aparece. Los turnos de
+  // ejecución conservan el índice con extractos (la rama de abajo).
+  if (opts?.idsOnly) {
+    return [
+      `SKILLS VÁLIDAS EN DISCO (${availableIds.length}): ${availableIds.join(", ")}`,
+      `Skills activas este turno (${selected.length}/${MAX_SKILLS_IN_PROMPT}) por relevancia al mensaje del usuario (kind=${kind || "n/a"}): ${selected.map((s) => s.id).join(", ") || "(ninguna)"}.`,
+      "DIRECTIVA: en este turno el catálogo viaja SOLO con los ids, sin extractos. Cualquier skill del catálogo puede cargarse COMPLETA durante el turno con la herramienta read_skill: si el trabajo toca el tema de una skill, cárgala antes de actuar y sigue su cuerpo, no su nombre.",
+    ].join("\n\n");
+  }
+
   // [EDITCORE-INTEGRAL-B2] Lo inyectado es el ÍNDICE (ver constantes
   // SKILL_INDEX_*), no los cuerpos: el cuerpo completo solo vía read_skill.
   const blocks = selected.map((skill) => buildSkillIndexEntry(skill)).filter(Boolean);
 
-  const availableIds = valid.map((s) => s.id);
   const prompt = [
     `SKILLS VÁLIDAS EN DISCO (${availableIds.length}): ${availableIds.join(", ")}`,
     `Índice de skills activas (${selected.length}/${MAX_SKILLS_IN_PROMPT}) por relevancia al mensaje del usuario (kind=${kind || "n/a"}).`,
@@ -686,7 +702,10 @@ function buildSkillsTurn(projectRoot, kind, message, limit = MAX_SKILLS_IN_PROMP
   const picked = selectSkillsForTurn(projectRoot, kind, message, limit);
   const pickedIds = picked.map((p) => p.id).filter(Boolean);
   const prompt = skillsPrompt(projectRoot, kind, message, { selectedIds: pickedIds, limit });
-  return { prompt, pickedIds, selected: picked };
+  // [EDITCORE-V512-R3] La MISMA selección en su variante solo-ids,
+  // para los turnos de pregunta sin escritura (ver skillsPrompt).
+  const idsPrompt = skillsPrompt(projectRoot, kind, message, { selectedIds: pickedIds, limit, idsOnly: true });
+  return { prompt, idsPrompt, pickedIds, selected: picked };
 }
 
 module.exports = {

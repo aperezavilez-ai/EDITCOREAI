@@ -54,19 +54,25 @@ function currentTimeLine(now = new Date()) {
 
 const FAILED_TURN_RE = /^Algo fall[oó] durante la ejecuci[oó]n:/;
 
-// El proveedor cachea por prefijo exacto: system (fijo) + historial se releen a una fracción del precio.
-// Lo que cambia en cada turno (turnContext, hora) va en el último mensaje, que nunca es parte del prefijo.
-function buildMessageList({ system, systemPrefix = "", turnContext = "", userText, projectRoot, threadId, historyInput, query, now, images }) {
+// El system es fijo por modo y proyecto; lo que cambia en cada turno
+// (turnContext, hora) va en el último mensaje del usuario.
+function buildMessageList({ system, systemPrefix = "", turnContext = "", userText, projectRoot, threadId, historyInput, query, now, images, skipDossier = false }) {
   const systemText = `${system}\n\n${stableContextLine(now)}`;
   const messages = [{ role: "system", content: systemPrefix ? `${systemPrefix}\n\n${systemText}` : systemText }];
-  // [EDITCORE-V500-A2] HISTORIAL APPEND-ONLY: si el hilo tiene registro
-  // verbatim, el historial del payload ES ese registro — los mensajes
-  // tal cual se enviaron, sin recortar ni re-adelgazar en cada turno —
-  // y este payload extiende byte a byte el del turno anterior. La
-  // copia adelgazada del expediente (turns) sigue existiendo para el
-  // bloque de memoria, separada. Sin registro (hilos previos a la
-  // v5.0.0 o sin proyecto), se conserva la reconstrucción corta de
-  // siempre como respaldo.
+  // HISTORIAL APPEND-ONLY: si el hilo tiene registro verbatim, el
+  // historial del payload ES ese registro — las entradas archivadas
+  // no se recortan ni se re-adelgazan en cada turno, y el registro
+  // solo crece por anexado. [EDITCORE-V512-R2] Desde la v5.1.2 la
+  // entrada del usuario es su TEXTO ORIGINAL (no el mensaje ya
+  // ensamblado que la v5.0.0 guardaba): el payload ya no extiende
+  // byte a byte el del turno anterior, a cambio de no recomprar el
+  // andamiaje de cada turno previo en todos los siguientes (la
+  // declaración A-1 en vivo dejó sin valor el prefijo byte-exacto:
+  // ME AI lee caché 0). La respuesta se guarda en su forma almacenada
+  // de siempre. La copia adelgazada del expediente (turns) sigue
+  // existiendo para el bloque de memoria, separada. Sin registro
+  // (hilos previos a la v5.0.0 o sin proyecto), se conserva la
+  // reconstrucción corta de siempre como respaldo.
   let verbatim = [];
   try { verbatim = projectRoot ? threadMemory.verbatimMessages(projectRoot, threadId) : []; } catch { verbatim = []; }
   if (verbatim.length) {
@@ -90,7 +96,12 @@ function buildMessageList({ system, systemPrefix = "", turnContext = "", userTex
   const hasImages = Array.isArray(images) && images.length > 0;
   let context = String(turnContext || "").trim();
   try {
-    if (projectRoot) {
+    // [EDITCORE-V512-R4] skipDossier: el llamador declara que el
+    // expediente ya viaja dentro del mensaje de este turno (el carril
+    // de orientación lo inyecta, deduplicado contra el Mapa, en el
+    // bloque de memoria compartida): anteponer aquí la copia estándar
+    // lo pagaría dos veces en la misma petición.
+    if (projectRoot && !skipDossier) {
       const memoryBlock = threadMemory.projectPromptBlock(projectRoot, threadId, query);
       if (memoryBlock) {
         context = context ? `${memoryBlock}\n\n${context}` : memoryBlock;
@@ -344,17 +355,29 @@ function rememberExchange(projectRoot, threadId, userText, assistantText, meta =
   if (assistantText) turns.push({ role: "assistant", content: slimStoredAssistantText(String(assistantText)).slice(0, 6_000), at: Date.now() });
   if (turns.length) threadMemory.appendTurns(projectRoot, threadId, turns);
 
-  // [EDITCORE-V500-A2] REGISTRO VERBATIM (separado de la copia
-  // adelgazada de arriba, que sigue alimentando el bloque de memoria):
-  // si el llamador trae el mensaje del usuario TAL CUAL se envió
-  // (meta.sentUserMessage, el último mensaje del payload ya
-  // ensamblado), el intercambio queda registrado verbatim y el turno
-  // siguiente se construye como prefijo guardado + mensaje nuevo. La
-  // respuesta se guarda en su forma almacenada (la misma de turns):
-  // es la forma canónica que el historial siempre ha reenviado.
-  if (projectRoot && meta && meta.sentUserMessage && typeof meta.sentUserMessage === "object") {
+  // REGISTRO VERBATIM (separado de la copia adelgazada de arriba,
+  // que sigue alimentando el bloque de memoria): si el llamador trae
+  // el texto ORIGINAL del usuario (meta.originalUserText = sus
+  // palabras tal cual las escribió, this._currentUserText en el
+  // orquestador), el intercambio queda registrado con ESE texto y la
+  // respuesta en su forma almacenada (la misma de turns).
+  // [EDITCORE-V512-R2] Hasta la v5.1.1 se archivaba el mensaje YA
+  // ENSAMBLADO (meta.sentUserMessage: hora + contexto del turno +
+  // catálogo de skills + bloques de memoria dentro, sin tope por
+  // entrada): cada turno siguiente lo reenviaba íntegro como
+  // historial y recompraba el andamiaje de todos los turnos previos
+  // (medición PAYLOAD-ASK: ≈ +4.166 tokens por intercambio previo;
+  // Δ en vivo +5.638 por turno). La premisa que lo justificaba — el
+  // prefijo byte-exacto para la caché del proveedor de la Fase A —
+  // quedó SIN VALOR con la declaración A-1 en vivo (2026-11-13):
+  // ME AI no honra la caché del proveedor (leído 0 en dos consultas
+  // seguidas). Sin esa premisa, archivar andamiaje es solo costo: se
+  // archivan las palabras del usuario y la respuesta guardada, y la
+  // estructura append-only del registro no cambia.
+  const verbatimUserText = meta && typeof meta.originalUserText === "string" ? meta.originalUserText : "";
+  if (projectRoot && verbatimUserText) {
     try {
-      const entries = [{ role: "user", content: meta.sentUserMessage.content }];
+      const entries = [{ role: "user", content: verbatimUserText }];
       if (assistantText) {
         entries.push({ role: "assistant", content: slimStoredAssistantText(String(assistantText)).slice(0, 6_000) });
       }
