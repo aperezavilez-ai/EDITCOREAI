@@ -629,6 +629,371 @@ function successfulWritePaths(steps = []) {
     .filter(Boolean);
 }
 
+// [EDITCORE-V516-S2/S3/S4/S5/S6] IDENTIDAD DE LA TAREA (medición
+// MEDICION-IDENTIDAD-TAREA): el cierre histórico vigila FORMA (hechos,
+// verificación, propuesta) pero ningún chequeo comparaba lo APLICADO
+// contra lo PEDIDO — dos turnos en vivo cerraron «cumplido»
+// respondiendo a otra tarea (init_db→frente del Asesor; CSS→
+// autenticación, este último desviado por una compuerta del propio
+// kernel, ya retirada en S1). Las piezas de aquí comparan DATOS —
+// rutas nombradas en el pedido, pasos del turno, códigos de salida —
+// nunca léxico de intenciones sobre la prosa del modelo:
+//  S2 conjunto de artefactos del pedido, determinista, al abrir.
+//  S3/S4 desviación al cierre: artefacto nombrado sin ningún paso, o
+//        reparación visual con escrituras solo fuera de la superficie.
+//  S5 comandos de evidencia como hechos del kernel (en
+//        buildKernelFactSummary, más abajo).
+//  S6 premisa refutada por la evidencia previa a cualquier escritura.
+// LÍMITE DECLARADO: la identidad se caza por ARCHIVO/SUPERFICIE, no
+// por región — una sustitución dentro del MISMO archivo nombrado (otro
+// frente del mismo app.py) no la detecta S3; la mitigan el re-ancla
+// literal de los empujones (S7) y el antecedente del expediente (S8).
+const TASK_ARTIFACT_EXTS = "css|scss|sass|less|styl|tsx?|jsx?|mjs|cjs|py|json|html?|md|sql|vue|svelte|php|rb|go|rs|java|c|h|cpp|hpp|sh|ya?ml|toml|xml|env";
+const NAMED_PATH_RE = new RegExp(`(?:[A-Za-z0-9_@.+-]+[\\\\/])*[A-Za-z0-9_@.+-]+\\.(?:${TASK_ARTIFACT_EXTS})\\b`, "gi");
+const ARTIFACT_WALK_SKIP = new Set(["node_modules", ".git", "dist", ".next", ".editcore", "out", "build"]);
+const ARTIFACT_TEXT_EXTS = new Set([
+  "js", "mjs", "cjs", "ts", "tsx", "jsx", "json", "md", "mdx", "css", "scss", "less",
+  "sql", "html", "htm", "vue", "svelte", "py", "env", "txt", "xml", "yml", "yaml",
+  "toml", "ini", "sh", "bash", "php", "rb", "go", "rs", "java", "c", "h", "cpp",
+]);
+
+// Identificadores candidatos del pedido: forma de llamada `nombre(`,
+// citados entre comillas/graves, o con forma de símbolo (snake_case,
+// camelCase, PascalCase). Las palabras corrientes del idioma no tienen
+// ninguna de esas formas; y aun si un candidato cuela, solo entra al
+// conjunto si el proyecto lo DEFINE en exactamente un archivo.
+function extractIdentifierCandidates(text) {
+  const src = String(text || "");
+  const out = [];
+  const seen = new Set();
+  const push = (name) => {
+    const n = String(name || "");
+    if (n.length < 3 || n.length > 60 || seen.has(n)) return;
+    seen.add(n);
+    out.push(n);
+  };
+  for (const m of src.matchAll(/([A-Za-z_][A-Za-z0-9_]*)\s*\(/g)) push(m[1]);
+  for (const m of src.matchAll(/[`'"]([A-Za-z_][A-Za-z0-9_]*)[`'"]/g)) push(m[1]);
+  for (const m of src.matchAll(/\b([A-Za-z]+(?:_[A-Za-z0-9]+)+|[a-z]+[A-Z][A-Za-z0-9]*|[A-Z][a-z]+[A-Z][A-Za-z0-9]*)\b/g)) push(m[1]);
+  return out.slice(0, 6);
+}
+
+function identifierDefinitionRe(name) {
+  const esc = String(name).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`(?:^|[^\\w$.])(?:async\\s+)?(?:function|class|def|const|let|var)\\s+${esc}\\b|\\b${esc}\\s*=\\s*(?:async\\s*)?(?:function|class|\\()`, "m");
+}
+
+// UNA pasada por el proyecto (la misma disciplina de recorrido que
+// search_files: profundidad ≤ 6, mismos directorios saltados, tope de
+// entradas): recoge las rutas relativas y, solo si hay identificadores
+// por resolver, lee el contenido de los archivos de texto (≤ 512 KB).
+function walkProjectFiles(root, visit) {
+  let visited = 0;
+  const walk = (dir, depth) => {
+    if (depth > 6 || visited > 4000) return;
+    let entries = [];
+    try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
+    for (const e of entries) {
+      if (visited > 4000) return;
+      if (e.isDirectory()) {
+        if (!ARTIFACT_WALK_SKIP.has(e.name)) walk(path.join(dir, e.name), depth + 1);
+        continue;
+      }
+      if (!e.isFile()) continue;
+      visited += 1;
+      visit(path.relative(root, path.join(dir, e.name)).replace(/\\/g, "/"), path.join(dir, e.name));
+    }
+  };
+  walk(path.resolve(root), 0);
+}
+
+// S2 — Conjunto de artefactos del pedido. Entran: (a) rutas/archivos
+// con extensión nombrados en el texto literal — con directorio se
+// conservan tal cual (pueden ser un archivo por crear); sin directorio
+// solo si ese nombre existe en el proyecto (un «Node.js» suelto no es
+// un artefacto); (b) identificadores resueltos a UN archivo por su
+// definición — ambiguos o vacíos no entran. Sin llamadas al modelo.
+function computeTaskArtifacts(projectRoot, text) {
+  const artifacts = { files: [], named: [], identifiers: [] };
+  const src = String(text || "");
+  if (!projectRoot || !src.trim()) return artifacts;
+  const namedRaw = [...new Set((src.match(NAMED_PATH_RE) || [])
+    .map((t) => String(t).replace(/\\/g, "/").replace(/^\.\//, "").replace(/[.,;:'")\]]+$/, ""))
+    .filter((t) => t && !t.includes("://")))].slice(0, 8);
+  const candidates = extractIdentifierCandidates(src);
+  const slashNamed = namedRaw.filter((t) => t.includes("/"));
+  const bareNamed = namedRaw.filter((t) => !t.includes("/"));
+  let projectPaths = null;
+  const defs = candidates.map((name) => ({ name, re: identifierDefinitionRe(name), files: new Set() }));
+  if (candidates.length || bareNamed.length) {
+    projectPaths = [];
+    walkProjectFiles(projectRoot, (rel, abs) => {
+      projectPaths.push(rel);
+      if (!defs.length) return;
+      const ext = (rel.match(/\.([a-z0-9]+)$/i) || [])[1]?.toLowerCase() || "";
+      if (!ARTIFACT_TEXT_EXTS.has(ext)) return;
+      let content = "";
+      try {
+        if (fs.statSync(abs).size > 512_000) return;
+        content = fs.readFileSync(abs, "utf8");
+      } catch { return; }
+      for (const d of defs) { if (d.re.test(content)) d.files.add(rel); }
+    });
+    for (const d of defs) {
+      if (d.files.size === 1) artifacts.identifiers.push({ name: d.name, file: [...d.files][0] });
+    }
+  }
+  const seenFiles = new Set();
+  const addFile = (display) => {
+    const key = String(display || "").toLowerCase();
+    if (!key || seenFiles.has(key)) return;
+    seenFiles.add(key);
+    artifacts.files.push(display);
+  };
+  for (const t of slashNamed) { artifacts.named.push(t); addFile(t); }
+  for (const t of bareNamed) {
+    const exists = projectPaths ? projectPaths.some((p) => p.split("/").pop().toLowerCase() === t.toLowerCase()) : false;
+    if (exists) { artifacts.named.push(t); addFile(t); }
+  }
+  for (const idf of artifacts.identifiers) addFile(idf.file);
+  return artifacts;
+}
+
+function pathMatchesArtifactSet(relPath, artifacts) {
+  const rel = String(relPath || "").replace(/\\/g, "/").toLowerCase();
+  if (!rel || !artifacts || !artifacts.files.length) return false;
+  for (const f of artifacts.files) {
+    const a = String(f || "").toLowerCase();
+    if (!a) continue;
+    if (rel === a || rel.endsWith(`/${a}`) || a.endsWith(`/${rel}`)) return true;
+    if (!a.includes("/") && rel.split("/").pop() === a) return true;
+  }
+  return false;
+}
+
+// ¿El paso recae sobre el conjunto? Por su ruta (lectura, escritura,
+// listado), o porque su texto operativo (comando, consulta, símbolo)
+// nombra un artefacto o el identificador resuelto.
+function stepIntersectsArtifacts(s, artifacts) {
+  if (!s || !artifacts || !artifacts.files.length) return false;
+  const p = s.input?.path || s.result?.path || "";
+  if (p && pathMatchesArtifactSet(p, artifacts)) return true;
+  const hay = [s.input?.command, s.input?.query, s.input?.symbol, s.input?.target, s.input?.pattern]
+    .filter(Boolean).join(" ");
+  if (hay) {
+    for (const idf of artifacts.identifiers) if (hay.includes(idf.name)) return true;
+    for (const f of artifacts.files) {
+      const base = String(f).split("/").pop();
+      if (base && hay.includes(base)) return true;
+    }
+  }
+  return false;
+}
+
+// La escritura ¿cae fuera de TODAS las referencias aplicables del
+// pedido (conjunto de artefactos y/o superficie de la reparación)?
+// Sin referencia aplicable no hay «fuera» que declarar.
+function writeTargetOutsideRefs(target, artifacts, repairVisualSurface) {
+  const refs = [];
+  if (artifacts && artifacts.files.length) refs.push(pathMatchesArtifactSet(target, artifacts));
+  if (repairVisualSurface && repairGuard) refs.push(repairGuard.isBuildAffectingPath(target));
+  if (!refs.length) return false;
+  return refs.every((r) => r === false);
+}
+
+// S3/S4 — Estado de desviación del turno: hubo escrituras aplicadas y
+// (S3) ningún paso recayó sobre el conjunto de artefactos nombrados, o
+// (S4) siendo reparación visual, TODAS las escrituras cayeron fuera de
+// la superficie que afecta al build (repair-guard: isBuildAffectingPath).
+function identityDeviationState({ steps = [], written = [], artifacts = null, repairVisualSurface = false } = {}) {
+  const writtenList = Array.isArray(written) ? written : [];
+  let namedMiss = false;
+  let surfaceMiss = false;
+  if (writtenList.length > 0) {
+    if (artifacts && artifacts.files.length
+      && !(Array.isArray(steps) ? steps : []).some((s) => stepIntersectsArtifacts(s, artifacts))) {
+      namedMiss = true;
+    }
+    if (repairVisualSurface && repairGuard
+      && writtenList.every((w) => !repairGuard.isBuildAffectingPath(w))) {
+      surfaceMiss = true;
+    }
+  }
+  return { deviated: namedMiss || surfaceMiss, namedMiss, surfaceMiss };
+}
+
+// La declaración del modelo satisface la compuerta (como el «¿procedo?»
+// satisface la suya): su cierre nombra el artefacto pedido (o la clase
+// de superficie) Y lo efectivamente escrito — declara la sustitución
+// en vez de disfrazarla. Sin declaración, manda la nota del kernel.
+function closeDeclaresDeviation(closeText, artifacts, written, state) {
+  const t = String(closeText || "");
+  if (!t || !Array.isArray(written) || !written.length) return false;
+  const namesWritten = written.some((w) => t.includes(String(w)) || t.includes(String(w).split("/").pop()));
+  if (!namesWritten) return false;
+  const namesArtifact = ((artifacts && artifacts.files) || []).some((f) => t.includes(String(f)) || t.includes(String(f).split("/").pop()))
+    || ((artifacts && artifacts.identifiers) || []).some((idf) => t.includes(idf.name));
+  if (namesArtifact) return true;
+  if (state && state.surfaceMiss && !state.namedMiss) return /\b(css|estilos|tailwind|visual)\b/i.test(t);
+  return false;
+}
+
+// S5/S6 — Un paso de comando de evidencia (o build_project) como DATO:
+// etiqueta, resultado y primera línea de error, desde el propio paso.
+function evidenceCommandInfo(s) {
+  if (!s || s.blocked) return null;
+  if (s.name === "build_project") {
+    const ok = s.ok !== false && s.result?.ok === true;
+    const errSrc = String(s.result?.stderr || s.result?.error || s.result?.output || "");
+    const firstError = errSrc.split(/\r?\n/).map((l) => l.trim()).find(Boolean) || "";
+    return { label: "build_project", ok, code: s.result?.code ?? null, firstError: firstError.slice(0, 160) };
+  }
+  if (s.name !== "run_command") return null;
+  const command = String(s.input?.command || "").replace(/\s+/g, " ").trim();
+  if (!command || !repairGuard || !repairGuard.EVIDENCE_COMMAND_RE.test(command)) return null;
+  const ok = s.ok !== false && s.result?.ok === true;
+  const errSrc = String(s.result?.stderr || s.result?.output || s.result?.error || "");
+  const firstError = errSrc.split(/\r?\n/).map((l) => l.trim()).find(Boolean) || "";
+  return { label: command.slice(0, 90), ok, code: s.result?.code ?? null, firstError: firstError.slice(0, 160) };
+}
+
+function evidenceStepLabel(s) {
+  const info = evidenceCommandInfo(s);
+  if (info) return `\`${info.label}\` → ${info.ok ? "OK" : "FALLÓ"}`;
+  if (s && s.name === "capture_preview_screenshot") return "captura del preview → renderOk sin errores de consola";
+  return "la evidencia del turno";
+}
+
+// [EDITCORE-V516-P8] EL AGENTE NUNCA IMPRIME EL VALOR DE UNA
+// CREDENCIAL (regla determinista, no consejo al modelo): en el examen
+// VIXERAI el agente imprimió dos veces en el chat la contraseña del
+// administrador del seed, literal desde el código. Al cerrar el turno
+// se COSECHAN de los contenidos que el propio turno leyó o escribió
+// (pasos read_file / write_file / replace_in_file / salida de
+// run_command) los literales con forma de credencial — asignaciones
+// «password|passwd|secret|api_key|token|…» [:|=|==|===] "valor" y
+// variables de entorno *_PASSWORD/*_SECRET/*_TOKEN/*_API_KEY=valor —
+// y el texto final completo (respuesta + hechos del kernel + notas +
+// bloques de verificación) se barre: cada valor cosechado que aparezca
+// se sustituye por «[credencial omitida]». El barrido es tolerante al
+// formateo de prosa del propio chat, que puede partir el valor con un
+// salto de párrafo tras un signo de puntuación («Sup3rSeed!» ⏎⏎
+// «Pass»): hay una segunda pasada que casa el valor salvo blancos (ver
+// redactHarvestedCredentials). Nombrar el archivo, la función y QUE la
+// credencial existe sigue permitido; el VALOR, no.
+// Exclusiones declaradas (placeholders, no credenciales): valores de
+// menos de 8 caracteres; referencias a variables de entorno
+// (${…}, process.env, os.environ, getenv, import.meta.env); valores
+// entre <…>; valores de un solo carácter repetido (xxxxxxxx, ****);
+// y la lista cerrada de ejemplos genéricos de abajo. Sin cosecha, la
+// pieza es inerte y el texto sale byte a byte como antes.
+const CREDENTIAL_ASSIGN_RE = /(?:password|passwd|pwd|secret|api[_-]?key|apikey|access[_-]?token|auth[_-]?token|refresh[_-]?token|client[_-]?secret|private[_-]?key)\s*["']?\s*[:=]{1,3}\s*["'`]([^"'`]{8,})["'`]/gi;
+const CREDENTIAL_ENV_RE = /(?:^|\n)\s*[A-Z0-9_]*(?:PASSWORD|PASSWD|SECRET|API[_-]?KEY|TOKEN)[A-Z0-9_]*\s*=\s*([^\s"'`]{8,})/g;
+const PLACEHOLDER_CREDENTIAL_RE = /^(?:changeme|change[-_ ]?me|example|ejemplo|placeholder|password|contraseña|secret|secreto|token|redacted|omitid[ao]|test|demo|sample|dummy|fake|your[-_ ].*|tu[-_ ].*|mi[-_ ].*|xxx.*|\*+.*|undefined|null|none|ninguna)$/i;
+
+function isPlaceholderCredentialValue(v) {
+  const s = String(v || "").trim();
+  if (s.length < 8) return true;
+  if (/^<[^>]*>$/.test(s)) return true;
+  if (s.includes("${") || s.includes("process.env") || s.includes("import.meta.env") || s.includes("os.environ") || s.includes("getenv")) return true;
+  if (/^(.)\1+$/.test(s)) return true;
+  return PLACEHOLDER_CREDENTIAL_RE.test(s);
+}
+
+function harvestTurnCredentials(steps = []) {
+  const values = new Set();
+  const collect = (content) => {
+    const src = String(content || "");
+    if (!src) return;
+    for (const m of src.matchAll(CREDENTIAL_ASSIGN_RE)) {
+      const v = String(m[1] || "").trim();
+      if (!isPlaceholderCredentialValue(v)) values.add(v);
+    }
+    for (const m of src.matchAll(CREDENTIAL_ENV_RE)) {
+      const v = String(m[1] || "").trim();
+      if (!isPlaceholderCredentialValue(v)) values.add(v);
+    }
+  };
+  for (const s of Array.isArray(steps) ? steps : []) {
+    if (!s) continue;
+    if (s.name === "read_file") collect(s.result?.content || s.result?.text || "");
+    else if (s.name === "write_file") collect(s.input?.content || "");
+    else if (s.name === "replace_in_file") { collect(s.input?.newText || ""); collect(s.input?.oldText || ""); }
+    else if (s.name === "run_command") { collect(s.result?.output || ""); collect(s.result?.stderr || ""); }
+  }
+  // Más largos primero: una sustitución parcial no debe sobrevivir
+  // dentro de un valor mayor que la contiene.
+  return [...values].sort((a, b) => b.length - a.length);
+}
+
+function redactHarvestedCredentials(text, steps = []) {
+  const values = harvestTurnCredentials(steps);
+  if (!values.length) return text;
+  let out = String(text || "");
+  for (const v of values) {
+    if (out.includes(v)) { out = out.split(v).join("[credencial omitida]"); continue; }
+    // El formateador de prosa del chat (ensureChatParagraphs) parte
+    // las frases tras los signos de puntuación y puede PARTIR EL
+    // PROPIO VALOR al entrar el texto del modelo («Sup3rSeed!» ⏎⏎
+    // «Pass»): la búsqueda literal no lo encontraría y la credencial
+    // saldría impresa aunque rota. Segunda pasada tolerante: se
+    // busca el valor SIN espacios contra el texto SIN espacios y se
+    // sustituye el tramo original completo (con sus saltos) por la
+    // marca. Solo corre cuando la pasada literal no encontró el
+    // valor, y exige la secuencia contigua salvo blancos: dos
+    // fragmentos separados por prosa no casan.
+    const needle = v.replace(/\s+/g, "");
+    if (needle.length < 8) continue;
+    for (let guard = 0; guard < 10; guard++) {
+      const skeleton = [];
+      const origin = [];
+      for (let i = 0; i < out.length; i++) {
+        if (!/\s/.test(out[i])) { skeleton.push(out[i]); origin.push(i); }
+      }
+      const idx = skeleton.join("").indexOf(needle);
+      if (idx < 0) break;
+      const startOrig = origin[idx];
+      const endOrig = origin[idx + needle.length - 1];
+      out = `${out.slice(0, startOrig)}[credencial omitida]${out.slice(endOrig + 1)}`;
+    }
+  }
+  return out;
+}
+
+// [EDITCORE-V516-S6] Afirmación de fallo REFUTABLE por la evidencia:
+// función negada («no se ve / no levanta / no abre / no carga / no
+// funciona / no renderiza / no responde / no muestra / no compila»)
+// o pantalla/página en blanco. Junto a BUILD_REQUEST (compilación)
+// delimita cuándo la maquinaria de premisa puede armarse: solo
+// contra afirmaciones que un build o una captura aprobados PUEDEN
+// desmentir, nunca contra pedidos sin afirmación de fallo.
+const PREMISE_CLAIM_RE = /\bno\s+(?:se\s+ve|compila|levanta|abre|carga|funciona|renderiza|responde|muestra|sale|anda)\b|pantalla\s+en\s+blanco|p[áa]gina\s+en\s+blanco/i;
+
+// S6 — Premisa refutada: la verificación implicada por el pedido
+// (comando de evidencia o captura, stepIsEvidenceAttempt de
+// repair-guard) corrió ANTES de cualquier escritura aplicada y salió
+// APROBADA: la afirmación del usuario («no compila», «no se ve»)
+// quedó desmentida por la evidencia del propio turno.
+function premiseRefutedByEvidence(steps = []) {
+  if (!repairGuard || typeof repairGuard.stepIsEvidenceAttempt !== "function") return { refuted: false, evidenceStep: null };
+  const list = Array.isArray(steps) ? steps : [];
+  const firstWriteIdx = list.findIndex((s) => s && (s.name === "write_file" || s.name === "replace_in_file" || s.name === "scaffold_project") && s.ok !== false && s.result?.ok !== false && !s.result?.unchanged);
+  const limit = firstWriteIdx === -1 ? list.length : firstWriteIdx;
+  for (let i = 0; i < limit; i += 1) {
+    const s = list[i];
+    if (!repairGuard.stepIsEvidenceAttempt(s)) continue;
+    if (s.name === "capture_preview_screenshot") {
+      const errs = Array.isArray(s.result?.diagnostics?.consoleErrors)
+        ? s.result.diagnostics.consoleErrors.filter((e) => e && e.type !== "warning")
+        : [];
+      if (s.result?.renderOk === true && errs.length === 0) return { refuted: true, evidenceStep: s };
+    } else if (s.name === "run_command") {
+      if (s.ok !== false && s.result?.ok === true) return { refuted: true, evidenceStep: s };
+    }
+  }
+  return { refuted: false, evidenceStep: null };
+}
+
 // [EDITCORE-INTEGRAL-B1] Resumen FACTUAL del kernel: los hechos del cierre
 // (qué archivo cambió y qué hunk real se aplicó) los construye el KERNEL
 // desde los steps — args oldText/newText/content que ya viajan en cada paso
@@ -713,13 +1078,36 @@ function buildKernelFactSummary(steps = []) {
       }
     }
   }
+  // [EDITCORE-V516-S5] Los comandos de EVIDENCIA también son hechos:
+  // hasta la v5.1.5 el resumen ignoraba los run_command y el resultado
+  // del build (pasara o fallara) solo existía si la prosa del modelo lo
+  // citaba — en el CASO 2 el build en verde quedó fuera de los hechos y
+  // el veredicto se apoyó solo en la captura. Ahora cada comando de la
+  // clase de evidencia (EVIDENCE_COMMAND_RE) y cada build_project dejan
+  // su línea determinista, deduplicada por comando+resultado, tope 4.
+  const cmdLines = [];
+  const seenCmd = new Set();
+  for (const s of Array.isArray(steps) ? steps : []) {
+    const info = evidenceCommandInfo(s);
+    if (!info) continue;
+    const key = `${info.label}|${info.ok}|${info.code}`;
+    if (seenCmd.has(key)) continue;
+    seenCmd.add(key);
+    cmdLines.push(info.ok
+      ? `- \`${info.label}\` → OK`
+      : `- \`${info.label}\` → FALLÓ${info.code != null ? ` (código ${info.code})` : ""}${info.firstError ? `: ${info.firstError}` : ""}`);
+    if (cmdLines.length >= 4) break;
+  }
   const audit = auditSubagentSteps(steps);
-  if (!lines.length && !audit.length) return "";
+  if (!lines.length && !audit.length && !cmdLines.length) return "";
   const out = ["## 🧾 Hechos del turno (kernel)", ""];
   if (lines.length) {
     out.push("Cambios que el kernel SÍ aplicó en disco (desde los pasos reales, no desde el relato):", "", ...lines, "");
   } else {
     out.push("El kernel no registró ninguna escritura aplicada en este turno.", "");
+  }
+  if (cmdLines.length) {
+    out.push("Comandos de evidencia de este turno (resultado desde los pasos, no desde el relato):", "", ...cmdLines, "");
   }
   if (audit.length) {
     out.push("Auditoría de lo delegado:", "", ...audit.map((f) => `- ${f}`), "");
@@ -968,7 +1356,7 @@ function repairDanglingOutput(text, steps = [], userMessage = "", decision = {})
   return formatAgentVisibleText("## ℹ️ Respuesta\n\nNo completé la instrucción en este turno. Reformulá o indicá el archivo puntual.");
 }
 
-const DISK_READ_TOOLS = new Set(["read_file", "list_files", "search_files", "project_discovery", "codebase_map", "symbol_search", "dependency_search", "search_codebase_semantic", "run_command", "run_diagnostic"]);
+const DISK_READ_TOOLS = new Set(["read_file", "list_files", "search_files", "project_discovery", "codebase_map", "symbol_search", "dependency_search", "run_command", "run_diagnostic"]);
 
 function successfulDiskReads(steps = []) {
   return (Array.isArray(steps) ? steps : []).filter((s) => DISK_READ_TOOLS.has(s.name) && s.ok !== false && s.result?.ok !== false).length;
@@ -1281,9 +1669,15 @@ function detachLongRunningStreams(steps) {
   }
 }
 
-function wantsCodeSearch(text) {
-  return /\b(?:busca|buscar|encuentra|localiza|d[oó]nde\s+est[aá]|en\s+qu[eé]\s+archivo|signIn|signInWithPassword|\bauth\b|\blogin\b)\b/i.test(String(text || ""));
-}
+// [EDITCORE-V516-S1] La compuerta legada wantsCodeSearch quedó
+// ELIMINADA (detector y disparo): casaba con un verbo de cortesía del
+// pedido («Encuentra la causa») y ordenaba sin contador cazar un TEMA
+// FIJO (auth/login/signIn) con una herramienta INEXISTENTE
+// (search_codebase_semantic) — el desvío del CASO 2 de la medición de
+// identidad de tarea lo prescribió esta orden, palabra por palabra.
+// Invariante desde la v5.1.6: ninguna compuerta del kernel inyecta un
+// tema fijo ni prescribe una herramienta fuera del set ejecutable;
+// todo empujón deriva su contenido del pedido literal del usuario.
 
 function wantsConnectionsCheck(text) {
   // Sin "qué falta" a secas: esa frase en una pregunta cualquiera
@@ -1301,7 +1695,7 @@ function maybeBlockRootListFiles(name, args, projectRoot, listOnly) {
     ok: false,
     blocked: true,
     error: "list_files de la raiz bloqueado en este modo. No sustituye busqueda ni check_connections.",
-    guidance: "Usa search_files, search_codebase_semantic, check_connections, o list_files('src').",
+    guidance: "Usa search_files, check_connections, o list_files('src').",
   };
 }
 
@@ -1492,7 +1886,7 @@ function looksLikePlanClose(text = "") {
 // el formato lista es para cuando el usuario pidió LISTAR, no para
 // cuando pidió CONTENIDO (dime / revisa / explica / dónde está).
 const SUBSTANTIVE_READ_TOOLS = new Set([
-  "read_file", "search_files", "search_codebase_semantic", "search_brain",
+  "read_file", "search_files", "search_brain",
   "read_skill", "capture_preview_screenshot", "symbol_search",
   "dependency_search", "codebase_map", "project_discovery",
 ]);
@@ -2545,6 +2939,19 @@ class ChatOrchestrator {
     // vacío sin un solo paso: contador propio, tope duro de UNA por
     // turno (el patrón de empujones de un solo uso del kernel: B2=1).
     let emptyCloseResumes = 0;
+    // [EDITCORE-V516-S3/S6] Identidad de la tarea: UNA devolución de
+    // identidad por turno (compartida por la desviación de artefacto/
+    // superficie y por la premisa refutada al cierre) y UN bloqueo de
+    // escritura por premisa refutada en el despacho (S6). Agotados,
+    // mandan las notas deterministas de la finalización (fail-open
+    // declarado, patrón de la casa).
+    let identityNudges = 0;
+    let premiseBlocks = 0;
+    // [EDITCORE-V516-S7] Re-ancla literal: los empujones citan el
+    // pedido del usuario (recorte de 200) en vez de «la tarea pedida»
+    // en genérico — cada devolución reinyecta el ancla que el turno
+    // solo recibe una vez, al abrir.
+    const literalRequestExcerpt = String(this._currentUserText || message || "").trim().replace(/\s+/g, " ").slice(0, 200);
 
     const toolHistory = new Map();
     // [EDITCORE-V491-C] Llamadas cortadas por needsAuthorization en
@@ -2941,6 +3348,46 @@ class ChatOrchestrator {
       });
       iterStartSteps = steps.length; // el marcador no es una iteración del bucle
     }
+    // [EDITCORE-V516-S2] Conjunto de artefactos del PEDIDO, calculado
+    // al abrir el turno de tarea (determinista, sin modelo): rutas
+    // nombradas en el texto literal + identificadores resueltos a un
+    // archivo por su definición, en UNA pasada por el proyecto y solo
+    // cuando hay candidatos que resolver. Queda asentado como marcador
+    // en los steps (auditoría) y disponible para las compuertas de
+    // identidad del cierre y del despacho. Los turnos de pregunta
+    // (ASK/LIST/ANALYZE/CHAT) no lo pagan: su carril queda intacto.
+    const taskArtifacts = (!chatOnly && decision?.kind !== "CHAT" && !listOnlyMode && !analysisMode && projectRoot)
+      ? computeTaskArtifacts(projectRoot, String(this._currentUserText || message || ""))
+      : { files: [], named: [], identifiers: [] };
+    if (taskArtifacts.files.length) {
+      steps.push({
+        name: "task_artifacts",
+        input: { named: taskArtifacts.named, identifiers: taskArtifacts.identifiers.map((x) => x.name) },
+        result: { files: taskArtifacts.files },
+        ok: true,
+      });
+      iterStartSteps = steps.length; // el marcador no es una iteración del bucle
+    }
+    // Superficie de reparación visual del turno (para S4/S6): el
+    // pedido es de reparación y su texto es de clase visual/CSS.
+    const repairVisualSurface = this._repairTask === true && !!repairGuard
+      && repairGuard.isVisualRepairTask(String(this._currentUserText || message || ""));
+    // [EDITCORE-V516-S6] La premisa solo es REFUTABLE por la evidencia
+    // cuando el usuario AFIRMÓ un fallo de la clase que la evidencia
+    // puede desmentir: una afirmación de compilación (BUILD_REQUEST:
+    // «no compila», «el build falla») o una afirmación de función
+    // negada (PREMISE_CLAIM_RE: «no se ve», «no levanta», «pantalla
+    // en blanco»). NO basta la clasificación amplia de reparación de
+    // la casa — su léxico incluye la sola palabra «preview», y un
+    // pedido de CREACIÓN que pide capturar el preview («crea el
+    // archivo…, corre la comprobación y captura el preview», batería
+    // V492-1a) no afirma ningún fallo: una captura aprobada no refuta
+    // nada ahí y la maquinaria de premisa NO debe armarse. Tampoco se
+    // arma ante premisas de otra clase («hay una doble definición»):
+    // un build en verde no desmiente un duplicado.
+    const premiseRefutableClaim = this._repairTask === true
+      && (BUILD_REQUEST.test(String(this._currentUserText || message || ""))
+        || PREMISE_CLAIM_RE.test(String(this._currentUserText || message || "")));
     // [EDITCORE-V510-B4] Latido del lote de herramientas (el de la
     // llamada al modelo se apaga al volver el paso): vive en esta
     // variable para que el finally del turno lo apague siempre,
@@ -3303,13 +3750,13 @@ class ChatOrchestrator {
           // herramientas ofrecidas, iteración ordinaria del bucle.
           // Reparto: con pasos/hechos manda B2 como siempre; sin
           // pasos, se reanuda. Tope duro: UNA reanudación por turno.
-          const noExecutedSteps = steps.every((s) => s.name === "director_dispatch" || s.name === "orientation_first" || s.name === "ask_explorer");
+          const noExecutedSteps = steps.every((s) => s.name === "director_dispatch" || s.name === "orientation_first" || s.name === "ask_explorer" || s.name === "task_artifacts");
           if (!chatOnly && decision?.kind !== "CHAT" && !listOnlyMode && !analysisMode
             && noExecutedSteps && emptyCloseResumes < 1 && i < stepsLimit - 1
             && isNarrationOnlyText(cleanText)) {
             emptyCloseResumes += 1;
             messages.push({ role: "assistant", content: cleanText || null });
-            messages.push({ role: "user", content: "Tu respuesta no trajo ninguna llamada a herramienta y este turno de tarea todavía no ha ejecutado NI UN paso: no hay nada que sintetizar. Ejecuta AHORA la tarea pedida usando las herramientas: empieza por la lectura o búsqueda que corresponda y sigue hasta aplicarla o verificarla. No cierres con narración ni con un resumen de intenciones." });
+            messages.push({ role: "user", content: `Tu respuesta no trajo ninguna llamada a herramienta y este turno de tarea todavía no ha ejecutado NI UN paso: no hay nada que sintetizar. Ejecuta AHORA la tarea pedida usando las herramientas: empieza por la lectura o búsqueda que corresponda y sigue hasta aplicarla o verificarla. No cierres con narración ni con un resumen de intenciones. Pedido literal del usuario: «${literalRequestExcerpt}».` });
             onProgress?.({ phase: "model", text: "Cierre en vacío sin pasos: reanudando la ejecución de la tarea" });
             continue;
           }
@@ -3391,21 +3838,15 @@ class ChatOrchestrator {
           if (fixWithoutWrites) {
             noWriteNudges += 1;
             messages.push({ role: "assistant", content: cleanText || null });
-            messages.push({ role: "user", content: "Todavía no modificaste ningún archivo y el usuario pidió corregir/implementar. No describas cambios ni digas que los aplicaste: aplícalos AHORA con replace_in_file o write_file (lee antes el archivo si hace falta). Solo si de verdad no hace falta cambiar nada, explica por qué con evidencia concreta (archivo:línea o salida de un comando)." });
+            messages.push({ role: "user", content: `Todavía no modificaste ningún archivo y el usuario pidió corregir/implementar. No describas cambios ni digas que los aplicaste: aplícalos AHORA con replace_in_file o write_file (lee antes el archivo si hace falta). Solo si de verdad no hace falta cambiar nada, explica por qué con evidencia concreta (archivo:línea o salida de un comando). Pedido literal del usuario: «${literalRequestExcerpt}».` });
             onProgress?.({ phase: "model", text: `Sin cambios aplicados todavía: pidiendo que aplique las correcciones (${noWriteNudges}/${MAX_NO_WRITE_NUDGES})` });
             continue;
           }
 
                     const userMsg = String(this._currentUserText || message || "");
-          if (!analysisMode && !listOnlyMode && wantsCodeSearch(userMsg) && i < stepsLimit - 2) {
-            const usedSearch = steps.some((s) => s.name === "search_files" || s.name === "search_codebase_semantic" || s.name === "search_brain");
-            if (!usedSearch) {
-              messages.push({ role: "assistant", content: cleanText || null });
-              messages.push({ role: "user", content: "No listes la raiz. Ejecuta AHORA search_codebase_semantic o search_files (auth/login/signIn) y reporta archivo + lineas. Cierra SIN menus ni opciones." });
-              onProgress?.({ phase: "model", text: "Forzando busqueda en codigo..." });
-              continue;
-            }
-          }
+          // [EDITCORE-V516-S1] Aquí vivía el disparo de wantsCodeSearch
+          // (orden de tema fijo auth/login con herramienta fantasma):
+          // eliminado con su detector — ver la nota en su antigua casa.
           if (!analysisMode && !listOnlyMode && wantsConnectionsCheck(userMsg) && connNudges < 1 && i < stepsLimit - 2) {
             const usedConn = steps.some((s) => s.name === "check_connections");
             if (!usedConn) {
@@ -3506,7 +3947,7 @@ class ChatOrchestrator {
             // devuelve UNA vez pidiendo propuesta o término.
             closingNudges += 1;
             messages.push({ role: "assistant", content: cleanText || null });
-            messages.push({ role: "user", content: "No cierres «mocho»: todo turno de tarea cierra con (a) una PROPUESTA concreta del siguiente paso — qué harías ahora, en qué archivos y para qué — o (b) la DECLARACIÓN explícita de término («doy por terminado X porque Y»). Reescribe tu cierre con el resultado de este turno MÁS la propuesta o la declaración, con nombre propio. Un usuario que va empezando debe saber qué sigue con solo leerte." });
+            messages.push({ role: "user", content: `No cierres «mocho»: todo turno de tarea cierra con (a) una PROPUESTA concreta del siguiente paso — qué harías ahora, en qué archivos y para qué — o (b) la DECLARACIÓN explícita de término («doy por terminado X porque Y»). Reescribe tu cierre con el resultado de este turno MÁS la propuesta o la declaración, con nombre propio. Un usuario que va empezando debe saber qué sigue con solo leerte. Pedido literal del usuario: «${literalRequestExcerpt}».` });
             onProgress?.({ phase: "model", text: "Cierre sin propuesta ni término declarado: pidiendo cierre propositivo" });
             continue;
           }
@@ -3552,11 +3993,51 @@ class ChatOrchestrator {
             continue;
           }
 
+          // [EDITCORE-V516-S3/S4/S6] Compuerta de IDENTIDAD DE LA
+          // TAREA (la última devolución del cierre; no reordena
+          // ninguna existente): el turno escribió, pero lo aplicado no
+          // responde al pedido literal — el conjunto de artefactos
+          // nombrados no recibió NI UN paso, o siendo reparación
+          // visual todas las escrituras cayeron fuera de la superficie
+          // implicada. Se devuelve UNA vez (contador compartido con la
+          // cara de premisa): o el modelo ejecuta sobre lo pedido, o
+          // DECLARA la desviación y su motivo en su cierre. Si su
+          // cierre ya declara la sustitución (nombra el artefacto y lo
+          // escrito), la compuerta queda satisfecha sin duplicar. Si
+          // aun así cierra fuera sin declarar, la finalización deja la
+          // nota determinista de identidad (o la de premisa refutada,
+          // que es la más específica cuando la evidencia desmintió el
+          // pedido antes de escribir).
+          const identityWritten = successfulWritePaths(steps);
+          const identityState = (!chatOnly && decision?.kind !== "CHAT" && !listOnlyMode && !analysisMode && !projectless)
+            ? identityDeviationState({ steps, written: identityWritten, artifacts: taskArtifacts, repairVisualSurface })
+            : { deviated: false, namedMiss: false, surfaceMiss: false };
+          if (identityState.deviated && identityNudges < 1 && i < stepsLimit - 1
+            && !closeDeclaresDeviation(cleanText, taskArtifacts, identityWritten, identityState)) {
+            identityNudges += 1;
+            const premiseNow = premiseRefutableClaim ? premiseRefutedByEvidence(steps) : { refuted: false, evidenceStep: null };
+            const premiseFlavor = premiseNow.refuted
+              && identityWritten.some((w) => writeTargetOutsideRefs(w, taskArtifacts, repairVisualSurface));
+            messages.push({ role: "assistant", content: cleanText || null });
+            if (premiseFlavor) {
+              messages.push({ role: "user", content: `ALTO — PREMISA REFUTADA POR TU PROPIA EVIDENCIA: el pedido literal fue «${literalRequestExcerpt}», pero tu evidencia de este turno (${evidenceStepLabel(premiseNow.evidenceStep)}), corrida ANTES de cualquier escritura, lo desmiente, y aun así escribiste fuera de lo pedido (${identityWritten.map((w) => `\`${w}\``).join(", ")}). Reescribe tu cierre DECLARANDO la refutación con esa evidencia: di que la premisa no se sostiene, cita el resultado exacto y plantea cualquier trabajo adicional como propuesta separada. No presentes el trabajo sustituto como la corrección encargada.` });
+              onProgress?.({ phase: "model", text: "Premisa refutada por la evidencia: pidiendo que la declare antes de cerrar" });
+            } else {
+              const namedList = taskArtifacts.files.length
+                ? taskArtifacts.files.map((f) => `\`${f}\``).join(", ")
+                : "la superficie implicada por la clase de la reparación (archivos que afectan al build/estilos)";
+              messages.push({ role: "user", content: `ALTO — IDENTIDAD DE LA TAREA: el pedido literal fue «${literalRequestExcerpt}». Ese pedido apunta a ${namedList} y ningún paso de este turno recayó sobre ellos; en cambio escribiste ${identityWritten.map((w) => `\`${w}\``).join(", ")}. O ejecutas AHORA sobre lo pedido, o reescribes tu cierre DECLARANDO la desviación y su motivo (qué pedía el usuario, qué hiciste en su lugar y por qué), para que el usuario juzgue la sustitución a la vista. Cerrar como si lo aplicado fuera lo pedido no es una opción.` });
+              onProgress?.({ phase: "model", text: "Identidad de la tarea: lo aplicado no responde al pedido — pidiendo ejecutar sobre lo pedido o declarar la desviación" });
+            }
+            continue;
+          }
+
           settleIteration(); // [EDITCORE-V510-B4] la última iteración también se asienta en el libro
           this.session.kill();
           const written = successfulWritePaths(steps);
           let textOut = cleanText;
           let emptyCloseFallback = false; // [EDITCORE-V515-R3] este cierre salió por la constancia de vacío
+          let premiseNoteShown = false; // [EDITCORE-V516-S6] la nota de premisa manda sobre la de identidad
 
           // [EDITCORE-V491-C] La presentación en prosa del plan (lo que
           // el usuario leyó antes de decir «procede») se anexa al plan
@@ -3607,6 +4088,26 @@ class ChatOrchestrator {
             if (factSummary) textOut = `${factSummary}\n\n---\n\n${String(textOut || "").trim()}`;
           }
 
+          // [EDITCORE-V516-S6] Nota DETERMINISTA de premisa refutada,
+          // ANTEPUESTA: en un turno de reparación, la evidencia
+          // implicada por el pedido corrió antes de cualquier
+          // escritura y salió APROBADA (la premisa del usuario quedó
+          // desmentida por el propio turno) y aun así el turno escribió
+          // fuera del conjunto/superficie. Es un HECHO desde los steps
+          // (con su línea de evidencia, S5), no un juicio sobre la
+          // prosa: el usuario la lee por encima del veredicto del
+          // modelo, declare este lo que declare. Si no hubo escrituras
+          // fuera, no hay sustitución que constatar y la nota no sale.
+          if (!listOnlyMode && !analysisMode && !chatOnly && decision?.kind !== "CHAT"
+            && this._repairTask === true && premiseRefutableClaim && written.length > 0) {
+            const premiseFinal = premiseRefutedByEvidence(steps);
+            const outsideWrites = written.filter((w) => writeTargetOutsideRefs(w, taskArtifacts, repairVisualSurface));
+            if (premiseFinal.refuted && outsideWrites.length > 0) {
+              premiseNoteShown = true;
+              textOut = `> ⚠️ **Nota del kernel (premisa refutada):** la afirmación del pedido quedó desmentida por la evidencia del propio turno (${evidenceStepLabel(premiseFinal.evidenceStep)}, corrida ANTES de cualquier escritura) y aun así este turno escribió fuera de lo pedido: ${outsideWrites.map((w) => `\`${w}\``).join(", ")}. Ese trabajo no era el pedido: valóralo como propuesta separada, no como la corrección encargada.\n\n${String(textOut || "").trim()}`;
+            }
+          }
+
           // [EDITCORE-INTEGRAL-B1] Garantía ESTRUCTURAL (sin regex sobre la
           // prosa): pedido con intención de mutación + turno AUTORIZADO +
           // CERO escrituras registradas = el kernel lo dice él mismo,
@@ -3630,6 +4131,27 @@ class ChatOrchestrator {
             const outside = written.filter((p) => !allowedPaths.some((a) => p === a || p.endsWith(`/${a}`) || a.endsWith(`/${p}`)));
             if (outside.length) {
               textOut = `${String(textOut || "").trim()}\n\n---\n\n**Nota del kernel:** este turno ejecutaba el plan presentado y autorizado por el usuario (${allowedPaths.map((a) => `\`${a}\``).join(", ") || "sin archivos declarados"}), pero también escribió FUERA del plan presentado: ${outside.map((p) => `\`${p}\``).join(", ")}. Ese exceso no era lo presentado: revísalo con el usuario antes de darlo por bueno.`;
+            }
+          }
+
+          // [EDITCORE-V516-S3/S4] Nota DETERMINISTA de identidad: la
+          // devolución del cierre no bastó (o el cierre declara sin
+          // declarar) y el turno termina escribiendo fuera del pedido
+          // sin un solo paso sobre el artefacto nombrado / con todas
+          // las escrituras fuera de la superficie de la reparación.
+          // Hermana de la nota «fuera del plan presentado» de aquí
+          // arriba, con la referencia cambiada: el PEDIDO LITERAL, no
+          // el plan. Si el modelo declaró la sustitución en su cierre
+          // (nombra el artefacto y lo escrito), la nota no se duplica;
+          // si la nota de premisa refutada ya salió, manda aquella.
+          if (!premiseNoteShown && written.length > 0 && !listOnlyMode && !analysisMode && !chatOnly && !projectless
+            && decision?.kind !== "CHAT") {
+            const devFinal = identityDeviationState({ steps, written, artifacts: taskArtifacts, repairVisualSurface });
+            if (devFinal.deviated && !closeDeclaresDeviation(cleanText, taskArtifacts, written, devFinal)) {
+              const namedList = taskArtifacts.files.length
+                ? taskArtifacts.files.map((f) => `\`${f}\``).join(", ")
+                : "la superficie implicada por la clase de la reparación";
+              textOut = `${String(textOut || "").trim()}\n\n---\n\n**Nota del kernel (identidad de la tarea):** el pedido apuntaba a ${namedList} y ningún paso de este turno recayó sobre ellos; este turno escribió ${written.map((w) => `\`${w}\``).join(", ")}. Si la desviación fue deliberada, debió declararse con su motivo en el cierre: lo aplicado no responde a lo pedido, y así queda asentado.`;
             }
           }
 
@@ -3702,6 +4224,11 @@ class ChatOrchestrator {
           if (turnWasPartial) {
             textOut = `${String(textOut || "").trim()}\n\n> ⚠️ **Respuesta parcial:** el proveedor cortó la transmisión en este turno; lo de arriba puede estar incompleto. Pide «continúa» si falta algo.`;
           }
+          // [EDITCORE-V516-P8] Barrido de credenciales sobre el texto
+          // FINAL completo (relato + hechos + notas + verificación):
+          // ningún valor de credencial cosechado de lo leído/escrito
+          // en este turno sale impreso al chat.
+          textOut = redactHarvestedCredentials(textOut, steps);
           textOut = formatAgentVisibleText(textOut);
           persistKernelRoadmap(projectRoot, { task: this._currentUserText || message, steps, kind: decision?.kind, text: textOut, completed: true });
           rememberOut(textOut); detachLongRunningStreams(steps);
@@ -3816,6 +4343,41 @@ class ChatOrchestrator {
             steps.push(stepData); this.session.addStep(stepData);
             onProgress?.({ phase: "tool", stage: "done", name, input: args, result: blockedEvidence, ok: false, blocked: true });
             messages.push({ role: "tool", tool_call_id: call.id, name, content: tools.truncatePayload(blockedEvidence, 2000) });
+            continue;
+          }
+
+          // [EDITCORE-V516-S6] Compuerta de PREMISA REFUTADA: en un
+          // turno de reparación, la evidencia implicada por el pedido
+          // ya corrió ANTES de cualquier escritura y salió APROBADA —
+          // la afirmación del usuario («el CSS no compila») quedó
+          // desmentida por la evidencia del propio turno (CASO 2: el
+          // build pasaba y el agente, sin ninguna compuerta que lo
+          // obligara a decirlo, escribió otra cosa y declaró
+          // «operativo»). Antes de permitir la PRIMERA escritura fuera
+          // del conjunto de artefactos/superficie del pedido, se
+          // bloquea UNA vez con la orden de declarar la refutación;
+          // si el modelo insiste, la escritura pasa (fail-open) y la
+          // finalización antepone la nota determinista de premisa
+          // refutada con la línea de evidencia.
+          let blockedPremise = null;
+          if (repairGuard && this._repairTask === true && premiseRefutableClaim && premiseBlocks < 1
+            && (name === "write_file" || name === "replace_in_file" || name === "scaffold_project")) {
+            const premise = premiseRefutedByEvidence(steps);
+            if (premise.refuted && writeTargetOutsideRefs(String(args?.path || ""), taskArtifacts, repairVisualSurface)) {
+              blockedPremise = {
+                ok: false,
+                blocked: true,
+                premiseGate: true,
+                error: `Compuerta de premisa refutada: tu propia evidencia de este turno (${evidenceStepLabel(premise.evidenceStep)}), corrida ANTES de cualquier escritura, DESMIENTE la premisa del pedido («${literalRequestExcerpt}»). No ejecutes trabajo sustituto como si fuera el pedido: declara AHORA en tu respuesta la refutación con esa evidencia y plantea cualquier trabajo adicional que veas como PROPUESTA separada, para que el usuario decida. Si después de declararlo aun así escribes fuera de lo pedido, la escritura pasará y el cierre dejará constancia de la premisa refutada.`,
+              };
+            }
+          }
+          if (blockedPremise) {
+            premiseBlocks += 1;
+            const stepData = { name, input: args, result: blockedPremise, ok: false, blocked: true };
+            steps.push(stepData); this.session.addStep(stepData);
+            onProgress?.({ phase: "tool", stage: "done", name, input: args, result: blockedPremise, ok: false, blocked: true });
+            messages.push({ role: "tool", tool_call_id: call.id, name, content: tools.truncatePayload(blockedPremise, 2000) });
             continue;
           }
 
@@ -4182,6 +4744,10 @@ class ChatOrchestrator {
           textOut = await appendRealVerification(projectRoot, written, steps, textOut, onProgress, { repairTask: this._repairTask === true, previewUrl: this._activePreviewUrl || "", signal: this.abort?.signal || null }); // [EDITCORE-INTEGRAL-B6]
         } catch (_) { /* verify no debe tumbar el turno */ }
       }
+      // [EDITCORE-V516-P8] El mismo barrido de credenciales en la
+      // finalización por agotamiento de pasos: la regla no depende de
+      // cómo cierre el turno.
+      textOut = redactHarvestedCredentials(textOut, steps);
       textOut = formatAgentVisibleText(textOut);
       persistKernelRoadmap(projectRoot, { task: this._currentUserText || message, steps, kind: decision?.kind, text: textOut, completed: !pausedByLimit });
       rememberOut(textOut); detachLongRunningStreams(steps);
@@ -4255,4 +4821,4 @@ class ChatOrchestrator {
   }
 }
 
-module.exports = { ChatOrchestrator, SKILL_IDS, taskQueue, groundUngroundedClaims, successfulDiskReads, hasMutationIntent, buildKernelFactSummary, auditSubagentSteps, runPostWriteVerify, formatVerifyBlock, applyTurnContextBudget, TURN_CONTEXT_MAX_CHARS, TURN_CONTEXT_TRUNCATION_MARKER, CTX_TIER_ESSENTIAL, CTX_TIER_NORMAL, CTX_TIER_ACCESSORY, /* [EDITCORE-INTEGRAL-B3] */ appendRealVerification, /* [EDITCORE-INTEGRAL-B5] */ normalizePermissionMode, buildModeAnnouncement, /* [EDITCORE-INTEGRAL-B6] */ raceSemanticBlock, SEMANTIC_MEMORY_TIMEOUT_MS, runRealVerification, /* [EDITCORE-INTEGRAL-B8] */ formatExternalActionResult, /* [EDITCORE-INTEGRAL-B9] */ buildCerebroServiceBlock, buildBrainContextBlock, /* [EDITCORE-V492-3] */ detectMemoryEventQuestion, memoryEventInDossier, memoryAnswerAffirmsEvent, memoryEventGuardBanner, MEMORY_EVENT_PROTOCOL, /* [EDITCORE-V510-B2/B3/B4/B6] */ isNarrationOnlyText, closingHasProposalOrTerminus, substantiveFallbackText, progressRenditionText, detectDecomposableTask };
+module.exports = { ChatOrchestrator, SKILL_IDS, taskQueue, groundUngroundedClaims, successfulDiskReads, hasMutationIntent, buildKernelFactSummary, auditSubagentSteps, runPostWriteVerify, formatVerifyBlock, applyTurnContextBudget, TURN_CONTEXT_MAX_CHARS, TURN_CONTEXT_TRUNCATION_MARKER, CTX_TIER_ESSENTIAL, CTX_TIER_NORMAL, CTX_TIER_ACCESSORY, /* [EDITCORE-INTEGRAL-B3] */ appendRealVerification, /* [EDITCORE-INTEGRAL-B5] */ normalizePermissionMode, buildModeAnnouncement, /* [EDITCORE-INTEGRAL-B6] */ raceSemanticBlock, SEMANTIC_MEMORY_TIMEOUT_MS, runRealVerification, /* [EDITCORE-INTEGRAL-B8] */ formatExternalActionResult, /* [EDITCORE-INTEGRAL-B9] */ buildCerebroServiceBlock, buildBrainContextBlock, /* [EDITCORE-V492-3] */ detectMemoryEventQuestion, memoryEventInDossier, memoryAnswerAffirmsEvent, memoryEventGuardBanner, MEMORY_EVENT_PROTOCOL, /* [EDITCORE-V510-B2/B3/B4/B6] */ isNarrationOnlyText, closingHasProposalOrTerminus, substantiveFallbackText, progressRenditionText, detectDecomposableTask, /* [EDITCORE-V516-S2/S3/S6/P8] */ computeTaskArtifacts, identityDeviationState, premiseRefutedByEvidence, harvestTurnCredentials, redactHarvestedCredentials };

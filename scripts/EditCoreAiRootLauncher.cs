@@ -15,7 +15,7 @@ using System.Windows.Forms;
 [assembly: AssemblyCompany("EditCoreAI")]
 [assembly: AssemblyProduct("EditCoreAI")]
 [assembly: AssemblyCopyright("Copyright © EditCoreAI")]
-[assembly: AssemblyVersion("5.1.5.0")]
+[assembly: AssemblyVersion("5.1.6.0")]
 [assembly: AssemblyFileVersion("4.6.1.0")]
 [assembly: AssemblyInformationalVersion("4.6.1")]
 

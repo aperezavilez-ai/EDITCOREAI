@@ -405,7 +405,7 @@ const READ_ONLY_TOOLS = [
   "list_files", "read_file", "search_files", "project_discovery",
   "codebase_map", "symbol_search", "dependency_search",
   "brain_search", "brain_skill", "brain_tools", "search_brain",
-  "search_codebase_semantic", "list_snapshots", "analyze_circular_dependencies",
+  "list_snapshots", "analyze_circular_dependencies",
   // Nuevas tools de solo lectura
   "web_search", "git_status", "git_log", "git_diff", "list_skills", "read_skill",
   "check_connections", "read_roadmap", "probe_endpoint",

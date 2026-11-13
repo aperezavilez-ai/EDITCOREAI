@@ -171,4 +171,12 @@ module.exports = {
   maybeBlockWriteBeforeEvidence,
   repairProtocolPrompt,
   EVIDENCE_BLOCK_LIMIT,
+  // [EDITCORE-V516-S5/S6] La clase de comandos de evidencia y su
+  // detector por paso se exportan para que el orquestador asiente los
+  // resultados de esos comandos en los hechos del kernel (S5) y
+  // detecte la premisa refutada por la evidencia previa (S6). Sin
+  // cambio de comportamiento: son las mismas constantes/función que
+  // este módulo ya usa por dentro.
+  EVIDENCE_COMMAND_RE,
+  stepIsEvidenceAttempt,
 };

@@ -500,11 +500,47 @@ function closeFront(projectRoot, text, closedBy = "") {
   return saveProjectState(projectRoot, state);
 }
 
+// [EDITCORE-V516-S8] Continuación anafórica CORTA: lista CERRADA y
+// corta de formas cuyo antecedente es la tarea del turno anterior
+// («retoma…», «continúa…», «sigue con…», «la tarea anterior», «eso
+// mismo», «lo mismo», «el encargo anterior»…). Exige mensaje corto
+// (≤ 120 caracteres): un mensaje largo que menciona «la tarea
+// anterior» de pasada ES una tarea nueva, no una anáfora.
+const ANAPHORIC_HEAD_RE = /^(?:retoma(?:r|lo|la|los|las)?|contin[uú]a(?:r)?|prosigue|reanuda(?:r)?|sigue\b|vuelve\s+a\b)/i;
+const ANAPHORIC_REF_RE = /\b(?:tarea|turno|encargo|trabajo)\s+anterior\b|\beso\s+mismo\b|\blo\s+mismo\b/i;
+
+function isAnaphoricContinuation(text) {
+  const t = String(text || "").trim();
+  if (!t || t.length > 120) return false;
+  return ANAPHORIC_HEAD_RE.test(t) || ANAPHORIC_REF_RE.test(t);
+}
+
 function noteWorkingOn(projectRoot, text, threadId) {
   const clipped = String(text || "").slice(0, 400);
-  saveProjectState(projectRoot, { ...loadProjectState(projectRoot), workingOn: clipped });
+  const project = loadProjectState(projectRoot);
+  // [EDITCORE-V516-S8] Si el mensaje nuevo es una continuación
+  // anafórica, sobrescribir workingOn a ciegas destruía el
+  // antecedente: la línea «Tarea en curso» del expediente quedaba con
+  // la anáfora misma («retoma la tarea anterior») y sin la tarea a la
+  // que apunta (CASO 1: el frente del Mapa ganó por saliencia). Ahora
+  // el workingOn desplazado se conserva como previousTask — en el
+  // estado del proyecto y en el del hilo — y el expediente lo rinde
+  // como «Tarea anterior: …» mientras el foco sea la anáfora. La
+  // rotación no se pisa a sí misma: si el texto nuevo ES el workingOn
+  // vigente (la doble siembra apertura/cierre del mismo turno) o el
+  // desplazado también era anafórico, previousTask no se toca.
+  const patch = { ...project, workingOn: clipped };
+  if (isAnaphoricContinuation(clipped) && project.workingOn
+    && project.workingOn !== clipped && !isAnaphoricContinuation(project.workingOn)) {
+    patch.previousTask = project.workingOn;
+  }
+  saveProjectState(projectRoot, patch);
   if (threadId) {
     const th = loadThread(projectRoot, threadId);
+    if (isAnaphoricContinuation(clipped) && th.workingOn
+      && th.workingOn !== clipped && !isAnaphoricContinuation(th.workingOn)) {
+      th.previousTask = th.workingOn;
+    }
     th.workingOn = clipped;
     saveThread(projectRoot, threadId, th);
   }
@@ -685,6 +721,14 @@ function projectPromptBlock(projectRoot, threadId, query) {
   const parts = [];
   const working = thread.workingOn || project.workingOn;
   if (working) parts.push(`Tarea en curso: ${working.slice(0, 300)}`);
+  // [EDITCORE-V516-S8] Con el foco en una anáfora («retoma la tarea
+  // anterior»), el expediente muestra también el antecedente que
+  // noteWorkingOn conservó: la tarea anterior deja de viajar solo como
+  // texto crudo a mitad del historial verbatim.
+  if (working && isAnaphoricContinuation(working)) {
+    const previous = thread.previousTask || project.previousTask;
+    if (previous && previous !== working) parts.push(`Tarea anterior: ${String(previous).slice(0, 300)}`);
+  }
   if (project.objective) parts.push(`Objetivo: ${String(project.objective).slice(0, 200)}`);
   if (project.style) parts.push(`Estilo: ${String(project.style).slice(0, 200)}`);
   // Antes solo llegaba LA ÚLTIMA decisión (150 caracteres): el resto de lo
@@ -774,6 +818,8 @@ module.exports = {
   saveProjectState,
   noteDecision,
   noteWorkingOn,
+  // [EDITCORE-V516-S8]
+  isAnaphoricContinuation,
   noteVerified,
   noteDiscarded,
   // [EDITCORE-INTEGRAL-B3]
