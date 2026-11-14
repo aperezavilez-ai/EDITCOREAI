@@ -219,6 +219,106 @@ function invalidateReadReceipts(projectRoot, relPath) {
   try { store.invalidateReadReceipts(projectRoot, normalizeReceiptPath(relPath)); } catch { /* ignore */ }
 }
 
+// --- [EDITCORE-V518-B1] Índice de leídos POR HILO -------------------
+// El comprobante A3 es por archivo+rango: una continuación que pide
+// OTRO rango del mismo archivo (en vivo, ALFA LUBES: la clave ~línea
+// 45 y _call_ai_service ~línea 1196 de app.py, re-explorados dos
+// turnos después) no casaba ninguna clave y el turno pagaba la
+// exploración entera hasta que el guardián de avance lo detenía. El
+// índice del hilo es por ARCHIVO: si el archivo ya se leyó en este
+// hilo (cualquier rango) y NO cambió desde entonces (mtime Y tamaño
+// idénticos a los de la huella), la relectura en un turno EXECUTE
+// responde con este stub — que declara la cobertura conocida y la
+// vía de escape (force:true). La persistencia vive en el archivo del
+// hilo (thread-memory); la validación y el formato son de aquí, como
+// en A3. Sin hilo, sin proyecto o con force:true: null (lectura real).
+function threadReadRangesText(ranges) {
+  const list = Array.isArray(ranges) ? ranges : [];
+  if (!list.length) return "sin rangos registrados";
+  return list.map(([s, e]) => (Number(e) ? `${Number(s)}-${Number(e)}` : `${Number(s)}-final`)).join(", ");
+}
+
+function threadReadStub(projectRoot, threadId, relPath, opts = {}) {
+  if (!projectRoot || !threadId || opts.force === true) return null;
+  const store = threadMemoryStore();
+  if (!store || typeof store.findThreadRead !== "function") return null;
+  const rel = normalizeReceiptPath(relPath);
+  if (!rel) return null;
+  let entry = null;
+  try { entry = store.findThreadRead(projectRoot, threadId, rel); } catch { entry = null; }
+  if (!entry) return null;
+  let stat = null;
+  try {
+    const fs = require("node:fs");
+    const path = require("node:path");
+    stat = fs.statSync(path.resolve(String(projectRoot), rel));
+  } catch { stat = null; }
+  if (!stat || !stat.isFile()) {
+    try { store.invalidateThreadReads(projectRoot, threadId, rel); } catch { /* ignore */ }
+    return null;
+  }
+  if (Number(stat.mtimeMs) !== Number(entry.mtimeMs) || Number(stat.size) !== Number(entry.size)) {
+    return null; // cambió: lectura real, y al registrarla el índice se refresca
+  }
+  return {
+    ok: true,
+    path: relPath,
+    cached: true,
+    alreadyReadInConversation: true,
+    threadReadStub: true,
+    totalLines: entry.totalLines || undefined,
+    bytes: stat.size,
+    note: `Ya leíste «${relPath}» en este hilo (rangos ya cubiertos: ${threadReadRangesText(entry.ranges)}; ${entry.totalLines ? `${entry.totalLines} líneas, ` : ""}${stat.size} caracteres) y el archivo NO cambió desde entonces: su contenido ya está en el contexto de este hilo y no se repite. Trabaja desde lo ya conocido en este hilo; si necesitas el contenido exacto o un rango no cubierto, repite read_file con force:true.`,
+  };
+}
+
+// Registra la huella de una lectura REAL en el índice del hilo (la
+// pide el orquestador tras despachar read_file con éxito, junto al
+// comprobante A3). La huella (mtime+tamaño) se toma de disco aquí.
+function noteThreadRead(projectRoot, threadId, relPath, requested = {}, readResult = {}) {
+  if (!projectRoot || !threadId) return;
+  const store = threadMemoryStore();
+  if (!store || typeof store.noteThreadRead !== "function") return;
+  const rel = normalizeReceiptPath(relPath);
+  if (!rel) return;
+  let stat = null;
+  try {
+    const fs = require("node:fs");
+    const path = require("node:path");
+    stat = fs.statSync(path.resolve(String(projectRoot), rel));
+  } catch { stat = null; }
+  if (!stat || !stat.isFile()) return;
+  try {
+    store.noteThreadRead(projectRoot, threadId, {
+      file: rel,
+      startLine: Number(requested.startLine) || 1,
+      endLine: Number(requested.endLine) || 0,
+      mtimeMs: stat.mtimeMs,
+      size: stat.size,
+      totalLines: Number(readResult.totalLines) || 0,
+    });
+  } catch { /* el índice nunca tumba una lectura */ }
+}
+
+// Una escritura sobre el archivo invalida su entrada del índice del
+// hilo (pasarela; el orquestador la llama tras escrituras con éxito,
+// junto a la invalidación de comprobantes A3).
+function invalidateThreadReads(projectRoot, threadId, relPath) {
+  if (!projectRoot || !threadId) return;
+  const store = threadMemoryStore();
+  if (!store || typeof store.invalidateThreadReads !== "function") return;
+  try { store.invalidateThreadReads(projectRoot, threadId, normalizeReceiptPath(relPath)); } catch { /* ignore */ }
+}
+
+// El índice del hilo, para el bloque de apertura «Ya conocido en este
+// hilo» (lo consume el orquestador solo en turnos EXECUTE).
+function threadReadIndex(projectRoot, threadId) {
+  if (!projectRoot || !threadId) return [];
+  const store = threadMemoryStore();
+  if (!store || typeof store.threadReadIndex !== "function") return [];
+  try { return store.threadReadIndex(projectRoot, threadId) || []; } catch { return []; }
+}
+
 // --- Cache write: dedupe de respuestas del modelo (ResponseCache) ---
 // La instancia llega por helpers.responseCache (main pasa la suya, la
 // misma del panel de métricas); sin esa costura, el harness crea una
@@ -519,6 +619,11 @@ module.exports = {
   readReceiptStub,
   noteReadReceipt,
   invalidateReadReceipts,
+  // [EDITCORE-V518-B1] Índice de leídos por hilo (stub + registro).
+  threadReadStub,
+  noteThreadRead,
+  invalidateThreadReads,
+  threadReadIndex,
   resolveResponseCache,
   stepCacheContext,
   lookupStepResponse,

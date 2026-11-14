@@ -830,6 +830,48 @@ function computeTaskArtifacts(projectRoot, text) {
   return artifacts;
 }
 
+// [EDITCORE-V518-B2] BLOQUE DE APERTURA «YA CONOCIDO EN ESTE HILO»
+// (función pura: la cablea el turno SOLO si es EXECUTE): el turno de
+// continuación en vivo («ya esta en el env la api») re-exploró durante
+// 24 pasos archivos que el propio hilo había mapeado dos turnos antes
+// — el conocimiento existía (historial, expediente, comprobantes)
+// pero nada se lo presentaba JUNTO al abrir. Este bloque lo resume en
+// la apertura, construido desde el conjunto de artefactos del pedido
+// (S2: identificadores resueltos a su archivo) y el índice de leídos
+// del hilo (B1: archivos ya leídos, con líneas y rangos cubiertos).
+// Solo lleva DATOS (rutas, líneas, rangos): ningún contenido de
+// archivo — el contenido vive en el contexto del hilo y la vía de
+// relectura exacta es force:true. Tope duro de ~600 caracteres.
+const THREAD_KNOWN_BLOCK_MAX_CHARS = 600;
+
+function buildThreadKnownBlock(artifacts, readEntries) {
+  const lines = [];
+  const ids = artifacts && Array.isArray(artifacts.identifiers) ? artifacts.identifiers : [];
+  for (const idf of ids.slice(0, 4)) {
+    if (idf && idf.name && idf.file) lines.push(`- \`${idf.name}\` se define en \`${idf.file}\``);
+  }
+  const entries = (Array.isArray(readEntries) ? [...readEntries] : [])
+    .filter((e) => e && e.file)
+    .sort((a, b) => (Number(b.at) || 0) - (Number(a.at) || 0))
+    .slice(0, 6);
+  for (const e of entries) {
+    const ranges = (Array.isArray(e.ranges) ? e.ranges : [])
+      .map(([s, en]) => (Number(en) ? `${Number(s)}-${Number(en)}` : `${Number(s)}-final`))
+      .join(", ");
+    const facts = [
+      e.totalLines ? `${e.totalLines} líneas` : "",
+      e.size ? `${e.size} caracteres` : "",
+      ranges ? `rangos ${ranges}` : "",
+    ].filter(Boolean).join(", ");
+    lines.push(`- \`${e.file}\` ya leído en este hilo${facts ? ` (${facts})` : ""}`);
+  }
+  if (!lines.length) return "";
+  const header = "YA CONOCIDO EN ESTE HILO (trabaja desde esto; no re-leas ni re-explores lo ya mapeado sin una causa concreta):";
+  const footer = "Si necesitas un contenido exacto que no tengas presente, pide solo ese rango con force:true.";
+  const block = [header, ...lines, footer].join("\n");
+  return block.length > THREAD_KNOWN_BLOCK_MAX_CHARS ? block.slice(0, THREAD_KNOWN_BLOCK_MAX_CHARS) : block;
+}
+
 function pathMatchesArtifactSet(relPath, artifacts) {
   const rel = String(relPath || "").replace(/\\/g, "/").toLowerCase();
   if (!rel || !artifacts || !artifacts.files.length) return false;
@@ -1040,6 +1082,70 @@ function redactHarvestedCredentials(text, steps = []) {
 // desmentir, nunca contra pedidos sin afirmación de fallo.
 const PREMISE_CLAIM_RE = /\bno\s+(?:se\s+ve|compila|levanta|abre|carga|funciona|renderiza|responde|muestra|sale|anda)\b|pantalla\s+en\s+blanco|p[áa]gina\s+en\s+blanco/i;
 
+// [EDITCORE-V518-A] HIGIENE DE SOLICITUD (la otra mitad de la regla
+// de credenciales): la guarda P8 de la v5.1.6 barre los VALORES que el
+// agente imprime, pero nada impedía que el agente PIDIERA el valor —
+// en vivo (ALFA LUBES, sobre la v5.1.7) el agente escribió «Si me
+// dices el valor de AI_API_KEY (o me autorizas a escribir .env con
+// ella), lo configuro», invitando al usuario a pegar su clave en el
+// chat. Este barrido determinista corre en los MISMOS sitios de
+// finalización que el de valores: una frase que SOLICITA el valor de
+// una credencial se sustituye entera por la redirección segura (el
+// usuario coloca el valor él mismo en el .env o en la bóveda de la
+// app; el agente verifica su presencia por nombre, sin mostrarlo).
+// Detección acotada, por frase: sustantivo de credencial (lista
+// cerrada ES/EN, incluidos los nombres de variable con esa forma:
+// AI_API_KEY casa por «API_KEY») + forma de petición dirigida al
+// usuario (imperativo o condicional de dar/decir/pasar/compartir,
+// «¿cuál es tu…?», «tell me / give me / please share…»).
+// NO son solicitud de valor y quedan exentos por guarda expresa:
+// pedir el NOMBRE de la variable («dime el nombre de…», «¿cómo se
+// llama la variable…?»), pedir confirmación de presencia («dime si…»)
+// y las frases que PROHÍBEN compartir («nunca compartas tu clave»,
+// «no me pases tu contraseña»): hablan de claves sin pedir su valor.
+const CREDENTIAL_SOLICIT_NOUN_RE = /(?:api[\s_-]?key|apikey|contraseñ\w*|\bpassword\b|\bpasswd\b|\bclave\b|\btoken\b|\bsecreto\b|\bsecret\b|credencial\w*|credential\w*|private[\s_-]?key|access[\s_-]?key)/i;
+const CREDENTIAL_SOLICIT_ASK_RE = /(?:\b(?:dime|decime|decí|dame|dámela|dámelo)\b|\bp[aá]s\w*(?:me|nos)\w*\b|\bmand\w*(?:me|nos)\w*\b|\benvi\w*(?:me|nos)\w*\b|\bcompart\w+\b|\bproporciona\w*\b|\bfacilita\w*\b|\bme\s+(?:dices|decís|das|compartes|mandas|envías|muestras)\b|\bsi\s+me\s+(?:dices|das|compartes|mandas|envías)\b|\bcu[aá]l(?:es)?\s+(?:es|son)\b|\bnecesito\s+que\s+me\b|\btell\s+me\b|\bgive\s+me\b|\bsend\s+me\b|\bprovide\s+me\b|\bshare\b[^.!?;]{0,40}\bwith\s+me\b|\bif\s+you\s+(?:tell|give|share|send|provide|paste)\b|\bwhat(?:'s|\s+is)\s+your\b|\bplease\s+(?:provide|share|send|give|paste)\b|\bcan\s+you\s+(?:tell|give|share|send|provide|paste)\b|\bcould\s+you\s+(?:tell|give|share|send|provide|paste)\b)/i;
+const CREDENTIAL_SOLICIT_NAME_GUARD_RE = /(?:\bnombre\s+de\b|\bcómo\s+se\s+llama\b|\bwhat(?:'s|\s+is)\s+the\s+name\b|\bname\s+of\s+the\b)/i;
+const CREDENTIAL_SOLICIT_WHETHER_GUARD_RE = /\b(?:dime|decime|decí|contame|avisame|avísame)\s+si\b/i;
+const CREDENTIAL_SOLICIT_NEGATION_GUARD_RE = /(?:\bno\b|\bnunca\b|\bjamás\b|\bevit\w+\b|\bnever\b|\bdon'?t\b|\bdo\s+not\b)[^.;:!?]{0,60}\b(?:digas|pases|pasés|des|compart\w+|muestres|reveles|share|tell|give|send|reveal)\b/i;
+const CREDENTIAL_REDIRECT_TEXT = "Coloca ese valor tú mismo en el archivo .env del proyecto (o en la bóveda de la app), sin pegarlo en el chat: yo verifico su presencia por nombre y sigo desde ahí, sin mostrarlo nunca.";
+
+function credentialSolicitationIn(sentence) {
+  const s = String(sentence || "");
+  if (!CREDENTIAL_SOLICIT_NOUN_RE.test(s)) return false;
+  if (CREDENTIAL_SOLICIT_NAME_GUARD_RE.test(s)) return false;
+  if (CREDENTIAL_SOLICIT_WHETHER_GUARD_RE.test(s)) return false;
+  if (CREDENTIAL_SOLICIT_NEGATION_GUARD_RE.test(s)) return false;
+  return CREDENTIAL_SOLICIT_ASK_RE.test(s);
+}
+
+// Sustituye cada frase solicitante por la redirección segura (una
+// sola vez por racha de frases solicitantes seguidas) y devuelve el
+// texto nuevo + cuántas frases se redirigieron. Sin detecciones, el
+// texto sale byte a byte como entró. «.env» se protege antes de
+// partir en frases: su punto no es un delimitador.
+function redirectCredentialSolicitations(text) {
+  const src = String(text || "");
+  if (!src.trim()) return { text: src, count: 0 };
+  const protectedSrc = src.replace(/\.env\b/gi, "ENV");
+  const parts = protectedSrc.match(/[^.!?…]+(?:[.!?…]+["»”']?)?[ \t]*/g) || [protectedSrc];
+  let count = 0;
+  let lastWasRedirect = false;
+  const out = [];
+  for (const part of parts) {
+    if (credentialSolicitationIn(part)) {
+      count += 1;
+      if (!lastWasRedirect) { out.push(`${CREDENTIAL_REDIRECT_TEXT} `); lastWasRedirect = true; }
+      continue;
+    }
+    out.push(part);
+    if (part.trim()) lastWasRedirect = false;
+  }
+  if (!count) return { text: src, count: 0 };
+  const joined = out.join("").replace(/ENV/g, ".env").replace(/[ \t]{2,}/g, " ");
+  return { text: joined.trim(), count };
+}
+
 // S6 — Premisa refutada: la verificación implicada por el pedido
 // (comando de evidencia o captura, stepIsEvidenceAttempt de
 // repair-guard) corrió ANTES de cualquier escritura aplicada y salió
@@ -1170,7 +1276,16 @@ function buildKernelFactSummary(steps = []) {
     if (cmdLines.length >= 4) break;
   }
   const audit = auditSubagentSteps(steps);
-  if (!lines.length && !audit.length && !cmdLines.length) return "";
+  // [EDITCORE-V518-A] Las redirecciones de solicitudes de credencial
+  // también son un hecho del turno (el marcador lo asienta la
+  // finalización al barrer el texto; si los hechos se construyen
+  // después — u otro consumidor los reconstruye — la línea sale de
+  // los steps, no del relato).
+  const credRedirects = (Array.isArray(steps) ? steps : []).reduce(
+    (acc, s) => acc + (s?.name === "credential_solicitation_redirected" ? Math.max(1, Number(s.result?.redirected) || 1) : 0),
+    0,
+  );
+  if (!lines.length && !audit.length && !cmdLines.length && !credRedirects) return "";
   const out = ["## 🧾 Hechos del turno (kernel)", ""];
   if (lines.length) {
     out.push("Cambios que el kernel SÍ aplicó en disco (desde los pasos reales, no desde el relato):", "", ...lines, "");
@@ -1179,6 +1294,9 @@ function buildKernelFactSummary(steps = []) {
   }
   if (cmdLines.length) {
     out.push("Comandos de evidencia de este turno (resultado desde los pasos, no desde el relato):", "", ...cmdLines, "");
+  }
+  if (credRedirects) {
+    out.push("Higiene de credenciales:", "", `- ${credRedirects} solicitud(es) de valor de credencial redirigida(s) a la vía segura: el valor lo coloca el usuario en el .env o en la bóveda y el agente verifica su presencia por nombre, sin mostrarlo.`, "");
   }
   if (audit.length) {
     out.push("Auditoría de lo delegado:", "", ...audit.map((f) => `- ${f}`), "");
@@ -3131,6 +3249,7 @@ class ChatOrchestrator {
         LEADERSHIP_PROMPT, LIVE_NARRATION_PROMPT, MARKDOWN_FORMAT_PROMPT, CAPABILITIES_PROMPT,
         "REGLA CRÍTICA: no cierres un turno diciendo 'ahora leo X' o 'voy a revisar Y'. Si vas a leer algo, llamá la tool en el MISMO turno.",
         "REGLA CRÍTICA: si el usuario pide corregir/arreglar, el trabajo son llamadas reales a replace_in_file/write_file, no texto. Nunca digas que aplicaste un cambio que no hiciste con una tool. Nunca inventes límites ('se me acabaron los tokens', 'se acabó mi turno'): mientras queden errores, sigue corrigiendo; si se agota el turno, EditCore se lo avisa al usuario. Cierra solo cuando terminaste o cuando necesites una decisión del usuario.",
+        "REGLA CRÍTICA: nunca pidas al usuario el VALOR de una credencial (clave, contraseña, API key, token o secreto) en el chat. Si falta una, indicá que la coloque él mismo en el .env del proyecto o en la bóveda de la app, y verificá su presencia por nombre, sin mostrarla jamás.",
         "Respondé siempre en español al usuario.",
       ].filter(Boolean).join("\n\n"));
       // [EDITCORE-INTEGRAL-B2] Prioridades: roadmap/preview/visión y los
@@ -3458,6 +3577,24 @@ class ChatOrchestrator {
         ok: true,
       });
       iterStartSteps = steps.length; // el marcador no es una iteración del bucle
+    }
+    // [EDITCORE-V518-B2] El bloque «Ya conocido en este hilo» se
+    // anexa al mensaje del turno ya ensamblado, como la directiva
+    // del director (B6): es una orden del harness y no puede
+    // perderse en la poda del presupuesto de contexto. SOLO en
+    // EXECUTE (puerta estricta por clase): cualquier otro carril —
+    // ASK incluido — queda byte-idéntico, sin bloque. Sin artefactos
+    // resueltos ni leídos previos no hay bloque.
+    if (decision?.kind === "EXECUTE" && projectRoot && threadId) {
+      try {
+        const knownBlock = buildThreadKnownBlock(taskArtifacts, tokenHarness.threadReadIndex(projectRoot, threadId));
+        if (knownBlock) {
+          const lastMsg = messages[messages.length - 1];
+          if (lastMsg && lastMsg.role === "user" && typeof lastMsg.content === "string") {
+            lastMsg.content += `\n\n${knownBlock}`;
+          }
+        }
+      } catch { /* el bloque nunca tumba el turno */ }
     }
     // Superficie de reparación visual del turno (para S4/S6): el
     // pedido es de reparación y su texto es de clase visual/CSS.
@@ -4334,6 +4471,16 @@ class ChatOrchestrator {
           // ningún valor de credencial cosechado de lo leído/escrito
           // en este turno sale impreso al chat.
           textOut = redactHarvestedCredentials(textOut, steps);
+          // [EDITCORE-V518-A] Barrido de SOLICITUDES de credenciales
+          // en el mismo sitio: la frase que pide el VALOR se
+          // sustituye por la redirección segura y el hecho queda
+          // asentado en los steps y declarado al pie.
+          const solicitationSweep = redirectCredentialSolicitations(textOut);
+          if (solicitationSweep.count > 0) {
+            textOut = solicitationSweep.text;
+            steps.push({ name: "credential_solicitation_redirected", input: {}, result: { redirected: solicitationSweep.count }, ok: true });
+            textOut = `${textOut}\n\n> 🔒 **Higiene de credenciales (kernel):** redirigí una solicitud de valor de credencial a la vía segura — el valor lo colocas tú en el .env o en la bóveda de la app; yo verifico su presencia por nombre, sin mostrarlo.`;
+          }
           textOut = formatAgentVisibleText(textOut);
           persistKernelRoadmap(projectRoot, { task: this._currentUserText || message, steps, kind: decision?.kind, text: textOut, completed: true });
           rememberOut(textOut); detachLongRunningStreams(steps);
@@ -4538,6 +4685,37 @@ class ChatOrchestrator {
             onProgress?.({ phase: "tool", stage: "done", name, input: args, result: stubResult, ok: true });
             messages.push({ role: "tool", tool_call_id: call.id, name, content: tools.truncatePayload(stubResult, tools.READ_FILE_PAYLOAD_CAP) });
             continue;
+          }
+
+          // [EDITCORE-V518-B1] STUB DEL ÍNDICE DEL HILO (solo
+          // EXECUTE): el comprobante A3 de abajo es por archivo+rango
+          // — una continuación que pide OTRO rango del mismo archivo
+          // no casa ninguna clave y paga la exploración entera (en
+          // vivo: 24 pasos re-leyendo app.py ya mapeado). El índice
+          // del hilo es por ARCHIVO: si ya se leyó en este hilo
+          // (cualquier rango, este turno o anteriores) y NO cambió
+          // desde entonces (el harness valida mtime+tamaño contra la
+          // huella del hilo), read_file responde con el stub del
+          // hilo, que declara la cobertura y la vía force:true. El
+          // paso queda como lectura cacheada: NO cuenta como paso
+          // aplicado (leer nunca aplica) y el guardián de avance B4
+          // ni se entera — sigue intacto. En cualquier otro carril
+          // esta puerta no existe y manda el comprobante A3 de
+          // siempre, byte a byte.
+          if (readCacheKey && args.force !== true && projectRoot && threadId && decision?.kind === "EXECUTE") {
+            try {
+              const threadStub = tokenHarness.threadReadStub(projectRoot, threadId, args.path, {
+                startLine: Number(args.startLine) || 1,
+                endLine: Number(args.endLine) || 0,
+              });
+              if (threadStub) {
+                const stepData = { name, input: args, result: threadStub, ok: true, cached: true };
+                steps.push(stepData); this.session.addStep(stepData);
+                onProgress?.({ phase: "tool", stage: "done", name, input: args, result: threadStub, ok: true });
+                messages.push({ role: "tool", tool_call_id: call.id, name, content: tools.truncatePayload(threadStub, tools.READ_FILE_PAYLOAD_CAP) });
+                continue;
+              }
+            } catch { /* el índice nunca tumba una lectura */ }
           }
 
           // [EDITCORE-V500-A3] COMPROBANTE DE LECTURA ENTRE TURNOS
@@ -4756,6 +4934,16 @@ class ChatOrchestrator {
                   endLine: Number(args.endLine) || 0,
                 }, result);
               } catch { /* el comprobante nunca tumba una lectura */ }
+              // [EDITCORE-V518-B1] La misma lectura real alimenta el
+              // índice del HILO (por archivo, con los rangos
+              // cubiertos): es el mapa que consumen el stub B1 y el
+              // bloque de apertura B2 de los turnos EXECUTE.
+              try {
+                tokenHarness.noteThreadRead(projectRoot, threadId, args.path, {
+                  startLine: Number(args.startLine) || 1,
+                  endLine: Number(args.endLine) || 0,
+                }, result);
+              } catch { /* el índice nunca tumba una lectura */ }
             }
           }
           // [EDITCORE-V492-5] Una escritura EXITOSA sobre un archivo
@@ -4777,6 +4965,9 @@ class ChatOrchestrator {
             // turnos de ese archivo (vía harness, dueño único).
             if (projectRoot) {
               try { tokenHarness.invalidateReadReceipts(projectRoot, args.path); } catch { /* ignore */ }
+              // [EDITCORE-V518-B1] Y su entrada en el índice del
+              // hilo: el stub jamás tapa el contenido nuevo.
+              try { tokenHarness.invalidateThreadReads(projectRoot, threadId, args.path); } catch { /* ignore */ }
             }
             const writtenPath = String(args.path).replace(/\\/g, "/").toLowerCase();
             for (const key of [...toolHistory.keys()]) {
@@ -4853,6 +5044,14 @@ class ChatOrchestrator {
       // finalización por agotamiento de pasos: la regla no depende de
       // cómo cierre el turno.
       textOut = redactHarvestedCredentials(textOut, steps);
+      // [EDITCORE-V518-A] Y el mismo barrido de SOLICITUDES, por la
+      // misma razón.
+      const solicitationSweepEnd = redirectCredentialSolicitations(textOut);
+      if (solicitationSweepEnd.count > 0) {
+        textOut = solicitationSweepEnd.text;
+        steps.push({ name: "credential_solicitation_redirected", input: {}, result: { redirected: solicitationSweepEnd.count }, ok: true });
+        textOut = `${textOut}\n\n> 🔒 **Higiene de credenciales (kernel):** redirigí una solicitud de valor de credencial a la vía segura — el valor lo colocas tú en el .env o en la bóveda de la app; yo verifico su presencia por nombre, sin mostrarlo.`;
+      }
       textOut = formatAgentVisibleText(textOut);
       persistKernelRoadmap(projectRoot, { task: this._currentUserText || message, steps, kind: decision?.kind, text: textOut, completed: !pausedByLimit });
       rememberOut(textOut); detachLongRunningStreams(steps);
@@ -4926,4 +5125,4 @@ class ChatOrchestrator {
   }
 }
 
-module.exports = { ChatOrchestrator, SKILL_IDS, taskQueue, groundUngroundedClaims, successfulDiskReads, hasMutationIntent, buildKernelFactSummary, auditSubagentSteps, runPostWriteVerify, formatVerifyBlock, applyTurnContextBudget, TURN_CONTEXT_MAX_CHARS, TURN_CONTEXT_TRUNCATION_MARKER, CTX_TIER_ESSENTIAL, CTX_TIER_NORMAL, CTX_TIER_ACCESSORY, /* [EDITCORE-INTEGRAL-B3] */ appendRealVerification, /* [EDITCORE-INTEGRAL-B5] */ normalizePermissionMode, buildModeAnnouncement, /* [EDITCORE-INTEGRAL-B6] */ raceSemanticBlock, SEMANTIC_MEMORY_TIMEOUT_MS, runRealVerification, /* [EDITCORE-INTEGRAL-B8] */ formatExternalActionResult, /* [EDITCORE-INTEGRAL-B9] */ buildCerebroServiceBlock, buildBrainContextBlock, /* [EDITCORE-V492-3] */ detectMemoryEventQuestion, memoryEventInDossier, memoryAnswerAffirmsEvent, memoryEventGuardBanner, MEMORY_EVENT_PROTOCOL, /* [EDITCORE-V510-B2/B3/B4/B6] */ isNarrationOnlyText, closingHasProposalOrTerminus, substantiveFallbackText, progressRenditionText, detectDecomposableTask, /* [EDITCORE-V516-S2/S3/S6/P8] */ computeTaskArtifacts, identityDeviationState, premiseRefutedByEvidence, harvestTurnCredentials, redactHarvestedCredentials, /* [EDITCORE-V517-C2] */ stubAgedToolResults, buildToolResultStub, TOOL_STUB_SENTINEL, TOOL_STUB_WINDOW_STEPS };
+module.exports = { ChatOrchestrator, SKILL_IDS, taskQueue, groundUngroundedClaims, successfulDiskReads, hasMutationIntent, buildKernelFactSummary, auditSubagentSteps, runPostWriteVerify, formatVerifyBlock, applyTurnContextBudget, TURN_CONTEXT_MAX_CHARS, TURN_CONTEXT_TRUNCATION_MARKER, CTX_TIER_ESSENTIAL, CTX_TIER_NORMAL, CTX_TIER_ACCESSORY, /* [EDITCORE-INTEGRAL-B3] */ appendRealVerification, /* [EDITCORE-INTEGRAL-B5] */ normalizePermissionMode, buildModeAnnouncement, /* [EDITCORE-INTEGRAL-B6] */ raceSemanticBlock, SEMANTIC_MEMORY_TIMEOUT_MS, runRealVerification, /* [EDITCORE-INTEGRAL-B8] */ formatExternalActionResult, /* [EDITCORE-INTEGRAL-B9] */ buildCerebroServiceBlock, buildBrainContextBlock, /* [EDITCORE-V492-3] */ detectMemoryEventQuestion, memoryEventInDossier, memoryAnswerAffirmsEvent, memoryEventGuardBanner, MEMORY_EVENT_PROTOCOL, /* [EDITCORE-V510-B2/B3/B4/B6] */ isNarrationOnlyText, closingHasProposalOrTerminus, substantiveFallbackText, progressRenditionText, detectDecomposableTask, /* [EDITCORE-V516-S2/S3/S6/P8] */ computeTaskArtifacts, identityDeviationState, premiseRefutedByEvidence, harvestTurnCredentials, redactHarvestedCredentials, /* [EDITCORE-V517-C2] */ stubAgedToolResults, buildToolResultStub, TOOL_STUB_SENTINEL, TOOL_STUB_WINDOW_STEPS, /* [EDITCORE-V518-A/B2] */ redirectCredentialSolicitations, credentialSolicitationIn, buildThreadKnownBlock, THREAD_KNOWN_BLOCK_MAX_CHARS };

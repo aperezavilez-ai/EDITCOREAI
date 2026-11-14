@@ -52,6 +52,13 @@ const VERBATIM_OLD_ASSISTANT_CHARS = 2_000;
 // archivo no cambió, read_file responde con el comprobante y no con el
 // contenido otra vez.
 const MAX_READ_RECEIPTS = 80;
+// [EDITCORE-V518-B1] Índice de leídos POR HILO: por archivo (sin
+// distinguir rango), la huella de la última lectura real en ESTE hilo
+// y los rangos cubiertos. Es el mapa que el turno EXECUTE consume
+// (stub de relectura + bloque «Ya conocido en este hilo»): el
+// comprobante A3 es por archivo+rango y una continuación que pide
+// OTRO rango del mismo archivo volvía a pagar la exploración entera.
+const MAX_THREAD_READS = 60;
 
 function storeDir(projectRoot) {
   return path.join(String(projectRoot || "."), ".editcore", "chat-memory");
@@ -81,6 +88,8 @@ function emptyThread(threadId) {
     // [EDITCORE-V500-A2] Registro verbatim (ver constantes arriba).
     verbatim: [],
     verbatimCompactions: 0,
+    // [EDITCORE-V518-B1] Índice de leídos de ESTE hilo (ver arriba).
+    readIndex: [],
   };
 }
 
@@ -140,6 +149,8 @@ function loadThread(projectRoot, threadId) {
   data.turns = Array.isArray(data.turns) ? data.turns.map(normalizeTurn).filter((t) => t.content) : [];
   data.verbatim = Array.isArray(data.verbatim) ? data.verbatim.map(sanitizeVerbatimEntry).filter(Boolean) : [];
   data.verbatimCompactions = Number(data.verbatimCompactions) || 0;
+  // [EDITCORE-V518-B1]
+  data.readIndex = Array.isArray(data.readIndex) ? data.readIndex.filter((r) => r && typeof r === "object" && r.file && Array.isArray(r.ranges)) : [];
   return data;
 }
 
@@ -318,6 +329,89 @@ function invalidateReadReceipts(projectRoot, file) {
   if (kept.length === (state.readReceipts || []).length) return state;
   state.readReceipts = kept;
   return saveProjectState(projectRoot, state);
+}
+
+// [EDITCORE-V518-B1] ÍNDICE DE LEÍDOS POR HILO (ver MAX_THREAD_READS):
+// a diferencia del comprobante A3 (expediente del PROYECTO, clave
+// archivo+rango), este índice vive en el archivo del HILO y su clave
+// es solo el archivo: cualquier rango leído suma cobertura. Persiste
+// entre turnos del mismo hilo; una escritura sobre el archivo borra
+// su entrada entera. La validación contra disco (mtime+tamaño) y el
+// formato del stub son del harness de tokens, como en A3.
+function threadReadKey(file) {
+  return String(file || "").replace(/\\/g, "/").replace(/^\.\//, "").toLowerCase();
+}
+
+// Fusiona un rango [start, end] (end 0 = hasta el final) en la lista:
+// ordena por inicio y une los que se solapan o se tocan.
+function mergeThreadReadRange(ranges, startLine, endLine) {
+  const s = Math.max(1, Number(startLine) || 1);
+  const e = Number(endLine) || 0;
+  const list = [...(Array.isArray(ranges) ? ranges : []), [s, e]]
+    .map((r) => [Math.max(1, Number(r?.[0]) || 1), Number(r?.[1]) || 0])
+    .sort((a, b) => a[0] - b[0]);
+  const out = [];
+  for (const [cs, ce] of list) {
+    const last = out[out.length - 1];
+    if (last && (last[1] === 0 || cs <= last[1] + 1)) {
+      if (last[1] !== 0 && (ce === 0 || ce > last[1])) last[1] = ce;
+      continue;
+    }
+    out.push([cs, ce]);
+  }
+  return out.slice(0, 12);
+}
+
+// Registra (o refresca) una lectura REAL en el índice del hilo. Si la
+// huella guardada no coincide con la de esta lectura (el archivo
+// cambió entre medias por fuera del kernel), la cobertura anterior
+// ya no describe el contenido: se reinicia con este rango.
+function noteThreadRead(projectRoot, threadId, entry) {
+  if (!projectRoot || !threadId || !entry || !entry.file) return null;
+  const data = loadThread(projectRoot, threadId);
+  const key = threadReadKey(entry.file);
+  if (!key) return data;
+  const prev = (data.readIndex || []).find((r) => r.key === key) || null;
+  const sameFingerprint = prev && Number(prev.mtimeMs) === Number(entry.mtimeMs) && Number(prev.size) === Number(entry.size);
+  const clean = {
+    key,
+    file: String(entry.file).replace(/\\/g, "/").slice(0, 300),
+    ranges: mergeThreadReadRange(sameFingerprint ? prev.ranges : [], entry.startLine, entry.endLine),
+    mtimeMs: Number(entry.mtimeMs) || 0,
+    size: Number(entry.size) || 0,
+    totalLines: Number(entry.totalLines) || (sameFingerprint ? Number(prev.totalLines) || 0 : 0),
+    reads: (sameFingerprint ? Number(prev.reads) || 0 : 0) + 1,
+    at: Date.now(),
+  };
+  data.readIndex = [...(data.readIndex || []).filter((r) => r.key !== key), clean].slice(-MAX_THREAD_READS);
+  return saveThread(projectRoot, threadId, data);
+}
+
+// Entrada del índice para un archivo, o null.
+function findThreadRead(projectRoot, threadId, file) {
+  if (!projectRoot || !threadId || !file) return null;
+  const key = threadReadKey(file);
+  const data = loadThread(projectRoot, threadId);
+  return (data.readIndex || []).find((r) => r.key === key) || null;
+}
+
+// El índice completo del hilo (copia superficial por entrada).
+function threadReadIndex(projectRoot, threadId) {
+  if (!projectRoot || !threadId) return [];
+  const data = loadThread(projectRoot, threadId);
+  return (data.readIndex || []).map((r) => ({ ...r, ranges: [...(r.ranges || [])] }));
+}
+
+// Una escritura sobre el archivo invalida su entrada del índice:
+// jamás debe tapar el contenido nuevo.
+function invalidateThreadReads(projectRoot, threadId, file) {
+  if (!projectRoot || !threadId || !file) return null;
+  const key = threadReadKey(file);
+  const data = loadThread(projectRoot, threadId);
+  const kept = (data.readIndex || []).filter((r) => r.key !== key);
+  if (kept.length === (data.readIndex || []).length) return data;
+  data.readIndex = kept;
+  return saveThread(projectRoot, threadId, data);
 }
 
 function saveProjectState(projectRoot, patch = {}) {
@@ -814,6 +908,12 @@ module.exports = {
   findReadReceipt,
   invalidateReadReceipts,
   readReceiptKey,
+  // [EDITCORE-V518-B1] Índice de leídos por hilo.
+  noteThreadRead,
+  findThreadRead,
+  threadReadIndex,
+  invalidateThreadReads,
+  threadReadKey,
   loadProjectState,
   saveProjectState,
   noteDecision,
