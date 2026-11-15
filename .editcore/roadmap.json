@@ -4,9 +4,9 @@
     "name": "EDITCOREAI",
     "description": "EditCoreAI — IDE con agente (MEAI)",
     "stack": [],
-    "status": "planning",
+    "status": "active",
     "createdAt": "2026-10-12T15:23:08.072Z",
-    "lastModified": "2026-10-12T15:23:08.073Z"
+    "lastModified": "2026-11-15T22:17:00.000Z"
   },
   "connections": {
     "github": {
@@ -42,6 +42,12 @@
     }
   },
   "history": [
+    {
+      "date": "2026-11-15T22:17:00.000Z",
+      "action": "release",
+      "details": "release v5.2.1: eliminación total de GafCore y Docker. Soporte exclusivo a GitHub, Vercel y Supabase Cloud Oficial.",
+      "by": "editcore"
+    },
     {
       "date": "2026-10-12T15:23:08.074Z",
       "action": "modified",

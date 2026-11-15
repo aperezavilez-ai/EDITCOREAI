@@ -5,9 +5,9 @@ PROHIBIDO reexplorar el repo entero si este documento cubre la tarea. Solo read_
 EditCore actualiza este archivo tras cambios. No pedirlo al usuario. No pegar codigo largo.
 
 ## Proceso
-- Fase: implementacion
-- Estado: ROADMAP actualizado con analisis de disco.
-- Actualizado: 2026-10-21 14:43
+- Fase: produccion
+- Estado: v5.2.1 — Conexiones saneadas: eliminación total de GafCore y Docker. Soporte exclusivo a GitHub, Vercel y Supabase Cloud Oficial.
+- Actualizado: 2026-11-15 15:15
 - Stack: Electron + TypeScript
 - Entry: index.html
 - Entry: main.js
