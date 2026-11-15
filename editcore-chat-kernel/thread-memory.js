@@ -808,10 +808,24 @@ function buildFactsSection(project, query) {
   return lines.length > 1 ? lines.join("\n") : "";
 }
 
-function projectPromptBlock(projectRoot, threadId, query) {
+function projectPromptBlock(projectRoot, threadId, query, opts = {}) {
   if (!projectRoot) return "";
   const project = loadProjectState(projectRoot);
   const thread = loadThread(projectRoot, threadId);
+  // [EDITCORE-V519-K2P] Dedupe expediente↔Mapa POR SECCIONES (solo
+  // aperturas EXECUTE en las que el Mapa también viaja; el llamador
+  // decide): el bloque se emite SIN las secciones que el Mapa ya
+  // declara en su forma vigente — en este bloque esa es la sección
+  // «Decisiones:» (los frentes y el estado no tienen sección en el
+  // expediente: viven solo en el Mapa). Se conservan íntegros el
+  // objetivo, los archivos, lo verificado y las notas, y sobre todo
+  // el contenido de IDENTIDAD de tarea: «Tarea en curso:» y el
+  // antecedente «Tarea anterior:» (v5.1.6-S8, blindado) viajan
+  // siempre — la omisión del bloque entero de la primera tentativa
+  // de K2 se los llevó por delante y (S8) lo cazó. Sin el flag, el
+  // bloque sale byte a byte como siempre (ASK, conserje,
+  // subagentes).
+  const omitMapSections = opts && opts.omitMapSections === true;
   const parts = [];
   const working = thread.workingOn || project.workingOn;
   if (working) parts.push(`Tarea en curso: ${working.slice(0, 300)}`);
@@ -827,7 +841,9 @@ function projectPromptBlock(projectRoot, threadId, query) {
   if (project.style) parts.push(`Estilo: ${String(project.style).slice(0, 200)}`);
   // Antes solo llegaba LA ÚLTIMA decisión (150 caracteres): el resto de lo
   // acordado se perdía y el agente volvía a preguntarlo o a re-explorarlo.
-  if (project.decisions.length) {
+  // [EDITCORE-V519-K2P] Con omitMapSections la sección no se emite:
+  // las decisiones viajan una sola vez, en el Mapa de este turno.
+  if (!omitMapSections && project.decisions.length) {
     const last = project.decisions.slice(-5)
       .map((d) => String(d?.text || "").trim()).filter(Boolean)
       .map((t) => `- ${t.slice(0, 200)}`);

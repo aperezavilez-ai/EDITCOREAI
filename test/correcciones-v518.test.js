@@ -200,7 +200,24 @@ test("(B0) el bloque «Ya conocido» puro: artefactos + leídos, con tope y vac�
 });
 
 // ------------------------------------------------------------ (B1)
-test("(B1) dentro del turno EXECUTE: releer OTRO rango del mismo archivo devuelve el stub del hilo", async () => {
+// RE-DELIMITACIÓN (B1) — v5.1.9, decisión de Lu, 2026-11-14
+// (precedente v5.1.7). La premisa de la v5.1.8 fijaba el stub por
+// ARCHIVO: releer cualquier otro rango del mismo archivo en el
+// hilo devolvía el stub, y este caso lo afirmaba con un rango
+// DISJUNTO (40-60 tras 1-10). La medición M4 (harness con el
+// kernel real) mostró el costo de esa granularidad: 3 de las
+// lecturas stubbeadas del fixture pedían rangos jamás leídos, y
+// cada desvío stub→búsqueda→force:true cuesta una llamada extra
+// entera (~36–45 mil caracteres de sobrecarga fija) para ahorrar
+// ~4.500 de contenido. El invariante de fondo de la v5.1.8 se
+// CONSERVA intacto — «nunca reenviar contenido que el hilo ya
+// tiene»: lo cubierto o solapado sigue devolviendo el stub y
+// jamás se reenvía; lo que se refina es la granularidad, de
+// archivo a rango (K5 de la v5.1.9): un rango disjunto es
+// información nueva y lee REAL, como afirma el caso nuevo
+// (B1-bis). Este caso pasa a afirmar el stub para un rango
+// SOLAPADO (5-15 tras 1-10).
+test("(B1) dentro del turno EXECUTE: releer un rango SOLAPADO del mismo archivo devuelve el stub del hilo", async () => {
   const root = emptyProject({ "package.json": PKG, "app.py": appPy() });
   const res = await new ChatOrchestrator().handle({
     ...BASE_ARGS,
@@ -208,17 +225,40 @@ test("(B1) dentro del turno EXECUTE: releer OTRO rango del mismo archivo devuelv
     projectRoot: root, threadId: "hilo-v518-b1",
     helpers: scriptedHelpers([
       { text: "", toolCalls: [toolCall("read_file", { path: "app.py", startLine: 1, endLine: 10 })], usage: USAGE },
-      { text: "", toolCalls: [toolCall("read_file", { path: "app.py", startLine: 40, endLine: 60 })], usage: USAGE },
+      { text: "", toolCalls: [toolCall("read_file", { path: "app.py", startLine: 5, endLine: 15 })], usage: USAGE },
       { text: "Revisé app.py desde lo ya conocido del hilo y el frente queda identificado. Propongo como siguiente paso conectar el endpoint y verificarlo con el preview.", toolCalls: [], usage: USAGE },
     ]),
   });
   const reads = (res.steps || []).filter((s) => s.name === "read_file");
   assert.equal(reads.length, 2, "el turno registró sus dos lecturas");
   assert.ok(String(reads[0].result?.content || "").includes("MARCA_LINEA_5"), "la primera lectura es real y trae su rango");
-  assert.equal(reads[1].result?.threadReadStub, true, "la segunda lectura (otro rango, mismo archivo, mismo turno) es el stub del hilo");
+  assert.equal(reads[1].result?.threadReadStub, true, "la segunda lectura (rango SOLAPADO con el ya cubierto, mismo archivo, mismo turno) es el stub del hilo");
   assert.equal(reads[1].result?.content, undefined, "el stub no repite contenido");
   assert.ok(String(reads[1].result?.note || "").includes("force:true"), "el stub declara la vía de escape");
   assert.ok(String(reads[1].result?.note || "").includes("este hilo"), "el stub declara que la cobertura es del hilo");
+});
+
+// ---------------------------------------------------------- (B1-bis)
+test("(B1-bis) dentro del turno EXECUTE: releer un rango DISJUNTO del mismo archivo lee REAL; lo que esa lectura cubre vuelve a stubbear", async () => {
+  const root = emptyProject({ "package.json": PKG, "app.py": appPy() });
+  const res = await new ChatOrchestrator().handle({
+    ...BASE_ARGS,
+    message: "corrige app.py: conecta el asesor con la IA configurada en el .env y verifica que responde",
+    projectRoot: root, threadId: "hilo-v518-b1bis",
+    helpers: scriptedHelpers([
+      { text: "", toolCalls: [toolCall("read_file", { path: "app.py", startLine: 1, endLine: 10 })], usage: USAGE },
+      { text: "", toolCalls: [toolCall("read_file", { path: "app.py", startLine: 40, endLine: 60 })], usage: USAGE },
+      { text: "", toolCalls: [toolCall("read_file", { path: "app.py", startLine: 45, endLine: 55 })], usage: USAGE },
+      { text: "Revisé app.py por rangos: el servicio de IA estaba en un rango jamás leído y lo traje de disco. Propongo como siguiente paso conectar el endpoint y verificarlo con el preview.", toolCalls: [], usage: USAGE },
+    ]),
+  });
+  const reads = (res.steps || []).filter((s) => s.name === "read_file");
+  assert.equal(reads.length, 3, "el turno registró sus tres lecturas");
+  assert.ok(String(reads[0].result?.content || "").includes("MARCA_LINEA_5"), "la primera lectura es real y trae su rango");
+  assert.notEqual(reads[1].result?.threadReadStub, true, "la segunda lectura (rango DISJUNTO, jamás leído) NO es el stub: es información nueva (K5)");
+  assert.ok(String(reads[1].result?.content || "").includes("MARCA_LINEA_50"), "la lectura disjunta trae el contenido real de su rango");
+  assert.equal(reads[2].result?.threadReadStub, true, "la tercera lectura (rango ya cubierto por la segunda) vuelve a ser el stub: lo cubierto jamás se reenvía");
+  assert.equal(reads[2].result?.content, undefined, "el stub no repite contenido");
 });
 
 // ------------------------------------------------------------ (B2)

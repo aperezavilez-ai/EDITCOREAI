@@ -232,6 +232,12 @@ function invalidateReadReceipts(projectRoot, relPath) {
 // vía de escape (force:true). La persistencia vive en el archivo del
 // hilo (thread-memory); la validación y el formato son de aquí, como
 // en A3. Sin hilo, sin proyecto o con force:true: null (lectura real).
+// [EDITCORE-V519-K5] Refinamiento consciente del rango (medición
+// M4, decisión de Lu 2026-11-14): el stub exige además que el rango
+// pedido SOLAPE la cobertura del índice; un rango disjunto es
+// información nueva y lee real. Lo cubierto sigue sin reenviarse
+// jamás — cambia la granularidad (de archivo a rango), no el
+// invariante.
 function threadReadRangesText(ranges) {
   const list = Array.isArray(ranges) ? ranges : [];
   if (!list.length) return "sin rangos registrados";
@@ -260,6 +266,27 @@ function threadReadStub(projectRoot, threadId, relPath, opts = {}) {
   if (Number(stat.mtimeMs) !== Number(entry.mtimeMs) || Number(stat.size) !== Number(entry.size)) {
     return null; // cambió: lectura real, y al registrarla el índice se refresca
   }
+  // [EDITCORE-V519-K5] El stub queda SOLO para rangos solapados o ya
+  // cubiertos por el índice: si el rango pedido no toca NINGÚN rango
+  // cubierto, es información nueva y la lectura es REAL (null). La
+  // medición M4 mostró que el stub por archivo castigaba los turnos
+  // de verificación legítima: 3 de las lecturas stubbeadas del
+  // fixture pedían rangos jamás leídos, y cada desvío
+  // stub→búsqueda→force:true costaba una llamada extra entera
+  // (~36-45 mil caracteres de sobrecarga fija) para ahorrar ~4.500
+  // de contenido. El invariante de la v5.1.8 se conserva: lo cubierto
+  // JAMÁS se reenvía. Sin rango explícito (opts vacío) el pedido es
+  // el archivo entero [1, final], que solapa cualquier cobertura.
+  const reqStart = Number(opts.startLine) || 1;
+  const reqEnd = Number(opts.endLine) || 0; // 0 = hasta el final
+  const reqEndEff = reqEnd === 0 ? Infinity : reqEnd;
+  const overlaps = (Array.isArray(entry.ranges) ? entry.ranges : []).some((r) => {
+    const cs = Math.max(1, Number(r?.[0]) || 1);
+    const ce = Number(r?.[1]) || 0;
+    const coveredEndEff = ce === 0 ? Infinity : ce;
+    return reqStart <= coveredEndEff && cs <= reqEndEff;
+  });
+  if (!overlaps) return null; // rango jamás leído: información nueva → lectura real
   return {
     ok: true,
     path: relPath,

@@ -188,7 +188,23 @@ function retireJudgedCaptureImages(messages, verdictText = "") {
 //    dieta nunca engorda un resultado chico);
 //  - los hechos del kernel leen los steps, no estos mensajes: la
 //    sustitución no los alcanza.
+// [EDITCORE-V519-K4a] VENTANA CORTA DE DELEGACIÓN (medición M4
+// §4-K4a): el resultado de delegate_parallel es un informe ya
+// destilado — el padre extrae lo útil en 1-2 pasos — y pasa a
+// stub con ≥3 pasos más nuevos en vez de esperar a la ventana
+// general de 6 (en S2 se reenviaba íntegro durante 6 llamadas:
+// 49.950 caracteres). La ventana aplicada a cada resultado es la
+// que su stub declara: el stub nunca miente sobre su cobertura.
+// [K4b — sustitución en tandas — quedó DETENIDA tras medirla en
+// esta misma construcción: diferir los stubs hasta juntar ≥3
+// elegibles COSTÓ +26.071 caracteres brutos en el escenario S1
+// del harness M4 (la zona de pasos creció de 286.042 a 312.113)
+// a cambio de un beneficio SOLO condicional a que el gateway
+// honre prefijos, que en vivo lee el 27-35 % de lo que el prefijo
+// permitiría (M4 §2.3). La pasada sigue siendo inmediata, como
+// en la v5.1.7; la evidencia queda en CONSTRUCCION-V519.]
 const TOOL_STUB_WINDOW_STEPS = 6;
+const DELEGATE_STUB_WINDOW_STEPS = 3;
 const TOOL_STUB_SENTINEL = "[stub M3 · resultado fuera de la ventana reciente]";
 
 function toolResultHeadline(content) {
@@ -209,17 +225,23 @@ function toolResultHeadline(content) {
   return headline.replace(/\s+/g, " ").slice(0, 120);
 }
 
-function buildToolResultStub(message) {
+function buildToolResultStub(message, windowSteps = TOOL_STUB_WINDOW_STEPS) {
   const name = String(message?.name || "herramienta");
   const originalChars = typeof message?.content === "string" ? message.content.length : 0;
   const headline = toolResultHeadline(message?.content || "");
-  return `${TOOL_STUB_SENTINEL} ${name} · resultado original de ${originalChars} caracteres, retirado por antigüedad (quedan ≥${TOOL_STUB_WINDOW_STEPS} pasos más nuevos tras él).${headline ? ` Titular: ${headline}.` : ""} Si necesitas el contenido íntegro, vuelve a ejecutar ${name} y volverá completo y reciente (en read_file, force:true salta el comprobante de lectura del turno).`;
+  // [EDITCORE-V519-K4a] La ventana declarada es la que de verdad se
+  // aplicó a ESTE resultado (3 en delegate_parallel, 6 en el resto):
+  // el stub nunca miente sobre su propia cobertura.
+  const window = Math.max(0, Number(windowSteps) || 0);
+  return `${TOOL_STUB_SENTINEL} ${name} · resultado original de ${originalChars} caracteres, retirado por antigüedad (quedan ≥${window} pasos más nuevos tras él).${headline ? ` Titular: ${headline}.` : ""} Si necesitas el contenido íntegro, vuelve a ejecutar ${name} y volverá completo y reciente (en read_file, force:true salta el comprobante de lectura del turno).`;
 }
 
 // Un «paso» = un mensaje assistant con tool_calls. La pasada recorre
 // el array desde el final contando los pasos más nuevos que quedan
 // tras cada resultado; muta SOLO el contenido de los mensajes tool
 // elegidos y devuelve cuántos stubbeó.
+// [EDITCORE-V519-K4a] La ventana es por herramienta: delegate_parallel
+// usa su ventana corta (3); el resto, la general (6).
 function stubAgedToolResults(messages, windowSteps = TOOL_STUB_WINDOW_STEPS) {
   if (!Array.isArray(messages)) return 0;
   const window = Math.max(0, Number(windowSteps) || 0);
@@ -230,12 +252,69 @@ function stubAgedToolResults(messages, windowSteps = TOOL_STUB_WINDOW_STEPS) {
     if (!m || typeof m !== "object") continue;
     if (m.role === "assistant" && Array.isArray(m.tool_calls) && m.tool_calls.length) { stepsAfter += 1; continue; }
     if (m.role !== "tool" || typeof m.content !== "string") continue;
-    if (stepsAfter < window) continue;
+    const effWindow = m.name === "delegate_parallel" ? DELEGATE_STUB_WINDOW_STEPS : window;
+    if (stepsAfter < effWindow) continue;
     if (m.content.startsWith(TOOL_STUB_SENTINEL)) continue;
-    const stub = buildToolResultStub(m);
+    const stub = buildToolResultStub(m, effWindow);
     if (stub.length < m.content.length) { m.content = stub; stubbed += 1; }
   }
   return stubbed;
+}
+
+// [EDITCORE-V519-K3] INFORMES DE DELEGACIÓN SIN ECO DE MEMORIA
+// (medición M4 §1.3/§4-K3): explorer y analyst CIERRAN o ABREN su
+// informe re-incrustando el bloque «## Memoria compartida
+// (expediente + Cerebro + Mapa)» que recibieron al despacharse —
+// medido: el 78 % del resultado de delegate_parallel era ese eco,
+// y el padre, que ya pagó esa memoria en su propio mensaje del
+// turno, la recompraba en cada llamada siguiente (49.950
+// caracteres reenviados en S2; encima el eco se comía el tope de
+// 4.000 del analyst y dejaba ~746 caracteres para su evidencia).
+// El retiro se hace AQUÍ, al inyectar el resultado en el contexto
+// del padre (el mensaje tool), sobre una COPIA: el resultado del
+// step queda ÍNTEGRO (los hechos del kernel y el destilado leen
+// los steps, como con los stubs C2) y el subagente SIGUE
+// recibiendo la memoria compartida (v5.1.0-B5 intacta: lo que se
+// corta es su DEVOLUCIÓN, no su entrega). El retiro es
+// determinista y acotado a las dos formas conocidas del eco
+// (explorer: el bloque cierra el informe; analyst: lo sigue su
+// línea «- **Raíz**:»), con el tope de 3.200 con el que los
+// subagentes lo incrustan; una forma no reconocida no se toca.
+// En el sitio del bloque queda una marca que declara el retiro.
+const SHARED_MEMORY_ECHO_HEADER = "## Memoria compartida (expediente + Cerebro + Mapa)";
+const SHARED_MEMORY_ECHO_MAX_CHARS = 3200;
+const DELEGATE_ECHO_MARKER = "[Informe sin eco de memoria (M4-K3): el bloque «Memoria compartida» que el subagente devolvía como eco de la memoria recibida se retiró de este resultado — esa memoria ya viaja en el mensaje de este turno; la evidencia propia del subagente se conserva íntegra.]";
+
+function stripSharedMemoryEcho(text) {
+  const src = String(text || "");
+  const headerIdx = src.indexOf(SHARED_MEMORY_ECHO_HEADER);
+  if (headerIdx === -1) return src;
+  const after = src.slice(headerIdx + SHARED_MEMORY_ECHO_HEADER.length);
+  // Forma analyst: tras el eco (≤3.200) viene su línea de raíz.
+  const analystTail = after.indexOf("\n\n- **Raíz**: ");
+  if (analystTail !== -1 && analystTail <= SHARED_MEMORY_ECHO_MAX_CHARS + 2) {
+    return src.slice(0, headerIdx) + DELEGATE_ECHO_MARKER + after.slice(analystTail);
+  }
+  // Forma explorer: el eco cierra el informe (nada tras él).
+  if (after.length <= SHARED_MEMORY_ECHO_MAX_CHARS + 2) {
+    return src.slice(0, headerIdx) + DELEGATE_ECHO_MARKER;
+  }
+  return src;
+}
+
+// Copia para el payload de un resultado delegate_parallel con el
+// eco retirado de cada informe; el original no se muta.
+function delegateResultWithoutEcho(result) {
+  if (!result || typeof result !== "object" || !Array.isArray(result.results)) return result;
+  let changed = false;
+  const results = result.results.map((r) => {
+    if (!r || typeof r.text !== "string" || !r.text.includes(SHARED_MEMORY_ECHO_HEADER)) return r;
+    const stripped = stripSharedMemoryEcho(r.text);
+    if (stripped === r.text) return r;
+    changed = true;
+    return { ...r, text: stripped };
+  });
+  return changed ? { ...result, results } : result;
 }
 
 // [EDITCORE-V491-C] PLAN PRESENTADO, PERSISTIDO: cuando el despacho
@@ -3412,7 +3491,13 @@ class ChatOrchestrator {
     // aperturas EXECUTE (puerta estricta por clase): para cualquier
     // otro carril va null y buildMessageList selecciona el registro
     // como siempre, byte a byte.
-    let messages = threadCore.buildMessageList({ system, systemPrefix: listOnlyMode ? "" : SELF_KNOWLEDGE_PROMPT, turnContext: applyTurnContextBudget(turnContext), userText, projectRoot, threadId, historyInput, query: String(this._currentUserText || message || ""), images: taskImages, skipDossier: orientationLaneTurn, verbatimBudget: decision?.kind === "EXECUTE" ? threadCore.EXECUTE_VERBATIM_BUDGET : null });
+    // [EDITCORE-V519-K2P] Dedupe expediente↔Mapa por secciones,
+    // puerta estricta EXECUTE (como C3) y solo si el Mapa viaja en
+    // este turno (mapBlock no vacío): el expediente se emite sin la
+    // sección de decisiones — ya declaradas en el Mapa — conservando
+    // las líneas de identidad de tarea (S8), objetivo, archivos,
+    // verificados y notas. El carril de preguntas no se toca.
+    let messages = threadCore.buildMessageList({ system, systemPrefix: listOnlyMode ? "" : SELF_KNOWLEDGE_PROMPT, turnContext: applyTurnContextBudget(turnContext), userText, projectRoot, threadId, historyInput, query: String(this._currentUserText || message || ""), images: taskImages, skipDossier: orientationLaneTurn, verbatimBudget: decision?.kind === "EXECUTE" ? threadCore.EXECUTE_VERBATIM_BUDGET : null, dossierDedupeMap: decision?.kind === "EXECUTE" && !!mapBlock });
     // [EDITCORE-V510-B6] La directiva del director (si la detección de
     // _handleCore marcó el turno descomponible) se anexa AQUÍ, al
     // mensaje del turno ya ensamblado: es una orden del harness y no
@@ -3739,6 +3824,15 @@ class ChatOrchestrator {
             // nombre del archivo y el texto alt (P-3, tres veces).
             .filter((t) => this._uiTask === true || this._visualReviewTask === true || (t.function?.name || t.name) !== "capture_preview_screenshot");
 
+        // [EDITCORE-V519-K1] La copia que VIAJA al proveedor lleva
+        // las descripciones ceñidas a su primera frase (tools.js):
+        // mismo set, mismos nombres y esquemas, ~5.500 caracteres
+        // menos por llamada. `availableTools` (íntegro) sigue
+        // mandando en la lógica de nombres del bucle; el payload y
+        // su contexto de caché local usan la copia dietada, que es
+        // lo que de verdad se envía.
+        const payloadTools = tools.slimToolDefinitions(availableTools);
+
         this.turnAbort = new AbortController();
         const turnSignal = (typeof AbortSignal.any === "function" && this.abort?.signal) ? AbortSignal.any([this.abort.signal, this.turnAbort.signal]) : (this.turnAbort.signal || this.abort?.signal);
 
@@ -3832,7 +3926,7 @@ class ChatOrchestrator {
         // turno como cache local. Solo respuestas de texto: un paso
         // con tool_calls jamás se reproduce desde caché.
         const stepCacheContext = stepResponseCache
-          ? tokenHarness.stepCacheContext({ apiBaseUrl, model: routedModel, projectRoot, messages, tools: availableTools, userText: this._currentUserText || message || "" })
+          ? tokenHarness.stepCacheContext({ apiBaseUrl, model: routedModel, projectRoot, messages, tools: payloadTools, userText: this._currentUserText || message || "" })
           : null;
         const cachedTurn = stepCacheContext ? tokenHarness.lookupStepResponse(stepResponseCache, stepCacheContext) : null;
 
@@ -3859,7 +3953,7 @@ class ChatOrchestrator {
           // o el NO_SESSION persiste: error de SESIÓN.
           const invokeModel = () => chatCaller({
             apiBaseUrl, apiKey: currentApiKey, model: routedModel, messages,
-            tools: availableTools,
+            tools: payloadTools,
             // [EDITCORE-V500-A4] Frontera del prefijo cacheable para
             // los breakpoints de caché del proveedor (harness/ai-core).
             // [EDITCORE-V517-C1] Frontera CRECIENTE: el último mensaje
@@ -4702,6 +4796,13 @@ class ChatOrchestrator {
           // ni se entera — sigue intacto. En cualquier otro carril
           // esta puerta no existe y manda el comprobante A3 de
           // siempre, byte a byte.
+          // [EDITCORE-V519-K5] El harness decide con el rango pedido
+          // (startLine/endLine viajan en las opts de la llamada): el
+          // stub solo sale si el rango SOLAPA la cobertura del
+          // índice; un rango disjunto es información nueva y la
+          // lectura es real — refinamiento de granularidad (medición
+          // M4), con el invariante intacto: lo cubierto jamás se
+          // reenvía.
           if (readCacheKey && args.force !== true && projectRoot && threadId && decision?.kind === "EXECUTE") {
             try {
               const threadStub = tokenHarness.threadReadStub(projectRoot, threadId, args.path, {
@@ -4998,7 +5099,14 @@ class ChatOrchestrator {
           // elipsis declarada), no del corte único de 2.000 por la
           // cabeza que eliminaba stderr, las colas con el error final,
           // la cola de read_skill y los diagnostics de la captura.
-          messages.push({ role: "tool", tool_call_id: call.id, name, content: tools.truncatePayload(result || {}, name === "read_file" ? tools.READ_FILE_PAYLOAD_CAP : undefined, name) });
+          // [EDITCORE-V519-K3] En delegate_parallel el payload sale
+          // de la copia sin eco de memoria (el step de arriba ya
+          // guardó el resultado íntegro).
+          let payloadResult = result;
+          if (name === "delegate_parallel") {
+            try { payloadResult = delegateResultWithoutEcho(result); } catch { payloadResult = result; }
+          }
+          messages.push({ role: "tool", tool_call_id: call.id, name, content: tools.truncatePayload(payloadResult || {}, name === "read_file" ? tools.READ_FILE_PAYLOAD_CAP : undefined, name) });
         }
 
         // [EDITCORE-V510-B4] Lote cerrado: el latido de herramientas
@@ -5125,4 +5233,4 @@ class ChatOrchestrator {
   }
 }
 
-module.exports = { ChatOrchestrator, SKILL_IDS, taskQueue, groundUngroundedClaims, successfulDiskReads, hasMutationIntent, buildKernelFactSummary, auditSubagentSteps, runPostWriteVerify, formatVerifyBlock, applyTurnContextBudget, TURN_CONTEXT_MAX_CHARS, TURN_CONTEXT_TRUNCATION_MARKER, CTX_TIER_ESSENTIAL, CTX_TIER_NORMAL, CTX_TIER_ACCESSORY, /* [EDITCORE-INTEGRAL-B3] */ appendRealVerification, /* [EDITCORE-INTEGRAL-B5] */ normalizePermissionMode, buildModeAnnouncement, /* [EDITCORE-INTEGRAL-B6] */ raceSemanticBlock, SEMANTIC_MEMORY_TIMEOUT_MS, runRealVerification, /* [EDITCORE-INTEGRAL-B8] */ formatExternalActionResult, /* [EDITCORE-INTEGRAL-B9] */ buildCerebroServiceBlock, buildBrainContextBlock, /* [EDITCORE-V492-3] */ detectMemoryEventQuestion, memoryEventInDossier, memoryAnswerAffirmsEvent, memoryEventGuardBanner, MEMORY_EVENT_PROTOCOL, /* [EDITCORE-V510-B2/B3/B4/B6] */ isNarrationOnlyText, closingHasProposalOrTerminus, substantiveFallbackText, progressRenditionText, detectDecomposableTask, /* [EDITCORE-V516-S2/S3/S6/P8] */ computeTaskArtifacts, identityDeviationState, premiseRefutedByEvidence, harvestTurnCredentials, redactHarvestedCredentials, /* [EDITCORE-V517-C2] */ stubAgedToolResults, buildToolResultStub, TOOL_STUB_SENTINEL, TOOL_STUB_WINDOW_STEPS, /* [EDITCORE-V518-A/B2] */ redirectCredentialSolicitations, credentialSolicitationIn, buildThreadKnownBlock, THREAD_KNOWN_BLOCK_MAX_CHARS };
+module.exports = { ChatOrchestrator, SKILL_IDS, taskQueue, groundUngroundedClaims, successfulDiskReads, hasMutationIntent, buildKernelFactSummary, auditSubagentSteps, runPostWriteVerify, formatVerifyBlock, applyTurnContextBudget, TURN_CONTEXT_MAX_CHARS, TURN_CONTEXT_TRUNCATION_MARKER, CTX_TIER_ESSENTIAL, CTX_TIER_NORMAL, CTX_TIER_ACCESSORY, /* [EDITCORE-INTEGRAL-B3] */ appendRealVerification, /* [EDITCORE-INTEGRAL-B5] */ normalizePermissionMode, buildModeAnnouncement, /* [EDITCORE-INTEGRAL-B6] */ raceSemanticBlock, SEMANTIC_MEMORY_TIMEOUT_MS, runRealVerification, /* [EDITCORE-INTEGRAL-B8] */ formatExternalActionResult, /* [EDITCORE-INTEGRAL-B9] */ buildCerebroServiceBlock, buildBrainContextBlock, /* [EDITCORE-V492-3] */ detectMemoryEventQuestion, memoryEventInDossier, memoryAnswerAffirmsEvent, memoryEventGuardBanner, MEMORY_EVENT_PROTOCOL, /* [EDITCORE-V510-B2/B3/B4/B6] */ isNarrationOnlyText, closingHasProposalOrTerminus, substantiveFallbackText, progressRenditionText, detectDecomposableTask, /* [EDITCORE-V516-S2/S3/S6/P8] */ computeTaskArtifacts, identityDeviationState, premiseRefutedByEvidence, harvestTurnCredentials, redactHarvestedCredentials, /* [EDITCORE-V517-C2] */ stubAgedToolResults, buildToolResultStub, TOOL_STUB_SENTINEL, TOOL_STUB_WINDOW_STEPS, /* [EDITCORE-V519-K4a] */ DELEGATE_STUB_WINDOW_STEPS, /* [EDITCORE-V518-A/B2] */ redirectCredentialSolicitations, credentialSolicitationIn, buildThreadKnownBlock, THREAD_KNOWN_BLOCK_MAX_CHARS, /* [EDITCORE-V519-K3] */ stripSharedMemoryEcho, delegateResultWithoutEcho, SHARED_MEMORY_ECHO_HEADER, DELEGATE_ECHO_MARKER };

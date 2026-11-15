@@ -116,7 +116,7 @@ function applyVerbatimBudget(hist, budget = {}) {
 
 // El system es fijo por modo y proyecto; lo que cambia en cada turno
 // (turnContext, hora) va en el último mensaje del usuario.
-function buildMessageList({ system, systemPrefix = "", turnContext = "", userText, projectRoot, threadId, historyInput, query, now, images, skipDossier = false, verbatimBudget = null }) {
+function buildMessageList({ system, systemPrefix = "", turnContext = "", userText, projectRoot, threadId, historyInput, query, now, images, skipDossier = false, verbatimBudget = null, dossierDedupeMap = false }) {
   const systemText = `${system}\n\n${stableContextLine(now)}`;
   const messages = [{ role: "system", content: systemPrefix ? `${systemPrefix}\n\n${systemText}` : systemText }];
   // HISTORIAL APPEND-ONLY: si el hilo tiene registro verbatim, el
@@ -177,7 +177,13 @@ function buildMessageList({ system, systemPrefix = "", turnContext = "", userTex
     // bloque de memoria compartida): anteponer aquí la copia estándar
     // lo pagaría dos veces en la misma petición.
     if (projectRoot && !skipDossier) {
-      const memoryBlock = threadMemory.projectPromptBlock(projectRoot, threadId, query);
+      // [EDITCORE-V519-K2P] dossierDedupeMap lo pasa SOLO el
+      // orquestador en aperturas EXECUTE con el Mapa viajando en el
+      // contexto del turno: el expediente se emite sin las secciones
+      // que el Mapa ya declara (decisiones), conservando identidad,
+      // objetivo, archivos, verificados y notas. En cualquier otro
+      // carril va false y el expediente sale íntegro, byte a byte.
+      const memoryBlock = threadMemory.projectPromptBlock(projectRoot, threadId, query, dossierDedupeMap ? { omitMapSections: true } : undefined);
       if (memoryBlock) {
         context = context ? `${memoryBlock}\n\n${context}` : memoryBlock;
       }

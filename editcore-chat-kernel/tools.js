@@ -2260,6 +2260,65 @@ function getToolDefinitions({ allowWrite = true, isFullAccess = false, isAnalysi
   });
 }
 
+// [EDITCORE-V519-K1] DIETA DE DESCRIPCIONES SOLO EN EL PAYLOAD
+// (medición M4 §1.1/§4-K1): el JSON de definiciones que viaja en
+// CADA llamada al proveedor medía 19.340 caracteres y el 48 % era
+// prosa de descripciones. La copia que sale al proveedor lleva cada
+// `description` (de función y de parámetros) ceñida a su PRIMERA
+// frase — la que ya dice qué hace la herramienta — sin tocar
+// nombres, parámetros ni esquemas, y sin quitar ni una herramienta
+// de la vista: el SET es el mismo (esto NO es la dieta C6 excluida
+// en M3, que recortaba el set contra el contrato de turno). Las
+// DEFINITIONS de origen quedan ÍNTEGRAS: cualquier otro consumidor
+// (documentación interna, depuración) sigue viendo el texto
+// completo; la dieta vive solo en la copia del payload. La
+// transformación es determinista (función pura del texto) y se
+// memoiza por objeto definición: el payload es byte-estable entre
+// llamadas y entre turnos, como exige la disciplina de prefijo.
+function firstSentenceOfDescription(text) {
+  const t = String(text || "").trim();
+  if (!t) return t;
+  for (let i = 0; i < t.length; i += 1) {
+    const c = t[i];
+    if (c !== "." && c !== "!" && c !== "?") continue;
+    const rest = t.slice(i + 1);
+    if (!rest.trim()) return t.slice(0, i + 1);
+    // Sin espacio tras el signo no hay frontera («Node.js», «5.1.9»).
+    if (!/^\s/.test(rest)) continue;
+    // Frontera solo si lo que sigue abre frase (mayúscula, dígito o
+    // apertura de interrogación/exclamación, tras cita o paréntesis):
+    // las abreviaturas («p. ej.», «etc.») no cortan a mitad de idea.
+    const next = rest.replace(/^\s+/, "").replace(/^['"«(]/, "");
+    if (/^[A-ZÁÉÍÓÚÑ0-9¿¡]/.test(next)) return t.slice(0, i + 1);
+  }
+  return t;
+}
+
+function slimDefinitionDescriptions(value) {
+  if (Array.isArray(value)) return value.map(slimDefinitionDescriptions);
+  if (value && typeof value === "object") {
+    const out = {};
+    for (const [key, val] of Object.entries(value)) {
+      out[key] = (key === "description" && typeof val === "string")
+        ? firstSentenceOfDescription(val)
+        : slimDefinitionDescriptions(val);
+    }
+    return out;
+  }
+  return value;
+}
+
+const _slimmedToolDefs = new WeakMap();
+function slimToolDefinitions(defs) {
+  if (!Array.isArray(defs)) return defs;
+  return defs.map((def) => {
+    if (!def || typeof def !== "object") return def;
+    let slim = _slimmedToolDefs.get(def);
+    if (!slim) { slim = slimDefinitionDescriptions(def); _slimmedToolDefs.set(def, slim); }
+    return slim;
+  });
+}
+
 const _ecToolStats = new Map();
 const _ecToolRateBuckets = new Map();
 
@@ -2330,6 +2389,9 @@ module.exports = {
   execute,
   DEFINITIONS,
   getToolDefinitions,
+  // [EDITCORE-V519-K1] Dieta de descripciones para el payload.
+  slimToolDefinitions,
+  firstSentenceOfDescription,
   webSearch,
   gitStatus,
   gitLog,
