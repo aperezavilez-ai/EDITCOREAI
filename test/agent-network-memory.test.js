@@ -10,7 +10,8 @@ const { AgentNetwork } = require("../editcore-chat-kernel/agent-network");
 const threadCore = require("../editcore-chat-kernel/thread-core");
 const threadMemory = require("../editcore-chat-kernel/thread-memory");
 const { withCacheControl } = require("../runtime/ai-core");
-const { SELF_KNOWLEDGE_PROMPT, CONNECT_GUIDE_PROMPT, wantsConnectGuide } = require("../editcore-chat-kernel/self-knowledge");
+const selfKnowledge = require("../editcore-chat-kernel/self-knowledge");
+const { SELF_KNOWLEDGE_PROMPT } = selfKnowledge;
 const tools = require("../editcore-chat-kernel/tools");
 
 const tmp = (name) => fs.mkdtempSync(path.join(os.tmpdir(), `ec-${name}-`));
@@ -89,10 +90,28 @@ test("caché: el system es idéntico entre turnos aunque cambie el contexto, que
   assert.ok(JSON.stringify(marked).match(/cache_control/g).length <= 4, "el proveedor admite como máximo 4 marcas");
 });
 
-test("guía de conexión: se activa con GitHub/Vercel/Supabase/publicar y el kernel tiene sus herramientas", () => {
-  for (const t of ["conecta con github", "quiero publicar mi página", "súbelo a vercel", "usa supabase"]) assert.ok(wantsConnectGuide(t), t);
-  assert.ok(!wantsConnectGuide("cambia el color del botón"));
-  assert.match(CONNECT_GUIDE_PROMPT, /check_connections[\s\S]*connect_project[\s\S]*publish_project/);
+test("guía de conexión: ELIMINADA en la v5.2.0 — sin detector ni inyección; el kernel conserva sus herramientas", () => {
+  // RE-DELIMITACIÓN v5.2.0 (decisión de Lu, 2026-11-15; precedente
+  // v5.1.7: la re-delimitación la decide Lu y la justificación va
+  // escrita dentro del test). Este caso afirmaba que la guía de
+  // conexión «se activa» con GitHub/Vercel/Supabase/publicar vía
+  // wantsConnectGuide y prescribía el contenido de
+  // CONNECT_GUIDE_PROMPT. Esa activación por tema ERA la compuerta
+  // que secuestró dos turnos reales de corrección de memoria en
+  // ALFA LUBES (2026-11-15: 233.793 + 164.366 tokens, 0 aplicados):
+  // cualquier MENCIÓN de esos temas — incluso en prohibiciones —
+  // inyectaba la guía y forzaba check_connections sobre la tarea
+  // literal, violando el invariante de la v5.1.6 (ninguna compuerta
+  // inyecta un tema fijo ni prescribe una herramienta fuera del
+  // pedido literal). Las afirmaciones del detector/guía se
+  // sustituyen por el invariante nuevo: la guía y su detector ya
+  // no existen en self-knowledge y ninguna inyección de guía
+  // ocurre. Las afirmaciones sobre el set de herramientas
+  // (check_connections disponible en solo lectura; connect_project
+  // exige escritura) se conservan intactas.
+  assert.equal(selfKnowledge.CONNECT_GUIDE_PROMPT, undefined, "la guía ya no existe en self-knowledge");
+  assert.equal(selfKnowledge.wantsConnectGuide, undefined, "el detector por tema ya no existe");
+  assert.equal(selfKnowledge.CONNECT_INTENT, undefined, "la regex de intención por tema ya no existe");
 
   const names = (opts) => tools.getToolDefinitions(opts).map((t) => t.function.name);
   assert.ok(names({ allowWrite: false }).includes("check_connections"), "diagnóstico disponible en solo lectura");

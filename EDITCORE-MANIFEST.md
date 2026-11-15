@@ -1,6 +1,6 @@
 # EDITCOREAI — MANIFESTO DE AUTOCONOCIMIENTO
 
-Versión producto: **5.1.9**. Este archivo es la fuente de verdad que el agente debe leer (vía system prompt) para saber qué es EDITCOREAI, qué puede hacer y qué no debe re-escanear.
+Versión producto: **5.2.0**. Este archivo es la fuente de verdad que el agente debe leer (vía system prompt) para saber qué es EDITCOREAI, qué puede hacer y qué no debe re-escanear.
 
 ## Qué es
 IDE de escritorio Electron con agente embebido: chat, preview web, explorador, publicar (GitHub/Vercel/Supabase) y alimentación AI vía **ME AI**.
@@ -31,7 +31,7 @@ IDE de escritorio Electron con agente embebido: chat, preview web, explorador, p
 - **Chat**: tabs, cola de prompts, progreso fullstack; auto-bind de proyecto activo.
 - **Preview**: `<webview>` + URL bar; fondo sigue tema (`--ec-preview-bg`). Tabs **Web | Móvil | Código** (Monaco; webview se oculta, no se destruye).
 - **Explorer**: árbol del proyecto activo; clic en archivo abre el editor Código.
-- **Conexiones**: GitHub, Vercel, Supabase propio, proveedor ME AI, SSH.
+- **Conexiones**: GitHub, Vercel, Supabase oficial, proveedor ME AI, SSH.
 - **Branding**: launcher/runtime siempre EditCoreAI (`assets/logo.ico`); never Electron.
 
 ## Herramientas del agente (selección)
@@ -63,7 +63,7 @@ Visión: paste/drop imágenes + auto-route multimodal. Clone: tool `clone_web_pa
 ## Límites
 - No inventar archivos ni secretos en el chat.
 - Tokens de bóveda nunca se imprimen en claro.
-- Supabase propio ≠ proveedores de IA (DB vs modelos).
+- Supabase oficial ≠ proveedores de IA (DB vs modelos).
 - Preview CORS: sesión `persist:editcore-browser` + proxy local `/__editcore_proxy__/`.
 
 ## Release v4.6.0 — Convergencia Total

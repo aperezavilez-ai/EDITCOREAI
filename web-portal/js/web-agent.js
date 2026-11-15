@@ -306,29 +306,19 @@
     "- El usuario usa saldo prepago en dólares (recarga de 20 USD con Mercado Pago; regalo de bienvenida al registrarse). Cada consulta descuenta según el modelo elegido en Modelos («Auto» elige el más adecuado).",
     "- Herramientas reales en esta versión: list_files, read_file, search_files, write_file, replace_in_file, delete_file, check_connections y publish_project. No inventes otras.",
     "- Los proyectos se guardan en la cuenta del usuario, en este navegador. La memoria de la conversación es el historial de este chat.",
-    "- Conexiones (⚙ Conexiones): GitHub, Vercel y Supabase propio. Los tokens se guardan en la cuenta del usuario: nunca los pidas en el chat ni los muestres.",
+    "- Conexiones (⚙ Conexiones): GitHub, Vercel y Supabase (oficial). Los tokens se guardan en la cuenta del usuario: nunca los pidas en el chat ni los muestres.",
     "- Ahorro de tokens: el inicio del prompt se cachea entre pasos y turnos. No releas archivos que ya leíste en esta conversación.",
     "=== FIN QUIÉN ERES ===",
   ].join("\n");
 
-  const CONNECT_GUIDE = [
-    "=== GUÍA: CONECTAR Y PUBLICAR DE PRINCIPIO A FIN ===",
-    "El usuario quiere conectar servicios o publicar. Suele no ser técnico: llévalo paso a paso hasta que su proyecto quede en vivo con una URL. No lo dejes a medias.",
-    "1. Llama check_connections y muestra en una lista corta qué está listo (✅) y qué falta (⬜).",
-    "2. Si falta una cuenta, da UNA instrucción a la vez, con los clics exactos, y espera a que diga «listo»:",
-    "   - GitHub: crear cuenta en github.com si no tiene → foto de perfil → Settings → Developer settings → Personal access tokens → Tokens (classic) → Generate new token → marcar «repo» → Generate → copiar. En EditCoreAI: ⚙ Conexiones → GitHub → pegar → Guardar.",
-    "   - Vercel: crear cuenta en vercel.com (puede entrar con su cuenta de GitHub) → vercel.com/account/tokens → Create → copiar. En EditCoreAI: ⚙ Conexiones → Vercel → pegar → Guardar.",
-    "   - Supabase (solo si la app usa base de datos): ⚙ Conexiones → Supabase propio → URL y clave de su servidor. Nunca Supabase Cloud.",
-    "   Cuando diga «listo», vuelve a llamar check_connections para confirmarlo: no lo supongas.",
-    "3. Antes de publicar, revisa que index.html y sus archivos estén completos y sin errores evidentes.",
-    "4. Publica con publish_project (EditCoreAI pide la confirmación al usuario).",
-    "5. Cierra con la URL en vivo, el repositorio de GitHub y cómo publicar cambios después («dime “publica” y lo hago»).",
-    "Si un paso falla, explica la causa en palabras simples, corrige lo que se pueda y reintenta. Pide al usuario solo lo que únicamente él puede hacer: crear una cuenta o pegar un token.",
-    "=== FIN GUÍA ===",
-  ].join("\n");
-  const CONNECT_INTENT = /\b(github|vercel|supabase|netlify|publica\w*|publicar|deploy\w*|despleg\w*|desplieg\w*|conect\w*|hosting|dominio|en l[ií]nea|online|sube(lo)?)\b/i;
+  // [EDITCORE-V520] La guía CONNECT_GUIDE y su detector CONNECT_INTENT
+  // quedaron ELIMINADOS (decisión de Lu, 2026-11-15): eran la compuerta
+  // espejo de la del kernel — inyectaban la guía por tema en turnContext
+  // ante cualquier mención de publicar/Vercel/Supabase/conectar. Las
+  // herramientas de conexión (check_connections, publish_project)
+  // siguen disponibles en el set, sin inyección automática.
 
-  // El proveedor cachea por prefijo exacto: el system es fijo por proyecto y lo variable (guía, instrucciones
+  // El proveedor cachea por prefijo exacto: el system es fijo por proyecto y lo variable (instrucciones
   // extra) va dentro del mensaje del turno.
   function systemMessage(projectName) {
     const policy = String(window.EditCoreEliteCommunication?.ELITE_COMMUNICATION_POLICY || window.ELITE_COMMUNICATION_POLICY || "");
@@ -350,7 +340,6 @@
 
   function turnContext(input) {
     return [
-      CONNECT_INTENT.test(String(input.prompt || "")) ? CONNECT_GUIDE : "",
       input.systemPrompt ? `INSTRUCCIONES ADICIONALES:\n${input.systemPrompt}` : "",
     ].filter(Boolean).join("\n\n");
   }

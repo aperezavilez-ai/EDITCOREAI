@@ -404,7 +404,7 @@ function presentedPlanPaths(rec) {
 // [EDITCORE-INTEGRAL-B9] agent-bus ya no se importa aquí: el
 // orquestador dejó de escribir el bus por turno (solo escritura,
 // nadie lo leía). El módulo queda para uso explícito.
-const { SELF_KNOWLEDGE_PROMPT, CONNECT_GUIDE_PROMPT, wantsConnectGuide } = require("./self-knowledge");
+const { SELF_KNOWLEDGE_PROMPT } = require("./self-knowledge");
 
 let projectMapApi = null;
 try {
@@ -1947,12 +1947,25 @@ function detachLongRunningStreams(steps) {
 // tema fijo ni prescribe una herramienta fuera del set ejecutable;
 // todo empujón deriva su contenido del pedido literal del usuario.
 
-function wantsConnectionsCheck(text) {
-  // Sin "qué falta" a secas: esa frase en una pregunta cualquiera
-  // ("¿qué falta para que la IA funcione?") secuestraba el turno y forzaba
-  // check_connections en cada paso. Hace falta contexto de conexión/deploy.
-  return /\b(?:check_connections|conect(?:a|ar|iones)?|publica(?:r)?|deploy|checklist|github|vercel)\b/i.test(String(text || ""));
-}
+// [EDITCORE-V520] La compuerta de conexiones quedó ELIMINADA
+// (detector wantsConnectionsCheck y su empujón a mitad de bucle, y la
+// inyección de CONNECT_GUIDE_PROMPT por wantsConnectGuide): casaba
+// con cualquier MENCIÓN de publicar/Vercel/Supabase/conectar —
+// incluso en prohibiciones y correcciones de memoria — e imponía
+// check_connections + checklist sobre la tarea literal. Dos turnos
+// reales de corrección de memoria en ALFA LUBES murieron así
+// (2026-11-15: 233.793 y 164.366 tokens, 0 aplicados), y el checklist
+// resultante prescribía «Siguiente paso: publish_project» y
+// etiquetaba la Supabase del proyecto como «Supabase propio /
+// GAFCORE», opción eliminada del producto por orden de Luis (solo
+// Supabase oficial). check_connections SIGUE en el set: la elige el
+// modelo cuando la tarea literal es de conexiones o publicación.
+// El detector wantsConnectGuide, su regex CONNECT_INTENT y el
+// texto CONNECT_GUIDE_PROMPT también quedaron eliminados de
+// self-knowledge.js (decisión de Lu, 2026-11-15; el caso de
+// test/agent-network-memory.test.js que los afirmaba fue
+// re-delimitado con la justificación escrita dentro del test —
+// precedente v5.1.7 — ver CONSTRUCCION-V520.md).
 
 function maybeBlockRootListFiles(name, args, projectRoot, listOnly) {
   if (name !== "list_files") return null;
@@ -3197,7 +3210,6 @@ class ChatOrchestrator {
     let visualReviewNudges = 0;
     let evidenceBlocks = 0;
     let looseHtmlBlocks = 0;
-    let connNudges = 0;
     let narrationRetries = 0;
     // [EDITCORE-V510-B2/B6] Empujones de los guardianes nuevos:
     // respuesta sustantiva (B2) y red del director (B6).
@@ -3341,7 +3353,12 @@ class ChatOrchestrator {
       pushTurnContext(CTX_TIER_NORMAL, cognitiveBlock, connectionsBlock);
     }
 
-    if (!listOnlyMode && wantsConnectGuide(this._currentUserText || message)) pushTurnContext(CTX_TIER_ESSENTIAL, CONNECT_GUIDE_PROMPT);
+    // [EDITCORE-V520] Aquí se inyectaba CONNECT_GUIDE_PROMPT en tier
+    // ESSENTIAL cuando wantsConnectGuide casaba por tema con el texto
+    // del usuario: eliminado con la compuerta de conexiones — ver la
+    // nota [EDITCORE-V520] en la antigua casa de wantsConnectionsCheck.
+    // Ninguna guía se inyecta por tema; check_connections queda en el
+    // set y la elige el modelo cuando la tarea literal lo pide.
     if (!chatOnly && decision?.kind !== "CHAT" && !listOnlyMode && !analysisMode && this._ecRoutedAgent && typeof agentNetwork?.rolePrompt === "function") {
       pushTurnContext(CTX_TIER_ACCESSORY, agentNetwork.rolePrompt(this._ecRoutedAgent));
     }
@@ -4179,20 +4196,14 @@ class ChatOrchestrator {
             continue;
           }
 
-                    const userMsg = String(this._currentUserText || message || "");
           // [EDITCORE-V516-S1] Aquí vivía el disparo de wantsCodeSearch
           // (orden de tema fijo auth/login con herramienta fantasma):
           // eliminado con su detector — ver la nota en su antigua casa.
-          if (!analysisMode && !listOnlyMode && wantsConnectionsCheck(userMsg) && connNudges < 1 && i < stepsLimit - 2) {
-            const usedConn = steps.some((s) => s.name === "check_connections");
-            if (!usedConn) {
-              connNudges += 1;
-              messages.push({ role: "assistant", content: cleanText || null });
-              messages.push({ role: "user", content: "Ejecuta AHORA check_connections y muestra checklist. No uses list_files de la raiz. Cierra SIN preguntar opciones." });
-              onProgress?.({ phase: "model", text: "Forzando check_connections..." });
-              continue;
-            }
-          }
+          // [EDITCORE-V520] Aquí vivía también el empujón de la
+          // compuerta de conexiones («Ejecuta AHORA check_connections
+          // y muestra checklist… Cierra SIN preguntar opciones»):
+          // eliminado con su detector — ver la nota [EDITCORE-V520]
+          // en la antigua casa de wantsConnectionsCheck.
 
 // En ANALYSIS: si el reporte es muy corto, forzar un turno más.
           if (analysisMode && cleanText.trim().length < 400 && i < stepsLimit - 1 && !/##\s*(?:📊|🏗️|⚙️|⚠️|🎯|📁)/.test(cleanText)) {

@@ -21,40 +21,18 @@ const SELF_KNOWLEDGE_PROMPT = [
   "  4. ROADMAP.md del proyecto (## Proceso, ## Bloqueos, ## Archivos clave, ## Siguiente) y el mapa del proyecto en .editcore/project-map.json.",
   "  5. Red de agentes (explorador, analista, implementador, verificador): elige el rol de cada tarea y aprende de los resultados.",
   "- Ahorro de tokens: el inicio del prompt se cachea entre turnos. No releas archivos que ya leíste en este hilo y lee archivos grandes por rangos.",
-  "- Conexiones (⚙ Conexiones): GitHub, Vercel, Supabase propio / GAFCORE (self-hosted; nunca Supabase Cloud) y servidor SSH. Tokens solo en la boveda: nunca los pidas ni los muestres. Usa `check_connections` y muestra checklist antes de guiar.",
+  "- Conexiones (⚙ Conexiones): GitHub, Vercel, Supabase (la del usuario: Supabase Cloud oficial, un proyecto por app) y servidor SSH. Tokens solo en la boveda: nunca los pidas ni los muestres. `check_connections` reporta el estado real de conexiones cuando la tarea lo requiere.",
   "- Seguridad: antes de cada edición se guarda un snapshot (`list_snapshots`, `rollback_last_change`). Push, deploy y SSH siempre piden confirmación al usuario salvo en Acceso completo.",
   "=== FIN QUIÉN ERES ===",
 ].join("\n");
 
-const CONNECT_GUIDE_PROMPT = [
-  "=== GUIA: CONECTAR Y PUBLICAR DE PRINCIPIO A FIN ===",
-  "El usuario quiere conectar servicios o publicar. Suele no ser tecnico: llevalo paso a paso hasta URL publica. No lo dejes a medias.",
-  "",
-  "PROTOCOLO OBLIGATORIO:",
-  "1) Llama YA a `check_connections` (no inventes el estado).",
-  "2) Muestra checklist en markdown:",
-  "   - ✅ / ⬜ GitHub token",
-  "   - ✅ / ⬜ Vercel token",
-  "   - ✅ / ⬜ Supabase propio (solo si el proyecto usa DB; NUNCA Supabase Cloud — usa GAFCORE/self-hosted)",
-  "   - ✅ / ⬜ Repo git + remote",
-  "   - ✅ / ⬜ Listo para publicar",
-  "3) Un solo siguiente paso a la vez. Si falta token: clics exactos + cuando este listo escribe: listo.",
-  "4) Con GitHub (y Vercel si aplica) listos y sin remote: `connect_project` (con Acceso completo se ejecuta directo sin pedir confirmación).",
-  "5) Para salir a internet: `publish_project` o `deploy_one_click` (con Acceso completo se publica directo sin pedir confirmación ni pausar).",
-  "6) Cierra con: URL publica, que quedo conectado, y para el proximo cambio dime publica.",
-  "",
-  "GitHub token: github.com → Settings → Developer settings → Personal access tokens → Tokens (classic) → repo → copiar → EditCore Conexiones → GitHub → Guardar.",
-  "Vercel token: vercel.com/account/tokens → Create → EditCore Conexiones → Vercel → Guardar.",
-  "Supabase: solo servidor propio / GAFCORE (URL + clave en Conexiones → Supabase propio).",
-  "Nunca pidas ni muestres tokens en el chat. Si un paso falla, explica en simple y reintenta lo que puedas.",
-  "=== FIN GUIA ===",
-].join("\n");
-
-const CONNECT_INTENT = /\b(github|vercel|supabase|gafcore|netlify|publica\w*|publicar|deploy\w*|despleg\w*|desplieg\w*|conect\w*|hosting|dominio|en\s+l[ií]nea|online|subir(lo)?\s+a\s+(internet|la\s+web)|sube(lo)?\s+a\s+(internet|la\s+web)|pon(lo|me)?\s+(en\s+l[ií]nea|online)|sacar\s+a\s+producci[oó]n)\b/i;
-
-function wantsConnectGuide(text) {
-  return CONNECT_INTENT.test(String(text || ""));
-}
+// [EDITCORE-V520] La guía CONNECT_GUIDE_PROMPT, su detector
+// wantsConnectGuide y su regex CONNECT_INTENT quedaron ELIMINADOS de
+// este módulo (decisión de Lu, 2026-11-15): eran la mitad inyectable
+// de la compuerta de conexiones — ver la nota [EDITCORE-V520] en
+// orchestrator.js, en la antigua casa de wantsConnectionsCheck.
+// Ninguna guía se inyecta por tema; check_connections queda en el
+// set y la elige el modelo cuando la tarea literal lo pide.
 
 function formatConnectionsChecklist(result = {}) {
   const s = result.services || {};
@@ -65,7 +43,6 @@ function formatConnectionsChecklist(result = {}) {
     "",
     line(s.github, "GitHub (token en boveda)"),
     line(s.vercel, "Vercel (token en boveda)"),
-    line(s.supabase, "Supabase propio / GAFCORE"),
     line(s.servidor_ssh, "Servidor SSH"),
     line(git.repo, "Git local" + (git.branch ? " (rama " + git.branch + ")" : "")),
     line(Boolean(git.remote), "Remote" + (git.remote ? ": " + git.remote : "")),
@@ -79,16 +56,11 @@ function formatConnectionsChecklist(result = {}) {
   if (next.length) {
     lines.push("### Siguiente paso", "");
     next.slice(0, 5).forEach((n, i) => lines.push((i + 1) + ". " + n));
-  } else if (result.readyToPublish) {
-    lines.push("### Siguiente paso", "", "1. Llamar `publish_project` (EditCore pedira confirmacion).");
   }
   return lines.join("\n");
 }
 
 module.exports = {
   SELF_KNOWLEDGE_PROMPT,
-  CONNECT_GUIDE_PROMPT,
-  wantsConnectGuide,
   formatConnectionsChecklist,
-  CONNECT_INTENT,
 };

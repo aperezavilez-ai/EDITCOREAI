@@ -84,7 +84,7 @@
     const lines = [];
     if (c.githubToken) lines.push("- GitHub conectado (Publicar crea el repositorio y sube los archivos del proyecto).");
     if (c.vercelToken) lines.push("- Vercel conectado (Publicar deja la app en vivo con su URL).");
-    if (c.supabaseUrl && c.supabaseKey) lines.push(`- Supabase propio: ${c.supabaseUrl}`);
+    if (c.supabaseUrl && c.supabaseKey) lines.push(`- Supabase: ${c.supabaseUrl}`);
     return { ok: true, memory: lines.length ? `Conexiones del usuario (web):\n${lines.join("\n")}` : "" };
   }
 
