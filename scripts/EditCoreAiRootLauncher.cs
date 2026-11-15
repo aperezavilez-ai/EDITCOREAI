@@ -15,9 +15,9 @@ using System.Windows.Forms;
 [assembly: AssemblyCompany("EditCoreAI")]
 [assembly: AssemblyProduct("EditCoreAI")]
 [assembly: AssemblyCopyright("Copyright © EditCoreAI")]
-[assembly: AssemblyVersion("5.1.8.0")]
-[assembly: AssemblyFileVersion("5.1.8.0")]
-[assembly: AssemblyInformationalVersion("5.1.8")]
+[assembly: AssemblyVersion("5.1.9.0")]
+[assembly: AssemblyFileVersion("5.1.9.0")]
+[assembly: AssemblyInformationalVersion("5.1.9")]
 
 internal static class Program
 {
