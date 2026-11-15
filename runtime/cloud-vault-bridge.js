@@ -52,13 +52,16 @@ function createCloudVaultBridge(deps = {}) {
 
   function vaultStatus() {
     const c = getConnections() || {};
+    const hasSupabase = Boolean(
+      String(c.supabaseUrl || c.selfSupabaseUrl || "").trim() &&
+      String(c.supabaseAnonKey || c.supabaseKey || c.selfSupabaseKey || "").trim() &&
+      !/supabase\.gafcore\.com/i.test(String(c.supabaseUrl || c.selfSupabaseUrl || ""))
+    );
     return {
       ok: true,
       github: Boolean(String(c.githubToken || "").trim()),
       vercel: Boolean(String(c.vercelToken || "").trim()),
-      supabase: Boolean(String(c.selfSupabaseUrl || "").trim() && String(c.selfSupabaseKey || "").trim()),
-      gafcoreAdmin: Boolean(String(getGatewayAdminToken() || "").trim()),
-      gatewayOrigin,
+      supabase: hasSupabase,
       note: "Tokens viven en safeStorage; no se listan en claro.",
     };
   }
@@ -78,9 +81,12 @@ function createCloudVaultBridge(deps = {}) {
       return { service: "vercel", token };
     }
     if (name === "supabase" || name === "selfsupabase") {
-      const url = String(c.selfSupabaseUrl || "").trim();
-      const key = String(c.selfSupabaseKey || "").trim();
-      if (!url || !key) throw new Error("Supabase no configurado en Conexiones (bóveda).");
+      const url = String(c.supabaseUrl || c.selfSupabaseUrl || "").trim();
+      const key = String(c.supabaseAnonKey || c.supabaseKey || c.selfSupabaseKey || "").trim();
+      if (/supabase\.gafcore\.com/i.test(url)) {
+        throw new Error("El servidor GafCore fue dado de baja. Usa Supabase Cloud Oficial (https://<ref>.supabase.co).");
+      }
+      if (!url || !key) throw new Error("Supabase Oficial no configurado en Conexiones (bóveda).");
       return { service: "supabase", url, key };
     }
     if (name === "gafcore" || name === "gateway") {

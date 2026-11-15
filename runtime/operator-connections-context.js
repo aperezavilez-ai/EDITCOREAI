@@ -115,16 +115,12 @@ function gafcorePathSlug(url = "") {
 }
 
 /**
- * URL Supabase que pertenece SOLO a este proyecto.
- * En GafCore: siempre https://supabase.gafcore.com/{slug-de-esta-carpeta}
- * Nunca hereda /taxidriv ni path de otro proyecto.
+ * URL Supabase que pertenece SOLO a este proyecto (Supabase Cloud Oficial o local).
  */
 function projectOwnedSupabaseUrl(projectRoot = "", candidateUrl = "") {
-  const slug = gafcoreProjectSlug(projectRoot);
   const raw = String(candidateUrl || "").trim().replace(/\/+$/, "");
-  if (isGafcoreSupabaseUrl(raw) || !raw) {
-    const origin = gafcorePlatformOrigin(raw) || defaultSupabaseOrigin();
-    return origin ? `${origin}/${slug}` : "";
+  if (isGafcoreSupabaseUrl(raw)) {
+    return "";
   }
   return raw;
 }
@@ -142,13 +138,11 @@ function projectOwnedSupabaseSchema(projectUrl = "", explicit = "") {
  */
 function resolveProjectSupabase(projectRoot = "", globalConnections = {}) {
   const root = String(projectRoot || "").trim();
-  const globalKey = String(globalConnections.selfSupabaseKey || "").trim();
-  const globalOrigin = gafcorePlatformOrigin(globalConnections.selfSupabaseUrl)
-    || String(globalConnections.selfSupabaseUrl || "").trim().replace(/\/+$/, "");
-  const ownSlug = root ? gafcoreProjectSlug(root) : "";
+  const globalKey = String(globalConnections.supabaseAnonKey || globalConnections.supabaseKey || globalConnections.selfSupabaseKey || "").trim();
+  const globalRaw = String(globalConnections.supabaseUrl || globalConnections.selfSupabaseUrl || "").trim().replace(/\/+$/, "");
+  const globalOrigin = isGafcoreSupabaseUrl(globalRaw) ? "" : globalRaw;
 
   if (!root) {
-    // Sin proyecto activo: solo origen/plataforma, nunca path de un app concreto.
     return {
       url: globalOrigin,
       key: globalKey,
@@ -178,22 +172,12 @@ function resolveProjectSupabase(projectRoot = "", globalConnections = {}) {
       || values.VITE_SUPABASE_PUBLISHABLE_KEY
       || "",
     ).trim();
+
     if (!url || !key) continue;
 
-    // Contaminación: .env apunta a otro slug GafCore → ignorar y corregir abajo.
+    // Ignorar por completo cualquier URL legacy de GafCore
     if (isGafcoreSupabaseUrl(url)) {
-      const envSlug = gafcorePathSlug(url);
-      if (envSlug && envSlug !== ownSlug) {
-        continue;
-      }
-      return {
-        url: projectOwnedSupabaseUrl(root, url),
-        key,
-        schema: projectOwnedSupabaseSchema(projectOwnedSupabaseUrl(root, url), values.NEXT_PUBLIC_SUPABASE_SCHEMA),
-        source: path.basename(filePath),
-        projectScoped: true,
-        projectName: path.basename(root),
-      };
+      continue;
     }
 
     return {
@@ -207,36 +191,28 @@ function resolveProjectSupabase(projectRoot = "", globalConnections = {}) {
   }
 
   const manifest = readProjectLinkManifest(root);
-  if (manifest?.supabase?.url && isGafcoreSupabaseUrl(manifest.supabase.url)) {
-    const linkedSlug = gafcorePathSlug(manifest.supabase.url);
-    if (!linkedSlug || linkedSlug === ownSlug) {
-      const url = projectOwnedSupabaseUrl(root, manifest.supabase.url);
-      return {
-        url,
-        key: globalKey,
-        schema: projectOwnedSupabaseSchema(url),
-        source: ".editcore/connections.json",
-        projectScoped: true,
-        projectName: path.basename(root),
-      };
-    }
-  }
-
-  // Bóveda: solo credencial de plataforma + URL propia de ESTE proyecto.
-  const platformOrigin = globalOrigin || (adminInfraEnabled() ? defaultSupabaseOrigin() : "");
-  if (globalKey && platformOrigin) {
-    const url = projectOwnedSupabaseUrl(root, platformOrigin);
+  if (manifest?.supabase?.url && !isGafcoreSupabaseUrl(manifest.supabase.url)) {
     return {
-      url,
-      key: globalKey,
-      schema: projectOwnedSupabaseSchema(url),
-      source: "boveda-plataforma+slug-proyecto",
+      url: manifest.supabase.url,
+      key: manifest.supabase.anonKey || globalKey,
+      schema: "public",
+      source: ".editcore/connections.json",
       projectScoped: true,
       projectName: path.basename(root),
     };
   }
 
-  // URL global no-GafCore (cloud único): no inyectar en proyectos distintos.
+  if (globalKey && globalOrigin) {
+    return {
+      url: globalOrigin,
+      key: globalKey,
+      schema: "public",
+      source: "boveda-global",
+      projectScoped: true,
+      projectName: path.basename(root),
+    };
+  }
+
   return {
     url: "",
     key: "",
@@ -244,24 +220,18 @@ function resolveProjectSupabase(projectRoot = "", globalConnections = {}) {
     source: "",
     projectScoped: false,
     projectName: path.basename(root),
-    note: "Este proyecto no tiene SUPABASE_URL propia; no se hereda la URL de otro proyecto.",
+    note: "Este proyecto no tiene SUPABASE_URL propia configurada en .env ni en bóveda.",
   };
 }
 
 function connectionsForProject(globalConnections = {}, projectRoot = "") {
   const resolved = resolveProjectSupabase(projectRoot, globalConnections);
-  if (!resolved.url && !resolved.key) {
-    return {
-      ...globalConnections,
-      selfSupabaseUrl: "",
-      selfSupabaseKey: "",
-      _supabaseResolved: resolved,
-    };
-  }
   return {
     ...globalConnections,
-    selfSupabaseUrl: resolved.url,
-    selfSupabaseKey: resolved.key || globalConnections.selfSupabaseKey,
+    supabaseUrl: resolved.url || (!isGafcoreSupabaseUrl(globalConnections.supabaseUrl) ? globalConnections.supabaseUrl : ""),
+    supabaseAnonKey: resolved.key || globalConnections.supabaseAnonKey || "",
+    selfSupabaseUrl: "",
+    selfSupabaseKey: "",
     _supabaseResolved: resolved,
   };
 }
@@ -279,16 +249,10 @@ function buildSafeConnectionsSnapshot(options = {}) {
       github: { configured: Boolean(connections.githubToken) },
       vercel: { configured: Boolean(connections.vercelToken) },
       supabase: {
-        configured: Boolean((connections.supabaseUrl || connections.selfSupabaseUrl) && (connections.supabaseAnonKey || connections.selfSupabaseKey)),
-        url: connections.supabaseUrl || connections.selfSupabaseUrl || "",
+        configured: Boolean(connections.supabaseUrl && connections.supabaseAnonKey),
+        url: connections.supabaseUrl || "",
       },
-      docker: { configured: connections.dockerEnabled !== false },
     };
-
-  const hasDockerCompose = projectRoot && (fs.existsSync(path.join(projectRoot, "docker-compose.yml")) || fs.existsSync(path.join(projectRoot, "docker-compose.yaml")));
-  const hasDockerfile = projectRoot && fs.existsSync(path.join(projectRoot, "Dockerfile"));
-  const hasSupabaseCli = projectRoot && fs.existsSync(path.join(projectRoot, "supabase", "config.toml"));
-  const dockerActive = Boolean(hasDockerCompose || hasDockerfile || hasSupabaseCli);
 
   const gatewayLink = options.gatewayLink && typeof options.gatewayLink === "object"
     ? options.gatewayLink
@@ -298,13 +262,12 @@ function buildSafeConnectionsSnapshot(options = {}) {
     : readProjectLinkManifest(options.projectRoot);
 
   const operatorNote =
-      "EDITCOREAI = IDE + agente autónomo. Conexiones oficiales (bóveda): GitHub, Vercel, Supabase (Cloud o Docker) y Docker local. "
+      "EDITCOREAI = IDE + agente autónomo. Conexiones oficiales (bóveda): GitHub, Vercel y Supabase Oficial (Cloud). "
       + "Modelos de IA: se eligen en el selector de Modelos. "
-      + "Si el proyecto tiene .env o contenedores Docker, el agente los detecta y respeta automáticamente.";
+      + "Si el proyecto tiene .env, el agente detecta y respeta automáticamente la configuración oficial.";
 
-  const effectiveSupabaseUrl = resolved.url || connections.supabaseUrl || connections.selfSupabaseUrl || "";
+  const effectiveSupabaseUrl = resolved.url || connections.supabaseUrl || "";
   const isSupabaseCloud = /supabase\.co/i.test(effectiveSupabaseUrl);
-  const isSupabaseDocker = /127\.0\.0\.1|localhost/i.test(effectiveSupabaseUrl) || hasSupabaseCli;
 
   const snapshot = {
     updatedAt: new Date().toISOString(),
@@ -321,26 +284,13 @@ function buildSafeConnectionsSnapshot(options = {}) {
       defaultProjectId: connections.vercelProjectId ? String(connections.vercelProjectId) : undefined,
     },
     supabase: {
-      configured: Boolean(summary.supabase?.configured || summary.selfsupabase?.configured || resolved.key),
+      configured: Boolean(summary.supabase?.configured || resolved.key),
       label: "Supabase Oficial (DB & Auth)",
       url: String(effectiveSupabaseUrl).replace(/\/+$/, ""),
-      mode: isSupabaseCloud ? "Cloud Oficial" : isSupabaseDocker ? "Docker Local" : "Oficial",
+      mode: isSupabaseCloud ? "Cloud Oficial" : "Oficial",
       scope: resolved.projectScoped ? "proyecto-activo" : "boveda-global",
       source: resolved.source || undefined,
       projectName: resolved.projectName || undefined,
-    },
-    selfsupabase: {
-      configured: Boolean(summary.supabase?.configured || summary.selfsupabase?.configured || resolved.key),
-      label: "Supabase Oficial (DB & Auth)",
-      url: String(effectiveSupabaseUrl).replace(/\/+$/, ""),
-      scope: resolved.projectScoped ? "proyecto-activo" : "boveda-global",
-      source: resolved.source || undefined,
-      projectName: resolved.projectName || undefined,
-    },
-    docker: {
-      configured: summary.docker?.configured !== false,
-      activeInProject: dockerActive,
-      type: hasSupabaseCli ? "Supabase CLI (Docker)" : hasDockerCompose ? "docker-compose" : hasDockerfile ? "Dockerfile" : "no detectado en raíz",
     },
     aiProvider: {
       configured: Boolean(gatewayLink?.projectId || gatewayLink?.projectName),
@@ -366,27 +316,26 @@ function formatOperatorConnectionsMemory(snapshot = {}) {
     "",
     "### Capas",
     "1) EDITCOREAI (esta app): IDE, agente autónomo, preview, Publicar, Inspector, Cerebro.",
-    "2) Conexiones bóveda: GitHub (git), Vercel (deploy), Supabase Oficial (DB/Auth) y Docker.",
+    "2) Conexiones bóveda: GitHub (git), Vercel (deploy) y Supabase Oficial (DB/Auth).",
     "3) Modelos de IA: se eligen en el selector de Modelos.",
     "",
     "### Estado actual",
     `- GitHub: ${statusLabel(s.github?.configured)}${s.github?.account ? ` (cuenta: ${s.github.account})` : ""} — commit/push / Publicar`,
     `- Vercel: ${statusLabel(s.vercel?.configured)}${s.vercel?.account ? ` (cuenta: ${s.vercel.account})` : ""}${s.vercel?.defaultProjectId ? ` project=${s.vercel.defaultProjectId}` : ""} — deploy / Publicar`,
-    `- Supabase Oficial (DB & Auth): ${statusLabel(s.supabase?.configured || s.selfsupabase?.configured)}${s.supabase?.url ? ` (${s.supabase.url})` : ""}${
+    `- Supabase Oficial (DB & Auth): ${statusLabel(s.supabase?.configured)}${s.supabase?.url ? ` (${s.supabase.url})` : ""}${
       s.supabase?.mode ? ` [${s.supabase.mode}]` : ""
     }${
       s.supabase?.scope === "proyecto-activo"
         ? ` [proyecto activo${s.supabase.projectName ? `: ${s.supabase.projectName}` : ""}${s.supabase.source ? ` via ${s.supabase.source}` : ""}]`
         : " [bóveda global]"
     }`,
-    `- Docker & Contenedores: ${s.docker?.activeInProject ? `ACTIVO en proyecto (${s.docker.type})` : s.docker?.configured ? "Habilitado" : "Deshabilitado"}`,
     `- Modelos de IA: ${statusLabel(ai.configured)}${ai.projectName ? ` proyecto=${ai.projectName}` : ""}`,
     `  ${ai.note || "Usa el selector de Modelos."}`,
   ];
 
   const links = s.projectLinks;
   if (links && typeof links === "object") {
-    lines.push("", "Publicar usa Conexiones oficiales de EDITCOREAI (GitHub/Vercel/Supabase/Docker).");
+    lines.push("", "Publicar usa Conexiones oficiales de EDITCOREAI (GitHub/Vercel/Supabase).");
     lines.push("Enlaces de ESTE proyecto (.editcore/connections.json):");
     if (links.github) lines.push(`  - GitHub proyecto: ${JSON.stringify(stripSecrets(links.github)).slice(0, 240)}`);
     if (links.vercel) lines.push(`  - Vercel proyecto: ${JSON.stringify(stripSecrets(links.vercel)).slice(0, 240)}`);

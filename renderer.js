@@ -980,30 +980,13 @@ function isGafcoreSupabaseUrl(url = "") {
   }
 }
 
-/** Bóveda global: solo origen de plataforma, nunca /taxidriv ni otro path de app. */
-function vaultSafeSupabaseUrl(url = "") {
-  const raw = String(url || "").trim().replace(/\/+$/, "");
-  if (!raw) return "";
-  try {
-    const parsed = new URL(raw);
-    if (/supabase\.gafcore\.com$/i.test(parsed.hostname)) {
-      return `${parsed.protocol}//${parsed.host}`;
-    }
-  } catch { /* ignore */ }
-  return raw;
-}
-
-/** URL que debe verse en el modal: del proyecto abierto, no de otro (taxidriv, etc.). */
+/** URL que debe verse en el modal: del proyecto abierto. Solo Supabase Cloud Oficial (https://<ref>.supabase.co). */
 function displaySupabaseUrlForActiveProject(savedUrl = "", projectRoot = "") {
-  const root = String(projectRoot || "").trim();
   const raw = String(savedUrl || "").trim().replace(/\/+$/, "");
-  if (!raw) {
-    return root && isCurrentUserAdmin() ? `https://supabase.gafcore.com/${gafcoreProjectSlugFromRoot(root)}` : "";
+  if (!raw || isGafcoreSupabaseUrl(raw)) {
+    return "";
   }
-  if (!isGafcoreSupabaseUrl(raw)) return raw;
-  const origin = vaultSafeSupabaseUrl(raw) || "https://supabase.gafcore.com";
-  if (!root) return origin;
-  return `${origin}/${gafcoreProjectSlugFromRoot(root)}`;
+  return raw;
 }
 
 function isPreviewAsUser() {
@@ -1015,25 +998,28 @@ function loadConnections() {
   const previewNote = $("connectionsPreviewNote");
   if (previewNote) previewNote.hidden = !preview;
   const saved = preview ? {} : loadJson("editcore-connections", {});
+  // Purga definitiva de URLs legacy gafcore y Docker en conexiones
+  if (saved.selfSupabaseUrl || (saved.supabaseUrl && isGafcoreSupabaseUrl(saved.supabaseUrl)) || "dockerEnabled" in saved) {
+    delete saved.selfSupabaseUrl;
+    delete saved.selfSupabaseKey;
+    delete saved.dockerEnabled;
+    if (saved.supabaseUrl && isGafcoreSupabaseUrl(saved.supabaseUrl)) saved.supabaseUrl = "";
+    if (!preview) saveSecureJson("editcore-connections", saved).catch(() => {});
+  }
   const display = { ...saved };
-  display.supabaseUrl = saved.supabaseUrl || saved.selfSupabaseUrl || "";
-  display.supabaseAnonKey = saved.supabaseAnonKey || saved.selfSupabaseKey || "";
+  display.supabaseUrl = displaySupabaseUrlForActiveProject(saved.supabaseUrl, state.projectRoot);
+  display.supabaseAnonKey = saved.supabaseAnonKey || "";
   display.supabaseServiceKey = saved.supabaseServiceKey || "";
 
   document.querySelectorAll("[data-conn]").forEach((input) => {
     input.value = display[input.dataset.conn] || "";
   });
 
-  const dockerToggle = $("dockerSupportToggle");
-  if (dockerToggle) {
-    dockerToggle.checked = saved.dockerEnabled !== false;
-  }
-
   const urlHint = $("supabaseProjectHint");
   if (urlHint) {
     const root = String(state.projectRoot || "").trim();
     if (root) {
-      urlHint.textContent = `Proyecto activo: ${pathBasename(root)} (reconociendo .env / docker-compose)`;
+      urlHint.textContent = `Proyecto activo: ${pathBasename(root)} (reconociendo .env)`;
     }
   }
 
@@ -1147,18 +1133,19 @@ async function saveConnections() {
   delete data.serverDeployPath;
   delete data.selfSupabaseUrl;
   delete data.selfSupabaseKey;
-
-  const dockerToggle = $("dockerSupportToggle");
-  data.dockerEnabled = dockerToggle ? dockerToggle.checked : true;
+  delete data.dockerEnabled;
 
   if (data.supabaseUrl) {
     data.supabaseUrl = String(data.supabaseUrl || "").trim().replace(/\/+$/, "");
+    if (isGafcoreSupabaseUrl(data.supabaseUrl)) {
+      data.supabaseUrl = "";
+    }
   }
 
   await saveSecureJson("editcore-connections", data);
   await saveSecureJson("editcore-rtk", { enabled: true });
   await renderConnectionStatus(false);
-  $("status").textContent = "Conexiones guardadas en bóveda. Supabase y Docker operando para tus proyectos.";
+  $("status").textContent = "Conexiones guardadas en bóveda. GitHub, Vercel y Supabase Oficial operando para tus proyectos.";
 }
 
 async function renderConnectionStatus(validate = false) {
@@ -1166,25 +1153,18 @@ async function renderConnectionStatus(validate = false) {
   if (preview) validate = false;
   const saved = preview ? {} : loadJson("editcore-connections", {});
   const hasSupabase = Boolean(
-    (saved.supabaseUrl && (saved.supabaseAnonKey || saved.supabaseServiceKey)) ||
-    (saved.selfSupabaseUrl && saved.selfSupabaseKey)
+    saved.supabaseUrl && !isGafcoreSupabaseUrl(saved.supabaseUrl) && (saved.supabaseAnonKey || saved.supabaseServiceKey)
   );
   const map = {
     github:   !!saved.githubToken,
     vercel:   !!saved.vercelToken,
     supabase: hasSupabase,
-    docker:   saved.dockerEnabled !== false,
   };
   Object.entries(map).forEach(([key, configured]) => {
     const badge = document.querySelector(`.conn-status[data-service="${key}"]`);
     if (!badge) return;
     badge.classList.remove("connected", "error");
     badge.removeAttribute("title");
-    if (key === "docker") {
-      badge.textContent = configured ? "activo" : "desactivado";
-      badge.classList.toggle("connected", configured);
-      return;
-    }
     if (!configured) {
       badge.textContent = "sin configurar";
       return;
@@ -11488,7 +11468,7 @@ async function createSupabaseProjectFromPanel() {
     appendMessage("assistant", "Creacion Supabase no disponible en esta build.");
     return;
   }
-  const useCloud = Boolean(window.confirm("¿Usar Supabase Cloud API? (Cancelar = GafCore/self-hosted ya configurado)"));
+  const useCloud = true;
   $("status").textContent = "Creando proyecto Supabase...";
   try {
     const result = await window.editcoreProject.supabaseCreate({

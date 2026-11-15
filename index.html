@@ -1157,7 +1157,7 @@
           <header class="dlg-head">
             <div>
               <h2>Conexiones</h2>
-              <p>Bóveda segura en tu computadora. Conecta tus cuentas oficiales (GitHub, Vercel, Supabase y Docker) y gestiona tus proveedores de IA OpenAI-compatible directos.</p>
+              <p>Bóveda segura en tu computadora. Conecta tus cuentas oficiales (GitHub, Vercel y Supabase Oficial) y gestiona tus proveedores de IA OpenAI-compatible directos.</p>
             </div>
             <button id="closeConnectionsBtn" type="button" class="dlg-close">✕</button>
           </header>
@@ -1198,9 +1198,9 @@
               <div class="conn-section-title">Supabase Oficial <span class="conn-status" data-service="supabase">sin conectar</span></div>
               <div class="conn-grid">
                 <div class="conn-field">
-                  <span>Project URL (Cloud o Docker local)</span>
-                  <input data-conn="supabaseUrl" placeholder="https://xyzcompany.supabase.co o http://127.0.0.1:54321" />
-                  <small id="supabaseProjectHint" style="display:block;margin-top:4px;opacity:.75;font-size:0.8em;">Detectado automáticamente desde .env / docker-compose del proyecto</small>
+                  <span>Project URL (Supabase Cloud Oficial)</span>
+                  <input data-conn="supabaseUrl" placeholder="https://<ref>.supabase.co" />
+                  <small id="supabaseProjectHint" style="display:block;margin-top:4px;opacity:.75;font-size:0.8em;">Detectado automáticamente desde .env del proyecto (https://&lt;ref&gt;.supabase.co)</small>
                 </div>
                 <div class="conn-field">
                   <span>Anon / API Key</span>
@@ -1217,15 +1217,6 @@
                 </div>
               </div>
               <div class="conn-error-detail" data-service="supabase" style="display:none;color:#e55;font-size:0.8em;margin-top:4px;padding:4px 8px;background:rgba(255,80,80,0.08);border-radius:4px;word-break:break-word;"></div>
-            </div>
-
-            <div class="conn-section">
-              <div class="conn-section-title">Docker & Contenedores <span class="conn-status" data-service="docker">activo</span></div>
-              <p style="font-size:0.82em;color:var(--text-muted,#888);margin:4px 0 6px;">Detección automática de Docker Engine, docker-compose y contenedores locales en tus proyectos.</p>
-              <label style="display:flex;align-items:center;gap:8px;font-size:0.85em;cursor:pointer;">
-                <input type="checkbox" id="dockerSupportToggle" data-conn="dockerEnabled" checked />
-                <span>Reconocer Docker en proyectos (docker-compose.yml / Dockerfile / Supabase CLI)</span>
-              </label>
             </div>
 
             <div class="conn-add-drawer" style="margin-top:12px;padding-top:12px;border-top:1px solid rgba(255,255,255,0.08);">

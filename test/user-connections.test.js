@@ -61,5 +61,5 @@ test("Conexiones: en Ver como usuario el panel se ve vacío y no guarda ni detec
   assert.match(r, /const saved = preview \? \{\} : loadJson\("editcore-connections", \{\}\);/);
   assert.match(r, /async function saveConnections\(\) \{\r?\n  if \(isPreviewAsUser\(\)\)/);
   assert.match(r, /async function detectConnections\(\) \{\r?\n  if \(isPreviewAsUser\(\)\)/);
-  assert.match(r, /return root && isCurrentUserAdmin\(\) \? `https:\/\/supabase\.gafcore\.com/);
+  assert.doesNotMatch(r, /return root && isCurrentUserAdmin\(\) \? `https:\/\/supabase\.gafcore\.com/);
 });

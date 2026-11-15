@@ -118,13 +118,18 @@ class ConnectionVerifier {
 
   async verifySupabase() {
     return this.cached("supabase", async () => {
-      const creds = this.getVaultCredentials("supabase");
-      if (!creds?.selfSupabaseUrl || !creds?.selfSupabaseKey) {
+      const creds = this.getVaultCredentials("supabase") || this.getConnections();
+      const rawUrl = creds?.supabaseUrl || creds?.selfSupabaseUrl || creds?.url || "";
+      const rawKey = creds?.supabaseAnonKey || creds?.supabaseKey || creds?.selfSupabaseKey || creds?.key || "";
+      if (/supabase\.gafcore\.com/i.test(rawUrl)) {
+        return { status: "error", message: "El servidor GafCore fue dado de baja. Usa Supabase Cloud Oficial (https://<ref>.supabase.co)." };
+      }
+      if (!rawUrl || !rawKey) {
         return { status: "no_configured", message: "No hay Supabase URL/Key configurados" };
       }
 
       // Normalizar URL: quitar /rest/v1 si existe
-      let baseUrl = creds.selfSupabaseUrl;
+      let baseUrl = rawUrl;
       if (baseUrl.includes("/rest/v1")) {
         baseUrl = baseUrl.split("/rest/v1")[0];
       }
@@ -134,8 +139,8 @@ class ConnectionVerifier {
         // Intentar health check simple
         const res = await fetch(`${baseUrl}/rest/v1/`, {
           headers: {
-            "apikey": creds.selfSupabaseKey,
-            "Authorization": `Bearer ${creds.selfSupabaseKey}`,
+            "apikey": rawKey,
+            "Authorization": `Bearer ${rawKey}`,
             "User-Agent": "EDITCOREAI-ConnectionVerifier",
           },
           signal: AbortSignal.timeout(TIMEOUT_MS),

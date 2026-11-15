@@ -4428,26 +4428,36 @@ function gatewayLinkForInput(input = {}) {
 function readConnections() {
   const value = readSecureState()["editcore-connections"];
   const connections = value && typeof value === "object" ? { ...value } : {};
-  // BÃ³veda global: nunca conservar path de un proyecto (/taxidriv, /page, ...).
-  const rawUrl = String(connections.selfSupabaseUrl || "").trim();
-  try {
-    const parsed = new URL(rawUrl);
-    if (/supabase\.gafcore\.com$/i.test(parsed.hostname) && String(parsed.pathname || "").replace(/\/+$/, "")) {
-      connections.selfSupabaseUrl = `${parsed.protocol}//${parsed.host}`;
-      // Persistir limpieza para que el modal no vuelva a mostrar taxidriv.
-      try {
-        const secure = readSecureState();
-        const stored = secure["editcore-connections"] && typeof secure["editcore-connections"] === "object"
-          ? { ...secure["editcore-connections"] }
-          : {};
-        if (String(stored.selfSupabaseUrl || "").trim() !== connections.selfSupabaseUrl) {
-          stored.selfSupabaseUrl = connections.selfSupabaseUrl;
-          secure["editcore-connections"] = stored;
-          writeSecureState(secure);
-        }
-      } catch { /* ignore */ }
-    }
-  } catch { /* ignore */ }
+  let mutated = false;
+  if ("selfSupabaseUrl" in connections || "selfSupabaseKey" in connections) {
+    delete connections.selfSupabaseUrl;
+    delete connections.selfSupabaseKey;
+    mutated = true;
+  }
+  if ("dockerEnabled" in connections) {
+    delete connections.dockerEnabled;
+    mutated = true;
+  }
+  if (connections.supabaseUrl && /supabase\.gafcore\.com/i.test(connections.supabaseUrl)) {
+    connections.supabaseUrl = "";
+    mutated = true;
+  }
+  if (mutated) {
+    try {
+      const secure = readSecureState();
+      const stored = secure["editcore-connections"] && typeof secure["editcore-connections"] === "object"
+        ? { ...secure["editcore-connections"] }
+        : {};
+      delete stored.selfSupabaseUrl;
+      delete stored.selfSupabaseKey;
+      delete stored.dockerEnabled;
+      if (stored.supabaseUrl && /supabase\.gafcore\.com/i.test(stored.supabaseUrl)) {
+        stored.supabaseUrl = "";
+      }
+      secure["editcore-connections"] = stored;
+      writeSecureState(secure);
+    } catch { /* ignore */ }
+  }
   return connections;
 }
 
@@ -4531,13 +4541,7 @@ async function validateConnection(service) {
   if (!configured) return { service: name, configured: false, ok: false, error: "Sin configurar" };
 
   if (name === "docker") {
-    try {
-      const { execSync } = require("node:child_process");
-      execSync("docker --version", { stdio: "ignore", timeout: 4000 });
-      return { service: "docker", configured: true, ok: true, account: "Docker Engine detectado" };
-    } catch {
-      return { service: "docker", configured: true, ok: true, account: "Modo Docker activo (sin daemon local)" };
-    }
+    return { service: "docker", configured: false, ok: false, error: "Servicio retirado" };
   }
 
   if (name === "ssh") {
@@ -4919,7 +4923,15 @@ async function importLocalConnections(input = {}) {
 
   const secure = readSecureState();
   const connections = { ...(secure["editcore-connections"] || {}) };
-  const imported = { github: false, vercel: false, selfsupabase: false, gafcore: false, legacy: Boolean(legacyImport?.imported) };
+  // Purga defensiva de selfSupabase legacy y Docker
+  delete connections.selfSupabaseUrl;
+  delete connections.selfSupabaseKey;
+  delete connections.dockerEnabled;
+  if (connections.supabaseUrl && /supabase\.gafcore\.com/i.test(connections.supabaseUrl)) {
+    connections.supabaseUrl = "";
+  }
+
+  const imported = { github: false, vercel: false, supabase: false, legacy: Boolean(legacyImport?.imported) };
   const sources = {};
   if (legacyImport?.imported) sources.legacy = "legacy-appdata";
 
@@ -4957,46 +4969,38 @@ async function importLocalConnections(input = {}) {
     }
   }
 
-  if (!connections.selfSupabaseUrl || !connections.selfSupabaseKey || !await connectionWorks("selfsupabase", connections)) {
-    const activeRoot = String(input.projectRoot || "").trim();
-    // Solo el proyecto activo: nunca importar URL de TAXIDRIV u otros a la bÃ³veda global.
-    const envFiles = activeRoot
-      ? [path.join(activeRoot, ".env"), path.join(activeRoot, ".env.local")]
-      : [];
-    const urlNames = ["SUPABASE_URL", "NEXT_PUBLIC_SUPABASE_URL", "VITE_SUPABASE_URL", "EXPO_PUBLIC_SUPABASE_URL"];
-    const keyNames = ["SUPABASE_SERVICE_ROLE_KEY", "SUPABASE_ANON_KEY", "NEXT_PUBLIC_SUPABASE_ANON_KEY", "VITE_SUPABASE_ANON_KEY", "SUPABASE_PUBLISHABLE_KEY", "VITE_SUPABASE_PUBLISHABLE_KEY"];
+  const activeRoot = String(input.projectRoot || "").trim();
+  const envFiles = activeRoot
+    ? [path.join(activeRoot, ".env"), path.join(activeRoot, ".env.local")]
+    : [];
+  const urlNames = ["SUPABASE_URL", "NEXT_PUBLIC_SUPABASE_URL", "VITE_SUPABASE_URL", "EXPO_PUBLIC_SUPABASE_URL"];
+  const keyNames = ["SUPABASE_ANON_KEY", "NEXT_PUBLIC_SUPABASE_ANON_KEY", "VITE_SUPABASE_ANON_KEY", "SUPABASE_PUBLISHABLE_KEY", "VITE_SUPABASE_PUBLISHABLE_KEY", "SUPABASE_SERVICE_ROLE_KEY"];
+
+  if (!connections.supabaseUrl || !connections.supabaseAnonKey) {
     for (const filePath of envFiles) {
       const values = readEnvValues(filePath);
-      const rawUrl = urlNames.map((name) => values[name]).find((value) => /https:\/\/supabase\.gafcore\.com/i.test(String(value || "")));
+      const rawUrl = urlNames.map((name) => values[name]).find((value) => /https:\/\/[a-z0-9_-]+\.supabase\.co/i.test(String(value || "")));
       const key = keyNames.map((name) => values[name]).find(Boolean);
       if (!rawUrl || !key) continue;
-      // BÃ³veda = origen de plataforma SIN path de proyecto (/taxidriv, /page, ...).
       let url = String(rawUrl).replace(/^=+/, "").replace(/\/+$/, "")
-        .replace(/\/gafcore-gateway(?:\/api(?:\/openai(?:\/v1)?)?)?$/i, "")
         .replace(/\/rest\/v1$/i, "")
         .replace(/\/+$/, "");
       try {
         const parsed = new URL(url);
-        if (/supabase\.gafcore\.com$/i.test(parsed.hostname)) {
-          url = `${parsed.protocol}//${parsed.host}`;
-        }
+        url = `${parsed.protocol}//${parsed.host}`;
       } catch { /* keep cleaned url */ }
-      const candidate = { ...connections, selfSupabaseUrl: url, selfSupabaseKey: String(key).replace(/^=+/, "").trim() };
-      if (await connectionWorks("selfsupabase", candidate)) {
-        connections.selfSupabaseUrl = candidate.selfSupabaseUrl;
-        connections.selfSupabaseKey = candidate.selfSupabaseKey;
-        imported.selfsupabase = true;
-        sources.selfsupabase = path.basename(activeRoot);
-        break;
-      }
+      const candidate = { ...connections, supabaseUrl: url, supabaseAnonKey: String(key).replace(/^=+/, "").trim() };
+      connections.supabaseUrl = candidate.supabaseUrl;
+      connections.supabaseAnonKey = candidate.supabaseAnonKey;
+      imported.supabase = true;
+      sources.supabase = path.basename(activeRoot);
+      break;
     }
   }
 
-  // ImportaciÃ³n de tokens de gateway AI eliminada a propÃ³sito.
-
   secure["editcore-connections"] = connections;
   writeSecureState(secure);
-  const validation = await Promise.all(["github", "vercel", "selfsupabase"].map(validateConnection));
+  const validation = await Promise.all(["github", "vercel", "supabase"].map(validateConnection));
   return { imported, sources, validation, legacyImport, gafcoreImported: false };
 }
 
@@ -6697,7 +6701,7 @@ ipcMain.handle("project:supabase-create", async (event, input = {}) => {
       title: "Crear proyecto Supabase",
       message: input.useCloud
         ? "Crear proyecto en Supabase Cloud y enlazar esta carpeta?"
-        : "Inicializar supabase/ en este proyecto y enlazar tu Supabase (GafCore)?",
+        : "Inicializar supabase/ en este proyecto y enlazar tu Supabase Cloud Oficial?",
       detail: rootPath,
     });
     if (result.response !== 1) {
