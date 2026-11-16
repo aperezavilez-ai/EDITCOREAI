@@ -1,11 +1,11 @@
 "use strict";
 /**
  * runtime/embeddings.js
- * Embeddings con proveedor opcional y fallback local determinista (hash).
+ * Embeddings con red neuronal (Transformers / Xenova all-MiniLM-L6-v2),
+ * proveedor opcional por API y fallback local determinista.
  *
  * Uso:
  *   const { getEmbedding, cosineSimilarity, setProvider } = require("./embeddings");
- *   setProvider(async (text) => [...], 1536); // opcional
  */
 
 const crypto = require("crypto");
@@ -16,12 +16,29 @@ const cache = new Map();
 
 let providerFn = null;
 let providerDim = DEFAULT_DIM;
+let transformerExtractor = null;
+let transformerAttempted = false;
 
 function setProvider(fn, dim = DEFAULT_DIM) {
   if (typeof fn !== "function") throw new Error("embeddings.setProvider: fn inválida");
   providerFn = fn;
   providerDim = dim;
   cache.clear();
+}
+
+async function getTransformerExtractor() {
+  if (transformerExtractor) return transformerExtractor;
+  if (transformerAttempted) return null;
+  transformerAttempted = true;
+  try {
+    const { pipeline } = require("@xenova/transformers");
+    transformerExtractor = await pipeline("feature-extraction", "Xenova/all-MiniLM-L6-v2", {
+      quantized: true,
+    });
+    return transformerExtractor;
+  } catch (_) {
+    return null;
+  }
 }
 
 function normalizeText(text) {
@@ -63,21 +80,37 @@ function localEmbedding(text, dim = DEFAULT_DIM) {
 
 async function getEmbedding(text) {
   const key = normalizeText(text);
+  if (!key) return Array.from(new Float64Array(DEFAULT_DIM));
   if (cache.has(key)) return cache.get(key);
 
-  let vec;
+  let vec = null;
   if (providerFn) {
     try {
       vec = await providerFn(text);
     } catch (_) {
-      vec = localEmbedding(text, providerDim);
+      vec = null;
     }
-  } else {
-    vec = localEmbedding(text, DEFAULT_DIM);
   }
+
+  // Red neuronal local si no hay proveedor externo
+  if (!vec) {
+    try {
+      const extractor = await getTransformerExtractor();
+      if (extractor) {
+        const output = await extractor(key, { pooling: "mean", normalize: true });
+        if (output && output.data) {
+          vec = Array.from(output.data);
+        }
+      }
+    } catch (_) {
+      vec = null;
+    }
+  }
+
   if (!Array.isArray(vec) || vec.length === 0) {
     vec = localEmbedding(text, DEFAULT_DIM);
   }
+
   if (cache.size >= MAX_CACHE) {
     const first = cache.keys().next().value;
     cache.delete(first);

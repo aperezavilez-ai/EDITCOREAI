@@ -13152,9 +13152,11 @@ function renderPromptQueue() {
     // se etiqueta «en cola», nunca «ejecutando»; y la etiqueta de
     // concurrencia cuenta turnos activos, no «agentes en paralelo».
     label.textContent = job.running
-      ? (job.kernelQueued
-        ? `${mode} en cola (el motor ejecuta de uno en uno): ${job.prompt.slice(0, 96)}`
-        : `${mode} ejecutando${countActiveAgents(activeRows) > 1 ? ` · ${countActiveAgents(activeRows)} turnos activos, de uno en uno` : ""}: ${job.prompt.slice(0, 96)}`)
+      ? (job.isSubAgent || job.directReadOnly
+        ? `Subagente respondiendo en paralelo: ${job.prompt.slice(0, 96)}`
+        : (job.kernelQueued
+          ? `${mode} en cola (el motor ejecuta de uno en uno): ${job.prompt.slice(0, 96)}`
+          : `${mode} ejecutando${countActiveAgents(activeRows) > 1 ? ` · ${countActiveAgents(activeRows)} turnos activos` : ""}: ${job.prompt.slice(0, 96)}`))
       : `${queuedIndex}. ${mode} despues: ${job.prompt.slice(0, 96)}`;
     row.appendChild(label);
     if (job.running) {
@@ -13330,10 +13332,29 @@ function countActiveAgents(active = []) {
   return active.filter((job) => job.usesProjectTools).length;
 }
 
+function isAgentInquiryPrompt(prompt = "") {
+  const t = String(prompt || "").trim();
+  if (!t) return true;
+  if (/\b(?:no\s+escribas?\s+c[oó]digo|solo\s+expl[ií]came|s[oó]lo\s+expl[ií]came|solo\s+dime|s[oó]lo\s+dime|sin\s+escribir\s+c[oó]digo|sin\s+tocar\s+c[oó]digo|qu[eé]\s+(?:m[aá]s\s+)?(?:queda|hay|falta|resta)(?:\s+\w+)?\s+por\s+(?:corregir|arreglar|hacer|reparar)|qu[eé]\s+pendientes\s+(?:hay|quedan|tenemos))\b/i.test(t)) {
+    return true;
+  }
+  if (/^(?:\u00bf|\s*(?:qu[eé]|cu[aá]l(?:es)?|c[oó]mo|d[oó]nde|por\s+qu[eé]|por\s+que|expl[ií]ca(?:me)?|dime\s+si|hay\s+alg[uú]n))\b/i.test(t)) {
+    if (t.includes("?") || /\b(?:quedan|queda|falta|faltan|hay)\s+por\b/i.test(t)) {
+      if (!/^\s*(?:haz|aplica|ejecuta|crea|modifica|corrige|arregla|agrega|elimina|publica|deploya)\b/i.test(t)) return true;
+    }
+  }
+  return false;
+}
+
 function canLaunchParallelAgent(next, active = []) {
   if (!next?.usesProjectTools) return false;
   const nextRoot = normalizeProjectRoot(next.projectRoot || "");
-  const nextWrite = next.isAgent && !next.directReadOnly && !next.readOnlyChat;
+  const nextIsReadOnly = Boolean(next.directReadOnly || next.readOnlyChat || isAgentInquiryPrompt(next.prompt));
+  if (nextIsReadOnly) {
+    next.directReadOnly = true;
+    next.isSubAgent = true;
+  }
+  const nextWrite = next.isAgent && !nextIsReadOnly;
   if (nextWrite) {
     // Concurrencia entre escritores: se arbitra POR CHAT, no por
     // proyecto. La conversación de UN chat es serie (sus mensajes y su
@@ -13389,10 +13410,13 @@ async function processPromptQueue() {
     setRunningControls();
     const parallelCount = countActiveAgents([...activePromptRequests.values()]);
     if (parallelCount > 1) {
-      // [EDITCORE-INTEGRAL-B7] La verdad del motor: hay varios turnos
-      // activos en la UI, pero el kernel los ejecuta de uno en uno y
-      // el resto espera en cola (con plazo, ver chat-kernel index).
-      $("status").textContent = `${parallelCount} turnos activos: el motor ejecuta de uno en uno, el resto espera en cola`;
+      const activeList = [...activePromptRequests.values()];
+      const hasSubAgent = activeList.some((j) => j.isSubAgent || j.directReadOnly);
+      if (hasSubAgent) {
+        $("status").textContent = `Agente principal trabajando · Subagente respondiendo consulta en paralelo`;
+      } else {
+        $("status").textContent = `${parallelCount} turnos activos: el motor ejecuta de uno en uno, el resto espera en cola`;
+      }
     }
   }
 }
@@ -13680,8 +13704,10 @@ async function executePromptJob(job) {
         || activeProject();
       const continueAuthorized = Boolean(job.continueAuthorized);
       const isFullAccessActive = (job.permissionMode || state.permissionMode) === "full";
-      let directReadOnly = isFullAccessActive ? false : Boolean(job.directReadOnly);
-      if (isFullAccessActive) job.directReadOnly = false;
+      const isInquiry = Boolean(job.isSubAgent || isAgentInquiryPrompt(prompt));
+      let directReadOnly = isInquiry ? true : (isFullAccessActive ? false : Boolean(job.directReadOnly));
+      if (isInquiry) job.directReadOnly = true;
+      else if (isFullAccessActive) job.directReadOnly = false;
       const workflowPhase = project?.agentWorkflow?.phase || "";
       const resumableTask = hasResumableAgentTask(project);
       const resumableExecutable = resumableTask && ["interrupted", "executing", "awaiting_authorization", "completed"].includes(workflowPhase);

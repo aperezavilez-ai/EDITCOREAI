@@ -242,9 +242,10 @@ function buildToolResultStub(message, windowSteps = TOOL_STUB_WINDOW_STEPS) {
 // elegidos y devuelve cuántos stubbeó.
 // [EDITCORE-V519-K4a] La ventana es por herramienta: delegate_parallel
 // usa su ventana corta (3); el resto, la general (6).
-function stubAgedToolResults(messages, windowSteps = TOOL_STUB_WINDOW_STEPS) {
+function stubAgedToolResults(messages, windowSteps = TOOL_STUB_WINDOW_STEPS, delegateWindowSteps = DELEGATE_STUB_WINDOW_STEPS) {
   if (!Array.isArray(messages)) return 0;
   const window = Math.max(0, Number(windowSteps) || 0);
+  const delWindow = Math.max(0, Number(delegateWindowSteps) || 0);
   let stubbed = 0;
   let stepsAfter = 0;
   for (let i = messages.length - 1; i >= 0; i -= 1) {
@@ -252,7 +253,7 @@ function stubAgedToolResults(messages, windowSteps = TOOL_STUB_WINDOW_STEPS) {
     if (!m || typeof m !== "object") continue;
     if (m.role === "assistant" && Array.isArray(m.tool_calls) && m.tool_calls.length) { stepsAfter += 1; continue; }
     if (m.role !== "tool" || typeof m.content !== "string") continue;
-    const effWindow = m.name === "delegate_parallel" ? DELEGATE_STUB_WINDOW_STEPS : window;
+    const effWindow = m.name === "delegate_parallel" ? delWindow : window;
     if (stepsAfter < effWindow) continue;
     if (m.content.startsWith(TOOL_STUB_SENTINEL)) continue;
     const stub = buildToolResultStub(m, effWindow);
@@ -454,7 +455,7 @@ const TURN_CONTEXT_MAX_CHARS = 16_000;
 // compactación mayor que puede reescribir la zona de pasos (nunca el
 // system, el historial ni el mensaje del turno). Por debajo del techo,
 // lo ya enviado queda congelado byte a byte.
-const DECLARED_COMPACTION_TOKENS = 180_000;
+const DECLARED_COMPACTION_TOKENS = 32_000;
 const TURN_CONTEXT_TRUNCATION_MARKER = "[contexto recortado por presupuesto]";
 const CTX_TIER_ESSENTIAL = 0;
 const CTX_TIER_NORMAL = 1;
@@ -613,9 +614,20 @@ const MUTATION_SUPPLEMENT_RE = /\b(?:reescrib\w*|cr(?:e|é)(?:a|á)\w*|constru\w
 const MUTATION_AESTHETIC_RE = /\b(?:mejor(?:a|á|ar|alo|ala|alos|alas|ame|ando|ado|ada)\w*|optimi\w+|rediseñ\w+|renov\w+|moderni\w+|embelle\w+|pul(?:ir|e|iendo|ido)\w*|ajust\w+\s+visualmente)\b/i;
 const MUTATION_AESTHETIC_CONDITIONAL_RE = /\b(?:mejorarí\w*|optimizarí\w*|rediseñarí\w*|renovarí\w*|modernizarí\w*|embellecerí\w*|pulirí\w*)\b/i;
 
+// [EDITCORE-V525-SUBAGENTS] Consultas, preguntas y pedidos expresos de no mutar
+// ("no escribas código", "solo explícame", "qué queda por corregir", etc.)
+// son de análisis y lectura: NO tienen intención de mutación, lo que permite que
+// un subagente las atienda concurrentemente en el chat sin bloquearse ni esperar.
+const EXPLICIT_NON_MUTATION_RE = /\b(?:no\s+escribas?\s+c[oó]digo|solo\s+expl[ií]came|s[oó]lo\s+expl[ií]came|solo\s+dime|s[oó]lo\s+dime|sin\s+escribir\s+c[oó]digo|sin\s+tocar\s+c[oó]digo|qu[eé]\s+(?:m[aá]s\s+)?(?:queda|hay|falta|resta)(?:\s+\w+)?\s+por\s+(?:corregir|arreglar|hacer|reparar)|qu[eé]\s+pendientes\s+(?:hay|quedan|tenemos))\b/i;
+const INTERROGATIVE_INQUIRY_RE = /^(?:\u00bf|\s*(?:qu[eé]|cu[aá]l(?:es)?|c[oó]mo|d[oó]nde|por\s+qu[eé]|por\s+que|expl[ií]ca(?:me)?|dime\s+si|hay\s+alg[uú]n))\b/i;
+
 function hasMutationIntent(text = "") {
   const t = String(text || "");
   if (!t.trim()) return false;
+  if (EXPLICIT_NON_MUTATION_RE.test(t)) return false;
+  if (INTERROGATIVE_INQUIRY_RE.test(t) && (t.includes("?") || /\b(?:quedan|queda|falta|faltan|hay)\s+por\b/i.test(t))) {
+    if (!/^\s*(?:haz|aplica|ejecuta|crea|modifica|corrige|arregla|agrega|elimina|publica|deploya)\b/i.test(t)) return false;
+  }
   if (FIX_INTENT_RE.test(t) || MUTATION_SUPPLEMENT_RE.test(t)) return true;
   if (!MUTATION_AESTHETIC_RE.test(t)) return false;
   if (MUTATION_AESTHETIC_CONDITIONAL_RE.test(t)) return false;
@@ -4087,7 +4099,14 @@ class ChatOrchestrator {
         // payload está blindado por las baterías del carril y sus
         // bucles son cortos).
         if (decision?.kind === "EXECUTE") {
-          try { stubAgedToolResults(messages); } catch { /* la dieta nunca tumba el turno */ }
+          try {
+            // [EDITCORE-V525-HARNESS] Reducción agresiva de tokens cuando la tarea acumula pasos:
+            // Si la conversación acumula más de 10 mensajes (más de 4 vueltas de ejecución), la ventana
+            // reciente se ajusta dinámicamente a 2 pasos (1 para subagentes) para no inflar la factura.
+            const effWin = (messages.length > 10) ? 2 : TOOL_STUB_WINDOW_STEPS;
+            const effDel = (messages.length > 10) ? 1 : DELEGATE_STUB_WINDOW_STEPS;
+            stubAgedToolResults(messages, effWin, effDel);
+          } catch { /* la dieta nunca tumba el turno */ }
         }
 
         // Compactar outputs antiguos de tools para evitar desbordar el contexto del modelo (3.4M tokens)

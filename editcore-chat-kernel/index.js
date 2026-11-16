@@ -98,7 +98,7 @@ function isPureKernelQuery(input = {}) {
   try {
     if (hasMutationIntent(message)) return false;
     const c = classify(message);
-    return Boolean(c && c.allowWrite === false && PURE_QUERY_KINDS.has(c.kind));
+    return Boolean(c && (c.allowWrite === false || PURE_QUERY_KINDS.has(c.kind)));
   } catch { return false; }
 }
 
@@ -137,7 +137,7 @@ function queueCancelledResult(entry) {
   };
 }
 
-// [EDITCORE-V510-B1] Desvío al CONSERJE: atiende la consulta por su
+// [EDITCORE-V510-B1] Desvío a SUBAGENTE CONCURRENTE: atiende la consulta por su
 // carril paralelo con AbortController PROPIO (cancelarla no toca la
 // corrida principal). Si el carril no puede atender (sin clave o
 // fallo del proveedor), la consulta NO se pierde:
@@ -151,7 +151,12 @@ async function divertToConcierge(entry, safeInput, { hasSlot = false } = {}) {
   entry.controller = controller;
   entry.state = "concierge";
   try {
-    safeInput.onProgress?.({ phase: "concierge", runId: entry.runId, chatId: entry.chatId, text: "El agente principal sigue con su tarea; esta consulta la atiende ahora el conserje, en solo lectura y sin tocar archivos." });
+    safeInput.onProgress?.({
+      phase: "concierge",
+      runId: entry.runId,
+      chatId: entry.chatId,
+      text: "El agente principal sigue trabajando en su tarea; este subagente atiende tu consulta en paralelo sin esperar ni tocar archivos.",
+    });
   } catch { /* el aviso no tumba el turno */ }
   let out = null;
   try {

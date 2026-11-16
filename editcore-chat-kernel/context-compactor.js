@@ -14,7 +14,7 @@
  *    solo cuando messages.length > 40.
  */
 
-const DEFAULT_MAX_TOOL_CHARS = 10_000;
+const DEFAULT_MAX_TOOL_CHARS = 6_000;
 const DEFAULT_MAX_ASSISTANT_CHARS = 100_000;
 const OUTDATED_FILE_MARKER = "[EditCoreAI: lectura anterior compactada - referirse a la versión más reciente del archivo]";
 const TRUNCATED_MARKER = (removed) => `\n\n... [EditCoreAI: ${removed} caracteres truncados para proteger la ventana de contexto] ...\n\n`;
@@ -80,7 +80,7 @@ class ContextCompactor {
   constructor(options = {}) {
     this.maxToolResultChars = options.maxToolResultChars || DEFAULT_MAX_TOOL_CHARS;
     this.maxAssistantChars = options.maxAssistantChars || DEFAULT_MAX_ASSISTANT_CHARS;
-    this.maxTotalTokens = options.maxTotalTokens || 120_000;
+    this.maxTotalTokens = options.maxTotalTokens || 28_000;
   }
 
   // [EDITCORE-INTEGRAL-B2] Compactación por tamaño estimado. Recorta

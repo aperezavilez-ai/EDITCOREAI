@@ -6,8 +6,8 @@ EditCore actualiza este archivo tras cambios. No pedirlo al usuario. No pegar co
 
 ## Proceso
 - Fase: produccion
-- Estado: v5.2.4 — Optimización inmediata del flujo de publicación: llamada directa a publish_project en el Turno 1, exclusión de .editcore en Git, permiso para plantillas .env.example y manejo de árbol limpio.
-- Actualizado: 2026-11-16 14:30
+- Estado: v5.2.5 — Harness de tokens robusto (compactor agresivo y stubs dinámicos), subagentes no bloqueantes en chat concurrente y memoria semántica basada en red neuronal con Transformers y VectorMemory.
+- Actualizado: 2026-11-16 15:55
 - Stack: Electron + TypeScript
 - Entry: index.html
 - Entry: main.js

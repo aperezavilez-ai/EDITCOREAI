@@ -178,8 +178,12 @@ function classify(message, opts = {}) {
     return { kind: "ANALYZE", label: "Análisis", allowTools: true, allowWrite: false, background };
   }
 
+  // [EDITCORE-V525-SUBAGENTS] Consultas explícitas ("qué queda por corregir",
+  // "no escribas código solo explícame", "explícame el fallo") NO son órdenes de cambio.
+  const isExplicitNonMutation = /\b(?:no\s+escribas?\s+c[oó]digo|solo\s+expl[ií]came|s[oó]lo\s+expl[ií]came|solo\s+dime|s[oó]lo\s+dime|sin\s+escribir\s+c[oó]digo|sin\s+tocar\s+c[oó]digo|qu[eé]\s+(?:m[aá]s\s+)?(?:queda|hay|falta|resta)(?:\s+\w+)?\s+por\s+(?:corregir|arreglar|hacer|reparar)|qu[eé]\s+pendientes\s+(?:hay|quedan|tenemos))\b/i.test(text);
+
   // PRIORIDAD 3: Verbos de cambio (fix gana sobre verify)
-  const fixMatch = TASK_FIX_RE.test(text);
+  const fixMatch = !isExplicitNonMutation && TASK_FIX_RE.test(text);
   const verifyMatch = TASK_VERIFY_RE.test(text);
 
   if (fixMatch) {
@@ -209,7 +213,7 @@ function classify(message, opts = {}) {
   if (TASK_LIST_RE.test(text)) {
     return { kind: "LIST", label: "Listado", allowTools: true, allowWrite: false, background };
   }
-  if (TASK_READ_RE.test(text) || PATHISH_RE.test(text)) {
+  if (TASK_READ_RE.test(text) || PATHISH_RE.test(text) || isExplicitNonMutation) {
     return { kind: "ASK", label: "Consulta", allowTools: true, allowWrite: false, background };
   }
   // [EDITCORE-V514-P1] La forma interrogativa tolera la puntuación

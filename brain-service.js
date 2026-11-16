@@ -9,6 +9,7 @@ const { projectId, projectStorageRoot } = require("./project-storage");
 const { resolveInside } = require("./project-path-policy");
 const { BrainMemoryStore } = require("./brain-memory-store");
 const { enrichAgentInventory } = require("./runtime/jarvis-port");
+const { VectorMemory } = require("./runtime/vector-memory");
 
 const execFileAsync = promisify(execFile);
 const SKIP_DIRS = new Set([".git", ".next", "node_modules", "dist", "build", "coverage", "release", "out"]);
@@ -162,6 +163,7 @@ class EditCoreBrainService {
     this.catalogCache = undefined;
     this.indexLocks = new Map();
     this.memoryStore = new BrainMemoryStore(path.join(this.userDataPath, "editcore-brain", "memory.sqlite"));
+    this.vectorMemory = new VectorMemory(path.join(this.userDataPath, "editcore-brain", "vector-store"));
   }
 
   globalStorePath() { return path.join(this.userDataPath, "editcore-brain", "global-memory.json"); }
@@ -546,6 +548,9 @@ class EditCoreBrainService {
           });
         } catch { /* ignore */ }
       }
+      try {
+        await this.vectorMemory.add(`${title}\n${content}`, { id: saved.id, scope: "global", type: input.type || "preference", title }, "global");
+      } catch { /* ignore */ }
       return saved;
     }
     const ws = assertRoot(root);
@@ -559,7 +564,11 @@ class EditCoreBrainService {
     index.entries.unshift({ id:entry.id, file:`entries/${fileName}`, timestamp:now, title:entry.title, type:entry.type });
     index.entries = index.entries.slice(0,500);
     await writeJson(indexPath, index);
-    return this.memoryStore.upsertMemory({ id:entry.id, scope:"project", projectId:projectId(ws), type:entry.type, title:entry.title, content:entry.summary, source:"tech", updatedAt:now, importance:Number(input.importance)||0.65 });
+    const upserted = this.memoryStore.upsertMemory({ id:entry.id, scope:"project", projectId:projectId(ws), type:entry.type, title:entry.title, content:entry.summary, source:"tech", updatedAt:now, importance:Number(input.importance)||0.65 });
+    try {
+      await this.vectorMemory.add(`${title}\n${content}`, { id: entry.id, scope: "project", projectId: projectId(ws), type: entry.type, title }, projectId(ws));
+    } catch { /* ignore */ }
+    return upserted;
   }
 
   /**
@@ -657,9 +666,46 @@ class EditCoreBrainService {
         type: record.type, title: record.title, content: record.content, source: record.source,
         updatedAt: record.timestamp, importance: ["architecture", "decision", "preference"].includes(record.type) ? 0.8 : 0.55,
       });
+      try {
+        this.vectorMemory.add(`${record.title || ""}\n${record.content || ""}`, {
+          id: record.id, scope: record.source === "global" ? "global" : "project",
+          projectId: pid, type: record.type, title: record.title, source: record.source,
+        }, record.source === "global" ? "global" : pid).catch(() => {});
+      } catch { /* non-blocking */ }
       this._memoryUpsertHashes.set(key, fingerprint);
     }
-    return this.memoryStore.searchMemories(pid, query, limit);
+    const lexicalResults = this.memoryStore.searchMemories(pid, query, limit);
+    // [EDITCORE-V525-BRAIN] Búsqueda semántica de red neuronal (Transformers / embeddings)
+    let vectorResults = [];
+    try {
+      const vHits = await this.vectorMemory.search(query, { topK: limit, ns: pid || "global", minScore: 0.15 });
+      vectorResults = (vHits || []).map((h) => ({
+        id: h.id,
+        title: h.meta?.title || h.text.slice(0, 60),
+        content: h.text,
+        type: h.meta?.type || "semantic",
+        source: h.meta?.source || "vector-memory",
+        score: h.score,
+        neuralMatch: true,
+      }));
+    } catch { vectorResults = []; }
+
+    // Fusión híbrida: pondera resultados léxicos (FTS5) y semánticos vectoriales
+    const combined = new Map();
+    for (const r of lexicalResults) {
+      combined.set(r.id, { ...r, score: (r.importance || 0.7) * 1.0 });
+    }
+    for (const v of vectorResults) {
+      if (combined.has(v.id)) {
+        const existing = combined.get(v.id);
+        existing.score = (existing.score || 0.7) + (v.score * 1.5);
+        existing.neuralMatch = true;
+      } else {
+        combined.set(v.id, v);
+      }
+    }
+    const sorted = [...combined.values()].sort((a, b) => (b.score || 0) - (a.score || 0));
+    return sorted.slice(0, limit);
   }
 
   async walkProject(root) {
