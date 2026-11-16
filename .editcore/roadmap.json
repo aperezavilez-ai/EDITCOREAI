@@ -43,6 +43,12 @@
   },
   "history": [
     {
+      "date": "2026-11-16T20:35:00.000Z",
+      "action": "release",
+      "details": "release v5.2.3: Corrección integral del pipeline commit, push y deploy con token vault en GitManager y soporte Supabase Cloud oficial",
+      "by": "editcore"
+    },
+    {
       "date": "2026-11-15T22:17:00.000Z",
       "action": "release",
       "details": "release v5.2.1: eliminación total de GafCore y Docker. Soporte exclusivo a GitHub, Vercel y Supabase Cloud Oficial.",

@@ -212,7 +212,7 @@ async function getCommitHistory(limit, cwd) {
   return { ok: true, repo: repo.repo, commits };
 }
 
-async function push(remote, branch, cwd) {
+async function push(remote, branch, cwd, options = {}) {
   const repo = ensureRepo(cwd);
   if (!repo.ok) return repo;
   const remoteName = typeof remote === "string" && remote.trim() ? remote : "origin";
@@ -223,17 +223,49 @@ async function push(remote, branch, cwd) {
       branchName = status.branch.split("...")[0].trim();
     }
   }
+  let token = String(options?.githubToken || options?.token || "").trim();
+  if (!token) {
+    try {
+      const { readConnections } = require("./cloud-vault-bridge");
+      token = String(readConnections()?.githubToken || "").trim();
+    } catch { /* ignore */ }
+  }
+  const env = { ...process.env };
+  if (token) {
+    env.GITHUB_TOKEN = token;
+    env.GH_TOKEN = token;
+  }
   const args = branchName ? ["push", remoteName, branchName] : ["push", remoteName];
-  return git(args, repo.repo);
+  if (token) {
+    const withHeader = await git(["-c", `http.extraHeader=Authorization: Bearer ${token}`, ...args], repo.repo, { env, timeoutMs: 300_000 });
+    if (withHeader.ok) return withHeader;
+  }
+  return git(args, repo.repo, { env, timeoutMs: 300_000 });
 }
 
-async function pull(remote, branch, cwd) {
+async function pull(remote, branch, cwd, options = {}) {
   const repo = ensureRepo(cwd);
   if (!repo.ok) return repo;
   const remoteName = typeof remote === "string" && remote.trim() ? remote : "origin";
   const branchName = typeof branch === "string" && branch.trim() ? branch : "";
+  let token = String(options?.githubToken || options?.token || "").trim();
+  if (!token) {
+    try {
+      const { readConnections } = require("./cloud-vault-bridge");
+      token = String(readConnections()?.githubToken || "").trim();
+    } catch { /* ignore */ }
+  }
+  const env = { ...process.env };
+  if (token) {
+    env.GITHUB_TOKEN = token;
+    env.GH_TOKEN = token;
+  }
   const args = branchName ? ["pull", remoteName, branchName] : ["pull", remoteName];
-  return git(args, repo.repo);
+  if (token) {
+    const withHeader = await git(["-c", `http.extraHeader=Authorization: Bearer ${token}`, ...args], repo.repo, { env, timeoutMs: 300_000 });
+    if (withHeader.ok) return withHeader;
+  }
+  return git(args, repo.repo, { env, timeoutMs: 300_000 });
 }
 
 async function detectLocalChanges(cwd) {

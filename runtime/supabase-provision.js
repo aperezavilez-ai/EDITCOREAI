@@ -197,6 +197,8 @@ async function createSupabaseProject(projectRoot, connections = {}, {
     if (cloud.ok && cloud.url && cloud.anonKey) {
       activeConnections = {
         ...activeConnections,
+        supabaseUrl: cloud.url,
+        supabaseAnonKey: cloud.anonKey,
         selfSupabaseUrl: cloud.url,
         selfSupabaseKey: cloud.serviceKey || cloud.anonKey,
       };
@@ -205,18 +207,17 @@ async function createSupabaseProject(projectRoot, connections = {}, {
     }
   }
 
-  if (!activeConnections.selfSupabaseKey) {
-    return { ok: false, message: "Configura Supabase propio en Conexiones o usa Cloud con token/org.", steps };
+  const activeKey = activeConnections.supabaseAnonKey || activeConnections.supabaseKey || activeConnections.selfSupabaseKey;
+  if (!activeKey) {
+    return { ok: false, message: "Configura Supabase en Conexiones o usa Cloud con token/org.", steps };
   }
 
-  // GafCore: URL = plataforma + slug de ESTE proyecto (nunca heredar /otro-proyecto).
   if (!cloud.created) {
+    const rawActive = activeConnections.supabaseUrl || activeConnections.selfSupabaseUrl || defaultSupabaseOrigin();
     activeConnections = {
       ...activeConnections,
-      selfSupabaseUrl: projectOwnedSupabaseUrl(
-        root,
-        gafcorePlatformOrigin(activeConnections.selfSupabaseUrl) || activeConnections.selfSupabaseUrl || defaultSupabaseOrigin(),
-      ),
+      supabaseUrl: projectOwnedSupabaseUrl(root, rawActive),
+      supabaseAnonKey: activeKey,
     };
   }
 
@@ -226,8 +227,9 @@ async function createSupabaseProject(projectRoot, connections = {}, {
     return { ok: false, message: health.message || "Supabase no responde.", steps };
   }
 
-  const projectId = cloud.projectId || gafcoreProjectSlug(name || root);
-  const schema = projectOwnedSupabaseSchema(activeConnections.selfSupabaseUrl);
+  const effectiveUrl = activeConnections.supabaseUrl || activeConnections.selfSupabaseUrl || "";
+  const projectId = cloud.projectId || connections.supabaseProjectId || path.basename(name || root);
+  const schema = projectOwnedSupabaseSchema(effectiveUrl);
 
   const bootstrap = bootstrapSupabaseFolder(root, {
     projectName: name,
@@ -236,13 +238,13 @@ async function createSupabaseProject(projectRoot, connections = {}, {
   steps.push({ step: "supabase_bootstrap", ...bootstrap });
 
   const env = writeLocalEnv(root, {
-    SUPABASE_URL: String(activeConnections.selfSupabaseUrl).replace(/\/+$/, ""),
-    NEXT_PUBLIC_SUPABASE_URL: String(activeConnections.selfSupabaseUrl).replace(/\/+$/, ""),
-    VITE_SUPABASE_URL: String(activeConnections.selfSupabaseUrl).replace(/\/+$/, ""),
-    SUPABASE_ANON_KEY: String(activeConnections.selfSupabaseKey),
-    NEXT_PUBLIC_SUPABASE_ANON_KEY: String(activeConnections.selfSupabaseKey),
-    VITE_SUPABASE_ANON_KEY: String(activeConnections.selfSupabaseKey),
-    SUPABASE_SERVICE_ROLE_KEY: String(activeConnections.selfSupabaseKey),
+    SUPABASE_URL: String(effectiveUrl).replace(/\/+$/, ""),
+    NEXT_PUBLIC_SUPABASE_URL: String(effectiveUrl).replace(/\/+$/, ""),
+    VITE_SUPABASE_URL: String(effectiveUrl).replace(/\/+$/, ""),
+    SUPABASE_ANON_KEY: String(activeKey),
+    NEXT_PUBLIC_SUPABASE_ANON_KEY: String(activeKey),
+    VITE_SUPABASE_ANON_KEY: String(activeKey),
+    SUPABASE_SERVICE_ROLE_KEY: String(activeConnections.supabaseServiceKey || activeConnections.selfSupabaseKey || activeKey),
     NEXT_PUBLIC_SUPABASE_SCHEMA: schema,
   });
   steps.push({ step: "env_local", ok: true, path: env.path, keys: env.keys });

@@ -823,7 +823,7 @@ function describeMemoryWrites(memWrites = []) {
 }
 
 function successfulExternalActions(steps = []) {
-  const kinds = { publish_project: "publish", deploy_one_click: "deploy", connect_project: "connect" };
+  const kinds = { publish_project: "publish", deploy_one_click: "deploy", connect_project: "connect", git_commit: "git_commit", git_push: "git_push" };
   const out = [];
   for (const s of Array.isArray(steps) ? steps : []) {
     if (!s || s.ok === false || s.result?.ok !== true) continue;
@@ -1736,7 +1736,7 @@ function groundUngroundedClaims(text, steps = [], userMessage = "", decision = {
   // publish_project/deploy_one_click ok, afirmar «ya quedó publicado» está
   // respaldado por un hecho del kernel y no se contrasta con el banner de
   // escrituras de archivo (la publicación no escribe archivos locales).
-  const publishDone = (Array.isArray(steps) ? steps : []).some((s) => (s.name === "publish_project" || s.name === "deploy_one_click") && s.ok !== false && s.result?.ok !== false);
+  const publishDone = (Array.isArray(steps) ? steps : []).some((s) => (s.name === "publish_project" || s.name === "deploy_one_click" || s.name === "git_commit" || s.name === "git_push") && s.ok !== false && s.result?.ok !== false);
   if (written.length === 0 && !publishDone && textClaimsDiskMutation(text)) {
     return formatAgentVisibleText(
       "> ⚠️ **En este turno no se modificó ningún archivo en disco.** Lo que sigue es explicación del modelo, no cambios aplicados.\n\n" +

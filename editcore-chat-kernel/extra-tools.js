@@ -190,7 +190,13 @@ async function runExternalAction(name, args, root, helpers = {}) {
     return { ok: false, aborted: true, cancelledBeforeLaunch: true, action: name, message: "Acción externa cancelada antes de lanzarse (Detener): no se publicó nada." };
   }
   const impls = (helpers && typeof helpers === "object" && helpers._externalImpls) || {};
-  const connections = typeof helpers.readConnections === "function" ? (helpers.readConnections() || {}) : {};
+  let connections = typeof helpers.readConnections === "function" ? (helpers.readConnections() || {}) : {};
+  if (!connections.githubToken) {
+    try {
+      const { readConnections } = require("../runtime/cloud-vault-bridge");
+      connections = { ...(readConnections() || {}), ...connections };
+    } catch { /* ignore */ }
+  }
   let result;
   if (name === "deploy_one_click") {
     if (typeof impls.deployOneClick === "function") {

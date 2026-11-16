@@ -75,7 +75,6 @@ function writeProjectInfra(projectRoot, infra = {}) {
     vercelUrl: infra.vercelUrl || "",
     supabaseUrl: infra.supabaseUrl || "",
     supabaseProjectId: infra.supabaseProjectId || "",
-    gafcoreGateway: infra.gafcoreGateway || "",
     liveUrl: infra.liveUrl || infra.vercelUrl || "",
     notes: Array.isArray(infra.notes) ? infra.notes : [],
   };
@@ -224,8 +223,9 @@ async function executeFullStackDeploy(projectRoot, connections = {}, {
 
     setStage("supabase", "running", "Provisionando Supabase y .env…");
     const scoped = connectionsForProject(connections, root);
-    supabaseUrl = projectOwnedSupabaseUrl(root, scoped.selfSupabaseUrl || connections.selfSupabaseUrl);
-    const supabaseKey = String(scoped.selfSupabaseKey || connections.selfSupabaseKey || "").trim();
+    const effectiveSupabaseUrl = scoped.supabaseUrl || scoped.selfSupabaseUrl || connections.supabaseUrl || connections.selfSupabaseUrl || "";
+    supabaseUrl = projectOwnedSupabaseUrl(root, effectiveSupabaseUrl);
+    const supabaseKey = String(scoped.supabaseAnonKey || scoped.supabaseKey || scoped.selfSupabaseKey || connections.supabaseAnonKey || connections.supabaseKey || connections.selfSupabaseKey || "").trim();
     let supabaseManage = { ok: true, skipped: true, message: "Supabase no configurado en Conexiones." };
     if (supabaseKey && supabaseUrl) {
       writeLocalEnv(root, {
@@ -318,7 +318,7 @@ async function executeFullStackDeploy(projectRoot, connections = {}, {
     vercelProjectName: vercelStep.projectName || prevInfra.vercelProjectName || path.basename(root),
     vercelUrl: liveUrl || prevInfra.vercelUrl || "",
     supabaseUrl: supabaseUrl || prevInfra.supabaseUrl || "",
-    supabaseProjectId: gafcoreProjectSlug(root),
+    supabaseProjectId: prevInfra.supabaseProjectId || connections.supabaseProjectId || path.basename(root),
     liveUrl: liveUrl || prevInfra.liveUrl || "",
     notes: [
       isUpdate ? "Actualización de publicación (EDITCOREAI)." : "Generado por executeFullStackDeploy (EDITCOREAI).",

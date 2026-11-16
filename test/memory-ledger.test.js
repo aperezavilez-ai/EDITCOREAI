@@ -1,4 +1,4 @@
-﻿const { describe, it, beforeEach, afterEach } = require("node:test");
+const { describe, it, beforeEach, afterEach } = require("node:test");
 const assert = require("node:assert");
 const fs = require("fs");
 const path = require("path");
@@ -17,7 +17,9 @@ describe("Cycle 29: Memory Ledger, Peer Review Swarm & Ghost Completion", () => 
 
   afterEach(() => {
     if (tmpDir && fs.existsSync(tmpDir)) {
-      fs.rmSync(tmpDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+      try {
+        fs.rmSync(tmpDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+      } catch {}
     }
   });
 

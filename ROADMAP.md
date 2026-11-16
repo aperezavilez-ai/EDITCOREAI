@@ -6,8 +6,8 @@ EditCore actualiza este archivo tras cambios. No pedirlo al usuario. No pegar co
 
 ## Proceso
 - Fase: produccion
-- Estado: v5.2.1 — Conexiones saneadas: eliminación total de GafCore y Docker. Soporte exclusivo a GitHub, Vercel y Supabase Cloud Oficial.
-- Actualizado: 2026-11-15 15:15
+- Estado: v5.2.3 — Corrección integral del pipeline commit, push y deploy: autenticación automática con token de vault en GitManager, soporte Supabase Cloud oficial y sincronización de acciones externas en el orquestador.
+- Actualizado: 2026-11-16 13:35
 - Stack: Electron + TypeScript
 - Entry: index.html
 - Entry: main.js

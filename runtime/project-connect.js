@@ -92,7 +92,7 @@ async function assessProjectConnections(projectRoot, connections = {}) {
   const missing = [];
   if (!summary.github?.configured) missing.push("github_token");
   if (!summary.vercel?.configured && !summary.netlify?.configured) missing.push("vercel_or_netlify_token");
-  if (!summary.selfsupabase?.configured) missing.push("selfsupabase");
+  if (!summary.supabase?.configured && !summary.selfsupabase?.configured) missing.push("supabase");
   if (!gitRoot) missing.push("git_repo");
   if (gitRoot && !remoteUrl) missing.push("git_remote");
 

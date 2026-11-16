@@ -33,17 +33,19 @@ function runCapture(command, args, { cwd, timeoutMs = 120_000 } = {}) {
 }
 
 async function supabaseHealth(connections) {
-  if (!connections.selfSupabaseUrl || !connections.selfSupabaseKey) {
+  const url = connections.supabaseUrl || connections.selfSupabaseUrl;
+  const key = connections.supabaseAnonKey || connections.supabaseKey || connections.selfSupabaseKey;
+  if (!url || !key) {
     return { ok: false, skipped: true, message: "Supabase no configurado." };
   }
   try {
     const result = await executeServiceRequest({
-      service: "selfsupabase",
+      service: "supabase",
       method: "GET",
       path: "/rest/v1/",
       connections,
     });
-    return { ok: true, status: result?.status || 200, url: connections.selfSupabaseUrl };
+    return { ok: true, status: result?.status || 200, url };
   } catch (error) {
     return { ok: false, message: error?.message || String(error) };
   }
@@ -88,13 +90,15 @@ async function checkMigrationDrift(projectRoot) {
 }
 
 async function ensureStorageBucket(connections, bucketName = "uploads") {
-  if (!connections.selfSupabaseUrl || !connections.selfSupabaseKey) {
+  const url = connections.supabaseUrl || connections.selfSupabaseUrl;
+  const key = connections.supabaseAnonKey || connections.supabaseKey || connections.selfSupabaseKey;
+  if (!url || !key) {
     return { ok: false, skipped: true, message: "Supabase no configurado." };
   }
   const name = String(bucketName || "uploads").trim();
   try {
     await executeServiceRequest({
-      service: "selfsupabase",
+      service: "supabase",
       method: "POST",
       path: "/storage/v1/bucket",
       body: { name, public: false },

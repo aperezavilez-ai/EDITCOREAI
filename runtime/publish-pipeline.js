@@ -272,6 +272,18 @@ async function publishProject(projectRoot, {
   const abortedResult = (step, { afterDeploy = false, deployUrl = "" } = {}) => afterDeploy
     ? { ok: true, completed: true, cancellationLate: true, abortedAfterLaunch: true, mode, projectRoot: path.resolve(String(projectRoot || "")), steps, /* [EDITCORE-INTEGRAL-B8] */ url: deployUrl || "", message: `La cancelación llegó tarde: el despliegue ${deployUrl || ""} sí salió y la publicación se completó antes de detener.`.trim() }
     : { ok: false, aborted: true, cancelledBeforeLaunch: step !== "deploy_one_click", mode, projectRoot: path.resolve(String(projectRoot || "")), steps: [...steps, { step, ok: false, aborted: true, message: "Publicación detenida por el usuario (Detener)." }], message: `[${step}] Publicación detenida por el usuario (Detener): el despliegue no se lanzó.`, failedStep: step };
+  connections = {
+    ...(connections && typeof connections === "object" ? connections : {}),
+  };
+  if (!connections.githubToken || !connections.vercelToken) {
+    try {
+      const { readConnections } = require("./cloud-vault-bridge");
+      const vaultConn = readConnections() || {};
+      for (const [k, v] of Object.entries(vaultConn)) {
+        if (!connections[k] && v) connections[k] = v;
+      }
+    } catch { /* ignore */ }
+  }
   const root = path.resolve(String(projectRoot || ""));
   const steps = [];
   const report = (step, percent, message = "") => {
