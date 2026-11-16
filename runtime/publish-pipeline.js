@@ -24,12 +24,17 @@ const SECRET_NAME_RE = /(^|[\\/])(\.env([.\\].*)?|.*\.(pem|key|p12|pfx)|credenti
 const ALWAYS_EXCLUDE = [
   "node_modules",
   ".git",
+  ".editcore",
   "release-275",
   "win-unpacked",
 ];
 
 function isSecretPath(relPath) {
-  return SECRET_NAME_RE.test(String(relPath || "").replace(/\\/g, "/"));
+  const norm = String(relPath || "").replace(/\\/g, "/");
+  if (/(^|[\\/])\.env\.(example|sample|template|dist)($|[?#])/i.test(norm)) {
+    return false;
+  }
+  return SECRET_NAME_RE.test(norm);
 }
 
 function resolveEditCoreAsarPaths(runtimeRoot) {

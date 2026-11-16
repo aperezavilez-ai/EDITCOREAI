@@ -43,6 +43,12 @@
   },
   "history": [
     {
+      "date": "2026-11-16T21:30:00.000Z",
+      "action": "release",
+      "details": "release v5.2.4: Optimización del flujo de publicación: publish_project directo en Turno 1, filtro de .editcore en Git, permiso para plantillas .env.example y manejo de árbol limpio",
+      "by": "editcore"
+    },
+    {
       "date": "2026-11-16T20:35:00.000Z",
       "action": "release",
       "details": "release v5.2.3: Corrección integral del pipeline commit, push y deploy con token vault en GitManager y soporte Supabase Cloud oficial",

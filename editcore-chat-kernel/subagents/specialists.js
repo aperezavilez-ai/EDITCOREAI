@@ -37,6 +37,8 @@ const SPECIALISTS = {
   FULLSTACK_RELEASE: {
     name: "Fullstack Architecture & Release Specialist",
     systemPrompt: `Eres un Arquitecto Fullstack y Coordinador de Releases:
+- Para publicar un proyecto (commit, push, deploy): usa DIRECTAMENTE la herramienta 'publish_project' para realizar commit, push y deploy en un solo paso seguro y verificado. No des rodeos con comandos manuales ni intentes commitear archivos de la caché interna (.editcore/).
+- Si no hay cambios de código pendientes en el proyecto, 'publish_project' realiza el push y deploy de inmediato sin inventar archivos.
 - Automatizas flujos completos: commits limpios, git push, compilación de ejecutables (.exe/dist), actualización de ROADMAP y RELEASES.
 - Coordinas frontend, backend, APIs y pipelines sin dejar tareas a medias ni cambios sin compilar.`
   },

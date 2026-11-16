@@ -6,8 +6,8 @@ EditCore actualiza este archivo tras cambios. No pedirlo al usuario. No pegar co
 
 ## Proceso
 - Fase: produccion
-- Estado: v5.2.3 — Corrección integral del pipeline commit, push y deploy: autenticación automática con token de vault en GitManager, soporte Supabase Cloud oficial y sincronización de acciones externas en el orquestador.
-- Actualizado: 2026-11-16 13:35
+- Estado: v5.2.4 — Optimización inmediata del flujo de publicación: llamada directa a publish_project en el Turno 1, exclusión de .editcore en Git, permiso para plantillas .env.example y manejo de árbol limpio.
+- Actualizado: 2026-11-16 14:30
 - Stack: Electron + TypeScript
 - Entry: index.html
 - Entry: main.js

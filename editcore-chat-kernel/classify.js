@@ -149,7 +149,7 @@ function classify(message, opts = {}) {
     return { kind: "ASK", label: "Busqueda en codigo", allowTools: true, allowWrite: false, background };
   }
   if (/\b(?:check_connections|conect(?:a|ar|iones)?|checklist|publica(?:r)?\s+(?:el\s+)?proyecto|qu[eé]\s+falta.*(?:conect|public))\b/i.test(text)
-      || (/\b(?:github|vercel|supabase|gafcore)\b/i.test(text) && /\b(?:conect|public|deploy|checklist|falta)\b/i.test(text))) {
+      || (/\b(?:github|vercel|supabase)\b/i.test(text) && /\b(?:conect|public|deploy|checklist|falta)\b/i.test(text))) {
     return { kind: "EXECUTE", label: "Conexiones / publicar", allowTools: true, allowWrite: true, background };
   }
 

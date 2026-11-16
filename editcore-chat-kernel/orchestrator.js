@@ -2850,6 +2850,16 @@ class ChatOrchestrator {
             "=== FIN DIRECTOR ===",
           ].join("\n");
         }
+        const isDirectPublishIntent = /\b(?:commit\s*push\s*deploy|publicar\s*(?:el\s*)?proyecto|publica\s*(?:los\s*)?cambios|publicar\s*en\s*producci[oó]n|haz\s*commit\s*push)\b/i.test(`${text || ""} ${effectiveText || ""}`);
+        if (isDirectPublishIntent) {
+          this._turnExtras.push([
+            "=== DIRECTIVA DE PUBLICACIÓN DIRECTA (publish_project) ===",
+            "El usuario ordenó explícitamente commit, push y deploy de este proyecto.",
+            "Usa DIRECTAMENTE la herramienta 'publish_project' para realizar commit, push y deploy en un solo paso seguro y verificado.",
+            "NO hagas llamadas manuales a git_commit ni intentes agregar archivos de la carpeta interna (.editcore/). 'publish_project' se encarga de todo el pipeline y devuelve el enlace en vivo.",
+            "=== FIN DIRECTIVA ===",
+          ].join("\n"));
+        }
       }
     } catch { /* la detección nunca tumba el turno */ }
 

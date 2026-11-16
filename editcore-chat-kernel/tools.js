@@ -1250,7 +1250,9 @@ async function gitCommit(root, options = {}) {
       note: res.ok
         ? (blockedSecrets.length
           ? `Commit creado con ${staged.length} archivo(s): ${staged.slice(0, 8).join(", ")}. Excluidos por sensibles (nunca se commitean): ${blockedSecrets.join(", ")}.`
-          : `Commit creado con ${staged.length} archivo(s): ${staged.slice(0, 8).join(", ")}. Sin rutas sensibles en el conjunto.`)
+          : (staged.length
+            ? `Commit creado con ${staged.length} archivo(s): ${staged.slice(0, 8).join(", ")}. Sin rutas sensibles en el conjunto.`
+            : "Árbol de trabajo limpio (sin cambios de código pendientes)."))
         : undefined,
     };
   } catch (e) {

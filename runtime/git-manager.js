@@ -69,19 +69,24 @@ async function getStatus(cwd) {
   return { ok: true, repo: repo.repo, branch, changes };
 }
 
+function isIgnoredInternalPath(f) {
+  const norm = String(f || "").replace(/\\/g, "/").replace(/^\.\//, "");
+  return norm.startsWith(".editcore/") || norm === ".editcore" || norm.startsWith(".git/") || norm === ".git";
+}
+
 // [EDITCORE-INTEGRAL-B8] Expande "." / directorios a la lista real de
 // cambios (porcelain -uall) para poder aplicar el filtro de secretos
 // archivo a archivo: `git add .` a ciegas ya no existe en esta pila.
 async function expandStageCandidates(files, repo) {
   const wantsAll = files.some((f) => f === "." || f === "./");
-  if (!wantsAll) return files.slice();
+  if (!wantsAll) return files.slice().filter((f) => !isIgnoredInternalPath(f));
   const status = await git(["status", "--porcelain", "-uall"], repo);
   if (!status.ok) return null;
   const fromStatus = status.stdout.split(/\r?\n/).filter(Boolean).map((line) => {
     const raw = line.slice(3).trim().replace(/^"+|"+$/g, "");
     return raw.includes(" -> ") ? raw.split(" -> ").pop().trim() : raw;
-  }).filter(Boolean);
-  const explicit = files.filter((f) => f !== "." && f !== "./");
+  }).filter((f) => f && !isIgnoredInternalPath(f));
+  const explicit = files.filter((f) => f !== "." && f !== "./" && !isIgnoredInternalPath(f));
   return [...new Set([...fromStatus, ...explicit])];
 }
 
@@ -99,13 +104,13 @@ async function stageFiles(files, cwd) {
   // bloqueados no se stagean y, si ya estaban staged de antes, se
   // retiran del índice (reset), como hace agent-git.
   const blockedSecrets = candidates.filter((f) => isSecretPath(f));
-  const safe = candidates.filter((f) => !isSecretPath(f));
+  const safe = candidates.filter((f) => !isSecretPath(f) && !isIgnoredInternalPath(f));
   for (const file of blockedSecrets) {
     await git(["reset", "HEAD", "--", file], repo.repo).catch(() => null);
   }
   if (!safe.length) {
     return {
-      ok: false,
+      ok: blockedSecrets.length === 0,
       message: blockedSecrets.length
         // [EDITCORE-V491-E] Conducción: este bloqueo es SOLO sobre las
         // rutas sensibles pedidas, no sobre el commit en general. En
@@ -114,7 +119,7 @@ async function stageFiles(files, cwd) {
         // creación del archivo. El mensaje ahora instruye la salida:
         // commitear el conjunto completo y dejar que el filtro excluya.
         ? `Stage bloqueado para estas rutas sensibles (${blockedSecrets.slice(0, 4).join(", ")}), que nunca se commitean. Esto NO significa que el commit sea imposible: si el pedido era commitear TODOS los cambios, vuelve a llamar git_commit SIN acotar el commit a estas rutas (files: ["."] o sin files): el filtro excluye las sensibles y commitea el resto. No reviertas la creación de estos archivos por este motivo.`
-        : "No hay archivos para stage.",
+        : "No hay archivos para stage (árbol de trabajo limpio).",
       staged: [],
       blockedSecrets,
     };
@@ -137,6 +142,10 @@ async function commit(message, cwd) {
   if (!repo.ok) return repo;
   if (!message || typeof message !== "string") {
     return { ok: false, message: "El mensaje de commit es obligatorio." };
+  }
+  const staged = await git(["diff", "--cached", "--name-only"], repo.repo);
+  if (staged.ok && !staged.stdout.trim()) {
+    return { ok: true, message: "Sin cambios para commit (árbol de trabajo limpio).", noop: true, stdout: "Sin cambios para commit." };
   }
   // [EDITCORE-INTEGRAL-B8] Mensaje vía -F (archivo temporal): comillas,
   // %, $() y saltos del mensaje son DATOS, nunca shell.
