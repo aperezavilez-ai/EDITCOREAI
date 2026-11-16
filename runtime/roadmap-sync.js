@@ -274,13 +274,15 @@ class RoadmapSync {
     return roadmap;
   }
 
-  recordDeploy(projectRoot, { type, status, url }) {
+  recordDeploy(projectRoot, { type, status, url, sha, deploymentId }) {
     const roadmap = this.loadOrCreate(projectRoot);
     roadmap.deployment.lastDeploy = {
       timestamp: nowISO(),
       type,
       status,
       url,
+      ...(sha ? { sha } : {}),
+      ...(deploymentId ? { deploymentId } : {}),
     };
     roadmap.history.push({
       date: nowISO(),

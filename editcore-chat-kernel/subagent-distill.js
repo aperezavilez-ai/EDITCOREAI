@@ -186,6 +186,17 @@ function recordSubagentDistillates(projectRoot, results = []) {
  */
 function distillTurnForBrain({ userText = "", steps = [], finalText = "" } = {}) {
   const list = Array.isArray(steps) ? steps : [];
+  // [ÍTEM 5] La memoria se lee SOLO vía el helper compartido del
+  // orchestrator, con require perezoso dentro de la función (el
+  // orchestrator requiere este módulo al inicio; el require en tiempo
+  // de llamada devuelve los exports completos) y degradación a [].
+  let memWrites = [];
+  let memDesc = "";
+  try {
+    const orch = require("./orchestrator");
+    memWrites = typeof orch.successfulMemoryWrites === "function" ? orch.successfulMemoryWrites(list) : [];
+    memDesc = typeof orch.describeMemoryWrites === "function" ? orch.describeMemoryWrites(memWrites) : "";
+  } catch { memWrites = []; memDesc = ""; }
   const applied = [];
   const seenApplied = new Set();
   const failed = [];
@@ -215,10 +226,36 @@ function distillTurnForBrain({ userText = "", steps = [], finalText = "" } = {})
       if (err) failed.push(`${s.name}: ${err}`);
     }
   }
+  const publishLines = [];
+  const seenPublish = new Set();
+  for (const s of list) {
+    if (!s) continue;
+    if (s.name !== "publish_project" && s.name !== "deploy_one_click") continue;
+    if (s.ok === false || s.result?.ok !== true) continue;
+    const r = s.result || {};
+    const stepDeploy = Array.isArray(r.steps) ? r.steps.find((x) => x && x.step === "deploy_one_click") : null;
+    const gitStep = Array.isArray(r.steps) ? r.steps.find((x) => x && x.step === "git_commit") : null;
+    const sha = String(r.sha || gitStep?.sha || "").trim();
+    const url = String(r.url || r.deployUrl || stepDeploy?.url || r.deploy?.url || "").trim();
+    const deploymentId = String(r.deploymentId || stepDeploy?.deploymentId || r.deploy?.deploymentId || "").trim();
+    if (!sha && !url && !deploymentId) continue;
+    const key = `${s.name}|${sha}|${url}|${deploymentId}`;
+    if (seenPublish.has(key)) continue;
+    seenPublish.add(key);
+    const segments = [];
+    if (sha) segments.push(`commit ${sha}`);
+    if (url) segments.push(url);
+    if (deploymentId) segments.push(`deploy ${deploymentId}`);
+    publishLines.push(`Publicación (hechos del kernel): ${segments.join(" · ")}`);
+  }
   const lines = [`Pedido: ${clip(userText, 300)}`];
-  lines.push(applied.length
-    ? `Aplicado (hechos del kernel): ${applied.slice(0, 10).join(", ")}`
-    : "Aplicado: nada (el kernel no registró escrituras en este turno).");
+  if (applied.length) {
+    lines.push(`Aplicado (hechos del kernel): ${applied.slice(0, 10).join(", ")}`);
+  } else if (!publishLines.length && !memWrites.length) {
+    lines.push("Aplicado: nada (el kernel no registró escrituras en este turno).");
+  }
+  for (const publishLine of publishLines) lines.push(publishLine);
+  if (memWrites.length) lines.push(`Aplicado en la memoria del proyecto (hechos del kernel): ${memDesc}`);
   if (verifiedOk || verifiedFail) lines.push(`Verificación visual: ${verifiedOk} captura(s) con render OK, ${verifiedFail} sin render confirmado.`);
   if (failed.length) lines.push(`Descartado/falló: ${failed.slice(0, 4).join(" · ")}`);
   const close = clip(finalText, 500);

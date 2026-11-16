@@ -379,12 +379,27 @@ function buildProjectMapBlock(projectRoot) {
 
 // El bloque completo del Mapa para el contexto del turno. Vacío solo
 // cuando ninguna capa tiene contenido todavía.
-function buildMapBlock(projectRoot) {
+//
+// [AUDITORÍA-ÍTEM-3 / B19] La cabecera tiene DOS formas y la elección
+// es del llamador, por clase de turno:
+//  - Forma vigente (defecto): la cláusula de autoridad completa —
+//    «manda sobre relatos viejos; … vale esto». Es la del carril de
+//    ORIENTACIÓN (ASK y conserje, que llaman sin opciones): ahí el
+//    Mapa SÍ manda y esta forma queda INTACTA, byte a byte.
+//  - Forma EXECUTE (`{ executeTurn: true }`): la misma cabecera SIN
+//    la cláusula de autoridad. En un turno de ejecución el Mapa
+//    orienta, pero NO sentencia el estado del repo: apoyarse en él
+//    para dar algo por hecho («ya consta») sin contrastar el estado
+//    real fue el mecanismo del fallo 6.2.
+const MAP_BLOCK_HEADER = "## 🗺️ MAPA DE ORIENTACIÓN (contexto permanente: el destilado VIGENTE del usuario y del proyecto — manda sobre relatos viejos; si algo de aquí contradice el historial, vale esto)";
+const MAP_BLOCK_HEADER_EXECUTE = "## 🗺️ MAPA DE ORIENTACIÓN (contexto permanente: el destilado del usuario y del proyecto — orienta este turno; NO sentencia el estado del repo: cualquier afirmación de estado o de publicación se contrasta con la evidencia real y los hechos deterministas de este turno)";
+function buildMapBlock(projectRoot, opts = {}) {
   const userBlock = buildUserMapBlock();
   const projectBlock = projectRoot ? buildProjectMapBlock(projectRoot) : "";
   if (!userBlock && !projectBlock) return "";
+  const executeTurn = !!opts && (opts.executeTurn === true || opts.kind === "EXECUTE");
   return [
-    "## 🗺️ MAPA DE ORIENTACIÓN (contexto permanente: el destilado VIGENTE del usuario y del proyecto — manda sobre relatos viejos; si algo de aquí contradice el historial, vale esto)",
+    executeTurn ? MAP_BLOCK_HEADER_EXECUTE : MAP_BLOCK_HEADER,
     userBlock,
     projectBlock,
   ].filter(Boolean).join("\n\n");

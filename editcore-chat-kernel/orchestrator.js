@@ -595,7 +595,7 @@ function userWantsDiskMutation(message = "") {
     || FIX_INTENT_RE.test(String(message || ""));
 }
 
-const FIX_INTENT_RE = /\b(?:corr[eií][gj](?:e|ir|alo|alos|ala|alas|eme|me|as)?(?:me|lo|la|los|las)?|arregl(?:a|á|ar|alo|alos|ala|alas|ame|as)?(?:me|lo|la|los|las)?|repar(?:a|á|ar|alo|alos|ala|alas|ame|as)?(?:me|lo|la|los|las)?|solucion(?:a|á|ar|alo|alos|ala|alas|ame|as)?(?:me|lo|la|los|las)?|resu[eé]lve(?:lo|la|los|las|me)?|resolver(?:lo|la|los|las|me)?|fix(?:ea)?|implementa(?:r|lo|los|la|las)?|aplica(?:r|lo|los|la|las)?|modifica(?:r|lo|los|la|las)?|modificaciones|agrega(?:r|lo|los|la|las)?|añad[ei]r?)\b/i;
+const FIX_INTENT_RE = /\b(?:corr[eií][gj](?:e|ir|alo|alos|ala|alas|eme|me|as)?(?:me|lo|la|los|las)?|arregl(?:a|á|ar|alo|alos|ala|alas|ame|as)?(?:me|lo|la|los|las)?|repar(?:a|á|ar|alo|alos|ala|alas|ame|as)?(?:me|lo|la|los|las)?|solucion(?:a|á|ar|alo|alos|ala|alas|ame|as)?(?:me|lo|la|los|las)?|resu[eé]lve(?:lo|la|los|las|me)?|resolver(?:lo|la|los|las|me)?|fix(?:ea)?|implementa(?:r|lo|los|la|las)?|aplica(?:r|lo|los|la|las)?|modifica(?:r|lo|los|la|las)?|modificaciones|agrega(?:r|lo|los|la|las)?|añad[ei]r?|public(?:a|á|ar|alo|alos|ala|alas|ame|as)(?:me|lo|la|los|las)?|(?:desplieg|despleg)(?:a|á|ar|alo|alos|ala|alas|ame|as)?(?:me|lo|la|los|las)?|deploy(?:a|á|ar|alo|alos|ala|alas|ame|as)?(?:me|lo|la|los|las)?|push(?:ea)?|commit(?:ea)?)\b/i;
 
 // [EDITCORE-CONSOLIDADA] Léxico de intención de mutación CENTRALIZADO.
 // El suplemento vivía DUPLICADO como regex inline en dos compuertas (el
@@ -769,14 +769,67 @@ function memoryEventGuardBanner(memEvent, answerText, projectRoot) {
 function textClaimsDiskMutation(text = "") {
   const raw = String(text || "");
   if (/<!DOCTYPE\s+html>/i.test(raw)) return true;
-  return /(?:^|[^\wáéíóúñ])(he\s+(?:creado|escrito|generado|movido|implementado|guardado|corregido|arreglado|aplicado|modificado|actualizado|reemplazado)|cre[eé]\s+(?:la\s+)?(?:carpeta|archivo|proyecto)|escrib[ií]|mov[ií]|gener[eé]|implement[eé]|guard[eé]|correg[ií]|arregl[eé]|apliqu[eé]|modifiqu[eé]|actualic[eé]|reemplac[eé]|finalic[eé]\s+(?:la\s+)?(?:creaci[oó]n|implementaci[oó]n))(?![\wáéíóúñ])/i.test(raw);
+  return /(?:^|[^\wáéíóúñ])(he\s+(?:creado|escrito|generado|movido|implementado|guardado|corregido|arreglado|aplicado|modificado|actualizado|reemplazado|publicado|desplegado|commiteado)|qued[óo]\s+(?:publicado|desplegado|commiteado)|cre[eé]\s+(?:la\s+)?(?:carpeta|archivo|proyecto)|escrib[ií]|mov[ií]|gener[eé]|implement[eé]|guard[eé]|correg[ií]|arregl[eé]|apliqu[eé]|modifiqu[eé]|actualic[eé]|reemplac[eé]|publiqu[eé]|desplegu[eé]|finalic[eé]\s+(?:la\s+)?(?:creaci[oó]n|implementaci[oó]n))(?![\wáéíóúñ])/i.test(raw);
+}
+
+function isSuccessfulWriteStep(s) {
+  return Boolean(s) && (s.name === "write_file" || s.name === "replace_in_file" || s.name === "scaffold_project") && s.ok !== false && s.result?.ok !== false && !s.result?.unchanged;
 }
 
 function successfulWritePaths(steps = []) {
   return (Array.isArray(steps) ? steps : [])
-    .filter((s) => (s.name === "write_file" || s.name === "replace_in_file" || s.name === "scaffold_project") && s.ok !== false && s.result?.ok !== false && !s.result?.unchanged)
+    .filter((s) => isSuccessfulWriteStep(s))
     .map((s) => s.input?.path || s.result?.path || s.result?.projectRoot)
     .filter(Boolean);
+}
+
+// [ÍTEM 5] Contabilidad única de «aplicado»: las herramientas del Mapa ya
+// eran WRITE_TOOLS desde la v5.1.3-W3, pero no producen rutas y eran
+// invisibles para successfulWritePaths. Estas funciones hermanas cuentan
+// las mutaciones de memoria EFECTIVAS y las acciones externas desde la
+// forma real de retorno de cada paso, para que la nota B1, los hechos, la
+// declaración de término, la constancia, el destilado y settleIteration
+// compartan la misma fuente de «aplicado».
+function successfulMemoryWrites(steps = []) {
+  const out = [];
+  for (const s of Array.isArray(steps) ? steps : []) {
+    if (!s || s.ok === false || s.result?.ok !== true) continue;
+    const text = String(s.result.text || s.input?.text || "").trim();
+    if (s.name === "note_map_decision" && s.result.recorded === "decision") {
+      out.push({ kind: "decision", text });
+    } else if (s.name === "open_map_front" && s.result.recorded === "front") {
+      out.push({ kind: "front", text });
+    } else if (s.name === "close_map_front" && s.result.recorded === "front_closed" && s.result.closed === true) {
+      out.push({ kind: "front_closed", text });
+    } else if (s.name === "ingest_to_brain" && Number(s.result.ingested || 0) > 0) {
+      out.push({ kind: "brain_ingest", text: `${Number(s.result.ingested || 0)} documento(s)` });
+    }
+  }
+  return out;
+}
+
+function describeMemoryWrites(memWrites = []) {
+  const list = Array.isArray(memWrites) ? memWrites : [];
+  const counts = { decision: 0, front: 0, front_closed: 0, brain_ingest: 0 };
+  for (const w of list) {
+    if (w && Object.prototype.hasOwnProperty.call(counts, w.kind)) counts[w.kind] += 1;
+  }
+  const parts = [];
+  if (counts.decision) parts.push(`${counts.decision} decisión(es) asentada(s) en el Mapa`);
+  if (counts.front) parts.push(`${counts.front} frente(s) abierto(s) en el Mapa`);
+  if (counts.front_closed) parts.push(`${counts.front_closed} frente(s) cerrado(s) en el Mapa`);
+  if (counts.brain_ingest) parts.push(`${counts.brain_ingest} ingesta(s) al Cerebro`);
+  return parts.join(", ");
+}
+
+function successfulExternalActions(steps = []) {
+  const kinds = { publish_project: "publish", deploy_one_click: "deploy", connect_project: "connect" };
+  const out = [];
+  for (const s of Array.isArray(steps) ? steps : []) {
+    if (!s || s.ok === false || s.result?.ok !== true) continue;
+    if (Object.prototype.hasOwnProperty.call(kinds, s.name)) out.push({ kind: kinds[s.name] });
+  }
+  return out;
 }
 
 // [EDITCORE-V516-S2/S3/S4/S5/S6] IDENTIDAD DE LA TAREA (medición
@@ -1233,7 +1286,7 @@ function redirectCredentialSolicitations(text) {
 function premiseRefutedByEvidence(steps = []) {
   if (!repairGuard || typeof repairGuard.stepIsEvidenceAttempt !== "function") return { refuted: false, evidenceStep: null };
   const list = Array.isArray(steps) ? steps : [];
-  const firstWriteIdx = list.findIndex((s) => s && (s.name === "write_file" || s.name === "replace_in_file" || s.name === "scaffold_project") && s.ok !== false && s.result?.ok !== false && !s.result?.unchanged);
+  const firstWriteIdx = list.findIndex((s) => isSuccessfulWriteStep(s));
   const limit = firstWriteIdx === -1 ? list.length : firstWriteIdx;
   for (let i = 0; i < limit; i += 1) {
     const s = list[i];
@@ -1303,7 +1356,7 @@ function buildKernelFactSummary(steps = []) {
   const seenWrites = new Set();
   for (const s of Array.isArray(steps) ? steps : []) {
     if (!s) continue;
-    if ((s.name === "write_file" || s.name === "replace_in_file" || s.name === "scaffold_project") && s.ok !== false && s.result?.ok !== false && !s.result?.unchanged) {
+    if (isSuccessfulWriteStep(s)) {
       const rel = String(s.input?.path || s.result?.path || s.result?.projectRoot || "").replace(/\\/g, "/");
       if (!rel) continue;
       const key = `${s.name}:${rel}:${summarizeHunkText(s.input?.oldText || "", 40)}:${summarizeHunkText(s.input?.newText || s.input?.content || "", 40)}`;
@@ -1354,6 +1407,46 @@ function buildKernelFactSummary(steps = []) {
       : `- \`${info.label}\` → FALLÓ${info.code != null ? ` (código ${info.code})` : ""}${info.firstError ? `: ${info.firstError}` : ""}`);
     if (cmdLines.length >= 4) break;
   }
+  const publishLines = [];
+  const seenPublish = new Set();
+  for (const s of Array.isArray(steps) ? steps : []) {
+    if (!s) continue;
+    if (s.name !== "publish_project" && s.name !== "deploy_one_click") continue;
+    if (s.ok === false || s.result?.ok !== true) continue;
+    const r = s.result || {};
+    const stepDeploy = Array.isArray(r.steps) ? r.steps.find((x) => x && x.step === "deploy_one_click") : null;
+    const gitStep = Array.isArray(r.steps) ? r.steps.find((x) => x && x.step === "git_commit") : null;
+    const sha = String(r.sha || gitStep?.sha || "").trim();
+    const url = String(r.url || r.deployUrl || stepDeploy?.url || r.deploy?.url || "").trim();
+    const deploymentId = String(r.deploymentId || stepDeploy?.deploymentId || r.deploy?.deploymentId || "").trim();
+    const branch = String(r.branch || "").trim();
+    const provider = String(r.provider || stepDeploy?.provider || r.deploy?.provider || "").trim();
+    if (!sha && !url && !deploymentId) continue;
+    const key = `${s.name}|${sha}|${url}|${deploymentId}`;
+    if (seenPublish.has(key)) continue;
+    seenPublish.add(key);
+    const segments = [];
+    if (sha) segments.push(`commit ${sha}`);
+    if (branch) segments.push(`rama ${branch}`);
+    if (url) segments.push(url);
+    if (deploymentId) segments.push(`deploy ${deploymentId}`);
+    if (provider) segments.push(`proveedor ${provider}`);
+    const label = s.name === "deploy_one_click" ? "Despliegue" : "Publicación";
+    publishLines.push(`- ${label}: ${segments.join(" · ")}`);
+  }
+  const memWrites = successfulMemoryWrites(steps);
+  const memLines = [];
+  const seenMem = new Set();
+  for (const w of memWrites) {
+    const key = `${w.kind}:${w.text}`;
+    if (seenMem.has(key)) continue;
+    seenMem.add(key);
+    if (w.kind === "decision") memLines.push(`- Decisión asentada en el Mapa: «${summarizeHunkText(w.text, 120)}»`);
+    else if (w.kind === "front") memLines.push(`- Frente abierto en el Mapa: «${summarizeHunkText(w.text, 120)}»`);
+    else if (w.kind === "front_closed") memLines.push(`- Frente cerrado en el Mapa: «${summarizeHunkText(w.text, 120)}»`);
+    else if (w.kind === "brain_ingest") memLines.push(`- Ingesta al Cerebro: ${w.text} incorporado(s)`);
+    if (memLines.length >= 6) break;
+  }
   const audit = auditSubagentSteps(steps);
   // [EDITCORE-V518-A] Las redirecciones de solicitudes de credencial
   // también son un hecho del turno (el marcador lo asienta la
@@ -1364,15 +1457,21 @@ function buildKernelFactSummary(steps = []) {
     (acc, s) => acc + (s?.name === "credential_solicitation_redirected" ? Math.max(1, Number(s.result?.redirected) || 1) : 0),
     0,
   );
-  if (!lines.length && !audit.length && !cmdLines.length && !credRedirects) return "";
+  if (!lines.length && !audit.length && !cmdLines.length && !credRedirects && !publishLines.length && !memLines.length) return "";
   const out = ["## 🧾 Hechos del turno (kernel)", ""];
   if (lines.length) {
     out.push("Cambios que el kernel SÍ aplicó en disco (desde los pasos reales, no desde el relato):", "", ...lines, "");
-  } else {
+  } else if (!publishLines.length && !memLines.length) {
     out.push("El kernel no registró ninguna escritura aplicada en este turno.", "");
+  }
+  if (memLines.length) {
+    out.push("Cambios que el kernel SÍ aplicó en la memoria del proyecto (Mapa/Cerebro, desde los pasos reales):", "", ...memLines, "");
   }
   if (cmdLines.length) {
     out.push("Comandos de evidencia de este turno (resultado desde los pasos, no desde el relato):", "", ...cmdLines, "");
+  }
+  if (publishLines.length) {
+    out.push("Publicación de este turno (desde el resultado real de la herramienta, no desde el relato):", "", ...publishLines, "");
   }
   if (credRedirects) {
     out.push("Higiene de credenciales:", "", `- ${credRedirects} solicitud(es) de valor de credencial redirigida(s) a la vía segura: el valor lo coloca el usuario en el .env o en la bóveda y el agente verifica su presencia por nombre, sin mostrarlo.`, "");
@@ -1633,7 +1732,12 @@ function successfulDiskReads(steps = []) {
 function groundUngroundedClaims(text, steps = [], userMessage = "", decision = {}, evidenceReads = 0) {
   if (decision?.kind === "LIST") return formatAgentVisibleText(String(text || "").trim());
   const written = successfulWritePaths(steps);
-  if (written.length === 0 && textClaimsDiskMutation(text)) {
+  // [ITEM-2] Exención de publicación real: si el turno SÍ ejecutó un paso
+  // publish_project/deploy_one_click ok, afirmar «ya quedó publicado» está
+  // respaldado por un hecho del kernel y no se contrasta con el banner de
+  // escrituras de archivo (la publicación no escribe archivos locales).
+  const publishDone = (Array.isArray(steps) ? steps : []).some((s) => (s.name === "publish_project" || s.name === "deploy_one_click") && s.ok !== false && s.result?.ok !== false);
+  if (written.length === 0 && !publishDone && textClaimsDiskMutation(text)) {
     return formatAgentVisibleText(
       "> ⚠️ **En este turno no se modificó ningún archivo en disco.** Lo que sigue es explicación del modelo, no cambios aplicados.\n\n" +
       String(repairDanglingOutput(text, steps, userMessage, decision) || "")
@@ -1667,13 +1771,60 @@ function scopeUserMessage(message = "", evidence = "") {
 let operatorConnectionsApi = null;
 try { operatorConnectionsApi = require("../runtime/operator-connections-context"); } catch { operatorConnectionsApi = null; }
 
-function buildConnectionsBlock(projectRoot) {
+let serviceHarnessApi = null;
+try { serviceHarnessApi = require("../service-harness"); } catch { serviceHarnessApi = null; }
+
+function buildConnectionsBlock(projectRoot, readConnections) {
   if (!projectRoot || !operatorConnectionsApi) return "";
+  if (typeof readConnections !== "function") return "";
   try {
-    const snap = operatorConnectionsApi.connectionsForProject ? operatorConnectionsApi.connectionsForProject({}, projectRoot) : null;
-    if (operatorConnectionsApi.formatOperatorConnectionsMemory) return operatorConnectionsApi.formatOperatorConnectionsMemory(snap);
+    let globalConnections;
+    try { globalConnections = readConnections(); } catch { return ""; }
+    if (!globalConnections || typeof globalConnections !== "object") return "";
+    if (!operatorConnectionsApi.buildSafeConnectionsSnapshot || !operatorConnectionsApi.formatOperatorConnectionsMemory) return "";
+    const connectionSummary = serviceHarnessApi?.connectionSummary ? serviceHarnessApi.connectionSummary : undefined;
+    const snap = operatorConnectionsApi.buildSafeConnectionsSnapshot({ connections: globalConnections, connectionSummary, projectRoot });
+    return operatorConnectionsApi.formatOperatorConnectionsMemory(snap);
   } catch { /* ignore */ }
   return "";
+}
+
+// [AUDITORÍA-ÍTEM-3 / B19] HECHO GIT DETERMINISTA DE APERTURA: vive
+// junto a los demás hechos deterministas que el kernel calcula al
+// abrir el turno (buildConnectionsBlock, buildBrainContextBlock),
+// con su misma disciplina fail-open: si git no responde, si el
+// proyecto no es un repo o si aún no hay commits, el hecho se omite
+// o se declara y el turno jamás se rompe por esto. La ejecución sigue
+// el patrón git del propio kernel (tools.js gitStatus/gitLog y
+// runtime/project-index readGitContext): execFileSync con array de
+// argumentos, cwd = raíz del proyecto, timeout corto y windowsHide.
+// Sin canales nuevos: no pasa por helpers ni por el despacho de
+// herramientas; es un dato de apertura, no una acción del modelo.
+let execFileSyncGit = null;
+try { ({ execFileSync: execFileSyncGit } = require("node:child_process")); } catch { execFileSyncGit = null; }
+
+function buildGitFactBlock(projectRoot) {
+  if (!projectRoot || projectRoot === "." || !execFileSyncGit) return "";
+  const run = (args) => execFileSyncGit("git", args, {
+    cwd: projectRoot, encoding: "utf8", timeout: 3000, windowsHide: true, maxBuffer: 256_000,
+    // stderr ignorado: un proyecto que no es repo no debe ensuciar
+    // la salida del proceso (patrón de memory-ledger al detectar rama).
+    stdio: ["ignore", "pipe", "ignore"],
+  }).trim();
+  try {
+    if (run(["rev-parse", "--is-inside-work-tree"]) !== "true") return "";
+    const branch = run(["rev-parse", "--abbrev-ref", "HEAD"]);
+    const status = run(["status", "--porcelain"]);
+    const dirtyCount = status ? status.split(/\r?\n/).filter(Boolean).length : 0;
+    let lastCommit = "";
+    try { lastCommit = run(["log", "-1", "--pretty=format:%h %s"]); } catch { lastCommit = ""; }
+    return [
+      "## HECHO GIT (estado real del repo, calculado por el kernel al abrir este turno: contrasta con esto cualquier afirmación de estado o de publicación; el Mapa no lo sustituye)",
+      branch ? `- Rama: ${branch}` : "",
+      `- Cambios sin commitear: ${dirtyCount ? `sí (${dirtyCount} archivo(s) con cambios)` : "no"}`,
+      lastCommit ? `- Último commit: ${lastCommit}` : "- Último commit: (sin commits todavía)",
+    ].filter(Boolean).join("\n");
+  } catch { return ""; }
 }
 
 function nextStepsClosingText(projectRoot, writtenFiles = [], steps = []) {
@@ -1693,6 +1844,10 @@ function nextStepsClosingText(projectRoot, writtenFiles = [], steps = []) {
     // del modelo, vía el empujón de la compuerta de cierre.
     const listedFiles = writtenFiles.slice(0, 6).map((p) => `\`${p}\``).join(", ");
     return `Declaro el término de esta tarea desde los hechos: quedaron aplicados ${writtenFiles.length} archivo(s) (${listedFiles}) y no queda ninguna escritura pendiente registrada en este turno.${reviewNote}`;
+  }
+  const memWritesClosing = successfulMemoryWrites(steps);
+  if (memWritesClosing.length > 0) {
+    return `Declaro el término de esta tarea desde los hechos: quedaron aplicadas ${memWritesClosing.length} mutación(es) en la memoria del proyecto (${describeMemoryWrites(memWritesClosing)}) y ningún archivo fue modificado en este turno; no queda ninguna mutación pendiente registrada.`;
   }
   if (steps.length > 0) {
     const toolNames = [...new Set(steps.map((s) => s.name).filter(Boolean))].slice(0, 5).join(", ");
@@ -1825,11 +1980,14 @@ function substantiveFallbackText(steps = [], writtenFiles = [], opts = {}) {
   // en vacío, sus hechos declaran el intento — la honestidad queda,
   // pero el balón ya no vuelve al usuario como primera respuesta.
   if (opts.emptyCloseResumed) lines.push("- El kernel reanudó la ejecución una vez (orden de ejecutar, no de sintetizar) y el modelo volvió a cerrar sin respuesta.");
+  const memWritesFallback = successfulMemoryWrites(steps);
   lines.push("", writtenFiles.length
     ? "Declaro el término de esta tarea desde esos hechos: lo aplicado quedó en disco y no queda ninguna escritura pendiente registrada."
-    : (opts.emptyCloseResumed
-      ? "Nada quedó aplicado en este turno: la tarea no se ejecutó ni siquiera tras la reanudación. Reformula el pedido o pide que lo retome; ambos cierres en vacío quedan registrados en este turno."
-      : "Nada quedó aplicado en este turno. Pide la síntesis de nuevo o reformula el pedido y lo retomo con lo ya explorado."));
+    : (memWritesFallback.length
+      ? `Declaro el término de esta tarea desde esos hechos: lo aplicado quedó asentado en la memoria del proyecto (${describeMemoryWrites(memWritesFallback)}) y no queda ninguna mutación pendiente registrada.`
+      : (opts.emptyCloseResumed
+        ? "Nada quedó aplicado en este turno: la tarea no se ejecutó ni siquiera tras la reanudación. Reformula el pedido o pide que lo retome; ambos cierres en vacío quedan registrados en este turno."
+        : "Nada quedó aplicado en este turno. Pide la síntesis de nuevo o reformula el pedido y lo retomo con lo ya explorado.")));
   return lines.join("\n");
 }
 
@@ -2079,7 +2237,9 @@ function formatExternalActionResult(name, result) {
     const warn = notVerified
       ? `⚠️ Publicación NO verificada: ${notVerified.smokeCause || "la ruta principal respondió pero no se pudo comprobar que fuera la app"}.`
       : "";
-    return [`## ✅ ${label} completado`, url ? `URL: ${url}` : "", warn, detail].filter(Boolean).join("\n\n");
+    const sha = result?.sha || result?.deploy?.sha || "";
+    const deploymentId = result?.deploymentId || result?.deploy?.deploymentId || "";
+    return [`## ✅ ${label} completado`, url ? `URL: ${url}` : "", sha ? `Commit: ${sha}` : "", deploymentId ? `Deploy: ${deploymentId}` : "", warn, detail].filter(Boolean).join("\n\n");
   }
   // [EDITCORE-CONSOLIDADA] Producción caída tras el deploy (humo
   // post-despliegue de deploy-one-click): el texto que reciben el
@@ -2257,7 +2417,7 @@ class ChatOrchestrator {
         try {
           const sync = require("../runtime/roadmap-sync").createRoadmapSync();
           const url = result?.url || result?.deployUrl || result?.liveUrl || result?.deploy?.url || ""; // [EDITCORE-INTEGRAL-B8] misma lectura que el formateador
-          sync.recordDeploy(projectRoot, { type: name === "deploy_one_click" ? (result?.provider || "deploy") : "publish", status: "success", url });
+          sync.recordDeploy(projectRoot, { type: name === "deploy_one_click" ? (result?.provider || "deploy") : "publish", status: "success", url, sha: result?.sha || "", deploymentId: result?.deploymentId || result?.deploy?.deploymentId || "" });
         } catch { /* el roadmap es opcional */ }
       }
       return { kind: "EXECUTE", text: formatAgentVisibleText(formatExternalActionResult(name, result)), steps: [step] };
@@ -3276,7 +3436,7 @@ class ChatOrchestrator {
 
     const roadmapFirstBlock = (!chatOnly && decision?.kind !== "CHAT" && !listOnlyMode && !analysisMode) ? buildRoadmapFirstBlock(projectRoot) : "";
     const cognitiveBlock = (!chatOnly && decision?.kind !== "CHAT" && !listOnlyMode && !analysisMode) ? formatCognitiveBlock(projectRoot) : "";
-    const connectionsBlock = (!chatOnly && decision?.kind !== "CHAT" && !listOnlyMode && !analysisMode) ? buildConnectionsBlock(projectRoot) : "";
+    const connectionsBlock = (!chatOnly && decision?.kind !== "CHAT" && !listOnlyMode && !analysisMode) ? buildConnectionsBlock(projectRoot, helpers?.readConnections) : "";
     const pendingVerified = (!chatOnly && decision?.kind !== "CHAT" && !listOnlyMode && !analysisMode && allowWrite) ? forensic.loadForensic(projectRoot) : null;
     const pendingVerifiedBlock = pendingVerified?.counts?.error
       ? [
@@ -3406,8 +3566,29 @@ class ChatOrchestrator {
     // Mapa ya trae en su forma vigente no se paga dos veces.
     let mapBlock = "";
     if (!listOnlyMode && projectRoot && !projectless) {
-      try { mapBlock = orientationMap.buildMapBlock(projectRoot); } catch { mapBlock = ""; }
+      // [AUDITORÍA-ÍTEM-3 / B19] Solo-EXECUTE: en un turno de
+      // ejecución la cabecera del Mapa se emite SIN la cláusula de
+      // autoridad (el Mapa orienta; no sentencia el estado del
+      // repo). Cualquier otro kind conserva la forma vigente: el
+      // carril de orientación (ASK) está blindado y no pasa por aquí
+      // (listOnlyMode), y el conserje llama a buildMapBlock sin
+      // opciones, con la cabecera intacta.
+      try { mapBlock = orientationMap.buildMapBlock(projectRoot, { executeTurn: decision?.kind === "EXECUTE" }); } catch { mapBlock = ""; }
       if (mapBlock) pushTurnContext(CTX_TIER_ESSENTIAL, mapBlock);
+      // [AUDITORÍA-ÍTEM-3 / B19] Contraste determinista: si la
+      // intención del turno es de mutación/publicación
+      // (hasMutationIntent, la única fuente del léxico), el estado
+      // real del repo entra al contexto en la apertura, para que un
+      // «ya consta» tenga contraste en el mismo turno. Sin repo o
+      // con git caído, buildGitFactBlock devuelve "" y no entra nada.
+      if (decision?.kind === "EXECUTE") {
+        try {
+          if (hasMutationIntent(`${this._currentUserText || ""} ${message || ""}`)) {
+            const gitFactBlock = buildGitFactBlock(projectRoot);
+            if (gitFactBlock) pushTurnContext(CTX_TIER_ESSENTIAL, gitFactBlock);
+          }
+        } catch { /* el hecho git nunca tumba el turno */ }
+      }
     }
     if (!listOnlyMode) {
       let brainBlock = buildBrainContextBlock(projectRoot, this._currentUserText || message);
@@ -3607,12 +3788,18 @@ class ChatOrchestrator {
       const fresh = steps.slice(iterStartSteps);
       const tokenDelta = Math.max(0, totalUsage.total_tokens - iterStartTokens);
       if (!fresh.length && tokenDelta === 0) return; // doble asiento: nada pasó
+      // [ÍTEM 5] Alineación con la contabilidad única de «aplicado»:
+      // además de escritura/verificación/delegación, cuentan las
+      // mutaciones de memoria efectivas, las acciones externas con ok
+      // y, en un turno de tarea (EXECUTE), un run_command con ok.
       const applied = fresh.some((s) => s && s.ok !== false && (
-        ((s.name === "write_file" || s.name === "replace_in_file" || s.name === "scaffold_project") && s.result?.ok !== false && !s.result?.unchanged)
+        (isSuccessfulWriteStep(s))
         || (s.name === "invoke_subagent" && Array.isArray(s.result?.applied) && s.result.applied.some((p) => p?.ok === true && p?.planned !== true))
         || (s.name === "capture_preview_screenshot" && s.result?.renderOk === true)
         || (s.name === "delegate_parallel" && Number(s.result?.appliedCount || 0) > 0)
-      ));
+      )) || successfulMemoryWrites(fresh).length > 0
+        || successfulExternalActions(fresh).length > 0
+        || (decision?.kind === "EXECUTE" && fresh.some((s) => s && s.name === "run_command" && s.ok !== false && s.result?.ok === true));
       tokenHarness.noteStepOutcome(progressBook, { applied, tokens: tokenDelta });
       if (applied) totalUsage.applied_step_tokens += tokenDelta;
       else totalUsage.idle_step_tokens += tokenDelta;
@@ -4461,7 +4648,7 @@ class ChatOrchestrator {
           // suene como suene el cierre del modelo. Extiende la garantía
           // determinista del «procede» (abajo, para «Pregunta antes») al
           // caso autorizado: aquí no falta autorización, falta el cambio.
-          if (written.length === 0 && !listOnlyMode && !analysisMode && !chatOnly && !projectless
+          if (written.length === 0 && successfulMemoryWrites(steps).length === 0 && successfulExternalActions(steps).length === 0 && !listOnlyMode && !analysisMode && !chatOnly && !projectless
             && decision?.kind !== "CHAT" && writeAuthorized) {
             const intentText = `${this._currentUserText || ""} ${message || ""}`;
             if (hasMutationIntent(intentText)) {
@@ -5244,4 +5431,4 @@ class ChatOrchestrator {
   }
 }
 
-module.exports = { ChatOrchestrator, SKILL_IDS, taskQueue, groundUngroundedClaims, successfulDiskReads, hasMutationIntent, buildKernelFactSummary, auditSubagentSteps, runPostWriteVerify, formatVerifyBlock, applyTurnContextBudget, TURN_CONTEXT_MAX_CHARS, TURN_CONTEXT_TRUNCATION_MARKER, CTX_TIER_ESSENTIAL, CTX_TIER_NORMAL, CTX_TIER_ACCESSORY, /* [EDITCORE-INTEGRAL-B3] */ appendRealVerification, /* [EDITCORE-INTEGRAL-B5] */ normalizePermissionMode, buildModeAnnouncement, /* [EDITCORE-INTEGRAL-B6] */ raceSemanticBlock, SEMANTIC_MEMORY_TIMEOUT_MS, runRealVerification, /* [EDITCORE-INTEGRAL-B8] */ formatExternalActionResult, /* [EDITCORE-INTEGRAL-B9] */ buildCerebroServiceBlock, buildBrainContextBlock, /* [EDITCORE-V492-3] */ detectMemoryEventQuestion, memoryEventInDossier, memoryAnswerAffirmsEvent, memoryEventGuardBanner, MEMORY_EVENT_PROTOCOL, /* [EDITCORE-V510-B2/B3/B4/B6] */ isNarrationOnlyText, closingHasProposalOrTerminus, substantiveFallbackText, progressRenditionText, detectDecomposableTask, /* [EDITCORE-V516-S2/S3/S6/P8] */ computeTaskArtifacts, identityDeviationState, premiseRefutedByEvidence, harvestTurnCredentials, redactHarvestedCredentials, /* [EDITCORE-V517-C2] */ stubAgedToolResults, buildToolResultStub, TOOL_STUB_SENTINEL, TOOL_STUB_WINDOW_STEPS, /* [EDITCORE-V519-K4a] */ DELEGATE_STUB_WINDOW_STEPS, /* [EDITCORE-V518-A/B2] */ redirectCredentialSolicitations, credentialSolicitationIn, buildThreadKnownBlock, THREAD_KNOWN_BLOCK_MAX_CHARS, /* [EDITCORE-V519-K3] */ stripSharedMemoryEcho, delegateResultWithoutEcho, SHARED_MEMORY_ECHO_HEADER, DELEGATE_ECHO_MARKER };
+module.exports = { ChatOrchestrator, SKILL_IDS, taskQueue, groundUngroundedClaims, successfulDiskReads, hasMutationIntent, buildKernelFactSummary, auditSubagentSteps, runPostWriteVerify, formatVerifyBlock, applyTurnContextBudget, TURN_CONTEXT_MAX_CHARS, TURN_CONTEXT_TRUNCATION_MARKER, CTX_TIER_ESSENTIAL, CTX_TIER_NORMAL, CTX_TIER_ACCESSORY, successfulMemoryWrites, describeMemoryWrites, successfulExternalActions, nextStepsClosingText, isSuccessfulWriteStep, /* [EDITCORE-INTEGRAL-B3] */ appendRealVerification, /* [EDITCORE-INTEGRAL-B5] */ normalizePermissionMode, buildModeAnnouncement, /* [EDITCORE-INTEGRAL-B6] */ raceSemanticBlock, SEMANTIC_MEMORY_TIMEOUT_MS, runRealVerification, /* [EDITCORE-INTEGRAL-B8] */ formatExternalActionResult, /* [EDITCORE-INTEGRAL-B9] */ buildCerebroServiceBlock, buildBrainContextBlock, /* [EDITCORE-V492-3] */ detectMemoryEventQuestion, memoryEventInDossier, memoryAnswerAffirmsEvent, memoryEventGuardBanner, MEMORY_EVENT_PROTOCOL, /* [EDITCORE-V510-B2/B3/B4/B6] */ isNarrationOnlyText, closingHasProposalOrTerminus, substantiveFallbackText, progressRenditionText, detectDecomposableTask, /* [EDITCORE-V516-S2/S3/S6/P8] */ computeTaskArtifacts, identityDeviationState, premiseRefutedByEvidence, harvestTurnCredentials, redactHarvestedCredentials, /* [EDITCORE-V517-C2] */ stubAgedToolResults, buildToolResultStub, TOOL_STUB_SENTINEL, TOOL_STUB_WINDOW_STEPS, /* [EDITCORE-V519-K4a] */ DELEGATE_STUB_WINDOW_STEPS, /* [EDITCORE-V518-A/B2] */ redirectCredentialSolicitations, credentialSolicitationIn, buildThreadKnownBlock, THREAD_KNOWN_BLOCK_MAX_CHARS, /* [EDITCORE-V519-K3] */ stripSharedMemoryEcho, delegateResultWithoutEcho, SHARED_MEMORY_ECHO_HEADER, DELEGATE_ECHO_MARKER };

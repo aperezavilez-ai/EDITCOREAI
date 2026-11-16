@@ -154,6 +154,19 @@ function readVercelIds(projectRoot, connections = {}) {
   };
 }
 
+function extractDeploymentId(output, provider) {
+  const text = String(output || "");
+  const dpl = text.match(/\bdpl_[A-Za-z0-9]+\b/);
+  if (dpl) return dpl[0];
+  if (provider === "netlify") {
+    const netlifyMatch = text.match(/https:\/\/([a-f0-9]{24})--[^\s/]+\.netlify\.app/i);
+    if (netlifyMatch) return netlifyMatch[1];
+  }
+  const vercelMatch = text.match(/vercel\.com\/[^\s/]+\/[^\s/]+\/([A-Za-z0-9_-]{8,})/i);
+  if (vercelMatch) return vercelMatch[1];
+  return "";
+}
+
 function summarizeDeployFailure(combined = "", exitCode = 1) {
   const text = String(combined || "").trim();
   const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
@@ -363,6 +376,7 @@ async function applyPostDeployVerification(base, { provider = "", production = t
     ...(firstError ? { firstLogError: firstError } : {}),
     logs: verdict.logs,
     ...(verdict.logsNote ? { logsNote: verdict.logsNote } : {}),
+    ...(base.deploymentId ? { deploymentId: base.deploymentId } : {}),
     available: base.available,
     provider: base.provider,
     url: base.url,
@@ -462,6 +476,7 @@ async function deployOneClick(projectRoot, input = {}, { connections = {}, deps 
         available: true,
         provider: "vercel",
         url: cleanUrl,
+        deploymentId: extractDeploymentId(combined, "vercel"),
         exitCode: result.code,
         deployRoot,
         projectId: ids.projectId,
@@ -548,6 +563,7 @@ async function deployOneClick(projectRoot, input = {}, { connections = {}, deps 
         available: true,
         provider: "netlify",
         url: urlMatch ? urlMatch[0].replace(/[).,]+$/, "") : "",
+        deploymentId: extractDeploymentId(combined, "netlify"),
         exitCode: result.code,
         output: combined.slice(-4000),
         message: result.code === 0 ? "Deploy OK" : summarizeDeployFailure(combined, result.code),
@@ -586,6 +602,7 @@ async function deployOneClick(projectRoot, input = {}, { connections = {}, deps 
 
 module.exports = {
   deployOneClick,
+  extractDeploymentId,
   detectProvider,
   resolveDeployRoot,
   readVercelIds,

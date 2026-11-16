@@ -463,6 +463,7 @@ async function publishProject(projectRoot, {
       logs: deployResult.logs ? String(deployResult.logs).slice(-DEPLOY_EVIDENCE_LOG_CAP) : (deployResult.logs ?? null),
       ...(deployResult.logsNote ? { logsNote: deployResult.logsNote } : {}),
       ...(deployResult.firstLogError ? { firstLogError: deployResult.firstLogError } : {}),
+      ...(deployResult.deploymentId ? { deploymentId: deployResult.deploymentId } : {}),
       publishFailed: deployResult.publishFailed === true,
       productionDown: deployResult.productionDown === true,
       // [EDITCORE-INTEGRAL-B8] «Responde» ≠ «verificado» también en el step.
@@ -495,6 +496,7 @@ async function publishProject(projectRoot, {
         branch,
         // [EDITCORE-INTEGRAL-B8] URL también en la raíz en el fallo.
         url: deployResult.url || "",
+        deploymentId: deployResult.deploymentId || "",
         steps,
         rollback,
         failedStep: "deploy_one_click",
@@ -537,6 +539,7 @@ async function publishProject(projectRoot, {
     // asimetría que grababa despliegues con url:"".
     url: deployStep?.url || "",
     deployUrl: deployStep?.url || "",
+    deploymentId: deployStep?.deploymentId || "",
     steps,
     message: lateCancel
       ? `La cancelación llegó tarde: el despliegue ${deployStep?.url || ""} sí salió. Publicación completada antes de detener.`
