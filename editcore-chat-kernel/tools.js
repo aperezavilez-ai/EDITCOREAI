@@ -2015,6 +2015,29 @@ async function execute(name, args, root, allowWrite, helpers = {}) {
         const file = path.isAbsolute(String(a.path || "")) ? String(a.path) : path.join(root, String(a.path || ""));
         return await extraTools.readPdf(file, { maxChars: a.maxChars });
       }
+      // [DOCUMENTOS] Creación real de PDF/Word/Excel/CSV: los
+      // nombres ya estaban clasificados como escritura en
+      // classify.js (WRITE_TOOLS) sin definición ni despacho.
+      case "create_pdf": {
+        if (!allowWrite) return { ok: false, error: "Escritura no permitida (Modo Solo Lectura)." };
+        const file = path.isAbsolute(String(a.path || "")) ? String(a.path) : path.join(root, String(a.path || ""));
+        return await extraTools.createPdf(file, a);
+      }
+      case "create_word": {
+        if (!allowWrite) return { ok: false, error: "Escritura no permitida (Modo Solo Lectura)." };
+        const file = path.isAbsolute(String(a.path || "")) ? String(a.path) : path.join(root, String(a.path || ""));
+        return await extraTools.createWord(file, a);
+      }
+      case "create_excel": {
+        if (!allowWrite) return { ok: false, error: "Escritura no permitida (Modo Solo Lectura)." };
+        const file = path.isAbsolute(String(a.path || "")) ? String(a.path) : path.join(root, String(a.path || ""));
+        return await extraTools.createExcel(file, a);
+      }
+      case "create_csv": {
+        if (!allowWrite) return { ok: false, error: "Escritura no permitida (Modo Solo Lectura)." };
+        const file = path.isAbsolute(String(a.path || "")) ? String(a.path) : path.join(root, String(a.path || ""));
+        return await extraTools.createCsv(file, a);
+      }
       case "docker_ps":
         return await extraTools.dockerPs({ all: a.all === true });
       case "screenshot_page":

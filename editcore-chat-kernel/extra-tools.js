@@ -254,8 +254,104 @@ async function runExternalAction(name, args, root, helpers = {}) {
   return result;
 }
 
+// ============================================================
+// CREACIÓN DE DOCUMENTOS — create_pdf / create_word /
+// create_excel / create_csv. Los nombres ya existían en la
+// lista de escritura de classify.js, sin definición ni
+// despacho: herramientas fantasma. Las librerías ya son
+// dependencias declaradas de la app (pdfkit, docx, exceljs) y
+// se cargan perezosas, como el resto de este módulo.
+// ============================================================
+function parrafosDe(args = {}) {
+  if (Array.isArray(args.paragraphs) && args.paragraphs.length) {
+    return args.paragraphs.map((p) => String(p ?? ""));
+  }
+  if (typeof args.text === "string" && args.text.trim()) return args.text.split(/\r?\n/);
+  return [];
+}
+
+function prepararDestino(file, extEsperada) {
+  const ext = path.extname(file).toLowerCase();
+  if (ext !== extEsperada) {
+    return { ok: false, error: `La ruta debe terminar en ${extEsperada} para este documento (recibido: ${ext || "sin extensión"}).` };
+  }
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  return null;
+}
+
+async function createPdf(file, args = {}) {
+  const mal = prepararDestino(file, ".pdf");
+  if (mal) return mal;
+  let PDFDocument;
+  try { PDFDocument = require("pdfkit"); } catch { return { ok: false, error: "La librería pdfkit no está disponible en esta instalación." }; }
+  await new Promise((resolve, reject) => {
+    const doc = new PDFDocument({ margin: 56 });
+    const stream = fs.createWriteStream(file);
+    stream.on("finish", resolve);
+    stream.on("error", reject);
+    doc.on("error", reject);
+    doc.pipe(stream);
+    if (args.title) { doc.fontSize(19).text(String(args.title)); doc.moveDown(); }
+    doc.fontSize(12);
+    for (const p of parrafosDe(args)) { doc.text(p); doc.moveDown(0.6); }
+    doc.end();
+  });
+  return { ok: true, path: file, bytes: fs.statSync(file).size, format: "pdf" };
+}
+
+async function createWord(file, args = {}) {
+  const mal = prepararDestino(file, ".docx");
+  if (mal) return mal;
+  let docx;
+  try { docx = require("docx"); } catch { return { ok: false, error: "La librería docx no está disponible en esta instalación." }; }
+  const children = [];
+  if (args.title) children.push(new docx.Paragraph({ text: String(args.title), heading: docx.HeadingLevel.HEADING_1 }));
+  for (const p of parrafosDe(args)) children.push(new docx.Paragraph(String(p)));
+  const buffer = await docx.Packer.toBuffer(new docx.Document({ sections: [{ children }] }));
+  fs.writeFileSync(file, buffer);
+  return { ok: true, path: file, bytes: buffer.length, format: "docx" };
+}
+
+async function createExcel(file, args = {}) {
+  const mal = prepararDestino(file, ".xlsx");
+  if (mal) return mal;
+  let ExcelJS;
+  try { ExcelJS = require("exceljs"); } catch { return { ok: false, error: "La librería exceljs no está disponible en esta instalación." }; }
+  const wb = new ExcelJS.Workbook();
+  const sheets = Array.isArray(args.sheets) && args.sheets.length
+    ? args.sheets
+    : [{ name: "Hoja 1", rows: Array.isArray(args.rows) ? args.rows : [] }];
+  for (const s of sheets) {
+    const ws = wb.addWorksheet(String(s?.name || "Hoja").slice(0, 31) || "Hoja");
+    for (const fila of (Array.isArray(s?.rows) ? s.rows : [])) {
+      ws.addRow(Array.isArray(fila) ? fila : [fila]);
+    }
+  }
+  await wb.xlsx.writeFile(file);
+  return { ok: true, path: file, bytes: fs.statSync(file).size, format: "xlsx" };
+}
+
+function celdaCsv(v) {
+  const s = String(v ?? "");
+  return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
+async function createCsv(file, args = {}) {
+  const mal = prepararDestino(file, ".csv");
+  if (mal) return mal;
+  const contenido = Array.isArray(args.rows)
+    ? args.rows.map((f) => (Array.isArray(f) ? f : [f]).map(celdaCsv).join(",")).join("\r\n") + "\r\n"
+    : String(args.text || "");
+  fs.writeFileSync(file, contenido, "utf8");
+  return { ok: true, path: file, bytes: Buffer.byteLength(contenido), format: "csv" };
+}
+
 const EXTRA_DEFINITIONS = [
   { type: "function", function: { name: "read_pdf", description: "Extrae el texto de un PDF, Word (.docx) o Excel (.xlsx) del disco. Acepta rutas absolutas o relativas.", parameters: { type: "object", properties: { path: { type: "string" }, maxChars: { type: "number" } }, required: ["path"] } } },
+  { type: "function", function: { name: "create_pdf", description: "Crea un PDF real en disco con título y párrafos (librería pdfkit). Para informes, reportes y documentos entregables.", parameters: { type: "object", properties: { path: { type: "string" }, title: { type: "string" }, paragraphs: { type: "array", items: { type: "string" } }, text: { type: "string" } }, required: ["path"] } } },
+  { type: "function", function: { name: "create_word", description: "Crea un Word (.docx) real en disco con título y párrafos (librería docx). Para cartas, contratos y documentos editables.", parameters: { type: "object", properties: { path: { type: "string" }, title: { type: "string" }, paragraphs: { type: "array", items: { type: "string" } }, text: { type: "string" } }, required: ["path"] } } },
+  { type: "function", function: { name: "create_excel", description: "Crea un Excel (.xlsx) real en disco con hojas y filas (librería exceljs). sheets: [{name, rows: [[celdas]]}].", parameters: { type: "object", properties: { path: { type: "string" }, sheets: { type: "array" }, rows: { type: "array" } }, required: ["path"] } } },
+  { type: "function", function: { name: "create_csv", description: "Crea un CSV en disco desde filas (rows) con comillas escapadas, o desde texto directo.", parameters: { type: "object", properties: { path: { type: "string" }, rows: { type: "array" }, text: { type: "string" } }, required: ["path"] } } },
   { type: "function", function: { name: "screenshot_page", description: "Abre una URL http(s) en un navegador headless, guarda una captura PNG y devuelve título, encabezados y texto visible.", parameters: { type: "object", properties: { url: { type: "string" }, viewport: { type: "string", enum: ["desktop", "mobile"] }, fullPage: { type: "boolean" } }, required: ["url"] } } },
   { type: "function", function: { name: "docker_ps", description: "Lista los contenedores Docker (nombre, imagen, estado, puertos). all=true incluye los detenidos.", parameters: { type: "object", properties: { all: { type: "boolean" } } } } },
   { type: "function", function: { name: "search_brain", description: "Busca en el Cerebro del proyecto: documentos ingeridos (.editcore/rag), memoria y código indexado.", parameters: { type: "object", properties: { query: { type: "string" } }, required: ["query"] } } },
@@ -269,6 +365,10 @@ module.exports = {
   EXTERNAL_ACTION_TOOLS,
   EXTRA_DEFINITIONS,
   readPdf,
+  createPdf,
+  createWord,
+  createExcel,
+  createCsv,
   screenshotPage,
   dockerPs,
   searchBrain,

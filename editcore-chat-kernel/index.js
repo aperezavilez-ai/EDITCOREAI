@@ -226,7 +226,15 @@ function enqueueTurn(entry, input) {
         divertToConcierge(entry, input, { hasSlot: true });
         return;
       }
-      if (orchestrator.isRunning()) {
+      // [CARRERA B7] No basta isRunning(): durante el ARRANQUE del
+      // turno en curso el orquestador aún no levanta su bandera y el
+      // mensaje caía a «espera» con un turno vivo delante. La cadena
+      // misma es la fuente de verdad: si hay otra corrida viva, se
+      // intenta la fusión (el orquestador acepta steering también
+      // durante el arranque, ver turnsInFlight en orchestrator.js).
+      const hayTurnoVivo = orchestrator.isRunning()
+        || [..._runs.values()].some((other) => other !== entry && other.state !== "done");
+      if (hayTurnoVivo) {
         let merged = false;
         try {
           const steerOut = orchestrator.steer(String(input.message || ""));

@@ -105,6 +105,10 @@ async function runKernelChat({
   skillsPrompt,
   maxSteps,
   totalTimeoutMs,
+  // [KERNEL-NUEVO] Conmutación opt-in al kernel de chat nuevo
+  // (editcore-chat-kernel/nuevo): apagada por defecto; el kernel
+  // viejo sigue siendo la ruta hasta el juicio en vivo.
+  kernelNuevo,
 }) {
   // [EDITCORE-INTEGRAL-B5] La autorización viaja como DATO estructurado
   // hasta handle(): cualquier nombre de ruta vale, el kernel recibe
@@ -195,6 +199,91 @@ async function runKernelChat({
   }, 5_000);
 
   try {
+    // [KERNEL-NUEVO] Ruta del kernel nuevo, SOLO si se pide
+    // explícitamente (env EDITCORE_KERNEL_NUEVO=1 o kernelNuevo en
+    // la entrada). Corre el turno por carriles con el adaptador a
+    // callChat/tools reales y devuelve la misma forma de resultado
+    // que esta función siempre devuelve. Sin la marca, nada cambia.
+    if (process.env.EDITCORE_KERNEL_NUEVO === "1" || kernelNuevo === true) {
+      const { manejarChatNuevo } = require("../editcore-chat-kernel/nuevo/adaptador");
+      const outN = await manejarChatNuevo({
+        message,
+        history: chatHistory,
+        threadId: tid,
+        chatId,
+        runId: rid,
+        projectRoot,
+        apiBaseUrl,
+        apiKey,
+        model,
+        images: Array.isArray(images) ? images : [],
+        helpers,
+        fallbackProfiles,
+        skillsPrompt,
+      }, {
+        // La memoria del turno, con TODO a la mano como en el
+        // kernel vigente: el MAPA (capas usuario + proyecto, la
+        // misma fuente del carril de orientación) y el Cerebro
+        // visible (brainSearch). Las skills viajan en skillsPrompt
+        // y por las herramientas read_skill/list_skills.
+        construirMemoria: async (inputN) => {
+          const partes = [];
+          try {
+            const orientationMap = require("../editcore-chat-kernel/orientation-map");
+            const bloqueMapa = orientationMap.buildMapBlock(inputN.projectRoot, { executeTurn: false });
+            if (bloqueMapa) partes.push(String(bloqueMapa).slice(0, 12000));
+          } catch { /* sin Mapa el turno responde igual */ }
+          if (helpers?.brainSearch && message) {
+            try {
+              const hits = await helpers.brainSearch(String(message).slice(0, 200));
+              const textoHits = Array.isArray(hits)
+                ? hits.map((h) => (typeof h === "string" ? h : (h?.text || h?.content || ""))).filter(Boolean).join("\n")
+                : "";
+              if (textoHits) partes.push(`Memoria del proyecto (Cerebro):\n${textoHits.slice(0, 6000)}`);
+            } catch { /* la memoria es opcional: sin ella el turno responde igual */ }
+          }
+          return partes.join("\n\n");
+        },
+      });
+      // Cierre con memoria, el mismo contrato de turno vigente:
+      // el Cerebro guarda los HECHOS destilados del turno (el
+      // detalle, no la prosa) y el Mapa se mantiene al cierre.
+      try {
+        if (typeof helpers?.brainRemember === "function" && outN.text) {
+          Promise.resolve(helpers.brainRemember(projectRoot, {
+            title: "Turno del agente",
+            type: "session",
+            content: `Pedido: ${String(message || "")}\n${outN.detalle || ""}`,
+          })).catch(() => {});
+        }
+      } catch { /* recordar nunca bloquea el cierre */ }
+      try {
+        if (projectRoot) {
+          const orientationMap = require("../editcore-chat-kernel/orientation-map");
+          const maintained = orientationMap.maintainProjectMap(projectRoot, {
+            steps: outN.steps, finalText: outN.text, userText: message,
+          });
+          if (maintained) orientationMap.syncUserProjectIndex(projectRoot, maintained);
+        }
+      } catch { /* el Mapa nunca tumba el cierre */ }
+      return {
+        ok: true,
+        text: outN.text,
+        detalle: outN.detalle,
+        cierreCorregida: outN.cierreCorregida,
+        steps: outN.steps,
+        threadId: tid,
+        runId: rid,
+        kernel: true,
+        kernelNuevo: true,
+        brain: true,
+        kind: outN.kind,
+        incomplete: outN.incomplete,
+        mutations: outN.mutations,
+        usage: outN.usage,
+        report: { completed: !outN.incomplete && !outN.cierreCorregida, role: "assistant" },
+      };
+    }
     // MOTOR ÚNICO (unificación): el chat lo ejecuta el ChatOrchestrator del
     // kernel (editcore-chat-kernel), que ya tiene herramientas nativas,
     // cancelación de punta a punta y error explícito ante respuestas vacías.

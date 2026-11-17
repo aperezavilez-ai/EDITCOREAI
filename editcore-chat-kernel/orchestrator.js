@@ -2383,6 +2383,7 @@ class ChatOrchestrator {
     this.turnAbort = null;
     this.steering = [];
     this.running = false;
+    this.turnsInFlight = 0;
     this.pendingTask = null;
     this.pendingExternal = null;
   }
@@ -2399,7 +2400,13 @@ class ChatOrchestrator {
   steer(instruction = "") {
     const text = String(instruction || "").trim();
     if (!text) return { accepted: false };
-    if (!this.running && !this.abort) return { accepted: false };
+    // [CARRERA B7] Un turno que está ARRANCANDO (handle ya entró pero
+    // _handleCore aún no levantó this.running — carga de memoria,
+    // Mapa y clasificación) también acepta steering: la instrucción
+    // queda en this.steering y el bucle del turno la consume en su
+    // primer chequeo. Sin esto, un mensaje en cola cuyo plazo vence
+    // durante el arranque caía a «espera» aunque hubiera turno vivo.
+    if (!this.running && !this.abort && !(this.turnsInFlight > 0)) return { accepted: false };
     this.steering.push({ instruction: text, at: Date.now() });
     let interrupted = false;
     if (this.turnAbort) {
@@ -2463,7 +2470,17 @@ class ChatOrchestrator {
     if (announcement) {
       try { safeInput.onProgress?.({ phase: "narration", text: announcement }); } catch { /* el anuncio no tumba el turno */ }
     }
-    const out = await this._handleCore(safeInput);
+    // [CARRERA B7] El turno cuenta como «en vuelo» desde la ENTRADA
+    // de handle (síncrono, antes de cualquier await): así el plazo
+    // de cola de otro mensaje nunca depende de cuánto tarde el
+    // arranque en levantar this.running.
+    this.turnsInFlight = (this.turnsInFlight || 0) + 1;
+    let out;
+    try {
+      out = await this._handleCore(safeInput);
+    } finally {
+      this.turnsInFlight -= 1;
+    }
     // [EDITCORE-V510-B5-MAPA] Mantenimiento agéntico del MAPA al
     // cierre de CADA turno y de CADA ruta (el expediente ya quedó
     // destilado por rememberExchange dentro del turno): la capa del

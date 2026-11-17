@@ -145,11 +145,18 @@ test("(K1-a) slimToolDefinitions: mismo set y esquemas, descripciones a primera 
   // Esquemas idénticos salvo el texto de las descripciones.
   const blank = (o) => JSON.parse(JSON.stringify(o, (k, v) => (k === "description" ? "" : v)));
   assert.deepEqual(blank(slim), blank(raw), "parámetros y esquemas intactos: solo cambia la prosa");
-  // La dieta medida: el JSON completo baja de 19.340 a ≤14.000.
+  // La dieta medida: el JSON completo baja de 20.731 a ≤15.000.
+  // [REDELIMITADO A PROPÓSITO, 2026-11-16] La línea base M4 era
+  // 19.340 con 34 herramientas y el tope dietado ≤14.000. Las 4
+  // herramientas de documentos (create_pdf / create_word /
+  // create_excel / create_csv), hechas reales por orden de Luis,
+  // suman 1.391 caracteres en crudo y 685 ya dietadas: la base
+  // pasa a 20.731 y el tope a ≤15.000. La dieta sigue vigente
+  // (el payload baja ~29%) y byte-estable entre llamadas.
   const rawJson = JSON.stringify(raw);
   const slimJson = JSON.stringify(slim);
-  assert.equal(rawJson.length, 19340, "la línea base medida en M4 es 19.340");
-  assert.ok(slimJson.length <= 14000, `el payload de definiciones bajó a ${slimJson.length} caracteres`);
+  assert.equal(rawJson.length, 20731, "la línea base con 38 herramientas es 20.731");
+  assert.ok(slimJson.length <= 15000, `el payload de definiciones bajó a ${slimJson.length} caracteres`);
   // Primera frase exacta en los casos con historia:
   const byName = Object.fromEntries(slim.map((d) => [d.function.name, d.function]));
   assert.equal(byName.read_file.description, "Lee el contenido de un archivo.");
@@ -187,7 +194,8 @@ test("(K1-b) en un turno EXECUTE real el payload lleva el set completo con descr
   }
   const readFile = payloadTools.find((t) => t.function?.name === "read_file");
   assert.equal(readFile.function.description, "Lee el contenido de un archivo.", "la descripción que viaja es la primera frase");
-  assert.ok(JSON.stringify(payloadTools).length <= 14000, "el JSON de herramientas del payload quedó dietado");
+  // Tope redelimitado a 15.000 junto con la base (ver K1-a).
+  assert.ok(JSON.stringify(payloadTools).length <= 15000, "el JSON de herramientas del payload quedó dietado");
   assert.equal(
     JSON.stringify(captures[1].tools), JSON.stringify(captures[0].tools),
     "las herramientas son byte-idénticas entre llamadas del turno (prefijo estable)",

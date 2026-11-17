@@ -1,6 +1,6 @@
 {
   "name": "editcoreai",
-  "version": "5.2.5",
+  "version": "5.2.6",
   "editcoreForensic": {
     "skip": [
       "runtime/golden-templates"

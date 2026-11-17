@@ -160,7 +160,16 @@ test("B7-2a: cancelar el runId EN COLA ⇒ su promesa resuelve cancelada y el qu
   const secondPromise = handleChat({
     runId: "b7-t2-second",
     chatId: "chat-b",
-    message: CHAT_MSG,
+    // [REDELIMITADO A PROPÓSITO — carrera B7] El segundo mensaje ya
+    // NO es CHAT_MSG: desde el Bloque B1 (v5.1.0) una consulta pura
+    // con otra corrida viva NO encola — la atiende el conserje en
+    // paralelo por diseño — así que la premisa original de esta
+    // prueba (una consulta esperando EN COLA) quedó imposible y la
+    // prueba moría en su propio assert de registro. Lo que esta
+    // prueba existe para probar es la cancelación de una corrida EN
+    // COLA sin tocar la que corre, y eso se prueba con una
+    // instrucción, que sí encola. El contrato afirmado no cambia.
+    message: "agrega un pie de página con el año al final del sitio",
     projectRoot,
     apiBaseUrl: "https://proxy.example.test/v1",
     apiKey: "k",
