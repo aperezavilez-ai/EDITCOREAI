@@ -900,7 +900,7 @@
       </div>
       <span>&#169; 2026 EditCoreAI. Todos los derechos reservados.</span>
       <div class="footer-links">
-        <a href="https://github.com/aperezavilez-ai/EDITCOREAI">GitHub</a>
+        <a href="https://github.com/aperezavilez-ai/EDITCOREAI-releases">GitHub</a>
         <a href="#privacy">Privacidad</a>
         <a href="#terms">T&#233;rminos</a>
       </div>
@@ -908,7 +908,7 @@
   </footer>
 
   <script>
-    fetch("https://api.github.com/repos/aperezavilez-ai/EDITCOREAI/releases/latest")
+    fetch("https://api.github.com/repos/aperezavilez-ai/EDITCOREAI-releases/releases/latest")
       .then((r) => (r.ok ? r.json() : null))
       .then((rel) => {
         const v = String(rel?.tag_name || "").replace(/^v/i, "");
