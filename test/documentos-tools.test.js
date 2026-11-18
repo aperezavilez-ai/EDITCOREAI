@@ -29,11 +29,11 @@ test("create_pdf crea un PDF real y read_pdf lo lee de vuelta", async () => {
     paragraphs: ["Hola mundo desde EditCoreAI.", "Segundo parrafo del documento."],
   }, root, true, {});
   assert.equal(r.ok, true, JSON.stringify(r));
-  const file = path.join(root, "informe.pdf");
+  const file = path.join(root, ".editcore", "entregables", "informe.pdf");
   assert.ok(fs.existsSync(file));
   assert.equal(fs.readFileSync(file).subarray(0, 4).toString("latin1"), "%PDF");
   assert.ok(fs.statSync(file).size > 400);
-  const leido = await tools.execute("read_pdf", { path: "informe.pdf" }, root, false, {});
+  const leido = await tools.execute("read_pdf", { path: ".editcore/entregables/informe.pdf" }, root, false, {});
   assert.equal(leido.ok, true, JSON.stringify(leido));
   assert.match(leido.text, /Hola mundo desde EditCoreAI/);
 });
@@ -46,10 +46,10 @@ test("create_word crea un DOCX real y read_pdf lo lee de vuelta", async () => {
     paragraphs: ["Contenido de la carta en Word."],
   }, root, true, {});
   assert.equal(r.ok, true, JSON.stringify(r));
-  const file = path.join(root, "carta.docx");
+  const file = path.join(root, ".editcore", "entregables", "carta.docx");
   assert.ok(fs.existsSync(file));
   assert.equal(fs.readFileSync(file).subarray(0, 2).toString("latin1"), "PK"); // ZIP
-  const leido = await tools.execute("read_pdf", { path: "carta.docx" }, root, false, {});
+  const leido = await tools.execute("read_pdf", { path: ".editcore/entregables/carta.docx" }, root, false, {});
   assert.equal(leido.ok, true, JSON.stringify(leido));
   assert.match(leido.text, /Contenido de la carta en Word/);
 });
@@ -61,7 +61,7 @@ test("create_excel crea un XLSX real con las celdas pedidas", async () => {
     sheets: [{ name: "Ventas", rows: [["Producto", "Total"], ["Tornillos", 150], ["Tuercas", 200]] }],
   }, root, true, {});
   assert.equal(r.ok, true, JSON.stringify(r));
-  const file = path.join(root, "datos.xlsx");
+  const file = path.join(root, ".editcore", "entregables", "datos.xlsx");
   assert.ok(fs.existsSync(file));
   const ExcelJS = require("exceljs");
   const wb = new ExcelJS.Workbook();
@@ -69,7 +69,7 @@ test("create_excel crea un XLSX real con las celdas pedidas", async () => {
   const ws = wb.getWorksheet("Ventas");
   assert.equal(ws.getCell("A2").value, "Tornillos");
   assert.equal(ws.getCell("B3").value, 200);
-  const leido = await tools.execute("read_pdf", { path: "datos.xlsx" }, root, false, {});
+  const leido = await tools.execute("read_pdf", { path: ".editcore/entregables/datos.xlsx" }, root, false, {});
   assert.equal(leido.ok, true, JSON.stringify(leido));
   assert.match(leido.text, /Tornillos/);
 });
@@ -81,7 +81,7 @@ test("create_csv escribe filas con comillas escapadas", async () => {
     rows: [["nombre", "nota"], ["uno", 'dijo "hola", y se fue']],
   }, root, true, {});
   assert.equal(r.ok, true, JSON.stringify(r));
-  const contenido = fs.readFileSync(path.join(root, "lista.csv"), "utf8");
+  const contenido = fs.readFileSync(path.join(root, ".editcore", "entregables", "lista.csv"), "utf8");
   assert.match(contenido, /nombre,nota/);
   assert.match(contenido, /"dijo ""hola"", y se fue"/);
 });

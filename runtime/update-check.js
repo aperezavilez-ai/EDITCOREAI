@@ -34,7 +34,7 @@ function resolveUpdateRepo({ packageJson = {}, env = process.env } = {}) {
     if (m) return m[1];
   }
   // Fallback estable del producto publicado.
-  return "aperezavilez-ai/EDITCOREAI";
+  return "aperezavilez-ai/EDITCOREAI-releases";
 }
 
 function fetchJson(url, { timeoutMs = 12_000, headers = {} } = {}) {

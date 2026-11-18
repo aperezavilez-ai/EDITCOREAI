@@ -132,6 +132,10 @@ async function callChatSingleAttempt({
   timeoutMs = DEFAULT_PROVIDER_TIMEOUT_MS,
   stream = true,
   onTextDelta = null,
+  // [v5.2.7 — tiempos] Tope de salida en el cable (tokens de
+  // respuesta): el llamador lo fija por carril; 0/ausente = sin tope,
+  // el comportamiento histórico.
+  maxTokens = 0,
   // [EDITCORE-V500-A4] Índice del último mensaje del historial ya
   // enviado (frontera del prefijo cacheable); lo calcula el kernel.
   cachePrefixEndIndex = -1,
@@ -149,6 +153,7 @@ async function callChatSingleAttempt({
     temperature: 0.1, // Ajustado para ser más determinista en código
     stream: wantStream,
     ...(wantStream ? { stream_options: { include_usage: true } } : {}),
+    ...(Number(maxTokens) > 0 ? { max_tokens: Math.floor(Number(maxTokens)) } : {}),
   };
   if (tools && tools.length) {
     body.tools = tools;
@@ -214,6 +219,7 @@ async function sendChatRequest({ url, body, apiKey, wantStream, signal, requestS
         // procesado (aunque no haya callback del kernel): el llamador
         // decide con hechos, no con un EOF limpio disfrazado.
         partial: streamed?.partial === true,
+        finishReason: streamed?.finishReason || null,
         sawContent: streamed?.sawContent === true || Boolean(msg.content) || msg.tool_calls.length > 0,
         ...(streamed?.streamError ? { streamError: streamed.streamError } : {}),
       };
@@ -246,6 +252,7 @@ async function sendChatRequest({ url, body, apiKey, wantStream, signal, requestS
       text: msg.content || "",
       toolCalls,
       usage: data?.usage ? normalizeUsage(data.usage) : null,
+      finishReason: data?.choices?.[0]?.finish_reason || null,
     };
   } catch (error) {
     if (error?.code === "PROVIDER_GATEWAY_TIMEOUT" || Number(error?.status) === 524 || isGatewayHtmlBody(error?.message)) {
@@ -270,8 +277,15 @@ async function callChat({
   timeoutMs = DEFAULT_PROVIDER_TIMEOUT_MS,
   stream = true,
   onTextDelta = null,
+  maxTokens = 0,
   fallbackProfiles = [],
   onFallback = null,
+  // [v5.2.7 — corrección] Aviso de reintento: se invoca ANTES de
+  // reintentar un intento fallido, para que la superficie lo diga
+  // en voz alta. El reintento histórico era mudo: un corte del
+  // gateway a los ~2 min + reintento se vivía como una espera
+  // eterna sin explicación.
+  onRetry = null,
   // [EDITCORE-INTEGRAL-B6] Sesión viva: proveedor de token fresco
   // inyectado por el puente/main (helpers.refreshAccessToken). Ante
   // NO_SESSION se re-pide UNA vez y el paso se reintenta con el token
@@ -343,6 +357,7 @@ async function callChat({
           timeoutMs,
           stream,
           onTextDelta: countingDelta,
+          maxTokens,
           cachePrefixEndIndex,
         });
         if (result?.sawContent) streamedAny = true;
@@ -390,6 +405,7 @@ async function callChat({
           break;
         }
         if (retry) {
+          try { onRetry?.({ attempt, status: Number(err?.status || 0) || null, code: err?.code || null }); } catch { /* ignore */ }
           // [EDITCORE-INTEGRAL-B6] Retry-After manda cuando el
           // upstream lo envía (parseado en ai-core desde la cabecera,
           // con tope de 30 s de la taxonomía); sin cabecera, el

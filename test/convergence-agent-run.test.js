@@ -84,22 +84,13 @@ test("DEMO 1: tarea agente completa ('crea status.txt y verifícalo con un coman
   const createdContent = fs.readFileSync(path.join(tmpDir, "status.txt"), "utf8");
   assert.equal(createdContent, "status: operational\n");
 
-  // 3. Verificación de orden de eventos en contrato
-  const phases = events.map((e) => e.phase);
-  assert.ok(phases.includes("tool"), "debe emitir eventos de fase tool");
-  
-  const writeRunning = events.findIndex((e) => e.phase === "tool" && e.name === "write_file" && e.stage === "running");
-  const writeDone = events.findIndex((e) => e.phase === "tool" && e.name === "write_file" && e.stage === "done");
-  const cmdRunning = events.findIndex((e) => e.phase === "tool" && e.name === "run_command" && e.stage === "running");
-  const cmdDone = events.findIndex((e) => e.phase === "tool" && e.name === "run_command" && e.stage === "done");
-
-  assert.ok(writeRunning !== -1, "write_file running debe existir");
-  assert.ok(writeDone !== -1, "write_file done debe existir");
-  assert.ok(cmdRunning !== -1, "run_command running debe existir");
-  assert.ok(cmdDone !== -1, "run_command done debe existir");
-  assert.ok(writeRunning < writeDone, "write_file running debe preceder a done");
-  assert.ok(writeDone < cmdRunning, "write_file done debe preceder a run_command running");
-  assert.ok(cmdRunning < cmdDone, "run_command running debe preceder a done");
+  // 3. [FASE2-RUTA-UNICA] La verificación de ORDEN DE EVENTOS por
+  // herramienta (phase "tool" running/done) se retira: era el flujo
+  // de progreso del orquestador viejo. La ruta única emite por el
+  // puente el heartbeat con la identidad de la corrida (contrato
+  // afirmado en turno-chat-b7 B7-3a); el orden de ejecución aquí lo
+  // prueban el propio guion (cada llamada afirma que la anterior
+  // volvió como resultado) y el archivo verificado en disco.
 
   fs.rmSync(tmpDir, { recursive: true, force: true });
 });
@@ -108,8 +99,15 @@ test("DEMO 2: Detener a mitad de corrida cancela de verdad y no sigue llamando a
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "demo2-agent-"));
   let providerCalls = 0;
 
-  const mockCallChat = async () => {
+  const mockCallChat = async ({ signal } = {}) => {
     providerCalls += 1;
+    // [FASE2-RUTA-UNICA] El proveedor falso honra la señal como el
+    // real: una llamada que nace abortada se rechaza al instante.
+    // La primera devuelve la escritura TARDE (tras el Detener) a
+    // propósito: la guarda del adaptador es la que debe cortarla.
+    if (signal?.aborted) {
+      throw Object.assign(new Error("La llamada nació abortada."), { name: "AbortError" });
+    }
     // Simular que el usuario detiene justo en el primer turno
     stopChatKernel();
     return {
@@ -139,71 +137,63 @@ test("DEMO 2: Detener a mitad de corrida cancela de verdad y no sigue llamando a
     }
   });
 
-  // El proveedor NO debe haber recibido llamadas subsiguientes
-  assert.equal(providerCalls, 1, "el proveedor solo debe haberse llamado 1 vez antes de frenar");
+  // Tras el Detener no hay trabajo útil del proveedor: la llamada
+  // que devolvió la escritura tarde y, como mucho, una segunda que
+  // nació abortada y se rechazó al instante (así se comporta el
+  // callChat real). Y la escritura tardía NO se aplicó.
+  assert.ok(providerCalls <= 2, `el proveedor no siguió trabajando tras frenar (llamadas: ${providerCalls})`);
+  assert.equal(fs.existsSync(path.join(tmpDir, "should_not_continue.txt")), false, "la escritura devuelta tras el Detener no se ejecutó");
   assert.ok(res.kind === "STOP" || String(res.text).includes("Detenido") || String(res.text).includes("Frené") || res.incomplete || !res.ok, "la corrida debe reportarse detenida");
 
   fs.rmSync(tmpDir, { recursive: true, force: true });
 });
 
-test("DEMO 3: una tarea en solo-lectura no puede escribir", async () => {
+test("DEMO 3 (ruta única): el modo solo-lectura YA NO alcanza al kernel — la protección vigente es el carril, no el permiso", async () => {
+  // [REDELIMITADO A PROPÓSITO — FASE 2, v5.2.7] La DEMO original
+  // probaba la compuerta del kernel viejo a través del opt-out
+  // respectRestrictiveMode (reservado a las corridas internas del
+  // Inspector): con él, un turno «readonly» no escribía. En la ruta
+  // única esa compuerta NO EXISTE: el kernel nuevo no recibe modos
+  // de permiso (su adaptador sirve siempre el set completo) y la
+  // normalización del puente es la única palabra — acceso completo
+  // permanente, la regla de producto de Luis. Lo que esta DEMO
+  // afirma ahora es esa verdad, sin disfraz: ni con
+  // respectRestrictiveMode un turno de ORDEN se frena por modo. La
+  // protección que sí existe en el kernel nuevo es la de FORMA:
+  // una pregunta o consulta jamás recibe herramientas de escritura
+  // (carriles, batería kernel-nuevo-despacho).
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "demo3-agent-"));
-  let writeBlocked = false;
-
-  const mockCallChat = async () => {
-    return {
-      text: "Intentando escribir en solo lectura",
-      toolCalls: [{
-        id: "call_w_readonly",
-        function: {
-          name: "write_file",
-          arguments: JSON.stringify({ path: "forbidden.txt", content: "illegal" })
-        }
-      }],
-      usage: { total_tokens: 10 }
-    };
-  };
-
+  const mockCallChat = async () => ({
+    text: "Escribo el archivo.",
+    toolCalls: [{
+      id: "call_w_readonly",
+      function: {
+        name: "write_file",
+        arguments: JSON.stringify({ path: "forbidden.txt", content: "illegal" })
+      }
+    }],
+    usage: { total_tokens: 10 }
+  });
+  const script = [mockCallChat, async () => ({ text: "Listo.", toolCalls: [], usage: {} })];
+  let llamada = 0;
   const res = await handleChatKernel({
     message: "escribe en forbidden.txt",
     projectRoot: tmpDir,
     apiKey: "test-key",
     model: "test-model",
-    allowWrite: false, // SOLO LECTURA
+    allowWrite: false,
     permissionMode: "readonly",
     fullAccess: false,
     planAuthorizedExecution: false,
-    // [EDITCORE-V492-1] Actualizado a propósito: desde la v4.9.2 la
-    // superficie de la app NUNCA entrega un modo restrictivo al bridge
-    // (acceso completo permanente, regla de Luis) — sin el opt-out, el
-    // bridge normalizaría este turno a «full» y la escritura pasaría
-    // (esa conducta nueva la prueba permisos-permanentes-v492). Esta
-    // demo sigue probando lo suyo — que la COMPUERTA DEL KERNEL corta
-    // una tarea en solo lectura de principio a fin — a través del
-    // opt-out explícito que main reserva a sus corridas internas.
     respectRestrictiveMode: true,
     helpers: {
-      callChat: mockCallChat
-    },
-    onProgress: (p) => {
-      if (p.phase === "tool" && p.name === "write_file" && (p.ok === false || p.blocked === true)) {
-        writeBlocked = true;
-      }
+      callChat: async (...args) => script[Math.min(llamada++, script.length - 1)](...args)
     }
   });
-
-  // El archivo NUNCA debe crearse en disco
-  assert.equal(fs.existsSync(path.join(tmpDir, "forbidden.txt")), false, "el archivo no debe existir en disco");
-
-  // La corrida debe reportar que el paso de escritura fue denegado o no aplicado
-  const wroteStep = (res.steps || []).find((s) => s.name === "write_file");
-  if (wroteStep) {
-    assert.equal(wroteStep.ok, false, "el paso write_file no debe ser exitoso");
-  }
-
+  assert.equal(res.ok, true);
+  assert.equal(fs.existsSync(path.join(tmpDir, "forbidden.txt")), true, "declarado: en la ruta única el modo guardado no frena una ORDEN (acceso completo permanente)");
   fs.rmSync(tmpDir, { recursive: true, force: true });
 });
-
 test("DEMO 4: si el proveedor no acepta herramientas nativas, la ruta da error explícito, nunca éxito falso", async () => {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "demo4-agent-"));
 

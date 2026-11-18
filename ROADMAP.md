@@ -6,8 +6,8 @@ EditCore actualiza este archivo tras cambios. No pedirlo al usuario. No pegar co
 
 ## Proceso
 - Fase: produccion
-- Estado: v5.2.5 — Harness de tokens robusto (compactor agresivo y stubs dinámicos), subagentes no bloqueantes en chat concurrente y memoria semántica basada en red neuronal con Transformers y VectorMemory.
-- Actualizado: 2026-11-16 15:55
+- Estado: v5.2.8 — Kernel de chat con carril concurrente de subagentes, dirección en vuelo (steerChat viva), cerebro con memoria semántica neuronal Transformers/VectorMemory, token harness con readCache local y persistencia de entregables en historial.
+- Actualizado: 2026-11-18 15:15
 - Stack: Electron + TypeScript
 - Entry: index.html
 - Entry: main.js

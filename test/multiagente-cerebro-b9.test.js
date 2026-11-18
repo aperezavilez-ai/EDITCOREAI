@@ -29,13 +29,19 @@ process.env.EDITCORE_USER_DATA_PATH = path.join(tmpBase, "userdata");
 fs.mkdirSync(process.env.EDITCORE_USER_DATA_PATH, { recursive: true });
 
 const root = path.join(__dirname, "..");
-const { ChatOrchestrator, buildCerebroServiceBlock } = require(path.join(root, "editcore-chat-kernel", "orchestrator.js"));
+// [FASE2-RUTA-UNICA] ChatOrchestrator se retiró con el kernel
+// viejo; buildCerebroServiceBlock vive ahora en concierge.js
+// (su consumidor), a donde se mudó en esta misma fase.
+const { buildCerebroServiceBlock } = require(path.join(root, "editcore-chat-kernel", "concierge.js"));
 const tools = require(path.join(root, "editcore-chat-kernel", "tools.js"));
 const { fetchStockPhoto } = require(path.join(root, "editcore-chat-kernel", "stock-photos.js"));
 const { getCoordination, AgentCoordination } = require(path.join(root, "runtime", "agent-coordination.js"));
 const { saveToBrain } = require(path.join(root, "editcore-chat-kernel", "brain-ingest.js"));
 const { EditCoreBrainService } = require(path.join(root, "brain-service.js"));
-const { shouldUseParallel } = require(path.join(root, "runtime", "agent-parallel.js"));
+// [FASE2-BORRAR B-4] runtime/agent-parallel.js se borró: la Fase 8
+// llevaba retirada del orquestador desde B9 y el módulo solo
+// sobrevivía porque ESTE test lo importaba para su premisa. La
+// premisa se reescribe abajo sin el módulo (ver B9-1).
 
 function tmpProject(prefix = "ec-b9-proj-") {
   return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
@@ -44,41 +50,6 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // ------------------------------------------------------------------
 // (1) Fase 8 retirada + bus sin escribir: turno completo por handle()
-// ------------------------------------------------------------------
-test("B9-1 turno completo: NO se crea batch de Fase 8, NO se inyecta job y NO se escribe el bus", async () => {
-  const project = tmpProject();
-  const message = "crea una app completa desde cero, con landing, dashboard y api, y además verifica todo el resultado";
-  assert.equal(shouldUseParallel(message), true, "la premisa: este mensaje SÍ habría disparado Fase 8 antes de B9");
-
-  const captured = [];
-  const orch = new ChatOrchestrator();
-  await orch.handle({
-    message,
-    projectRoot: project, apiKey: "sk-test", apiBaseUrl: "https://example.invalid", model: "test-model",
-    permissionMode: "full", allowWrite: true, fullAccess: true,
-    helpers: {
-      callChat: async (args) => {
-        captured.push((args.messages || []).map((m) => String(m.content || "")).join("\n"));
-        return { text: "Listo: propongo sentar la base y verificarla en el preview. ¿Sigo con eso?", toolCalls: [], usage: {} };
-      },
-    },
-    history: [],
-  });
-
-  assert.ok(captured.length >= 1, "el modelo fue llamado (turno real por handle)");
-  const context = captured.join("\n");
-  assert.ok(!context.includes("PARALLEL FAN-OUT"), "ningún prompt de fan-out de Fase 8 entra al contexto");
-  assert.ok(!context.includes("JOB ACTIVO"), "ningún prompt de job fantasma entra al contexto");
-  const parallelDir = path.join(project, ".editcore", "parallel");
-  assert.ok(!fs.existsSync(path.join(parallelDir, "LATEST.json")), "LATEST.json no se crea ni se sobrescribe por turno");
-  const busFiles = fs.existsSync(path.join(project, ".editcore", "chat-memory"))
-    ? fs.readdirSync(path.join(project, ".editcore", "chat-memory")).filter((f) => f.startsWith("bus-"))
-    : [];
-  assert.deepEqual(busFiles, [], "el turno no deja ningún bus-*.json nuevo (agent-bus apagado en el camino vivo)");
-});
-
-// ------------------------------------------------------------------
-// (2) Locks: liberación por escritura, renovación, identidad única
 // ------------------------------------------------------------------
 test("B9-2a tras una write_file, OTRO thread adquiere el lock del mismo archivo de inmediato", () => {
   const project = tmpProject();

@@ -855,6 +855,7 @@
           <button id="permissionsBtn" type="button" aria-haspopup="menu" aria-expanded="false" title="Permisos paso a paso (Pregunta antes de escribir o ejecutar)" aria-label="Permisos">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg>
           </button>
+          <button id="visualEditBtnChat" type="button" title="Edición visual del proyecto en el Navegador: doble clic en un texto para editarlo, clic para color o foto; se guarda solo en el archivo" aria-label="Edición visual">&#9998; Editar</button>
           <span class="composer-spacer"></span>
           <div class="model-picker-wrap">
             <button id="modelPickerBtn" type="button" class="model-picker-btn" aria-haspopup="listbox" aria-expanded="false" title="Seleccionar modelo">
@@ -912,6 +913,7 @@
           <button id="saveEditorBtn" class="preview-inspect-btn text-action-btn" type="button" title="Guardar (Ctrl+S)">Guardar</button>
           <button id="gotoDefBtn" class="preview-inspect-btn text-action-btn" type="button" title="Ir a definición (F12)">F12</button>
           <button id="inspectBrowserBtn" class="preview-inspect-btn text-action-btn" type="button" title="Inspeccionar DOM del preview local">Inspeccionar</button>
+          <button id="visualEditBtn" class="preview-inspect-btn text-action-btn" type="button" title="Edición visual: edita textos, colores y fotos directamente en la vista previa y se guardan solos en el archivo">✎ Editar</button>
         </div>
       </div>
       <div class="viewer-body">
@@ -1217,6 +1219,99 @@
                 </div>
               </div>
               <div class="conn-error-detail" data-service="supabase" style="display:none;color:#e55;font-size:0.8em;margin-top:4px;padding:4px 8px;background:rgba(255,80,80,0.08);border-radius:4px;word-break:break-word;"></div>
+            </div>
+
+            <div class="conn-section">
+              <div class="conn-section-title">Meta — Facebook e Instagram <span class="conn-status" data-service="meta">sin conectar</span></div>
+              <p style="font-size: 0.85em; opacity: 0.85; margin: 6px 0 10px; line-height: 1.4;">Publica en tus Páginas de Facebook y en Instagram (cuenta Business/Creador vinculada a una Página) desde el agente. Crea tu app en Meta for Developers y pega aquí sus credenciales; la conexión es OAuth oficial y los tokens viven cifrados en tu bóveda, nunca se muestran.</p>
+              <div class="conn-grid">
+                <div class="conn-field">
+                  <span>App ID</span>
+                  <input data-conn="metaAppId" placeholder="App ID de tu app de Meta" />
+                </div>
+                <div class="conn-field">
+                  <span>App Secret</span>
+                  <input data-conn="metaAppSecret" type="password" placeholder="App Secret" />
+                </div>
+              </div>
+              <div class="conn-grid" style="margin-top:6px;">
+                <div class="conn-field">
+                  <span>Redirect URI (la misma registrada en la app de Meta)</span>
+                  <input data-conn="metaRedirectUri" placeholder="https://..." />
+                </div>
+              </div>
+              <div class="oauth-row" style="margin-top:8px;">
+                <button type="button" class="conn-connect-btn social-connect-btn" data-social-connect="meta">Conectar →</button>
+                <div class="conn-field">
+                  <span>Código de autorización</span>
+                  <input data-social-code="meta" placeholder="Pega el «code» de la URL de retorno" />
+                </div>
+                <button type="button" class="conn-connect-btn social-complete-btn" data-social-complete="meta">Completar conexión</button>
+              </div>
+              <div class="conn-social-detail" data-social-detail="meta" style="display:none;font-size:0.82em;margin-top:6px;padding:4px 8px;background:rgba(255,255,255,0.05);border-radius:4px;word-break:break-word;white-space:pre-line;"></div>
+              <div class="conn-error-detail" data-service="meta" style="display:none;color:#e55;font-size:0.8em;margin-top:4px;padding:4px 8px;background:rgba(255,80,80,0.08);border-radius:4px;word-break:break-word;"></div>
+            </div>
+
+            <div class="conn-section">
+              <div class="conn-section-title">TikTok <span class="conn-status" data-service="tiktok">sin conectar</span></div>
+              <p style="font-size: 0.85em; opacity: 0.85; margin: 6px 0 10px; line-height: 1.4;">Publica videos en tu cuenta de TikTok desde el agente. Crea tu app en TikTok for Developers (Login Kit + Content Posting API) y pega aquí sus credenciales; la conexión es OAuth oficial y los tokens viven cifrados en tu bóveda, nunca se muestran. Sin la auditoría de TikTok, los videos solo salen en privado (SELF_ONLY).</p>
+              <div class="conn-grid">
+                <div class="conn-field">
+                  <span>Client Key</span>
+                  <input data-conn="tiktokClientKey" placeholder="Client Key de tu app de TikTok" />
+                </div>
+                <div class="conn-field">
+                  <span>Client Secret</span>
+                  <input data-conn="tiktokClientSecret" type="password" placeholder="Client Secret" />
+                </div>
+              </div>
+              <div class="conn-grid" style="margin-top:6px;">
+                <div class="conn-field">
+                  <span>Redirect URI (la misma registrada en la app de TikTok)</span>
+                  <input data-conn="tiktokRedirectUri" placeholder="https://..." />
+                </div>
+              </div>
+              <div class="oauth-row" style="margin-top:8px;">
+                <button type="button" class="conn-connect-btn social-connect-btn" data-social-connect="tiktok">Conectar →</button>
+                <div class="conn-field">
+                  <span>Código de autorización</span>
+                  <input data-social-code="tiktok" placeholder="Pega el «code» de la URL de retorno" />
+                </div>
+                <button type="button" class="conn-connect-btn social-complete-btn" data-social-complete="tiktok">Completar conexión</button>
+              </div>
+              <div class="conn-social-detail" data-social-detail="tiktok" style="display:none;font-size:0.82em;margin-top:6px;padding:4px 8px;background:rgba(255,255,255,0.05);border-radius:4px;word-break:break-word;white-space:pre-line;"></div>
+              <div class="conn-error-detail" data-service="tiktok" style="display:none;color:#e55;font-size:0.8em;margin-top:4px;padding:4px 8px;background:rgba(255,80,80,0.08);border-radius:4px;word-break:break-word;"></div>
+            </div>
+
+            <div class="conn-section">
+              <div class="conn-section-title">YouTube <span class="conn-status" data-service="youtube">sin conectar</span></div>
+              <p style="font-size: 0.85em; opacity: 0.85; margin: 6px 0 10px; line-height: 1.4;">Sube videos a tu canal de YouTube desde el agente. Crea tu proyecto OAuth en Google Cloud (YouTube Data API v3) y pega aquí sus credenciales; la conexión es OAuth oficial y los tokens viven cifrados en tu bóveda, nunca se muestran.</p>
+              <div class="conn-grid">
+                <div class="conn-field">
+                  <span>Client ID</span>
+                  <input data-conn="googleClientId" placeholder="Client ID de tu proyecto de Google" />
+                </div>
+                <div class="conn-field">
+                  <span>Client Secret</span>
+                  <input data-conn="googleClientSecret" type="password" placeholder="Client Secret" />
+                </div>
+              </div>
+              <div class="conn-grid" style="margin-top:6px;">
+                <div class="conn-field">
+                  <span>Redirect URI (la misma registrada en Google Cloud)</span>
+                  <input data-conn="googleRedirectUri" placeholder="https://..." />
+                </div>
+              </div>
+              <div class="oauth-row" style="margin-top:8px;">
+                <button type="button" class="conn-connect-btn social-connect-btn" data-social-connect="youtube">Conectar →</button>
+                <div class="conn-field">
+                  <span>Código de autorización</span>
+                  <input data-social-code="youtube" placeholder="Pega el «code» de la URL de retorno" />
+                </div>
+                <button type="button" class="conn-connect-btn social-complete-btn" data-social-complete="youtube">Completar conexión</button>
+              </div>
+              <div class="conn-social-detail" data-social-detail="youtube" style="display:none;font-size:0.82em;margin-top:6px;padding:4px 8px;background:rgba(255,255,255,0.05);border-radius:4px;word-break:break-word;white-space:pre-line;"></div>
+              <div class="conn-error-detail" data-service="youtube" style="display:none;color:#e55;font-size:0.8em;margin-top:4px;padding:4px 8px;background:rgba(255,80,80,0.08);border-radius:4px;word-break:break-word;"></div>
             </div>
 
             <div class="conn-add-drawer" style="margin-top:12px;padding-top:12px;border-top:1px solid rgba(255,255,255,0.08);">

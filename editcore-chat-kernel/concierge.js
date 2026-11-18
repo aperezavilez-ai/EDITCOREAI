@@ -35,6 +35,39 @@ const CONCIERGE_SYSTEM = [
   "4) La tarea principal sigue corriendo intacta en paralelo: no la des por terminada ni hables en su nombre sobre su resultado.",
 ].join("\n");
 
+// [FASE2-RUTA-UNICA] buildCerebroServiceBlock vivía en
+// orchestrator.js y este módulo lo leía con require perezoso. Al
+// retirarse el kernel viejo, la función se muda AQUÍ verbatim, que
+// es su consumidor vivo (la memoria compartida del conserje).
+async function buildCerebroServiceBlock(projectRoot, query, helpers) {
+  if (!projectRoot || projectRoot === "." || typeof helpers?.brainSearch !== "function") return "";
+  const q = String(query || "").trim();
+  if (!q) return "";
+  let out = null;
+  try {
+    out = await Promise.race([
+      Promise.resolve(helpers.brainSearch(projectRoot, q, { scope: "all", limit: 5 })),
+      new Promise((resolve) => setTimeout(() => resolve(null), 6_000)),
+    ]);
+  } catch { return ""; }
+  if (!out) return "";
+  const lines = [];
+  for (const m of (Array.isArray(out.memory) ? out.memory : []).slice(0, 4)) {
+    const text = String(m?.content || m?.text || "").trim();
+    if (text) lines.push(`- [memoria] **${String(m?.title || "recuerdo")}**: ${text.slice(0, 500)}`);
+  }
+  for (const k of (Array.isArray(out.knowledge) ? out.knowledge : []).slice(0, 4)) {
+    const text = String(k?.text || k?.content || "").trim();
+    if (text) lines.push(`- [conocimiento] \`${String(k?.path || k?.title || "instalado")}\`: ${text.slice(0, 500)}`);
+  }
+  for (const c of (Array.isArray(out.catalog) ? out.catalog : []).slice(0, 4)) {
+    const name = String(c?.name || c?.id || "").trim();
+    if (name) lines.push(`- [catálogo] **${name}**: ${String(c?.description || "").slice(0, 200)}`);
+  }
+  if (!lines.length) return "";
+  return `## CEREBRO (lo instalado y recordado en EditCoreAI, relevante a este turno)\n${lines.join("\n")}`.slice(0, 3200);
+}
+
 // Los bloques de memoria compartida: el expediente del proyecto y el
 // Cerebro — los MISMOS constructores que alimentan al turno principal
 // (projectPromptBlock y buildCerebroServiceBlock), para que el
@@ -57,7 +90,6 @@ async function buildSharedMemoryBlock(projectRoot, threadId, query, helpers) {
     if (dossier) parts.push(dossier);
   } catch { /* sin expediente no hay bloque, no un error */ }
   try {
-    const { buildCerebroServiceBlock } = require("./orchestrator");
     const cerebro = await buildCerebroServiceBlock(projectRoot, query, helpers);
     if (cerebro) parts.push(cerebro);
   } catch { /* fail-open, como al abrir el turno principal */ }
@@ -145,4 +177,4 @@ async function runConcierge({ message, projectRoot, threadId, apiBaseUrl, apiKey
   };
 }
 
-module.exports = { runConcierge, buildSharedMemoryBlock, CONCIERGE_SYSTEM };
+module.exports = { runConcierge, buildSharedMemoryBlock, buildCerebroServiceBlock, CONCIERGE_SYSTEM };

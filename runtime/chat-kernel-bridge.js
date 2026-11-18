@@ -20,7 +20,7 @@ const KERNEL_TIMEOUT_MS = 60 * 60 * 1000; // 60 min — el agente nunca se queda
 // ejecución de su turno; al vencer recibe el resultado honesto
 // «sigue en cola» en su propia burbuja (ver index.js).
 
-function buildKernelHelpers({ BrowserWindow, capturePreview, previewUrl, startPreview, appUserData, onProcessChunk, onProcessSevereError, abortSignal, brainSearch, brainRemember, brainReadSkill, readConnections, refreshAccessToken, ...extra }) {
+function buildKernelHelpers({ BrowserWindow, capturePreview, previewUrl, startPreview, appUserData, onProcessChunk, onProcessSevereError, abortSignal, brainSearch, brainRemember, brainReadSkill, readConnections, writeConnections, refreshAccessToken, ...extra }) {
   return {
     ...extra,
     // [EDITCORE-INTEGRAL-B6] Costura de sesión viva: el kernel la usa
@@ -38,6 +38,10 @@ function buildKernelHelpers({ BrowserWindow, capturePreview, previewUrl, startPr
     brainRemember: typeof brainRemember === "function" ? brainRemember : null,
     brainReadSkill: typeof brainReadSkill === "function" ? brainReadSkill : null,
     readConnections: typeof readConnections === "function" ? readConnections : null,
+    // [SOCIAL-META FASE 1] Escritura a la bóveda de Conexiones: el
+    // kernel la usa para guardar credenciales (tokens de Meta) por el
+    // mismo estado seguro cifrado que lee readConnections.
+    writeConnections: typeof writeConnections === "function" ? writeConnections : null,
     abortSignal: abortSignal || null,
     onProcessChunk: typeof onProcessChunk === "function" ? onProcessChunk : null,
     onProcessSevereError: typeof onProcessSevereError === "function" ? onProcessSevereError : null,
@@ -105,9 +109,10 @@ async function runKernelChat({
   skillsPrompt,
   maxSteps,
   totalTimeoutMs,
-  // [KERNEL-NUEVO] Conmutación opt-in al kernel de chat nuevo
-  // (editcore-chat-kernel/nuevo): apagada por defecto; el kernel
-  // viejo sigue siendo la ruta hasta el juicio en vivo.
+  // [KERNEL ÚNICO — v5.2.7] Marca informativa heredada: hasta la
+  // v5.2.6 conmutaba opt-in al kernel nuevo. Desde la v5.2.7 el
+  // kernel nuevo es la ÚNICA ruta y este campo ya no decide nada;
+  // el resultado siempre lleva kernelNuevo: true.
   kernelNuevo,
 }) {
   // [EDITCORE-INTEGRAL-B5] La autorización viaja como DATO estructurado
@@ -199,108 +204,26 @@ async function runKernelChat({
   }, 5_000);
 
   try {
-    // [KERNEL-NUEVO] Ruta del kernel nuevo, SOLO si se pide
-    // explícitamente (env EDITCORE_KERNEL_NUEVO=1 o kernelNuevo en
-    // la entrada). Corre el turno por carriles con el adaptador a
-    // callChat/tools reales y devuelve la misma forma de resultado
-    // que esta función siempre devuelve. Sin la marca, nada cambia.
-    if (process.env.EDITCORE_KERNEL_NUEVO === "1" || kernelNuevo === true) {
-      const { manejarChatNuevo } = require("../editcore-chat-kernel/nuevo/adaptador");
-      const outN = await manejarChatNuevo({
-        message,
-        history: chatHistory,
-        threadId: tid,
-        chatId,
-        runId: rid,
-        projectRoot,
-        apiBaseUrl,
-        apiKey,
-        model,
-        images: Array.isArray(images) ? images : [],
-        helpers,
-        fallbackProfiles,
-        skillsPrompt,
-      }, {
-        // La memoria del turno, con TODO a la mano como en el
-        // kernel vigente: el MAPA (capas usuario + proyecto, la
-        // misma fuente del carril de orientación) y el Cerebro
-        // visible (brainSearch). Las skills viajan en skillsPrompt
-        // y por las herramientas read_skill/list_skills.
-        construirMemoria: async (inputN) => {
-          const partes = [];
-          try {
-            const orientationMap = require("../editcore-chat-kernel/orientation-map");
-            const bloqueMapa = orientationMap.buildMapBlock(inputN.projectRoot, { executeTurn: false });
-            if (bloqueMapa) partes.push(String(bloqueMapa).slice(0, 12000));
-          } catch { /* sin Mapa el turno responde igual */ }
-          if (helpers?.brainSearch && message) {
-            try {
-              const hits = await helpers.brainSearch(String(message).slice(0, 200));
-              const textoHits = Array.isArray(hits)
-                ? hits.map((h) => (typeof h === "string" ? h : (h?.text || h?.content || ""))).filter(Boolean).join("\n")
-                : "";
-              if (textoHits) partes.push(`Memoria del proyecto (Cerebro):\n${textoHits.slice(0, 6000)}`);
-            } catch { /* la memoria es opcional: sin ella el turno responde igual */ }
-          }
-          return partes.join("\n\n");
-        },
-      });
-      // Cierre con memoria, el mismo contrato de turno vigente:
-      // el Cerebro guarda los HECHOS destilados del turno (el
-      // detalle, no la prosa) y el Mapa se mantiene al cierre.
-      try {
-        if (typeof helpers?.brainRemember === "function" && outN.text) {
-          Promise.resolve(helpers.brainRemember(projectRoot, {
-            title: "Turno del agente",
-            type: "session",
-            content: `Pedido: ${String(message || "")}\n${outN.detalle || ""}`,
-          })).catch(() => {});
-        }
-      } catch { /* recordar nunca bloquea el cierre */ }
-      try {
-        if (projectRoot) {
-          const orientationMap = require("../editcore-chat-kernel/orientation-map");
-          const maintained = orientationMap.maintainProjectMap(projectRoot, {
-            steps: outN.steps, finalText: outN.text, userText: message,
-          });
-          if (maintained) orientationMap.syncUserProjectIndex(projectRoot, maintained);
-        }
-      } catch { /* el Mapa nunca tumba el cierre */ }
-      return {
-        ok: true,
-        text: outN.text,
-        detalle: outN.detalle,
-        cierreCorregida: outN.cierreCorregida,
-        steps: outN.steps,
-        threadId: tid,
-        runId: rid,
-        kernel: true,
-        kernelNuevo: true,
-        brain: true,
-        kind: outN.kind,
-        incomplete: outN.incomplete,
-        mutations: outN.mutations,
-        usage: outN.usage,
-        report: { completed: !outN.incomplete && !outN.cierreCorregida, role: "assistant" },
-      };
-    }
-    // MOTOR ÚNICO (unificación): el chat lo ejecuta el ChatOrchestrator del
-    // kernel (editcore-chat-kernel), que ya tiene herramientas nativas,
-    // cancelación de punta a punta y error explícito ante respuestas vacías.
-    // El controlador Cline salió de esta ruta: su código permanece en
-    // El motor Cline fue retirado del disco en la convergencia; el chat lo ejecuta solo el kernel.
-    // stopChatKernel() (arriba, vía index.js) detiene ESTE motor: el que corre.
+    // [KERNEL ÚNICO — v5.2.7] La ÚNICA ruta: index.handleChat corre
+    // SIEMPRE el kernel nuevo (carriles + adaptador a callChat/tools
+    // reales). Ya no hay condición de flag ni camino viejo: el
+    // kernel viejo salió del árbol en esta entrega. La memoria del
+    // turno (Mapa + Cerebro, enmarcada como referencia) la compone
+    // la propia entrada del kernel; aquí quedan el atajo casual, el
+    // heartbeat, la normalización de acceso completo y el modelado
+    // del resultado, como siempre.
     const out = await handleChat({
       message,
+      // La autorización como DATO: sin este reenvío el kernel
+      // solo veía el texto enlatado que la transporta y lo
+      // clasificaba por su forma (CONVERSACION, sin
+      // herramientas) — la ejecución autorizada jamás ejecutaba.
+      planAuthorizedExecution: planAuthorizedData,
       history: chatHistory,
       messages: chatHistory,
       threadId: tid,
       chatId,
-      // [EDITCORE-INTEGRAL-B7] La identidad y el plazo de cola viajan
-      // al kernel: su registro de corridas y su aviso «en cola» usan
-      // este mismo runId.
       runId: rid,
-      queueTimeoutMs,
       projectRoot,
       apiBaseUrl,
       apiKey,
@@ -308,20 +231,8 @@ async function runKernelChat({
       images: Array.isArray(images) ? images : [],
       onProgress: emitProgress,
       helpers,
-      autoHeal,
-      // [EDITCORE-V492-1] Valores EFECTIVOS ya normalizados arriba:
-      // el kernel recibe «full» en toda corrida de usuario.
-      allowWrite: effectiveAllowWrite,
-      permissionMode: effectivePermissionMode,
-      permissionFull: effectivePermissionFull,
-      fullAccess: effectiveFullAccess,
-      // [EDITCORE-INTEGRAL-B5] Dato normalizado (ver arriba), no el texto.
-      planAuthorizedExecution: planAuthorizedData,
-      planAuthorized: planAuthorizedData,
-      isNewChat: newChatData,
       fallbackProfiles,
       skillsPrompt,
-      maxSteps,
     });
 
     if (out?.error || out?.kind === "ERROR") {
@@ -333,74 +244,50 @@ async function runKernelChat({
       throw err;
     }
 
-    // [EDITCORE-INTEGRAL-B7] Resultado honesto de COLA: el turno no se
-    // ejecutó porque otro ocupaba el motor al vencer el plazo. No es
-    // un error del kernel ni un éxito: viaja como resultado con su
-    // texto, para que la burbuja del chat de origen lo muestre tal
-    // cual y el usuario decida (reenviar o detener el otro turno).
-    if (out?.queued) {
-      return {
-        ok: false,
-        queued: true,
-        queueTimeout: true,
-        text: String(out?.text || "Tu turno sigue en cola."),
-        steps: [],
-        threadId: tid,
-        runId: rid,
-        kernel: true,
-        brain: true,
-        kind: "QUEUED",
-        incomplete: true,
-        // [EDITCORE-V510-B1b] El aviso de cola es texto de SISTEMA:
-        // su usage viaja marcado para que el recibo no estime ni un
-        // token de salida sobre él (el caso ↓75).
-        usage: out?.usage || { system_notice: true },
-        report: { completed: false, role: "assistant", queued: true },
-      };
-    }
+    // Cierre con memoria, el mismo contrato de turno vigente:
+    // el Cerebro guarda los HECHOS destilados del turno (el
+    // detalle, no la prosa) y el Mapa se mantiene al cierre.
+    try {
+      if (typeof helpers?.brainRemember === "function" && out.text) {
+        Promise.resolve(helpers.brainRemember(projectRoot, {
+          title: "Turno del agente",
+          type: "session",
+          content: `Pedido: ${String(message || "")}\n${out.detalle || ""}`,
+        })).catch(() => {});
+      }
+    } catch { /* recordar nunca bloquea el cierre */ }
+    try {
+      if (projectRoot) {
+        const orientationMap = require("../editcore-chat-kernel/orientation-map");
+        const maintained = orientationMap.maintainProjectMap(projectRoot, {
+          steps: out.steps, finalText: out.text, userText: message,
+        });
+        if (maintained) orientationMap.syncUserProjectIndex(projectRoot, maintained);
+      }
+    } catch { /* el Mapa nunca tumba el cierre */ }
 
-    // [EDITCORE-V510-B1b] Entrada vencida FUNDIDA como steering: el
-    // mensaje no se ejecutó como turno propio porque ya lo atiende el
-    // turno en curso. Viaja como resultado informativo con su texto y
-    // usage de sistema (costo cero en el recibo).
-    if (out?.kind === "STEERED" || out?.steered) {
-      return {
-        ok: true,
-        steered: true,
-        text: String(out?.text || "Tu mensaje se fundió con el turno en curso."),
-        steps: [],
-        threadId: tid,
-        runId: rid,
-        kernel: true,
-        brain: true,
-        kind: "STEERED",
-        incomplete: false,
-        usage: out?.usage || { system_notice: true },
-        report: { completed: false, role: "assistant", steered: true },
-      };
-    }
-
-    const isStopped = out?.kind === "STOP" || String(out?.text || "").includes("Detenido.");
-    const ok = !out?.blocked && !isStopped;
-    const finalText = out?.text
-      || (ok ? "Operación procesada." : (isStopped ? "Detenido." : "Hay un proceso activo. Envía **detente** para cancelarlo antes de mandar otro mensaje."));
-
+    const isStopped = out?.kind === "STOP";
     return {
-      ok,
-      text: finalText,
-      steps: Array.isArray(out?.steps) ? out.steps : [],
-      threadId: out?.threadId || tid,
-      // [EDITCORE-INTEGRAL-B7] El resultado también lleva su runId.
-      runId: out?.runId || rid,
+      ok: !isStopped,
+      text: out.text || (isStopped ? "Detenido." : "Operación procesada."),
+      detalle: out.detalle,
+      cierreCorregida: out.cierreCorregida,
+      steps: Array.isArray(out.steps) ? out.steps : [],
+      threadId: out.threadId || tid,
+      runId: out.runId || rid,
       kernel: true,
+      // [KERNEL ÚNICO] Marca informativa: la ruta ya es siempre esta.
+      kernelNuevo: true,
       brain: true,
-      kind: isStopped ? "STOP" : out?.kind,
-      incomplete: isStopped || !!out?.incomplete,
-      // [EDITCORE-INTEGRAL-B7] Cancelación en cola declarada como dato.
-      cancelled: out?.cancelled === true,
-      mutations: out?.mutations,
-      usage: out?.usage,
-      report: { completed: ok && !out?.incomplete && !isStopped, role: "assistant" },
+      kind: out.kind,
+      incomplete: isStopped || !!out.incomplete,
+      cancelled: isStopped,
+      mutations: out.mutations,
+      // Archivos entregables del turno: la superficie los pinta
+      // en la burbuja del chat como enlace «Descargar».
+      archivos: Array.isArray(out.archivos) ? out.archivos : [],
+      usage: out.usage,
+      report: { completed: !isStopped && !out.incomplete && !out.cierreCorregida, role: "assistant" },
     };
   } catch (err) {
     const message = String(err?.message || err).slice(0, 400);

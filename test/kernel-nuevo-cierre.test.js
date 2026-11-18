@@ -18,6 +18,7 @@ function resultadoOrden({ textoFinal, aplicados = [], fallos = [] }) {
   return {
     carril: "ORDEN",
     textoFinal,
+    herramientasEjecutadas: aplicados.length ? 2 : 0,
     llamadas: 2,
     tokensUsados: 8000,
     presupuestoAgotado: false,

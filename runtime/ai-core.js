@@ -348,6 +348,7 @@ async function readOpenAiStream(response, onTextDelta, signal, onActivity) {
   let sawDone = false;
   let streamError = null;
   let sawContent = false;
+  let finishReason = null;
   const consume = (chunk, flush = false) => {
     pending += chunk;
     const lines = pending.split(/\r?\n/);
@@ -367,6 +368,8 @@ async function readOpenAiStream(response, onTextDelta, signal, onActivity) {
         continue;
       }
       if (data?.usage) streamUsage = data.usage;
+      const fr = data?.choices?.[0]?.finish_reason;
+      if (fr) finishReason = String(fr);
       const delta = data?.choices?.[0]?.delta || data?.choices?.[0]?.message || {};
       const reasoning = delta.reasoning || delta.reasoning_content || delta.thought || "";
       if (reasoning) {
@@ -416,7 +419,7 @@ async function readOpenAiStream(response, onTextDelta, signal, onActivity) {
     // también para la guarda de no-reintento del provider).
     sawContent = Boolean(text) || toolCalls.size > 0;
     const partial = Boolean(streamError) || (!sawDone && sawContent);
-    return { text, toolCalls: normalizeToolCallsOut([...toolCalls.values()].filter((call) => call.function.name)), usage: usage(streamUsage), partial, sawDone, sawContent, ...(streamError ? { streamError } : {}) };
+    return { text, toolCalls: normalizeToolCallsOut([...toolCalls.values()].filter((call) => call.function.name)), usage: usage(streamUsage), partial, sawDone, sawContent, finishReason, ...(streamError ? { streamError } : {}) };
   } finally {
     if (signal) signal.removeEventListener("abort", onAbort);
   }

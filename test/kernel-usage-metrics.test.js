@@ -28,18 +28,30 @@ test("normalizeUsage reconoce tokens de caché de OpenAI, Anthropic y formatos p
   });
 });
 
-test("el orquestador suma el uso de cada turno del modelo (antes devolvía siempre ceros)", () => {
-  const src = fs.readFileSync(path.join(__dirname, "..", "editcore-chat-kernel", "orchestrator.js"), "utf8");
-  assert.match(src, /const addUsage = \(raw = \{\}\) =>/);
-  assert.match(src, /clearInterval\(hb\); this\.turnAbort = null;\s*\}\s*addUsage\(turn\?\.usage \|\| \{\}\);/);
-  assert.match(src, /totalUsage\.total_tokens \+= Number\(raw\.total_tokens \|\| 0\) \|\| input \+ output;/);
+test("el kernel suma el uso de cada turno del modelo (antes devolvía siempre ceros)", async () => {
+  // [FASE2-RUTA-UNICA] La versión anterior leía el código del
+  // orquestador viejo (addUsage). El contrato — el turno reporta el
+  // consumo REAL que el proveedor declara — se afirma ahora de
+  // comportamiento sobre la entrada única del kernel nuevo.
+  const { handleChat } = require("../editcore-chat-kernel/index");
+  const provider = require("../editcore-chat-kernel/provider");
+  const original = provider.callChat;
+  provider.callChat = async () => ({ text: "Respuesta con consumo.", toolCalls: [], usage: { input_tokens: 100, output_tokens: 50 } });
+  try {
+    const out = await handleChat({ message: "hola, ¿qué tal?", projectRoot: process.cwd(), apiBaseUrl: "http://127.0.0.1:9/v1", apiKey: "k", model: "m", helpers: {} });
+    assert.equal(out.usage.total_tokens, 150, "el uso del turno es la suma real del proveedor, no ceros");
+  } finally {
+    provider.callChat = original;
+  }
 });
 
-test("el orquestador expone los campos de caché que lee la pantalla", () => {
-  const src = fs.readFileSync(path.join(__dirname, "..", "editcore-chat-kernel", "orchestrator.js"), "utf8");
-  assert.match(src, /totalUsage\.provider_cache_read_tokens \+= cacheRead;/);
-  assert.match(src, /totalUsage\.cached_input_tokens \+= cacheRead;/);
-  assert.match(src, /totalUsage\.provider_calls \+= 1;/);
+test("la pantalla conserva su línea de caché del recibo (la superficie que lee los campos de uso)", () => {
+  // [FASE2-RUTA-UNICA] La mitad del kernel de esta prueba (los
+  // campos provider_cache_* del orquestador viejo) cesa con la ruta
+  // única: el kernel nuevo reporta el uso como total del turno
+  // (usage.total_tokens, probado arriba). La mitad de superficie —
+  // la línea del recibo que presenta la caché cuando el proveedor
+  // la reporta — sigue en el renderer y se sigue afirmando.
   const renderer = fs.readFileSync(path.join(__dirname, "..", "renderer.js"), "utf8");
   assert.match(renderer, /cache proveedor leído \$\{providerCache\} · escrito \$\{providerCacheWrite\}/);
 });
@@ -75,6 +87,11 @@ test("withCacheControl (Fase A): system + último del historial con prefixEndInd
 });
 
 test("el chat no reutiliza respuestas guardadas en lugar de llamar al modelo", () => {
-  const src = fs.readFileSync(path.join(__dirname, "..", "editcore-chat-kernel", "orchestrator.js"), "utf8");
-  assert.doesNotMatch(src, /promptCache\.cacheRead\(/);
+  // [FASE2-RUTA-UNICA] La guarda se traslada al kernel nuevo: en
+  // ninguna de sus piezas existe lectura de una caché de respuestas.
+  const dir = path.join(__dirname, "..", "editcore-chat-kernel", "nuevo");
+  for (const f of fs.readdirSync(dir)) {
+    const src = fs.readFileSync(path.join(dir, f), "utf8");
+    assert.doesNotMatch(src, /promptCache\.cacheRead\(/, `${f} no lee respuestas guardadas`);
+  }
 });

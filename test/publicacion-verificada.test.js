@@ -112,10 +112,21 @@ test("publicación verificada: si los logs no se pueden obtener, el fallo del hu
   assert.match(result.message, /PRODUCCIÓN ESTÁ CAÍDA/);
 });
 
-test("publicación verificada: el formateador del agente cuenta la caída con humo, logs y orden de reparación", () => {
-  const source = fs.readFileSync(path.join(__dirname, "..", "editcore-chat-kernel", "orchestrator.js"), "utf8");
-  assert.match(source, /productionDown/, "formatExternalActionResult reconoce el resultado de producción caída");
-  assert.match(source, /Humo post-despliegue/, "el texto al agente incluye la evidencia del humo");
-  assert.match(source, /Logs del despliegue \(evidencia para reparar\)/, "el texto al agente incluye los logs como evidencia");
-  assert.match(source, /REPARACIÓN PRIORITARIA/, "el texto al agente declara la reparación prioritaria");
+test("publicación verificada: el resultado de la caída lleva la evidencia que el agente necesita (humo, logs, orden)", async () => {
+  // [FASE2-RUTA-UNICA] La versión anterior leía el formateador del
+  // orquestador viejo (formatExternalActionResult), que componía la
+  // narración de la caída. En la ruta única no hay formateador: el
+  // agente recibe el RESULTADO de la herramienta, así que el
+  // contrato se afirma donde ahora vive — el resultado de
+  // deployOneClick trae productionDown, el mensaje de caída y los
+  // logs como evidencia para reparar.
+  const root = tmpVercelProject();
+  const result = await deployOneClick(root, { provider: "vercel", production: true }, {
+    connections: { vercelToken: "tok-test" },
+    deps: makeDeps({ smokeStatus: 503 }),
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.productionDown, true, "el resultado reconoce la producción caída");
+  assert.match(result.message, /PRODUCCIÓN ESTÁ CAÍDA/, "el mensaje declara la caída y la orden de reparación");
+  assert.ok(result.logs, "los logs del despliegue viajan como evidencia en el resultado");
 });

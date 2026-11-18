@@ -127,6 +127,25 @@ test("una ruta local no se disfraza de imagen para el proveedor", async () => {
   assert.equal(typeof ultimoUsuario.content, "string");
 });
 
+test("parcial propagado: partial del proveedor marca el resultado incomplete", async () => {
+  const callChat = async () => ({ content: "Respuesta a mit", toolCalls: [], usage: { input_tokens: 500, output_tokens: 20 }, partial: true });
+  const out = await manejarChatNuevo(
+    { message: "¿qué queda pendiente?", threadId: "tp2", runId: "rp2", apiBaseUrl: "x", apiKey: "k", model: "m" },
+    depsBase({ callChat }),
+  );
+  assert.equal(out.incomplete, true);
+  assert.match(out.detalle, /Respuesta (parcial|incompleta|cortada)/);
+});
+
+test("parcial propagado: streamError del proveedor también marca incomplete", async () => {
+  const callChat = async () => ({ content: "Respuesta a mit", toolCalls: [], usage: { input_tokens: 500, output_tokens: 20 }, streamError: new Error("corte") });
+  const out = await manejarChatNuevo(
+    { message: "¿qué queda pendiente?", threadId: "tp3", runId: "rp3", apiBaseUrl: "x", apiKey: "k", model: "m" },
+    depsBase({ callChat }),
+  );
+  assert.equal(out.incomplete, true);
+});
+
 test("cierre falso a traves de toda la pila: la salida lleva la correccion del kernel", async () => {
   const callChat = async () => ({ content: "Listo, todo corregido y completado.", toolCalls: [], usage: { input_tokens: 900, output_tokens: 50 } });
   const out = await manejarChatNuevo(

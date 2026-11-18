@@ -11,7 +11,7 @@ test("Página oficial: /download entrega siempre el instalador más nuevo", () =
   const config = JSON.parse(fs.readFileSync(path.join(ROOT, "vercel.json"), "utf8"));
   const route = config.routes.find((r) => r.src === "/(download|descargar)");
   assert.ok(route, "falta la ruta /download");
-  assert.equal(route.dest, "https://github.com/aperezavilez-ai/EDITCOREAI/releases/latest/download/EDITCOREAI-Setup.exe");
+  assert.equal(route.dest, "https://github.com/aperezavilez-ai/EDITCOREAI-releases/releases/latest/download/EDITCOREAI-Setup.exe");
   assert.equal(route.status, 302);
   assert.ok(config.routes.indexOf(route) < config.routes.findIndex((r) => r.handle === "filesystem"));
 });

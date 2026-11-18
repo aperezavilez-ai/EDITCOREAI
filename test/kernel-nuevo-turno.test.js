@@ -120,6 +120,19 @@ test("ORDEN: un fallo de herramienta queda en el resumen, no se esconde", async 
   assert.match(r.resumen, /Fallos: write_file/);
 });
 
+test("respuesta parcial del proveedor: el turno la declara incompleta en el resumen", async () => {
+  const prov = proveedorGuion([
+    { texto: "La respuesta quedó a mit", uso: { total: 3000 }, parcial: true },
+  ]);
+  const r = await ejecutarTurno({
+    texto: "¿qué queda pendiente?",
+    llamarModelo: prov,
+    ejecutarHerramienta: async () => ({ ok: true }),
+  });
+  assert.equal(r.respuestaParcial, true);
+  assert.match(r.resumen, /Respuesta (parcial|incompleta|cortada)/);
+});
+
 test("ORDEN: el presupuesto de tokens cierra el turno y el hecho queda escrito", async () => {
   const prov = proveedorGuion([
     { toolCalls: [{ nombre: "read_file", args: {} }], uso: { total: 200000 } },

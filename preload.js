@@ -38,12 +38,14 @@ contextBridge.exposeInMainWorld("editcoreProject", {
   gotoDefinition: (input) => ipcRenderer.invoke("project:goto-definition", input),
   revealInFolder: (input = {}) => ipcRenderer.invoke("project:reveal-in-folder", input),
   openPath: (input = {}) => ipcRenderer.invoke("project:open-path", input),
+  downloadFile: (input = {}) => ipcRenderer.invoke("project:download-file", input),
+  applyVisualEdit: (input = {}) => ipcRenderer.invoke("project:apply-visual-edit", input),
   copyPath: (input = {}) => ipcRenderer.invoke("project:copy-path", input),
   createFile: (input = {}) => ipcRenderer.invoke("project:create-file", input),
   mkdir: (input = {}) => ipcRenderer.invoke("project:mkdir", input),
   renameEntry: (input = {}) => ipcRenderer.invoke("project:rename-entry", input),
   deleteEntry: (input = {}) => ipcRenderer.invoke("project:delete-entry", input),
-  startPreview: (rootPath) => ipcRenderer.invoke("project:preview-start", rootPath),
+  startPreview: (rootPath, opciones) => ipcRenderer.invoke("project:preview-start", rootPath, opciones || {}),
   previewHealth: (rootPath) => ipcRenderer.invoke("project:preview-health", rootPath),
   stopPreview: (rootPath) => ipcRenderer.invoke("project:preview-stop", rootPath),
   browserInspect: (input = {}) => ipcRenderer.invoke("project:browser-inspect", input),
@@ -297,11 +299,9 @@ contextBridge.exposeInMainWorld("editcoreAgent", {
     ipcRenderer.on("agent:complete", listener);
     return () => ipcRenderer.removeListener("agent:complete", listener);
   },
-  onError: (callback) => {
-    const listener = (_event, value) => callback(value);
-    ipcRenderer.on("agent:error", listener);
-    return () => ipcRenderer.removeListener("agent:error", listener);
-  },
+  // [FASE2-BORRAR B-6] onError retirado: escuchaba el canal
+  // agent:error, que main NUNCA emite (0 emisores en el árbol); la
+  // suscripción del renderer se retira en el mismo cambio.
   setPermission: (mode) => ipcRenderer.invoke("permissions:set", mode),
   onApprovalRequest: (callback) => {
     const listener = (_event, value) => callback(value);
@@ -365,6 +365,9 @@ contextBridge.exposeInMainWorld("editcoreConnections", {
   importLocal: (input = {}) => ipcRenderer.invoke("connections:import-local", input),
   importLegacy: () => ipcRenderer.invoke("connections:import-legacy"),
   operatorMemory: (input = {}) => ipcRenderer.invoke("connections:operator-memory", input),
+  socialAuthUrl: (red) => ipcRenderer.invoke("social:auth-url", { red }),
+  socialComplete: (input = {}) => ipcRenderer.invoke("social:complete", input),
+  socialStatus: () => ipcRenderer.invoke("social:status"),
 });
 
 // [FIX] onChunk ahora devuelve cleanup individual (coherente con el resto del bridge);
@@ -549,14 +552,10 @@ contextBridge.exposeInMainWorld("editcoreLsp", {
   diagnostics: () => ipcRenderer.invoke("lsp:diagnostics"),
 });
 
-contextBridge.exposeInMainWorld("editcoreWindowsStt", {
-  windowsSttStart: (input = {}) => ipcRenderer.invoke("agent:windows-stt-start", input),
-  onWindowsSttText: (callback) => {
-    const subscription = (_event, text) => callback(text);
-    ipcRenderer.on("editcore:windows-stt-text", subscription);
-    return () => ipcRenderer.removeListener("editcore:windows-stt-text", subscription);
-  },
-});
+// [FASE2-BORRAR B-6] Namespace editcoreWindowsStt retirado: era un
+// duplicado sin llamantes que además escuchaba un canal que main
+// nunca emite (editcore:windows-stt-text; el real es
+// agent:windows-stt-text). La superficie viva de STT es editcoreApp.
 
 contextBridge.exposeInMainWorld("editcoreDb", {
   getStatus: () => ipcRenderer.invoke("db:get-status"),
@@ -583,16 +582,9 @@ contextBridge.exposeInMainWorld("editcoreMcp", {
   disconnect: (id) => ipcRenderer.invoke("mcp:disconnect", id),
 });
 
-contextBridge.exposeInMainWorld("editcoreAst", {
-  parse: (filePath) => ipcRenderer.invoke("ast:parse", filePath),
-  analyze: (filePath) => ipcRenderer.invoke("ast:analyze", filePath),
-  renameSymbol: (payload) => ipcRenderer.invoke("ast:renameSymbol", payload),
-  extractFunction: (payload) => ipcRenderer.invoke("ast:extractFunction", payload),
-  restructureClass: (payload) => ipcRenderer.invoke("ast:restructureClass", payload),
-  provideCodeActions: (payload) => ipcRenderer.invoke("ast:provideCodeActions", payload),
-  executeCodeAction: (payload) => ipcRenderer.invoke("ast:executeCodeAction", payload),
-  listActions: () => ipcRenderer.invoke("ast:listActions"),
-});
+// [FASE2-BORRAR B-8] Namespace editcoreAst retirado con sus
+// handlers: los 8 métodos ast:* no tenían ni un llamante en el
+// renderer (0 apariciones de editcoreAst fuera de este archivo).
 
 contextBridge.exposeInMainWorld("editcoreTelemetry", {
   getMetrics: () => ipcRenderer.invoke("telemetry:get-metrics"),

@@ -99,11 +99,24 @@ test("el analista detecta un archivo realmente cortado", () => withTempDir(async
   assert.match(out.report, /package\.json no define script `test`/);
 }));
 
-test("el prompt de análisis prohíbe reportar extractos como archivos truncados", () => {
-  const src = fs.readFileSync(path.join(__dirname, "..", "editcore-chat-kernel", "orchestrator.js"), "utf8");
-  assert.match(src, /PROHIBIDO reportar un archivo como 'truncado'/);
-  assert.match(src, /no verificado en este analisis/);
-  assert.match(src, /task: this\._currentUserText \|\| message/);
+test("un listado parcial se declara parcial: nadie reporta un extracto como el total", async () => {
+  // [FASE2-RUTA-UNICA] La versión anterior leía la prosa del prompt
+  // de análisis del orquestador viejo («PROHIBIDO reportar un
+  // archivo como 'truncado'»). En el kernel nuevo esa honestidad no
+  // es prosa: es DATO — list_files cuenta ANTES de cortar y declara
+  // totalFiles/truncated, y el adaptador entrega los conteos
+  // primero (corrección del juicio en vivo de la v5.2.6, batería
+  // kernel-nuevo-listados). Se afirma aquí sobre la herramienta
+  // compartida que ambos kernels usan.
+  const fsx = require("node:fs");
+  const osx = require("node:os");
+  const tmp = fsx.mkdtempSync(path.join(osx.tmpdir(), "ec-truthful-"));
+  for (let i = 0; i < 90; i += 1) fsx.writeFileSync(path.join(tmp, `f${String(i).padStart(3, "0")}.txt`), "x");
+  const tools = require("../editcore-chat-kernel/tools");
+  const out = await tools.execute("list_files", { path: "." }, tmp, false, {});
+  assert.equal(out.totalFiles, 90, "el total real viaja en el resultado");
+  assert.equal(out.truncated, true, "y el corte se declara, no se disfraza");
+  assert.ok(out.files.length < 90, "lo entregado es un extracto declarado");
 });
 
 const CURATED = [

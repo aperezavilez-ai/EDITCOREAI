@@ -28,7 +28,12 @@ const os = require("node:os");
 const path = require("node:path");
 const { execFileSync } = require("node:child_process");
 
-const { buildKernelFactSummary, formatExternalActionResult } = require("../editcore-chat-kernel/orchestrator");
+// [FASE2-RUTA-UNICA] Las pruebas (1)-(6) afirmaban el formateador
+// de hechos del orquestador viejo (buildKernelFactSummary /
+// formatExternalActionResult), retirado con él: en el kernel
+// nuevo el cierre se compone desde los hechos en cierre.js
+// (batería kernel-nuevo-cierre). Quedan las de módulo vivo: el
+// destilado al Mapa (subagent-distill) y deploy/publish-pipeline.
 const { distillTurnForBrain } = require("../editcore-chat-kernel/subagent-distill");
 const { deployOneClick, extractDeploymentId } = require("../runtime/deploy-one-click");
 const { publishProject } = require("../runtime/publish-pipeline");
@@ -67,62 +72,6 @@ function publishStep({ withDeployId = true } = {}) {
     },
   };
 }
-
-test("(1) hechos: un turno de publish_project cierra con «Publicación: commit <hash completo> · <url> · deploy <id>» desde el resultado real", () => {
-  assert.equal(FULL_SHA.length, 40);
-  const facts = buildKernelFactSummary([publishStep()]);
-  assert.ok(facts.includes("Publicación:"), `el resumen trae la rama de publicación; fue: ${JSON.stringify(facts)}`);
-  assert.ok(facts.includes(`commit ${FULL_SHA}`), "el hash COMPLETO (40) viaja en los hechos, no el truncado de 7");
-  assert.ok(facts.includes(PROD_URL), "la URL del despliegue viaja en los hechos");
-  assert.ok(facts.includes(`deploy ${DEPLOY_ID}`), "el ID de despliegue viaja en los hechos");
-});
-
-test("(2) hechos: un deploy_one_click suelto también deja su línea (URL + deploy <id> + proveedor)", () => {
-  const facts = buildKernelFactSummary([{
-    name: "deploy_one_click",
-    ok: true,
-    input: {},
-    result: { ok: true, provider: "vercel", url: "https://demo-app.vercel.app", deploymentId: "dpl_Solo456" },
-  }]);
-  assert.ok(facts.includes("https://demo-app.vercel.app"), `la URL viaja; fue: ${JSON.stringify(facts)}`);
-  assert.ok(facts.includes("deploy dpl_Solo456"), "el ID de despliegue viaja");
-});
-
-test("(3) hechos: publicación SIN id de despliegue (el proveedor no lo expuso): hash y URL sí, sin segmento «deploy» colgando ni «undefined»", () => {
-  const facts = buildKernelFactSummary([publishStep({ withDeployId: false })]);
-  assert.ok(facts.includes(`commit ${FULL_SHA}`), "el hash completo viaja");
-  assert.ok(facts.includes(PROD_URL), "la URL viaja");
-  assert.ok(!/deploy\s+(undefined|null)/.test(facts), "ningún «deploy undefined»");
-  assert.ok(!facts.includes("deploy ·"), "ningún segmento deploy vacío colgando");
-});
-
-test("(4) guarda: una publicación FALLIDA no deja línea de publicación en los hechos", () => {
-  const facts = buildKernelFactSummary([{
-    name: "publish_project",
-    ok: false,
-    input: {},
-    result: { ok: false, completed: false, failedStep: "deploy_one_click", message: "[deploy_one_click] Deploy fallo", steps: [] },
-  }]);
-  assert.ok(!facts.includes("Publicación:"), `sin línea de publicación; fue: ${JSON.stringify(facts)}`);
-});
-
-test("(5) guarda: el formato de las líneas de escritura existentes no cambia (la rama de publicación es aditiva)", () => {
-  const facts = buildKernelFactSummary([{
-    name: "write_file",
-    ok: true,
-    input: { path: "src/app.js", content: "uno\ndos" },
-    result: { ok: true, path: "src/app.js" },
-  }]);
-  assert.ok(facts.includes("- `src/app.js`: archivo escrito por el kernel (2 líneas, 7 caracteres)"), `línea de escritura intacta; fue: ${JSON.stringify(facts)}`);
-  assert.ok(!facts.includes("Publicación:"), "sin publicación no hay línea de publicación");
-});
-
-test("(6) formateador de la ruta diferida: el texto de cierre de publish_project incluye commit completo y deploy <id>", () => {
-  const text = formatExternalActionResult("publish_project", publishStep().result);
-  assert.ok(text.includes(FULL_SHA), `el hash completo aparece; fue: ${JSON.stringify(text)}`);
-  assert.ok(text.includes(DEPLOY_ID), "el ID de despliegue aparece");
-  assert.ok(text.includes(PROD_URL), "la URL sigue apareciendo (blindaje B8)");
-});
 
 test("(7) destilado al Mapa: una publicación se destila con su sha, no como «Aplicado: nada»", () => {
   const distilled = distillTurnForBrain({

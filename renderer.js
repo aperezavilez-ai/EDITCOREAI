@@ -334,6 +334,50 @@ function repairMojibakeText(value) {
 }
 
 /** Quita XML de tools que el modelo a veces pega en el chat (no debe verse). */
+// Objetos JSON de herramienta fuera del texto visible: el
+// mismo dialecto que el kernel rescata en parse-text-tools,
+// aquí en la superficie (el buffer del stream se limpia con
+// esta función, no con la del kernel).
+function quitarObjetosJsonHerramienta(texto) {
+  const src = String(texto || "");
+  let out = "";
+  let i = 0;
+  while (i < src.length) {
+    const ini = src.indexOf("{", i);
+    if (ini < 0) { out += src.slice(i); break; }
+    let profundidad = 0;
+    let enCadena = false;
+    let escape = false;
+    let fin = -1;
+    for (let j = ini; j < src.length; j++) {
+      const ch = src[j];
+      if (enCadena) {
+        if (escape) escape = false;
+        else if (ch === "\\") escape = true;
+        else if (ch === '"') enCadena = false;
+        continue;
+      }
+      if (ch === '"') enCadena = true;
+      else if (ch === "{") profundidad++;
+      else if (ch === "}") {
+        profundidad--;
+        if (profundidad === 0) { fin = j; break; }
+      }
+    }
+    if (fin < 0) { out += src.slice(i); break; }
+    let esHerramienta = false;
+    try {
+      const obj = JSON.parse(src.slice(ini, fin + 1));
+      esHerramienta = !!obj && typeof obj === "object"
+        && (typeof obj.tool === "string" || typeof obj.function === "string");
+    } catch { /* no era JSON: se conserva */ }
+    out += src.slice(i, ini);
+    if (!esHerramienta) out += src.slice(ini, fin + 1);
+    i = fin + 1;
+  }
+  return out;
+}
+
 function stripAgentToolXml(value, { trim = true } = {}) {
   const names = [
     "list_directory", "list_dir", "list_files", "read_file", "write_file",
@@ -353,6 +397,12 @@ function stripAgentToolXml(value, { trim = true } = {}) {
     .replace(/<parameter\s*=\s*[a-zA-Z_][\w-]*\s*>[\s\S]*?<\/parameter>/gi, "")
     .replace(re, "")
     .replace(/<\/?(?:dots_function_call|invoke|parameter|tool_call|tool_use)\b[^>]*>/gi, "");
+  // Dialecto JSON de herramientas ({"tool":"bash","args":{...}}):
+  // fuera los objetos balanceados con llave de herramienta, y si
+  // uno quedó abierto (stream cortado), se corta desde ahí.
+  out = quitarObjetosJsonHerramienta(out);
+  const corteJson = out.search(/\{\s*"(?:tool|function)"\s*:/);
+  if (corteJson >= 0) out = out.slice(0, corteJson);
   // Bloques incompletos / stream cortado: cortar desde el primer marcador de protocolo.
   const cut = out.search(/<(?:dots_function_call|invoke\b|parameter\b|tool_call|tool_use|tool_invocation|function_calls?|function\s*=|parameter\s*=)\b/i);
   if (cut >= 0) out = out.slice(0, cut);
@@ -1025,6 +1075,7 @@ function loadConnections() {
 
   setupAddConnectionDrawer();
   renderConnectionStatus();
+  renderSocialConnectionStatus().catch(() => {});
 }
 
 function setupAddConnectionDrawer() {
@@ -1306,6 +1357,120 @@ async function openConnections() {
 
 function closeConnections() {
   $("connectionsDialog").close();
+}
+
+// ── Conexiones sociales (Meta / TikTok / YouTube) ─────────────────────
+// La config (app id/secret/redirect) viaja por los campos data-conn y
+// el guardado genérico; la conexión OAuth va por IPC (social:*) y los
+// tokens SOLO viven en la bóveda — aquí jamás se pinta un token.
+const SOCIAL_REDES_UI = ["meta", "tiktok", "youtube"];
+
+function pintarSocialError(red, mensaje) {
+  const el = document.querySelector(`.conn-error-detail[data-service="${red}"]`);
+  if (!el) return;
+  if (mensaje) {
+    el.textContent = mensaje;
+    el.style.display = "block";
+  } else {
+    el.textContent = "";
+    el.style.display = "none";
+  }
+}
+
+function pintarSocialEstado(red, estado) {
+  const badge = document.querySelector(`.conn-status[data-service="${red}"]`);
+  if (badge) {
+    badge.classList.remove("connected", "error");
+    badge.removeAttribute("title");
+    if (!estado) {
+      badge.textContent = "sin conectar";
+    } else if (estado.conectada) {
+      badge.textContent = "conectada";
+      badge.classList.add("connected");
+    } else if (estado.configurada) {
+      badge.textContent = "sin conectar";
+    } else {
+      badge.textContent = "sin configurar";
+      if (Array.isArray(estado.faltan) && estado.faltan.length) {
+        badge.title = `Falta configurar: ${estado.faltan.join(", ")}`;
+      }
+    }
+  }
+  const detalle = document.querySelector(`[data-social-detail="${red}"]`);
+  if (!detalle) return;
+  const lineas = [];
+  if (estado?.conectada) {
+    if (red === "meta") {
+      for (const p of estado.paginas || []) {
+        lineas.push(`📄 ${p.name || p.id}${p.instagram ? ` · Instagram: @${p.instagram.username || p.instagram.id}` : ""}`);
+      }
+      if (!lineas.length) lineas.push("Conectada (sin páginas asociadas).");
+    } else if (red === "tiktok") {
+      lineas.push(`Cuenta conectada${estado.cuenta?.openId ? ` · open_id: ${estado.cuenta.openId}` : ""}`);
+    } else if (red === "youtube") {
+      lineas.push(`Canal: ${estado.canal?.title || estado.canal?.id || "conectado"}`);
+    }
+  } else if (estado && !estado.configurada && Array.isArray(estado.faltan) && estado.faltan.length) {
+    lineas.push(`Falta configurar: ${estado.faltan.join(", ")}`);
+  }
+  detalle.textContent = lineas.join("\n");
+  detalle.style.display = lineas.length ? "block" : "none";
+}
+
+async function renderSocialConnectionStatus() {
+  if (isPreviewAsUser()) return;
+  if (!window.editcoreConnections?.socialStatus) return;
+  const r = await window.editcoreConnections.socialStatus().catch(() => null);
+  if (!r?.ok) return;
+  for (const red of SOCIAL_REDES_UI) pintarSocialEstado(red, r[red]);
+}
+
+async function conectarSocial(red) {
+  if (isPreviewAsUser()) {
+    $("status").textContent = "Vista de usuario: las conexiones no se editan. Sal de la vista de usuario para conectar tus redes.";
+    return;
+  }
+  pintarSocialError(red, "");
+  // Primero se guardan las credenciales tecleadas (App ID/Secret/
+  // Redirect) en la bóveda: el handler construye la URL con ellas.
+  await saveConnections();
+  if (!window.editcoreConnections?.socialAuthUrl) return;
+  const r = await window.editcoreConnections.socialAuthUrl(red)
+    .catch((e) => ({ ok: false, error: e?.message || String(e) }));
+  if (!r?.ok || !r.url) {
+    pintarSocialError(red, r?.error || "No se pudo construir la URL de autorización.");
+    await renderSocialConnectionStatus();
+    return;
+  }
+  openExternal(r.url);
+  $("status").textContent = "Autoriza la app en el navegador, copia el código (parámetro «code» de la URL de retorno), pégalo en la sección de la red y pulsa «Completar conexión».";
+}
+
+async function completarSocial(red) {
+  if (isPreviewAsUser()) {
+    $("status").textContent = "Vista de usuario: las conexiones no se editan. Sal de la vista de usuario para conectar tus redes.";
+    return;
+  }
+  const input = document.querySelector(`[data-social-code="${red}"]`);
+  const code = String(input?.value || "").trim();
+  if (!code) {
+    pintarSocialError(red, "Pega primero el código de autorización (parámetro «code» de la URL de retorno).");
+    return;
+  }
+  pintarSocialError(red, "");
+  if (!window.editcoreConnections?.socialComplete) return;
+  const r = await window.editcoreConnections.socialComplete({ red, code })
+    .catch((e) => ({ ok: false, error: e?.message || String(e) }));
+  if (!r?.ok) {
+    pintarSocialError(red, r?.error || "No se pudo completar la conexión.");
+    return;
+  }
+  if (input) input.value = "";
+  secureState = await window.editcoreSecureConfig.load().catch(() => secureState);
+  await renderSocialConnectionStatus();
+  $("status").textContent = r.aviso
+    ? `Red conectada y guardada en la bóveda. Aviso: ${r.aviso}`
+    : "Red social conectada y guardada en la bóveda de Conexiones.";
 }
 
 // ── Providers ─────────────────────────────────────────────────────────────────
@@ -2185,7 +2350,7 @@ function renderModelPickerMenu() {
   menu.appendChild(searchWrap);
 
   const isAdmin = isCurrentUserAdmin();
-  const autoScopes = isAdmin ? [
+  const autoScopes = isAdmin && PRIMARY_PROVIDER_KEYS.length > 1 ? [
     { scope: "all", title: "Auto", hint: "EditCoreAI elige el modelo ideal de ME AI para cada tarea." },
     { scope: "meai", title: "Auto · ME AI", hint: "Solo modelos de ME AI." },
   ] : [{ scope: "meai", title: "Auto", hint: "EditCoreAI elige automáticamente el modelo ideal para cada tarea." }];
@@ -2216,6 +2381,10 @@ function renderModelPickerMenu() {
         if (!menu.classList.contains("hidden")) renderModelPickerMenu();
       });
     });
+    // El renglón entero es el blanco del clic, no solo el
+    // interruptor: pulsar «Auto» sobre su título no hacía
+    // nada y el usuario terminaba pulsando un modelo.
+    autoCopy.addEventListener("click", () => toggle.click());
     autoRow.append(autoCopy, toggle);
     menu.appendChild(autoRow);
   });
@@ -2369,7 +2538,11 @@ async function selectModelFromPicker({ auto = false, autoScope = "", entry, keep
   const select = $("chatModelSelect");
   if (!select) return;
   if (auto) {
-    const value = AutoModel.autoSelectionValue(autoScope);
+    let value = AutoModel.autoSelectionValue(autoScope);
+    if (![...select.options].some((option) => option.value === value)) {
+      const existente = [...select.options].find((option) => option.dataset?.auto === "1");
+      if (existente) value = existente.value;
+    }
     if (select.value !== value) {
       select.value = value;
       select.dispatchEvent(new Event("change", { bubbles: true }));
@@ -2382,6 +2555,25 @@ async function selectModelFromPicker({ auto = false, autoScope = "", entry, keep
     item.dataset.model === entry.model && item.dataset.profileId === entry.profileId
   );
   if (!option) {
+    // La entrada viene del catálogo (p. ej. un modelo de la
+    // nube distinto al que su perfil trae como modelo
+    // «actual»): el <select> lleva un solo modelo por perfil,
+    // así que esa opción no existe — pero el perfil verificado
+    // SÍ, y el change del select ya sabe activar por
+    // providerKey+modelo. Antes este hueco abría el modal de
+    // proveedores sin decir por qué: elegir un modelo del
+    // menú terminaba en la pantalla de administración.
+    const profile = loadProviderProfiles().find((item) => item.id === entry.profileId && item.status === "active")
+      || verifiedProfileForModel(entry.providerKey, entry.model);
+    if (profile) {
+      const providerData = loadJson("editcore-providers", {})[entry.providerKey] || {};
+      const baseUrl = profile.baseUrl || providerData.baseUrl || PROVIDERS[entry.providerKey]?.baseUrl || "";
+      const apiKey = (profile && profile.apiKey) || providerData.apiKey || "";
+      await activateProvider({ baseUrl, apiKey, model: entry.model, providerKey: entry.providerKey, profileId: profile.id });
+      updateModelPickerLabel();
+      updateStatus();
+      return;
+    }
     if (!keepOpen) openProviders();
     return;
   }
@@ -2443,7 +2635,7 @@ function catalogChatModelOptions() {
   const profiles = loadProviderProfiles().filter((profile) => {
     if (!profile || !profile.model) return false;
     const effectiveKey = profile.apiKey || resolveProviderApiKey(profile.providerKey, "");
-    return Boolean(effectiveKey) || PRIMARY_PROVIDER_KEYS.includes(profile.providerKey);
+    return Boolean(effectiveKey) || PRIMARY_PROVIDER_KEYS.includes(profile.providerKey) || perfilUtilizableSinClave(profile);
   });
   const uniqueByModel = new Map();
   for (const profile of profiles) {
@@ -2515,8 +2707,20 @@ async function setChatModelEnabled(entry, enabled) {
   updateStatus();
 }
 
+// Endpoint SIN clave utilizable: el auto-detectar lo probó EN
+// VIVO y dejó el perfil active + chatVerified +
+// catalogConfirmed con la apiKey vacía, porque esa es la
+// configuración válida de un endpoint que no exige clave
+// (local tipo Ollama, p. ej. EDITCORE MODEL en
+// localhost:11435). Exigir apiKey no vacía en las listas del
+// chat lo dejaba «Funcional» en el modal de Modelos pero
+// invisible en el selector (2026-11-18).
+function perfilUtilizableSinClave(profile) {
+  return profile?.chatVerified === true && profile?.catalogConfirmed === true;
+}
+
 function verifiedChatModelOptions() {
-  const verifiedProfiles = loadProviderProfiles().filter((profile) => ["active", "enabled"].includes(profile.status) && profile.model && profile.apiKey);
+  const verifiedProfiles = loadProviderProfiles().filter((profile) => ["active", "enabled"].includes(profile.status) && profile.model && (profile.apiKey || perfilUtilizableSinClave(profile)));
   const customProvidersByKey = new Map(loadCustomProviders().map((provider) => [`custom:${provider.id}`, provider]));
   return filterModelOptionsForRole(verifiedProfiles
     .filter((profile) => {
@@ -3702,7 +3906,10 @@ async function switchChatThread(chatId, targetProjectId = "") {
     }
   } else {
     for (const message of state.history) {
-      append(message.role, message.content, message.usage, false, null, message.images || [], message.documents || []);
+      const bubble = append(message.role, message.content, message.usage, false, null, message.images || [], message.documents || []);
+      if (Array.isArray(message.archivos) && message.archivos.length && typeof pintarArchivosEntregados === "function") {
+        pintarArchivosEntregados(bubble, message.archivos, project.projectRoot);
+      }
     }
   }
   // [EDITCORE-INTEGRAL-B7] Re-atar las tarjetas vivas de ESTE chat
@@ -4892,6 +5099,266 @@ function buildPreviewInteractScript(action, selector, text = "") {
   })()`;
 }
 
+// ============================================================
+// [EDITOR VISUAL v5.2.7] Función pedida por Luis (estilo
+// Lovable): con la vista previa local abierta, el botón
+// «✎ Editar» inyecta un editor en la página — doble clic en
+// un texto para reescribirlo ahí mismo, clic en un elemento
+// para cambiar color de texto/fondo o la foto — y cada cambio
+// se guarda SOLO en el archivo fuente del proyecto vía
+// editcoreProject.applyVisualEdit (el mapeo vive en el proceso
+// principal, runtime/visual-edit.js). La página devuelve los
+// cambios por una cola que el anfitrión drena por sondeo,
+// porque el webview va sandboxed y sin preload.
+// ============================================================
+let visualEditActivo = false;
+let visualEditTimer = null;
+
+function buildVisualEditScript() {
+  return `(function () {
+  if (window.__ecVisualEditor) return { ok: true, ya: true };
+  window.__ecVisualEditor = true;
+  var edits = [];
+  window.__ecVisualEdits = edits;
+  var hover = null, hoverOutline = "", selected = null, editing = null, original = "", panel = null;
+  function push(e) { if (edits.length < 50) edits.push(e); }
+  function textoDe(el) { return (el && el.innerText ? el.innerText : "").trim().slice(0, 400); }
+  var toast = null, toastTimer = null;
+  function avisar(msg) {
+    if (!toast) {
+      toast = document.createElement("div");
+      toast.style.cssText = "position:fixed;left:50%;top:14px;transform:translateX(-50%);z-index:2147483647;pointer-events:none;background:#1f2430;color:#e8ecf4;border:1px solid #4f8cff;border-radius:999px;padding:8px 16px;font:13px system-ui;box-shadow:0 8px 30px rgba(0,0,0,.45)";
+      document.body.appendChild(toast);
+    }
+    toast.textContent = msg;
+    toast.style.display = "block";
+    if (toastTimer) clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { if (toast) toast.style.display = "none"; }, 4500);
+  }
+  window.__ecVisualAviso = avisar;
+  function restaurarHover() { if (hover) { hover.style.outline = hoverOutline; hover = null; } }
+  function onMove(ev) {
+    if (editing) return;
+    var t = ev.target;
+    if (!t || t.nodeType !== 1 || (panel && panel.contains(t))) return;
+    if (hover === t) return;
+    restaurarHover();
+    hover = t; hoverOutline = t.style.outline || "";
+    t.style.outline = "2px solid #4f8cff";
+  }
+  function cerrarPanel() { if (panel) { panel.remove(); panel = null; } selected = null; }
+  function abrirPanel(el) {
+    cerrarPanel();
+    selected = el;
+    panel = document.createElement("div");
+    panel.style.cssText = "position:fixed;z-index:2147483647;background:#1f2430;color:#e8ecf4;border:1px solid #4f8cff;border-radius:10px;padding:10px 12px;font:13px system-ui;box-shadow:0 8px 30px rgba(0,0,0,.45);min-width:230px";
+    var r = el.getBoundingClientRect();
+    panel.style.left = Math.max(8, Math.min(r.left, innerWidth - 260)) + "px";
+    panel.style.top = Math.max(8, Math.min(innerHeight - 200, r.bottom + 8)) + "px";
+    var titulo = document.createElement("div");
+    titulo.textContent = "<" + el.tagName.toLowerCase() + ">" + (el.id ? " #" + el.id : "");
+    titulo.style.cssText = "font-weight:700;margin-bottom:8px";
+    panel.appendChild(titulo);
+    function filaColor(nombre, prop) {
+      var fila = document.createElement("div");
+      fila.style.cssText = "display:flex;align-items:center;gap:8px;margin:6px 0";
+      var lab = document.createElement("span"); lab.textContent = nombre; lab.style.minWidth = "52px";
+      var inp = document.createElement("input"); inp.type = "color"; inp.value = "#3366ff";
+      var btn = document.createElement("button"); btn.textContent = "Aplicar"; btn.type = "button";
+      btn.addEventListener("click", function () {
+        el.style.setProperty(prop, inp.value);
+        push({ tipo: prop === "color" ? "color-texto" : "color-fondo", texto: textoDe(el), idElemento: el.id ? "#" + el.id : "", valor: inp.value });
+      });
+      fila.appendChild(lab); fila.appendChild(inp); fila.appendChild(btn);
+      panel.appendChild(fila);
+    }
+    filaColor("Texto", "color");
+    filaColor("Fondo", "background-color");
+    if (el.tagName === "IMG") {
+      var filaF = document.createElement("div");
+      filaF.style.cssText = "display:flex;align-items:center;gap:8px;margin:6px 0";
+      var labF = document.createElement("span"); labF.textContent = "Foto"; labF.style.minWidth = "52px";
+      var inpF = document.createElement("input"); inpF.type = "text"; inpF.value = el.getAttribute("src") || ""; inpF.style.flex = "1";
+      var btnF = document.createElement("button"); btnF.textContent = "Cambiar"; btnF.type = "button";
+      btnF.addEventListener("click", function () {
+        var nuevo = inpF.value.trim(); if (!nuevo) return;
+        push({ tipo: "foto", anterior: el.getAttribute("src") || "", nuevo: nuevo });
+        el.setAttribute("src", nuevo);
+      });
+      filaF.appendChild(labF); filaF.appendChild(inpF); filaF.appendChild(btnF);
+      panel.appendChild(filaF);
+    }
+    var cerrar = document.createElement("button"); cerrar.textContent = "Cerrar"; cerrar.type = "button"; cerrar.style.marginTop = "6px";
+    cerrar.addEventListener("click", cerrarPanel);
+    panel.appendChild(cerrar);
+    document.body.appendChild(panel);
+  }
+  function onClick(ev) {
+    if (panel && panel.contains(ev.target)) return;
+    if (editing) return;
+    ev.preventDefault(); ev.stopPropagation();
+    var t = ev.target;
+    if (t && t.nodeType === 1) abrirPanel(t);
+  }
+  function confirmarEdicion() {
+    if (!editing) return;
+    var el = editing; editing = null;
+    el.removeAttribute("contenteditable");
+    var nuevo = (el.innerText || "").trim();
+    if (nuevo && nuevo !== original) {
+      push({ tipo: "texto", anterior: original, nuevo: nuevo });
+      avisar("Guardando tu cambio…");
+    } else {
+      avisar("Sin cambios — el texto quedó igual");
+    }
+  }
+  function onDblClick(ev) {
+    var t = ev.target;
+    if (!t || t.nodeType !== 1 || (panel && panel.contains(t))) return;
+    ev.preventDefault(); ev.stopPropagation();
+    cerrarPanel();
+    if (t.tagName === "IMG") { abrirPanel(t); return; }
+    editing = t; original = (t.innerText || "").trim();
+    t.setAttribute("contenteditable", "true");
+    t.focus();
+    var sel = window.getSelection(); if (sel) sel.selectAllChildren(t);
+    avisar("Escribe el cambio y pulsa Enter para guardarlo");
+  }
+  function onKey(ev) {
+    if (!editing) return;
+    if (ev.key === "Enter" && !ev.shiftKey) { ev.preventDefault(); var elE = editing; confirmarEdicion(); if (elE && elE.blur) elE.blur(); }
+    else if (ev.key === "Escape") { var el = editing; editing = null; el.removeAttribute("contenteditable"); el.innerText = original; }
+    ev.stopPropagation();
+  }
+  function onBlur(ev) { if (editing && ev.target === editing) confirmarEdicion(); }
+  document.addEventListener("mousemove", onMove, true);
+  document.addEventListener("click", onClick, true);
+  document.addEventListener("dblclick", onDblClick, true);
+  document.addEventListener("keydown", onKey, true);
+  document.addEventListener("blur", onBlur, true);
+  window.__ecVisualConfirmar = function () { confirmarEdicion(); };
+  window.__ecVisualEditorOff = function () {
+    document.removeEventListener("mousemove", onMove, true);
+    document.removeEventListener("click", onClick, true);
+    document.removeEventListener("dblclick", onDblClick, true);
+    document.removeEventListener("keydown", onKey, true);
+    document.removeEventListener("blur", onBlur, true);
+    restaurarHover(); cerrarPanel();
+    if (toast) { toast.remove(); toast = null; }
+    if (editing) { editing.removeAttribute("contenteditable"); editing = null; }
+    window.__ecVisualEditor = false;
+    // La cola NO se vacía al apagar: el anfitrión la drena DESPUÉS
+    // de confirmar la edición en curso (ver toggleVisualEdit).
+  };
+  return { ok: true };
+})()`;
+}
+
+// Los DOS botones (barra del Navegador y barra bajo el cuadro
+// del chat, donde Luis lo busca por costumbre de Lovable)
+// reflejan el mismo estado.
+function reflejarEstadoVisualEdit() {
+  for (const id of ["visualEditBtn", "visualEditBtnChat"]) {
+    const b = $(id);
+    if (!b) continue;
+    b.classList.toggle("activo", visualEditActivo);
+    b.textContent = visualEditActivo ? "✎ Editando…" : "✎ Editar";
+  }
+}
+
+// Avisos del editor visual: NUNCA con showPreviewStatus. Esa función
+// desoculta #previewStatus — la cortina de carga del navegador — y
+// esa cortina solo se vuelve a ocultar cuando hay una navegación;
+// al activar el editor (sin navegación) la cortina tapaba la página
+// entera para siempre (defecto cazado en vivo: «al darle clic a
+// Editar se cierra el proyecto» y solo la flecha de recargar lo
+// devolvía). Los avisos del editor van a la barra de estado y al
+// aviso DENTRO de la página, que no tapa nada y se quita solo.
+function avisoVisualEdit(msg) {
+  $("status").textContent = msg;
+  try { hidePreviewLoading(); } catch { /* la cortina no aplica aquí */ }
+  const wv = $("previewWebview");
+  if (wv && typeof wv.executeJavaScript === "function") {
+    wv.executeJavaScript("window.__ecVisualAviso && window.__ecVisualAviso(" + JSON.stringify(msg) + ")").catch(() => undefined);
+  }
+}
+
+async function aplicarEdicionVisualAlProyecto(edicion) {
+  const root = String(state.projectRoot || "").trim();
+  if (!root || !window.editcoreProject?.applyVisualEdit) return;
+  try {
+    const r = await window.editcoreProject.applyVisualEdit({ projectRoot: root, edicion });
+    const msg = r?.ok
+      ? `✓ Edición visual guardada en ${r.archivo}`
+      : `Edición visual: ${r?.error || "no se pudo guardar en el archivo"}`;
+    avisoVisualEdit(msg);
+  } catch (error) {
+    $("status").textContent = `Edición visual: ${error?.message || String(error)}`;
+  }
+}
+
+async function drenarEdicionesVisuales() {
+  const webview = $("previewWebview");
+  if (!webview || typeof webview.executeJavaScript !== "function") return;
+  try {
+    const vivo = await webview.executeJavaScript("!!window.__ecVisualEditor");
+    if (!vivo) {
+      // La página navegó o se recargó: el editor se reinyecta solo.
+      await webview.executeJavaScript(buildVisualEditScript());
+      return;
+    }
+    const pendientes = await webview.executeJavaScript("Array.isArray(window.__ecVisualEdits) ? window.__ecVisualEdits.splice(0) : []");
+    for (const ed of pendientes || []) await aplicarEdicionVisualAlProyecto(ed);
+  } catch { /* navegación en curso; el siguiente ciclo reintenta */ }
+}
+
+async function toggleVisualEdit() {
+  const webview = $("previewWebview");
+  if (visualEditActivo) {
+    visualEditActivo = false;
+    reflejarEstadoVisualEdit();
+    try {
+      // Apagar NUNCA pierde trabajo (defecto cazado en vivo: Luis
+      // pulsaba ✎ Editar para apagar creyendo que así guardaba y el
+      // cambio se perdía): primero se confirma la edición en curso
+      // y se drena la cola al proyecto; solo DESPUÉS se detiene el
+      // drenador y se apaga el editor en la página.
+      try {
+        await webview.executeJavaScript("window.__ecVisualConfirmar && window.__ecVisualConfirmar()");
+      } catch { /* la vista pudo cerrarse antes */ }
+      await drenarEdicionesVisuales();
+      if (visualEditTimer) { clearInterval(visualEditTimer); visualEditTimer = null; }
+      await webview.executeJavaScript("window.__ecVisualEditorOff && window.__ecVisualEditorOff()");
+      // SIN reload: recargar tras guardar dejaba la vista en blanco
+      // (el servidor de desarrollo recompila) y borraba de la vista
+      // el aviso del guardado. La página ya muestra el texto nuevo,
+      // idéntico al archivo; apagar solo retira el editor.
+    } catch { /* la vista pudo cerrarse antes */ }
+    avisoVisualEdit("Edición visual desactivada");
+    return;
+  }
+  const root = String(state.projectRoot || "").trim();
+  if (!root) {
+    avisoVisualEdit("Edición visual: abre un proyecto primero");
+    return;
+  }
+  const url = String(webview?.getURL?.() || $("previewUrl")?.value || "");
+  if (!webview || typeof webview.executeJavaScript !== "function" || !isLocalPreviewUrl(url)) {
+    avisoVisualEdit("Edición visual: primero abre la vista previa local del proyecto (su botón de vista previa), espera a que cargue y vuelve a pulsar ✎ Editar");
+    return;
+  }
+  try {
+    await webview.executeJavaScript(buildVisualEditScript());
+  } catch (error) {
+    $("status").textContent = `Edición visual: ${error?.message || String(error)}`;
+    return;
+  }
+  visualEditActivo = true;
+  reflejarEstadoVisualEdit();
+  visualEditTimer = setInterval(() => { drenarEdicionesVisuales().catch(() => undefined); }, 700);
+  avisoVisualEdit("EDICIÓN VISUAL ACTIVA — doble clic en un texto para editarlo; clic en un elemento para su color o su foto. Los cambios se guardan solos en el archivo.");
+}
+
 async function runPreviewInteract(action) {
   const webview = $("previewWebview");
   const selector = String($("browserInspectSelector")?.value || "").trim();
@@ -5053,6 +5520,9 @@ async function maybeRefreshPreviewAfterWrite(fileName = "") {
     if (project?.scaffoldIncomplete) return;
   }
   if (base && ProjectFilesUi?.shouldAutoStartPreview && !ProjectFilesUi.shouldAutoStartPreview(base)) return;
+  // Tras escribir, solo se refresca una vista previa que el
+  // usuario ya arrancó en esta sesión; jamás se arranca una sola.
+  if (!previewArranquePermitido) return;
   try {
     const preview = await window.editcoreProject.startPreview(state.projectRoot);
     if (!preview?.available || !preview.url) return;
@@ -5685,6 +6155,14 @@ let previewExpectedUrl = "";
 let previewNavigationId = 0;
 let projectSelectionId = 0;
 let previewHealthCheckPending = false;
+// [v5.2.7 — corrección] La vista previa SOLO arranca por gesto
+// explícito del usuario (el botón de vista previa o Enter en la
+// barra de URL). Ninguna ruta automática — abrir un proyecto,
+// escribir un archivo, vigilar la salud del preview — puede
+// arrancar el servidor del proyecto: arrancarlo era lo que abría
+// la app del proyecto (su script dev) por su cuenta, una y otra
+// vez, detrás de EditCoreAI.
+let previewArranquePermitido = false;
 let previewRecoveryPromise = null;
 let previewRecoveryFailures = 0;
 let previewRecoveryBlockedUntil = 0;
@@ -5857,6 +6335,12 @@ async function openPreview({ forceReload = false } = {}) {
   if (state.projectRoot && !isRemotePreviewUrl(raw) && window.editcoreProject?.previewHealth) {
     const health = await window.editcoreProject.previewHealth(state.projectRoot).catch(() => ({ available: false }));
     if (!health?.available) {
+      if (!previewArranquePermitido) {
+        // Sin gesto explícito no se arranca nada: el panel queda
+        // en espera y la app del proyecto no se abre sola.
+        showPreviewStatus("La vista previa no está iniciada — pulsa el botón de vista previa para iniciarla.");
+        return;
+      }
       const preview = await window.editcoreProject.startPreview(state.projectRoot).catch((error) => ({
         available: false,
         message: error?.message || String(error),
@@ -5952,6 +6436,7 @@ function isRemotePreviewUrl(value) {
 }
 
 async function monitorPreviewHealth({ forceRecovery = false } = {}) {
+  if (!previewArranquePermitido) return;
   if (!state.projectRoot || !window.editcoreProject?.previewHealth || previewHealthCheckPending) return;
   if (previewRecoveryPromise) return previewRecoveryPromise;
   if (!forceRecovery && Date.now() < previewRecoveryBlockedUntil) return;
@@ -6237,6 +6722,9 @@ async function openNewWindow() {
 }
 
 async function refreshPreview() {
+  // Gesto explícito del botón de vista previa: desde aquí sí se
+  // puede arrancar el servidor del proyecto en esta sesión.
+  previewArranquePermitido = true;
   const button = $("openPreviewBtn");
   button?.classList.add("refreshing");
   button.disabled = true;
@@ -6432,27 +6920,35 @@ async function selectProject(id, options = {}) {
     }
     renderProjectFiles("").catch(() => undefined);
     try {
-      const preview = await window.editcoreProject.startPreview(project.projectRoot);
+      // [Orden de Luis, 2026-11-17] Al abrir un proyecto el navegador
+      // entra SOLO, sin clics, cuando la vista previa es una página
+      // web: si ya hay un servidor vivo se enlaza su URL y si no, se
+      // arranca en modo soloWeb. Si el proyecto abre su propia app de
+      // escritorio, main devuelve omitidaEscritorio y aquí NO se
+      // arranca nada — eso sigue siendo solo con el botón, como él
+      // mismo ordenó cuando PodcastStudio se abría solo detrás.
+      const health = await window.editcoreProject.previewHealth?.(project.projectRoot).catch(() => ({ available: false }));
       if (selectionId !== projectSelectionId || activeProject()?.id !== project.id || normalizeProjectRoot(state.projectRoot) !== normalizeProjectRoot(project.projectRoot)) return;
-      if (!preview?.available) {
-        showPreviewStatus(preview?.message || "No se pudo iniciar el navegador del proyecto.");
-        $("status").textContent = "Servidor no iniciado";
-      } else {
-        $("previewUrl").value = preview.url;
+      if (health?.available && health.url) {
+        previewArranquePermitido = true;
+        $("previewUrl").value = health.url;
         await openPreview({ forceReload: true });
-        $("status").textContent = preview.desktop
-          ? `Interfaz de la app ${preview.desktopLabel} · las funciones nativas solo responden en la app de escritorio`
-          : preview.remote
-          ? "Proyecto conectado mediante la vista previa remota del despliegue"
-          : preview.fallback
-          ? "Proyecto conectado mediante la vista previa estatica del build"
-          : preview.dependencyReport?.installed
-          ? `Dependencias instaladas con ${preview.dependencyReport.manager} · Proyecto conectado`
-          : "Proyecto conectado";
+        $("status").textContent = "Proyecto conectado";
+      } else {
+        const arranque = await window.editcoreProject.startPreview?.(project.projectRoot, { soloWeb: true }).catch(() => null);
+        if (selectionId !== projectSelectionId || activeProject()?.id !== project.id || normalizeProjectRoot(state.projectRoot) !== normalizeProjectRoot(project.projectRoot)) return;
+        if (arranque?.available && arranque.url) {
+          previewArranquePermitido = true;
+          $("previewUrl").value = String(arranque.url).replace(/\/$/, "");
+          await openPreview({ forceReload: true });
+          $("status").textContent = "Proyecto conectado";
+        } else {
+          showPreviewStatus(arranque?.message || "Vista previa sin iniciar — pulsa el botón de vista previa para iniciarla.");
+          $("status").textContent = "Proyecto abierto";
+        }
       }
     } catch (error) {
-      $("status").textContent = "Servidor no iniciado: " + (error?.message || String(error));
-      showPreviewStatus(error?.message || String(error));
+      $("status").textContent = "Proyecto abierto";
     }
     scheduleProjectKnowledgeRefresh(project.projectRoot);
   })();
@@ -7802,7 +8298,7 @@ function appendMessage(role, text, usage = { local_response: true }, target = nu
 // se conserva la conducta histórica contra el chat activo. Si el
 // chat de origen ya no existe, el resolvedor puro cae al activo
 // (respaldo declarado en runtime/chat-turn-ownership.js).
-function rememberMessage(role, content, usage, images = [], documents = [], target = null) {
+function rememberMessage(role, content, usage, images = [], documents = [], target = null, archivos = []) {
   let project = null;
   let chat = null;
   const Ownership = window.EditCoreChatTurnOwnership;
@@ -7842,7 +8338,7 @@ function rememberMessage(role, content, usage, images = [], documents = [], targ
   if (role === "assistant" && typeof stripAgentToolXml === "function") {
     cleanedContent = stripAgentToolXml(cleanedContent, { trim: false });
   }
-  const entry = { role, content: cleanedContent, usage: usage || null, images, documents };
+  const entry = { role, content: cleanedContent, usage: usage || null, images, documents, archivos: Array.isArray(archivos) ? archivos : [] };
   chat.messages.push(entry);
   // [EDITCORE-INTEGRAL-B7] project.messages / state.history /
   // state.activeProjectId solo se sincronizan si el destino es el
@@ -9598,6 +10094,51 @@ function finalizeThinkingAsAssistant(thinking, text, usage, elapsedSeconds, opti
   }
   scrollFeedToBottom();
   return thinking;
+}
+
+// [KERNEL-NUEVO v5.2.7] Archivos ENTREGADOS en el chat: cuando
+// el turno crea un archivo (un PDF, un Word, una nota…), el
+// resultado trae `archivos` y la burbuja lo ofrece AHÍ MISMO
+// como ENLACE DE DESCARGA (regla de Luis: igual que los
+// adjuntos de un chat) — al darle clic, el archivo baja a la
+// carpeta de Descargas del usuario vía editcoreProject
+// .downloadFile, sin cazarlo en el Explorador ni copiar rutas.
+function pintarArchivosEntregados(contenedor, archivos, projectRoot) {
+  if (!contenedor || !Array.isArray(archivos) || !archivos.length) return;
+  const root = String(projectRoot || state.projectRoot || "").trim();
+  const caja = document.createElement("div");
+  caja.className = "msg-attachments msg-attachments--entregados";
+  for (const archivo of archivos) {
+    const rel = String(archivo?.path || "").trim();
+    if (!rel) continue;
+    const nombre = String(archivo?.nombre || "").trim() || rel.split(/[\\/]/).pop() || rel;
+    const fila = document.createElement("div");
+    fila.className = "msg-attachment msg-attachment--entregado";
+    const etiqueta = document.createElement("span");
+    etiqueta.className = "msg-attachment-nombre";
+    etiqueta.textContent = Number.isFinite(archivo?.bytes) ? `📄 ${nombre} · ${archivo.bytes} bytes` : `📄 ${nombre}`;
+    etiqueta.title = rel;
+    fila.appendChild(etiqueta);
+    const descargar = document.createElement("button");
+    descargar.type = "button";
+    descargar.className = "msg-attachment-accion";
+    descargar.textContent = "Descargar";
+    descargar.title = `Descargar ${nombre} a tu carpeta de Descargas`;
+    descargar.addEventListener("click", async () => {
+      if (!window.editcoreProject?.downloadFile || !root) return;
+      descargar.disabled = true;
+      try {
+        await window.editcoreProject.downloadFile({ projectRoot: root, path: rel });
+        descargar.textContent = "✓ En Descargas";
+      } catch {
+        descargar.disabled = false;
+        descargar.textContent = "Descargar (reintentar)";
+      }
+    });
+    fila.appendChild(descargar);
+    caja.appendChild(fila);
+  }
+  if (caja.childElementCount) contenedor.appendChild(caja);
 }
 
 function removeThinking(item = null) {
@@ -11866,7 +12407,13 @@ async function hardStopFromChat(reason = "terminal-stop") {
   if (project) {
     const taskId = project.agentWorkflow?.taskId || project.durableWorkflow?.taskId || "";
     if (taskId && window.editcoreTasks?.cancel) await window.editcoreTasks.cancel(taskId).catch(() => null);
-    if (taskId && window.editcoreTasks?.discard) await window.editcoreTasks.discard(taskId).catch(() => null);
+    // [FASE2-CONECTAR C-6] Aquí había una llamada a
+    // window.editcoreTasks.discard: ese método no existe en preload,
+    // ni hay handler task:discard, ni el TaskManager/TaskStore tienen
+    // primitiva de descarte — era una llamada muerta con guarda «?.».
+    // Se retira: task:cancel ya deja la tarea fuera de las
+    // recuperables, que era el efecto buscado. No se inventa una
+    // semántica de descarte que el sistema de tareas no tiene.
     project.agentWorkflow = {
       ...(project.agentWorkflow || {}),
       phase: "idle",
@@ -12494,9 +13041,7 @@ async function send(event) {
   const agentTaskLive = hasResumableAgentTask(project)
     || project?.agentWorkflow?.phase === "executing"
     || [...activePromptRequests.values()].some((job) => job.isAgent && job.agentExecuting);
-  if (!hasAttachments && /^[?¿!\s]{1,4}$/.test(effectivePrompt.trim()) && agentTaskLive) {
-    effectivePrompt = "Continua la tarea activa. Explica en que paso vas y sigue ejecutando desde la evidencia guardada.";
-  } else if (!hasAttachments && project && ProjectAnalysis.isAgentTaskFeedback(effectivePrompt)
+  if (!hasAttachments && project && ProjectAnalysis.isAgentTaskFeedback(effectivePrompt)
     && project.agentWorkflow?.phase === "awaiting_authorization") {
     appendUserWithImages(effectivePrompt, []);
     rememberMessage("user", effectivePrompt);
@@ -12942,7 +13487,12 @@ function buildPromptJob(prompt) {
   let modelFields = PromptJobModel?.resolvePromptJobModelFields
     ? PromptJobModel.resolvePromptJobModelFields(selectedProfile, loadJson("editcore-providers", {}), PROVIDERS)
     : null;
-  if (!modelFields?.apiKey) {
+  // Un endpoint verificado SIN clave (local) no se bloquea:
+  // su clave vacía es su configuración válida — el mismo
+  // predicado que lo deja aparecer en el selector
+  // (perfilUtilizableSinClave). Sin esta exención, el envío
+  // exigía teclear una clave cualquiera para poder usarlo.
+  if (!modelFields?.apiKey && !perfilUtilizableSinClave(selectedProfile)) {
     openSettings();
     $("status").textContent = "Falta API key";
     alert("Falta configurar la API key para este modelo. Por favor, ingresa tu clave en el menú de Configuración.");
@@ -14129,10 +14679,13 @@ async function executePromptJob(job) {
           saveProjects({ immediate: true });
         }
       }
-      finalizeThinkingAsAssistant(thinking, finalText, result.usage, elapsedSeconds, {
+      const burbujaFinalAgente = finalizeThinkingAsAssistant(thinking, finalText, result.usage, elapsedSeconds, {
         // Informe final siempre sustituye Avances; no conservar progreso como cuerpo.
         preserveNarrative: false,
       });
+      // [KERNEL-NUEVO v5.2.7] Los archivos que el turno creó se
+      // entregan EN esta burbuja (Abrir / Mostrar en carpeta).
+      pintarArchivosEntregados(burbujaFinalAgente, result.archivos, job.projectRoot);
       if (result.usage) recordUsage(result.usage);
       notifyVoiceAssistant(finalText);
       const report = result.report || {};
@@ -14226,6 +14779,7 @@ async function executePromptJob(job) {
       removeThinking(thinking);
 
       // If streaming populated the element, finalize it; else use result directly
+      let burbujaChat = streamEl;
       if (streamEl) {
         const finalText = String(result?.text || "").trim() && result.text !== "Operación completada."
           ? result.text
@@ -14246,12 +14800,15 @@ async function executePromptJob(job) {
         // [EDITCORE-INTEGRAL-B7] Solo se pinta en el feed de origen;
         // si el usuario cambió de chat, la respuesta vive persistida
         // en su chat y se ve al volver.
-        append("assistant", result.text, result.usage, true, elapsedSeconds);
+        burbujaChat = append("assistant", result.text, result.usage, true, elapsedSeconds);
       }
+      // [KERNEL-NUEVO v5.2.7] Los archivos que el turno creó se
+      // entregan EN esta burbuja (Abrir / Mostrar en carpeta).
+      pintarArchivosEntregados(burbujaChat, result.archivos, job.projectRoot);
 
       // [EDITCORE-INTEGRAL-B7] Éxito de CHAT: persiste en el chat de
       // origen del trabajo, aunque el visible ahora sea otro.
-      rememberMessage("assistant", accumulated || result.text, result.usage, [], [], turnTarget);
+      rememberMessage("assistant", accumulated || result.text, result.usage, [], [], turnTarget, result.archivos);
       if (result.usage) recordUsage(result.usage);
       notifyVoiceAssistant(accumulated || result.text || result?.text);
       updateStatus();
@@ -16101,6 +16658,10 @@ document.querySelector(".conn-connect-btn[data-service='selfsupabase']")
   ?.addEventListener("click", connectSelfSupabase);
 document.querySelector(".conn-connect-btn[data-service='supabase']")
   ?.addEventListener("click", connectSupabase);
+document.querySelectorAll(".social-connect-btn")
+  .forEach((btn) => btn.addEventListener("click", () => conectarSocial(btn.dataset.socialConnect)));
+document.querySelectorAll(".social-complete-btn")
+  .forEach((btn) => btn.addEventListener("click", () => completarSocial(btn.dataset.socialComplete)));
 
 $("newProjectBtn").addEventListener("click", openNewProjectDialog);
 $("saveProjectBtn")?.addEventListener("click", saveCurrentProjectEntry);
@@ -16204,17 +16765,19 @@ if (typeof window.editcoreAgent.onComplete === "function") {
     settleAgentTurnChrome(thinking, { failed: payload?.completed === false, force: true });
   });
 }
-if (typeof window.editcoreAgent.onError === "function") {
-  window.editcoreAgent.onError((payload) => {
-    const thinking = resolveThinkingForTransparency(payload);
-    if (!thinking) return;
-    settleAgentTurnChrome(thinking, { failed: true, force: true });
-    setAgentLiveActivity(thinking, String(payload?.error || payload?.message || "Error del agente").slice(0, 160));
-  });
-}
+// [FASE2-BORRAR B-6] Suscripción a editcoreAgent.onError retirada
+// con el método de preload: el canal agent:error no tiene emisor en
+// main, así que este bloque jamás recibía nada. Los errores del
+// turno llegan por la respuesta de la propia llamada y onProgress.
 
 window.editcoreAgent.onProgress((progress) => {
   try {
+    // Un evento de progreso que no sea un objeto jamás debe
+    // tumbar el turno: este manejador lee progress.phase en
+    // varios puntos confiando en que siempre llega un objeto,
+    // y un solo evento vacío mataba la corrida con
+    // «Cannot read properties of undefined (reading 'phase')».
+    if (!progress || typeof progress !== "object") return;
     if (Date.now() < agentUiHardStopUntil) return;
     if (progress?.phase === "pipeline" || progress?.pipeline) {
       applyPipelineProgress(progress);
@@ -16731,6 +17294,16 @@ $("inspectBrowserBtn")?.addEventListener("click", () => {
     $("status").textContent = err?.message || String(err);
   });
 });
+$("visualEditBtn")?.addEventListener("click", () => {
+  toggleVisualEdit().catch((err) => {
+    $("status").textContent = err?.message || String(err);
+  });
+});
+$("visualEditBtnChat")?.addEventListener("click", () => {
+  toggleVisualEdit().catch((err) => {
+    $("status").textContent = err?.message || String(err);
+  });
+});
 $("closeBrowserInspectBtn")?.addEventListener("click", () => {
   $("browserInspectPanel")?.classList.add("hidden");
 });
@@ -16810,7 +17383,7 @@ window.addEventListener("resize", () => {
   window.EditCoreEditor?.layout?.();
   window.EditCoreTerminal?.fit?.();
 });
-$("previewUrl").addEventListener("keydown", (e) => { if (e.key === "Enter") openPreview(); });
+$("previewUrl").addEventListener("keydown", (e) => { if (e.key === "Enter") { previewArranquePermitido = true; openPreview(); } });
 function attachPreviewWebviewListeners(webview) {
   if (!webview || webview._previewListenersAttached) return;
   webview._previewListenersAttached = true;
@@ -17496,8 +18069,13 @@ window.EditCoreDiffDecisions = {
       acceptBtn.className = "diff-decision-btn diff-btn-done";
       rejectBtn.remove();
       try {
-        if (filePath && newContent && window.editcoreBridge?.writeFile) {
-          await window.editcoreBridge.writeFile({ path: filePath, content: newContent });
+        // [FASE2-CONECTAR C-2] Antes llamaba a window.editcoreBridge.writeFile,
+        // un namespace que preload NUNCA expuso: Aceptar no escribía nada, en
+        // silencio. La vía real de escritura del editor es
+        // editcoreProject.saveEditor ({projectRoot, path, content} →
+        // project:save-editor, que escribe y emite el cambio de archivos).
+        if (filePath && newContent && window.editcoreProject?.saveEditor) {
+          await window.editcoreProject.saveEditor({ projectRoot: state.projectRoot || "", path: filePath, content: newContent });
         }
       } catch (err) {
         console.warn("[diff-decisions] accept error", err);
@@ -17509,8 +18087,10 @@ window.EditCoreDiffDecisions = {
       rejectBtn.className = "diff-decision-btn diff-btn-done";
       acceptBtn.remove();
       try {
-        if (filePath && oldContent && window.editcoreBridge?.writeFile) {
-          await window.editcoreBridge.writeFile({ path: filePath, content: oldContent });
+        // [FASE2-CONECTAR C-2] Misma corrección que en Aceptar: la
+        // escritura real va por editcoreProject.saveEditor.
+        if (filePath && oldContent && window.editcoreProject?.saveEditor) {
+          await window.editcoreProject.saveEditor({ projectRoot: state.projectRoot || "", path: filePath, content: oldContent });
         }
       } catch (err) {
         console.warn("[diff-decisions] reject error", err);

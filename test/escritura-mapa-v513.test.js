@@ -40,7 +40,10 @@ process.env.HOME = path.join(tmpBase, "home");
 fs.mkdirSync(process.env.HOME, { recursive: true });
 process.env.EDITCORE_AGENT_NETWORK_PATH = path.join(tmpBase, "agent-network.json");
 
-const { ChatOrchestrator } = require("../editcore-chat-kernel/orchestrator");
+// [FASE2-RUTA-UNICA] ChatOrchestrator se retiró con el kernel
+// viejo: las pruebas de turno (i-b), (ii) y (iv) se retiran con
+// él. Quedan las de módulo vivo: el destilador (i-a, iii) y las
+// herramientas del Mapa contra classify/tools/expediente (vi).
 const orientationMap = require("../editcore-chat-kernel/orientation-map");
 const threadMemory = require("../editcore-chat-kernel/thread-memory");
 const { recordSubagentDistillates } = require("../editcore-chat-kernel/subagent-distill");
@@ -129,64 +132,6 @@ test("(i-a) el destilador asienta los pendientes explícitos de un informe de ex
 });
 
 // -------------------------------------------------------------- (i-b)
-test("(i-b) un turno ANALYZE con ROADMAP de pendientes cierra dejando frentes en el expediente y en el Mapa", async () => {
-  const root = alfaFixture();
-  const reply = "Análisis cerrado: el ROADMAP declara tres pendientes, con el Asesor IA como el mayor. Siguiente paso concreto: conectar app.py con templates/ai_agent.html.";
-  const s = scriptedHelpers([
-    { text: reply, toolCalls: [], usage: USAGE },
-    { text: reply, toolCalls: [], usage: USAGE },
-    { text: reply, toolCalls: [], usage: USAGE },
-    { text: reply, toolCalls: [], usage: USAGE },
-  ]);
-  await new ChatOrchestrator().handle({
-    ...BASE_ARGS, message: "analiza el estado del proyecto",
-    projectRoot: root, threadId: "hilo-v513-ib", helpers: s.helpers,
-  });
-  const fronts = (threadMemory.loadProjectState(root).fronts || []).filter((f) => f.status !== "closed");
-  assert.ok(fronts.some((f) => f.text.includes("Asesor IA")), `el analyst destiló el frente del Asesor IA al expediente (frentes: ${fronts.map((f) => f.text).join(" | ") || "ninguno"})`);
-  assert.ok(fronts.some((f) => /subagente analyst/.test(f.source || "")), "la procedencia es el analyst despachado en directo");
-  const map = orientationMap.getProjectMap(root);
-  assert.ok(map.openFronts.some((f) => f.text.includes("Asesor IA")), "al cerrar el turno, el frente ya está en los frentes abiertos del Mapa");
-});
-
-// --------------------------------------------------------------- (ii)
-test("(ii) CICLO COMPLETO: un hilo nuevo pregunta «¿qué queda pendiente?» y responde del Mapa, sin explorador", async () => {
-  const root = alfaFixture();
-  const replyA = "Análisis cerrado: tres pendientes declarados en el ROADMAP. Siguiente paso concreto: conectar app.py con templates/ai_agent.html.";
-  const sa = scriptedHelpers([
-    { text: replyA, toolCalls: [], usage: USAGE },
-    { text: replyA, toolCalls: [], usage: USAGE },
-    { text: replyA, toolCalls: [], usage: USAGE },
-    { text: replyA, toolCalls: [], usage: USAGE },
-  ]);
-  await new ChatOrchestrator().handle({
-    ...BASE_ARGS, message: "analiza el estado del proyecto",
-    projectRoot: root, threadId: "hilo-v513-ii-viejo", helpers: sa.helpers,
-  });
-
-  // Hilo NUEVO (otro threadId, mismo proyecto): la pregunta se
-  // responde desde la memoria registrada, no re-explorando.
-  const snapshots = [];
-  const replyB = "Queda pendiente, según la memoria del proyecto: el Asesor IA sin backend completo, las imágenes de static/images/ y confirmar el 500 de /products. El más urgente es el del Asesor IA.";
-  const sb = scriptedHelpers([
-    { text: replyB, toolCalls: [], usage: USAGE },
-    { text: replyB, toolCalls: [], usage: USAGE },
-    { text: replyB, toolCalls: [], usage: USAGE },
-  ], snapshots);
-  const res = await new ChatOrchestrator().handle({
-    ...BASE_ARGS, message: "¿qué queda pendiente?",
-    projectRoot: root, threadId: "hilo-v513-ii-nuevo", helpers: sb.helpers,
-  });
-  const names = (res.steps || []).map((s) => s.name);
-  assert.ok(names.includes("orientation_first"), `el hilo nuevo tomó el carril de orientación (${names.join(", ")})`);
-  assert.ok(!names.includes("ask_explorer"), "el hilo nuevo NO despachó al explorador");
-  assert.ok(snapshots.length >= 1, "la pregunta llegó al modelo");
-  assert.ok(snapshots[0].includes("Frentes abiertos:"), "el bloque compartido trae la sección de frentes");
-  assert.ok(snapshots[0].includes("Asesor IA sin backend completo"), "el bloque compartido contiene los frentes REGISTRADOS en el turno anterior");
-  assert.ok(!snapshots[0].includes("ninguno registrado"), "con frentes registrados no se declara el vacío");
-});
-
-// -------------------------------------------------------------- (iii)
 test("(iii) el workingOn (la pregunta del usuario) ya no aparece como frente del Mapa", () => {
   const root = emptyProject({ "package.json": JSON.stringify({ name: "demo" }) });
   threadMemory.noteFront(root, "Confirmar el error 500 de /products en producción", "subagente analyst · prueba v5.1.3");
@@ -200,33 +145,6 @@ test("(iii) el workingOn (la pregunta del usuario) ya no aparece como frente del
 });
 
 // --------------------------------------------------------------- (iv)
-test("(iv) memoria vacía: el bloque declara el vacío y el carril inyecta la directiva de vacío", async () => {
-  const root = emptyProject({ "package.json": JSON.stringify({ name: "demo" }), "src/index.js": "console.log(1);\n" });
-  const block = await buildSharedMemoryBlock(root, "hilo-v513-iv", "¿qué queda pendiente?", {});
-  assert.ok(block.includes("Frentes abiertos: ninguno registrado"), "el bloque compartido DECLARA la sección vacía en vez de omitirla");
-
-  const snapshots = [];
-  const reply = "De este proyecto aún no tengo registrado ningún frente abierto ni decisiones en la memoria: no consta ningún pendiente. Siguiente paso concreto: dime qué frente registramos primero o encárgame el análisis del proyecto.";
-  const s = scriptedHelpers([
-    { text: reply, toolCalls: [], usage: USAGE },
-    { text: reply, toolCalls: [], usage: USAGE },
-    { text: reply, toolCalls: [], usage: USAGE },
-  ], snapshots);
-  const res = await new ChatOrchestrator().handle({
-    ...BASE_ARGS, message: "¿qué queda pendiente?",
-    projectRoot: root, threadId: "hilo-v513-iv", helpers: s.helpers,
-  });
-  const names = (res.steps || []).map((x) => x.name);
-  assert.ok(names.includes("orientation_first"), "la pregunta de orientación tomó su carril también con la memoria vacía");
-  assert.ok(snapshots.length >= 1, "el turno llegó al modelo");
-  assert.ok(snapshots[0].includes("MEMORIA DE ORIENTACIÓN VACÍA"), "la directiva de vacío viajó ante el modelo");
-  assert.ok(snapshots[0].includes("aún no tengo registrado"), "la directiva ordena declararlo en la voz del agente");
-  assert.ok(snapshots[0].includes("PROHIBIDO concluir «no queda pendiente»"), "la directiva prohíbe concluir «no queda pendiente» desde lecturas de archivos");
-  const map = orientationMap.getProjectMap(root);
-  assert.ok(!map.openFronts.some((f) => /qué queda pendiente/i.test(f.text)), "tras el turno, la pregunta sigue sin ser un frente del Mapa");
-});
-
-// --------------------------------------------------------------- (vi)
 test("(vi) herramientas del Mapa: clasificación de escritura, bloqueo sin autorización y persistencia vía expediente", async () => {
   for (const name of ["open_map_front", "close_map_front", "note_map_decision"]) {
     assert.ok(WRITE_TOOLS.includes(name), `${name} está clasificada como ESCRITURA en classify.js`);

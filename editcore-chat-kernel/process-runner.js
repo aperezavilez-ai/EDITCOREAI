@@ -125,6 +125,41 @@ function killProcessTree(child) {
   } catch { /* el proceso ya pudo morir */ }
 }
 
+// Traducción de comandos Unix del modelo a cmd.exe (Windows).
+// El modelo emite su dialecto habitual — ls, cat, /dev/null —
+// y en cmd.exe eso no existe: la inspección moría con «no se
+// reconoce» y el turno cerraba con 0 acciones aunque la llamada
+// se hubiera rescatado bien. Se traducen solo formas seguras
+// al inicio de cada segmento del comando (tras &&, || o ;).
+function traducirComandoWindows(command) {
+  let cmd = String(command || "");
+  cmd = cmd.replace(/\bping\s+(?:-n\s+(\d+)\s+127\.0\.0\.1|-n\s+(\d+)\s+localhost)\b/gi, (match, n1, n2) => {
+    const count = Number(n1 || n2 || 0);
+    return count > 2 ? "ping -n 2 127.0.0.1" : match;
+  });
+  cmd = cmd.replace(/\btimeout\s+(?:\/t\s+(\d+))\b/gi, (match, count) => {
+    return Number(count) > 2 ? "timeout /t 2" : match;
+  });
+  cmd = cmd.replace(/&>\s*\/dev\/null/g, ">nul 2>&1");
+  cmd = cmd.replace(/(\d?)>\s*\/dev\/null/g, (m, n) => `${n || ""}>nul`);
+  cmd = cmd.replace(/(^|&&|\|\||;)\s*cat\s+/g, (m, sep) => (sep ? `${sep} type ` : "type "));
+  cmd = cmd.replace(/(^|&&|\|\||;)\s*ls(?:\s+-[a-zA-Z]+)?(?=\s|$)/g, (m, sep) => (sep ? `${sep} dir` : "dir"));
+  return cmd;
+}
+
+// Traducción cmd → PowerShell para el spawn con powershell.exe
+// (el run_command del kernel): el modelo emite «cd /d "ruta" &&
+// npm install» y en Windows PowerShell 5.1 «/d» no existe y «&&»
+// no separa comandos — el comando moría al instante y el turno
+// cerraba con «falló run_command» (registro de turnos de Luis,
+// 2026-11-17). Se adaptan SOLO esas dos formas.
+function traducirParaPowerShell(command) {
+  let cmd = String(command || "");
+  cmd = cmd.replace(/\s*&&\s*/g, "; ");
+  cmd = cmd.replace(/(^|;)\s*cd\s+\/d\s+/gi, (m, sep) => (sep ? "; " : "") + "cd ");
+  return cmd;
+}
+
 function runProcess({
   cwd,
   command,
@@ -148,13 +183,8 @@ function runProcess({
   // Desarmar y neutralizar bucles de "sleep falso" con ping en Windows
   // Ejemplo común del LLM: ping -n 301 127.0.0.1 > nul o timeout /t 300
   if (process.platform === "win32") {
-    cmd = cmd.replace(/\bping\s+(?:-n\s+(\d+)\s+127\.0\.0\.1|-n\s+(\d+)\s+localhost)\b/gi, (match, n1, n2) => {
-      const count = Number(n1 || n2 || 0);
-      return count > 2 ? "ping -n 2 127.0.0.1" : match;
-    });
-    cmd = cmd.replace(/\btimeout\s+(?:\/t\s+(\d+))\b/gi, (match, count) => {
-      return Number(count) > 2 ? "timeout /t 2" : match;
-    });
+    cmd = traducirComandoWindows(cmd);
+    if (usePowerShellOnWindows) cmd = traducirParaPowerShell(cmd);
   } else {
     cmd = cmd.replace(/\bsleep\s+(\d+)\b/gi, (match, count) => {
       return Number(count) > 2 ? "sleep 2" : match;
@@ -324,6 +354,8 @@ module.exports = {
   isLongRunningCommand,
   isBuildCommand,
   detectSevereIssue,
+  traducirComandoWindows,
+  traducirParaPowerShell,
   SEVERE_RE,
   LONG_RUNNING_RE,
   DEFAULT_TIMEOUT_MS,

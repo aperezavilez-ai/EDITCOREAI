@@ -3962,6 +3962,20 @@ ${input.analysisMode === true ? `MODO ANALISIS (SOLO LECTURA):
       ],
     });
 
+    // [FASE2-CONECTAR C-7] La fundación operativa externa se APLICA
+    // por fin: buildExternalFoundationContext llevaba importada
+    // desde el nacimiento de este adaptador sin una sola invocación,
+    // y su batería certificaba una integración inexistente. Entra
+    // como mensaje de sistema propio, con el modo real de la corrida
+    // (análisis = solo lectura; ejecución con o sin escritura).
+    messages.push({
+      role: "system",
+      content: buildExternalFoundationContext({
+        analysisMode: input.analysisMode === true,
+        allowWrite: input.allowWrite === true && input.analysisMode !== true,
+      }),
+    });
+
     // Contexto extra del host solo si existe
     if (input.systemExtra) {
       messages.push({ role: "system", content: String(input.systemExtra).slice(0, 500) });

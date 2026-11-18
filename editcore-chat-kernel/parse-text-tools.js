@@ -29,18 +29,28 @@ const ALIAS = {
 
 const NATIVE = [
   "list_files", "read_file", "write_file", "replace_in_file", "search_files",
-  "run_command", "audit_env", "supabase_migrate", "scaffold_project", "capture_preview",
+  "run_command", "audit_env", "supabase_migrate", "scaffold_project",
   "capture_preview_screenshot",
   // [EDITCORE-INTEGRAL-B4] start_preview reconocida también por la vía texto.
   "start_preview", "git_log", "git_diff",
-  "web_scrape", "ingest_to_brain", "list_brain", "clone_repo",
+  "web_scrape", "ingest_to_brain", "clone_repo",
   "rollback_last_change", "list_snapshots",
+  // [v5.2.7 — corrección] Los documentos también se rescatan por
+  // la vía texto: create_pdf/word/excel/csv son nombres reales del
+  // despachador (extra-tools) y faltaban en esta lista — una
+  // llamada en texto a crear un PDF se descartaba en silencio.
+  "create_pdf", "create_word", "create_excel", "create_csv",
+  // [FASE2-BORRAR B-3] Salen capture_preview y list_brain: nombres
+  // muertos que la vía texto reconocía y el despachador rechazaba
+  // (capture_preview es la deriva de capture_preview_screenshot;
+  // list_brain no existe en ningún conjunto). La vía texto ya solo
+  // promete nombres con case real en tools.execute.
 ];
 
 const TOOL_TAG_NAMES = [...new Set([...NATIVE, ...Object.keys(ALIAS)])];
 
 /** Marca el inicio de protocolo tool/XML/JSON que no debe verse en el chat. */
-const TOOL_MARKUP_START_RE = /<(?:dots_function_call|tool_call|tool_use|tool_invocation|function_calls?|function\s*=|parameter\s*=|invoke\b)\b|<\/?(?:dots_function_call|tool_call|tool_use|function|parameter)\b|```(?:json|xml)?\s*\n\s*\{[\s\S]*?"(?:name|tool|function)"\s*:/i;
+const TOOL_MARKUP_START_RE = /<\|tool_call\|>|<(?:dots_function_call|tool_code|tool_call|tool_use|tool_invocation|function_calls?|function\s*=|parameter\s*=|invoke\b)\b|<\/?(?:dots_function_call|tool_code|tool_call|tool_use|function|parameter)\b|```(?:json|xml)?\s*\n\s*\{\s*"(?:tool|function)"\s*:|```(?:json|xml)?\s*\n\s*\{\s*"name"\s*:[^}]*?"(?:args|arguments|input|parameters)"\s*:|\{\s*"(?:tool|function)"\s*:/i;
 
 function normalizeToolName(name) {
   const raw = String(name || "").trim().toLowerCase().replace(/[-\s]+/g, "_");
@@ -136,6 +146,13 @@ function parseInnerArgs(body) {
 function toRelativePath(projectRoot, filePath) {
   const raw = String(filePath || "").trim();
   if (!raw || !projectRoot) return raw.replace(/\\/g, "/");
+  // Prefijo literal primero: si la ruta empieza con la raíz tal
+  // cual (sin importar la plataforma), el resto ES la ruta
+  // relativa; resolver con path.resolve en otra plataforma
+  // devuelve la ruta entera y el prefijo jamás se recorta.
+  const escaped = String(projectRoot).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const prefixRe = new RegExp(`^${escaped}[\\\\/]?`, "i");
+  if (prefixRe.test(raw)) return raw.replace(prefixRe, "").replace(/\\/g, "/") || ".";
   const path = require("path");
   try {
     const root = path.resolve(String(projectRoot));
@@ -148,9 +165,6 @@ function toRelativePath(projectRoot, filePath) {
       return path.relative(root, abs).replace(/\\/g, "/") || ".";
     }
   } catch { /* ignore */ }
-  const escaped = String(projectRoot).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const re = new RegExp(`^${escaped}[\\\\/]?`, "i");
-  if (re.test(raw)) return raw.replace(re, "").replace(/\\/g, "/") || ".";
   return raw.replace(/\\/g, "/");
 }
 
@@ -173,10 +187,135 @@ function pushCall(calls, name, args, projectRoot) {
   });
 }
 
+// Argumentos del formato <tool_code>: el cuerpo de <arguments>
+// es JSON. Si el JSON no cierra (stream cortado a mitad del
+// objeto), se cae al parser interno general, que tolera texto.
+function parseToolCodeArgs(body) {
+  let trimmed = String(body || "").trim();
+  // Un resto de la etiqueta de cierre dentro del cuerpo (cuando
+  // falta </tool_code> el cuerpo capturado lo arrastra) no es
+  // parte del JSON: se corta antes de parsear.
+  const corte = trimmed.indexOf("</arguments");
+  if (corte >= 0) trimmed = trimmed.slice(0, corte).trim();
+  if (trimmed.startsWith("{")) {
+    try {
+      const json = JSON.parse(trimmed);
+      if (json && typeof json === "object" && !Array.isArray(json)) return json;
+    } catch { /* JSON incompleto: se intenta la vía general */ }
+  }
+  return parseInnerArgs(body);
+}
+
+
+// Objetos JSON completos en el texto (con llaves balanceadas,
+// respetando cadenas): el dialecto JSON de herramientas llega
+// como líneas peladas {"tool":"bash","args":{...}} sin cerco.
+function extraerObjetosJson(src) {
+  const objetos = [];
+  const texto = String(src || "");
+  for (let i = 0; i < texto.length; i++) {
+    if (texto[i] !== "{") continue;
+    let profundidad = 0;
+    let enCadena = false;
+    let escape = false;
+    let fin = -1;
+    for (let j = i; j < texto.length; j++) {
+      const ch = texto[j];
+      if (enCadena) {
+        if (escape) escape = false;
+        else if (ch === "\\") escape = true;
+        else if (ch === '"') enCadena = false;
+        continue;
+      }
+      if (ch === '"') enCadena = true;
+      else if (ch === "{") profundidad++;
+      else if (ch === "}") {
+        profundidad--;
+        if (profundidad === 0) { fin = j; break; }
+      }
+    }
+    if (fin < 0) continue;
+    try {
+      const obj = JSON.parse(texto.slice(i, fin + 1));
+      if (obj && typeof obj === "object" && !Array.isArray(obj)) {
+        objetos.push({ obj, inicio: i, fin: fin + 1 });
+        i = fin;
+      }
+    } catch { /* no era JSON: seguir buscando */ }
+  }
+  return objetos;
+}
+
+// ¿Este objeto JSON es una llamada a herramienta en dialecto
+// JSON? Llaves vistas en vivo: {"tool": "bash", "args": {...}}
+// (el «Auto» de la pasarela), {"name": ..., "arguments": ...},
+// {"function": ..., "parameters": ...}.
+function llamadaDesdeJson(obj) {
+  if (!obj || typeof obj !== "object") return null;
+  const nombre = obj.tool || obj.name || obj.function;
+  if (typeof nombre !== "string" || !nombre.trim()) return null;
+  let crudos = obj.args != null ? obj.args
+    : obj.arguments != null ? obj.arguments
+    : obj.input != null ? obj.input
+    : obj.parameters != null ? obj.parameters
+    : {};
+  if (typeof crudos === "string") {
+    try { crudos = JSON.parse(crudos); } catch { crudos = {}; }
+  }
+  if (!crudos || typeof crudos !== "object" || Array.isArray(crudos)) crudos = {};
+  const args = {};
+  for (const [k, v] of Object.entries(crudos)) assignArg(args, k, v);
+  return { nombre, args };
+}
+
 function parseTextToolCalls(text, { projectRoot } = {}) {
   const src = String(text || "");
   if (!src.trim()) return [];
   const calls = [];
+
+  // Dialecto JSON (líneas peladas o en cerco): {"tool": "...",
+  // "args": {...}}. Sin esta rama la llamada no se ejecutaba y
+  // el JSON quedaba pintado como si fuera la respuesta (visto
+  // en vivo: el agente «inspeccionaba» con JSON en el chat y no
+  // construía nada). pushCall descarta los nombres sin destino
+  // real tras aplicar los alias (bash -> run_command).
+  for (const { obj } of extraerObjetosJson(src)) {
+    const llamada = llamadaDesdeJson(obj);
+    if (llamada) pushCall(calls, llamada.nombre, llamada.args, projectRoot);
+  }
+
+  // Formato Gemma: <|tool_call|>call: <espacio>: <nombre>{json}<|tool_call|>
+  // El modelo «Auto» lo emite con un espacio de nombres inventado
+  // («googleapis: write_file»); el nombre válido es el ÚLTIMO
+  // segmento. Los argumentos son el objeto JSON entre la primera
+  // { y la última } antes del marcador de cierre (el contenido
+  // puede traer llaves dentro de cadenas). Sin este rescate, la
+  // llamada no se ejecutaba y el marcado quedaba pintado en el
+  // chat (juicio v5.2.7: notas.txt «creado» que nunca existió).
+  const gemmaRe = /<\|tool_call\|>\s*call:\s*([a-zA-Z0-9_.\-: ]+?)\s*(\{[\s\S]*\})\s*(?:<\|tool_call\|>|$)/gi;
+  let gm;
+  while ((gm = gemmaRe.exec(src))) {
+    const nombre = String(gm[1] || "").split(":").pop().trim();
+    if (nombre) pushCall(calls, nombre, parseToolCodeArgs(gm[2] || ""), projectRoot);
+  }
+
+  // Formato tool_code: <tool_code><name>list_files</name>
+  // <arguments>{"path": "..."}</arguments></tool_code>
+  const toolCodeRe = /<tool_code>\s*<name>\s*([a-zA-Z_][\w-]*)\s*<\/name>\s*<arguments>\s*([\s\S]*?)\s*<\/arguments>\s*<\/tool_code>/gi;
+  let tm;
+  while ((tm = toolCodeRe.exec(src))) {
+    pushCall(calls, tm[1], parseToolCodeArgs(tm[2] || ""), projectRoot);
+  }
+
+  // tool_code sin cierre (stream cortado): se rescata si los
+  // argumentos llegaron legibles.
+  if (!calls.length) {
+    const openTc = /<tool_code>\s*<name>\s*([a-zA-Z_][\w-]*)\s*<\/name>\s*<arguments>\s*([\s\S]*)$/i.exec(src);
+    if (openTc) {
+      const args = parseToolCodeArgs(openTc[2] || "");
+      if (Object.keys(args).length) pushCall(calls, openTc[1], args, projectRoot);
+    }
+  }
 
   // Formato cerrado: <tool_call><function=name>...</function></tool_call>
   const fnBlockRe = /<tool_call>\s*<function\s*=\s*([a-zA-Z_][\w-]*)\s*>\s*([\s\S]*?)\s*<\/function>\s*<\/tool_call>/gi;
@@ -249,6 +388,12 @@ function parseTextToolCalls(text, { projectRoot } = {}) {
 /**
  * Texto visible para el chat: corta en el primer markup de tool/protocolo.
  */
+// La cerca JSON solo cuenta como protocolo si el objeto es una
+// LLAMADA (clave tool/function, o name acompañado de args/
+// arguments/input/parameters). Un package.json también abre con
+// "name" — pero es un ARCHIVO volcado, no una llamada: comerlo
+// aquí dejaba el turno mudo («Aquí está el proyecto:» y nada
+// más) y ciego ante la corrección de volcado del bucle.
 function visibleNarrationText(text) {
   const raw = String(text || "");
   if (!raw) return "";
@@ -259,9 +404,25 @@ function visibleNarrationText(text) {
 
 function stripTextToolMarkup(text) {
   let out = String(text || "");
+  // Dialecto JSON: fuera los objetos que sean llamadas (con
+  // nombre conocido o no: un {"tool": ...} jamás es prosa).
+  const spansJson = extraerObjetosJson(out)
+    .filter(({ obj }) => obj && typeof obj === "object"
+      && (typeof obj.tool === "string" || typeof obj.function === "string"))
+    .map(({ inicio, fin }) => [inicio, fin])
+    .sort((a, b) => b[0] - a[0]);
+  for (const [inicio, fin] of spansJson) {
+    out = out.slice(0, inicio) + " " + out.slice(fin);
+  }
+  out = out.replace(/<\|tool_call\|>[\s\S]*?<\|tool_call\|>/gi, "");
+  // Gemma sin cierre (stream cortado): se corta la cola entera.
+  out = out.replace(/<\|tool_call\|>[\s\S]*$/i, "");
   out = out.replace(/<dots_function_call>[\s\S]*?<\/dots_function_call>/gi, "");
   out = out.replace(/<invoke\b[^>]*>[\s\S]*?<\/invoke>/gi, "");
   out = out.replace(/<parameter\b[^>]*>[\s\S]*?<\/parameter>/gi, "");
+  out = out.replace(/<tool_code>[\s\S]*?<\/tool_code>/gi, "");
+  // tool_code sin cierre (stream cortado): se corta la cola entera.
+  out = out.replace(/<tool_code>[\s\S]*$/i, "");
   out = out.replace(/<tool_call>[\s\S]*?<\/tool_call>/gi, "");
   out = out.replace(/<tool_use>[\s\S]*?<\/tool_use>/gi, "");
   out = out.replace(/<function\s*=\s*[a-zA-Z_][\w-]*\s*>[\s\S]*?<\/function>/gi, "");
@@ -269,7 +430,7 @@ function stripTextToolMarkup(text) {
   const names = TOOL_TAG_NAMES.join("|");
   const re = new RegExp(`<(${names})>\\s*[\\s\\S]*?\\s*<\\/\\1>`, "gi");
   out = out.replace(re, "");
-  out = out.replace(/<\/?(?:dots_function_call|invoke|parameter|tool_call|tool_use)\b[^>]*>/gi, "");
+  out = out.replace(/<\/?(?:dots_function_call|invoke|parameter|tool_call|tool_use|tool_code)\b[^>]*>/gi, "");
   // Incompletos / stream cortado
   out = visibleNarrationText(out);
   return out.replace(/\n{3,}/g, "\n\n").trim();
@@ -290,6 +451,8 @@ module.exports = {
   isToolProtocolText,
   normalizeToolName,
   toRelativePath,
+  extraerObjetosJson,
+  llamadaDesdeJson,
   ALIAS,
   TOOL_MARKUP_START_RE,
 };

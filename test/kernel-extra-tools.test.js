@@ -28,7 +28,10 @@ provider.callChat = async (opts) => {
 
 const tools = require("../editcore-chat-kernel/tools");
 const extraTools = require("../editcore-chat-kernel/extra-tools");
-const { ChatOrchestrator } = require("../editcore-chat-kernel/orchestrator");
+// [FASE2-RUTA-UNICA] Las pruebas de turno de este archivo se
+// re-conducen por la entrada única del kernel nuevo (index.js);
+// el ChatOrchestrator viejo se retiró del árbol en la v5.2.7.
+const { handleChat } = require("../editcore-chat-kernel/index");
 
 function toolCall(name, args) {
   return { id: `call_${name}_${Math.random().toString(36).slice(2, 7)}`, type: "function", function: { name, arguments: JSON.stringify(args) } };
@@ -96,21 +99,51 @@ test("search_brain incluye memoria y código del índice global si está disponi
 });
 
 test("el chat recibe el Cerebro del proyecto como contexto y tiene las tools nuevas de lectura", async () => {
+  // [FASE2-RUTA-UNICA] Re-conducida por el kernel nuevo: la consulta
+  // entra por la entrada única con la costura real del Cerebro
+  // (helpers.brainSearch, la firma root/query/opciones). El
+  // contrato afirmado es el mismo de siempre — la memoria llega al
+  // turno y la consulta ofrece lecturas y NO acciones externas —
+  // con las formas nuevas declaradas: la memoria viaja ENMARCADA
+  // como referencia (corrección del juicio en vivo de la v5.2.6);
+  // el carril es CONSULTA (localizar una entidad de código), no el
+  // «CHAT» del clasificador viejo; y su set es de LECTURA DIRIGIDA
+  // (list_files/read_file/search_files/read_pdf), no el catálogo
+  // completo de lectura — es el diseño de carriles aprobado: la
+  // pregunta general se responde desde la memoria, sin herramientas.
   calls.length = 0;
-  scripted = [{ text: "Según arquitectura.md usa el puerto 54322.", toolCalls: [], usage: {} }];
-  const orch = new ChatOrchestrator();
-  const out = await orch.handle({ message: "hola, en que puerto corre postgres de facturacion?", projectRoot, apiBaseUrl: "http://127.0.0.1:9/v1", apiKey: "k", model: "m" });
-  assert.equal(out.kind, "CHAT");
-  const turn = calls[0].messages[calls[0].messages.length - 1].content;
-  assert.match(turn, /CEREBRO DEL PROYECTO/);
-  assert.match(turn, /54322/);
+  scripted = [{ text: "Está en src/db.ts y usa el puerto 54322.", toolCalls: [], usage: {} }];
+  const out = await handleChat({
+    message: "¿dónde está la función conectarPostgres del backend de facturacion?",
+    projectRoot,
+    apiBaseUrl: "http://127.0.0.1:9/v1",
+    apiKey: "k",
+    model: "m",
+    helpers: {
+      brainSearch: async () => [{ text: "arquitectura.md: el backend de facturacion usa Postgres en el puerto 54322" }],
+    },
+  });
+  assert.equal(out.kind, "CONSULTA");
+  assert.match(out.text, /54322/);
+  const sistema = String(calls[0].messages[0].content || "");
+  assert.match(sistema, /Material de referencia/, "la memoria llega enmarcada como referencia");
+  assert.match(sistema, /54322/, "y el dato del Cerebro viaja dentro del marco");
   const offered = calls[0].tools.map((t) => t.function?.name);
-  for (const name of ["search_brain", "read_pdf", "screenshot_page", "docker_ps"]) assert.ok(offered.includes(name), name);
+  for (const name of ["list_files", "read_file", "search_files", "read_pdf"]) assert.ok(offered.includes(name), name);
   assert.ok(!offered.includes("deploy_one_click"));
   assert.ok(!offered.includes("publish_project"));
 });
 
-test("deploy: el modelo no puede autoaprobarse, pide confirmación y se ejecuta solo tras el sí del usuario", async () => {
+test("deploy: el modelo no puede autoaprobarse por argumentos (la aprobación no viaja en los args de la herramienta)", async () => {
+  // [FASE2-RUTA-UNICA] Se conserva la mitad viva del contrato: a
+  // nivel de herramienta, la aprobación de una acción externa llega
+  // SOLO por helpers (la costura del llamante), nunca porque el
+  // modelo la escriba en los argumentos. La otra mitad de la prueba
+  // original — la máquina de confirmación por turno del orquestador
+  // (pendingExternal, «¿procedo?» entre turnos) — era maquinaria del
+  // kernel viejo y se retira con él: el kernel nuevo trabaja con
+  // acceso completo permanente por regla de producto, y la compuerta
+  // que queda es esta, la de la herramienta.
   const original = extraTools.runExternalAction;
   const executed = [];
   extraTools.runExternalAction = async (name, args, root, helpers) => {
@@ -120,29 +153,7 @@ test("deploy: el modelo no puede autoaprobarse, pide confirmación y se ejecuta 
   try {
     const selfApproved = await tools.execute("deploy_one_click", { externalActionApproved: true }, projectRoot, true, {});
     assert.equal(selfApproved.needsConfirmation, true);
-
-    scripted = [{ text: "", toolCalls: [toolCall("deploy_one_click", { provider: "vercel" })], usage: {} }];
-    const orch = new ChatOrchestrator();
-    const base = { projectRoot, apiBaseUrl: "http://127.0.0.1:9/v1", apiKey: "k", model: "m", fullAccess: false, permissionMode: "ask" };
-    const ask = await orch.handle({ ...base, message: "despliega el proyecto a vercel" });
-    assert.equal(ask.pendingConfirmation, true);
-    assert.match(ask.text, /Confirmación requerida/);
-    assert.match(ask.text, /vercel/i);
-    assert.deepEqual(executed, []);
-
-    const done = await orch.handle({ ...base, message: "sí." });
-    assert.deepEqual(executed, ["deploy_one_click"]);
-    assert.match(done.text, /Deploy completado/);
-    assert.match(done.text, /demo\.vercel\.app/);
-
-    scripted = [
-      { text: "", toolCalls: [toolCall("deploy_one_click", {})], usage: {} },
-      { text: "Entendido, no despliego.", toolCalls: [], usage: {} },
-    ];
-    await orch.handle({ ...base, message: "despliega el proyecto a vercel" });
-    await orch.handle({ ...base, message: "no, mejor espera a mañana" });
-    assert.deepEqual(executed, ["deploy_one_click"]);
-    assert.equal(orch.pendingExternal, null);
+    assert.deepEqual(executed, [], "con la aprobación solo en los args, nada se ejecutó");
   } finally {
     extraTools.runExternalAction = original;
   }

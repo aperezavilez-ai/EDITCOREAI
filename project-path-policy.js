@@ -110,12 +110,18 @@ function resolveInside(rootPath, relativePath = "") {
   const root = assertProjectRoot(rootPath);
   let cleanRel = String(relativePath || ".").trim().replace(/\\/g, "/").replace(/^\/+/, "");
 
-  // Mapeo inteligente y transparente: si el proyecto no tiene físicamente las carpetas 'app' o 'src' 
-  // en la raíz pero el agente las solicita, redirigimos al contenido correspondiente en la raíz.
-  if (!fs.existsSync(path.join(root, "app")) && (cleanRel.startsWith("app/") || cleanRel === "app")) {
+  // Mapeo inteligente y transparente: si el proyecto no tiene físicamente las carpetas 'app' o 'src'
+  // en la raíz pero el agente las solicita, redirigimos al contenido correspondiente en la raíz —
+  // SOLO si ese contenido EXISTE en disco. Si no existe ni la carpeta ni el archivo sin prefijo,
+  // la ruta pedida manda tal cual: recortar el prefijo sin condición aplanaba las escrituras de
+  // un proyecto nuevo (src/app.js caía como app.js en la raíz, src/ jamás se creaba y la
+  // estructura del andamiaje se destruía en silencio — «sistemas contino», 2026-11-17).
+  if (!fs.existsSync(path.join(root, "app")) && (cleanRel === "app"
+    || (cleanRel.startsWith("app/") && fs.existsSync(path.join(root, cleanRel.replace(/^app\//, "")))))) {
     cleanRel = cleanRel.replace(/^app\/?/, "");
   }
-  if (!fs.existsSync(path.join(root, "src")) && (cleanRel.startsWith("src/") || cleanRel === "src")) {
+  if (!fs.existsSync(path.join(root, "src")) && (cleanRel === "src"
+    || (cleanRel.startsWith("src/") && fs.existsSync(path.join(root, cleanRel.replace(/^src\//, "")))))) {
     cleanRel = cleanRel.replace(/^src\/?/, "");
   }
 
@@ -413,10 +419,12 @@ function resolveAccessibleTarget(primaryRoot, maybePath = "", options = {}) {
     if (hit) return hit;
   } else {
     let cleanRel = raw.replace(/\\/g, "/").replace(/^\/+/, "");
-    if (!fs.existsSync(path.join(primary, "app")) && (cleanRel.startsWith("app/") || cleanRel === "app")) {
+    if (!fs.existsSync(path.join(primary, "app")) && (cleanRel === "app"
+      || (cleanRel.startsWith("app/") && fs.existsSync(path.join(primary, cleanRel.replace(/^app\//, "")))))) {
       cleanRel = cleanRel.replace(/^app\/?/, "");
     }
-    if (!fs.existsSync(path.join(primary, "src")) && (cleanRel.startsWith("src/") || cleanRel === "src")) {
+    if (!fs.existsSync(path.join(primary, "src")) && (cleanRel === "src"
+      || (cleanRel.startsWith("src/") && fs.existsSync(path.join(primary, cleanRel.replace(/^src\//, "")))))) {
       cleanRel = cleanRel.replace(/^src\/?/, "");
     }
     const candidates = [

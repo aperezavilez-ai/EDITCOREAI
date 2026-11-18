@@ -1,432 +1,305 @@
 "use strict";
+// ============================================================
+// [KERNEL ÚNICO — v5.2.7] Entrada del kernel de chat.
+//
+// Desde la v5.2.7 esta es la ÚNICA ruta de chat: el kernel nuevo
+// (editcore-chat-kernel/nuevo: despacho por carriles, turno con
+// presupuestos duros, subagentes reales, cierre desde los hechos)
+// atiende TODOS los turnos. El kernel viejo (orchestrator.js y su
+// cadena serial con cola y steering) se retiró del árbol en esta
+// misma entrega, con su mapa de alcanzabilidad: lo compartido se
+// quedó (provider.js, tools.js, extra-tools.js, parse-text-tools.js,
+// classify.js, concierge.js, orientation-map.js) y lo exclusivo se
+// borró con sus tests exclusivos. La red de seguridad es el tag
+// v5.2.6 en GitHub, no código muerto conviviendo.
+//
+// Contrato que esta entrada mantiene con runtime/chat-kernel-bridge.js
+// (y, a través de él, con main.js):
+//   handleChat(input)      → resultado del adaptador (text, detalle,
+//                            steps, kind=carril, incomplete,
+//                            mutations, usage, archivos) o la forma
+//                            STOP si la corrida fue cancelada.
+//   stopChat()             → aborta TODAS las corridas vivas.
+//   cancelChatRun(runId)   → aborta UNA corrida; true si existía.
+//   isChatRunning()        → hay corridas vivas o en cadena.
+//   steerChat(instruction) → DECLARADO: { accepted: false }. El
+//                            carril paralelo del kernel nuevo
+//                            (nuevo/subagentes.atenderEnParalelo)
+//                            existe como módulo probado pero aún no
+//                            está cableado a esta entrada; hasta
+//                            que lo esté, una instrucción a mitad de
+//                            turno NO se funde — entra al cerrar el
+//                            turno en curso. No se finge lo contrario.
+//   classify               → el clasificador compartido (classify.js).
+//   QUEUE_TIMEOUT_MS       → constante de compatibilidad del
+//                            puente; la cola con plazo del kernel
+//                            viejo ya no existe (los turnos se
+//                            serializan en cadena, sin aviso de cola).
+// ============================================================
 
-/**
- * Núcleo de chat EditCore — entrada única.
- *
- *   const { handleChat, stopChat } = require("./editcore-chat-kernel");
- *   const out = await handleChat({ message, projectRoot, apiBaseUrl, apiKey, model, onProgress });
- */
-
-const { ChatOrchestrator, hasMutationIntent } = require("./orchestrator");
+const { manejarChatNuevo } = require("./nuevo/adaptador");
 const { classify } = require("./classify");
-// [EDITCORE-V510-B1] Carril del conserje (solo lectura, en paralelo).
-const { runConcierge } = require("./concierge");
-const { SKILL_IDS } = require("./skills-catalog");
-const { uiDesignSystemPrompt } = require("./ui-design-prompt");
-const { scaffoldNextApp } = require("./scaffold");
-const { detectDevLogIssue } = require("./dev-log-detector");
-const tools = require("./tools");
-const snapshot = require("./snapshot");
-const processRunner = require("./process-runner");
-const visionInspector = require("./vision-inspector");
-const globalMemory = require("./global-memory");
-const taskQueue = require("./task-queue");
-const threadCore = require("./thread-core");
-const threadMemory = require("./thread-memory");
-const modelRouter = require("./model-router");
-const agentBus = require("./agent-bus");
-const selfGuard = require("./self-guard");
 
-const orchestrator = new ChatOrchestrator();
-
-// 🔒 Lock serializado: impide que dos mensajes concurrentes pisen el estado
-// interno del orchestrator (abort, turnAbort, _currentUserText, _threadId).
-// [EDITCORE-INTEGRAL-B7] La serialización NO se toca (un orquestador +
-// una cadena, ver «Lo que ya está bien» del programa): lo que el Bloque
-// 7 añade es PLAZO para quien espera en la cola y cancelación POR
-// runId. Antes el segundo handleChat esperaba a `prev` sin plazo: una
-// corrida colgada dejaba todas las posteriores en «Pensando…» hasta
-// reiniciar, y KERNEL_TIMEOUT_MS vivía sin uso en el bridge.
-let _chain = Promise.resolve();
-
-// [EDITCORE-INTEGRAL-B7] Plazo de COLA declarado: quien espera su turno
-// más de esto recibe un resultado honesto en SU burbuja en vez de
-// colgar para siempre. Es deliberadamente mucho menor que el plazo
-// total de ejecución del bridge (KERNEL_TIMEOUT_MS, 60 min): esperar
-// en cola NO consume el presupuesto de ejecución del turno.
 const QUEUE_TIMEOUT_MS = 120_000;
+// Tope de espera de la búsqueda del Cerebro al construir la memoria
+// del turno: el Cerebro es opcional y nunca retiene un turno.
+const BUSQUEDA_CEREBRO_MS = 8_000;
 
-// [EDITCORE-INTEGRAL-B7] Registro de corridas de la cadena: una
-// entrada por corrida (runId), con su estado queued|running|done.
-// Es la costura que permite cancelar UNA corrida (la de su chat) sin
-// matar las demás: la que espera sale de la cola; la que corre aborta
-// solo su señal (como es la única en ejecución — serialización —,
-// detener el orquestador en ese instante ES detener solo esa).
-const _runs = new Map();
+const _runs = new Map(); // runId -> { controller, threadId, runId, steeringQueue }
+let _chain = Promise.resolve();
+let _active = 0;
 
-function resolveQueueTimeoutMs(input = {}) {
-  const raw = input.queueTimeoutMs ?? input.queueWaitMs ?? input.queueDeadlineMs;
-  if (raw === null || raw === undefined || raw === "") return QUEUE_TIMEOUT_MS;
-  const n = Number(raw);
-  if (!Number.isFinite(n) || n < 0) return QUEUE_TIMEOUT_MS;
-  return n; // 0 = sin plazo (solo para costuras que lo pidan explícito)
-}
-
-function queueTimeoutResult(entry, waitedMs) {
-  const seconds = Math.max(1, Math.round(waitedMs / 1000));
-  return {
-    kind: "QUEUED",
-    queued: true,
-    queueTimeout: true,
-    // [EDITCORE-V510-B1b] Texto de SISTEMA, no del modelo: el recibo
-    // no debe estimar tokens de salida sobre él (el caso ↓75 de Luis:
-    // 297 caracteres ÷ 4 asentados como si el modelo hubiera hablado).
-    systemNotice: true,
-    usage: { system_notice: true },
-    runId: entry.runId,
-    chatId: entry.chatId || "",
-    waitedMs,
-    text: [
-      `## ⏳ Tu turno sigue en cola tras ${seconds} s`,
-      "",
-      "Hay otro turno en curso y el motor de EditCoreAI ejecuta **de uno en uno**: este turno **no se ejecutó** y no quedó colgado en silencio.",
-      "",
-      "Puedes esperar a que termine el turno anterior y reenviar tu mensaje, o detener el turno en curso desde su propio chat.",
-    ].join("\n"),
-    steps: [],
-  };
-}
-
-// [EDITCORE-V510-B1] ¿Es una CONSULTA PURA? (preguntar, listar,
-// analizar, verificar — sin intención de mutación). Solo esas pueden
-// salir de la cadena hacia el conserje: una instrucción o una tarea
-// jamás se atiende por el carril de solo lectura.
-const PURE_QUERY_KINDS = new Set(["ASK", "LIST", "ANALYZE", "VERIFY"]);
-function isPureKernelQuery(input = {}) {
-  const message = String(input?.message || "");
-  if (!message.trim()) return false;
+// La memoria del turno, con TODO a la mano como en el kernel
+// vigente hasta la v5.2.6: el MAPA (capas usuario + proyecto, la
+// misma fuente del carril de orientación) y el Cerebro visible
+// (brainSearch). Las skills viajan en skillsPrompt y por las
+// herramientas read_skill/list_skills. Mudada desde el puente en
+// la unificación de ruta, con DOS correcciones de contrato: la
+// búsqueda del Cerebro se llama con su firma real
+// (root, query, opciones) — el puente la llamaba con un solo
+// argumento y el Cerebro nunca respondía en producción — y el
+// resultado se aplana desde su forma real ({memory, knowledge,
+// catalog}) además de la forma de lista simple.
+async function construirMemoria(inputN, helpers) {
+  const partes = [];
   try {
-    if (hasMutationIntent(message)) return false;
-    const c = classify(message);
-    return Boolean(c && (c.allowWrite === false || PURE_QUERY_KINDS.has(c.kind)));
-  } catch { return false; }
-}
-
-// [EDITCORE-V510-B1b] Resultado de una entrada VENCIDA que se fundió
-// como steering del turno en curso: el mensaje NO se descartó — el
-// agente lo atiende dentro de la tarea que ya corre. Texto de
-// sistema: cero tokens estimados en el recibo.
-function steeredResult(entry, waitedMs) {
-  const seconds = Math.max(1, Math.round(waitedMs / 1000));
-  return {
-    kind: "STEERED",
-    steered: true,
-    systemNotice: true,
-    usage: { system_notice: true },
-    runId: entry.runId,
-    chatId: entry.chatId || "",
-    waitedMs,
-    text: [
-      `## 🧭 Tu mensaje se fundió con el turno en curso`,
-      "",
-      `Llevaba ${seconds} s en cola: en vez de descartarlo, lo entregué como instrucción (steering) al turno que está trabajando, que lo atiende dentro de su tarea. Nada se perdió y este aviso no consumió tokens del modelo.`,
-    ].join("\n"),
-    steps: [],
-  };
-}
-
-function queueCancelledResult(entry) {
-  return {
-    kind: "STOP",
-    cancelled: true,
-    queuedCancelled: entry.state !== "running",
-    runId: entry.runId,
-    chatId: entry.chatId || "",
-    text: "Cancelado por el usuario.",
-    steps: [],
-  };
-}
-
-// [EDITCORE-V510-B1] Desvío a SUBAGENTE CONCURRENTE: atiende la consulta por su
-// carril paralelo con AbortController PROPIO (cancelarla no toca la
-// corrida principal). Si el carril no puede atender (sin clave o
-// fallo del proveedor), la consulta NO se pierde:
-//  - hasSlot=false (desvío al llegar, sin sitio en la cadena): se
-//    encola por la ruta de siempre.
-//  - hasSlot=true (desvío al vencer el plazo, con sitio): queda en
-//    ESPERA DECLARADA en su sitio y ejecuta cuando la cadena la
-//    recoja.
-async function divertToConcierge(entry, safeInput, { hasSlot = false } = {}) {
-  const controller = new AbortController();
-  entry.controller = controller;
-  entry.state = "concierge";
-  try {
-    safeInput.onProgress?.({
-      phase: "concierge",
-      runId: entry.runId,
-      chatId: entry.chatId,
-      text: "El agente principal sigue trabajando en su tarea; este subagente atiende tu consulta en paralelo sin esperar ni tocar archivos.",
-    });
-  } catch { /* el aviso no tumba el turno */ }
-  let out = null;
-  try {
-    out = await runConcierge({
-      message: safeInput.message,
-      projectRoot: safeInput.projectRoot,
-      threadId: safeInput.threadId,
-      apiBaseUrl: safeInput.apiBaseUrl,
-      apiKey: safeInput.apiKey,
-      model: safeInput.model,
-      helpers: safeInput.helpers,
-      signal: controller.signal,
-      onProgress: safeInput.onProgress,
-    });
-  } catch { out = null; }
-  if (controller.signal.aborted) {
-    entry.state = "done";
-    _runs.delete(entry.runId);
-    entry.resolveCaller(queueCancelledResult(entry));
-    return;
-  }
-  if (out) {
-    entry.state = "done";
-    _runs.delete(entry.runId);
-    entry.resolveCaller({ ...out, runId: entry.runId, chatId: entry.chatId || "" });
-    return;
-  }
-  if (hasSlot) {
-    entry.state = "waiting";
+    const orientationMap = require("./orientation-map");
+    const bloqueMapa = orientationMap.buildMapBlock(inputN.projectRoot, { executeTurn: false });
+    if (bloqueMapa) partes.push(String(bloqueMapa).slice(0, 12000));
+  } catch { /* sin Mapa el turno responde igual */ }
+  if (typeof helpers?.brainSearch === "function" && inputN.message) {
     try {
-      safeInput.onProgress?.({ phase: "queued-wait", runId: entry.runId, chatId: entry.chatId, text: "El conserje no pudo atender esta consulta; queda en espera declarada y se ejecutará en cuanto el motor se libere. No se descarta." });
-    } catch { /* el aviso no tumba el turno */ }
-  } else {
-    entry.state = "queued";
-    enqueueTurn(entry, safeInput);
-  }
-}
-
-// La ruta de siempre: la cadena serial del orquestador único, con su
-// plazo de cola. [EDITCORE-V510-B1b] Al vencer el plazo la entrada YA
-// NO se descarta (antes resolvía QUEUED y el pickup la tiraba: el
-// mensaje de Luis caducó a los 120 s sin ejecutarse): consulta pura
-// → conserje; instrucción/tarea → se funde como steering del turno
-// en curso; sin turno al que fundirla → ESPERA DECLARADA en su sitio
-// hasta que la cadena la recoja y la EJECUTE.
-function enqueueTurn(entry, input) {
-  const runId = entry.runId;
-  const prev = _chain;
-  let release;
-  _chain = new Promise((r) => { release = r; });
-
-  // Aviso de cola: si ya hay otra corrida viva, este turno nace EN
-  // COLA y su burbuja lo dice (nunca un «ejecutando» falso).
-  if ([..._runs.values()].some((other) => other !== entry && other.state !== "done")) {
-    try {
-      input.onProgress?.({ phase: "queued", runId, chatId: entry.chatId, text: "En cola: el motor ejecuta de uno en uno." });
-    } catch { /* el aviso no tumba el turno */ }
-  }
-
-  const queueTimeoutMs = resolveQueueTimeoutMs(input);
-  if (queueTimeoutMs > 0) {
-    entry.queueTimer = setTimeout(() => {
-      if (entry.state !== "queued") return;
-      const waitedMs = Date.now() - entry.queuedAt;
-      // [EDITCORE-V510-B1b] Venció el plazo: jamás descarte.
-      if (isPureKernelQuery(input)) {
-        divertToConcierge(entry, input, { hasSlot: true });
-        return;
-      }
-      // [CARRERA B7] No basta isRunning(): durante el ARRANQUE del
-      // turno en curso el orquestador aún no levanta su bandera y el
-      // mensaje caía a «espera» con un turno vivo delante. La cadena
-      // misma es la fuente de verdad: si hay otra corrida viva, se
-      // intenta la fusión (el orquestador acepta steering también
-      // durante el arranque, ver turnsInFlight en orchestrator.js).
-      const hayTurnoVivo = orchestrator.isRunning()
-        || [..._runs.values()].some((other) => other !== entry && other.state !== "done");
-      if (hayTurnoVivo) {
-        let merged = false;
-        try {
-          const steerOut = orchestrator.steer(String(input.message || ""));
-          merged = Boolean(steerOut) && steerOut.accepted !== false;
-        } catch { merged = false; }
-        if (merged) {
-          entry.state = "steered";
-          entry.resolveCaller(steeredResult(entry, waitedMs));
-          return;
+      // [Juicio en vivo v5.2.7] El ámbito manda: con "all"/"code",
+      // searchForAgent REINDEXA el proyecto en línea antes de buscar
+      // (indexProject camina el árbol, re-troza lo cambiado y
+      // reconstruye el FTS en el proceso principal). Tras un
+      // reemplazo del árbol eso es una reindexación completa DENTRO
+      // del primer turno — la ventana dejó de responder antes de
+      // que el proveedor recibiera nada. La memoria del turno se
+      // pide con ámbito "memory" (solo el almacén de memoria, sin
+      // indexar) y con tope de espera: el Cerebro es opcional y
+      // jamás retiene un turno. El conocimiento del proyecto sigue
+      // alcanzable por la herramienta brain_search, llamada
+      // explícita y visible, no peaje de cada mensaje.
+      const out = await Promise.race([
+        helpers.brainSearch(inputN.projectRoot, String(inputN.message).slice(0, 200), { scope: "memory", limit: 6 }),
+        new Promise((resolve) => setTimeout(() => resolve(null), BUSQUEDA_CEREBRO_MS)),
+      ]);
+      const textos = [];
+      if (Array.isArray(out)) {
+        for (const h of out) {
+          const t = typeof h === "string" ? h : (h?.text || h?.content || "");
+          if (t) textos.push(h?.neuralMatch ? `[Red Neuronal] ${t}` : t);
+        }
+      } else if (out && typeof out === "object") {
+        for (const clave of ["memory", "knowledge", "catalog"]) {
+          for (const h of (Array.isArray(out[clave]) ? out[clave] : [])) {
+            const t = typeof h === "string" ? h : (h?.text || h?.content || h?.description || "");
+            if (t) textos.push(h?.neuralMatch ? `[Red Neuronal] ${t}` : t);
+          }
         }
       }
-      entry.state = "waiting";
-      try {
-        input.onProgress?.({ phase: "queued-wait", runId, chatId: entry.chatId, text: "Tu mensaje sigue en cola y NO se descarta: queda en espera declarada y se ejecutará en cuanto el motor se libere." });
-      } catch { /* el aviso no tumba el turno */ }
-    }, queueTimeoutMs);
+      const textoHits = textos.filter(Boolean).join("\n");
+      if (textoHits) partes.push(`Memoria del proyecto (Cerebro Semántico Neuronal):\n${textoHits.slice(0, 6000)}`);
+    } catch { /* la memoria es opcional: sin ella el turno responde igual */ }
   }
-
-  (async () => {
-    await prev;
-    if (entry.queueTimer) { clearTimeout(entry.queueTimer); entry.queueTimer = null; }
-    if (entry.state === "concierge") {
-      // El desvío al conserje posee la resolución de esta entrada;
-      // aquí solo se libera su sitio de la cadena.
-      release();
-      return;
-    }
-    if (entry.state !== "queued" && entry.state !== "waiting") {
-      // Cancelada o fundida (steered): nunca llega al orquestador.
-      entry.state = "done";
-      _runs.delete(runId);
-      release();
-      return;
-    }
-    entry.state = "running";
-    try {
-      if (orchestrator.isRunning()) {
-        entry.resolveCaller({
-          kind: "CHAT",
-          text: "Hay un proceso activo. Envía **detente** para cancelarlo antes de mandar otro mensaje.",
-          blocked: true,
-          systemNotice: true,
-          usage: { system_notice: true },
-          runId,
-          chatId: entry.chatId || "",
-        });
-        return;
-      }
-      const out = await orchestrator.handle({ ...input, runId });
-      let guard = null;
-      try { guard = selfGuard.verifyAfterTurn(input?.projectRoot, out?.steps); } catch { guard = null; }
-      if (guard && !guard.ok && out && typeof out === "object") {
-        out.selfGuard = guard;
-        out.text = [String(out.text || "").trim(), selfGuard.formatGuardNotice(guard)].filter(Boolean).join("\n\n");
-      }
-      if (out && typeof out === "object" && !out.runId) out.runId = runId;
-      entry.resolveCaller(out);
-    } catch (err) {
-      entry.rejectCaller(err);
-    } finally {
-      entry.state = "done";
-      _runs.delete(runId);
-      release();
-    }
-  })();
+  if (!partes.length) return "";
+  // La memoria entra ENMARCADA como referencia: en el juicio en
+  // vivo de la v5.2.6 el agente recitó el expediente del Mapa como
+  // si fuera el estado real y atribuyó al usuario un síntoma que
+  // nunca escribió. El marco viaja SIEMPRE que haya Mapa o Cerebro.
+  const MARCO_MEMORIA = "Material de referencia del proyecto (Mapa de orientación y Cerebro): NO son palabras del usuario en esta conversación; es contexto acumulado que puede estar desactualizado. Verifícalo contra los hechos y el código antes de darlo por cierto, y nunca atribuyas al usuario síntomas, frases o pedidos que no haya escrito en este chat.";
+  return [MARCO_MEMORIA, ...partes].join("\n\n");
 }
 
-function handleChat(input) {
-  const safeInput = input && typeof input === "object" ? input : {};
-  // [EDITCORE-INTEGRAL-B7] Identidad de la corrida de principio a fin:
-  // el runId entra (renderer → main → bridge) o se genera aquí una
-  // sola vez; jamás viaja vacío aguas abajo.
-  const runId = String(safeInput.runId || "").trim()
-    || `run_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-  const entry = {
+function resultadoDetenido(input, runId) {
+  return {
+    ok: true,
+    kind: "STOP",
+    text: "Detenido.",
+    detalle: "Turno detenido.",
+    steps: [],
+    incomplete: true,
+    mutations: 0,
+    usage: { total_tokens: 0, kernel_nuevo: true },
+    archivos: [],
+    threadId: String(input?.threadId || input?.chatId || ""),
     runId,
-    chatId: String(safeInput.chatId || safeInput.threadId || "").trim(),
-    state: "queued",
-    queuedAt: Date.now(),
-    resolveCaller: null,
-    rejectCaller: null,
-    queueTimer: null,
-    controller: null,
+    kernelNuevo: true,
   };
-  _runs.set(runId, entry);
-  const callerPromise = new Promise((resolve, reject) => {
-    entry.resolveCaller = resolve;
-    entry.rejectCaller = reject;
-  });
-
-  // [EDITCORE-V510-B1] Si ya hay una corrida viva y esto es una
-  // consulta pura, NO entra en la cadena: la atiende el conserje por
-  // su carril, sin esperar a que el motor se libere. Si el motor está
-  // libre, el flujo normal no cambia.
-  const anotherLive = [..._runs.values()].some((other) => other !== entry && other.state !== "done");
-  if ((anotherLive || orchestrator.isRunning()) && isPureKernelQuery(safeInput)) {
-    divertToConcierge(entry, safeInput, { hasSlot: false });
-    return callerPromise;
-  }
-  enqueueTurn(entry, safeInput);
-  return callerPromise;
 }
 
-// [EDITCORE-INTEGRAL-B7] Cancelación quirúrgica por runId:
-//  - corrida EN COLA → su promesa resuelve como cancelada y sale de la
-//    cola; la que corre no se entera (el orquestador ni se toca).
-//  - corrida EN CURSO → solo su señal se aborta (orchestrator.stop():
-//    por la serialización, la única corrida en ejecución es esa).
-// Devuelve true si la corrida existía. Sin runId no cancela nada:
-// el paro global es stopChat(), último recurso declarado del llamante.
-function cancelChatRun(runId) {
-  const id = String(runId || "").trim();
-  if (!id) return false;
-  const entry = _runs.get(id);
-  if (!entry) return false;
-  if (entry.state === "concierge") {
-    // [EDITCORE-V510-B1] Corrida del conserje: se aborta SOLO su
-    // señal propia; la corrida principal no se entera. El desvío
-    // resuelve al llamante como cancelado al ver la señal.
-    try { entry.controller?.abort(); } catch { /* ignore */ }
-    return true;
+async function handleChat(input = {}) {
+  const runId = String(input.runId || "").trim()
+    || `run_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  const controller = new AbortController();
+  const external = input.helpers?.abortSignal || null;
+  if (external) {
+    if (external.aborted) controller.abort();
+    else if (typeof external.addEventListener === "function") {
+      external.addEventListener("abort", () => controller.abort(), { once: true });
+    }
   }
-  if (entry.state === "queued" || entry.state === "queue-timeout" || entry.state === "waiting") {
-    if (entry.queueTimer) { clearTimeout(entry.queueTimer); entry.queueTimer = null; }
-    const wasTimeout = entry.state === "queue-timeout";
-    entry.state = "cancelled";
-    if (!wasTimeout) entry.resolveCaller(queueCancelledResult(entry));
-    return true;
-  }
-  if (entry.state === "running") {
-    entry.state = "cancelling";
-    try { orchestrator.stop(); } catch { /* ignore */ }
-    return true;
-  }
-  return false;
-}
+  const runEntry = { controller, threadId: String(input.threadId || input.chatId || ""), runId, steeringQueue: [] };
+  _runs.set(runId, runEntry);
+  // Streaming en vivo hacia la superficie: el puente entrega
+  // onProgress en la entrada; los deltas de texto del proveedor se
+  // traducen a la fase que el renderer pinta en vivo
+  // (narration_delta). Sin onProgress el turno corre igual, solo
+  // que sin pintado en vivo.
+  let indiceDelta = 0;
+  const onTextDelta = typeof input.onProgress === "function"
+    ? (tramo) => {
+        try { input.onProgress({ phase: "narration_delta", text: tramo, index: indiceDelta++ }); } catch { /* ignore */ }
+      }
+    : null;
+  // La señal de ESTA corrida manda sobre la que trajera el llamante:
+  // el adaptador la reenvía a callChat y las herramientas la reciben
+  // en helpers — así Detener corta proveedor y herramientas a la vez.
+  const helpers = { ...(input.helpers || {}), abortSignal: controller.signal };
 
-function listChatRuns() {
-  return [..._runs.values()].map((entry) => ({
-    runId: entry.runId,
-    chatId: entry.chatId || "",
-    state: entry.state,
-    queuedAt: entry.queuedAt,
-  }));
+  const run = async () => {
+    _active += 1;
+    // Registro de diagnóstico del turno (.editcore/turnos.jsonl
+    // del proyecto abierto): la evidencia cruda para diagnosticar
+    // en la máquina del usuario en vez de corregir a ciegas.
+    const { crearRegistro } = require("./nuevo/registro");
+    const registro = crearRegistro(input.projectRoot);
+    registro.anotar({ tipo: "inicio_turno", mensaje: String(input.message || "").slice(0, 200) });
+    try {
+      // Cancelada mientras esperaba en la cadena: ni proveedor ni
+      // herramientas — resuelve STOP directamente.
+      if (controller.signal.aborted) return resultadoDetenido(input, runId);
+      const out = await manejarChatNuevo({ ...input, runId, helpers, steeringQueue: runEntry.steeringQueue }, {
+        // La misma costura de inyección del proveedor que el
+        // kernel viejo honraba (helpers.callChat): si el llamante
+        // la trae, el adaptador la usa; en producción main no la
+        // pasa y el adaptador usa el callChat real de provider.js.
+        ...(typeof helpers.callChat === "function" ? { callChat: helpers.callChat } : {}),
+        ...(onTextDelta ? { onTextDelta } : {}),
+        // Avisos del turno (inicio según el carril, latido de
+        // espera, reintento del proveedor): la espera deja de ser
+        // muda — la superficie los narra en el registro del turno
+        // (fase narration, la que el renderer pinta).
+        ...(typeof input.onProgress === "function" ? {
+          onAviso: (textoAviso) => {
+            const texto = String(textoAviso || "").trim();
+            if (!texto) return;
+            try { input.onProgress({ phase: "narration", text: texto, index: indiceDelta++ }); } catch { /* ignore */ }
+          },
+        } : {}),
+        // Actividad del turno (una línea por herramienta
+        // ejecutada): viaja por el MISMO canal de narración que
+        // los avisos — la superficie la pinta en vivo y la espera
+        // deja de ser un «Trabajando…» mudo.
+        ...(typeof input.onProgress === "function" ? {
+          onActividad: (textoActividad) => {
+            const texto = String(textoActividad || "").trim();
+            if (!texto) return;
+            try { input.onProgress({ phase: "narration", text: texto, index: indiceDelta++ }); } catch { /* ignore */ }
+          },
+        } : {}),
+        construirMemoria: (inputN) => construirMemoria(inputN, helpers),
+        onRespuestaCruda: (info) => registro.anotar({ tipo: "respuesta_proveedor", ...info }),
+      });
+      registro.anotar({
+        tipo: "fin_turno",
+        carril: out?.kind || null,
+        pasos: (out?.steps || []).length,
+        aplicados: (out?.mutations || []).length,
+        // Los fallos CON su resumen: el registro anterior solo
+        // contaba pasos y el error concreto de un comando era
+        // ilegible desde el registro (hizo falta arqueología en
+        // tres turnos para llegar a él).
+        fallos: (out?.steps || []).filter((s) => s && s.ok === false).slice(0, 5)
+          .map((s) => ({ nombre: s.nombre, resumen: String(s.resumen || "").slice(0, 300) })),
+        texto: String(out?.text || "").slice(0, 300),
+      });
+      if (controller.signal.aborted) return resultadoDetenido(input, runId);
+      return out;
+    } catch (err) {
+      if (controller.signal.aborted) return resultadoDetenido(input, runId);
+      throw err;
+    } finally {
+      _active -= 1;
+      _runs.delete(runId);
+    }
+  };
+
+  // Carril concurrente para subagentes: si ya hay un turno activo
+  // y el mensaje del usuario es una pregunta o consulta (no una orden
+  // que escribe en disco), se atiende de inmediato en paralelo sin
+  // esperar en la cadena al agente principal.
+  const { decidirTurno } = require("./nuevo/despacho");
+  const decisionPrevia = decidirTurno(input.message);
+  const esConsultaParalela = _active > 0
+    && !input.planAuthorizedExecution
+    && decisionPrevia.carril !== "ORDEN";
+
+  if (esConsultaParalela) {
+    return run();
+  }
+
+  // Serialización de turnos con mutación: la cadena garantiza que dos órdenes
+  // nunca se pisan al escribir código en disco.
+  const result = _chain.then(run, run);
+  _chain = result.then(() => {}, () => {});
+  return result;
 }
 
 function stopChat() {
-  return orchestrator.stop();
+  for (const { controller } of _runs.values()) {
+    try { controller.abort(); } catch { /* ignore */ }
+  }
+  return { stopped: true, text: "Detenido." };
 }
 
-function steerChat(instruction) {
-  return orchestrator.steer(instruction);
+function cancelChatRun(runId) {
+  const entry = _runs.get(String(runId || ""));
+  if (!entry) return false;
+  try { entry.controller.abort(); } catch { /* ignore */ }
+  return true;
 }
 
 function isChatRunning() {
-  return orchestrator.isRunning();
+  return _active > 0 || _runs.size > 0;
+}
+
+// Dirección en vuelo (Steering vivo): inyecta la instrucción prioritaria
+// directamente en la cola del turno en curso para que el modelo la
+// incorpore en la siguiente llamada sin tener que reiniciar el turno.
+function steerChat(instruction, targetRunId = null) {
+  const text = String(instruction || "").trim();
+  if (!text) return { accepted: false, steered: false, reason: "instruccion_vacia" };
+  let target = null;
+  if (targetRunId && _runs.has(String(targetRunId))) {
+    target = _runs.get(String(targetRunId));
+  } else if (_runs.size > 0) {
+    const all = [..._runs.values()];
+    target = all[all.length - 1];
+  }
+  if (!target) {
+    return { accepted: false, steered: false, reason: "sin_corrida_activa" };
+  }
+  if (!target.steeringQueue) target.steeringQueue = [];
+  target.steeringQueue.push({ instruction: text, at: Date.now() });
+  return { accepted: true, steered: true, runId: target.runId || null };
 }
 
 module.exports = {
   handleChat,
   stopChat,
-  // [EDITCORE-INTEGRAL-B7] Cancelación por corrida + plazo de cola.
   cancelChatRun,
-  listChatRuns,
   QUEUE_TIMEOUT_MS,
-  // [EDITCORE-V510-B1/B1b] Clasificación de consulta pura y el
-  // resultado de cola (texto de sistema, sin tokens estimados).
-  isPureKernelQuery,
-  queueTimeoutResult,
   steerChat,
   isChatRunning,
   classify,
-  SKILL_IDS,
-  ChatOrchestrator,
-  taskQueue,
-  uiDesignSystemPrompt,
-  scaffoldNextApp,
-  detectDevLogIssue,
-  TOOL_RESULT_CAP: tools.TOOL_RESULT_CAP,
-  tools,
-  snapshot,
-  rollbackLastChange: snapshot.rollbackLastChange,
-  listSnapshots: snapshot.listSnapshots,
-  processRunner,
-  runProcess: processRunner.runProcess,
-  visionInspector,
-  capture_preview_screenshot: visionInspector.capture_preview_screenshot,
-  globalMemory,
-  recordSolution: globalMemory.recordSolution,
-  globalMemoryPrompt: globalMemory.promptBlock,
-  threadCore,
-  threadMemory,
-  modelRouter,
-  agentBus,
+  // Infraestructura compartida que la entrada vieja re-exportaba y
+  // que sigue viva por sus propios consumidores:
+  tools: require("./tools"),
+  snapshot: require("./snapshot"),
+  processRunner: require("./process-runner"),
+  visionInspector: require("./vision-inspector"),
+  globalMemory: require("./global-memory"),
+  threadMemory: require("./thread-memory"),
 };

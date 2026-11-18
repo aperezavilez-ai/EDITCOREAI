@@ -29,7 +29,12 @@ test("extractImports extrae imports y requires de JS", () => {
 });
 
 test("tools.execute ejecuta graphify_project y genera salidas", async () => {
-  const result = await tools.execute("graphify_project", { path: "." }, process.cwd(), false);
+  // [FASE2-CONECTAR C-1] graphify_project quedó clasificada como
+  // ESCRITURA (escribe en graphify-out/) y su case ganó la guarda
+  // allowWrite que le faltaba: la prueba pasa a pedirla con
+  // escritura autorizada, que es su forma real de uso. Sin ella, el
+  // case la niega (probado en kernel-conectar-fantasmas).
+  const result = await tools.execute("graphify_project", { path: "." }, process.cwd(), true);
   assert.equal(result.ok, true);
   assert.ok(result.totalNodes > 0);
   assert.ok(result.totalEdges >= 0);

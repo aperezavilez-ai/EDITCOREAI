@@ -413,6 +413,14 @@ const READ_ONLY_TOOLS = [
   // Nuevas tools de solo lectura
   "web_search", "git_status", "git_log", "git_diff", "list_skills", "read_skill",
   "check_connections", "read_roadmap", "probe_endpoint",
+  // [SOCIAL-META FASE 1] social_estado solo LEE el estado de la
+  // conexión con Meta guardado en la bóveda (páginas/cuentas, sin
+  // tokens): es lectura como check_connections.
+  "social_estado",
+  // [SOCIAL-FASE 2] tiktok_estado y youtube_estado solo LEEN el
+  // estado de su conexión guardado en la bóveda (cuenta/canal, sin
+  // tokens): lectura como social_estado.
+  "tiktok_estado", "youtube_estado",
   // Herramientas extra del kernel (extra-tools.js): lectura pura, sin guardia
   // de escritura en el despachador. Faltaban aquí y la clasificación derivaba.
   "read_pdf", "docker_ps", "screenshot_page",
@@ -453,10 +461,18 @@ const WRITE_TOOLS = [
   "run_command", "create_pdf", "create_word", "create_excel", "create_csv",
   "inspect_preview", "generate_image", "generate_video", "add_erp_module",
   "deploy_one_click", "publish_project", "fullstack_deploy", "connect_project",
-  "audit_env", "supabase_migrate", "scaffold_project", "capture_preview",
+  "audit_env", "supabase_migrate", "scaffold_project",
   "fetch_stock_photo", "run_e2e_pipeline", "rollback_last_change",
+  // [FASE2-CONECTAR C-1] graphify_project clasificada por fin como
+  // ESCRITURA: su case existía sin clasificación, sin definición y sin
+  // guarda — escribía en graphify-out/ fuera de las tres protecciones.
+  // [FASE2-BORRAR B-3] Salen dos nombres muertos: capture_preview
+  // (deriva sin implementación; la real es capture_preview_screenshot,
+  // de SOLO LECTURA) y update_roadmap (sin implementación en ningún
+  // sitio del árbol: la clasificación prometía lo que no existe).
+  "graphify_project",
   // Nuevas tools de escritura
-  "install_skill", "clone_repo", "ingest_to_brain", "update_roadmap",
+  "install_skill", "clone_repo", "ingest_to_brain",
   // Del catálogo base del kernel: ejecutan/comprometen el repo y el
   // despachador las protege con allowWrite; no estaban clasificadas.
   "build_project", "git_commit", "git_push",
@@ -480,6 +496,19 @@ const WRITE_TOOLS = [
   // memoria sin escribirla; lo que ese turno produzca vía subagentes
   // entra por el destilador (W1), no por estas herramientas.
   "open_map_front", "close_map_front", "note_map_decision",
+  // [SOCIAL-META FASE 1] social_conectar completa el OAuth de Meta y
+  // GUARDA las credenciales en la bóveda de Conexiones (escritura de
+  // estado, aunque sin código solo devuelva la URL de autorización),
+  // y social_publicar ESCRIBE en el mundo exterior (un post real en
+  // la página o en Instagram): ambas son ESCRITURA y solo entran en
+  // turnos ORDEN con escritura autorizada.
+  "social_conectar", "social_publicar",
+  // [SOCIAL-FASE 2] El mismo criterio para TikTok y YouTube:
+  // tiktok_conectar / youtube_conectar completan su OAuth y GUARDAN
+  // las credenciales en la bóveda, y tiktok_publicar / youtube_subir
+  // ESCRIBEN en el mundo exterior (un video real publicado/subido):
+  // las cuatro son ESCRITURA.
+  "tiktok_conectar", "tiktok_publicar", "youtube_conectar", "youtube_subir",
 ];
 
 // Subconjunto curado para MODO CHARLA: lectura ligera, sin análisis pesado.

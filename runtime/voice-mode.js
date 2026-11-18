@@ -382,11 +382,14 @@
 
   function getTranscribeFn() {
     if (typeof window === "undefined") return null;
-    // Bridge real de EDITCOREAI (preload). Compat: electronAPI legacy si existiera.
-    const fn = window.editcoreApp?.transcribeAudio
-      || window.electronAPI?.transcribeAudio
-      || null;
-    return typeof fn === "function" ? fn.bind(window.editcoreApp || window.electronAPI || window) : null;
+    // Bridge real de EDITCOREAI (preload).
+    // [FASE2-BORRAR B-6] Fuera la rama legacy electronAPI.transcribeAudio:
+    // el namespace electronAPI de preload solo expone evolución
+    // (getEvolutionState/runEvolutionCycle/openDashboard) — nunca
+    // tuvo transcribeAudio; la rama era código muerto con comentario
+    // de compatibilidad hacia un puente inexistente.
+    const fn = window.editcoreApp?.transcribeAudio || null;
+    return typeof fn === "function" ? fn.bind(window.editcoreApp || window) : null;
   }
 
   function getSttStatusFn() {
@@ -827,8 +830,9 @@
     cleanQueryText,
     cleanTextForSpeech,
     formatCallTranscript,
+    // [FASE2-BORRAR B-6] Sin rama electronAPI (ver getTranscribeFn).
     getTranscribeBridgeName: () => (typeof window !== "undefined" && window.editcoreApp?.transcribeAudio
       ? "editcoreApp"
-      : (typeof window !== "undefined" && window.electronAPI?.transcribeAudio ? "electronAPI" : "")),
+      : ""),
   };
 });

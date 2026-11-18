@@ -1336,6 +1336,57 @@ main {
   hyphens: manual;
 }
 
+/* Archivos entregados en el chat (kernel nuevo, v5.2.7): fila
+   limpia con el nombre del archivo y las acciones como enlaces
+   de texto — sin cajas de botón (pedido en vivo de Luis: los
+   botones por defecto se veían como «cuadros de PowerPoint»). */
+.msg-attachments--entregados {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.msg-attachment--entregado {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  padding: 8px 12px;
+  background: rgba(128, 128, 128, 0.08);
+  border: 1px solid rgba(128, 128, 128, 0.22);
+  border-radius: 10px;
+  font-size: 13px;
+}
+
+.msg-attachment-nombre {
+  font-weight: 600;
+  color: var(--ec-text);
+}
+
+.msg-attachment-accion {
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ec-accent);
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.msg-attachment-accion:hover { text-decoration: underline; }
+
+/* Botón de edición visual del Navegador en estado activo. */
+#visualEditBtn.activo,
+#visualEditBtnChat.activo {
+  color: var(--ec-accent);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
 /* Densidad tipo Claude: parrafos y listas compactos, sin aire vertical extra */
 .msg-body p { margin: 0 0 14px; line-height: 1.55; }
 .msg-body p:last-child { margin-bottom: 0; }

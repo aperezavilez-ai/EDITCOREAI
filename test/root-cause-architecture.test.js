@@ -30,13 +30,19 @@ test("publish-pipeline llama ensureVercelProjectId(connections, opts)", () => {
   assert.match(source, /projectRoot:\s*root/);
 });
 
-test("orchestrator no pide escribe procede al cerrar analisis", () => {
-  const source = fs.readFileSync(
-    path.join(__dirname, "..", "editcore-chat-kernel", "orchestrator.js"),
-    "utf8",
-  );
-  assert.doesNotMatch(
-    source,
-    /Si quieres que aplique cambios en disco, escribe \*\*procede\*\*/,
-  );
+test("el kernel no pide «escribe procede» al cerrar un análisis", () => {
+  // [FASE2-RUTA-UNICA] La frase prohibida se buscaba en el
+  // orquestador viejo; la guarda se traslada a las piezas del
+  // kernel nuevo que componen lenguaje de cierre (textos, cierre,
+  // despacho, turno, adaptador): ninguna puede pedir al usuario que
+  // escriba «procede» para aplicar cambios tras un análisis.
+  const dir = path.join(__dirname, "..", "editcore-chat-kernel", "nuevo");
+  for (const f of fs.readdirSync(dir)) {
+    const source = fs.readFileSync(path.join(dir, f), "utf8");
+    assert.doesNotMatch(
+      source,
+      /Si quieres que aplique cambios en disco, escribe \*\*procede\*\*/,
+      `${f} no pide «escribe procede»`,
+    );
+  }
 });

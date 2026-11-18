@@ -184,19 +184,47 @@ function recordSubagentDistillates(projectRoot, results = []) {
  * del cierre. Es lo que el próximo turno (y los subagentes, vía la
  * memoria compartida) necesitan recordar: hechos, no prosa.
  */
+// [FASE2-RUTA-UNICA] successfulMemoryWrites y describeMemoryWrites
+// vivían en orchestrator.js y este módulo las leía con require
+// perezoso. Al retirarse el kernel viejo, las dos funciones — puras,
+// sin dependencias — se mudan AQUÍ verbatim, que es su consumidor
+// vivo (el destilado del turno para el Cerebro).
+function successfulMemoryWrites(steps = []) {
+  const out = [];
+  for (const s of Array.isArray(steps) ? steps : []) {
+    if (!s || s.ok === false || s.result?.ok !== true) continue;
+    const text = String(s.result.text || s.input?.text || "").trim();
+    if (s.name === "note_map_decision" && s.result.recorded === "decision") {
+      out.push({ kind: "decision", text });
+    } else if (s.name === "open_map_front" && s.result.recorded === "front") {
+      out.push({ kind: "front", text });
+    } else if (s.name === "close_map_front" && s.result.recorded === "front_closed" && s.result.closed === true) {
+      out.push({ kind: "front_closed", text });
+    } else if (s.name === "ingest_to_brain" && Number(s.result.ingested || 0) > 0) {
+      out.push({ kind: "brain_ingest", text: `${Number(s.result.ingested || 0)} documento(s)` });
+    }
+  }
+  return out;
+}
+
+function describeMemoryWrites(memWrites = []) {
+  const list = Array.isArray(memWrites) ? memWrites : [];
+  const counts = { decision: 0, front: 0, front_closed: 0, brain_ingest: 0 };
+  for (const w of list) {
+    if (w && Object.prototype.hasOwnProperty.call(counts, w.kind)) counts[w.kind] += 1;
+  }
+  const parts = [];
+  if (counts.decision) parts.push(`${counts.decision} decisión(es) asentada(s) en el Mapa`);
+  if (counts.front) parts.push(`${counts.front} frente(s) abierto(s) en el Mapa`);
+  if (counts.front_closed) parts.push(`${counts.front_closed} frente(s) cerrado(s) en el Mapa`);
+  if (counts.brain_ingest) parts.push(`${counts.brain_ingest} ingesta(s) al Cerebro`);
+  return parts.join(", ");
+}
+
 function distillTurnForBrain({ userText = "", steps = [], finalText = "" } = {}) {
   const list = Array.isArray(steps) ? steps : [];
-  // [ÍTEM 5] La memoria se lee SOLO vía el helper compartido del
-  // orchestrator, con require perezoso dentro de la función (el
-  // orchestrator requiere este módulo al inicio; el require en tiempo
-  // de llamada devuelve los exports completos) y degradación a [].
-  let memWrites = [];
-  let memDesc = "";
-  try {
-    const orch = require("./orchestrator");
-    memWrites = typeof orch.successfulMemoryWrites === "function" ? orch.successfulMemoryWrites(list) : [];
-    memDesc = typeof orch.describeMemoryWrites === "function" ? orch.describeMemoryWrites(memWrites) : "";
-  } catch { memWrites = []; memDesc = ""; }
+  const memWrites = successfulMemoryWrites(list);
+  const memDesc = describeMemoryWrites(memWrites);
   const applied = [];
   const seenApplied = new Set();
   const failed = [];
@@ -267,6 +295,9 @@ module.exports = {
   distillSubagentReport,
   recordSubagentDistillates,
   distillTurnForBrain,
+  // [FASE2-RUTA-UNICA] Mudadas desde orchestrator.js (ver arriba).
+  successfulMemoryWrites,
+  describeMemoryWrites,
   extractKeyFiles,
   extractConclusions,
   // [EDITCORE-V513-W2]

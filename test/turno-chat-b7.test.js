@@ -18,6 +18,21 @@
 //      ORIGEN.
 // La serialización no se toca: un solo orquestador, una cadena (las
 // pruebas 1 y 2 solo pasan si el segundo NUNCA corre en paralelo).
+//
+// [REDELIMITADO A PROPÓSITO — FASE 2, v5.2.7] El kernel nuevo es la
+// ruta ÚNICA y la entrada (editcore-chat-kernel/index.js) cambió de
+// mecanismo: ya no hay cola con plazo ni fusión steering en la
+// entrada (steerChat se declara no cableado: el carril paralelo del
+// kernel nuevo existe como módulo, no como entrada), y el registro
+// de corridas es por AbortController, sin listChatRuns. Las pruebas
+// 1, 2a, 2b y 3a se reescriben contra el contrato NUEVO, que es el
+// que Luis juzga en vivo: (1) el segundo turno ESPERA en cadena y
+// corre DESPUÉS como turno propio — nunca en paralelo, nunca
+// descartado, nunca fundido en silencio; (2) cancelar por runId
+// funciona en cadena y en curso, y Detener corta también entre el
+// proveedor y la herramienta; (3) la identidad (runId/chatId) viaja
+// en el resultado y en el progreso del puente, cuya superficie en
+// la ruta nueva es el heartbeat. Las pruebas 0, 3b y 4 no cambian.
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
@@ -36,7 +51,7 @@ fs.writeFileSync(path.join(projectRoot, "src", "App.tsx"), "export const App = (
 const {
   handleChat,
   cancelChatRun,
-  listChatRuns,
+  isChatRunning,
   QUEUE_TIMEOUT_MS,
 } = require("../editcore-chat-kernel/index");
 const { handleChatKernel, KERNEL_TIMEOUT_MS } = require("../runtime/chat-kernel-bridge");
@@ -60,7 +75,10 @@ const CHAT_MSG = "hola, ¿me ayudas con una duda rápida?";
 
 // ---------- (d) el plazo de cola declarado es menor que el total ----------
 
-test("B7-0: el plazo de cola declarado (120 s) es mucho menor que el plazo total del bridge (60 min)", () => {
+test("B7-0: las constantes de plazo declaradas se conservan (QUEUE_TIMEOUT_MS hoy es compatibilidad del puente)", () => {
+  // [FASE2] La cola con plazo ya no existe en la ruta única; la
+  // constante se conserva porque el puente la re-exporta y su
+  // relación con el plazo total sigue siendo la declarada.
   assert.equal(QUEUE_TIMEOUT_MS, 120_000);
   assert.equal(KERNEL_TIMEOUT_MS, 60 * 60 * 1000);
   assert.ok(QUEUE_TIMEOUT_MS < KERNEL_TIMEOUT_MS, "esperar en cola no consume el plazo de ejecución");
@@ -68,19 +86,18 @@ test("B7-0: el plazo de cola declarado (120 s) es mucho menor que el plazo total
 
 // ---------- (1) cola con plazo: el segundo no cuelga ni se PIERDE ----------
 
-test("B7-1: primero bloqueado en el proveedor ⇒ la instrucción vencida se FUNDE como steering (v5.1.0: ya no se descarta) y el primero completa después", async () => {
-  // [EDITCORE-V510-B1b] ACTUALIZADO A PROPÓSITO: la versión anterior
-  // afirmaba el contrato del Bloque 7 original — al vencer el plazo,
-  // el segundo resolvía QUEUED y su mensaje se DESCARTABA. Ese es
-  // exactamente el descarte que Luis vivió en vivo (su mensaje
-  // caducó a los 120 s sin ejecutarse) y que la Fase B elimina por
-  // directiva suya: ningún mensaje caduca — se atiende (conserje),
-  // se funde como steering o espera declarado. Esta prueba conserva
-  // el esqueleto (primero bloqueado, segundo con plazo corto,
-  // primero intacto y completa después) y afirma el contrato nuevo:
-  // la instrucción vencida se funde en el turno en curso, con su
-  // identidad, sin llegar al proveedor como turno propio y con el
-  // aviso marcado como texto de sistema (costo cero).
+test("B7-1: primero bloqueado en el proveedor ⇒ el segundo ESPERA en cadena (no corre en paralelo ni se descarta) y corre después como turno propio", async () => {
+  // [REDELIMITADO A PROPÓSITO — FASE 2, v5.2.7] La versión anterior
+  // afirmaba la fusión steering de la entrada vieja (B1b): al
+  // vencer el plazo de cola, la instrucción se fundía en el turno
+  // en curso. En la ruta única esa fusión NO existe en la entrada
+  // (declarado en index.js: steerChat devuelve accepted:false; el
+  // carril paralelo es un módulo aún no cableado). El contrato que
+  // esta prueba afirma ahora es el de la cadena nueva, que conserva
+  // lo que B7 protegía — serialización e identidad — sin inventar
+  // la fusión: el segundo no corre en paralelo, no se descarta y
+  // no caduca; espera y corre DESPUÉS, como turno propio, con su
+  // proveedor y su runId.
   const gate = deferred();
   let firstCalls = 0;
   let secondCalls = 0;
@@ -101,7 +118,7 @@ test("B7-1: primero bloqueado en el proveedor ⇒ la instrucción vencida se FUN
     },
   });
 
-  const second = await handleChat({
+  const secondPromise = handleChat({
     runId: "b7-t1-second",
     chatId: "chat-b",
     message: "agrega también un pie de página con el año al final del sitio",
@@ -109,34 +126,41 @@ test("B7-1: primero bloqueado en el proveedor ⇒ la instrucción vencida se FUN
     apiBaseUrl: "https://proxy.example.test/v1",
     apiKey: "k",
     model: "m",
-    queueTimeoutMs: 80,
     helpers: {
       callChat: async () => {
         secondCalls += 1;
-        return { text: "no debería ejecutarse", toolCalls: [], usage: {} };
+        return { text: "Respuesta del segundo turno.", toolCalls: [], usage: {} };
       },
     },
   });
 
-  assert.equal(second.kind, "STEERED", "la instrucción vencida se fundió como steering, no se descartó");
-  assert.equal(second.steered, true);
-  assert.equal(second.runId, "b7-t1-second", "el resultado lleva la identidad de SU corrida");
-  assert.equal(second.chatId, "chat-b");
-  assert.match(second.text, /se fundió con el turno en curso/, "la burbuja del segundo dice la verdad: su mensaje lo atiende el turno en curso");
-  assert.equal(second.usage?.system_notice, true, "el aviso es texto de SISTEMA: cero tokens estimados en el recibo");
-  assert.equal(secondCalls, 0, "el turno vencido NUNCA llegó al proveedor como turno propio");
+  assert.equal(await pendingProbe(secondPromise), "pending", "el segundo ESPERA: no corre en paralelo con el primero");
+  assert.equal(secondCalls, 0, "mientras el primero corre, el segundo no ha llegado al proveedor");
   assert.equal(await pendingProbe(firstPromise), "pending", "el primero sigue intacto, corriendo");
+  assert.equal(isChatRunning(), true, "hay corridas vivas registradas");
 
   gate.resolve({ text: "Respuesta del primer turno.", toolCalls: [], usage: {} });
   const first = await firstPromise;
   assert.equal(firstCalls, 1);
   assert.match(first.text, /Respuesta del primer turno/);
   assert.equal(first.runId, "b7-t1-first", "el resultado del primero lleva su runId");
+
+  const second = await secondPromise;
+  assert.equal(secondCalls, 1, "al liberarse la cadena, el segundo corrió como turno propio");
+  assert.match(second.text, /Respuesta del segundo turno/, "su respuesta es la SUYA, no un aviso de fusión ni de descarte");
+  assert.equal(second.runId, "b7-t1-second", "el resultado lleva la identidad de SU corrida");
 });
 
 // ---------- (2a) cancelar en cola ----------
 
-test("B7-2a: cancelar el runId EN COLA ⇒ su promesa resuelve cancelada y el que corre no se entera", async () => {
+test("B7-2a: cancelar el runId EN CADENA (aún no arranca) ⇒ su promesa resuelve STOP sin llegar al proveedor y el que corre no se entera", async () => {
+  // [REDELIMITADO A PROPÓSITO — FASE 2, v5.2.7] Sin cola ni
+  // listChatRuns: en la ruta única la corrida se registra al entrar
+  // (su AbortController existe desde handleChat) y la cadena la
+  // arranca después; cancelarla en ese intervalo resuelve STOP sin
+  // tocar al proveedor. La forma STOP de la entrada lleva
+  // kind/incomplete (el puente la traduce a cancelled en su
+  // resultado); queuedCancelled era un dato de la cola vieja.
   const gate = deferred();
   let firstCalls = 0;
   let secondCalls = 0;
@@ -160,21 +184,11 @@ test("B7-2a: cancelar el runId EN COLA ⇒ su promesa resuelve cancelada y el qu
   const secondPromise = handleChat({
     runId: "b7-t2-second",
     chatId: "chat-b",
-    // [REDELIMITADO A PROPÓSITO — carrera B7] El segundo mensaje ya
-    // NO es CHAT_MSG: desde el Bloque B1 (v5.1.0) una consulta pura
-    // con otra corrida viva NO encola — la atiende el conserje en
-    // paralelo por diseño — así que la premisa original de esta
-    // prueba (una consulta esperando EN COLA) quedó imposible y la
-    // prueba moría en su propio assert de registro. Lo que esta
-    // prueba existe para probar es la cancelación de una corrida EN
-    // COLA sin tocar la que corre, y eso se prueba con una
-    // instrucción, que sí encola. El contrato afirmado no cambia.
     message: "agrega un pie de página con el año al final del sitio",
     projectRoot,
     apiBaseUrl: "https://proxy.example.test/v1",
     apiKey: "k",
     model: "m",
-    queueTimeoutMs: 0, // sin plazo: solo la cancelación lo saca de la cola
     helpers: {
       callChat: async () => {
         secondCalls += 1;
@@ -183,31 +197,34 @@ test("B7-2a: cancelar el runId EN COLA ⇒ su promesa resuelve cancelada y el qu
     },
   });
 
-  // Esperar a que la segunda corrida exista registrada como en cola.
-  for (let i = 0; i < 50 && !listChatRuns().some((r) => r.runId === "b7-t2-second"); i += 1) {
-    await new Promise((res) => setTimeout(res, 10));
-  }
-  assert.ok(listChatRuns().some((r) => r.runId === "b7-t2-second" && r.state === "queued"), "la segunda corrida está registrada EN COLA");
-
-  assert.equal(cancelChatRun("b7-t2-second"), true, "cancelar una corrida en cola la encuentra");
-  const second = await secondPromise;
-  assert.equal(second.cancelled, true);
-  assert.equal(second.queuedCancelled, true, "se declara cancelada EN COLA");
-  assert.equal(second.kind, "STOP");
-  assert.equal(second.runId, "b7-t2-second");
-  assert.equal(secondCalls, 0, "la corrida cancelada en cola nunca llegó al proveedor");
-
+  assert.equal(cancelChatRun("b7-t2-second"), true, "cancelar una corrida en cadena la encuentra por su runId");
   assert.equal(await pendingProbe(firstPromise), "pending", "el que corre NO se enteró de la cancelación ajena");
+
   gate.resolve({ text: "El primero terminó bien.", toolCalls: [], usage: {} });
   const first = await firstPromise;
   assert.equal(firstCalls, 1);
   assert.match(first.text, /El primero terminó bien/);
-  assert.notEqual(first.cancelled, true);
+  assert.notEqual(first.kind, "STOP");
+
+  const second = await secondPromise;
+  assert.equal(second.kind, "STOP", "la corrida cancelada en cadena resuelve detenida");
+  assert.equal(second.incomplete, true);
+  assert.equal(second.runId, "b7-t2-second");
+  assert.equal(secondCalls, 0, "la corrida cancelada en cadena nunca llegó al proveedor");
 });
 
 // ---------- (2b) cancelar en curso: solo su señal ----------
 
-test("B7-2b: cancelar el runId EN CURSO ⇒ solo esa corrida se detiene; la que esperaba detrás corre después", async () => {
+test("B7-2b: cancelar el runId EN CURSO ⇒ solo esa corrida se detiene (y su herramienta NO se ejecuta); la que esperaba detrás corre después", async () => {
+  // [REDELIMITADO A PROPÓSITO — FASE 2, v5.2.7] El fake reproduce el
+  // riesgo real que la ruta única cierra: un proveedor LENTO que
+  // ignora la señal y devuelve la llamada de escritura DESPUÉS del
+  // Detener. El kernel viejo lo cortaba en el orquestador; el nuevo
+  // lo corta en el adaptador (la señal abortada ⇒ la herramienta no
+  // se ejecuta) y la siguiente llamada al proveedor nace abortada y
+  // se rechaza al instante, como hace el callChat real. Por eso el
+  // conteo es 2 (la devuelta tarde + la rechazada al instante) y no
+  // 1 como en la versión vieja de esta prueba.
   let cancelResult = null;
   let runnerCalls = 0;
 
@@ -219,13 +236,12 @@ test("B7-2b: cancelar el runId EN CURSO ⇒ solo esa corrida se detiene; la que 
     apiBaseUrl: "https://proxy.example.test/v1",
     apiKey: "k",
     model: "m",
-    permissionMode: "full",
-    allowWrite: true,
-    fullAccess: true,
-    planAuthorizedExecution: true,
     helpers: {
-      callChat: async () => {
+      callChat: async (args) => {
         runnerCalls += 1;
+        if (args?.signal?.aborted) {
+          throw Object.assign(new Error("La llamada nació abortada."), { name: "AbortError" });
+        }
         // Detener quirúrgico de ESTA corrida mientras el proveedor
         // «piensa»: el aborto llega antes de que devuelva la llamada.
         setTimeout(() => { cancelResult = cancelChatRun("b7-t3-runner"); }, 30);
@@ -247,7 +263,6 @@ test("B7-2b: cancelar el runId EN CURSO ⇒ solo esa corrida se detiene; la que 
     apiBaseUrl: "https://proxy.example.test/v1",
     apiKey: "k",
     model: "m",
-    queueTimeoutMs: 0,
     helpers: {
       callChat: async () => ({ text: "Respuesta del turno que esperaba.", toolCalls: [], usage: {} }),
     },
@@ -255,57 +270,57 @@ test("B7-2b: cancelar el runId EN CURSO ⇒ solo esa corrida se detiene; la que 
 
   const runner = await runnerPromise;
   assert.equal(cancelResult, true, "la corrida en curso se encontró por su runId");
-  assert.equal(runnerCalls, 1, "el proveedor no recibió más llamadas tras el Detener de esa corrida");
-  assert.ok(
-    runner.kind === "STOP" || /detenid|frené/i.test(String(runner.text || "")),
-    `la corrida cancelada se reporta detenida (kind=${runner.kind})`,
-  );
-  assert.equal(fs.existsSync(path.join(projectRoot, "no-debe-crearse.txt")), false, "la herramienta de la corrida cancelada no se ejecutó");
+  assert.equal(runner.kind, "STOP", "la corrida cancelada se reporta detenida");
+  assert.equal(fs.existsSync(path.join(projectRoot, "no-debe-crearse.txt")), false, "la herramienta devuelta TRAS el Detener no se ejecutó");
+  assert.ok(runnerCalls <= 2, `tras el Detener no hubo trabajo útil del proveedor (llamadas: ${runnerCalls})`);
 
   const behind = await behindPromise;
-  assert.match(behind.text, /Respuesta del turno que esperaba/, "la corrida en cola NO fue cancelada: corrió al liberarse la cadena");
-  assert.notEqual(behind.cancelled, true);
+  assert.match(behind.text, /Respuesta del turno que esperaba/, "la corrida en cadena NO fue cancelada: corrió al liberarse la cadena");
+  assert.notEqual(behind.kind, "STOP");
   assert.equal(behind.runId, "b7-t3-behind");
 });
 
 // ---------- (3) progreso con runId por el bridge (ruta chat) ----------
 
-test("B7-3a: bridge con runId del renderer ⇒ TODOS los eventos de progreso y el resultado llevan ese runId", async () => {
+test("B7-3a: bridge con runId del renderer ⇒ el progreso (heartbeat) y el resultado llevan ese runId y su chatId", async () => {
+  // [REDELIMITADO A PROPÓSITO — FASE 2, v5.2.7] La versión anterior
+  // afirmaba eventos de progreso POR HERRAMIENTA (phase: "tool")
+  // del orquestador viejo. La ruta única no emite ese flujo por el
+  // puente: su superficie de progreso es el heartbeat de 5 s, que
+  // pasa por la MISMA puerta (emitProgress) que estampa runId y
+  // chatId en cada evento. El contrato de identidad — que es lo que
+  // B7 protege: ningún evento sin identidad o con identidad ajena —
+  // se afirma igual; el proveedor falso espera al primer heartbeat
+  // antes de responder para que el flujo exista.
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "ec-b7-prog-"));
   fs.writeFileSync(path.join(root, "package.json"), JSON.stringify({ name: "demo" }));
   const events = [];
-  const script = [
-    { text: "", toolCalls: [{ id: "call_w1", type: "function", function: { name: "write_file", arguments: JSON.stringify({ path: "nota-b7.txt", content: "hola\n" }) } }], usage: {} },
-    { text: "Listo: cree nota-b7.txt con el contenido pedido.", toolCalls: [], usage: {} },
-  ];
   const out = await handleChatKernel({
-    message: "AUTORIZACION DE EJECUCION: crea el archivo nota-b7.txt con el contenido del plan presentado al usuario.",
-    history: [
-      { role: "user", content: "crea un archivo nota-b7.txt" },
-      { role: "assistant", content: "Voy a crear nota-b7.txt. ¿Procedo?" },
-    ],
+    message: "¿qué hace este proyecto?",
     projectRoot: root,
     apiBaseUrl: "http://127.0.0.1:9/v1",
     apiKey: "k",
     model: "m",
-    allowWrite: true,
-    permissionMode: "step",
-    fullAccess: false,
-    planAuthorized: true,
     runId: "b7-progress-run",
     chatId: "chat-b7-1",
-    helpers: { callChat: async () => script.shift() || { text: "Listo.", toolCalls: [], usage: {} } },
+    helpers: {
+      callChat: async () => {
+        for (let i = 0; i < 100 && !events.some((e) => e.phase === "heartbeat"); i += 1) {
+          await new Promise((res) => setTimeout(res, 100));
+        }
+        return { text: "Es un proyecto de demostración.", toolCalls: [], usage: {} };
+      },
+    },
     onProgress: (p) => events.push(p),
   });
 
   assert.equal(out.ok, true);
   assert.equal(out.runId, "b7-progress-run", "el resultado del bridge lleva el runId de la corrida");
-  assert.ok(events.length > 0, "hubo eventos de progreso");
+  assert.ok(events.length > 0, "hubo eventos de progreso (heartbeat)");
   for (const event of events) {
     assert.equal(event.runId, "b7-progress-run", `ningún evento sale con runId vacío o ajeno (fase=${event.phase})`);
     assert.equal(event.chatId, "chat-b7-1", "el progreso también lleva el chat de origen");
   }
-  assert.ok(events.some((e) => e.phase === "tool" && e.name === "write_file"), "el progreso real del turno fluyó por la misma ruta");
 });
 
 test("B7-3b: bridge sin runId ⇒ lo genera una vez y lo estampa en cada evento y en el resultado (ruta casual incluida)", async () => {

@@ -64,26 +64,32 @@ function scriptedHelpers(script) {
   return { callChat: async () => script.shift() || { text: "Listo.", toolCalls: [], usage: {} } };
 }
 
-test("V492-1a un chat con modo guardado «solo lectura» ejecuta escritura, comando y captura: el bridge normaliza a acceso completo", async () => {
+test("V492-1a un chat con modo guardado «solo lectura» ejecuta escritura y comando: el acceso completo permanente llega al disco", async () => {
+  // [FASE2-RUTA-UNICA] Re-conducida por el kernel nuevo. El contrato
+  // de producto no cambia — un chat guardado en «solo lectura»
+  // ejecuta la ORDEN completa (el TALLE PRUEBA que quedó en Charla
+  // y debía desbloquearse solo) — y se afirma por EFECTOS en disco,
+  // no por la forma de pasos del orquestador viejo. Dos diferencias
+  // declaradas: la captura de preview ya no entra en esta prueba
+  // (su costura en la ruta nueva son los helpers del IDE —
+  // startPreview/capturePreview —, no el modo; su no-bloqueo se
+  // prueba en la batería C-12 de inspect_preview), y el anuncio
+  // «Modo de este chat:» no existe en el kernel nuevo porque no hay
+  // modos que anunciar.
   const root = tmpProject();
-  const events = [];
-  // El mensaje menciona la captura y el turno nace con la compuerta de
-  // evidencia: el modelo captura primero y después escribe/ejecuta
-  // (orden real de trabajo; la compuerta no es de modo, es de evidencia).
   const script = [
-    { text: "Primero capturo el preview.", toolCalls: [toolCall("capture_preview_screenshot", {})], usage: {} },
     {
-      text: "Ahora aplico lo pedido.",
+      text: "Aplico lo pedido.",
       toolCalls: [
         toolCall("write_file", { path: "saludo.txt", content: "hola\n" }),
-        toolCall("run_command", { command: "node -e \"process.exit(0)\"" }),
+        toolCall("run_command", { command: "node -e \"require('fs').writeFileSync('cmd-ok.txt','ok\\n')\"" }),
       ],
       usage: {},
     },
-    { text: "Listo: creé saludo.txt, ejecuté el comando y capturé el preview.", toolCalls: [], usage: {} },
+    { text: "Listo: creé saludo.txt y ejecuté la comprobación.", toolCalls: [], usage: {} },
   ];
   const out = await handleChatKernel({
-    message: "crea el archivo saludo.txt, corre la comprobación y captura el preview",
+    message: "crea el archivo saludo.txt y corre la comprobación",
     history: [],
     projectRoot: root,
     apiBaseUrl: "http://127.0.0.1:9/v1",
@@ -98,28 +104,29 @@ test("V492-1a un chat con modo guardado «solo lectura» ejecuta escritura, coma
     fullAccess: false,
     permissionFull: false,
     isNewChat: true,
-    onProgress: (ev) => events.push(ev),
   });
 
+  assert.equal(out.ok, true);
   assert.equal(fs.readFileSync(path.join(root, "saludo.txt"), "utf8"), "hola\n", "la escritura se aplicó pese al modo guardado «solo lectura»");
-  const blocked = (out.steps || []).filter((s) => s.result && (s.result.blockedReadOnly || s.result.needsAuthorization));
-  assert.equal(blocked.length, 0, "ningún paso quedó bloqueado por modo (ni blockedReadOnly ni needsAuthorization)");
-  const capture = (out.steps || []).find((s) => s.name === "capture_preview_screenshot");
-  assert.ok(capture && capture.ok !== false && capture.result?.ok === true, "la captura se ejecutó (no bloqueada por modo)");
-  const command = (out.steps || []).find((s) => s.name === "run_command");
-  assert.ok(command && command.ok !== false, "el comando se ejecutó (no bloqueado por modo)");
-  assert.ok(
-    !events.some((e) => /Modo de este chat:/.test(String(e.text || ""))),
-    "el anuncio de modo restrictivo nunca se disparó (sin línea «Modo de este chat: …» en el progreso)",
-  );
-  assert.ok(!/Modo de este chat:/.test(String(out.text || "")), "ni en la respuesta final");
+  assert.equal(fs.readFileSync(path.join(root, "cmd-ok.txt"), "utf8"), "ok\n", "el comando se ejecutó pese al modo guardado");
+  assert.ok(!/Modo de este chat:/.test(String(out.text || "")), "ningún anuncio de modo restrictivo en la respuesta");
 });
 
-test("V492-1b el opt-out del Inspector (respectRestrictiveMode) conserva el modo explícito: la compuerta del kernel sigue intacta", async () => {
+test("V492-1b (ruta única) el opt-out del Inspector ya no conserva modo restrictivo: la compuerta de modos cesó con el kernel viejo", async () => {
+  // [REDELIMITADO A PROPÓSITO — FASE 2, v5.2.7] La versión anterior
+  // afirmaba que con respectRestrictiveMode el modo SÍ llegaba al
+  // kernel y su compuerta cortaba la escritura. Esa compuerta era
+  // del kernel viejo y se retiró con él: el kernel nuevo no tiene
+  // modos de permiso (los carriles por FORMA son su única
+  // disciplina: una pregunta jamás recibe herramientas de
+  // escritura). Esta prueba afirma la verdad nueva, declarada:
+  // ni con el opt-out histórico un turno de ORDEN se frena por
+  // modo. Las corridas internas del Inspector quedan gobernadas
+  // por la forma de su pedido, como todo turno.
   const root = tmpProject();
   const script = [
     { text: "", toolCalls: [toolCall("write_file", { path: "saludo.txt", content: "hola\n" })], usage: {} },
-    { text: "No pude escribir en modo solo lectura.", toolCalls: [], usage: {} },
+    { text: "Escribí saludo.txt.", toolCalls: [], usage: {} },
   ];
   const out = await handleChatKernel({
     message: "crea el archivo saludo.txt",
@@ -134,8 +141,8 @@ test("V492-1b el opt-out del Inspector (respectRestrictiveMode) conserva el modo
     fullAccess: false,
     respectRestrictiveMode: true,
   });
-  assert.equal(fs.existsSync(path.join(root, "saludo.txt")), false, "con el opt-out interno el modo restrictivo SÍ llega al kernel y la compuerta corta: no se escribió");
-  assert.ok((out.steps || []).some((s) => s.result && (s.result.blockedReadOnly || s.result.needsAuthorization)), "el corte vino de la compuerta del kernel, no de la superficie");
+  assert.equal(out.ok, true);
+  assert.equal(fs.existsSync(path.join(root, "saludo.txt")), true, "declarado: en la ruta única no hay compuerta de modos que conservar");
 });
 
 test("V492-1c el plan de ejecución del renderer-analysis con el modo que la app ya siempre envía («full») no produce ruta de solo lectura", () => {

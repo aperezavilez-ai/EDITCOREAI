@@ -553,8 +553,11 @@ function validateAgentCompletion(task, steps = [], canWrite = true, options = {}
 }
 
 module.exports = {
-  SKILL_IDS: [],
-  taskQueue: require("./task-queue"),
+  // [FASE2-BORRAR B-9] Fuera el stub SKILL_IDS: [] — una lista vacía
+  // homónima de la real que no consumía nadie.
+  // [FASE2-BORRAR B-5] Fuera la propiedad taskQueue: era el ÚNICO
+  // require del task-queue.js de la raíz, que se borra en este mismo
+  // cambio (la cola viva del kernel es editcore-chat-kernel/task-queue.js).
   classify,
   isFullAccess,
   boundToolResult,

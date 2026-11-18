@@ -141,7 +141,9 @@ const { ProjectScaffoldService } = require("./project-scaffold-service");
 const { ResponseCache } = require("./response-cache");
 const { ToolCache } = require("./tool-cache");
 const { READ_METHODS, connectionSummary, digest, executeServiceRequest } = require("./service-harness");
-const { aggregateUsage, localCacheUsage, normalizeProviderUsage } = require("./usage-metrics");
+// [FASE2-BORRAR B-2] aggregateUsage y localCacheUsage salen del require:
+// eran exportaciones fantasma (importadas y jamás usadas en main.js).
+const { normalizeProviderUsage } = require("./usage-metrics");
 const { builtNextPreviewLaunch, directPreviewLaunch, findRunnableProjectRoot, findPythonExecutable, resolvePythonPreviewTarget, isPreviewDocumentContentType, normalizePreviewUrl, previewRuntimeFingerprint, readProjectPreviewEnv, resolveDesktopPreviewTarget, stablePreviewPort, staticPreviewLaunch } = require("./preview-runtime");
 const { ensureProjectDependencies } = require("./project-dependencies");
 const { capturePreview } = require("./visual-preview-inspector");
@@ -167,7 +169,10 @@ const {
   VISION_MODEL_PATTERN: VISION_INTAKE_PATTERN,
 } = require("./runtime/vision-intake");
 const { createExternalKnowledgeHook, wrapDispatcherWithKnowledgePersist } = require("./runtime/external-knowledge-persist");
-const { BRAIN_TOOL_DEFINITIONS, registerBrainTools } = require("./runtime/brain-tools");
+// [FASE2-BORRAR B-2] registerBrainTools sale del require: exportación
+// fantasma (importada y jamás invocada en main.js; el registro real de
+// herramientas del Cerebro ocurre en la superficie del agente).
+const { BRAIN_TOOL_DEFINITIONS } = require("./runtime/brain-tools");
 const { queuePostWriteDiagnostics } = require("./runtime/post-write-diagnostics");
 const { ReversibleContextStore, loadProjectContext } = require("./runtime/context-store");
 const { rememberProjectEvent, loadProjectMemory, formatMemoryForPrompt } = require("./runtime/project-memory");
@@ -181,7 +186,8 @@ const {
   acceptAllPending,
 } = require("./runtime/agent-run-checkpoint");
 const { ensureProjectRoadmap, syncProjectRoadmap, buildRoadmapSyncFromRun, formatRoadmapForPrompt, readRoadmap } = require("./runtime/project-roadmap");
-const { MAX_WINDOWS, WINDOW_SLOTS, allocateWindowSlot, canOpenWindow } = require("./runtime/window-slots");
+// [FASE2-BORRAR B-2] WINDOW_SLOTS sale del require: exportación fantasma.
+const { MAX_WINDOWS, allocateWindowSlot, canOpenWindow } = require("./runtime/window-slots");
 const { deployOneClick } = require("./runtime/deploy-one-click");
 const { publishProject, findGitRoot } = require("./runtime/publish-pipeline");
 const { assessProjectConnections, connectProject } = require("./runtime/project-connect");
@@ -217,7 +223,8 @@ const { authManager } = require("./runtime/auth-manager");
 const { createSnapshot, rollbackLastChange, listSnapshots } = require("./editcore-chat-kernel/snapshot");
 const { Phase1Audit } = require("./runtime/phase1-audit");
 const { TokenLedger } = require("./runtime/token-ledger");
-const { TaskStore, digest: taskDigest } = require("./runtime/task-store");
+// [FASE2-BORRAR B-2] El alias taskDigest sale del require: exportación fantasma.
+const { TaskStore } = require("./runtime/task-store");
 const { TaskManager } = require("./runtime/task-manager");
 const { TaskRecovery } = require("./runtime/task-recovery");
 const { registerTaskIpc } = require("./runtime/task-ipc");
@@ -754,8 +761,12 @@ function publishAgentProgress(sender, payload = {}) {
   const redacted = typeof redactSensitive === "function"
     ? redactSensitive(safePayload, 8)
     : safePayload;
+  // El renderer confía en que agent:progress siempre trae un
+  // objeto; si la redacción devolviera otra cosa, se envía un
+  // objeto vacío antes que un valor que tumbe su manejador.
+  const envioProgreso = redacted && typeof redacted === "object" ? redacted : {};
   try {
-    sender.send("agent:progress", redacted);
+    sender.send("agent:progress", envioProgreso);
   } catch { /* ignore */ }
   try {
     attachTransparencyToProgress(sender, redacted, redacted);
@@ -1966,6 +1977,9 @@ ipcMain.handle("editcore:chat", async (_event, input = {}) => {
       // [EDITCORE-INTEGRAL-B6] Sesión viva: el kernel re-pide el token por esta costura ante NO_SESSION.
       refreshAccessToken: async () => { try { const { authManager } = require("./runtime/auth-manager"); return await authManager.getAccessToken(); } catch { return null; } },
       readConnections,
+      // [SOCIAL-META FASE 1] Escritura a la bóveda para el kernel
+      // (guardar los tokens de Meta al completar social_conectar).
+      writeConnections,
       fullAccess,
       externalActionApproved: fullAccess,
       permissionMode: permissionHint || permissionMode || "full",
@@ -2009,8 +2023,14 @@ ipcMain.handle("editcore:chat", async (_event, input = {}) => {
       // step moría en la compuerta (bucle de needsAuthorization). Se
       // aceptan los nombres que el renderer ya manda (planAuthorized /
       // planAuthorizedExecution) y se reenvía el dato, sin mirar el texto.
-      planAuthorizedExecution: fullAccess
-        || input.planAuthorizedExecution === true
+      // [2026-11-18] Permiso NO es autorización: fullAccess
+      // entraba en este OR y TODO turno de un usuario con
+      // acceso completo llegaba al kernel como «ejecución
+      // autorizada», forzando el carril ORDEN hasta para una
+      // pregunta («cual es la capital de francia?» corrió como
+      // orden, registro 19:27Z). El flag lleva SOLO el dato del
+      // renderer: la autorización de ESTE turno.
+      planAuthorizedExecution: input.planAuthorizedExecution === true
         || input.planAuthorized === true
         || input.authorizedContinuation === true,
       planAuthorized: input.planAuthorized === true || input.planAuthorizedExecution === true,
@@ -2049,6 +2069,9 @@ ipcMain.handle("editcore:chat", async (_event, input = {}) => {
       kernel: true,
       kind: out?.kind || decision.kind,
       steps: Array.isArray(out?.steps) ? out.steps : [],
+      // [KERNEL-NUEVO] Archivos entregables del turno (solo el
+      // kernel nuevo los produce; con el viejo viaja vacío).
+      archivos: Array.isArray(out?.archivos) ? out.archivos : [],
       visionRouted: images.length ? model : undefined,
       usage: out?.usage || {
         prompt_tokens: 0,
@@ -3066,7 +3089,7 @@ function isProjectServerRunning(projectRoot) {
       || target.startsWith(`${path.resolve(root || "")}${path.sep}`)));
 }
 
-async function startProjectPreview(rootPath, ownerId) {
+async function startProjectPreview(rootPath, ownerId, opciones) {
   const safeRoot = assertProjectRoot(rootPath);
   const pendingStart = previewStartPromises.get(safeRoot);
   if (pendingStart) {
@@ -3074,7 +3097,7 @@ async function startProjectPreview(rootPath, ownerId) {
     previewProcesses.get(safeRoot)?.owners.add(ownerId);
     return { ...result, started: false };
   }
-  const start = startProjectPreviewNow(safeRoot, ownerId);
+  const start = startProjectPreviewNow(safeRoot, ownerId, opciones?.soloWeb === true);
   previewStartPromises.set(safeRoot, start);
   try {
     return await start;
@@ -3083,7 +3106,7 @@ async function startProjectPreview(rootPath, ownerId) {
   }
 }
 
-async function startProjectPreviewNow(safeRoot, ownerId) {
+async function startProjectPreviewNow(safeRoot, ownerId, soloWeb = false) {
   const rootNorm = String(safeRoot || "").replace(/[\\/]+$/, "").toLowerCase();
   if (/[\\/]editcoreai$/.test(rootNorm) || rootNorm.endsWith("editcoreai")) {
     return {
@@ -3098,7 +3121,12 @@ async function startProjectPreviewNow(safeRoot, ownerId) {
     let rootPkg = null;
     try { rootPkg = JSON.parse(fs.readFileSync(path.join(safeRoot, "package.json"), "utf8")); } catch { /* sin package.json */ }
     const desktop = resolveDesktopPreviewTarget(safeRoot, rootPkg);
-    if (desktop) return startDesktopPreview(safeRoot, ownerId, desktop);
+    if (desktop) {
+      // soloWeb (arranque al abrir el proyecto): una app de escritorio
+      // NUNCA se abre sola; solo el botón de vista previa la lanza.
+      if (soloWeb) return { available: false, url: "", omitidaEscritorio: true, message: "Este proyecto abre su propia app de escritorio: no se inicia sola. Pulsa el botón de vista previa para abrirla." };
+      return startDesktopPreview(safeRoot, ownerId, desktop);
+    }
     const pythonTarget = resolvePythonPreviewTarget(safeRoot);
     if (pythonTarget) return startPythonPreview(safeRoot, ownerId, pythonTarget);
     return { available: false, url: "", message: "Este proyecto no tiene interfaz que mostrar en el navegador (ni script dev/start ni index.html). Ejecutalo desde la Terminal." };
@@ -3106,7 +3134,10 @@ async function startProjectPreviewNow(safeRoot, ownerId) {
   let pkg;
   try { pkg = JSON.parse(fs.readFileSync(packagePath, "utf8")); } catch { throw new Error("package.json invalido."); }
   const desktop = resolveDesktopPreviewTarget(runtimeRoot, pkg);
-  if (desktop) return startDesktopPreview(safeRoot, ownerId, desktop);
+  if (desktop) {
+    if (soloWeb) return { available: false, url: "", omitidaEscritorio: true, message: "Este proyecto abre su propia app de escritorio: no se inicia sola. Pulsa el botón de vista previa para abrirla." };
+    return startDesktopPreview(safeRoot, ownerId, desktop);
+  }
   if (!pkg?.scripts?.dev && !pkg?.scripts?.start) return { available: false, url: "", message: "El proyecto no define un script dev o start." };
 
   // Preflight: si .next esta corrupto (routes-manifest), limpiarlo antes de abrir preview.
@@ -3144,7 +3175,20 @@ async function startProjectPreviewNow(safeRoot, ownerId) {
   }
 
   const currentFingerprint = previewRuntimeFingerprint(safeRoot, runtimeRoot);
-  const existing = previewProcesses.get(safeRoot);
+  let existing = previewProcesses.get(safeRoot);
+  if (existing?.fallback) {
+    // Un respaldo (build estático o URL de despliegue) nunca es la
+    // respuesta permanente: nació de un arranque del servidor de
+    // desarrollo que no llegó a tiempo. Ante una nueva petición se
+    // retira y se reintenta el servidor real; dejarlo registrado
+    // condenaba al proyecto a la copia estática para siempre y ni
+    // el botón de recargar lo recuperaba (defecto cazado en vivo:
+    // «El servidor respondio, pero la aplicacion no mostro
+    // contenido» sin salida).
+    try { stopPreviewRuntime(existing); } catch { /* ignore */ }
+    previewProcesses.delete(safeRoot);
+    existing = undefined;
+  }
   if (existing?.remote && existing.url) {
     if (await isHttpReady(existing.url)) {
       existing.owners.add(ownerId);
@@ -4461,6 +4505,27 @@ function readConnections() {
   return connections;
 }
 
+// [SOCIAL-META FASE 1] Escritura de Conexiones por la MISMA vía que
+// las lee readConnections: fusiona el parche sobre el objeto
+// «editcore-connections» del estado seguro y lo persiste cifrado con
+// safeStorage (writeSecureState). Un valor null/""/undefined BORRA la
+// clave. Es la costura que el kernel recibe como
+// helpers.writeConnections para guardar credenciales (p. ej. los
+// tokens de Meta de social_conectar) sin tocar texto plano jamás.
+function writeConnections(patch = {}) {
+  const secure = readSecureState();
+  const current = secure["editcore-connections"] && typeof secure["editcore-connections"] === "object"
+    ? { ...secure["editcore-connections"] }
+    : {};
+  for (const [key, value] of Object.entries(patch && typeof patch === "object" ? patch : {})) {
+    if (value === null || value === undefined || value === "") delete current[key];
+    else current[key] = value;
+  }
+  secure["editcore-connections"] = current;
+  writeSecureState(secure);
+  return readConnections();
+}
+
 function operatorConnectionsProjectId(projectRoot = "") {
   const root = String(projectRoot || "").trim();
   if (!root) return "";
@@ -4607,27 +4672,175 @@ ipcMain.handle("connections:operator-memory", async (_event, input = {}) => {
     memory: formatOperatorConnectionsMemory(snapshot),
   };
 });
-ipcMain.handle("connections:gafcore-status", async () => {
-  scrubGatewayFromSecureState();
-  return { connected: false, adminTokenStored: false, vaultActive: false, removed: true };
-});
 
-ipcMain.handle("connections:gafcore-admin-token", async () => {
-  scrubGatewayFromSecureState();
-  throw new Error("Esta integraciÃ³n ya no estÃ¡ disponible. Elige un modelo en el panel Modelos.");
-});
+// [SOCIAL UI] Conexiones sociales (Meta / TikTok / YouTube) desde el
+// diálogo de Conexiones. Estos handlers NO duplican llamadas HTTP:
+// usan los mismos clientes runtime (runtime/social-*.js) y ejecutan
+// EL MISMO flujo que las herramientas social_conectar /
+// tiktok_conectar / youtube_conectar del kernel (tools.js), con la
+// bóveda de Conexiones como única fuente de tokens. Ninguna
+// respuesta incluye tokens: solo resúmenes públicos.
+const socialMetaUi = require("./runtime/social-meta");
+const socialTiktokUi = require("./runtime/social-tiktok");
+const socialYoutubeUi = require("./runtime/social-youtube");
 
-ipcMain.handle("connections:gafcore-activate", async () => {
-  scrubGatewayFromSecureState();
-  return { connected: false, removed: true };
-});
-
-async function connectGatewayProjectInternal() {
-  scrubGatewayFromSecureState();
-  throw new Error("Esta integraciÃ³n ya no estÃ¡ disponible. Elige un modelo en el panel Modelos.");
+function socialVaultHelpers() {
+  return { readConnections, writeConnections };
 }
 
-ipcMain.handle("connections:gafcore-project", async (_event, input = {}) => connectGatewayProjectInternal(input));
+function socialRedDeInput(input) {
+  const raw = typeof input === "string" ? input : input?.red;
+  return String(raw || "").trim().toLowerCase();
+}
+
+ipcMain.handle("social:auth-url", async (_event, input = {}) => {
+  const red = socialRedDeInput(input);
+  const helpers = socialVaultHelpers();
+  try {
+    if (red === "meta") {
+      const base = socialMetaUi.createClientFromHelpers(helpers);
+      if (!base.ok) return { ok: false, error: base.error };
+      return { ok: true, red, url: base.client.buildAuthUrl() };
+    }
+    if (red === "tiktok") {
+      const base = socialTiktokUi.createClientFromHelpers(helpers);
+      if (!base.ok) return { ok: false, error: base.error };
+      return { ok: true, red, url: base.client.buildAuthUrl() };
+    }
+    if (red === "youtube") {
+      const base = socialYoutubeUi.createClientFromHelpers(helpers);
+      if (!base.ok) return { ok: false, error: base.error };
+      return { ok: true, red, url: base.client.buildAuthUrl() };
+    }
+    return { ok: false, error: `Red social no soportada: ${red || "(vacía)"}. Usa meta, tiktok o youtube.` };
+  } catch (error) {
+    return { ok: false, error: error?.message || String(error) };
+  }
+});
+
+ipcMain.handle("social:complete", async (_event, input = {}) => {
+  const red = socialRedDeInput(input);
+  const code = String(input?.code || "").trim();
+  const helpers = socialVaultHelpers();
+  if (!code) return { ok: false, error: "Falta el código de autorización (parámetro «code» de la URL de retorno)." };
+  try {
+    if (red === "meta") {
+      const base = socialMetaUi.createClientFromHelpers(helpers);
+      if (!base.ok) return { ok: false, error: base.error };
+      const intercambio = await base.client.exchangeCode(code);
+      if (!intercambio.ok) return { ok: false, error: intercambio.error };
+      let tokenFinal = intercambio;
+      let aviso = "";
+      const extendido = await base.client.extendToken(intercambio.accessToken);
+      if (extendido.ok) {
+        tokenFinal = extendido;
+      } else {
+        aviso = `El token no se pudo extender a larga duración (${extendido.error}); se guardó el token corto, que caduca pronto.`;
+      }
+      const listado = await base.client.listPages(tokenFinal.accessToken);
+      if (!listado.ok) return { ok: false, error: listado.error };
+      const guardado = socialMetaUi.saveSocialPatch(helpers, socialMetaUi.buildSocialPatch({
+        userToken: tokenFinal.accessToken,
+        expiresIn: tokenFinal.expiresIn,
+        pages: listado.pages,
+      }));
+      if (!guardado.ok) return { ok: false, error: guardado.error };
+      return {
+        ok: true,
+        red,
+        conectado: true,
+        paginas: listado.pages.map(socialMetaUi.paginaPublica),
+        ...(aviso ? { aviso } : {}),
+      };
+    }
+    if (red === "tiktok") {
+      const base = socialTiktokUi.createClientFromHelpers(helpers);
+      if (!base.ok) return { ok: false, error: base.error };
+      const intercambio = await base.client.exchangeCode(code);
+      if (!intercambio.ok) return { ok: false, error: intercambio.error };
+      const info = await base.client.getUserInfo(intercambio.accessToken);
+      const openId = intercambio.openId || (info.ok ? info.openId : "");
+      const guardado = socialTiktokUi.saveTiktokPatch(helpers, socialTiktokUi.buildTiktokPatch({
+        accessToken: intercambio.accessToken,
+        refreshToken: intercambio.refreshToken,
+        openId,
+      }));
+      if (!guardado.ok) return { ok: false, error: guardado.error };
+      return {
+        ok: true,
+        red,
+        conectado: true,
+        cuenta: { openId, ...(info.ok && info.displayName ? { nombre: info.displayName } : {}) },
+      };
+    }
+    if (red === "youtube") {
+      const base = socialYoutubeUi.createClientFromHelpers(helpers);
+      if (!base.ok) return { ok: false, error: base.error };
+      const intercambio = await base.client.exchangeCode(code);
+      if (!intercambio.ok) return { ok: false, error: intercambio.error };
+      const canal = await base.client.getMyChannel(intercambio.accessToken);
+      if (!canal.ok) return { ok: false, error: canal.error };
+      const guardado = socialYoutubeUi.saveYoutubePatch(helpers, socialYoutubeUi.buildYoutubePatch({
+        accessToken: intercambio.accessToken,
+        refreshToken: intercambio.refreshToken,
+        channel: canal.channel,
+      }));
+      if (!guardado.ok) return { ok: false, error: guardado.error };
+      return {
+        ok: true,
+        red,
+        conectado: true,
+        canal: socialYoutubeUi.canalPublico(canal.channel),
+        ...(!intercambio.refreshToken
+          ? { aviso: "Google no devolvió refresh_token: la conexión caducará al expirar el access token y habrá que reconectar." }
+          : {}),
+      };
+    }
+    return { ok: false, error: `Red social no soportada: ${red || "(vacía)"}. Usa meta, tiktok o youtube.` };
+  } catch (error) {
+    return { ok: false, error: error?.message || String(error) };
+  }
+});
+
+ipcMain.handle("social:status", async () => {
+  try {
+    const connections = readConnections();
+    const metaCfg = socialMetaUi.resolveMetaConfig({ connections, env: process.env });
+    const metaState = socialMetaUi.readSocialState(connections);
+    const ttCfg = socialTiktokUi.resolveTiktokConfig({ connections, env: process.env });
+    const ttState = socialTiktokUi.readTiktokState(connections);
+    const ytCfg = socialYoutubeUi.resolveGoogleConfig({ connections, env: process.env });
+    const ytState = socialYoutubeUi.readYoutubeState(connections);
+    return {
+      ok: true,
+      meta: {
+        configurada: metaCfg.configured,
+        ...(metaCfg.configured ? {} : { faltan: metaCfg.missing }),
+        conectada: Boolean(metaState.userToken),
+        paginas: metaState.pages.map(socialMetaUi.paginaPublica),
+      },
+      tiktok: {
+        configurada: ttCfg.configured,
+        ...(ttCfg.configured ? {} : { faltan: ttCfg.missing }),
+        conectada: Boolean(ttState.accessToken),
+        cuenta: ttState.openId ? { openId: ttState.openId } : null,
+      },
+      youtube: {
+        configurada: ytCfg.configured,
+        ...(ytCfg.configured ? {} : { faltan: ytCfg.missing }),
+        conectada: Boolean(ytState.accessToken),
+        canal: socialYoutubeUi.canalPublico(ytState.channel),
+      },
+    };
+  } catch (error) {
+    return { ok: false, error: error?.message || String(error) };
+  }
+});
+// [FASE2-BORRAR B-7] Retirados los 4 handlers connections:gafcore-*
+// (status/admin-token/activate/project): eran tumbas del backend
+// *.gafcore.com dado de baja (AGENTS.md lo prohíbe) y ningún método
+// de preload ni llamante del renderer los alcanzaba. La limpieza
+// scrubGatewayFromSecureState se queda: la invocan otros flujos.
 
 function getCloudVaultBridge() {
   const { createCloudVaultBridge } = require("./runtime/cloud-vault-bridge");
@@ -4673,71 +4886,14 @@ ipcMain.handle("cloud:test-local-api", async (_event, input = {}) => {
   return testLocalApi(input || {});
 });
 
-ipcMain.handle("ecosystem:scan", async (_event, input = {}) => {
-  const force = Boolean(input?.force);
-  const result = await ecosystemScanner.scanAsync(null, { force });
-  ecosystemState.projects = result.projects || [];
-  ecosystemState.lastScan = result.scannedAt;
-  return result;
-});
-
-ipcMain.handle("ecosystem:projects", async (_event, input = {}) => {
-  const { filter, limit } = input || {};
-  let projects = ecosystemState.projects || [];
-  if (filter) {
-    const f = String(filter).toLowerCase();
-    projects = projects.filter(p => p.name.toLowerCase().includes(f));
-  }
-  if (limit && Number(limit) > 0) projects = projects.slice(0, Number(limit));
-  return { projects, total: projects.length, lastScan: ecosystemState.lastScan };
-});
-
-ipcMain.handle("ecosystem:connections", async () => {
-  return connectionVerifier.verifyAll();
-});
-
-ipcMain.handle("ecosystem:status", async (_event, input = {}) => {
-  const { refresh, project } = input || {};
-  if (refresh) {
-    const scanResult = await ecosystemScanner.scanAsync(null, { force: true });
-    ecosystemState.projects = scanResult.projects || [];
-    ecosystemState.lastScan = scanResult.scannedAt;
-  }
-  const connections = await connectionVerifier.verifyAll();
-  let projects = ecosystemState.projects || [];
-  if (project) {
-    projects = projects.filter(p => p.name === project);
-  }
-  return {
-    projects: projects.map(p => ({
-      name: p.name,
-      path: p.path,
-      stack: p.frameworks,
-      languages: p.languages,
-      hasGit: p.hasGit,
-      hasVercel: p.hasVercelDir || p.hasVercelConfig,
-      hasSupabase: p.hasSupabaseDir || !!p.supabaseUrl,
-      github: p.github,
-      vercel: p.vercel,
-      supabase: p.supabase,
-      roadmap: p.roadmap ? { exists: true, ...p.roadmap } : null,
-    })),
-    connections,
-    lastScan: ecosystemState.lastScan,
-  };
-});
-
-ipcMain.handle("ecosystem:roadmap", async (_event, input = {}) => {
-  const { projectRoot } = input || {};
-  if (!projectRoot) return { error: "projectRoot requerido" };
-  return roadmapSync.loadOrCreate(projectRoot);
-});
-
-ipcMain.handle("ecosystem:bootstrap", async (_event, input = {}) => {
-  const { projectName, stack, github, vercel, supabase, server } = input || {};
-  if (!projectName) return { error: "projectName requerido" };
-  return projectBootstrap.bootstrap(projectName, { stack, github, vercel, supabase, server });
-});
+// [FASE2-BORRAR B-7] Retirados los 6 handlers ecosystem:*
+// (scan/projects/connections/status/roadmap/bootstrap): ningún
+// método de preload los exponía ni el renderer los llamaba — la
+// superficie IPC viva del ecosistema es editcoreEcosystem (swarm,
+// refactor, ADR, memoria). Las instancias compartidas
+// (ecosystemScanner, connectionVerifier, roadmapSync,
+// projectBootstrap, ecosystemState) SE QUEDAN: otros flujos
+// internos las usan.
 
 function verificationReportPath() {
   const argument = process.argv.find((value) => String(value).startsWith("--editcore-verify-report="));
@@ -5748,21 +5904,9 @@ function optionalJarvisLauncher() {
   }
 }
 
-ipcMain.handle("agent:restart-backend", async () => {
-  const jarvis = optionalJarvisLauncher();
-  if (!jarvis) return false;
-  try {
-    jarvis.stopJarvis();
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-    const secureState = readSecureState();
-    const connections = secureState["editcore-connections"] || {};
-    jarvis.startJarvis(app.getPath("userData"), connections);
-    return true;
-  } catch (err) {
-    console.error("[EditCore] Error restarting optional Jarvis sidecar:", err);
-    return false;
-  }
-});
+// [FASE2-BORRAR B-7] Retirado el handler agent:restart-backend:
+// sin método de preload ni llamante; el sidecar opcional se gestiona
+// por su propio ciclo de arranque/parada.
 
 const voiceStt = require("./runtime/voice-stt");
 const windowsStt = require("./runtime/windows-stt");
@@ -6203,6 +6347,49 @@ ipcMain.handle("project:open-path", async (_event, input = {}) => {
   return { ok: true, path: rel };
 });
 
+// [v5.2.7 — regla de Luis] Descarga de un archivo entregado en
+// el chat: el clic en el enlace «Descargar» de la tarjeta copia
+// el archivo a la carpeta de Descargas del usuario, igual que
+// la descarga de un adjunto en un navegador. Si ya existe un
+// archivo con ese nombre, se numera: «nombre (1).ext», etc.
+ipcMain.handle("project:download-file", (_event, input = {}) => {
+  const raw = String(input.path || "").trim();
+  let target;
+  if (path.isAbsolute(raw)) {
+    target = path.resolve(raw);
+  } else {
+    const root = assertProjectRoot(String(input.projectRoot || "").trim());
+    target = resolveInside(root, assertSafeProjectRel(raw));
+  }
+  if (!fs.existsSync(target)) throw new Error(`No existe: ${raw}`);
+  const descargas = path.join(os.homedir(), "Downloads");
+  fs.mkdirSync(descargas, { recursive: true });
+  let destino = path.join(descargas, path.basename(target));
+  if (fs.existsSync(destino)) {
+    const ext = path.extname(destino);
+    const base = destino.slice(0, destino.length - ext.length);
+    let n = 1;
+    while (fs.existsSync(`${base} (${n})${ext}`)) n += 1;
+    destino = `${base} (${n})${ext}`;
+  }
+  fs.copyFileSync(target, destino);
+  // Al terminar, la carpeta de Descargas se abre con el archivo
+  // resaltado: el usuario VE dónde cayó su descarga.
+  shell.showItemInFolder(destino);
+  return { ok: true, path: destino };
+});
+
+// [v5.2.7] Editor visual del Navegador: la edición que el
+// usuario hizo en la vista previa (texto, foto o color) se
+// mapea a la plantilla fuente y se guarda en el archivo. La
+// lógica pura vive en runtime/visual-edit.js (probada sin
+// Electron); aquí solo se valida la raíz del proyecto.
+const { aplicarEdicionVisual } = require("./runtime/visual-edit");
+ipcMain.handle("project:apply-visual-edit", (_event, input = {}) => {
+  const root = assertProjectRoot(String(input.projectRoot || "").trim());
+  return aplicarEdicionVisual(root, input.edicion || {});
+});
+
 ipcMain.handle("project:copy-path", (_event, input = {}) => {
   const root = assertProjectRoot(String(input.projectRoot || "").trim());
   const rel = assertSafeProjectRel(input.path);
@@ -6338,11 +6525,11 @@ ipcMain.handle("project:resolve-special-folder", (_event, key = "") => {
     return "";
   }
 });
-ipcMain.handle("project:preview-start", async (event, rootPath) => {
+ipcMain.handle("project:preview-start", async (event, rootPath, opciones) => {
   try {
     const raw = String(rootPath || "").trim();
     if (!raw) return { available: false, url: "", message: "Abre un proyecto primero." };
-    const result = await startProjectPreview(raw, event.sender.id);
+    const result = await startProjectPreview(raw, event.sender.id, opciones);
     try {
       const { appendPreviewLog } = require("./runtime/log-tail");
       const root = assertProjectRoot(raw);
@@ -7262,8 +7449,10 @@ ipcMain.handle("agent:run", async (event, input = {}) => {
         // repetirlo regeneraba el mismo prompt (bucle infinito). Ahora
         // el flag llega como planAuthorizedExecution hasta handle(),
         // sin depender de ninguna forma del texto transformado.
-        planAuthorizedExecution: permissionHint === "full"
-          || input.planAuthorized === true
+        // [2026-11-18] Permiso NO es autorización (ver la nota
+        // en el handler de chat): permissionHint "full" ya no
+        // fuerza la autorización de plan de cada turno.
+        planAuthorizedExecution: input.planAuthorized === true
           || input.planAuthorizedExecution === true
           || input.authorizedContinuation === true,
         planAuthorized: input.planAuthorized === true || input.planAuthorizedExecution === true,
@@ -7363,15 +7552,16 @@ ipcMain.handle("agent:run", async (event, input = {}) => {
           });
         }
       } catch { /* ignore */ }
-      // Preview en background: NUNCA bloquear el return del agente (evita UI colgada en Verifier).
-      Promise.resolve()
-        .then(() => startProjectPreview(rootPath, event.sender.id))
-        .then((preview) => {
-          if (preview?.available && preview?.url && !event.sender.isDestroyed()) {
-            event.sender.send("project:preview-updated", { projectRoot: rootPath, url: preview.url });
-          }
-        })
-        .catch(() => {});
+      // [v5.2.7 — juicio en vivo] SIN arranque automático de preview
+      // al cerrar el turno: este gancho lanzaba el entorno dev del
+      // proyecto tras CADA turno de agente, sin que el usuario lo
+      // pidiera. En un proyecto Electron (PodcastStudio: su script
+      // dev levanta vite + electron) eso ABRE la app del proyecto
+      // sola — y se cierra y reabre cuando la huella del preview
+      // cambia o el dev reacciona a los archivos que el propio
+      // turno escribe (.editcore). La vista previa queda SOLO a
+      // petición explícita: el IPC project:preview-start (panel
+      // Web) y la herramienta start_preview del agente.
       return {
         text,
         steps: typeof slimAgentStepsForIpc === "function" ? slimAgentStepsForIpc(steps) : steps,
@@ -7379,6 +7569,9 @@ ipcMain.handle("agent:run", async (event, input = {}) => {
         report,
         kernel: true,
         kind: out?.kind || kernelDecision.kind,
+        // [KERNEL-NUEVO] Archivos entregables del turno (solo el
+        // kernel nuevo los produce; con el viejo viaja vacío).
+        archivos: Array.isArray(out?.archivos) ? out.archivos : [],
       };
     } catch (error) {
       throw new Error(typeof toUserFacingError === "function" ? toUserFacingError(error) : String(error?.message || error));
@@ -8485,6 +8678,10 @@ app.whenReady().then(async () => {
         ],
         sharedSkillPaths: [
           path.join(__dirname, "brain-seed", "skills"),
+          // [FASE2-CONECTAR C-3/S-7] Las 5 skills de .agents/skills
+          // también son raíz compartida del Cerebro: el catálogo
+          // dinámico las resolvía, pero el Cerebro no las miraba.
+          path.join(__dirname, ".agents", "skills"),
         ],
       });
       inspectorService = new InspectorCoreService({
@@ -8602,9 +8799,9 @@ ipcMain.handle("brain:search",          (_e, root, query, lim)  => brain().searc
 ipcMain.handle("brain:knowledge-search",(_e, root, query, lim)  => brain().searchKnowledge(root, query, lim));
 ipcMain.handle("brain:agent-search",    (_e, root, query, options) => brain().searchForAgent(String(root || ""), String(query || ""), options || {}));
 ipcMain.handle("brain:agent-inventory", (_e, root, query, lim) => brain().agentInventory(String(root || ""), String(query || ""), lim));
-ipcMain.handle("bots:list", () => getBotRegistry().list());
-ipcMain.handle("bots:status", () => getBotRegistry().directorStatus());
-ipcMain.handle("bots:run", async (_e, id, context = {}) => getBotRegistry().run(id, context));
+// [FASE2-BORRAR B-7] Retirados los handlers bots:* (list/status/run):
+// sin método de preload ni llamante del renderer. El registro de
+// bots (getBotRegistry) se queda para sus flujos internos.
 ipcMain.handle("brain:read-skill",      (_e, root, name) => brain().readSkillForAgent(String(root || ""), String(name || "")));
 ipcMain.handle("brain:related",         (_e, root, nodeId, lim) => brain().relatedKnowledge(root, nodeId, lim));
 ipcMain.handle("brain:memory-stats",    (_e, root)              => brain().memoryStats(root));
@@ -8620,7 +8817,8 @@ ipcMain.handle("brain:audit", async (_e, root, repair) => {
       const healed = await healAndPurgeBrainSkills({
         userDataPath: app.getPath("userData"),
         catalogPath: path.join(__dirname, "brain-seed", "catalog.json"),
-        sharedSkillPaths: [path.join(__dirname, "brain-seed", "skills")],
+        // [FASE2-CONECTAR C-3/S-7] Misma raíz .agents/skills que en la instanciación principal.
+        sharedSkillPaths: [path.join(__dirname, "brain-seed", "skills"), path.join(__dirname, ".agents", "skills")],
       });
       const audit = await brain().auditTools(root, { repair: false });
       return { ...audit, healReport: healed };
@@ -9215,13 +9413,12 @@ ipcMain.handle("mcp:disconnect", async (_event, id) => {
   }
 });
 
-// AST Refactorer Bridge
-try {
-  const { AstIpcBridge } = require("./runtime/ast-ipc-bridge");
-  new AstIpcBridge().register(ipcMain);
-} catch {
-  // ignore
-}
+// [FASE2-BORRAR B-8] Retirado el registro del puente AST
+// (ast:parse/analyze/renameSymbol/extractFunction/restructureClass/
+// provideCodeActions/executeCodeAction/listActions): los 8 métodos
+// de preload (editcoreAst) no tenían NI UN llamante en el renderer.
+// Sin registro, runtime/ast-ipc-bridge.js queda sin consumidor y se
+// borra en este mismo cambio; el namespace de preload también.
 
 // Telemetry handlers
 let globalTelemetryMonitor = null;
@@ -9249,25 +9446,9 @@ function getDebuggerClient() {
 }
 
 const activeDebugSessions = new Map();
-ipcMain.handle("debug:start-session", async (_event, options) => {
-  try {
-    const client = getDebuggerClient();
-    const session = await client.startSession(options?.id || null, options || {});
-    return { ok: true, id: session.id, session };
-  } catch (error) {
-    return { ok: false, error: error.message };
-  }
-});
-
-ipcMain.handle("debug:stop-session", async (_event, id) => {
-  try {
-    const client = getDebuggerClient();
-    const res = await client.stopSession(id);
-    return res;
-  } catch (error) {
-    return { ok: false, error: error.message };
-  }
-});
+// [FASE2-BORRAR B-7] Retirados los handlers debug:* (start-session/
+// stop-session): sin método de preload ni llamante. La familia viva
+// del depurador es debugger:* (aquí debajo), que sí tiene superficie.
 
 ipcMain.handle("debugger:create-session", async (_event, options) => {
   try {

@@ -140,7 +140,7 @@ test("update-check usa repo por defecto y compara semver", async () => {
   const { compareSemver, resolveUpdateRepo, checkForUpdates } = require("../runtime/update-check");
   assert.equal(compareSemver("2.2.15", "2.2.14"), 1);
   assert.equal(compareSemver("2.2.14", "2.2.14"), 0);
-  assert.equal(resolveUpdateRepo({ packageJson: {}, env: {} }), "aperezavilez-ai/EDITCOREAI");
+  assert.equal(resolveUpdateRepo({ packageJson: {}, env: {} }), "aperezavilez-ai/EDITCOREAI-releases");
   assert.equal(resolveUpdateRepo({ packageJson: {}, env: { EDITCORE_GITHUB_REPO: "acme/editcore" } }), "acme/editcore");
   const current = await checkForUpdates({
     currentVersion: "2.5.7",
@@ -150,7 +150,7 @@ test("update-check usa repo por defecto y compara semver", async () => {
       status: 200,
       json: {
         tag_name: "v2.5.7",
-        html_url: "https://github.com/aperezavilez-ai/EDITCOREAI/releases/tag/v2.5.7",
+        html_url: "https://github.com/aperezavilez-ai/EDITCOREAI-releases/releases/tag/v2.5.7",
         assets: [],
       },
     }),

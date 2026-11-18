@@ -253,12 +253,21 @@ function listFiles(root, rel = ".", max = 80, opts = {}) {
   }
   const dir = safe(root, requested === "/" ? "." : requested);
   if (!fs.existsSync(dir)) return { ok: false, error: `No existe: ${rel}` };
-  const entries = fs.readdirSync(dir, { withFileTypes: true }).slice(0, max);
+  // Conteos ANTES del corte: el total real de la carpeta viaja
+  // siempre en el resultado, para que ningún resumen tenga que
+  // adivinar el tamaño desde una lista recortada.
+  const allEntries = fs.readdirSync(dir, { withFileTypes: true });
+  const totalDirs = allEntries.filter((e) => e.isDirectory()).length;
+  const totalFiles = allEntries.filter((e) => e.isFile()).length;
+  const entries = allEntries.slice(0, max);
   return {
     ok: true,
     path: requested,
     dirs: entries.filter((e) => e.isDirectory()).map((e) => e.name),
     files: entries.filter((e) => e.isFile()).map((e) => e.name),
+    totalDirs,
+    totalFiles,
+    truncated: allEntries.length > entries.length,
   };
 }
 
@@ -1489,6 +1498,24 @@ const DEFINITIONS = [
   {
     type: "function",
     function: {
+      name: "delete_file",
+      // [FASE2-CONECTAR C-8] Definición REAL de la herramienta que
+      // classify.js ya clasificaba como escritura: el chat no podía
+      // borrar ningún archivo por ninguna vía. El case toma snapshot
+      // antes de borrar (rollback_last_change lo puede restaurar).
+      description: "Borra UN archivo del proyecto. Antes de borrar guarda un snapshot (reversible con rollback_last_change). Solo archivos: para carpetas usa run_command. Requiere turno con escritura autorizada.",
+      parameters: {
+        type: "object",
+        properties: {
+          path: { type: "string", description: "Ruta del archivo a borrar, relativa al proyecto." }
+        },
+        required: ["path"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
       name: "search_files",
       // [EDITCORE-INTEGRAL-B4] Definición honesta de los DOS modos: la
       // anterior prometía «texto o expresión» pero la implementación
@@ -1640,6 +1667,268 @@ const DEFINITIONS = [
           query: { type: "string", description: "La consulta de búsqueda." }
         },
         required: ["query"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "web_scrape",
+      // [FASE2-CONECTAR C-4] Definición REAL: scrapeWebPage
+      // (browser-tool.js) estaba importada en este archivo sin case
+      // ni definición — la herramienta se anunciaba y el despacho la
+      // rechazaba como desconocida.
+      description: "Lee una URL http(s) y extrae su texto visible (navegador headless si está disponible; si no, fetch). Úsala para leer documentación o páginas concretas. Para BUSCAR en internet usa web_search.",
+      parameters: {
+        type: "object",
+        properties: {
+          url: { type: "string", description: "La URL completa a leer (http:// o https://)." }
+        },
+        required: ["url"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "graphify_project",
+      // [FASE2-CONECTAR C-1] Definición REAL del case que ya existía
+      // sin clasificación ni guarda: genera el grafo del proyecto y
+      // ESCRIBE sus salidas en graphify-out/ (por eso es escritura).
+      description: "Genera el grafo de conocimiento del proyecto (módulos, símbolos y relaciones) y escribe las salidas en graphify-out/ del proyecto analizado. Requiere turno con escritura autorizada.",
+      parameters: {
+        type: "object",
+        properties: {
+          path: { type: "string", description: "Ruta del proyecto o subcarpeta a grafear. Por defecto, la raíz del proyecto." }
+        }
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "list_snapshots",
+      // [FASE2-CONECTAR C-13] Envuelve listSnapshots (snapshot.js),
+      // exportada y anunciada pero sin definición ni case.
+      description: "Lista los snapshots guardados del proyecto (cada escritura guarda el estado previo de los archivos que toca): id, fecha, motivo y archivos. Úsala para saber qué se puede revertir con rollback_last_change.",
+      parameters: {
+        type: "object",
+        properties: {
+          limit: { type: "number", description: "Máximo de snapshots a listar (defecto 20)." }
+        }
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "analyze_circular_dependencies",
+      // [FASE2-CONECTAR C-13] Envuelve detectCircularDependencies
+      // (circular-dependency-detector.js), importada y reexportada
+      // pero jamás invocada por un case.
+      description: "Detecta dependencias circulares entre los módulos del proyecto (imports que se cierran en ciclo). Solo lectura: no modifica nada.",
+      parameters: {
+        type: "object",
+        properties: {
+          path: { type: "string", description: "Subcarpeta a analizar. Por defecto, todo el proyecto." }
+        }
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "read_roadmap",
+      // [FASE2-CONECTAR C-13] Envuelve readRoadmap
+      // (runtime/project-roadmap.js), la función interna que listFiles
+      // ya usaba sin exponerla como herramienta.
+      description: "Lee el ROADMAP.md del proyecto (o su equivalente detectado) y devuelve su contenido. Solo lectura.",
+      parameters: { type: "object", properties: {} }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "audit_env",
+      // [FASE2-CONECTAR C-13] Envuelve auditEnv (este mismo archivo),
+      // exportada sin un solo llamador en el árbol.
+      description: "Audita las variables de entorno: compara .env.example contra .env.local/.env y reporta las claves que faltan o están vacías. No muestra valores.",
+      parameters: { type: "object", properties: {} }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "supabase_migrate",
+      // [FASE2-CONECTAR C-13] Envuelve runSupabaseSql (este mismo
+      // archivo): la función interna ni se llamaba como la herramienta
+      // clasificada. Prepara y previsualiza las migraciones SQL del
+      // proyecto y declara las credenciales que falten.
+      description: "Prepara las migraciones de Supabase del proyecto: lee la carpeta supabase/migrations (o el .sql indicado), previsualiza el SQL y dice qué falta para aplicarlas (credenciales/CLI). Requiere turno con escritura autorizada.",
+      parameters: {
+        type: "object",
+        properties: {
+          path: { type: "string", description: "Carpeta de migraciones o archivo .sql. Por defecto supabase/migrations." }
+        }
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "clone_repo",
+      // [FASE2-CONECTAR C-13] Envuelve cloneRepo (este mismo archivo,
+      // con su lock de destino), exportada sin llamadores.
+      description: "Clona un repositorio git (https:// o git@) DENTRO del proyecto, en la carpeta destino indicada o en .editcore/repos/<nombre>. Si el destino ya tiene contenido, no clona de nuevo. Requiere turno con escritura autorizada.",
+      parameters: {
+        type: "object",
+        properties: {
+          url: { type: "string", description: "URL del repositorio (https://github.com/... o git@...)." },
+          path: { type: "string", description: "Carpeta destino relativa al proyecto (opcional)." }
+        },
+        required: ["url"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "social_conectar",
+      // [SOCIAL-META FASE 1] OAuth de Meta en dos tiempos, pensado
+      // para el chat: sin «code» devuelve la URL de autorización que
+      // el usuario abre y aprueba; con «code» (el parámetro code de
+      // la URL de retorno) intercambia, extiende el token, lista las
+      // páginas y GUARDA todo en la bóveda de Conexiones.
+      description: "Conecta las redes de Meta (Facebook e Instagram) de EditCoreAI. Sin argumentos devuelve la URL de autorización de Meta para que el usuario la abra y apruebe los permisos. Con el argumento «code» (el código que Meta devuelve en la URL de retorno tras autorizar) completa la conexión: intercambia el código, guarda el token de larga duración y las páginas en la bóveda de Conexiones. Requiere que la app de Meta esté configurada (META_APP_ID, META_APP_SECRET y META_REDIRECT_URI en el entorno o en Conexiones).",
+      parameters: {
+        type: "object",
+        properties: {
+          code: { type: "string", description: "Código de autorización que Meta devolvió en la URL de retorno (parámetro «code»). Sin él, la herramienta solo devuelve la URL de autorización." }
+        }
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "social_estado",
+      description: "Muestra el estado de la conexión social de Meta: si la app está configurada, si hay una conexión activa y qué páginas de Facebook (y cuentas de Instagram vinculadas) están conectadas. Nunca devuelve tokens.",
+      parameters: { type: "object", properties: {} }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "social_publicar",
+      // [SOCIAL-META FASE 1] Publicación REAL vía Graph API: página
+      // (post con mensaje y/o enlace) o Instagram (dos pasos:
+      // contenedor + publish; exige imageUrl pública). Es escritura
+      // en el mundo exterior: solo turnos ORDEN autorizados.
+      description: "Publica en una página de Facebook conectada o en su cuenta de Instagram vinculada, vía la Graph API de Meta. En Facebook publica un post con «message» y/o «link». En Instagram (instagram:true) publica una foto desde «imageUrl» pública con «message» como pie. Si hay varias páginas conectadas, indica «pageId»; con una sola, se usa esa.",
+      parameters: {
+        type: "object",
+        properties: {
+          pageId: { type: "string", description: "Id de la página conectada donde publicar (la da social_estado). Opcional si solo hay una página conectada." },
+          instagram: { type: "boolean", description: "true para publicar en la cuenta de Instagram vinculada a la página; por defecto false (post en la página de Facebook)." },
+          message: { type: "string", description: "Texto del post en Facebook o pie de la foto en Instagram." },
+          link: { type: "string", description: "Enlace a adjuntar al post de Facebook (opcional; no aplica a Instagram)." },
+          imageUrl: { type: "string", description: "URL pública de la imagen (obligatoria para Instagram; en Facebook no se usa)." }
+        }
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "tiktok_conectar",
+      // [SOCIAL-FASE 2] OAuth de TikTok (Login Kit) en dos tiempos,
+      // como social_conectar: sin «code» devuelve la URL de
+      // autorización; con «code» intercambia los tokens, lee el
+      // usuario y GUARDA todo en la bóveda de Conexiones.
+      description: "Conecta la cuenta de TikTok de EditCoreAI (Login Kit). Sin argumentos devuelve la URL de autorización de TikTok para que el usuario la abra y apruebe los permisos. Con el argumento «code» (el código que TikTok devuelve en la URL de retorno tras autorizar) completa la conexión: intercambia el código por los tokens y los guarda en la bóveda de Conexiones. Requiere que la app de TikTok esté configurada (TIKTOK_CLIENT_KEY, TIKTOK_CLIENT_SECRET y TIKTOK_REDIRECT_URI en el entorno o en Conexiones).",
+      parameters: {
+        type: "object",
+        properties: {
+          code: { type: "string", description: "Código de autorización que TikTok devolvió en la URL de retorno (parámetro «code»). Sin él, la herramienta solo devuelve la URL de autorización." }
+        }
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "tiktok_estado",
+      description: "Muestra el estado de la conexión de TikTok: si la app está configurada, si hay una conexión activa y qué cuenta (open_id) está conectada. Nunca devuelve tokens.",
+      parameters: { type: "object", properties: {} }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "tiktok_publicar",
+      // [SOCIAL-FASE 2] Publicación REAL vía Content Posting API:
+      // con «videoUrl» pública TikTok descarga y publica el video
+      // (PULL_FROM_URL); con «publishId» (sin videoUrl) consulta el
+      // estado de una publicación ya iniciada. Sin auditoría de la
+      // app, TikTok solo acepta privacidad SELF_ONLY.
+      description: "Publica un video en la cuenta de TikTok conectada, vía la Content Posting API. Con «videoUrl» pública inicia la publicación (TikTok descarga el video desde esa URL). Con «publishId» y sin «videoUrl», consulta el estado de una publicación ya iniciada. La privacidad por defecto es SELF_ONLY (privado): mientras la app de TikTok no pase su auditoría, es la única que TikTok acepta; pedir otra privacidad puede ser rechazada por TikTok y la herramienta lo avisa.",
+      parameters: {
+        type: "object",
+        properties: {
+          videoUrl: { type: "string", description: "URL pública del video a publicar (TikTok lo descarga: fuente PULL_FROM_URL). Omitirla si se consulta el estado con «publishId»." },
+          title: { type: "string", description: "Título/texto del video en TikTok (opcional)." },
+          privacyLevel: { type: "string", enum: ["SELF_ONLY", "PUBLIC_TO_EVERYONE", "MUTUAL_FOLLOW_FRIENDS", "FOLLOWER_OF_CREATOR"], description: "Privacidad del video. Por defecto SELF_ONLY, la única aceptada sin auditoría de la app." },
+          publishId: { type: "string", description: "Id de una publicación ya iniciada: con él (y sin «videoUrl») la herramienta devuelve su estado en vez de publicar." }
+        }
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "youtube_conectar",
+      // [SOCIAL-FASE 2] OAuth de Google en dos tiempos, como
+      // social_conectar: sin «code» devuelve la URL de autorización
+      // (access_type=offline + prompt=consent, para recibir
+      // refresh_token); con «code» intercambia, lee el canal y
+      // GUARDA todo en la bóveda de Conexiones.
+      description: "Conecta el canal de YouTube de EditCoreAI (OAuth de Google). Sin argumentos devuelve la URL de autorización de Google para que el usuario la abra y apruebe los permisos. Con el argumento «code» (el código que Google devuelve en la URL de retorno tras autorizar) completa la conexión: intercambia el código, guarda los tokens y el canal en la bóveda de Conexiones. Requiere que la app de Google esté configurada (GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET y GOOGLE_REDIRECT_URI en el entorno o en Conexiones).",
+      parameters: {
+        type: "object",
+        properties: {
+          code: { type: "string", description: "Código de autorización que Google devolvió en la URL de retorno (parámetro «code»). Sin él, la herramienta solo devuelve la URL de autorización." }
+        }
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "youtube_estado",
+      description: "Muestra el estado de la conexión de YouTube: si la app de Google está configurada, si hay una conexión activa y qué canal está conectado. Nunca devuelve tokens.",
+      parameters: { type: "object", properties: {} }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "youtube_subir",
+      // [SOCIAL-FASE 2] Subida REAL con la subida reanudable de la
+      // YouTube Data API v3: lee el archivo de video del proyecto,
+      // renueva el access token con el refresh token guardado si
+      // hace falta y sube. Es escritura en el mundo exterior.
+      description: "Sube un video del proyecto al canal de YouTube conectado, con la subida reanudable de la YouTube Data API v3. Lee el archivo indicado en «path» (ruta dentro del proyecto), renueva el token de acceso con el refresh token guardado y sube el video con el título y la privacidad pedidos. La privacidad por defecto es «private» (privado).",
+      parameters: {
+        type: "object",
+        properties: {
+          path: { type: "string", description: "Ruta del archivo de video dentro del proyecto (p. ej. «videos/episodio-1.mp4»)." },
+          title: { type: "string", description: "Título del video en YouTube." },
+          description: { type: "string", description: "Descripción del video (opcional)." },
+          privacyStatus: { type: "string", enum: ["private", "unlisted", "public"], description: "Privacidad del video. Por defecto «private»." },
+          tags: { type: "array", items: { type: "string" }, description: "Etiquetas del video (opcional)." },
+          categoryId: { type: "string", description: "Id de categoría de YouTube (opcional)." }
+        },
+        required: ["path", "title"]
       }
     }
   },
@@ -1838,6 +2127,105 @@ const DEFINITIONS = [
         required: ["name"]
       }
     }
+  },
+  {
+    type: "function",
+    function: {
+      name: "brain_search",
+      // [FASE2-CONECTAR C-12] Portado del Grupo 1A: la herramienta
+      // existía en la superficie del Cerebro (runtime/brain-tools.js)
+      // pero el chat no la servía ni la despachaba. En el kernel se
+      // ejecuta sobre helpers.brainSearch — la MISMA búsqueda del
+      // Cerebro que main conecta (brain().searchForAgent) — con la
+      // búsqueda local de search_brain como respaldo.
+      description: "Busca en el Cerebro de EditCoreAI: memoria, conocimiento y código indexado (alcance all|memory|code|catalog). Es la búsqueda del Cerebro como servicio; search_brain es su equivalente sobre el índice local del proyecto.",
+      parameters: {
+        type: "object",
+        properties: {
+          query: { type: "string", description: "La consulta de búsqueda." },
+          scope: { type: "string", enum: ["all", "memory", "code", "catalog"], description: "Alcance de la búsqueda (defecto all)." },
+          limit: { type: "number", description: "Máximo de resultados (1-20, defecto 8)." }
+        },
+        required: ["query"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "brain_skill",
+      // [FASE2-CONECTAR C-12] Portado del Grupo 1A: en la superficie
+      // del Cerebro abría skills por nombre; en el kernel comparte la
+      // cadena de resolución de read_skill (Cerebro → catálogo →
+      // motor de skills), que es la misma capacidad con más raíces.
+      description: "Abre una skill instalada en el Cerebro de EditCoreAI por su nombre exacto. Comparte la resolución de read_skill: Cerebro, catálogo local y motor de skills (incluidas las aprendidas/globales).",
+      parameters: {
+        type: "object",
+        properties: {
+          name: { type: "string", description: "Nombre exacto de la skill." }
+        },
+        required: ["name"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "brain_tools",
+      // [FASE2-CONECTAR C-12] Portado del Grupo 1A: el inventario se
+      // compone de los registros REALES del kernel (definiciones
+      // servidas + list_skills), que es lo que la herramienta promete:
+      // las herramientas del agente y las skills instaladas.
+      description: "Muestra el inventario del agente: las herramientas servidas en esta superficie y las skills instaladas (por alcance). Úsala para saber qué capacidades hay de verdad antes de prometer una.",
+      parameters: {
+        type: "object",
+        properties: {
+          query: { type: "string", description: "Filtro opcional para las skills." },
+          limit: { type: "number", description: "Máximo de herramientas a listar (defecto 50)." }
+        }
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "inspect_preview",
+      // [FASE2-CONECTAR C-12] Portado del Grupo 1A: en la superficie
+      // runtime exigía BrowserWindow/evento de Electron; en el kernel
+      // se compone con las costuras propias del turno (startPreview +
+      // capturePreview de helpers, las mismas de start_preview y
+      // capture_preview_screenshot).
+      description: "Arranca el preview local del proyecto y lo examina visualmente (captura con diagnósticos). Equivale a start_preview + capture_preview_screenshot en un solo paso. Requiere las costuras de preview del IDE.",
+      parameters: {
+        type: "object",
+        properties: {
+          viewport: { type: "string", enum: ["desktop", "mobile"], description: "Tamaño de la captura (defecto desktop)." }
+        }
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "create_project",
+      // [FASE2-CONECTAR C-12] Portado del Grupo 1A: en main.js vivía
+      // como registro del dispatcher del agente (createProjectInside
+      // sobre ProjectScaffoldService); el case del kernel usa el
+      // MISMO servicio de scaffold, la misma intención de plantilla
+      // (runtime/template-intent) y el mismo estado (scaffold-state).
+      description: "Crea un proyecto NUEVO desde plantilla (blank|web|node|react|web-pro|next-saas|open-saas|soundonemusic|auto) dentro de la carpeta indicada del proyecto abierto. Para sentar la base en el proyecto ACTUAL vacío usa scaffold_project.",
+      parameters: {
+        type: "object",
+        properties: {
+          name: { type: "string", description: "Nombre de la carpeta del proyecto nuevo." },
+          template: { type: "string", description: "Plantilla: blank|web|node|react|web-pro|next-saas|open-saas|soundonemusic|auto." },
+          path: { type: "string", description: "Carpeta padre relativa al proyecto abierto (defecto: la raíz)." },
+          prompt: { type: "string", description: "Descripción del proyecto: ayuda a resolver la plantilla cuando es auto." },
+          install: { type: "boolean", description: "Instalar dependencias al crear (defecto sí, salvo blank)." }
+        },
+        required: ["name"]
+      }
+    }
   }
 ];
 
@@ -1850,6 +2238,27 @@ function resolveListPath(root, requested) {
   } catch {
     return { target: requested || ".", source: "passthrough" };
   }
+}
+
+// [v5.2.7 — regla de Luis] Los documentos ENTREGABLES
+// (PDF/Word/Excel/CSV) NO se quedan en la raíz del proyecto
+// («en breve estará llena de archivos basura»): se generan
+// en `.editcore/entregables/` y el chat los ofrece como
+// ENLACE DE DESCARGA — al darle clic bajan a la carpeta de
+// Descargas del usuario, igual que los adjuntos de un chat.
+// Solo se respeta otra ruta si es absoluta y queda FUERA del
+// proyecto (un destino pedido expresamente).
+function destinoEntregable(root, pedida) {
+  const raw = String(pedida || "").trim();
+  const base = path.basename(raw.replace(/\\/g, "/")) || "documento";
+  if (raw && path.isAbsolute(raw)) {
+    const abs = path.resolve(raw);
+    const raiz = path.resolve(String(root || ""));
+    const dentro = abs.toLowerCase() === raiz.toLowerCase()
+      || abs.toLowerCase().startsWith(raiz.toLowerCase() + path.sep);
+    if (!dentro) return abs;
+  }
+  return path.join(String(root || ""), ".editcore", "entregables", base);
 }
 
 async function execute(name, args, root, allowWrite, helpers = {}) {
@@ -1911,6 +2320,27 @@ async function execute(name, args, root, allowWrite, helpers = {}) {
       case "replace_in_file":
         if (!allowWrite) return { ok: false, error: "Escritura no permitida (Modo Solo Lectura)." };
         return replaceInFile(root, a.path, a.oldText, a.newText, coordCtx);
+      // [FASE2-CONECTAR C-8] delete_file REAL: snapshot previo (la
+      // reversión queda posible vía rollback_last_change), lock de la
+      // ruta y borrado de UN archivo — nunca carpetas.
+      case "delete_file": {
+        if (!allowWrite) return { ok: false, error: "Escritura no permitida (Modo Solo Lectura)." };
+        const rel = String(a.path || "").trim();
+        if (!rel) return { ok: false, error: "delete_file requiere «path»." };
+        const abs = safe(root, rel);
+        if (!fs.existsSync(abs)) return { ok: false, error: `No existe: ${rel}` };
+        if (!fs.statSync(abs).isFile()) return { ok: false, error: `delete_file solo borra archivos; ${rel} no es un archivo.` };
+        const lockBlock = acquireWriteLock(root, rel, "delete_file", coordCtx);
+        if (lockBlock) return lockBlock;
+        try {
+          try { snapshotBeforeWrite(root, rel, "pre-delete"); } catch { /* el snapshot es red de seguridad, no compuerta */ }
+          fs.unlinkSync(abs);
+          invalidateReadCache(rel);
+          return { ok: true, path: rel.replace(/\\/g, "/"), deleted: true, note: "Archivo borrado. Su contenido quedó en snapshot: rollback_last_change puede restaurarlo." };
+        } finally {
+          releaseWriteLock(root, rel, coordCtx);
+        }
+      }
       case "delegate_parallel": {
         // Subagentes EN PARALELO (explorer/analyst de lectura y, desde
         // la v5.1.0, writer con ámbito exclusivo), requeridos aquí
@@ -2000,13 +2430,43 @@ async function execute(name, args, root, allowWrite, helpers = {}) {
         return await gitPush(root, a);
       case "web_search":
         return webSearch(a.query, { maxResults: a.maxResults });
+      // [FASE2-CONECTAR C-4] web_scrape REAL: el import de
+      // scrapeWebPage (browser-tool.js) llevaba sin case desde que se
+      // escribió el módulo; la herramienta se anunciaba y caía en
+      // «Herramienta desconocida».
+      case "web_scrape":
+        return await scrapeWebPage(a.url || a.href || "");
       case "graphify_project": {
-        // El runner existe (graphify-runner.js) pero el despachador no tenía
-        // el case: caía en "Herramienta desconocida". Genera el grafo y sus
-        // salidas en graphify-out/ del proyecto analizado.
+        // [FASE2-CONECTAR C-1] Segunda capa que faltaba: el case
+        // existía sin guarda allowWrite (y sin clasificación ni
+        // definición). graphify ESCRIBE en graphify-out/: sin
+        // escritura autorizada no se ejecuta.
+        if (!allowWrite) return { ok: false, error: "graphify_project escribe en graphify-out/: requiere modo escritura." };
         const { buildProjectGraph } = require("./graphify-runner");
         const target = a.path && a.path !== "." ? (path.isAbsolute(String(a.path)) ? String(a.path) : path.join(root, String(a.path))) : root;
         return await buildProjectGraph(target, {});
+      }
+      // [FASE2-CONECTAR C-13] Grupo 1B: funciones ya escritas dentro
+      // del kernel que nadie envolvía como herramienta.
+      case "list_snapshots":
+        return listSnapshots(root, Number(a.limit) || 20);
+      case "analyze_circular_dependencies":
+        return detectCircularDependencies(root, { path: a.path || undefined });
+      case "read_roadmap": {
+        const { readRoadmap } = require("../runtime/project-roadmap");
+        const found = readRoadmap(root);
+        if (!found.exists) return { ok: false, error: "Este proyecto no tiene ROADMAP.md (ni equivalente detectado)." };
+        return { ok: true, path: found.relative || found.absolute, content: found.content };
+      }
+      case "audit_env":
+        return auditEnv(root);
+      case "supabase_migrate": {
+        if (!allowWrite) return { ok: false, error: "supabase_migrate requiere modo escritura." };
+        return await runSupabaseSql(root, a.path || a.sqlPath || "");
+      }
+      case "clone_repo": {
+        if (!allowWrite) return { ok: false, error: "clone_repo requiere modo escritura." };
+        return await cloneRepo(root, a.url || a.repoUrl || "", a.path || a.dest || "", coordCtx);
       }
       case "deploy_one_click":
         if (!allowWrite) return { ok: false, error: "Deploy requiere modo ejecución." };
@@ -2020,23 +2480,19 @@ async function execute(name, args, root, allowWrite, helpers = {}) {
       // classify.js (WRITE_TOOLS) sin definición ni despacho.
       case "create_pdf": {
         if (!allowWrite) return { ok: false, error: "Escritura no permitida (Modo Solo Lectura)." };
-        const file = path.isAbsolute(String(a.path || "")) ? String(a.path) : path.join(root, String(a.path || ""));
-        return await extraTools.createPdf(file, a);
+        return await extraTools.createPdf(destinoEntregable(root, a.path), a);
       }
       case "create_word": {
         if (!allowWrite) return { ok: false, error: "Escritura no permitida (Modo Solo Lectura)." };
-        const file = path.isAbsolute(String(a.path || "")) ? String(a.path) : path.join(root, String(a.path || ""));
-        return await extraTools.createWord(file, a);
+        return await extraTools.createWord(destinoEntregable(root, a.path), a);
       }
       case "create_excel": {
         if (!allowWrite) return { ok: false, error: "Escritura no permitida (Modo Solo Lectura)." };
-        const file = path.isAbsolute(String(a.path || "")) ? String(a.path) : path.join(root, String(a.path || ""));
-        return await extraTools.createExcel(file, a);
+        return await extraTools.createExcel(destinoEntregable(root, a.path), a);
       }
       case "create_csv": {
         if (!allowWrite) return { ok: false, error: "Escritura no permitida (Modo Solo Lectura)." };
-        const file = path.isAbsolute(String(a.path || "")) ? String(a.path) : path.join(root, String(a.path || ""));
-        return await extraTools.createCsv(file, a);
+        return await extraTools.createCsv(destinoEntregable(root, a.path), a);
       }
       case "docker_ps":
         return await extraTools.dockerPs({ all: a.all === true });
@@ -2045,6 +2501,11 @@ async function execute(name, args, root, allowWrite, helpers = {}) {
       case "capture_preview_screenshot":
         return await capture_preview_screenshot({ url: a.url || helpers?.activePreviewUrl || undefined, viewport: a.viewport === "mobile" ? "mobile" : "desktop", projectRoot: root });
       case "fetch_stock_photo":
+        // [FASE2-CONECTAR C-11] Segunda capa que faltaba: la foto
+        // ESCRIBE el archivo en disco y el case no comprobaba
+        // allowWrite (solo lo contenían las capas externas). Como el
+        // resto de escrituras, la guarda vive también en el case.
+        if (!allowWrite) return { ok: false, error: "fetch_stock_photo escribe la foto en disco: requiere modo escritura." };
         // [EDITCORE-INTEGRAL-B6] La señal del turno llega a la foto:
         // sin ella, la descarga escribía el archivo caiga el turno o no.
         // [EDITCORE-INTEGRAL-B9] Y el lock del archivo destino: la
@@ -2075,6 +2536,10 @@ async function execute(name, args, root, allowWrite, helpers = {}) {
           },
         });
       case "scaffold_project": {
+        // [FASE2-CONECTAR C-11] Segunda capa que faltaba: scaffold
+        // escribe la base entera del proyecto y el case no comprobaba
+        // allowWrite. La guarda va primero, como en el resto.
+        if (!allowWrite) return { ok: false, error: "scaffold_project escribe la base del proyecto: requiere modo escritura." };
         const { projectLooksEmpty } = require("./build-base-guard");
         if (a.force !== true && !projectLooksEmpty(root)) {
           return { ok: false, error: "El proyecto ya tiene contenido (package.json o estructura): scaffold_project no pisa una app existente. Si el usuario pidió rehacer la base desde cero, repite con force:true." };
@@ -2156,6 +2621,314 @@ async function execute(name, args, root, allowWrite, helpers = {}) {
       }
       case "check_connections":
         return await extraTools.checkConnections(root, helpers);
+      // [SOCIAL-META FASE 1] Redes sociales (Meta): el cliente vive
+      // en runtime/social-meta.js; las credenciales SOLO viajan a la
+      // bóveda de Conexiones (helpers.readConnections/writeConnections,
+      // el estado seguro cifrado de main) y NINGÚN resultado devuelve
+      // tokens al chat.
+      case "social_conectar": {
+        if (!allowWrite) return { ok: false, error: "social_conectar guarda credenciales en la bóveda: requiere modo escritura." };
+        const social = require("../runtime/social-meta");
+        const base = social.createClientFromHelpers(helpers);
+        if (!base.ok) return { ok: false, error: base.error };
+        const code = String(a.code || "").trim();
+        if (!code) {
+          return {
+            ok: true,
+            paso: "autorizar",
+            url: base.client.buildAuthUrl(),
+            note: "Abre la URL, autoriza la app de Meta y vuelve con el código (parámetro «code» de la URL de retorno): llama de nuevo social_conectar con ese código para completar la conexión.",
+          };
+        }
+        const intercambio = await base.client.exchangeCode(code);
+        if (!intercambio.ok) return { ok: false, error: intercambio.error };
+        let tokenFinal = intercambio;
+        let aviso = "";
+        const extendido = await base.client.extendToken(intercambio.accessToken);
+        if (extendido.ok) {
+          tokenFinal = extendido;
+        } else {
+          aviso = `El token no se pudo extender a larga duración (${extendido.error}); se guardó el token corto, que caduca pronto.`;
+        }
+        const listado = await base.client.listPages(tokenFinal.accessToken);
+        if (!listado.ok) return { ok: false, error: listado.error };
+        const guardado = social.saveSocialPatch(helpers, social.buildSocialPatch({
+          userToken: tokenFinal.accessToken,
+          expiresIn: tokenFinal.expiresIn,
+          pages: listado.pages,
+        }));
+        if (!guardado.ok) return { ok: false, error: guardado.error };
+        return {
+          ok: true,
+          conectado: true,
+          paginas: listado.pages.map(social.paginaPublica),
+          ...(aviso ? { aviso } : {}),
+          note: "Conexión guardada en la bóveda de Conexiones (estado seguro cifrado). El token no se muestra.",
+        };
+      }
+      case "social_estado": {
+        const social = require("../runtime/social-meta");
+        const connections = social.readConnectionsSafe(helpers);
+        const config = social.resolveMetaConfig({ connections, env: process.env });
+        const estado = social.readSocialState(connections);
+        return {
+          ok: true,
+          configurado: config.configured,
+          ...(config.configured ? {} : { faltan: config.missing }),
+          conectado: Boolean(estado.userToken),
+          tokenExpiraEn: estado.expiresAt ? new Date(estado.expiresAt).toISOString() : null,
+          paginas: estado.pages.map(social.paginaPublica),
+          note: estado.userToken
+            ? "Conexión activa; los tokens viven en la bóveda y no se muestran."
+            : "Sin conexión activa: usa social_conectar para autorizar.",
+        };
+      }
+      case "social_publicar": {
+        if (!allowWrite) return { ok: false, error: "social_publicar publica de verdad en la red social: requiere modo escritura." };
+        const social = require("../runtime/social-meta");
+        const base = social.createClientFromHelpers(helpers);
+        if (!base.ok) return { ok: false, error: base.error };
+        const estado = social.readSocialState(base.connections);
+        if (!estado.userToken || !estado.pages.length) {
+          return { ok: false, error: "No hay páginas conectadas: primero completa social_conectar." };
+        }
+        let pagina = null;
+        const pedido = String(a.pageId || "").trim();
+        if (pedido) pagina = estado.pages.find((p) => p.id === pedido) || null;
+        else if (estado.pages.length === 1) pagina = estado.pages[0];
+        if (!pagina) {
+          return {
+            ok: false,
+            error: "Indica «pageId» de la página donde publicar.",
+            paginas: estado.pages.map(social.paginaPublica),
+          };
+        }
+        if (a.instagram === true) {
+          if (!pagina.instagram) {
+            return { ok: false, error: `La página «${pagina.name}» no tiene cuenta de Instagram vinculada.` };
+          }
+          const pubIg = await base.client.publishToInstagram({
+            igUserId: pagina.instagram.id,
+            pageToken: pagina.accessToken,
+            imageUrl: String(a.imageUrl || ""),
+            videoUrl: String(a.videoUrl || ""),
+            caption: String(a.message || ""),
+          });
+          if (!pubIg.ok) return { ok: false, error: pubIg.error };
+          return { ok: true, red: "instagram", cuenta: pagina.instagram.username || pagina.instagram.id, mediaId: pubIg.mediaId };
+        }
+        const pubFb = await base.client.publishToPage({
+          pageId: pagina.id,
+          pageToken: pagina.accessToken,
+          message: String(a.message || ""),
+          link: String(a.link || ""),
+        });
+        if (!pubFb.ok) return { ok: false, error: pubFb.error };
+        return { ok: true, red: "facebook", pagina: { id: pagina.id, name: pagina.name }, postId: pubFb.postId };
+      }
+      // [SOCIAL-FASE 2] TikTok y YouTube: los clientes viven en
+      // runtime/social-tiktok.js y runtime/social-youtube.js; las
+      // credenciales SOLO viajan a la bóveda de Conexiones
+      // (helpers.readConnections/writeConnections) y NINGÚN
+      // resultado devuelve tokens al chat.
+      case "tiktok_conectar": {
+        if (!allowWrite) return { ok: false, error: "tiktok_conectar guarda credenciales en la bóveda: requiere modo escritura." };
+        const tt = require("../runtime/social-tiktok");
+        const base = tt.createClientFromHelpers(helpers);
+        if (!base.ok) return { ok: false, error: base.error };
+        const code = String(a.code || "").trim();
+        if (!code) {
+          return {
+            ok: true,
+            paso: "autorizar",
+            url: base.client.buildAuthUrl(),
+            note: "Abre la URL, autoriza la app de TikTok y vuelve con el código (parámetro «code» de la URL de retorno): llama de nuevo tiktok_conectar con ese código para completar la conexión.",
+          };
+        }
+        const intercambio = await base.client.exchangeCode(code);
+        if (!intercambio.ok) return { ok: false, error: intercambio.error };
+        const info = await base.client.getUserInfo(intercambio.accessToken);
+        const openId = intercambio.openId || (info.ok ? info.openId : "");
+        const guardado = tt.saveTiktokPatch(helpers, tt.buildTiktokPatch({
+          accessToken: intercambio.accessToken,
+          refreshToken: intercambio.refreshToken,
+          openId,
+        }));
+        if (!guardado.ok) return { ok: false, error: guardado.error };
+        return {
+          ok: true,
+          conectado: true,
+          cuenta: { openId, ...(info.ok && info.displayName ? { nombre: info.displayName } : {}) },
+          note: "Conexión guardada en la bóveda de Conexiones (estado seguro cifrado). Los tokens no se muestran.",
+        };
+      }
+      case "tiktok_estado": {
+        const tt = require("../runtime/social-tiktok");
+        const connections = tt.readConnectionsSafe(helpers);
+        const config = tt.resolveTiktokConfig({ connections, env: process.env });
+        const estado = tt.readTiktokState(connections);
+        return {
+          ok: true,
+          configurado: config.configured,
+          ...(config.configured ? {} : { faltan: config.missing }),
+          conectado: Boolean(estado.accessToken),
+          cuenta: estado.openId ? { openId: estado.openId } : null,
+          note: estado.accessToken
+            ? "Conexión activa; los tokens viven en la bóveda y no se muestran."
+            : "Sin conexión activa: usa tiktok_conectar para autorizar.",
+        };
+      }
+      case "tiktok_publicar": {
+        if (!allowWrite) return { ok: false, error: "tiktok_publicar publica de verdad en TikTok: requiere modo escritura." };
+        const tt = require("../runtime/social-tiktok");
+        const base = tt.createClientFromHelpers(helpers);
+        if (!base.ok) return { ok: false, error: base.error };
+        const estado = tt.readTiktokState(base.connections);
+        if (!estado.accessToken) {
+          return { ok: false, error: "No hay cuenta de TikTok conectada: primero completa tiktok_conectar." };
+        }
+        const publishIdPedido = String(a.publishId || "").trim();
+        if (publishIdPedido && !String(a.videoUrl || "").trim()) {
+          const st = await base.client.fetchPublishStatus({ accessToken: estado.accessToken, publishId: publishIdPedido });
+          if (!st.ok) return { ok: false, error: st.error };
+          return {
+            ok: true,
+            red: "tiktok",
+            publishId: publishIdPedido,
+            estadoPublicacion: st.status,
+            ...(st.failReason ? { motivoFallo: st.failReason } : {}),
+            postIds: st.postIds,
+          };
+        }
+        const pub = await base.client.publishVideo({
+          accessToken: estado.accessToken,
+          videoUrl: String(a.videoUrl || ""),
+          title: String(a.title || ""),
+          privacyLevel: String(a.privacyLevel || ""),
+        });
+        if (!pub.ok) return { ok: false, error: pub.error };
+        return {
+          ok: true,
+          red: "tiktok",
+          publishId: pub.publishId,
+          privacidad: pub.privacidad,
+          ...(pub.aviso ? { aviso: pub.aviso } : {}),
+          note: "Publicación iniciada: TikTok procesa el video en segundo plano; consulta su estado con tiktok_publicar y el «publishId» devuelto.",
+        };
+      }
+      case "youtube_conectar": {
+        if (!allowWrite) return { ok: false, error: "youtube_conectar guarda credenciales en la bóveda: requiere modo escritura." };
+        const yt = require("../runtime/social-youtube");
+        const base = yt.createClientFromHelpers(helpers);
+        if (!base.ok) return { ok: false, error: base.error };
+        const code = String(a.code || "").trim();
+        if (!code) {
+          return {
+            ok: true,
+            paso: "autorizar",
+            url: base.client.buildAuthUrl(),
+            note: "Abre la URL, autoriza la app de Google y vuelve con el código (parámetro «code» de la URL de retorno): llama de nuevo youtube_conectar con ese código para completar la conexión.",
+          };
+        }
+        const intercambio = await base.client.exchangeCode(code);
+        if (!intercambio.ok) return { ok: false, error: intercambio.error };
+        const canal = await base.client.getMyChannel(intercambio.accessToken);
+        if (!canal.ok) return { ok: false, error: canal.error };
+        const guardado = yt.saveYoutubePatch(helpers, yt.buildYoutubePatch({
+          accessToken: intercambio.accessToken,
+          refreshToken: intercambio.refreshToken,
+          channel: canal.channel,
+        }));
+        if (!guardado.ok) return { ok: false, error: guardado.error };
+        return {
+          ok: true,
+          conectado: true,
+          canal: yt.canalPublico(canal.channel),
+          ...(!intercambio.refreshToken
+            ? { aviso: "Google no devolvió refresh_token: la conexión caducará al expirar el access token y habrá que reconectar con youtube_conectar." }
+            : {}),
+          note: "Conexión guardada en la bóveda de Conexiones (estado seguro cifrado). Los tokens no se muestran.",
+        };
+      }
+      case "youtube_estado": {
+        const yt = require("../runtime/social-youtube");
+        const connections = yt.readConnectionsSafe(helpers);
+        const config = yt.resolveGoogleConfig({ connections, env: process.env });
+        const estado = yt.readYoutubeState(connections);
+        return {
+          ok: true,
+          configurado: config.configured,
+          ...(config.configured ? {} : { faltan: config.missing }),
+          conectado: Boolean(estado.accessToken),
+          canal: yt.canalPublico(estado.channel),
+          note: estado.accessToken
+            ? "Conexión activa; los tokens viven en la bóveda y no se muestran."
+            : "Sin conexión activa: usa youtube_conectar para autorizar.",
+        };
+      }
+      case "youtube_subir": {
+        if (!allowWrite) return { ok: false, error: "youtube_subir sube un video real a YouTube: requiere modo escritura." };
+        const yt = require("../runtime/social-youtube");
+        const fsYt = require("node:fs");
+        const base = yt.createClientFromHelpers(helpers);
+        if (!base.ok) return { ok: false, error: base.error };
+        const estado = yt.readYoutubeState(base.connections);
+        if (!estado.accessToken && !estado.refreshToken) {
+          return { ok: false, error: "No hay canal de YouTube conectado: primero completa youtube_conectar." };
+        }
+        const rutaPedida = String(a.path || "").trim();
+        if (!rutaPedida) return { ok: false, error: "youtube_subir requiere «path» con el archivo de video dentro del proyecto." };
+        const raizAbs = path.resolve(root);
+        const rutaAbs = path.resolve(raizAbs, rutaPedida);
+        if (rutaAbs !== raizAbs && !rutaAbs.startsWith(raizAbs + path.sep)) {
+          return { ok: false, error: "El archivo de video debe estar dentro del proyecto." };
+        }
+        let contenido;
+        try {
+          const st = fsYt.statSync(rutaAbs);
+          if (!st.isFile() || st.size === 0) return { ok: false, error: `El archivo «${rutaPedida}» no existe o está vacío.` };
+          contenido = fsYt.readFileSync(rutaAbs);
+        } catch {
+          return { ok: false, error: `No se pudo leer el archivo «${rutaPedida}» dentro del proyecto.` };
+        }
+        // El access token de Google caduca a la hora: se renueva
+        // con el refresh token guardado antes de subir, y el nuevo
+        // se guarda en la bóveda. Si el refresco falla, se intenta
+        // con el token guardado y YouTube dirá su error real.
+        let accessToken = estado.accessToken;
+        if (estado.refreshToken) {
+          const renovado = await base.client.refreshAccessToken(estado.refreshToken);
+          if (renovado.ok) {
+            accessToken = renovado.accessToken;
+            const g = yt.saveYoutubePatch(helpers, yt.buildYoutubePatch({ accessToken }));
+            if (!g.ok) return { ok: false, error: g.error };
+          }
+        }
+        const ext = path.extname(rutaAbs).toLowerCase();
+        const contentType = ext === ".mov" ? "video/quicktime"
+          : ext === ".webm" ? "video/webm"
+          : ext === ".mkv" ? "video/x-matroska"
+          : "video/mp4";
+        const subida = await base.client.uploadVideo({
+          accessToken,
+          title: String(a.title || ""),
+          description: String(a.description || ""),
+          tags: Array.isArray(a.tags) ? a.tags : [],
+          categoryId: String(a.categoryId || ""),
+          privacyStatus: String(a.privacyStatus || "private"),
+          content: contenido,
+          contentType,
+        });
+        if (!subida.ok) return { ok: false, error: subida.error };
+        return {
+          ok: true,
+          red: "youtube",
+          videoId: subida.videoId,
+          url: subida.url,
+          privacidad: subida.privacyStatus,
+          canal: yt.canalPublico(estado.channel),
+        };
+      }
       case "ingest_to_brain": {
         if (!allowWrite) return { ok: false, error: "ingest_to_brain requiere modo escritura." };
         const target = path.isAbsolute(String(a.path || "")) ? String(a.path) : path.join(root, String(a.path || ""));
@@ -2243,21 +3016,109 @@ async function execute(name, args, root, allowWrite, helpers = {}) {
       case "read_skill": {
         const wanted = String(a.name || a.skill || a.id || "").trim();
         if (!wanted) return { ok: false, error: "read_skill requiere el nombre de la skill." };
-        // Primero el Cerebro (incluye las skills instaladas desde su catálogo);
-        // si no está o falla, el catálogo local del kernel.
-        if (typeof helpers?.brainReadSkill === "function") {
-          try {
-            const s = await helpers.brainReadSkill(root, wanted);
-            if (s && s.content) return { ok: true, name: s.name || wanted, source: s.source || "cerebro", content: String(s.content).slice(0, 30000) };
-          } catch { /* cae al catálogo local */ }
-        }
-        try {
-          const cat = require("./skills-catalog");
-          const hit = cat.loadSkillBody(root, wanted);
-          if (hit && hit.available) return { ok: true, name: wanted, source: "catalogo", content: String(hit.body || "").slice(0, 30000) };
-        } catch { /* sin catálogo */ }
-        return { ok: false, error: `Skill no encontrada: ${wanted}. Revisa los nombres disponibles con list_skills.` };
+        return await readSkillByName(root, wanted, helpers);
       }
+      // [FASE2-CONECTAR C-12] brain_skill: la misma capacidad de
+      // read_skill vista desde la superficie del Cerebro; comparte la
+      // cadena de resolución completa (Cerebro → catálogo → motor).
+      case "brain_skill": {
+        const wanted = String(a.name || a.skill || a.id || "").trim();
+        if (!wanted) return { ok: false, error: "brain_skill requiere el nombre de la skill." };
+        return await readSkillByName(root, wanted, helpers);
+      }
+      // [FASE2-CONECTAR C-12] brain_search: la búsqueda del Cerebro
+      // como servicio (helpers.brainSearch = brain().searchForAgent,
+      // la misma que main conecta), con el índice local de
+      // search_brain como respaldo cuando la costura no viene.
+      case "brain_search": {
+        const q = String(a.query || "").trim();
+        if (!q) return { ok: false, error: "brain_search requiere «query»." };
+        const scope = ["all", "memory", "code", "catalog"].includes(String(a.scope || "")) ? String(a.scope) : "all";
+        const limit = Math.max(1, Math.min(20, Number(a.limit) || 8));
+        if (typeof helpers?.brainSearch === "function") {
+          try {
+            const out = await helpers.brainSearch(root, q, { scope, limit });
+            if (out) return { ok: true, query: q, scope, ...out };
+          } catch { /* cae al índice local */ }
+        }
+        return await extraTools.searchBrain(root, q, helpers, limit);
+      }
+      // [FASE2-CONECTAR C-12] brain_tools: inventario compuesto de
+      // los registros reales de ESTA superficie (definiciones
+      // servidas) y del motor de skills (list_skills).
+      case "brain_tools": {
+        const limite = Math.max(1, Math.min(200, Number(a.limit) || 50));
+        const servidas = getToolDefinitions({ allowWrite: true, isFullAccess: true });
+        const skills = listSkills(root, helpers, a.query || "");
+        return {
+          ok: true,
+          agentTools: servidas.slice(0, limite).map((d) => ({ name: d.function.name, description: String(d.function.description || "").slice(0, 140) })),
+          agentToolsTotal: servidas.length,
+          skills: {
+            total: skills.count || 0,
+            byScope: skills.byScope || {},
+            names: [...(skills.project || []), ...(skills.global || []), ...(skills.builtin || [])].slice(0, limite),
+          },
+        };
+      }
+      // [FASE2-CONECTAR C-12] inspect_preview: start_preview +
+      // capture_preview_screenshot compuestos con las costuras del
+      // turno (las mismas que usan esos dos cases por separado).
+      case "inspect_preview": {
+        if (!allowWrite) return { ok: false, error: "inspect_preview requiere modo escritura." };
+        if (typeof helpers?.startPreview !== "function" || typeof helpers?.capturePreview !== "function") {
+          return { ok: false, error: "inspect_preview no está disponible en esta ruta: el IDE no conectó las costuras de preview (startPreview/capturePreview)." };
+        }
+        const started = await startPreviewTool(root, helpers);
+        if (!started || started.ok !== true) return started || { ok: false, error: "No se pudo arrancar el preview." };
+        const shot = await helpers.capturePreview({ url: started.previewUrl || started.url, viewport: a.viewport === "mobile" ? "mobile" : "desktop" });
+        return { ok: true, previewUrl: started.previewUrl || started.url || "", capture: shot || null };
+      }
+      // [FASE2-CONECTAR C-12] create_project: el MISMO servicio de
+      // scaffold que usa main.js (createProjectInside), con la misma
+      // intención de plantilla y el mismo estado de scaffold.
+      case "create_project": {
+        if (!allowWrite) return { ok: false, error: "create_project requiere modo escritura." };
+        const nombre = String(a.name || "").trim();
+        if (!nombre) return { ok: false, error: "create_project requiere «name» (nombre de la carpeta del proyecto nuevo)." };
+        const { resolveTemplateIntent } = require("../runtime/template-intent");
+        const intent = resolveTemplateIntent(String(a.prompt || a.brief || ""), { template: a.template });
+        const templateId = intent.id || "blank";
+        const padreRel = String(a.path || a.parent || "").trim();
+        const padre = safe(root, padreRel || ".");
+        fs.mkdirSync(padre, { recursive: true });
+        const destino = safe(root, path.join(padreRel || ".", nombre));
+        const relDestino = path.relative(path.resolve(root), destino).replace(/\\/g, "/");
+        if (!relDestino || relDestino.startsWith("..")) return { ok: false, error: "Ruta de proyecto inválida (fuera del proyecto abierto)." };
+        const { ProjectScaffoldService } = require("../project-scaffold-service");
+        const creado = await new ProjectScaffoldService().create(
+          { name: nombre, template: templateId, parentPath: padre, install: a.install !== false && templateId !== "blank" },
+          {}
+        );
+        try {
+          const { writeScaffoldState } = require("../runtime/scaffold-state");
+          writeScaffoldState(creado.root || destino, { createdVia: "create_project", template: creado.template || templateId, ts: new Date().toISOString() });
+        } catch { /* el estado es cortesía, no compuerta */ }
+        return { ok: true, path: relDestino, name: nombre, template: creado.template || templateId, templateIntent: intent, report: creado.report || null };
+      }
+      // [FASE2-CONECTAR C-12] Grupo 1A servido por el dispatcher de
+      // capacidades runtime: lecturas directas…
+      case "project_discovery":
+      case "codebase_map":
+      case "symbol_search":
+      case "dependency_search":
+      case "probe_endpoint":
+        return await dispatchCapabilityTool(name, a, root, allowWrite, helpers);
+      // …y escrituras con la guarda de segunda capa en el case.
+      case "clone_web_page":
+      case "images_to_code":
+      case "generate_image":
+      case "generate_video":
+      case "add_erp_module":
+      case "fullstack_deploy":
+      case "run_e2e_pipeline":
+        if (!allowWrite) return { ok: false, error: `${name} requiere modo escritura.` };
+        return await dispatchCapabilityTool(name, a, root, allowWrite, helpers);
       default:
         return { ok: false, error: `Herramienta desconocida: ${name}` };
     }
@@ -2266,9 +3127,94 @@ async function execute(name, args, root, allowWrite, helpers = {}) {
   }
 }
 
+// Cadena de resolución de skills de read_skill/brain_skill:
+// 1) el Cerebro (incluye las instaladas desde su catálogo);
+// 2) el catálogo local del kernel (brain-seed + .agents del repo);
+// 3) [FASE2-CONECTAR C-3] el motor de skills (runtime/skills-engine),
+//    que es la ÚNICA capa que mira las raíces globales/aprendidas de
+//    <userData>/skills y las del proyecto (.editcore/skills): sin
+//    ella, S-5 — list_skills las anunciaba y read_skill no podía
+//    leerlas. Resuelve por nombre de frontmatter, por slug y por
+//    carpeta, que cubre también los alias de doble identidad
+//    (C-10/S-1…S-4: carpeta «gstack-core» ↔ frontmatter «gstack»).
+async function readSkillByName(root, wanted, helpers) {
+  if (typeof helpers?.brainReadSkill === "function") {
+    try {
+      const s = await helpers.brainReadSkill(root, wanted);
+      if (s && s.content) return { ok: true, name: s.name || wanted, source: s.source || "cerebro", content: String(s.content).slice(0, 30000) };
+    } catch { /* cae al catálogo local */ }
+  }
+  try {
+    const cat = require("./skills-catalog");
+    const hit = cat.loadSkillBody(root, wanted);
+    if (hit && hit.available) return { ok: true, name: wanted, source: "catalogo", content: String(hit.body || "").slice(0, 30000) };
+  } catch { /* sin catálogo */ }
+  try {
+    const engine = require("../runtime/skills-engine");
+    const lista = engine.listAllSkills({ projectRoot: root, userDataPath: skillsUserDataPath(helpers) }) || [];
+    const objetivo = String(wanted).toLowerCase();
+    const skill = lista.find((s) => {
+      const carpeta = s?.filePath ? path.basename(path.dirname(String(s.filePath))).toLowerCase() : "";
+      return String(s?.name || "").toLowerCase() === objetivo
+        || String(s?.slug || "").toLowerCase() === objetivo
+        || String(s?.id || "").toLowerCase() === objetivo
+        || carpeta === objetivo;
+    });
+    if (skill) {
+      const cuerpo = engine.loadSkillBody(skill);
+      if (cuerpo) return { ok: true, name: skill.name || wanted, source: `skills-engine:${skill.scope || "global"}`, content: String(cuerpo).slice(0, 30000) };
+    }
+  } catch { /* sin motor de skills */ }
+  return { ok: false, error: `Skill no encontrada: ${wanted}. Revisa los nombres disponibles con list_skills.` };
+}
+
 // Las definiciones extra viven en extra-tools.js; se fusionan una sola vez y sin duplicar.
 for (const def of extraTools.EXTRA_DEFINITIONS) {
   if (!DEFINITIONS.some((t) => t.function?.name === def.function?.name)) DEFINITIONS.push(def);
+}
+
+// [FASE2-CONECTAR C-12] Portado del Grupo 1A: estas 12 herramientas
+// existen COMPLETAS en la superficie runtime del agente
+// (runtime/register-agent-capability-tools.js, sobre ToolDispatcher)
+// pero esa superficie no alimenta el chat: el modelo las veía
+// clasificadas y el despacho las rechazaba. Sus definiciones se
+// toman del PROPIO registro runtime (fuente única, sin reescribir
+// esquemas) y sus cases delegan en un dispatcher local por llamada —
+// el mismo patrón que runtime/e2e-pipeline-report.js ya usa.
+const CAPABILITY_PORTED_TOOLS = [
+  "project_discovery", "codebase_map", "symbol_search", "dependency_search",
+  "probe_endpoint", "clone_web_page", "images_to_code", "generate_image",
+  "generate_video", "add_erp_module", "fullstack_deploy", "run_e2e_pipeline",
+];
+try {
+  const { ToolDispatcher } = require("../runtime/tool-dispatcher");
+  const { registerAgentCapabilityTools } = require("../runtime/register-agent-capability-tools");
+  const definicionesCap = new ToolDispatcher({ authorize: async () => true });
+  registerAgentCapabilityTools(definicionesCap, { rootPath: process.cwd(), canWrite: true });
+  for (const def of definicionesCap.definitions()) {
+    if (CAPABILITY_PORTED_TOOLS.includes(def.function?.name) && !DEFINITIONS.some((t) => t.function?.name === def.function?.name)) {
+      DEFINITIONS.push(def);
+    }
+  }
+} catch { /* si la superficie runtime no carga, el kernel conserva su set propio */ }
+
+async function dispatchCapabilityTool(nombre, a, root, allowWrite, helpers) {
+  const { ToolDispatcher } = require("../runtime/tool-dispatcher");
+  const { registerAgentCapabilityTools } = require("../runtime/register-agent-capability-tools");
+  const dispatcher = new ToolDispatcher({ authorize: async () => allowWrite === true });
+  registerAgentCapabilityTools(dispatcher, {
+    rootPath: root,
+    canWrite: allowWrite === true,
+    readConnections: typeof helpers?.readConnections === "function" ? helpers.readConnections : null,
+    appUserData: skillsUserDataPath(helpers),
+  });
+  const record = await dispatcher.dispatch(nombre, a || {}, {});
+  if (!record || record.ok !== true) {
+    return { ok: false, error: (record && record.error) || `La herramienta ${nombre} falló.` };
+  }
+  const resultado = record.result;
+  if (resultado && typeof resultado === "object") return resultado;
+  return { ok: true, result: resultado == null ? null : String(resultado) };
 }
 
 // La clasificación lectura/escritura vive en classify.js (única fuente):

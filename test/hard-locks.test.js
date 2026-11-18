@@ -33,15 +33,20 @@ test("H1: ActionRegistry cachea read_file por path normalizado (no 3 lecturas a 
   assert.equal(registry.hash(a), registry.hash(b));
 });
 
-test("H2: analysisMode / NO MODIFICAR deniega write en authorize", () => {
-  // [COSECHA MODO AGENTE] La denegación ya no vive en el authorize() del
-  // despachador legado (readonlyDiagnostic): vive en la guardia previa al
-  // despacho del orquestador del kernel, que corta TODAS las WRITE_TOOLS
-  // cuando el turno no puede escribir y marca el paso blockedReadOnly.
-  const orchSource = fs.readFileSync(path.join(__dirname, "..", "editcore-chat-kernel", "orchestrator.js"), "utf8");
-  assert.match(orchSource, /WRITE_TOOLS\.includes\(name\)/);
-  assert.match(orchSource, /blockedReadOnly: true/);
-  assert.match(orchSource, /Modo solo lectura: no se ejecutan herramientas de escritura/);
+test("H2: un turno sin escritura no recibe NI ejecuta herramientas de escritura", () => {
+  // [FASE2-RUTA-UNICA] La versión anterior leía la guardia previa al
+  // despacho en el código del orquestador viejo (blockedReadOnly).
+  // En la ruta única la denegación tiene dos capas vivas, y ambas se
+  // afirman de comportamiento: (1) el set servido sin escritura no
+  // contiene NINGUNA WRITE_TOOLS de la clasificación (la fuente
+  // única), y (2) los cases de escritura cortan en su propio cuerpo
+  // sin allowWrite (probado a fondo en kernel-conectar-fantasmas).
+  const { WRITE_TOOLS } = require("../editcore-chat-kernel/classify");
+  const tools = require("../editcore-chat-kernel/tools");
+  const servidasSin = new Set(tools.getToolDefinitions({ allowWrite: false }).map((d) => d.function.name));
+  for (const nombre of WRITE_TOOLS) {
+    assert.ok(!servidasSin.has(nombre), `${nombre} no se sirve en un turno sin escritura`);
+  }
 });
 
 test("H3: un escritor por chat (paralelo entre chats) + steer de nudges", () => {

@@ -10,7 +10,12 @@ const logDir = fs.mkdtempSync(path.join(os.tmpdir(), "ec-provider-log-"));
 process.env.EDITCORE_USER_DATA_PATH = logDir;
 
 const { callChat, orderProfiles, rejectedKeys } = require("../editcore-chat-kernel/provider");
-const { runtimeContextLine, buildMessageList } = require("../editcore-chat-kernel/thread-core");
+// [FASE2-RUTA-UNICA] thread-core.js se retiró con el kernel viejo:
+// sus 3 pruebas de este archivo (contexto del sistema y
+// buildMessageList) se retiran con él — la construcción de
+// mensajes vive ahora en el adaptador del kernel nuevo
+// (aMensajesProveedor, batería kernel-nuevo-adaptador). Quedan
+// las pruebas del proveedor, que es infraestructura compartida.
 const { redactSecrets, providerErrorLogPath } = require("../runtime/provider-error-log");
 
 function jsonResponse(status, body) {
@@ -22,33 +27,6 @@ function jsonResponse(status, body) {
     text: async () => text,
   };
 }
-
-test("el contexto del sistema incluye fecha, hora y sistema operativo", () => {
-  const line = runtimeContextLine(new Date("2026-09-30T21:18:00Z"));
-  assert.match(line, /2026-09-30T21:18:00\.000Z/);
-  assert.match(line, /Sistema operativo:/);
-  assert.match(line, /no pidas al usuario ejecutar comandos/);
-});
-
-test("buildMessageList agrega el contexto y omite turnos fallidos del historial", () => {
-  const messages = buildMessageList({
-    system: "SYS",
-    userText: "que hora es?",
-    projectRoot: "",
-    threadId: "t-test",
-    historyInput: [
-      { role: "user", content: "hola" },
-      { role: "assistant", content: "Algo falló durante la ejecución: No pude autenticar el modelo." },
-      { role: "assistant", content: "Hola, ¿en qué te ayudo?" },
-    ],
-    query: "que hora es?",
-    now: new Date("2026-09-30T21:18:00Z"),
-  });
-  assert.match(messages[0].content, /^SYS\n\nContexto del sistema:/);
-  assert.ok(!messages.some((m) => /Algo falló durante la ejecución/.test(m.content)));
-  assert.match(messages[messages.length - 1].content, /^\[Hora actual: .+ · ISO 2026-09-30T21:18:00\.000Z\]\nque hora es\?$/);
-  assert.doesNotMatch(messages[0].content, /21:18|ISO/, "el system no cambia de minuto a minuto (caché del prompt)");
-});
 
 test("callChat usa el perfil de respaldo cuando la clave principal da 401", async () => {
   rejectedKeys.clear();
@@ -123,22 +101,6 @@ test("orderProfiles manda al final las claves rechazadas y quita duplicados", ()
   const ordered = orderProfiles([dead, live, { ...live }]);
   assert.deepEqual(ordered.map((p) => p.apiKey), ["k-live", "k-dead"]);
   rejectedKeys.clear();
-});
-
-test("buildMessageList envía la imagen adjunta al modelo", () => {
-  const dataUrl = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUg==";
-  const messages = buildMessageList({
-    system: "SYS",
-    userText: "analiza la captura",
-    projectRoot: "",
-    threadId: "t-img",
-    historyInput: [],
-    images: [{ dataUrl, name: "captura.png" }],
-  });
-  const content = messages[messages.length - 1].content;
-  assert.ok(Array.isArray(content));
-  assert.deepEqual(content.map((p) => p.type), ["text", "image_url"]);
-  assert.equal(content[1].image_url.url, dataUrl);
 });
 
 test("con imágenes, los modelos con visión van primero en la cola", () => {
