@@ -265,10 +265,13 @@ function crearLlamarModelo({ callChat, perfil, definiciones, projectRoot, onText
       // aunque la espera sea del proveedor (juicio en vivo,
       // 2026-11-17). Sin onAviso no hay latido.
       let latido = null;
+      let contadorLatidos = 0;
       if (typeof onAviso === "function" && Number(latidoMs) > 0) {
         latido = setInterval(() => {
           if (primerMs !== null) return;
-          try { onAviso("Sigo en ello: el modelo sigue preparando su respuesta…"); } catch { /* avisar nunca tumba el turno */ }
+          contadorLatidos += 1;
+          const segs = contadorLatidos * Math.round(Number(latidoMs) / 1000);
+          try { onAviso(`Procesando consulta (${segs}s): el modelo está generando la respuesta…`); } catch { /* avisar nunca tumba el turno */ }
         }, Number(latidoMs));
         latido.unref?.();
       }
@@ -399,7 +402,11 @@ function crearEjecutarHerramienta({ execute, root, helpers, onActividad = null }
       if (nombreN === "run_command" || nombreN === "build_project") destino = String(argsN?.command || "").trim().replace(/\s+/g, " ").slice(0, 70);
       else if (argsN?.path) destino = String(argsN.path).slice(0, 70);
       const lineasRes = String(resumenN || "").split("\n").map((l) => l.trim()).filter(Boolean);
-      const detalle = lineasRes.find((l) => l.startsWith("Resultado:")) || lineasRes[0] || "";
+      let detalle = lineasRes.find((l) => l.startsWith("Resultado:")) || lineasRes[0] || "";
+      // Sanitizar si el detalle es JSON crudo o volcado de depuración interna
+      if (detalle.startsWith("{") && (detalle.includes('"ok"') || detalle.includes('"snapshotId"') || detalle.includes('"path"'))) {
+        detalle = okN ? "completado exitosamente" : "falló la operación";
+      }
       onActividad(`${okN ? "✓" : "✗"} ${nombreN}${destino ? ` · ${destino}` : ""}${detalle ? ` — ${detalle.slice(0, 110)}` : ""}`);
     } catch { /* narrar nunca tumba el turno */ }
   };
@@ -488,12 +495,26 @@ function crearEjecutarHerramienta({ execute, root, helpers, onActividad = null }
       resumen = lineasCmd.join("\n").slice(0, 2000);
     }
     if (!resumen) {
-      if (typeof r === "string") resumen = r;
+      if (nombre === "write_file") {
+        resumen = ok
+          ? (r?.bytes ? `Archivo escrito correctamente (${r.bytes} bytes).` : "Archivo escrito correctamente.")
+          : `Error al escribir archivo: ${r?.error || "fallo"}`;
+      } else if (nombre === "replace_in_file") {
+        resumen = ok
+          ? (r?.replacements ? `Cambios aplicados correctamente (${r.replacements} reemplazos).` : "Cambios aplicados correctamente.")
+          : `Error al editar archivo: ${r?.error || "fallo"}`;
+      } else if (typeof r === "string") resumen = r;
       else if (typeof r?.content === "string") resumen = r.content;
       else if (typeof r?.output === "string") resumen = r.output;
       else if (r?.error) resumen = String(r.error);
       else if (Array.isArray(r?.files)) resumen = r.files.map((f) => (typeof f === "string" ? f : f?.path || f?.name || "")).filter(Boolean).join("\n");
-      else if (r && typeof r === "object") { try { resumen = JSON.stringify(r).slice(0, 2000); } catch { resumen = ok ? "ok" : "fallo"; } }
+      else if (r && typeof r === "object") {
+        if (r.ok !== false && (r.path || r.snapshotId || r.reviewQueued)) {
+          resumen = `Operación completada en ${r.path || args?.path || "archivo"}.`;
+        } else {
+          try { resumen = JSON.stringify(r).slice(0, 2000); } catch { resumen = ok ? "ok" : "fallo"; }
+        }
+      }
     }
     if (!resumen) resumen = ok ? "ok" : "fallo";
     const creaArchivo = /^(write_file|replace_in_file|create_pdf|create_word|create_excel|create_csv)$/.test(nombre);

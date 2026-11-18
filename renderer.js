@@ -6622,12 +6622,17 @@ async function settlePreviewDocument() {
     const root = String(state.projectRoot || "").toLowerCase();
     const isEditCoreDesktop = /editcoreai|editcore\s*ai|\\resources\\app(\\|$)/i.test(root)
       || /editcoreai$|editcore ai$/i.test(root.replace(/[\\/]+$/, ""));
+    const isAgentActive = (typeof activePromptRequests !== "undefined" && activePromptRequests.size > 0);
     showPreviewStatus(isEditCoreDesktop
       ? "Este proyecto es EditCoreAI (app de escritorio). El panel Web no aplica; usa el chat a la izquierda."
-      : "El servidor respondio, pero la aplicacion no mostro contenido. Revisa el error de inicio del proyecto.");
+      : isAgentActive
+        ? "El agente está preparando el proyecto. La vista previa se conectará en cuanto el servidor esté listo."
+        : "El servidor respondio, pero la aplicacion no mostro contenido. Revisa el error de inicio del proyecto.");
     $("status").textContent = isEditCoreDesktop
       ? "Preview web no aplica a EditCoreAI desktop"
-      : "El proyecto abrio una pagina vacia";
+      : isAgentActive
+        ? "Configuración del proyecto en progreso"
+        : "El proyecto abrio una pagina vacia";
     void monitorPreviewHealth({ forceRecovery: false });
     return;
   }
