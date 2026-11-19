@@ -75,3 +75,17 @@ test("invariante: ORDEN viaja con el set completo y puede escribir", () => {
     assert.equal(d.puedeEscribir, true, texto);
   }
 });
+
+test("invariante: ? es siempre CONVERSACION, incluso con contexto enEjecucion", () => {
+  const d1 = decidirTurno("?", { enEjecucion: true });
+  assert.equal(d1.carril, "CONVERSACION");
+  assert.equal(d1.herramientas, "ninguna");
+
+  const d2 = decidirTurno("¿?", { enEjecucion: true });
+  assert.equal(d2.carril, "CONVERSACION");
+
+  // En cambio, confirmaciones explícitas de continuación sí proceden:
+  const d3 = decidirTurno("continua", { enEjecucion: true });
+  assert.equal(d3.carril, "ORDEN");
+});
+

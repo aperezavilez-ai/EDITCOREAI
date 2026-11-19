@@ -32,8 +32,8 @@ const RE_ORDEN_INICIO = /^\s*(?:por\s+favor\s+)?(?:corr[ií]j\w*|corrig\w*|arreg
 
 // Verbo de orden directa en cualquier parte del mensaje (imperativo
 // no precedido de «se»: «porque hay una carpeta... corrije ese nombre»,
-// «hay un error, arréglalo», «elimina la carpeta tmp»).
-const RE_ORDEN_DIRECTA = /(?<!\bse\s+)\b(?:corr[ií]j\w*|corrig\w*|arregl\w*|repar\w*|solucion\w*|renombr\w*|elimin\w*|borr\w*|instal\w*|constru\w*)\b/i;
+// «hay un error, arréglalo», «elimina la carpeta tmp», «hazlo en este proyecto»).
+const RE_ORDEN_DIRECTA = /(?<!\bse\s+)\b(?:corr[ií]j\w*|corrig\w*|arregl\w*|repar\w*|solucion\w*|renombr\w*|elimin\w*|borr\w*|instal\w*|constru\w*|haz(?:lo|la|me)?)\b/i;
 
 // Pedido de un producto de trabajo: «hazme/quiero/dame … análisis/informe/…».
 // [v5.2.7 — corrección] «dame el resumen en pdf» caía fuera: ni
@@ -95,7 +95,7 @@ function decidirTurno(texto, contexto = {}) {
   if (contexto && contexto.respuestaAOferta && t.length <= 24 && RE_CONTINUACION_CORTA.test(t)) {
     return { carril: "ORDEN", herramientas: "completa", puedeEscribir: true, motivo: "continuacion_aprobada" };
   }
-  if (contexto && contexto.enEjecucion && t.length <= 24 && (RE_CONTINUACION_CORTA.test(t) || /^[?¿]+$/.test(t))) {
+  if (contexto && contexto.enEjecucion && t.length <= 24 && RE_CONTINUACION_CORTA.test(t)) {
     return { carril: "ORDEN", herramientas: "completa", puedeEscribir: true, motivo: "continuacion_tras_corte" };
   }
   // La orden manda sobre la mención de «propuesta»: un encargo de

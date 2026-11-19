@@ -375,10 +375,12 @@ function stripAgentToolXml(value, { trim = true } = {}) {
   ].join("|");
   const re = new RegExp(`<(${names})>[\\s\\S]*?<\\/\\1>`, "gi");
   let out = String(value || "")
-    .replace(/<\s*\|\s*DSML\s*\|\s*calls>[\s\S]*?<\s*\/\s*\|\s*DSML\s*\|\s*calls>/gi, "")
-    .replace(/<\s*\|\s*DSML\s*\|\s*calls>[\s\S]*$/gi, "")
-    .replace(/<\s*\|\s*DSML\s*\|[^>]*>[\s\S]*?<\s*\/\s*\|\s*DSML\s*\|[^>]*>/gi, "")
-    .replace(/<\/?\s*\|\s*DSML\s*\|[^>]*>/gi, "")
+    .replace(/<\s*\/?\s*[|｜\uFF5C]\s*DSML[\s\S]*?<\s*\/?\s*[|｜\uFF5C][^>]*calls\s*>/gi, "")
+    .replace(/<\s*\/?\s*[|｜\uFF5C][^>]*calls\s*>[\s\S]*$/gi, "")
+    .replace(/<\s*\/?\s*[|｜\uFF5C][^>]*invoke[\s\S]*?<\s*\/?\s*[|｜\uFF5C][^>]*invoke\s*>/gi, "")
+    .replace(/<\s*\/?\s*[|｜\uFF5C][^>]*invoke[\s\S]*$/gi, "")
+    .replace(/<\s*\/?\s*[|｜\uFF5C][^>]*>/gi, "")
+    .replace(/<\s*\/?\s*DSML\b[^>]*>/gi, "")
     .replace(/<dots_function_call>[\s\S]*?<\/dots_function_call>/gi, "")
     .replace(/<invoke\b[^>]*>[\s\S]*?<\/invoke>/gi, "")
     .replace(/<parameter\b[^>]*>[\s\S]*?<\/parameter>/gi, "")
@@ -395,14 +397,14 @@ function stripAgentToolXml(value, { trim = true } = {}) {
   const corteJson = out.search(/\{\s*"(?:tool|function)"\s*:/);
   if (corteJson >= 0) out = out.slice(0, corteJson);
   // Bloques incompletos / stream cortado: cortar desde el primer marcador de protocolo.
-  const cut = out.search(/<(?:dots_function_call|invoke\b|parameter\b|tool_call|tool_use|tool_invocation|function_calls?|function\s*=|parameter\s*=|\|\s*DSML)\b/i);
+  const cut = out.search(/<(?:dots_function_call|invoke\b|parameter\b|tool_call|tool_use|tool_invocation|function_calls?|function\s*=|parameter\s*=|[\s\S]*?[|｜\uFF5C]\s*DSML|[|｜\uFF5C])\b/i);
   if (cut >= 0) out = out.slice(0, cut);
   out = out.replace(/\n{3,}/g, "\n\n");
   return trim ? out.trimEnd() : out;
 }
 
 function looksLikeAgentToolDump(value = "") {
-  return /<(?:dots_function_call|invoke\b|parameter\b|tool_call|tool_use|function\s*=|parameter\s*=|\|\s*DSML\b)\b/i.test(String(value || ""));
+  return /<(?:dots_function_call|invoke\b|parameter\b|tool_call|tool_use|function\s*=|parameter\s*=|(?:\/?\s*)?[|｜\uFF5C]\s*DSML\b|[|｜\uFF5C])\b/i.test(String(value || ""));
 }
 
 /** Une chunks del agente sin pegar pasos (evita "correctamente.Entendido"). */
@@ -14758,7 +14760,8 @@ async function executePromptJob(job) {
           }
           accumulated = replace ? text : `${accumulated}${text}`;
           const cleanAccumulated = accumulated
-            .replace(/<\s*\/?\s*\|\s*DSML\b[^>]*>/gi, "")
+            .replace(/<\s*\/?\s*[|｜\uFF5C]\s*DSML\b[^>]*>/gi, "")
+            .replace(/<\s*\/?\s*[|｜\uFF5C][^>]*>/gi, "")
             .replace(/<\/?(?:tool_call|tool_use|tool_code|dots_function_call|invoke|parameter)\b[^>]*>/gi, "");
           streamBody.innerHTML = renderMarkdown(cleanAccumulated);
           scrollFeedToBottom();

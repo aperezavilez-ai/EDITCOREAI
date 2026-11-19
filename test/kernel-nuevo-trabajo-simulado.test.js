@@ -58,12 +58,12 @@ test("detector: el reporte falso declara trabajo hecho; la propuesta real, no", 
   assert.equal(declaraTrabajoHecho("Ya quedó listo."), false, "sin archivos mencionados no basta un verbo suelto");
 });
 
-test("despacho: «?» tras un turno en ejecución continúa como ORDEN; tras conversar, no", () => {
+test("despacho: «?» es siempre CONVERSACION; «sigue» continúa como ORDEN", () => {
   const historialEjecucion = [
     { role: "user", content: "procede" },
     { role: "assistant", content: "Revisando el estado del directorio raíz antes de crear la estructura del proyecto.\nVerificando el estado del director" },
   ];
-  assert.equal(decidirTurno("?", contextoDesdeHistorial(historialEjecucion)).carril, "ORDEN");
+  assert.equal(decidirTurno("?", contextoDesdeHistorial(historialEjecucion)).carril, "CONVERSACION");
   assert.equal(decidirTurno("sigue", contextoDesdeHistorial(historialEjecucion)).carril, "ORDEN");
   const historialCharla = [
     { role: "user", content: "¿cuál es la capital de Francia?" },

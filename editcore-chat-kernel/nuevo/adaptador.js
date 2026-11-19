@@ -160,8 +160,10 @@ function crearLlamarModelo({ callChat, perfil, definiciones, projectRoot, onText
     // — jamás se pinta. Sin filtro, el marcado crudo se veía en
     // el chat en vivo aunque el texto final ya viniera limpio.
     const APERTURAS_DELTA = [
-      { re: /<\s*\|\s*DSML\s*\|\s*calls>/i, cierre: /<\s*\/\s*\|\s*DSML\s*\|\s*calls>/i },
-      { re: /<\s*\/?\s*\|\s*DSML\b[^>]*>/i, cierre: />/ },
+      { re: /<\s*\/?\s*[|｜\uFF5C]\s*DSML\s*[|｜\uFF5C]\s*calls\b/i, cierre: /<\s*\/?\s*[|｜\uFF5C][^>]*calls\s*>/i },
+      { re: /<\s*\/?\s*[|｜\uFF5C]\s*(?:DSML\s*[|｜\uFF5C]\s*)?invoke\b/i, cierre: /<\s*\/?\s*[|｜\uFF5C][^>]*invoke\s*>/i },
+      { re: /<\s*\/?\s*[|｜\uFF5C][^>]*>/i, cierre: />/ },
+      { re: /<\s*\/?\s*[|｜\uFF5C]/i, cierre: />/ },
       { re: /<\|tool_call\|>/, cierre: /<\|tool_call\|>/ },
       { re: /<tool_code>/, cierre: /<\/tool_code>/ },
       { re: /<tool_call>/, cierre: /<\/tool_call>/ },
@@ -273,7 +275,7 @@ function crearLlamarModelo({ callChat, perfil, definiciones, projectRoot, onText
           if (primerMs !== null) return;
           contadorLatidos += 1;
           const segs = contadorLatidos * Math.round(Number(latidoMs) / 1000);
-          try { onAviso(`Pensando… (${segs}s)`); } catch { /* avisar nunca tumba el turno */ }
+          try { onAviso(`Sigo en ello… (${segs}s)`); } catch { /* avisar nunca tumba el turno */ }
         }, Number(latidoMs));
         latido.unref?.();
       }
@@ -689,20 +691,12 @@ async function manejarChatNuevo(input, deps = {}) {
     mensajeEfectivo,
     contextoDesdeHistorial(input.history || input.messages || []),
   );
-  const esPreguntaReal = clasificacion.motivo === "pregunta" || /[¿?]/.test(textoCrudo);
-
-  let carrilPrevisto;
-  if (esPreguntaReal) {
+  const esPreguntaUsuario = !esEnlatado && !esAprobacionCorta && (
+    clasificacion.motivo === "pregunta" || /[¿?]/.test(textoCrudo) || /^(?:qu[eé]|cu[aá]l|c[oó]mo|d[oó]nde|por\s*qu[eé]|qui[eé]n)\b/i.test(textoCrudo.trim())
+  );
+  let carrilPrevisto = (ejecucionAutorizada && !esPreguntaUsuario) ? "ORDEN" : clasificacion.carril;
+  if (!input.projectRoot && carrilPrevisto === "ORDEN") {
     carrilPrevisto = "CONVERSACION";
-  } else if (ejecucionAutorizada) {
-    carrilPrevisto = "ORDEN";
-  } else if (clasificacion.carril === "ORDEN") {
-    // Si no hay autorización explícita ("procede") ni flag de ejecución autorizada,
-    // el pedido de trabajo entra como PROPUESTA: el agente explica qué entendió,
-    // propone los cambios en la raíz y pregunta "¿Deseas que proceda con estos cambios?" sin tocar archivos.
-    carrilPrevisto = "PROPUESTA";
-  } else {
-    carrilPrevisto = clasificacion.carril;
   }
   const fuerzaOrden = carrilPrevisto === "ORDEN";
   const llamarModelo = crearLlamarModelo({
@@ -711,7 +705,7 @@ async function manejarChatNuevo(input, deps = {}) {
     definiciones,
     projectRoot: input.projectRoot || process.cwd(),
     onTextDelta: typeof deps.onTextDelta === "function" ? deps.onTextDelta : null,
-    maxTokens: TOPE_SALIDA_POR_CARRIL[carrilPrevisto] || 0,
+    maxTokens: (input.projectRoot ? TOPE_SALIDA_POR_CARRIL.ORDEN : TOPE_SALIDA_POR_CARRIL[carrilPrevisto]) || 0,
     onAviso: typeof deps.onAviso === "function" ? deps.onAviso : null,
     ...(Number(deps.latidoMs) > 0 ? { latidoMs: Number(deps.latidoMs) } : {}),
     onRespuestaCruda: typeof deps.onRespuestaCruda === "function" ? deps.onRespuestaCruda : null,
@@ -748,7 +742,7 @@ async function manejarChatNuevo(input, deps = {}) {
   const historial = seleccionarHistorial(historialCrudo);
 
   const resultado = await ejecutarTurno({
-    ...(fuerzaOrden ? { carrilForzado: "ORDEN" } : {}),
+    carrilForzado: carrilPrevisto,
     conHerramientas: (carrilPrevisto === "ORDEN" || carrilPrevisto === "CONSULTA") && Boolean(input.projectRoot),
     texto: mensajeEfectivo,
     llamarModelo,
@@ -776,7 +770,7 @@ async function manejarChatNuevo(input, deps = {}) {
     // Los archivos de código del proyecto (.ts, .tsx, .js, etc.) se escriben
     // directo en la raíz y NUNCA se ofrecen como descargas de chat.
     archivos: (resultado.hechos.archivos || [])
-      .filter((a) => /\.(?:pdf|docx?|xlsx?|csv|zip)$/i.test(String(a?.path || "")))
+      .filter((a) => /\.(?:pdf|docx?|xlsx?|csv|zip|txt|md)$/i.test(String(a?.path || "")))
       .map((a) => {
         const p = String(a?.path || "");
         const entrada = { path: p, nombre: p.split(/[\\/]/).filter(Boolean).pop() || p };

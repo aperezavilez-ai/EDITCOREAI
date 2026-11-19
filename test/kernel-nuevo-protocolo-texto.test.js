@@ -115,3 +115,28 @@ test("marcado DSML se parsea como tool call y se retira del texto visible", () =
   assert.ok(!/DSML|calls|invoke|parameter/.test(visible));
 });
 
+test("marcado DSML con pipes Unicode (｜), atributos tipados y cierres alternativos", () => {
+  const userSnippet = "Voy a ejecutar directamente.\n\n"
+    + "Primero veo la estructura del proyecto.\n"
+    + "</｜DSML｜ invoke name=\"list_files\">\n"
+    + "<｜DSML｜ parameter name=\"path\" string=\"true\">.</｜DSML｜ parameter>\n"
+    + "<｜DSML｜ parameter name=\"recursive\" boolean=\"true\">true</｜DSML｜ parameter>\n"
+    + "<｜DSML｜ parameter name=\"ignore\" array=\"true\">[\"node_modules\", \".next\", \".git\", \"dist\", \"build\"]</｜DSML｜ parameter>\n"
+    + "<｜DSML｜ /｜DSML｜ invoke>\n"
+    + "<｜DSML｜ calls>";
+
+  assert.ok(TOOL_MARKUP_START_RE.test(userSnippet));
+  const calls = parseTextToolCalls(userSnippet, { projectRoot: RAIZ });
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].function.name, "list_files");
+  const args = JSON.parse(calls[0].function.arguments);
+  assert.equal(args.path, ".");
+  assert.equal(args.recursive, true);
+  assert.deepEqual(args.ignore, ["node_modules", ".next", ".git", "dist", "build"]);
+
+  const visible = stripTextToolMarkup(userSnippet);
+  assert.equal(visible, "Voy a ejecutar directamente.\n\nPrimero veo la estructura del proyecto.");
+  assert.ok(!/DSML|calls|invoke|parameter|[|｜\uFF5C]/.test(visible));
+});
+
+

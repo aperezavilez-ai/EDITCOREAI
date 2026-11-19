@@ -50,7 +50,7 @@ const NATIVE = [
 const TOOL_TAG_NAMES = [...new Set([...NATIVE, ...Object.keys(ALIAS)])];
 
 /** Marca el inicio de protocolo tool/XML/JSON que no debe verse en el chat. */
-const TOOL_MARKUP_START_RE = /<\s*\|\s*DSML\b|<\|tool_call\|>|<(?:dots_function_call|tool_code|tool_call|tool_use|tool_invocation|function_calls?|function\s*=|parameter\s*=|invoke\b)\b|<\/?(?:dots_function_call|tool_code|tool_call|tool_use|function|parameter)\b|```(?:json|xml)?\s*\n\s*\{\s*"(?:tool|function)"\s*:|```(?:json|xml)?\s*\n\s*\{\s*"name"\s*:[^}]*?"(?:args|arguments|input|parameters)"\s*:|\{\s*"(?:tool|function)"\s*:/i;
+const TOOL_MARKUP_START_RE = /<\s*\/?\s*[|｜\uFF5C]\s*DSML\b|<\|tool_call\|>|<(?:dots_function_call|tool_code|tool_call|tool_use|tool_invocation|function_calls?|function\s*=|parameter\s*=|invoke\b)\b|<\/?(?:dots_function_call|tool_code|tool_call|tool_use|function|parameter)\b|```(?:json|xml)?\s*\n\s*\{\s*"(?:tool|function)"\s*:|```(?:json|xml)?\s*\n\s*\{\s*"name"\s*:[^}]*?"(?:args|arguments|input|parameters)"\s*:|\{\s*"(?:tool|function)"\s*:/i;
 
 function normalizeToolName(name) {
   const raw = String(name || "").trim().toLowerCase().replace(/[-\s]+/g, "_");
@@ -80,18 +80,27 @@ function unescapeTextBlob(val) {
 }
 
 function assignArg(args, key, val) {
-  if (/^(path|file|filepath|file_path)$/i.test(key)) args.path = val;
-  else if (/^(command|cmd)$/i.test(key)) args.command = val;
-  else if (/^(content|contents|text)$/i.test(key)) args.content = unescapeTextBlob(val);
-  else if (/^(old|old_str|oldText|old_text)$/i.test(key)) args.oldText = unescapeTextBlob(val);
-  else if (/^(new|new_str|newText|new_text)$/i.test(key)) args.newText = unescapeTextBlob(val);
-  // [EDITCORE-INTEGRAL-B4] query recibe el MISMO unescapeTextBlob que
-  // content/oldText/newText: sin esto, buscar por la vía texto el
-  // literal \n de un archivo-blob llegaba como secuencia escapada sin
-  // desescapar y search_files jamás lo encontraba.
-  else if (/^(query|pattern|search)$/i.test(key)) args.query = unescapeTextBlob(val);
-  else if (/^url$/i.test(key)) args.url = val;
-  else args[key] = val;
+  let parsedVal = val;
+  if (typeof val === "string") {
+    const trimmed = val.trim();
+    if (trimmed === "true") parsedVal = true;
+    else if (trimmed === "false") parsedVal = false;
+    else if (/^-?\d+(?:\.\d+)?$/.test(trimmed) && !/^(path|file|filepath|file_path|query|pattern|search|content|contents|text|old|new)/i.test(key)) {
+      parsedVal = Number(trimmed);
+    } else if ((trimmed.startsWith("[") && trimmed.endsWith("]")) || (trimmed.startsWith("{") && trimmed.endsWith("}"))) {
+      try {
+        parsedVal = JSON.parse(trimmed);
+      } catch { /* mantener cadena si no es JSON válido */ }
+    }
+  }
+  if (/^(path|file|filepath|file_path)$/i.test(key)) args.path = typeof parsedVal === "string" ? parsedVal.trim() : parsedVal;
+  else if (/^(command|cmd)$/i.test(key)) args.command = parsedVal;
+  else if (/^(content|contents|text)$/i.test(key)) args.content = typeof parsedVal === "string" ? unescapeTextBlob(parsedVal) : parsedVal;
+  else if (/^(old|old_str|oldText|old_text)$/i.test(key)) args.oldText = typeof parsedVal === "string" ? unescapeTextBlob(parsedVal) : parsedVal;
+  else if (/^(new|new_str|newText|new_text)$/i.test(key)) args.newText = typeof parsedVal === "string" ? unescapeTextBlob(parsedVal) : parsedVal;
+  else if (/^(query|pattern|search)$/i.test(key)) args.query = typeof parsedVal === "string" ? unescapeTextBlob(parsedVal) : parsedVal;
+  else if (/^url$/i.test(key)) args.url = parsedVal;
+  else args[key] = parsedVal;
 }
 
 function parseInnerArgs(body) {
@@ -347,12 +356,13 @@ function parseTextToolCalls(text, { projectRoot } = {}) {
   }
 
   // Formato DSML (Kimi/DSML): < | DSML | calls>< | DSML | invoke name="tool">< | DSML | parameter name="param">value</ | DSML | parameter></ | DSML | invoke></ | DSML | calls>
-  const dsmlRe = /<\s*\|\s*DSML\s*\|\s*invoke\s+name\s*=\s*["']?([^"'>\s]+)["']?\s*>([\s\S]*?)<\s*\/\s*\|\s*DSML\s*\|\s*invoke\s*>/gi;
+  // Soporta barra vertical ASCII | y Unicode ｜ (\uFF5C), barras de cierre opcionales, y atributos de tipo de dato
+  const dsmlRe = /<\s*\/?\s*[|｜\uFF5C]\s*DSML\s*[|｜\uFF5C]\s*invoke\s+name\s*=\s*["']?([^"'>\s]+)["']?[^>]*>([\s\S]*?)<\s*\/?\s*[|｜\uFF5C][^>]*invoke\s*>/gi;
   while ((m = dsmlRe.exec(src))) {
     const rawName = m[1];
     const body = m[2];
     const args = {};
-    const paramRe = /<\s*\|\s*DSML\s*\|\s*parameter\s+name\s*=\s*["']?([^"'>\s]+)["']?\s*>([\s\S]*?)<\s*\/\s*\|\s*DSML\s*\|\s*parameter\s*>/gi;
+    const paramRe = /<\s*\/?\s*(?:[|｜\uFF5C]\s*DSML\s*[|｜\uFF5C]\s*)?parameter\s+name\s*=\s*["']?([^"'>\s]+)["']?[^>]*>([\s\S]*?)<\s*\/?\s*(?:[|｜\uFF5C][^>]*|(?:\/\s*)?)parameter\s*>/gi;
     let pm;
     while ((pm = paramRe.exec(body))) {
       assignArg(args, pm[1], pm[2].trim());
@@ -366,7 +376,7 @@ function parseTextToolCalls(text, { projectRoot } = {}) {
     const rawName = m[1];
     const body = m[2];
     const args = {};
-    const paramRe = /<parameter\s+name\s*=\s*["']?([^"'>\s]+)["']?\s*>\s*([\s\S]*?)\s*<\/parameter>/gi;
+    const paramRe = /<parameter\s+name\s*=\s*["']?([^"'>\s]+)["']?[^>]*>\s*([\s\S]*?)\s*<\/parameter>/gi;
     let pm;
     while ((pm = paramRe.exec(body))) {
       assignArg(args, pm[1], pm[2].trim());
@@ -376,12 +386,12 @@ function parseTextToolCalls(text, { projectRoot } = {}) {
 
   // <invoke name="tool"> sin wrapper dots_function_call
   if (!calls.length) {
-    const bareInvoke = /<invoke\s+name\s*=\s*["']?([^"'>\s]+)["']?\s*>\s*([\s\S]*?)(?:<\/invoke>|$)/gi;
+    const bareInvoke = /<\s*\/?\s*invoke\s+name\s*=\s*["']?([^"'>\s]+)["']?[^>]*>\s*([\s\S]*?)(?:<\s*\/?\s*invoke[^>]*>|$)/gi;
     while ((m = bareInvoke.exec(src))) {
       const rawName = m[1];
       const body = m[2];
       const args = {};
-      const paramRe = /<parameter\s+name\s*=\s*["']?([^"'>\s]+)["']?\s*>\s*([\s\S]*?)(?:<\/parameter>|$)/gi;
+      const paramRe = /<\s*\/?\s*parameter\s+name\s*=\s*["']?([^"'>\s]+)["']?[^>]*>\s*([\s\S]*?)(?:<\s*\/?\s*parameter[^>]*>|$)/gi;
       let pm;
       while ((pm = paramRe.exec(body))) {
         assignArg(args, pm[1], pm[2].trim());
@@ -428,14 +438,17 @@ function stripTextToolMarkup(text) {
   for (const [inicio, fin] of spansJson) {
     out = out.slice(0, inicio) + " " + out.slice(fin);
   }
-  out = out.replace(/<\s*\|\s*DSML\s*\|\s*calls>[\s\S]*?<\s*\/\s*\|\s*DSML\s*\|\s*calls>/gi, "");
-  out = out.replace(/<\s*\|\s*DSML\s*\|\s*calls>[\s\S]*$/gi, "");
-  out = out.replace(/<\s*\|\s*DSML\s*\|[^>]*>[\s\S]*?<\s*\/\s*\|\s*DSML\s*\|[^>]*>/gi, "");
-  out = out.replace(/<\s*\/?\s*\|\s*DSML\s*\|[^>]*>/gi, "");
-  out = out.replace(/<\s*\/?\s*\|\s*DSML\b[^>]*>/gi, "");
   out = out.replace(/<\|tool_call\|>[\s\S]*?<\|tool_call\|>/gi, "");
   // Gemma sin cierre (stream cortado): se corta la cola entera.
   out = out.replace(/<\|tool_call\|>[\s\S]*$/i, "");
+  // DSML / Pipes (soporta ASCII | y Unicode ｜ \uFF5C)
+  out = out.replace(/<\s*\/?\s*[|｜\uFF5C]\s*DSML[\s\S]*?<\s*\/?\s*[|｜\uFF5C][^>]*calls\s*>/gi, "");
+  out = out.replace(/<\s*\/?\s*[|｜\uFF5C][^>]*calls\s*>[\s\S]*$/gi, "");
+  out = out.replace(/<\s*\/?\s*[|｜\uFF5C][^>]*invoke[\s\S]*?<\s*\/?\s*[|｜\uFF5C][^>]*invoke\s*>/gi, "");
+  out = out.replace(/<\s*\/?\s*[|｜\uFF5C][^>]*invoke[\s\S]*$/gi, "");
+  out = out.replace(/<\s*\/?\s*[|｜\uFF5C]\s*DSML\b[^>]*>/gi, "");
+  out = out.replace(/<\s*\/?\s*[|｜\uFF5C][^>]*>/gi, "");
+  out = out.replace(/<\s*\/?\s*DSML\b[^>]*>/gi, "");
   out = out.replace(/<dots_function_call>[\s\S]*?<\/dots_function_call>/gi, "");
   out = out.replace(/<invoke\b[^>]*>[\s\S]*?<\/invoke>/gi, "");
   out = out.replace(/<parameter\b[^>]*>[\s\S]*?<\/parameter>/gi, "");

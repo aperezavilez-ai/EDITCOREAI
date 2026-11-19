@@ -88,7 +88,7 @@ async function ejecutarTurno({ texto, llamarModelo, ejecutarHerramienta, herrami
   // (sin herramientas) y el modelo narraba la construcción en
   // prosa: el defecto raíz probado con el registro de turnos.
   const decision = carrilForzado
-    ? { carril: carrilForzado, herramientas: carrilForzado === "ORDEN" ? "completa" : "ninguna", puedeEscribir: carrilForzado === "ORDEN", motivo: "ejecucion_autorizada" }
+    ? { carril: carrilForzado, herramientas: carrilForzado === "ORDEN" ? "completa" : (carrilForzado === "CONSULTA" ? "lectura-dirigida" : "ninguna"), puedeEscribir: carrilForzado === "ORDEN", motivo: "carril_autorizado" }
     : decidirTurno(texto, contextoDesdeHistorial(historial));
   const carril = decision.carril;
   // Regla de arquitectura en dos fases:
@@ -291,7 +291,7 @@ async function ejecutarTurno({ texto, llamarModelo, ejecutarHerramienta, herrami
         // El archivo como ENTREGABLE descargable del turno SOLO si es un documento
         // de exportación (PDF, Word, Excel, CSV, ZIP). El código fuente del proyecto
         // se escribe directamente a disco y NUNCA se ofrece como descarga en el chat.
-        if (resultado?.esEntregable || /\.(?:pdf|docx?|xlsx?|csv|zip)$/i.test(rutaArchivo)) {
+        if (resultado?.esEntregable || /\.(?:pdf|docx?|xlsx?|csv|zip|txt|md)$/i.test(rutaArchivo)) {
           const entregable = { path: rutaArchivo };
           if (Number.isFinite(resultado?.archivoBytes)) entregable.bytes = resultado.archivoBytes;
           hechos.archivos.push(entregable);
