@@ -291,12 +291,14 @@ async function ejecutarTurno({ texto, llamarModelo, ejecutarHerramienta, herrami
       if (paso.ok && resultado?.archivoAplicado) {
         const rutaArchivo = String(resultado.archivoAplicado);
         hechos.aplicados.push(rutaArchivo);
-        // El archivo como ENTREGABLE del turno (con su tamaño
-        // cuando la herramienta lo declara): la superficie lo
-        // ofrece en el chat, no solo como ruta en el texto.
-        const entregable = { path: rutaArchivo };
-        if (Number.isFinite(resultado?.archivoBytes)) entregable.bytes = resultado.archivoBytes;
-        hechos.archivos.push(entregable);
+        // El archivo como ENTREGABLE descargable del turno SOLO si es un documento
+        // de exportación (PDF, Word, Excel, CSV, ZIP). El código fuente del proyecto
+        // se escribe directamente a disco y NUNCA se ofrece como descarga en el chat.
+        if (resultado?.esEntregable || /\.(?:pdf|docx?|xlsx?|csv|zip)$/i.test(rutaArchivo)) {
+          const entregable = { path: rutaArchivo };
+          if (Number.isFinite(resultado?.archivoBytes)) entregable.bytes = resultado.archivoBytes;
+          hechos.archivos.push(entregable);
+        }
       }
       if (paso.ok && resultado?.listado) hechos.listados.push(resultado.listado);
       if (!paso.ok) hechos.fallos.push(paso);

@@ -156,3 +156,73 @@ test("cierre falso a traves de toda la pila: la salida lleva la correccion del k
   assert.match(out.text, /no aplicó cambios/);
   assert.deepEqual(out.mutations, []);
 });
+
+test("archivos de codigo modificados no se ofrecen como entregables descargables", async () => {
+  let llamada = 0;
+  const callChat = async () => {
+    llamada += 1;
+    if (llamada === 1) {
+      return {
+        content: null,
+        toolCalls: [
+          { function: { name: "write_file", arguments: JSON.stringify({ path: "src/db/drizzle.ts", content: "export const db = {};" }) } },
+        ],
+        usage: { input_tokens: 500, output_tokens: 40 },
+      };
+    }
+    return { content: "He creado el archivo drizzle.ts en la raíz del proyecto.", toolCalls: [], usage: { input_tokens: 600, output_tokens: 30 } };
+  };
+  const execute = async (nombre, args) => ({ ok: true, path: args.path, bytes: 42 });
+  const out = await manejarChatNuevo(
+    { message: "crea el archivo src/db/drizzle.ts", threadId: "tc1", runId: "rc1", apiBaseUrl: "x", apiKey: "k", model: "m", projectRoot: "D:/test" },
+    depsBase({ callChat, execute }),
+  );
+  assert.equal(out.ok, true);
+  assert.deepEqual(out.mutations, ["src/db/drizzle.ts"]);
+  // NUNCA debe ofrecer descarga de código fuente del proyecto
+  assert.deepEqual(out.archivos, []);
+});
+
+test("documentos exportables si se registran como entregables descargables", async () => {
+  let llamada = 0;
+  const callChat = async () => {
+    llamada += 1;
+    if (llamada === 1) {
+      return {
+        content: null,
+        toolCalls: [
+          { function: { name: "create_pdf", arguments: JSON.stringify({ path: "reporte.pdf", content: "datos" }) } },
+        ],
+        usage: { input_tokens: 500, output_tokens: 40 },
+      };
+    }
+    return { content: "He generado el reporte.pdf.", toolCalls: [], usage: { input_tokens: 600, output_tokens: 30 } };
+  };
+  const execute = async (nombre, args) => ({ ok: true, path: args.path, bytes: 1024 });
+  const out = await manejarChatNuevo(
+    { message: "genera un reporte en pdf", threadId: "tc2", runId: "rc2", apiBaseUrl: "x", apiKey: "k", model: "m", projectRoot: "D:/test" },
+    depsBase({
+      callChat,
+      execute,
+      getToolDefinitions: () => [...DEFINICIONES, { type: "function", function: { name: "create_pdf", description: "pdf", parameters: {} } }],
+    }),
+  );
+  assert.equal(out.ok, true);
+  assert.equal(out.archivos.length, 1);
+  assert.equal(out.archivos[0].nombre, "reporte.pdf");
+});
+
+test("stripTextToolMarkup purga etiquetas DSML completas e incompletas", () => {
+  const { stripTextToolMarkup } = require("../editcore-chat-kernel/parse-text-tools");
+  const sucio = `Hola usuario.
+< | DSML | calls>
+< | DSML | invoke name="capture_preview_screenshot">
+</ | DSML | invoke>
+</ | DSML | calls>
+Aquí está tu respuesta.`;
+  const limpio = stripTextToolMarkup(sucio);
+  assert.equal(limpio.includes("DSML"), false);
+  assert.equal(limpio.includes("invoke"), false);
+  assert.match(limpio, /Hola usuario\.\s+Aquí está tu respuesta\./);
+});
+

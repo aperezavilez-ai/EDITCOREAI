@@ -429,6 +429,7 @@ function crearEjecutarHerramienta({ execute, root, helpers, onActividad = null, 
           input: args || {},
           stage: "running",
           path: args?.path || args?.filePath || args?.command || "",
+          projectRoot: root,
         });
       } catch { /* ignore */ }
     }
@@ -444,6 +445,7 @@ function crearEjecutarHerramienta({ execute, root, helpers, onActividad = null, 
             ok: true,
             stage: "done",
             path: args?.path || "",
+            projectRoot: root,
             result: { ok: true, resumen: cached.resumen },
           });
         } catch { /* ignore */ }
@@ -468,6 +470,7 @@ function crearEjecutarHerramienta({ execute, root, helpers, onActividad = null, 
             ok: false,
             stage: "done",
             path: args?.path || args?.filePath || args?.command || "",
+            projectRoot: root,
             error: resumenErr,
           });
         } catch { /* ignore */ }
@@ -484,6 +487,7 @@ function crearEjecutarHerramienta({ execute, root, helpers, onActividad = null, 
           ok,
           stage: "done",
           path: args?.path || args?.filePath || args?.command || "",
+          projectRoot: root,
           result: r,
         });
       } catch { /* ignore */ }
@@ -568,6 +572,7 @@ function crearEjecutarHerramienta({ execute, root, helpers, onActividad = null, 
     }
     if (!resumen) resumen = ok ? "ok" : "fallo";
     const creaArchivo = /^(write_file|replace_in_file|create_pdf|create_word|create_excel|create_csv)$/.test(nombre);
+    const esEntregable = ok && /^(create_pdf|create_word|create_excel|create_csv)$/.test(nombre);
     let archivoAplicado = ok && creaArchivo && (r?.path || args?.path)
       ? String(r?.path || args.path)
       : undefined;
@@ -587,7 +592,7 @@ function crearEjecutarHerramienta({ execute, root, helpers, onActividad = null, 
       readCache.set(normPath, { resumen: resumenFinal });
     }
     narrar(nombre, args, ok, resumenFinal);
-    return { ok, resumen: resumenFinal, archivoAplicado, archivoBytes };
+    return { ok, resumen: resumenFinal, archivoAplicado, archivoBytes, esEntregable };
   };
 }
 
@@ -772,14 +777,18 @@ async function manejarChatNuevo(input, deps = {}) {
     steps: resultado.hechos.pasos,
     usage: { total_tokens: resultado.tokensUsados, kernel_nuevo: true },
     mutations: resultado.hechos.aplicados,
-    // Archivos entregables del turno: la superficie los pinta
-    // en la burbuja como chips que abren el archivo con un clic.
-    archivos: (resultado.hechos.archivos || []).map((a) => {
-      const p = String(a?.path || "");
-      const entrada = { path: p, nombre: p.split(/[\\/]/).filter(Boolean).pop() || p };
-      if (Number.isFinite(a?.bytes)) entrada.bytes = a.bytes;
-      return entrada;
-    }),
+    // Archivos entregables del turno: la superficie SOLO ofrece
+    // descargas de documentos exportables (PDF, Word, Excel, CSV, ZIP).
+    // Los archivos de código del proyecto (.ts, .tsx, .js, etc.) se escriben
+    // directo en la raíz y NUNCA se ofrecen como descargas de chat.
+    archivos: (resultado.hechos.archivos || [])
+      .filter((a) => /\.(?:pdf|docx?|xlsx?|csv|zip)$/i.test(String(a?.path || "")))
+      .map((a) => {
+        const p = String(a?.path || "");
+        const entrada = { path: p, nombre: p.split(/[\\/]/).filter(Boolean).pop() || p };
+        if (Number.isFinite(a?.bytes)) entrada.bytes = a.bytes;
+        return entrada;
+      }),
     incomplete: resultado.presupuestoAgotado === true || resultado.respuestaParcial === true,
     // Desglose medido del turno (también va en el detalle de hechos).
     tiempos: resultado.tiempos || null,

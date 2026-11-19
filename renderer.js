@@ -114,6 +114,7 @@ const state = {
   lastUserPrompt: "",
   fileListHighlightNames: [],
   fileListWritingNames: [],
+  fileListAnalyzingNames: [],
   touchedHighlightNames: [],
   touchedRelativePaths: [],
   fileListRenderToken: 0,
@@ -388,6 +389,10 @@ function stripAgentToolXml(value, { trim = true } = {}) {
   ].join("|");
   const re = new RegExp(`<(${names})>[\\s\\S]*?<\\/\\1>`, "gi");
   let out = String(value || "")
+    .replace(/<\s*\|\s*DSML\s*\|\s*calls>[\s\S]*?<\s*\/\s*\|\s*DSML\s*\|\s*calls>/gi, "")
+    .replace(/<\s*\|\s*DSML\s*\|\s*calls>[\s\S]*$/gi, "")
+    .replace(/<\s*\|\s*DSML\s*\|[^>]*>[\s\S]*?<\s*\/\s*\|\s*DSML\s*\|[^>]*>/gi, "")
+    .replace(/<\/?\s*\|\s*DSML\s*\|[^>]*>/gi, "")
     .replace(/<dots_function_call>[\s\S]*?<\/dots_function_call>/gi, "")
     .replace(/<invoke\b[^>]*>[\s\S]*?<\/invoke>/gi, "")
     .replace(/<parameter\b[^>]*>[\s\S]*?<\/parameter>/gi, "")
@@ -404,14 +409,14 @@ function stripAgentToolXml(value, { trim = true } = {}) {
   const corteJson = out.search(/\{\s*"(?:tool|function)"\s*:/);
   if (corteJson >= 0) out = out.slice(0, corteJson);
   // Bloques incompletos / stream cortado: cortar desde el primer marcador de protocolo.
-  const cut = out.search(/<(?:dots_function_call|invoke\b|parameter\b|tool_call|tool_use|tool_invocation|function_calls?|function\s*=|parameter\s*=)\b/i);
+  const cut = out.search(/<(?:dots_function_call|invoke\b|parameter\b|tool_call|tool_use|tool_invocation|function_calls?|function\s*=|parameter\s*=|\|\s*DSML)\b/i);
   if (cut >= 0) out = out.slice(0, cut);
   out = out.replace(/\n{3,}/g, "\n\n");
   return trim ? out.trimEnd() : out;
 }
 
 function looksLikeAgentToolDump(value = "") {
-  return /<(?:dots_function_call|invoke\b|parameter\b|tool_call|tool_use|function\s*=|parameter\s*=)\b/i.test(String(value || ""));
+  return /<(?:dots_function_call|invoke\b|parameter\b|tool_call|tool_use|function\s*=|parameter\s*=|\|\s*DSML\b)\b/i.test(String(value || ""));
 }
 
 /** Une chunks del agente sin pegar pasos (evita "correctamente.Entendido"). */
@@ -4846,6 +4851,7 @@ function clearAgentTouchedHighlights() {
   state.touchedRelativePaths = [];
   state.fileListHighlightNames = [];
   state.fileListWritingNames = [];
+  state.fileListAnalyzingNames = [];
 }
 
 function scheduleClearAgentTouchedHighlights(delayMs = 180000) {
@@ -4857,8 +4863,8 @@ function scheduleClearAgentTouchedHighlights(delayMs = 180000) {
   }, delayMs);
 }
 
-function markAgentTouchedFromPayload(payload = {}, { writing = false } = {}) {
-  const root = normalizeProjectRoot(state.projectRoot);
+function markAgentTouchedFromPayload(payload = {}, { writing = false, analyzing = false } = {}) {
+  const root = normalizeProjectRoot(state.projectRoot || payload.projectRoot);
   const writtenPath = String(payload.writtenPath || payload.path || payload.relativePath || "");
   const names = Array.isArray(payload.highlightNames) && payload.highlightNames.length
     ? payload.highlightNames
@@ -4879,6 +4885,11 @@ function markAgentTouchedFromPayload(payload = {}, { writing = false } = {}) {
     state.fileListWritingNames = mergeHighlightNames(names);
   } else {
     state.fileListWritingNames = [];
+  }
+  if (analyzing) {
+    state.fileListAnalyzingNames = mergeHighlightNames(names);
+  } else {
+    state.fileListAnalyzingNames = [];
   }
   scheduleClearAgentTouchedHighlights(180000);
   try {
@@ -5013,25 +5024,28 @@ function addAgentCodeFragment(thinkingItem, progress) {
 function notifyAgentFileMutationProgress(thinkingEl, progress) {
   if (!progress || typeof progress !== "object") return;
   const tool = String(progress?.name || "").toLowerCase();
+  const root = String(progress?.projectRoot || state.projectRoot || "").trim();
   const payload = ProjectFilesUi?.filesChangedPayload
-    ? ProjectFilesUi.filesChangedPayload(progress, state.projectRoot)
+    ? ProjectFilesUi.filesChangedPayload(progress, root)
     : {
       writtenPath: String(progress?.input?.path || progress?.input?.filePath || progress?.input?.TargetFile || progress?.input?.targetPath || progress?.input?.AbsolutePath || progress?.path || ""),
       highlightNames: [],
       fileName: "",
     };
   const isWriteTool = /write|replace|diff|patch|mutate|edit|create|delete|append|save|touch/i.test(tool);
+  const isReadTool = /read|view|list|cat|find|grep|stat|head|tail/i.test(tool);
   const writing = isWriteTool && (progress?.stage === "running" || (progress?.ok === undefined && progress?.stage !== "done"));
+  const analyzing = isReadTool && (progress?.stage === "running" || (progress?.ok === undefined && progress?.stage !== "done"));
   const done = progress?.stage === "done" || progress?.ok === true;
   const hasTarget = Boolean(payload.writtenPath || payload.fileName || (payload.highlightNames && payload.highlightNames.length > 0));
-  if (!isWriteTool && !hasTarget) return;
+  if (!isWriteTool && !isReadTool && !hasTarget) return;
 
-  const nav = markAgentTouchedFromPayload(payload, { writing });
+  const nav = markAgentTouchedFromPayload(payload, { writing, analyzing });
   // Refrescar siempre: en "running" el árbol puede anticipar; en "done" confirma lo ya escrito en disco.
   // Si el usuario está en la raíz, quedarse ahí para que aparezcan carpetas nuevas (src/, etc.).
-  if (writing || done || hasTarget) {
+  if (writing || analyzing || done || hasTarget) {
     const currentView = String(state.fileListRelativePath || "");
-    const refreshView = (!currentView || writing)
+    const refreshView = (!currentView || writing || analyzing)
       ? currentView
       : String(nav.viewDir || currentView);
     refreshProjectFilesFromDisk({ viewDir: refreshView, highlightNames: nav.highlightNames }).catch(() => undefined);
@@ -5824,14 +5838,20 @@ async function renderProjectFiles(relativePath = "") {
         button.classList.add("is-touched");
         if (row.kind === "file") button.classList.add("is-new");
       }
-      const writingName = state.fileListWritingNames.includes(String(row.name || "").toLowerCase());
+      const writingName = (state.fileListWritingNames || []).includes(String(row.name || "").toLowerCase());
+      const analyzingName = (state.fileListAnalyzingNames || []).includes(String(row.name || "").toLowerCase());
       if (writingName && row.kind === "file") button.classList.add("is-writing");
+      if (analyzingName) button.classList.add("is-analyzing");
       // Bolita anclada a la izquierda del panel; nombre y carpeta/archivo icono a la derecha.
       const dot = document.createElement("span");
       dot.className = writingName
         ? "file-item-dot is-writing-dot"
-        : (touched ? "file-item-dot" : "file-item-dot is-idle");
-      dot.title = touched ? (writingName ? "Escribiendo…" : "Modificado por el agente") : "";
+        : (analyzingName
+          ? "file-item-dot is-analyzing-dot"
+          : (touched ? "file-item-dot" : "file-item-dot is-idle"));
+      dot.title = touched
+        ? (writingName ? "Escribiendo…" : (analyzingName ? "Analizando…" : "Tocado por el agente"))
+        : "";
       dot.setAttribute("aria-hidden", "true");
       button.appendChild(dot);
 
@@ -10110,10 +10130,18 @@ function finalizeThinkingAsAssistant(thinking, text, usage, elapsedSeconds, opti
 // .downloadFile, sin cazarlo en el Explorador ni copiar rutas.
 function pintarArchivosEntregados(contenedor, archivos, projectRoot) {
   if (!contenedor || !Array.isArray(archivos) || !archivos.length) return;
+  // Solo documentos exportables (PDF, Word, Excel, CSV, ZIP).
+  // Los archivos de código del proyecto (.ts, .tsx, .js, .json, etc.) se escriben
+  // directamente a disco en la raíz y NUNCA se ofrecen como descargas de chat.
+  const entregablesValidos = archivos.filter((a) => {
+    const p = String(a?.path || a?.nombre || "").toLowerCase();
+    return /\.(?:pdf|docx?|xlsx?|csv|zip)$/i.test(p);
+  });
+  if (!entregablesValidos.length) return;
   const root = String(projectRoot || state.projectRoot || "").trim();
   const caja = document.createElement("div");
   caja.className = "msg-attachments msg-attachments--entregados";
-  for (const archivo of archivos) {
+  for (const archivo of entregablesValidos) {
     const rel = String(archivo?.path || "").trim();
     if (!rel) continue;
     const nombre = String(archivo?.nombre || "").trim() || rel.split(/[\\/]/).pop() || rel;

@@ -764,7 +764,8 @@ html[data-theme=""] .file-item.is-touched {
   ) !important;
   box-shadow: inset 3px 0 0 #0284c7 !important;
 }
-.file-item.is-writing {
+.file-item.is-writing,
+.file-item.is-analyzing {
   background: linear-gradient(
     90deg,
     rgba(56, 189, 248, 0.28) 0%,
@@ -777,7 +778,9 @@ html[data-theme=""] .file-item.is-touched {
   animation: file-touch-pulse 1.1s ease-in-out infinite;
 }
 html[data-theme="blanco"] .file-item.is-writing,
-html[data-theme=""] .file-item.is-writing {
+html[data-theme="blanco"] .file-item.is-analyzing,
+html[data-theme=""] .file-item.is-writing,
+html[data-theme=""] .file-item.is-analyzing {
   background: linear-gradient(
     90deg,
     rgba(2, 132, 199, 0.22) 0%,
@@ -787,17 +790,25 @@ html[data-theme=""] .file-item.is-writing {
   box-shadow: inset 3.5px 0 0 #0284c7 !important;
 }
 .file-item-dot.is-writing-dot,
-.file-item.is-writing .file-item-dot {
+.file-item-dot.is-analyzing-dot,
+.file-item.is-writing .file-item-dot,
+.file-item.is-analyzing .file-item-dot {
   background: #0284c7 !important;
   box-shadow: 0 0 0 2.5px rgba(2, 132, 199, 0.35), 0 0 10px rgba(2, 132, 199, 0.8) !important;
   animation: dot-pulse 0.9s ease-in-out infinite;
 }
 html[data-theme="negro"] .file-item-dot.is-writing-dot,
+html[data-theme="negro"] .file-item-dot.is-analyzing-dot,
 html[data-theme="gris"] .file-item-dot.is-writing-dot,
+html[data-theme="gris"] .file-item-dot.is-analyzing-dot,
 html[data-theme="azul"] .file-item-dot.is-writing-dot,
+html[data-theme="azul"] .file-item-dot.is-analyzing-dot,
 html[data-theme="negro"] .file-item.is-writing .file-item-dot,
+html[data-theme="negro"] .file-item.is-analyzing .file-item-dot,
 html[data-theme="gris"] .file-item.is-writing .file-item-dot,
-html[data-theme="azul"] .file-item.is-writing .file-item-dot {
+html[data-theme="gris"] .file-item.is-analyzing .file-item-dot,
+html[data-theme="azul"] .file-item.is-writing .file-item-dot,
+html[data-theme="azul"] .file-item.is-analyzing .file-item-dot {
   background: #38bdf8 !important;
   box-shadow: 0 0 0 2.5px rgba(56, 189, 248, 0.45), 0 0 12px rgba(56, 189, 248, 0.9) !important;
 }

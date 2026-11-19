@@ -414,6 +414,10 @@ function stripTextToolMarkup(text) {
   for (const [inicio, fin] of spansJson) {
     out = out.slice(0, inicio) + " " + out.slice(fin);
   }
+  out = out.replace(/<\s*\|\s*DSML\s*\|\s*calls>[\s\S]*?<\s*\/\s*\|\s*DSML\s*\|\s*calls>/gi, "");
+  out = out.replace(/<\s*\|\s*DSML\s*\|\s*calls>[\s\S]*$/gi, "");
+  out = out.replace(/<\s*\|\s*DSML\s*\|[^>]*>[\s\S]*?<\s*\/\s*\|\s*DSML\s*\|[^>]*>/gi, "");
+  out = out.replace(/<\/?\s*\|\s*DSML\s*\|[^>]*>/gi, "");
   out = out.replace(/<\|tool_call\|>[\s\S]*?<\|tool_call\|>/gi, "");
   // Gemma sin cierre (stream cortado): se corta la cola entera.
   out = out.replace(/<\|tool_call\|>[\s\S]*$/i, "");
