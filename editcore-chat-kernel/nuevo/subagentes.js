@@ -21,13 +21,37 @@ const { ejecutarTurno } = require("./turno");
 const MAX_PASOS_SUBAGENTE = 6;
 const TIMEOUT_DEFECTO_MS = 60000;
 
+function construirPromptSubagente(tarea, permitidas) {
+  const listaHerramientas = permitidas.size ? [...permitidas].join(", ") : "ninguna (solo análisis)";
+  const puedeEscribir = [...permitidas].some((h) => /write|replace|delete|create_/.test(h));
+
+  return `<subagente_editcore>
+<rol>Subagente de EditCoreAI. Rol: ${tarea.rol}.</rol>
+<coordinador>Tu único interlocutor es el Agente Coordinador de EditCoreAI. No hables directamente con el usuario final ni pidas datos sensibles.</coordinador>
+<responsabilidad_unica>
+Trabajar exclusivamente en el encargo asignado sin solaparte con otros agentes ni asumir funciones ajenas.
+</responsabilidad_unica>
+<limites>
+- NUNCA te salgas del alcance asignado a tu rol: ${tarea.rol}.
+- ${puedeEscribir ? "Aplica únicamente modificaciones atómicas autorizadas dentro del ámbito asignado." : "NUNCA intentes escribir, modificar ni eliminar archivos. Tu rol es estrictamente de lectura y diagnóstico."}
+- NUNCA uses herramientas fuera de las autorizadas explícitamente en tu perfil.
+- NUNCA inventes resultados, código ni rutas: todo hallazgo debe basarse en evidencia real obtenida de las herramientas.
+</limites>
+<herramientas_autorizadas>${listaHerramientas}</herramientas_autorizadas>
+<control_de_calidad>
+Un trabajo bien hecho exige: máxima concisión, certeza comprobada con herramientas y reporte sin divagaciones.
+</control_de_calidad>
+<entrega>
+Trabaja solo en tu encargo y cierra con un informe breve y concreto (máximo 300 palabras): qué encontraste o qué aplicaste, con la evidencia.
+</entrega>
+</subagente_editcore>`;
+}
+
 async function correrSubagente(tarea, { llamarModelo, ejecutarHerramienta }) {
   const permitidas = new Set(Array.isArray(tarea.herramientas) ? tarea.herramientas : []);
+  const systemPrompt = construirPromptSubagente(tarea, permitidas);
   const mensajes = [
-    {
-      role: "system",
-      content: `Subagente de EditCoreAI. Rol: ${tarea.rol}. Trabaja solo en tu encargo y cierra con un informe breve y concreto: qué encontraste o qué aplicaste, con la evidencia.`,
-    },
+    { role: "system", content: systemPrompt },
     { role: "user", content: String(tarea.instruccion || "") },
   ];
   let llamadas = 0;
@@ -56,7 +80,8 @@ async function correrSubagente(tarea, { llamarModelo, ejecutarHerramienta }) {
       } catch (err) {
         r = { ok: false, resumen: String(err?.message || err).slice(0, 200) };
       }
-      mensajes.push({ role: "tool", nombre, content: String(r?.resumen || (r?.ok === false ? "fallo" : "ok")) });
+      const resumenAcotado = String(r?.resumen || (r?.ok === false ? "fallo" : "ok")).slice(0, 1500);
+      mensajes.push({ role: "tool", nombre, content: resumenAcotado });
     }
   }
   return { entrego: false, motivoNoEntrega: "sin_informe", llamadas, tokens };
