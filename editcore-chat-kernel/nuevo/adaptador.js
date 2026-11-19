@@ -271,7 +271,7 @@ function crearLlamarModelo({ callChat, perfil, definiciones, projectRoot, onText
           if (primerMs !== null) return;
           contadorLatidos += 1;
           const segs = contadorLatidos * Math.round(Number(latidoMs) / 1000);
-          try { onAviso(`Procesando consulta (${segs}s): el modelo está generando la respuesta…`); } catch { /* avisar nunca tumba el turno */ }
+          try { onAviso(`Pensando… (${segs}s)`); } catch { /* avisar nunca tumba el turno */ }
         }, Number(latidoMs));
         latido.unref?.();
       }
@@ -387,7 +387,7 @@ function crearLlamarModelo({ callChat, perfil, definiciones, projectRoot, onText
   };
 }
 
-function crearEjecutarHerramienta({ execute, root, helpers, onActividad = null }) {
+function crearEjecutarHerramienta({ execute, root, helpers, onActividad = null, onToolProgress = null }) {
   const readCache = new Map();
   // Narración en vivo del turno: cada herramienta ejecutada deja
   // UNA línea en la superficie por el canal de narración — la
@@ -421,9 +421,33 @@ function crearEjecutarHerramienta({ execute, root, helpers, onActividad = null }
       return { ok: false, resumen: "Turno detenido: la herramienta no se ejecutó." };
     }
     const normPath = String(args?.path || "").trim().replace(/\\/g, "/").toLowerCase();
+    if (typeof onToolProgress === "function") {
+      try {
+        onToolProgress({
+          phase: "tool",
+          name: nombre,
+          input: args || {},
+          stage: "running",
+          path: args?.path || args?.filePath || args?.command || "",
+        });
+      } catch { /* ignore */ }
+    }
     if (nombre === "read_file" && normPath && readCache.has(normPath)) {
       const cached = readCache.get(normPath);
       narrar(nombre, args, true, `${cached.resumen} (desde caché de lectura)`);
+      if (typeof onToolProgress === "function") {
+        try {
+          onToolProgress({
+            phase: "tool",
+            name: nombre,
+            input: args || {},
+            ok: true,
+            stage: "done",
+            path: args?.path || "",
+            result: { ok: true, resumen: cached.resumen },
+          });
+        } catch { /* ignore */ }
+      }
       return { ok: true, resumen: cached.resumen, cacheHit: true };
     }
     if (normPath && (nombre === "write_file" || nombre === "replace_in_file")) {
@@ -435,9 +459,35 @@ function crearEjecutarHerramienta({ execute, root, helpers, onActividad = null }
     } catch (err) {
       const resumenErr = String(err?.message || err).slice(0, 300);
       narrar(nombre, args, false, resumenErr);
+      if (typeof onToolProgress === "function") {
+        try {
+          onToolProgress({
+            phase: "tool",
+            name: nombre,
+            input: args || {},
+            ok: false,
+            stage: "done",
+            path: args?.path || args?.filePath || args?.command || "",
+            error: resumenErr,
+          });
+        } catch { /* ignore */ }
+      }
       return { ok: false, resumen: resumenErr };
     }
     const ok = r?.ok !== false;
+    if (typeof onToolProgress === "function") {
+      try {
+        onToolProgress({
+          phase: "tool",
+          name: nombre,
+          input: args || {},
+          ok,
+          stage: "done",
+          path: args?.path || args?.filePath || args?.command || "",
+          result: r,
+        });
+      } catch { /* ignore */ }
+    }
     // Listados: el modelo recibe un texto determinista con los
     // conteos PRIMERO (no un JSON cortado a 2.000 caracteres del
     // que tenga que adivinar el total), y el dato estructurado
@@ -681,6 +731,7 @@ async function manejarChatNuevo(input, deps = {}) {
     root: input.projectRoot || process.cwd(),
     helpers: input.helpers || {},
     onActividad: typeof deps.onActividad === "function" ? deps.onActividad : null,
+    onToolProgress: typeof deps.onToolProgress === "function" ? deps.onToolProgress : null,
   });
 
   const tMemoria = Date.now();

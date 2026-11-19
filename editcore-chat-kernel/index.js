@@ -198,6 +198,10 @@ async function handleChat(input = {}) {
             if (!texto) return;
             try { input.onProgress({ phase: "narration", text: texto, index: indiceDelta++ }); } catch { /* ignore */ }
           },
+          onToolProgress: (toolEvt) => {
+            if (!toolEvt) return;
+            try { input.onProgress({ ...toolEvt, index: indiceDelta++ }); } catch { /* ignore */ }
+          },
         } : {}),
         construirMemoria: (inputN) => construirMemoria(inputN, helpers),
         onRespuestaCruda: (info) => registro.anotar({ tipo: "respuesta_proveedor", ...info }),
