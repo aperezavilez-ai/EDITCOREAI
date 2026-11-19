@@ -74,11 +74,11 @@ if (mismatches.length) {
   throw new Error(`ASAR corrupto o inconsistente: ${mismatches.slice(0, 20).join(", ")}`);
 }
 
-// Candado de release: nunca publicar un ASAR sin el hotfix path / chrome Chat.
+// Candado de release: nunca publicar un ASAR sin el kernel de chat / chrome Chat.
 {
-  const orchPacked = asar.extractFile(archivePath, "editcore-chat-kernel/orchestrator.js").toString("utf8");
-  if (!/const path = require\(["']path["']\)/.test(orchPacked)) {
-    throw new Error("ASAR inválido: falta require('path') en orchestrator.js");
+  const kernelPacked = asar.extractFile(archivePath, "editcore-chat-kernel/index.js").toString("utf8");
+  if (!/manejarChatNuevo/.test(kernelPacked)) {
+    throw new Error("ASAR inválido: falta manejarChatNuevo en editcore-chat-kernel/index.js");
   }
   const htmlPacked = asar.extractFile(archivePath, "index.html").toString("utf8");
   const topPacked = (htmlPacked.match(/chat-home-top-actions[\s\S]*?<\/div>/) || [""])[0];
