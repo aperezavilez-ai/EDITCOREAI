@@ -59,186 +59,107 @@
     return "";
   }
 
-  // Modelos estables conocidos (fallback si no hay catalogo amplio).
+  // Modelos estables conocidos (catálogo oficial depurado de 6 modelos de élite).
   const AUTO_SAFE_MODEL_PATTERNS = [
-    /claude-opus/i,
     /claude-sonnet/i,
+    /claude-opus/i,
     /claude-haiku/i,
-    /qwen3/i,
-    /glm-5/i,
-    /deepseek-v4/i,
-    /kimi-k2/i,
-    /minimax-m/i,
-    /step-3/i,
-    /mimo-v2/i,
+    /deepseek-v4-pro/i,
+    /qwen3\.6-plus/i,
+    /glm-5\.2/i,
   ];
 
   const TIER_SCORES = [
-    ["claude-opus-5", 100],
-    ["claude-opus-4.8", 98],
-    ["claude-opus-4.7", 96],
-    ["claude-opus-4.6", 94],
-    ["claude-opus", 92],
-    ["claude-sonnet-5", 90],
-    ["claude-sonnet-4.6", 88],
-    ["claude-sonnet", 85],
-    ["deepseek-v4-pro", 75],
-    ["deepseek-v4", 70],
-    ["qwen3.6-plus", 68],
-    ["qwen3.6", 65],
-    ["qwen3.5", 60],
-    ["kimi-k2.6", 58],
-    ["glm-5.2", 55],
-    ["glm-5", 50],
-    ["claude-haiku-4.5", 48],
-    ["claude-haiku", 45],
-    ["minimax-m3", 42],
-    ["step-3.7-flash", 40],
+    ["claude-opus-4.8", 100],
+    ["claude-sonnet-4.6", 96],
+    ["deepseek-v4-pro", 85],
+    ["qwen3.6-plus", 80],
+    ["glm-5.2", 75],
+    ["claude-haiku-4.5", 70],
   ];
 
   // ---------------------------------------------------------------------------
-  // CATALOGO EXPLICITO: cada modelo tiene un trabajo. Auto NO pelea por "el mejor".
-  // Clasifica la tarea → toma el carril del rol → rota least-used SOLO dentro del carril.
+  // CATALOGO EXPLICITO: los 6 modelos oficiales de élite para EditCoreAI.
   // ---------------------------------------------------------------------------
   const MODEL_DUTY_CATALOG = [
-    // ME AI (22 modelos oficiales de la cuenta)
-    { id: "meai/claude-opus-5.5", family: "claude", duty: "verify+hard-implement", purpose: "Auditorias criticas, arquitectura, maximo razonamiento." },
-    { id: "meai/claude-opus-5-5", family: "claude", duty: "verify+hard-implement", purpose: "Auditorias criticas, arquitectura, maximo razonamiento (alias)." },
-    { id: "meai/claude-opus-5", family: "claude", duty: "verify+hard-implement", purpose: "Auditorias y razonamiento avanzado." },
-    { id: "meai/claude-opus-4.8", family: "claude", duty: "verify+hard-implement", purpose: "Auditorias criticas, refactors dificiles, cierre de plan con tools." },
-    { id: "meai/claude-opus-4-8", family: "claude", duty: "verify+hard-implement", purpose: "Auditorias criticas, refactors dificiles (alias)." },
-    { id: "meai/claude-sonnet-5.5", family: "claude", duty: "implement+analyze", purpose: "Agente principal de ultima generacion." },
-    { id: "meai/claude-sonnet-5-5", family: "claude", duty: "implement+analyze", purpose: "Agente principal de ultima generacion (alias)." },
-    { id: "meai/claude-sonnet-5", family: "claude", duty: "implement+analyze", purpose: "Implementacion avanzada con tools." },
-    { id: "meai/claude-sonnet-4.6", family: "claude", duty: "implement+analyze", purpose: "Agente principal: editar codigo, analizar runtime, reportes con tools." },
-    { id: "meai/claude-sonnet-4-6", family: "claude", duty: "implement+analyze", purpose: "Agente principal: editar codigo, analizar runtime (alias)." },
-    { id: "meai/claude-haiku-4.5", family: "claude", duty: "chat+fast-analyze", purpose: "Chat rapido y analisis ligero de bajo costo." },
-    { id: "meai/claude-haiku-4-5", family: "claude", duty: "chat+fast-analyze", purpose: "Chat corto y analisis rapido de bajo costo (alias)." },
-    { id: "meai/deepseek-v4-pro", family: "deepseek", duty: "implement-alt", purpose: "Implementacion con razonamiento matematico y logico." },
-    { id: "meai/deepseek-v4-flash", family: "deepseek", duty: "fast-analyze", purpose: "Analisis rapido de logs y diagnostico." },
-    { id: "meai/deepseek-v4", family: "deepseek", duty: "reserve", purpose: "Reserva de desarrollo general." },
-    { id: "meai/qwen3.6-plus", family: "qwen", duty: "implement-alt", purpose: "Alternativa de implementacion cuando Claude ya se uso." },
-    { id: "meai/qwen3.6", family: "qwen", duty: "implement-alt", purpose: "Implementacion general alternativa." },
-    { id: "meai/qwen3.5", family: "qwen", duty: "chat+alt", purpose: "Chat y soporte rapido." },
-    { id: "meai/glm-5.2", family: "glm", duty: "implement-alt", purpose: "Alternativa moderna de implementacion." },
-    { id: "meai/minimax-m2.5", family: "minimax", duty: "chat+fast-analyze", purpose: "Chat veloz y lectura rapida." },
-    { id: "meai/kimi-k2.6", family: "kimi", duty: "implement-alt", purpose: "Razonamiento e implementacion alternativa." },
-    { id: "meai/step-3.7-flash", family: "step", duty: "chat", purpose: "Chat instantaneo de soporte." },
-    { id: "meai/mimo-v2.5", family: "mimo", duty: "chat", purpose: "Chat ligero de asistencia." },
+    { id: "meai/claude-sonnet-4.6", family: "claude", duty: "implement+analyze", purpose: "Agente principal de desarrollo: escribir código, editar y ejecutar herramientas con máxima precisión." },
+    { id: "meai/claude-opus-4.8", family: "claude", duty: "verify+hard-implement", purpose: "Auditorías críticas, arquitectura compleja y máximo razonamiento lógico." },
+    { id: "meai/claude-haiku-4.5", family: "claude", duty: "chat+fast-analyze", purpose: "Chat conversacional rápido, preguntas conceptuales y consultas inmediatas." },
+    { id: "meai/deepseek-v4-pro", family: "deepseek", duty: "implement-alt", purpose: "Razonamiento lógico-matemático y desarrollo backend alternativo." },
+    { id: "meai/qwen3.6-plus", family: "qwen", duty: "implement-alt", purpose: "Alternativa full-stack potente para desarrollo web y frontend." },
+    { id: "meai/glm-5.2", family: "glm", duty: "implement-alt", purpose: "Modelo robusto de soporte y desarrollo general." },
   ];
 
   /**
    * Carriles por rol. Orden = prioridad de USO (no score).
-   * Auto elige el primer carril con modelos disponibles y rota ahi.
-   * primary pelea entre si por least-used; secondary/reserve NO compiten con primary.
+   * Auto elige el primer carril con modelos disponibles y rota ahí.
    */
   const ROLE_LANES = {
     build: {
-      purpose: "Crear un producto desde cero (greenfield: app/web/SaaS/landing). La corrida más larga y la que define la calidad percibida: solo modelos fuertes, sin rotación por uso.",
-      primary: [
-        /claude-opus/,
-        /claude-sonnet-5/,
-        /claude-sonnet-4/,
-        /claude-fable/,
-        /gpt-5\.6-terra/,
-        /grok-4\.5/,
-      ],
-      secondary: [/qwen3\.6-plus/, /kimi-k2\.6/, /glm-5/],
-      reserve: [/deepseek-v4-pro/],
-      forbid: [/claude-haiku/, /gemini-2\.5-flash/, /gpt-5\.6-luna/, /gpt-5\.6-sol/, /minimax/, /deepseek-v4-flash/, /qwen3\.5/],
+      purpose: "Crear un producto desde cero (greenfield: app/web/SaaS/landing). Solo modelos de máxima capacidad.",
+      primary: [/claude-sonnet/, /claude-opus/],
+      secondary: [/deepseek-v4/, /qwen3/],
+      reserve: [/glm-5/],
+      forbid: [/claude-haiku/, /kimi/, /minimax/, /step/, /mimo/],
     },
     implement: {
       purpose: "Crear/editar/arreglar codigo con write_file y tools.",
-      primary: [
-        /claude-sonnet-4/,
-        /claude-sonnet-5/,
-        /claude-fable/,
-        /claude-opus/,
-        /gpt-5\.6-terra/,
-        /grok-4\.5/,
-        /qwen3\.6-plus/,
-      ],
-      secondary: [/kimi-k2\.6/, /glm-5/, /grok-4\.3/],
-      reserve: [/deepseek-v4-pro/],
-      forbid: [/gpt-5\.6-sol/, /gemini-2\.5-flash/],
+      primary: [/claude-sonnet/, /claude-opus/, /qwen3/],
+      secondary: [/deepseek-v4/, /glm-5/],
+      reserve: [],
+      forbid: [/claude-haiku/, /kimi/, /minimax/, /step/, /mimo/],
     },
     analyze: {
       purpose: "Leer, diagnosticar, planear, reportes (sin mutar o antes de PROCEDE).",
-      primary: [
-        /claude-sonnet/,
-        /claude-fable/,
-        /grok-4\.3/,
-        /gemini-2\.5-flash/,
-        /gpt-5\.6-luna/,
-        /qwen3\.6-plus/,
-        /glm-5/,
-      ],
-      secondary: [/claude-haiku/, /grok-4\.5/, /kimi-k2\.6/, /claude-opus/],
-      reserve: [/deepseek-v4/],
-      forbid: [/gpt-5\.6-sol/],
+      primary: [/claude-sonnet/, /claude-haiku/, /qwen3/, /glm-5/],
+      secondary: [/deepseek-v4/, /claude-opus/],
+      reserve: [],
+      forbid: [/kimi/, /minimax/, /step/, /mimo/],
     },
     chat: {
-      purpose: "Mensajes cortos sin tools de proyecto.",
-      primary: [
-        /gpt-5\.6-luna/,
-        /gemini-2\.5-flash/,
-        /grok-4\.3/,
-        /kimi-k2\.6/,
-        /glm-5/,
-        /qwen3\.6-plus/,
-        /claude-haiku/,
-      ],
-      secondary: [/claude-sonnet/, /claude-fable/],
-      reserve: [/deepseek-v4/, /gpt-5\.6-sol/],
-      forbid: [/claude-opus/, /gpt-5\.6-terra/],
+      purpose: "Mensajes cortos de conversación, dudas o consultas conceptuales.",
+      primary: [/claude-haiku/, /qwen3/, /glm-5/],
+      secondary: [/claude-sonnet/, /deepseek-v4/],
+      reserve: [/claude-opus/],
+      forbid: [/kimi/, /minimax/, /step/, /mimo/],
     },
     verify: {
       purpose: "Auditoria, seguridad, produccion, go/no-go.",
-      primary: [
-        /claude-opus/,
-        /claude-fable/,
-        /gpt-5\.6-sol/,
-        /grok-4\.5/,
-        /claude-sonnet/,
-        /gpt-5\.6-terra/,
-        /qwen3\.6-plus/,
-      ],
-      secondary: [/grok-4\.3/, /kimi-k2\.6/, /glm-5/],
-      reserve: [/deepseek-v4-pro/],
-      forbid: [/claude-haiku/, /gemini-2\.5-flash/, /gpt-5\.6-luna/],
+      primary: [/claude-opus/, /claude-sonnet/, /deepseek-v4/],
+      secondary: [/qwen3/, /glm-5/],
+      reserve: [],
+      forbid: [/claude-haiku/, /kimi/, /minimax/, /step/, /mimo/],
     },
   };
 
   // Compat: ROLE_FIT derivado del catalogo (tests / scoreModelForAuto legacy).
   const ROLE_FIT = {
     build: [
-      [/claude-opus|claude-fable|claude-sonnet-5|claude-sonnet-4|gpt-5\.6-terra|grok-4\.5/i, 100],
-      [/qwen3\.6-plus|kimi-k2\.6|glm-5/i, 70],
-      [/deepseek-v4-pro/i, 40],
-      [/claude-haiku|gemini-2\.5-flash|gpt-5\.6-luna|gpt-5\.6-sol|minimax|deepseek-v4-flash|qwen3\.5/i, 0],
+      [/claude-opus|claude-sonnet/i, 100],
+      [/deepseek-v4|qwen3/i, 70],
+      [/glm-5/i, 50],
+      [/claude-haiku|kimi|minimax|step|mimo/i, 0],
     ],
     implement: [
-      [/claude-opus|claude-fable|claude-sonnet-5|claude-sonnet-4|gpt-5\.6-terra|grok-4\.5|qwen3\.6-plus/i, 100],
-      [/kimi-k2\.6|glm-5|grok-4\.3/i, 70],
-      [/deepseek-v4/i, 40],
-      [/claude-haiku|gemini-2\.5-flash|gpt-5\.6-luna/i, 30],
+      [/claude-sonnet|claude-opus|deepseek-v4|qwen3/i, 100],
+      [/glm-5/i, 70],
+      [/claude-haiku|kimi|minimax|step|mimo/i, 0],
     ],
     analyze: [
-      [/claude-sonnet|claude-fable|claude-haiku|grok-4\.3|gemini-2\.5-flash|gpt-5\.6-luna|qwen3\.6-plus/i, 100],
-      [/grok-4\.5|kimi-k2\.6|glm-5|claude-opus/i, 70],
-      [/deepseek-v4/i, 40],
-      [/gpt-5\.6-terra|gpt-5\.6-sol/i, 35],
+      [/claude-sonnet|claude-haiku|qwen3|glm-5/i, 100],
+      [/deepseek-v4|claude-opus/i, 70],
+      [/kimi|minimax|step|mimo/i, 0],
     ],
     chat: [
-      [/claude-haiku|gpt-5\.6-luna|gemini-2\.5-flash|grok-4\.3|kimi-k2\.6/i, 100],
-      [/glm-5|qwen3\.6-plus|claude-sonnet|claude-fable|deepseek-v4|gpt-5\.6-sol/i, 70],
-      [/claude-opus|gpt-5\.6-terra|grok-4\.5/i, 30],
+      [/claude-haiku|qwen3|glm-5/i, 100],
+      [/claude-sonnet|deepseek-v4/i, 70],
+      [/claude-opus/i, 30],
+      [/kimi|minimax|step|mimo/i, 0],
     ],
     verify: [
-      [/claude-opus|claude-fable|gpt-5\.6-sol|grok-4\.5|claude-sonnet|gpt-5\.6-terra/i, 100],
-      [/grok-4\.3|qwen3\.6-plus|kimi-k2\.6|glm-5/i, 70],
-      [/deepseek-v4/i, 40],
-      [/claude-haiku|gemini-2\.5-flash|gpt-5\.6-luna/i, 20],
+      [/claude-opus|claude-sonnet|deepseek-v4/i, 100],
+      [/qwen3|glm-5/i, 70],
+      [/claude-haiku|kimi|minimax|step|mimo/i, 0],
     ],
   };
   const ROLE_SCORE_BAND = 28;

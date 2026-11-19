@@ -94,3 +94,24 @@ test("turno CONSULTA: el modelo emite <tool_code> y la herramienta SÍ se ejecut
   assert.equal(out.text, "La carpeta scratch contiene a.txt.");
   assert.ok(!/tool_code/.test(out.text));
 });
+
+test("marcado DSML se parsea como tool call y se retira del texto visible", () => {
+  const dsmlText = "Revisando el repositorio...\n"
+    + "< | DSML | calls>\n"
+    + "< | DSML | invoke name=\"run_command\">\n"
+    + "< | DSML | parameter name=\"command\">git status< / | DSML | parameter>\n"
+    + "< / | DSML | invoke>\n"
+    + "< / | DSML | calls>";
+
+  assert.ok(TOOL_MARKUP_START_RE.test(dsmlText));
+  const calls = parseTextToolCalls(dsmlText, { projectRoot: RAIZ });
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].function.name, "run_command");
+  const args = JSON.parse(calls[0].function.arguments);
+  assert.equal(args.command, "git status");
+
+  const visible = stripTextToolMarkup(dsmlText);
+  assert.equal(visible, "Revisando el repositorio...");
+  assert.ok(!/DSML|calls|invoke|parameter/.test(visible));
+});
+

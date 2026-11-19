@@ -46,28 +46,14 @@ const PROVIDER_MODELS = {
   ],
 };
 
-// ME AI: catálogo completo soportado para EditCore
+// ME AI: catálogo oficial y depurado para EditCoreAI (6 modelos de élite)
 const MEAI_PROVIDER_MODELS = [
-  "qwen3.6-plus",
-  "claude-sonnet-5",
-  "deepseek-v4-flash",
-  "mimo-v2.5",
-  "minimax-m2.5",
-  "deepseek-v4-pro",
-  "glm-5.2",
-  "qwen3.5",
-  "claude-opus-5-5",
-  "claude-sonnet-5.5",
-  "claude-haiku-4.5",
   "claude-sonnet-4.6",
-  "claude-opus-5.5",
-  "claude-opus-5",
-  "qwen3.6",
-  "claude-sonnet-5-5",
-  "kimi-k2.6",
-  "claude-haiku-4-5",
-  "deepseek-v4",
-  "step-3.7-flash",
+  "claude-opus-4.8",
+  "claude-haiku-4.5",
+  "deepseek-v4-pro",
+  "qwen3.6-plus",
+  "glm-5.2",
 ];
 PROVIDER_MODELS.meai = MEAI_PROVIDER_MODELS;
 

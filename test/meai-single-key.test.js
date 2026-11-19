@@ -13,8 +13,8 @@ test("todos los modelos ME AI usan la clave de claude-sonnet-4.6", () => {
     "editcore-providers": { meai: { apiKey: "sk-vieja" } },
     "editcore-provider-profiles": [
       { id: "meai:claude-sonnet-4.6", providerKey: "meai", model: "claude-sonnet-4.6", apiKey: "sk-buena", status: "active" },
-      { id: "meai:glm-5", providerKey: "meai", model: "glm-5", apiKey: "sk-otra", status: "active" },
-      { id: "meai:kimi-k2.6", providerKey: "meai", model: "kimi-k2.6", apiKey: "", status: "" },
+      { id: "meai:glm-5.2", providerKey: "meai", model: "glm-5.2", apiKey: "sk-otra", status: "active" },
+      { id: "meai:qwen3.6-plus", providerKey: "meai", model: "qwen3.6-plus", apiKey: "", status: "" },
     ],
   });
   assert.equal(changed, true);

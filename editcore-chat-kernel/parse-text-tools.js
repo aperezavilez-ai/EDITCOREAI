@@ -50,7 +50,7 @@ const NATIVE = [
 const TOOL_TAG_NAMES = [...new Set([...NATIVE, ...Object.keys(ALIAS)])];
 
 /** Marca el inicio de protocolo tool/XML/JSON que no debe verse en el chat. */
-const TOOL_MARKUP_START_RE = /<\|tool_call\|>|<(?:dots_function_call|tool_code|tool_call|tool_use|tool_invocation|function_calls?|function\s*=|parameter\s*=|invoke\b)\b|<\/?(?:dots_function_call|tool_code|tool_call|tool_use|function|parameter)\b|```(?:json|xml)?\s*\n\s*\{\s*"(?:tool|function)"\s*:|```(?:json|xml)?\s*\n\s*\{\s*"name"\s*:[^}]*?"(?:args|arguments|input|parameters)"\s*:|\{\s*"(?:tool|function)"\s*:/i;
+const TOOL_MARKUP_START_RE = /<\s*\|\s*DSML\b|<\|tool_call\|>|<(?:dots_function_call|tool_code|tool_call|tool_use|tool_invocation|function_calls?|function\s*=|parameter\s*=|invoke\b)\b|<\/?(?:dots_function_call|tool_code|tool_call|tool_use|function|parameter)\b|```(?:json|xml)?\s*\n\s*\{\s*"(?:tool|function)"\s*:|```(?:json|xml)?\s*\n\s*\{\s*"name"\s*:[^}]*?"(?:args|arguments|input|parameters)"\s*:|\{\s*"(?:tool|function)"\s*:/i;
 
 function normalizeToolName(name) {
   const raw = String(name || "").trim().toLowerCase().replace(/[-\s]+/g, "_");
@@ -344,6 +344,20 @@ function parseTextToolCalls(text, { projectRoot } = {}) {
         pushCall(calls, m[1], args, projectRoot);
       }
     }
+  }
+
+  // Formato DSML (Kimi/DSML): < | DSML | calls>< | DSML | invoke name="tool">< | DSML | parameter name="param">value</ | DSML | parameter></ | DSML | invoke></ | DSML | calls>
+  const dsmlRe = /<\s*\|\s*DSML\s*\|\s*invoke\s+name\s*=\s*["']?([^"'>\s]+)["']?\s*>([\s\S]*?)<\s*\/\s*\|\s*DSML\s*\|\s*invoke\s*>/gi;
+  while ((m = dsmlRe.exec(src))) {
+    const rawName = m[1];
+    const body = m[2];
+    const args = {};
+    const paramRe = /<\s*\|\s*DSML\s*\|\s*parameter\s+name\s*=\s*["']?([^"'>\s]+)["']?\s*>([\s\S]*?)<\s*\/\s*\|\s*DSML\s*\|\s*parameter\s*>/gi;
+    let pm;
+    while ((pm = paramRe.exec(body))) {
+      assignArg(args, pm[1], pm[2].trim());
+    }
+    pushCall(calls, rawName, args, projectRoot);
   }
 
   // Formato dots_function_call: <dots_function_call><invoke name="grep"><parameter name="pattern">...</parameter></invoke></dots_function_call>

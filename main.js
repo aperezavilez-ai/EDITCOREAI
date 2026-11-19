@@ -4307,42 +4307,14 @@ function gatewayModelsFromPayload(payload) {
   return expandGatewayCatalogModels([...new Set(rows.map((item) => String(item?.id || item?.name || item || "").trim()).filter(Boolean))]);
 }
 
-// ME AI: catálogo completo soportado para EditCore
+// ME AI: catálogo oficial y depurado para EditCoreAI (6 modelos de élite)
 const MEAI_GATEWAY_MODELS = [
-  "claude-opus-5.5",
-  "claude-opus-5-5",
-  "claude-opus-5",
-  "claude-opus-4.8",
-  "claude-opus-4-8",
-  "claude-opus-4.7",
-  "claude-opus-4-7",
-  "claude-opus-4.7-thinking",
-  "claude-opus-4.6",
-  "claude-opus-4-6",
-  "claude-opus-4.6-thinking",
-  "claude-sonnet-5.5",
-  "claude-sonnet-5-5",
-  "claude-sonnet-5",
   "claude-sonnet-4.6",
-  "claude-sonnet-4-6",
+  "claude-opus-4.8",
   "claude-haiku-4.5",
-  "claude-haiku-4-5",
-  "claude-haiku-4-5-20251001",
   "deepseek-v4-pro",
-  "deepseek-v4-flash",
-  "deepseek-v4",
   "qwen3.6-plus",
-  "qwen3.6",
-  "qwen3.5",
   "glm-5.2",
-  "glm-5.1",
-  "glm-5",
-  "kimi-k2.6",
-  "minimax-m3",
-  "minimax-m2.7",
-  "minimax-m2.5",
-  "step-3.7-flash",
-  "mimo-v2.5",
 ];
 
 const BLOCKED_GATEWAY_MODELS = [
@@ -4393,18 +4365,25 @@ function scrubGatewayFromSecureState() {
     secure["editcore-custom-providers"] = cleanedProviders;
     changed = true;
   }
+  const ALLOWED_MEAI = new Set(MEAI_GATEWAY_MODELS);
   const rawProfiles = Array.isArray(secure["editcore-provider-profiles"]) ? secure["editcore-provider-profiles"] : [];
-  const cleanedProfiles = rawProfiles.filter((profile) => !isGatewayResidueProfile(profile));
+  const cleanedProfiles = rawProfiles.filter((profile) => {
+    if (isGatewayResidueProfile(profile)) return false;
+    if (profile && profile.providerKey === "meai") {
+      return ALLOWED_MEAI.has(String(profile.model || "").trim().toLowerCase());
+    }
+    return true;
+  });
   if (cleanedProfiles.length !== rawProfiles.length) {
     secure["editcore-provider-profiles"] = cleanedProfiles;
     changed = true;
   }
   const chat = secure["editcore-chat-config"];
-  if (chat && (isGatewayResidueProfile(chat) || String(chat.baseUrl || "").toLowerCase().includes("gafcore-gateway"))) {
+  if (chat && (isGatewayResidueProfile(chat) || String(chat.baseUrl || "").toLowerCase().includes("gafcore-gateway") || (chat.providerKey === "meai" && !ALLOWED_MEAI.has(String(chat.model || "").trim().toLowerCase())))) {
     const fallback = cleanedProfiles.find((profile) =>
       profile.providerKey === "meai"
       && profile.apiKey
-      && profile.model,
+      && ALLOWED_MEAI.has(profile.model),
     ) || cleanedProfiles.find((profile) => profile.apiKey && profile.model);
     if (fallback) {
       secure["editcore-chat-config"] = {

@@ -55,12 +55,22 @@ function pickMeaiKey(provider = {}, profiles = []) {
   return "";
 }
 
+const ALLOWED_MEAI_MODELS = new Set([
+  "claude-sonnet-4.6",
+  "claude-opus-4.8",
+  "claude-haiku-4.5",
+  "deepseek-v4-pro",
+  "qwen3.6-plus",
+  "glm-5.2",
+]);
+
 function dedupeMeaiProfiles(profiles) {
   const byModel = new Map();
   const out = [];
   for (const p of profiles) {
     if (!p || p.providerKey !== MEAI_KEY) { out.push(p); continue; }
     const model = String(p.model || "").trim().toLowerCase();
+    if (!ALLOWED_MEAI_MODELS.has(model)) continue; // Solo conservar los 6 modelos de élite
     const prev = byModel.get(model);
     if (prev === undefined) { byModel.set(model, out.length); out.push(p); continue; }
     if (!ACTIVE_STATUSES.has(out[prev].status) && ACTIVE_STATUSES.has(p.status)) out[prev] = p;
@@ -107,7 +117,8 @@ function unifyMeaiSecureState(input) {
   const chat = state["editcore-chat-config"];
   if (chat && typeof chat === "object") {
     const next = { ...chat };
-    if (HIDDEN_PROVIDER_KEYS.includes(next.providerKey)) {
+    const currentModel = String(next.model || "").trim().toLowerCase();
+    if (HIDDEN_PROVIDER_KEYS.includes(next.providerKey) || (next.providerKey === MEAI_KEY && !ALLOWED_MEAI_MODELS.has(currentModel))) {
       Object.assign(next, {
         providerKey: MEAI_KEY,
         providerProfileId: `${MEAI_KEY}:${MEAI_DEFAULT_MODEL}`,

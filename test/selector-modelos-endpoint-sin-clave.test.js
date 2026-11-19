@@ -76,12 +76,12 @@ const PROVEEDOR_LOCAL = {
   enabledModels: ["editcore-base-0.1"],
 };
 const PERFIL_MEAI = {
-  id: "meai:kimi-k2.6",
+  id: "meai:claude-sonnet-4.6",
   providerKey: "meai",
   providerName: "ME AI Cloud",
   baseUrl: "https://api.meai.cloud/v1",
   apiKey: "clave-del-proxy",
-  model: "kimi-k2.6",
+  model: "claude-sonnet-4.6",
   status: "active",
 };
 
@@ -100,7 +100,7 @@ test("el modelo del endpoint sin clave APARECE en las dos listas del chat", () =
 test("el catálogo ME AI sigue intacto junto al endpoint local", () => {
   const listas = construirListas({ profiles: [PERFIL_LOCAL, PERFIL_MEAI], customProviders: [PROVEEDOR_LOCAL] });
   const modelos = listas.catalogChatModelOptions().map((e) => e.model).sort();
-  assert.equal(JSON.stringify(modelos), JSON.stringify(["editcore-base-0.1", "kimi-k2.6"]));
+  assert.equal(JSON.stringify(modelos), JSON.stringify(["claude-sonnet-4.6", "editcore-base-0.1"]));
 });
 
 test("la compuerta de envío no exige clave a un perfil verificado sin clave", () => {

@@ -31,21 +31,11 @@ const options = profiles.map((profile) => ({
 function sixteenModelProfiles() {
   const meai = [
     "meai/claude-sonnet-4.6",
-    "meai/claude-sonnet-5",
     "meai/claude-haiku-4.5",
     "meai/claude-opus-4.8",
-    "meai/claude-opus-4.7",
-    "meai/claude-opus-5",
     "meai/qwen3.6-plus",
-    "meai/qwen3.6",
     "meai/glm-5.2",
-    "meai/glm-5",
-    "meai/kimi-k2.6",
     "meai/deepseek-v4-pro",
-    "meai/deepseek-v4-flash",
-    "meai/minimax-m3",
-    "meai/step-3.7-flash",
-    "meai/mimo-v2.5",
   ];
   return meai.map((model, index) => ({
     id: `p${index}`,
@@ -381,7 +371,7 @@ test("Auto alterna de familia en el siguiente turno (Qwen a Claude ME AI)", () =
 test("Auto rota modelos ME AI del mismo carril (chat primary)", () => {
   const meaiProfiles = [
     { id: "m1", providerKey: "custom:gafcore-gateway", model: "meai/claude-haiku-4.5", status: "active", apiKey: "k1" },
-    { id: "m2", providerKey: "custom:gafcore-gateway", model: "meai/kimi-k2.6", status: "active", apiKey: "k1" },
+    { id: "m2", providerKey: "custom:gafcore-gateway", model: "meai/qwen3.6-plus", status: "active", apiKey: "k1" },
     { id: "m3", providerKey: "custom:gafcore-gateway", model: "meai/claude-opus-4.8", status: "active", apiKey: "k1" },
   ];
   const meaiOptions = meaiProfiles.map((profile) => ({
@@ -394,8 +384,8 @@ test("Auto rota modelos ME AI del mismo carril (chat primary)", () => {
     isAgent: false,
     usesProjectTools: false,
   });
-  // Chat primary = haiku/kimi; opus esta prohibido en chat.
-  assert.match(first?.model || "", /haiku|kimi/i);
+  // Chat primary = haiku/qwen; opus esta prohibido en chat.
+  assert.match(first?.model || "", /haiku|qwen/i);
   assert.doesNotMatch(first?.model || "", /opus/i);
   const second = AutoModel.resolveAutoModelProfile(meaiOptions, meaiProfiles, {
     prompt: "hola",
@@ -404,7 +394,7 @@ test("Auto rota modelos ME AI del mismo carril (chat primary)", () => {
     lastAutoResolvedModel: first?.model || "",
     autoModelUsage: AutoModel.bumpModelUsage({}, first?.model || ""),
   });
-  assert.match(second?.model || "", /haiku|kimi/i);
+  assert.match(second?.model || "", /haiku|qwen/i);
   assert.notEqual(first?.model, second?.model);
 });
 
@@ -490,13 +480,13 @@ test("Auto clasifica roles tipo Cursor y rota aptos por tarea", () => {
   assert.ok(byRole.implement.every((m) => !/deepseek/i.test(m) || /sonnet|opus|qwen/.test(m)));
   assert.ok(byRole.implement.some((m) => /sonnet|opus|qwen/i.test(m)));
   assert.ok(byRole.analyze.some((m) => /sonnet|haiku|qwen|glm/i.test(m)));
-  assert.ok(byRole.chat.some((m) => /haiku|kimi|glm|qwen/i.test(m)));
+  assert.ok(byRole.chat.some((m) => /haiku|glm|qwen/i.test(m)));
   assert.ok(byRole.chat.every((m) => !/claude-opus/i.test(m)), "chat no debe usar opus");
-  assert.ok(new Set([...byRole.implement, ...byRole.analyze, ...byRole.chat]).size >= 6, "pocos modelos distintos entre roles");
+  assert.ok(new Set([...byRole.implement, ...byRole.analyze, ...byRole.chat]).size >= 4, "pocos modelos distintos entre roles");
 });
 
 test("Catalogo explicito: implement usa carril primario, no pelea con DeepSeek", () => {
-  assert.ok(Array.isArray(AutoModel.MODEL_DUTY_CATALOG) && AutoModel.MODEL_DUTY_CATALOG.length >= 10);
+  assert.ok(Array.isArray(AutoModel.MODEL_DUTY_CATALOG) && AutoModel.MODEL_DUTY_CATALOG.length >= 6);
   assert.ok(AutoModel.ROLE_LANES?.implement?.primary?.length >= 3);
   // El catálogo ya solo trae filas del gateway único.
   assert.ok(AutoModel.MODEL_DUTY_CATALOG.every((row) => row.id.startsWith("meai/")));
@@ -589,6 +579,6 @@ test("Auto rota con least-used en el pool ME AI ampliado", () => {
   assert.equal(usage.meai, turns);
   assert.deepEqual(Object.keys(usage), ["meai"]);
   // Carril implement primario: Claude/Qwen — sin DeepSeek (reserva).
-  assert.ok(new Set(picked).size >= 4, `pocos modelos distintos: ${new Set(picked).size} -> ${picked.join(", ")}`);
+  assert.ok(new Set(picked).size >= 3, `pocos modelos distintos: ${new Set(picked).size} -> ${picked.join(", ")}`);
   assert.ok(picked.every((model) => !/deepseek/i.test(model)), "DeepSeek no pertenece al carril primario de implement");
 });
