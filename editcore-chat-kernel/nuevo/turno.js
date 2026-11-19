@@ -91,17 +91,14 @@ async function ejecutarTurno({ texto, llamarModelo, ejecutarHerramienta, herrami
     ? { carril: carrilForzado, herramientas: carrilForzado === "ORDEN" ? "completa" : "ninguna", puedeEscribir: carrilForzado === "ORDEN", motivo: "ejecucion_autorizada" }
     : decidirTurno(texto, contextoDesdeHistorial(historial));
   const carril = decision.carril;
-  // Capacidad estructural: con proyecto abierto, el turno
-  // ofrece el set completo y el presupuesto de ORDEN sea cual
-  // sea la etiqueta textual; el carril REPORTADO se promueve
-  // a ORDEN solo si el turno actuó (ejecutó herramientas o
-  // anunció trabajo y hubo que corregirlo) — una pregunta
-  // respondida sin herramientas sigue reportando CONVERSACION.
-  const conCapacidad = conHerramientas === true && !carrilForzado;
-  const presupuesto = conCapacidad ? PRESUPUESTOS.ORDEN : PRESUPUESTOS[carril];
-  const herramientasDelCarril = conCapacidad || presupuesto.herramientas === null
+  // Regla de arquitectura en dos fases:
+  // - CONVERSACION y PROPUESTA: CERO herramientas. El modelo responde al instante como humano.
+  // - CONSULTA: Solo herramientas de lectura dirigida para ubicar código.
+  // - ORDEN: Set completo de ejecución solo cuando el turno es ORDEN (autorizado).
+  const presupuesto = PRESUPUESTOS[carril] || PRESUPUESTOS.CONVERSACION;
+  const herramientasDelCarril = carril === "ORDEN"
     ? herramientasCompletas.slice()
-    : presupuesto.herramientas.slice();
+    : (carril === "CONSULTA" ? (presupuesto.herramientas || []).slice() : []);
   const permitidas = new Set(herramientasDelCarril);
 
   const mensajes = [];
@@ -345,7 +342,7 @@ async function ejecutarTurno({ texto, llamarModelo, ejecutarHerramienta, herrami
   const SOLO_LECTURA = new Set(["list_files", "read_file", "search_files", "read_pdf", "read_url", "search_web"]);
   const ejecutoAccion = hechos.aplicados.length > 0
     || hechos.pasos.some((paso) => !paso.denegada && !SOLO_LECTURA.has(paso.nombre));
-  const carrilReportado = conCapacidad && (ejecutoAccion || anuncioCorregido)
+  const carrilReportado = (carril === "ORDEN" || carrilForzado === "ORDEN")
     ? "ORDEN"
     : carril;
   const resumen = resumenDeHechos({ carril: carrilReportado, hechos, tokensUsados, llamadas, presupuestoAgotado, respuestaParcial, respuestaContinuada, trabajoSimuladoDetectado: trabajoSimuladoCorregido, tiempos });

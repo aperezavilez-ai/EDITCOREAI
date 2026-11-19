@@ -701,8 +701,9 @@ async function manejarChatNuevo(input, deps = {}) {
     mensajeEfectivo,
     contextoDesdeHistorial(input.history || input.messages || []),
   );
+  const esPreguntaReal = clasificacion.motivo === "pregunta" || /[¿?]/.test(mensajeEfectivo);
   const fuerzaOrden = ejecucionAutorizada
-    && (esEnlatado || clasificacion.carril !== "CONVERSACION");
+    && (esEnlatado || !esPreguntaReal);
   const carrilPrevisto = fuerzaOrden ? "ORDEN" : clasificacion.carril;
   const llamarModelo = crearLlamarModelo({
     callChat,
@@ -710,11 +711,7 @@ async function manejarChatNuevo(input, deps = {}) {
     definiciones,
     projectRoot: input.projectRoot || process.cwd(),
     onTextDelta: typeof deps.onTextDelta === "function" ? deps.onTextDelta : null,
-    // Con proyecto abierto el tope de salida es el de ORDEN
-    // (sin tope): el turno puede emitir llamadas a herramientas
-    // grandes y un tope de «conversación» las truncaría a mitad
-    // de JSON — la capacidad estructural manda también aquí.
-    maxTokens: input.projectRoot ? 0 : (TOPE_SALIDA_POR_CARRIL[carrilPrevisto] || 0),
+    maxTokens: TOPE_SALIDA_POR_CARRIL[carrilPrevisto] || 0,
     onAviso: typeof deps.onAviso === "function" ? deps.onAviso : null,
     ...(Number(deps.latidoMs) > 0 ? { latidoMs: Number(deps.latidoMs) } : {}),
     onRespuestaCruda: typeof deps.onRespuestaCruda === "function" ? deps.onRespuestaCruda : null,
@@ -752,10 +749,7 @@ async function manejarChatNuevo(input, deps = {}) {
 
   const resultado = await ejecutarTurno({
     ...(fuerzaOrden ? { carrilForzado: "ORDEN" } : {}),
-    // Capacidad estructural: hay proyecto abierto — el turno
-    // ofrece el set completo de herramientas decida lo que
-    // decida la forma del texto (ver turno.js).
-    conHerramientas: Boolean(input.projectRoot),
+    conHerramientas: (carrilPrevisto === "ORDEN" || carrilPrevisto === "CONSULTA") && Boolean(input.projectRoot),
     texto: mensajeEfectivo,
     llamarModelo,
     ejecutarHerramienta,

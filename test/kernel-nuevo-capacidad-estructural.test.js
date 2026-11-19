@@ -55,13 +55,13 @@ test("el detector de anuncio reconoce la promesa exacta del registro y respeta l
   assert.equal(anunciaTrabajoSinEjecutar("La capital de Francia es París."), false);
 });
 
-test("LA ORDEN DEL REGISTRO: con proyecto, el anuncio se corrige en el acto y el turno ejecuta", async () => {
+test("LA ORDEN DEL REGISTRO: con autorización y proyecto, el anuncio se corrige en el acto y el turno ejecuta", async () => {
   const capturas = [];
   const out = await manejarChatNuevo(
-    { ...BASE, projectRoot: "/tmp/x", message: ORDEN_SAAS },
+    { ...BASE, projectRoot: "/tmp/x", message: ORDEN_SAAS, planAuthorizedExecution: true },
     depsConGuion([TEXTO(ANUNCIO_REGISTRO), LLAMADA_LIST, TEXTO(REPORTE_EXISTENCIA)], capturas),
   );
-  assert.ok(capturas[0].herramientasOfrecidas > 0, "la orden recibió herramientas aunque su texto clasifica CONVERSACION");
+  assert.ok(capturas[0].herramientasOfrecidas > 0, "la orden autorizada recibe herramientas para ejecutar");
   assert.equal(capturas.length, 3, "anuncio → corrección → ejecución → reporte");
   assert.equal(out.kind, "ORDEN");
   assert.ok(out.steps.length >= 1, "la exploración ocurrió de verdad");
@@ -71,7 +71,7 @@ test("LA ORDEN DEL REGISTRO: con proyecto, el anuncio se corrige en el acto y el
 test("si tras la corrección el modelo SOLO vuelve a anunciar, el turno se reporta ORDEN sin aplicar nada", async () => {
   const capturas = [];
   const out = await manejarChatNuevo(
-    { ...BASE, projectRoot: "/tmp/x", message: ORDEN_SAAS },
+    { ...BASE, projectRoot: "/tmp/x", message: ORDEN_SAAS, planAuthorizedExecution: true },
     depsConGuion([TEXTO(ANUNCIO_REGISTRO), TEXTO(ANUNCIO_REGISTRO)], capturas),
   );
   assert.equal(capturas.length, 2, "una sola corrección, ni un bucle");
@@ -79,7 +79,7 @@ test("si tras la corrección el modelo SOLO vuelve a anunciar, el turno se repor
   assert.deepEqual(out.mutations, []);
 });
 
-test("una PREGUNTA con proyecto abierto se responde como conversación (con herramientas ofrecidas, sin usarlas)", async () => {
+test("una PREGUNTA con proyecto abierto se responde como conversación (CERO herramientas ofrecidas, respuesta inmediata)", async () => {
   const capturas = [];
   const out = await manejarChatNuevo(
     { ...BASE, projectRoot: "/tmp/x", message: "cual es la capital de francia?" },
@@ -87,7 +87,7 @@ test("una PREGUNTA con proyecto abierto se responde como conversación (con herr
   );
   assert.equal(out.kind, "CONVERSACION");
   assert.equal(capturas.length, 1, "sin correcciones: responder no anuncia trabajo");
-  assert.ok(capturas[0].herramientasOfrecidas > 0, "la capacidad estaba sobre la mesa; el modelo decidió responder");
+  assert.equal(capturas[0].herramientasOfrecidas, 0, "CERO herramientas para preguntas: respuesta directa sin pensar ni explorar");
   assert.match(out.text, /París/);
 });
 
