@@ -41,24 +41,7 @@ function missingDependencies(root, pkg = {}) {
     return declared.slice();
   }
 
-  // Ruta robusta: hay lockfile interno → usarlo como fuente de verdad.
-  if (fs.existsSync(internalLock)) {
-    try {
-      const lock = JSON.parse(fs.readFileSync(internalLock, "utf8"));
-      const packages = lock && typeof lock === "object" ? (lock.packages || {}) : {};
-      const missing = [];
-      for (const name of declared) {
-        const key = `node_modules/${name}`;
-        if (!packages[key]) missing.push(name);
-      }
-      return missing;
-    } catch {
-      // Lockfile corrupto → tratar como instalación inválida.
-      return declared.slice();
-    }
-  }
-
-  // Fallback (sin lockfile interno): existencia de carpeta individual.
+  // Verificación real en disco: comprobar si la carpeta de la dependencia existe en node_modules
   return declared.filter((name) => !fs.existsSync(dependencyPath(root, name)));
 }
 

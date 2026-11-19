@@ -25,7 +25,7 @@ test("F1: planAuthorized anula NO MODIFICAR en authorize", () => {
   // fullAccess y planAuthorizedExecution ligados a permissionHint "full".
   const agentRun = mainSource.slice(mainSource.indexOf('ipcMain.handle("agent:run"'));
   assert.match(agentRun, /fullAccess: permissionHint === "full"/);
-  assert.match(agentRun, /planAuthorizedExecution: permissionHint === "full"/);
+  assert.match(agentRun, /planAuthorizedExecution:\s*input\.planAuthorized/);
 });
 
 test("F1b: authorizedPlanExecutionPrompt anula diagnostico y evita .md basura", () => {

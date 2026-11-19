@@ -179,7 +179,7 @@ async function ejecutarTurno({ texto, llamarModelo, ejecutarHerramienta, herrami
       // el volcado vuelve como contexto y la orden es escribirlo
       // con write_file en la raíz. Si insiste, el cierre (cierre.js)
       // impide que el código llegue al chat y declara la verdad.
-      if (!pedidos.length && herramientasDelCarril.length && (carril === "ORDEN" || conCapacidad)
+      if (!pedidos.length && herramientasDelCarril.length && carril === "ORDEN"
         && !volcadoCorregido && esVolcadoDeCodigo(textoFinal)) {
         volcadoCorregido = true;
         correcciones += 1;
@@ -217,9 +217,7 @@ async function ejecutarTurno({ texto, llamarModelo, ejecutarHerramienta, herrami
         mensajes.push({ role: "assistant", content: textoFinal });
         mensajes.push({
           role: "user",
-          // Con la capacidad sobre la mesa, la corrección es la
-          // de ORDEN (ejecutar ahora) sea cual sea la etiqueta.
-          content: conCapacidad ? correccionPorCarril.ORDEN : (correccionPorCarril[carril] || correccionPorCarril.ORDEN),
+          content: carril === "ORDEN" ? correccionPorCarril.ORDEN : (correccionPorCarril[carril] || correccionPorCarril.ORDEN),
         });
         textoFinal = "";
         continue;

@@ -83,7 +83,7 @@ test("C3: PROCEDE ejecuta, no reabre analisis", () => {
   // planAuthorizedExecution ligado a Acceso completo (no reabre análisis).
   const agentRunC3 = mainSource.slice(mainSource.indexOf('ipcMain.handle("agent:run"'));
   assert.match(agentRunC3, /handleChatKernel\(\{/);
-  assert.match(agentRunC3, /planAuthorizedExecution: permissionHint === "full"/);
+  assert.match(agentRunC3, /planAuthorizedExecution:\s*input\.planAuthorized/);
   assert.match(rendererSource, /planAuthorizedExecution[\s\S]{0,80}isAgentAuthorization/);
 });
 

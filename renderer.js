@@ -9561,8 +9561,8 @@ function addAgentNarration(thinkingItem, text) {
   const value = humanizeAgentNarration(stripAgentToolXml(String(text || ""))).trim();
   if (!thinkingItem || !value) return;
   if (looksLikeAgentToolDump(text) && value.length < 8) return;
-  // Líneas de acción del orquestador: actualizar actividad en vivo sin ensuciar la caja de pensamiento
-  if (/^[⚙️🔍📂✓○→✗]/.test(value) || /^(Creando|Editando|Leyendo|Verificando|Explorando)\b/i.test(value)) {
+  // Líneas de acción del orquestador y avisos de progreso: actualizar actividad en vivo sin ensuciar la caja de pensamiento ni la prosa
+  if (/^[⚙️🔍📂✓○→✗]/.test(value) || /^(Creando|Editando|Leyendo|Verificando|Explorando|Procesando|Sigo en ello)\b/i.test(value)) {
     setAgentLiveActivity(thinkingItem, value);
     thinkingItem._thoughtLiveBlock = null;
     return;

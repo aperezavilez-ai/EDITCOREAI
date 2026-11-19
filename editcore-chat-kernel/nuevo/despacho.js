@@ -30,6 +30,11 @@ const RE_PEDIDO_AMABLE = /\b(?:puedes|podr[ií]as|necesito\s+que|quiero\s+que|te
 // Verbo de trabajo al inicio del mensaje (imperativo directo).
 const RE_ORDEN_INICIO = /^\s*(?:por\s+favor\s+)?(?:corr[ií]j\w*|corrig\w*|arregl\w*|repar\w*|solucion\w*|implement\w*|aplic\w*|crea(?:r|me|lo|la)?\b|cre[aá]\b|genera(?:r)?\b|gener[aá]\b|escrib\w*|modific\w*|actualiz\w*|agreg\w*|a[ñn]ad\w*|elimin\w*|borr\w*|public\w*|despleg\w*|ejecut\w*|reemplaz\w*|haz(?:me|lo|la)?\b|constru\w*|instal\w*|configur\w*|sigue\b|contin[uú]a\b)/i;
 
+// Verbo de orden directa en cualquier parte del mensaje (imperativo
+// no precedido de «se»: «porque hay una carpeta... corrije ese nombre»,
+// «hay un error, arréglalo», «elimina la carpeta tmp»).
+const RE_ORDEN_DIRECTA = /(?<!\bse\s+)\b(?:corr[ií]j\w*|corrig\w*|arregl\w*|repar\w*|solucion\w*|renombr\w*|elimin\w*|borr\w*|instal\w*|constru\w*)\b/i;
+
 // Pedido de un producto de trabajo: «hazme/quiero/dame … análisis/informe/…».
 // [v5.2.7 — corrección] «dame el resumen en pdf» caía fuera: ni
 // «resumen» ni los formatos de documento estaban en la lista, el
@@ -105,6 +110,9 @@ function decidirTurno(texto, contexto = {}) {
   }
   if (RE_LISTADO.test(t) || (RE_CONSULTA_LOCALIZA.test(t) && RE_ENTIDAD_CODIGO.test(t))) {
     return { carril: "CONSULTA", herramientas: "lectura-dirigida", puedeEscribir: false, motivo: "consulta_de_codigo" };
+  }
+  if (RE_ORDEN_DIRECTA.test(t)) {
+    return { carril: "ORDEN", herramientas: "completa", puedeEscribir: true, motivo: "orden_directa" };
   }
   const esPregunta = /[¿?]/.test(t) || RE_INTERROGATIVA.test(t) || RE_PREGUNTA_META.test(t) || RE_RECLAMO.test(t);
   if (esPregunta) {

@@ -185,7 +185,7 @@ async function handleChat(input = {}) {
           onAviso: (textoAviso) => {
             const texto = String(textoAviso || "").trim();
             if (!texto) return;
-            try { input.onProgress({ phase: "narration", text: texto, index: indiceDelta++ }); } catch { /* ignore */ }
+            try { input.onProgress({ phase: "model", text: texto, index: indiceDelta++ }); } catch { /* ignore */ }
           },
         } : {}),
         // Actividad del turno (una línea por herramienta

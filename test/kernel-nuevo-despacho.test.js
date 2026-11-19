@@ -37,6 +37,9 @@ const CASOS = [
   // --- CONSULTA: lectura dirigida, nunca explorador sobre la raíz ---
   ["¿dónde está la función getUserMediaWithTimeout en el código?", "CONSULTA"],
   ["lista los archivos de src", "CONSULTA"],
+  // Casos reales capturados en vivo (2026-11-19):
+  ["PORQUE NO SE VISUALIZA EL PROYECTO FALTA ALGO?", "CONVERSACION"],
+  ["PORQUE EXISTE UNA CARPETA EN LA CARPETA DE RAIZ CON OTRO NOMBRE QUE NO ES EL PROYECTO CORRIJE ESE NOMBRE", "ORDEN"],
 ];
 
 for (const [texto, esperado] of CASOS) {
