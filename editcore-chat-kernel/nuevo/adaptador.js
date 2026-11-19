@@ -160,6 +160,8 @@ function crearLlamarModelo({ callChat, perfil, definiciones, projectRoot, onText
     // — jamás se pinta. Sin filtro, el marcado crudo se veía en
     // el chat en vivo aunque el texto final ya viniera limpio.
     const APERTURAS_DELTA = [
+      { re: /<\s*\|\s*DSML\s*\|\s*calls>/i, cierre: /<\s*\/\s*\|\s*DSML\s*\|\s*calls>/i },
+      { re: /<\s*\/?\s*\|\s*DSML\b[^>]*>/i, cierre: />/ },
       { re: /<\|tool_call\|>/, cierre: /<\|tool_call\|>/ },
       { re: /<tool_code>/, cierre: /<\/tool_code>/ },
       { re: /<tool_call>/, cierre: /<\/tool_call>/ },
@@ -664,20 +666,9 @@ async function manejarChatNuevo(input, deps = {}) {
   // decidirTurno es determinista, así que ambas decisiones coinciden
   // siempre.
   const textoCrudo = String(input.message || "");
-  // El texto enlatado del flujo de análisis («AUTORIZACION DE
-  // EJECUCION (PROCEDE): …») SOLO lo produce la ruta autorizada
-  // del renderer: su sola presencia ya es la autorización como
-  // dato, aunque la bandera no hubiera llegado.
   const esEnlatado = /^\s*AUTORIZACION DE EJECUCION \(PROCEDE\)/.test(textoCrudo);
-  const ejecucionAutorizada = input.planAuthorizedExecution === true || esEnlatado;
-  // Mensaje efectivo: el enlatado NO llega al modelo. Trae un
-  // plan guardado fuera de la conversación que secuestraba el
-  // turno (en «sistemas contino» mandaba al agente a construir
-  // sobre rental-equipment-saas cuando lo aprobado en el hilo
-  // era otro SaaS en la raíz). La conversación manda: el modelo
-  // recibe la orden de ejecutar lo acordado en el hilo, con la
-  // petición original del usuario — la única parte del enlatado
-  // que es suya — como referencia.
+  const esAprobacionCorta = /^\s*(?:s[ií][,.]?\s*)?(?:procede|adelante|hazlo|dale|va|autorizo)\b/i.test(textoCrudo.trim());
+  const ejecucionAutorizada = input.planAuthorizedExecution === true || esEnlatado || esAprobacionCorta;
   let mensajeEfectivo = textoCrudo;
   if (esEnlatado) {
     const seccion = (re) => {
@@ -690,21 +681,30 @@ async function manejarChatNuevo(input, deps = {}) {
       "El usuario autorizó con «procede» lo acordado en esta conversación. Ejecuta AHORA con herramientas, en la raíz del proyecto abierto, lo propuesto y aprobado en los mensajes anteriores de este hilo; la conversación manda sobre cualquier plan guardado fuera de ella.",
       tarea ? `La petición original del usuario fue:\n${tarea}` : "",
     ].filter(Boolean).join("\n\n");
+  } else if (esAprobacionCorta) {
+    mensajeEfectivo = "El usuario autorizó con «procede» lo propuesto en el mensaje anterior. Ejecuta AHORA con herramientas, directamente sobre los archivos relevantes en la raíz del proyecto abierto, las acciones concretas acordadas. No hagas exploraciones a ciegas ni corras comandos innecesarios.";
   }
-  // La autorización fuerza ORDEN solo sobre lo que no es una
-  // pregunta: si el clasificador dice CONVERSACION (pregunta o
-  // conversación), el turno se responde como conversación
-  // aunque el flag venga puesto — una pregunta no se
-  // «ejecuta». El enlatado queda fuera de esta guarda: ÉL es
-  // la autorización y su mensaje efectivo ya es la orden.
+
   const clasificacion = decidirTurno(
     mensajeEfectivo,
     contextoDesdeHistorial(input.history || input.messages || []),
   );
-  const esPreguntaReal = clasificacion.motivo === "pregunta" || /[¿?]/.test(mensajeEfectivo);
-  const fuerzaOrden = ejecucionAutorizada
-    && (esEnlatado || !esPreguntaReal);
-  const carrilPrevisto = fuerzaOrden ? "ORDEN" : clasificacion.carril;
+  const esPreguntaReal = clasificacion.motivo === "pregunta" || /[¿?]/.test(textoCrudo);
+
+  let carrilPrevisto;
+  if (esPreguntaReal) {
+    carrilPrevisto = "CONVERSACION";
+  } else if (ejecucionAutorizada) {
+    carrilPrevisto = "ORDEN";
+  } else if (clasificacion.carril === "ORDEN") {
+    // Si no hay autorización explícita ("procede") ni flag de ejecución autorizada,
+    // el pedido de trabajo entra como PROPUESTA: el agente explica qué entendió,
+    // propone los cambios en la raíz y pregunta "¿Deseas que proceda con estos cambios?" sin tocar archivos.
+    carrilPrevisto = "PROPUESTA";
+  } else {
+    carrilPrevisto = clasificacion.carril;
+  }
+  const fuerzaOrden = carrilPrevisto === "ORDEN";
   const llamarModelo = crearLlamarModelo({
     callChat,
     perfil,
@@ -763,7 +763,7 @@ async function manejarChatNuevo(input, deps = {}) {
 
   return {
     ok: true,
-    text: cierre.voz,
+    text: stripTextToolMarkup(cierre.voz),
     vozOriginal: cierre.vozOriginal,
     detalle: cierre.detalle,
     cierreCorregida: cierre.corregida,

@@ -748,7 +748,7 @@ function publishAgentProgress(sender, payload = {}) {
   let safePayload = typeof clipMutationProgressForUi === "function"
     ? clipMutationProgressForUi(payload)
     : (payload || {});
-  if (safePayload && typeof safePayload.text === "string" && /<(?:dots_function_call|invoke\b|parameter\b|tool_call|tool_use)\b/i.test(safePayload.text)) {
+  if (safePayload && typeof safePayload.text === "string" && /<(?:dots_function_call|invoke\b|parameter\b|tool_call|tool_use|\s*\/?\s*\|\s*DSML)\b/i.test(safePayload.text)) {
     try {
       // Convergencia: la limpieza de marcado de herramientas vive en el kernel
       // (parse-text-tools). Antes se importaba del controlador Cline, ya retirado.

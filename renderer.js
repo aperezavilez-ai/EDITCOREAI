@@ -14757,7 +14757,10 @@ async function executePromptJob(job) {
             job.stopStreamingTimer = () => 0;
           }
           accumulated = replace ? text : `${accumulated}${text}`;
-          streamBody.innerHTML = renderMarkdown(accumulated);
+          const cleanAccumulated = accumulated
+            .replace(/<\s*\/?\s*\|\s*DSML\b[^>]*>/gi, "")
+            .replace(/<\/?(?:tool_call|tool_use|tool_code|dots_function_call|invoke|parameter)\b[^>]*>/gi, "");
+          streamBody.innerHTML = renderMarkdown(cleanAccumulated);
           scrollFeedToBottom();
         });
       } catch {}
