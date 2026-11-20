@@ -95,22 +95,23 @@ class MultiAgentCoordinator:
             self.storage.add_checkpoint(task_id, "CODED", dev_result)
             self.registry.update_agent_status("agent_developer", "IDLE")
 
-            # Checkpoint 3: Code Analysis
+            # Parallel Execution: Analyst + Security + QA running concurrently
             self.registry.update_agent_status("agent_analyst", "WORKING")
-            analysis_report = await self.analyst.analyze_workspace(task_id, ws)
-            self.storage.add_checkpoint(task_id, "ANALYZED", analysis_report)
-            self.registry.update_agent_status("agent_analyst", "IDLE")
-
-            # Checkpoint 4: Security Scan
             self.registry.update_agent_status("agent_security", "WORKING")
-            security_report = await self.security.audit_workspace(task_id, ws)
-            self.storage.add_checkpoint(task_id, "AUDITED", security_report)
-            self.registry.update_agent_status("agent_security", "IDLE")
-
-            # Checkpoint 5: Quality Assurance
             self.registry.update_agent_status("agent_qa", "WORKING")
-            qa_verdict = await self.qa.inspect_and_test(task_id, ws)
+
+            analysis_report, security_report, qa_verdict = await asyncio.gather(
+                self.analyst.analyze_workspace(task_id, ws),
+                self.security.audit_workspace(task_id, ws),
+                self.qa.inspect_and_test(task_id, ws)
+            )
+
+            self.storage.add_checkpoint(task_id, "ANALYZED", analysis_report)
+            self.storage.add_checkpoint(task_id, "AUDITED", security_report)
             self.storage.add_checkpoint(task_id, "VALIDATED", qa_verdict)
+
+            self.registry.update_agent_status("agent_analyst", "IDLE")
+            self.registry.update_agent_status("agent_security", "IDLE")
             self.registry.update_agent_status("agent_qa", "IDLE")
 
             final_output = {

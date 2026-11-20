@@ -214,18 +214,29 @@ async function handleChat(input = {}) {
     registro.anotar({ tipo: "inicio_turno", mensaje: String(input.message || "").slice(0, 200) });
     try {
       if (controller.signal.aborted) return resultadoDetenido(input, runId);
+      // Saludo y atención humana inicial: acusa recibo amablemente antes de arrancar
+      const greeting = input.message && /analiz|revisa|qu[eé]\s+falta|dime|c[oó]mo\s+funciona/i.test(input.message)
+        ? "¡Hola! Con gusto te ayudo. Para darte un diagnóstico certero y claro sin modificar ningún archivo, coordino en este momento al equipo de agentes de EditCoreAI en paralelo:\n\n"
+        : "¡Hola! Entendido. Pongo en marcha al equipo de agentes de EditCoreAI para coordinar y atender tu solicitud:\n\n";
+      try { onProgress({ phase: "narration_delta", text: greeting, index: indiceDelta++ }); } catch {}
+
       const out = await manejarChatNuevo({ ...input, runId, helpers, steeringQueue: runEntry.steeringQueue }, {
         ...(typeof helpers.callChat === "function" ? { callChat: helpers.callChat } : {}),
         ...(onTextDelta ? { onTextDelta } : {}),
         onAviso: (textoAviso) => {
           const texto = String(textoAviso || "").trim();
           if (!texto) return;
-          try { onProgress({ phase: "model", text: texto, index: indiceDelta++ }); } catch {}
+          try { onProgress({ phase: "narration", text: `[Coordinador] ${texto}`, index: indiceDelta++ }); } catch {}
         },
         onActividad: (textoActividad) => {
           const texto = String(textoActividad || "").trim();
           if (!texto) return;
-          try { onProgress({ phase: "narration", text: texto, index: indiceDelta++ }); } catch {}
+          let role = "Analista";
+          if (/carpeta|directorio|listado|arbol|estructura|ruta/i.test(texto)) role = "Arquitecto";
+          else if (/seguridad|token|clave|secret|auth|permiso/i.test(texto)) role = "Seguridad";
+          else if (/test|prueba|build|tsc|lint|verific/i.test(texto)) role = "QA";
+          const formatted = texto.startsWith("[") ? texto : `[${role}] ${texto}`;
+          try { onProgress({ phase: "narration", text: formatted, index: indiceDelta++ }); } catch {}
         },
         onToolProgress: (toolEvt) => {
           if (!toolEvt) return;
