@@ -214,11 +214,6 @@ async function handleChat(input = {}) {
     registro.anotar({ tipo: "inicio_turno", mensaje: String(input.message || "").slice(0, 200) });
     try {
       if (controller.signal.aborted) return resultadoDetenido(input, runId);
-      // Saludo y atención humana inicial: acusa recibo amablemente antes de arrancar
-      const greeting = input.message && /analiz|revisa|qu[eé]\s+falta|dime|c[oó]mo\s+funciona/i.test(input.message)
-        ? "¡Hola! Con gusto te ayudo. Para darte un diagnóstico certero y claro sin modificar ningún archivo, coordino en este momento al equipo de agentes de EditCoreAI en paralelo:\n\n"
-        : "¡Hola! Entendido. Pongo en marcha al equipo de agentes de EditCoreAI para coordinar y atender tu solicitud:\n\n";
-      try { onProgress({ phase: "narration_delta", text: greeting, index: indiceDelta++ }); } catch {}
 
       const out = await manejarChatNuevo({ ...input, runId, helpers, steeringQueue: runEntry.steeringQueue }, {
         ...(typeof helpers.callChat === "function" ? { callChat: helpers.callChat } : {}),
