@@ -14,7 +14,7 @@
       "branch": "main",
       "remoteUrl": null,
       "hasLocalGit": false,
-      "lastPush": "2026-11-20T14:28:31.654Z"
+      "lastPush": "2026-11-20T15:20:03.026Z"
     },
     "vercel": {
       "projectId": null,
@@ -220,6 +220,12 @@
       "date": "2026-11-20T14:28:31.656Z",
       "action": "modified",
       "details": "git push main (5f6ec5a): feat(multiagent): bridge all 74 tools and 105 skills to multi-agent engine",
+      "by": "editcore"
+    },
+    {
+      "date": "2026-11-20T15:20:03.027Z",
+      "action": "modified",
+      "details": "git push main (0dd25ca): feat(multiagent): unify single autonomous brain (Agno + OpenHands) and cleanup legacy antecedents",
       "by": "editcore"
     }
   ],
