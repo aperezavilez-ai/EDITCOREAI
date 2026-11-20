@@ -16,6 +16,7 @@ const {
   rollbackLastChange,
   // [EDITCORE-INTEGRAL-B4] Reversión de UN archivo desde su snapshot.
   rollbackFileChange,
+  revertTurn,
   listSnapshots,
 } = require("./snapshot");
 // [EDITCORE-INTEGRAL-B4] run_command CONVERGE al runner único del kernel
@@ -446,7 +447,7 @@ function writeFile(root, rel, content, coordCtx) {
       return finish({ ok: true, unchanged: true, identicalNoop: true, path: rel, note: `${rel} ya tenía exactamente ese contenido: no se escribió nada (no-op idéntico, comprobante de escritura justa).` });
     }
   } catch { /* si no se puede leer, se escribe normal */ }
-  const snap = snapshotBeforeWrite(root, rel, "write_file");
+  const snap = snapshotBeforeWrite(root, rel, "write_file", coordCtx);
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(file, body, "utf8");
   invalidateReadCache(file);
@@ -645,7 +646,7 @@ function replaceInFile(root, rel, oldText, newText, coordCtx) {
     });
   }
 
-  const snap = snapshotBeforeWrite(root, rel, "replace_in_file");
+  const snap = snapshotBeforeWrite(root, rel, "replace_in_file", coordCtx);
   fs.writeFileSync(file, next, "utf8");
   invalidateReadCache(file);
   const out = {
@@ -888,11 +889,20 @@ async function runCommand(root, command, options = {}) {
 // revierte solo la última escritura DE ESE archivo, sin tocar otros
 // archivos modificados después. Como escritura que es, pasa por la
 // compuerta única y por la segunda capa (allowWrite en execute).
-function rollbackFileTool(root, rel) {
-  const target = String(rel || "").trim();
-  if (!target) return { ok: false, error: "rollback_last_change requiere path: el archivo cuya última escritura quieres revertir." };
-  const result = rollbackFileChange(root, target);
-  if (result?.ok) invalidateReadCache(safe(root, target));
+function rollbackFileTool(root, relOrArgs) {
+  const target = typeof relOrArgs === "string" ? relOrArgs.trim() : String(relOrArgs?.path || "").trim();
+  if (target) {
+    const result = rollbackFileChange(root, target);
+    if (result?.ok) invalidateReadCache(safe(root, target));
+    return result;
+  }
+  const turnId = typeof relOrArgs === "object" ? (relOrArgs?.turnId || relOrArgs?.snapshotId || null) : null;
+  const result = revertTurn(root, turnId);
+  if (result?.ok && Array.isArray(result.restored)) {
+    for (const restoredPath of result.restored) {
+      try { invalidateReadCache(safe(root, restoredPath)); } catch { /* ignore */ }
+    }
+  }
   return result;
 }
 
@@ -1538,13 +1548,13 @@ const DEFINITIONS = [
       // [EDITCORE-INTEGRAL-B4] Definición REAL de la herramienta que
       // classify.js ya clasificaba como escritura y self-knowledge ya
       // anunciaba: antes no existía aquí y el despacho la rechazaba.
-      description: "Revierte la ÚLTIMA escritura de UN archivo concreto restaurando su snapshot previo (cada write_file/replace_in_file guarda un snapshot antes de tocar el disco). Solo afecta a ese archivo: no deshace cambios posteriores en otros archivos. Úsala cuando el usuario pida deshacer el último cambio de un archivo en vez de reescribirlo entero.",
+      description: "Revierte escrituras restaurando sus snapshots previos. Si se especifica «path», revierte solo ese archivo concreto. Si se omite «path», revierte TODOS los archivos modificados durante el último turno (Time-Machine Revert Turn completo estilo Cursor).",
       parameters: {
         type: "object",
         properties: {
-          path: { type: "string", description: "Ruta del archivo cuya última escritura se revierte." }
-        },
-        required: ["path"]
+          path: { type: "string", description: "Opcional: ruta del archivo concreto a revertir. Si se omite, se revierte el turno multi-archivo completo." },
+          turnId: { type: "string", description: "Opcional: ID de un turno o snapshot específico a revertir." }
+        }
       }
     }
   },
@@ -2310,7 +2320,7 @@ async function execute(name, args, root, allowWrite, helpers = {}) {
       // de la compuerta en el despachador, como toda escritura.
       case "rollback_last_change":
         if (!allowWrite) return { ok: false, error: "Escritura no permitida (Modo Solo Lectura)." };
-        return rollbackFileTool(root, a.path);
+        return rollbackFileTool(root, a);
       // [EDITCORE-INTEGRAL-B4] start_preview: envuelve helpers.startPreview.
       case "start_preview":
         return await startPreviewTool(root, helpers);
@@ -2333,7 +2343,7 @@ async function execute(name, args, root, allowWrite, helpers = {}) {
         const lockBlock = acquireWriteLock(root, rel, "delete_file", coordCtx);
         if (lockBlock) return lockBlock;
         try {
-          try { snapshotBeforeWrite(root, rel, "pre-delete"); } catch { /* el snapshot es red de seguridad, no compuerta */ }
+          try { snapshotBeforeWrite(root, rel, "pre-delete", coordCtx); } catch { /* el snapshot es red de seguridad, no compuerta */ }
           fs.unlinkSync(abs);
           invalidateReadCache(rel);
           return { ok: true, path: rel.replace(/\\/g, "/"), deleted: true, note: "Archivo borrado. Su contenido quedó en snapshot: rollback_last_change puede restaurarlo." };

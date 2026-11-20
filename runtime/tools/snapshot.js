@@ -73,7 +73,7 @@ function pruneOldSnapshots(projectRoot) {
 /**
  * Crea un snapshot de uno o más archivos relativos antes de mutarlos.
  */
-function createSnapshot(projectRoot, filePaths, reason = "pre-write") {
+function createSnapshot(projectRoot, filePaths, reason = "pre-write", metadata = {}) {
   const root = path.resolve(projectRoot || "");
   if (!root || !fs.existsSync(root)) {
     return { ok: false, error: "projectRoot inválido" };
@@ -120,15 +120,18 @@ function createSnapshot(projectRoot, filePaths, reason = "pre-write") {
     reason: String(reason || "pre-write"),
     createdAt: new Date().toISOString(),
     projectRoot: root,
+    turnId: metadata?.turnId || null,
+    runId: metadata?.runId || null,
     files,
   };
   fs.writeFileSync(path.join(dir, META_NAME), `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
-  fs.writeFileSync(latestPath(root), `${JSON.stringify({ id, createdAt: manifest.createdAt, reason: manifest.reason }, null, 2)}\n`, "utf8");
+  fs.writeFileSync(latestPath(root), `${JSON.stringify({ id, createdAt: manifest.createdAt, reason: manifest.reason, turnId: manifest.turnId }, null, 2)}\n`, "utf8");
   pruneOldSnapshots(root);
 
   return {
     ok: true,
     id,
+    turnId: manifest.turnId,
     dir: path.relative(root, dir).replace(/\\/g, "/"),
     files: files.map((f) => f.path),
     createdAt: manifest.createdAt,
@@ -276,6 +279,7 @@ function listSnapshots(projectRoot, limit = 20) {
     const packed = readManifest(projectRoot, id);
     return {
       id,
+      turnId: packed?.manifest?.turnId || null,
       createdAt: packed?.manifest?.createdAt || null,
       reason: packed?.manifest?.reason || "",
       files: (packed?.manifest?.files || []).map((f) => f.path),
@@ -285,10 +289,102 @@ function listSnapshots(projectRoot, limit = 20) {
 }
 
 /**
- * Atajo: snapshot de un solo path antes de escribir.
+ * RevertTurn: Time-Machine para revertir TODOS los archivos modificados
+ * durante un turno completo (estilo "Revert Turn" de Cursor / Windsurf).
  */
-function snapshotBeforeWrite(projectRoot, relPath, reason = "pre-write") {
-  return createSnapshot(projectRoot, [relPath], reason);
+function revertTurn(projectRoot, turnId = null) {
+  const root = path.resolve(projectRoot || "");
+  if (!root) return { ok: false, error: "Falta projectRoot" };
+
+  const snapRoot = snapshotsRoot(root);
+  if (!fs.existsSync(snapRoot)) return { ok: false, error: "No hay snapshots para revertir turno." };
+
+  const dirs = fs.readdirSync(snapRoot, { withFileTypes: true })
+    .filter((e) => e.isDirectory())
+    .map((e) => e.name)
+    .sort()
+    .reverse();
+
+  if (!dirs.length) return { ok: false, error: "No hay snapshots disponibles." };
+
+  let targetTurnId = turnId ? String(turnId).trim() : null;
+  const snapshotsToRevert = [];
+
+  for (const id of dirs) {
+    const packed = readManifest(root, id);
+    if (!packed?.manifest) continue;
+
+    if (!targetTurnId) {
+      targetTurnId = packed.manifest.turnId || id;
+    }
+
+    if (packed.manifest.turnId === targetTurnId || (!packed.manifest.turnId && id === targetTurnId)) {
+      snapshotsToRevert.push(packed);
+    } else if (snapshotsToRevert.length > 0) {
+      break;
+    }
+  }
+
+  if (!snapshotsToRevert.length) {
+    const latestId = getLatestSnapshotId(root);
+    if (latestId) {
+      const packed = readManifest(root, latestId);
+      if (packed) snapshotsToRevert.push(packed);
+    }
+  }
+
+  if (!snapshotsToRevert.length) {
+    return { ok: false, error: `No se encontraron checkpoints para el turno ${targetTurnId || "reciente"}.` };
+  }
+
+  const restoredSet = new Set();
+  const deletedSet = new Set();
+
+  for (const packed of snapshotsToRevert) {
+    for (const file of packed.manifest.files || []) {
+      const rel = String(file.path || "").replace(/\\/g, "/");
+      if (!rel || rel === ".") continue;
+      let resolved;
+      try {
+        resolved = safeRel(root, rel);
+      } catch {
+        continue;
+      }
+
+      if (file.existed && file.backup) {
+        const backupAbs = path.join(packed.dir, file.backup);
+        if (fs.existsSync(backupAbs)) {
+          fs.mkdirSync(path.dirname(resolved.abs), { recursive: true });
+          fs.copyFileSync(backupAbs, resolved.abs);
+          restoredSet.add(rel);
+        }
+      } else if (!file.existed && fs.existsSync(resolved.abs)) {
+        try {
+          fs.unlinkSync(resolved.abs);
+          deletedSet.add(rel);
+        } catch { /* ignore */ }
+      }
+    }
+  }
+
+  const restored = Array.from(restoredSet);
+  const deleted = Array.from(deletedSet);
+
+  return {
+    ok: true,
+    turnId: targetTurnId,
+    snapshotsReverted: snapshotsToRevert.map((s) => s.manifest.id),
+    filesAffected: restored.length + deleted.length,
+    restored,
+    deleted,
+  };
+}
+
+/**
+ * Atajo: snapshot de un solo path antes de escribir con metadata opcional.
+ */
+function snapshotBeforeWrite(projectRoot, relPath, reason = "pre-write", metadata = {}) {
+  return createSnapshot(projectRoot, [relPath], reason, metadata);
 }
 
 module.exports = {
@@ -297,6 +393,7 @@ module.exports = {
   rollbackLastChange,
   // [EDITCORE-INTEGRAL-B4] Reversión por archivo (ver arriba).
   rollbackFileChange,
+  revertTurn,
   listSnapshots,
   getLatestSnapshotId,
   snapshotsRoot,

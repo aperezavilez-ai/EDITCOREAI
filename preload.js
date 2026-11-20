@@ -970,5 +970,6 @@ contextBridge.exposeInMainWorld("editcoreUpdates", {
 contextBridge.exposeInMainWorld("editcoreRecovery", {
   createCheckpoint: (params) => ipcRenderer.invoke("recovery:create-checkpoint", params),
   rollbackLatest: (params) => ipcRenderer.invoke("recovery:rollback-latest", params),
+  revertTurn: (params) => ipcRenderer.invoke("recovery:revert-turn", params),
   listCheckpoints: (params) => ipcRenderer.invoke("recovery:list-checkpoints", params),
 });

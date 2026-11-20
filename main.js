@@ -220,7 +220,7 @@ const { createProjectBootstrap } = require("./runtime/project-bootstrap");
 const { createSupabaseProject } = require("./runtime/supabase-provision");
 const { checkForUpdates } = require("./runtime/update-check");
 const { authManager } = require("./runtime/auth-manager");
-const { createSnapshot, rollbackLastChange, listSnapshots } = require("./runtime/tools/snapshot");
+const { createSnapshot, rollbackLastChange, rollbackFileChange, revertTurn, listSnapshots } = require("./runtime/tools/snapshot");
 const { Phase1Audit } = require("./runtime/phase1-audit");
 const { TokenLedger } = require("./runtime/token-ledger");
 // [FASE2-BORRAR B-2] El alias taskDigest sale del require: exportación fantasma.
@@ -6982,7 +6982,24 @@ ipcMain.handle("recovery:create-checkpoint", async (_event, input = {}) => {
 ipcMain.handle("recovery:rollback-latest", async (_event, input = {}) => {
   try {
     const root = String(input?.projectRoot || globalActiveWorkspacePath || app.getAppPath()).trim();
-    const res = rollbackLastChange(root, input?.snapshotId || null);
+    let res;
+    if (input?.path) {
+      res = rollbackFileChange(root, input.path);
+    } else if (input?.turnId) {
+      res = revertTurn(root, input.turnId);
+    } else {
+      res = rollbackLastChange(root, input?.snapshotId || null);
+    }
+    return { success: res.ok, result: res };
+  } catch (error) {
+    return { success: false, error: error?.message || String(error) };
+  }
+});
+
+ipcMain.handle("recovery:revert-turn", async (_event, input = {}) => {
+  try {
+    const root = String(input?.projectRoot || globalActiveWorkspacePath || app.getAppPath()).trim();
+    const res = revertTurn(root, input?.turnId || null);
     return { success: res.ok, result: res };
   } catch (error) {
     return { success: false, error: error?.message || String(error) };
