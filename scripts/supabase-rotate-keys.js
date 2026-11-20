@@ -23,7 +23,7 @@ const lib = require("./lib/supabase-keys");
 const APP_ROOT = path.resolve(__dirname, "..");
 const PROJECTS_ROOT = path.resolve(APP_ROOT, "..");
 const BACKUP_ROOT = path.join(PROJECTS_ROOT, "Z RESPALDOS", "supabase-key-rotation");
-const PUBLIC_URL = process.env.GAFCORE_SUPABASE_URL || "https://supabase.gafcore.com";
+const PUBLIC_URL = process.env.SUPABASE_URL || process.env.GAFCORE_SUPABASE_URL || "https://ycftycizdgbboojfdtkz.supabase.co";
 const PROXY_URL = process.env.GAFCORE_SUPABASE_LOCAL_URL || "http://127.0.0.1:54321";
 
 const SKIP_DIRS = new Set([

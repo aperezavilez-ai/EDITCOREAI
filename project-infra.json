@@ -4,22 +4,13 @@
   "projectSlug": "editcoreai",
   "isolationMode": "dedicated_supabase",
   "supabase": {
-    "url": "https://api-editcoreai.gafcore.com",
+    "url": "https://ycftycizdgbboojfdtkz.supabase.co",
+    "cloudRef": "ycftycizdgbboojfdtkz",
+    "projectId": "ycftycizdgbboojfdtkz",
     "localUrl": "http://127.0.0.1:55321",
     "dbPort": 55322,
     "studioPort": 55323,
-    "projectId": "editcoreai",
-    "schema": "editcoreai",
-    "sharedWithOtherProjects": false
-  },
-  "tunnel": {
-    "provider": "cloudflare",
-    "name": "gafcore-editcoreai",
-    "id": "3911918c-00f3-424b-b0f2-37bc3b392aab",
-    "container": "cloudflared_editcoreai",
-    "configDir": "%USERPROFILE%\\.cloudflared\\tunnels\\editcoreai",
-    "hostname": "api-editcoreai.gafcore.com",
-    "service": "http://host.docker.internal:55321",
+    "schema": "public",
     "sharedWithOtherProjects": false
   }
 }
