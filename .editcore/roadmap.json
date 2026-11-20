@@ -14,7 +14,7 @@
       "branch": "main",
       "remoteUrl": null,
       "hasLocalGit": false,
-      "lastPush": "2026-11-20T14:14:44.247Z"
+      "lastPush": "2026-11-20T14:28:31.654Z"
     },
     "vercel": {
       "projectId": null,
@@ -214,6 +214,12 @@
       "date": "2026-11-20T14:14:44.248Z",
       "action": "modified",
       "details": "git push main (009088b): feat(multiagent): integrate Agno + OpenHands multi-agent engine sidecar",
+      "by": "editcore"
+    },
+    {
+      "date": "2026-11-20T14:28:31.656Z",
+      "action": "modified",
+      "details": "git push main (5f6ec5a): feat(multiagent): bridge all 74 tools and 105 skills to multi-agent engine",
       "by": "editcore"
     }
   ],
