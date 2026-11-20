@@ -730,18 +730,6 @@ async function manejarChatNuevo(input, deps = {}) {
     ...(Number(deps.latidoMs) > 0 ? { latidoMs: Number(deps.latidoMs) } : {}),
     onRespuestaCruda: typeof deps.onRespuestaCruda === "function" ? deps.onRespuestaCruda : null,
   });
-  // El turno habla desde el primer segundo: la superficie narra
-  // qué se puso en marcha según el carril, en vez de un
-  // «Trabajando…» mudo hasta que el modelo entrega algo.
-  if (typeof deps.onAviso === "function") {
-    const AVISO_INICIAL = {
-      ORDEN: "Manos a la obra: ejecuto tu orden…",
-      PROPUESTA: "Preparo la propuesta…",
-      CONSULTA: "Reviso el proyecto para responderte…",
-    };
-    const avisoInicial = AVISO_INICIAL[carrilPrevisto];
-    if (avisoInicial) { try { deps.onAviso(avisoInicial); } catch { /* avisar nunca tumba el turno */ } }
-  }
   const ejecutarHerramienta = crearEjecutarHerramienta({
     execute,
     root: input.projectRoot || process.cwd(),

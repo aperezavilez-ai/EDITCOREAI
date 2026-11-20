@@ -9521,6 +9521,12 @@ function addPlanDelta(thinkingItem, text) {
 
 function humanizeAgentNarration(text) {
   let cleaned = repairMojibakeText(String(text || ""))
+    .replace(/^\[(?:Coordinador|Arquitecto|Analista|Seguridad|QA|Agente|Director)\]\s*/i, "")
+    .replace(/\((?:coordinador|arquitecto|analista|seguridad|qa|agente|director)\)\s*/gi, "")
+    .replace(/^\[[^\]]+\]\s*(?=[⚙️🔍📂✓○→✗]|\b(?:list_|read_|write_|replace_|delete_|edit_|run_|diagnose_))/i, "")
+    .replace(/\bManos a la obra:\s*ejecuto tu orden[….]*/gi, "")
+    .replace(/\bPreparo la propuesta[….]*/gi, "")
+    .replace(/\bReviso el proyecto para responderte[….]*/gi, "")
     .replace(/\bbrain_tools\b/gi, "capacidades")
     .replace(/\bbrain_search\b/gi, "memoria del proyecto")
     .replace(/\bbrain_skill\b/gi, "habilidad")
@@ -9570,8 +9576,11 @@ function addAgentNarration(thinkingItem, text) {
   if (!thinkingItem || !value) return;
   if (looksLikeAgentToolDump(text) && value.length < 8) return;
   // Líneas de acción del orquestador y avisos de progreso: actualizar actividad en vivo sin ensuciar la caja de pensamiento ni la prosa
-  if (/^[⚙️🔍📂✓○→✗]/.test(value) || /^(Creando|Editando|Leyendo|Verificando|Explorando|Procesando|Sigo en ello)\b/i.test(value)) {
-    setAgentLiveActivity(thinkingItem, value);
+  if (/^(?:\[[^\]]+\]\s*)?[⚙️🔍📂✓○→✗]/.test(value)
+    || /^(?:\[[^\]]+\]\s*)?(?:Creando|Editando|Leyendo|Verificando|Explorando|Procesando|Sigo en ello)\b/i.test(value)
+    || /^(?:\[[^\]]+\]\s*)?(?:✓|✗|\b(?:list_files|read_file|write_file|replace_in_file|run_command|diagnose_code_health)\b)/i.test(value)) {
+    const liveText = value.replace(/^\[[^\]]+\]\s*/, "").trim();
+    if (liveText) setAgentLiveActivity(thinkingItem, liveText);
     thinkingItem._thoughtLiveBlock = null;
     return;
   }

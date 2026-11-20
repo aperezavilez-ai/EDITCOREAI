@@ -116,7 +116,7 @@ async function handleChatSidecar(input, runId, onProgress) {
             const contentStr = typeof m.content === "string" ? m.content : JSON.stringify(m.content);
             onProgress({
               phase: topic,
-              text: `[${sender}] ${contentStr}`,
+              text: contentStr,
               runId
             });
           }
@@ -234,17 +234,21 @@ async function handleChat(input = {}) {
         onAviso: (textoAviso) => {
           const texto = String(textoAviso || "").trim();
           if (!texto) return;
-          try { onProgress({ phase: "narration", text: `[Coordinador] ${texto}`, index: indiceDelta++ }); } catch {}
+          // Avisos de latido o tiempo deben ir a la barra de estado sin ensuciar la burbuja del chat
+          if (/^pensando/i.test(texto) || /tiempo|intento/i.test(texto)) {
+            try { onProgress({ phase: "heartbeat", text: texto, index: indiceDelta++ }); } catch {}
+            return;
+          }
+          // Jamás prefijar roles artificiales
+          try { onProgress({ phase: "narration", text: texto, index: indiceDelta++ }); } catch {}
         },
         onActividad: (textoActividad) => {
           const texto = String(textoActividad || "").trim();
           if (!texto) return;
-          let role = "Analista";
-          if (/carpeta|directorio|listado|arbol|estructura|ruta/i.test(texto)) role = "Arquitecto";
-          else if (/seguridad|token|clave|secret|auth|permiso/i.test(texto)) role = "Seguridad";
-          else if (/test|prueba|build|tsc|lint|verific/i.test(texto)) role = "QA";
-          const formatted = texto.startsWith("[") ? texto : `[${role}] ${texto}`;
-          try { onProgress({ phase: "narration", text: formatted, index: indiceDelta++ }); } catch {}
+          // Sin roles prefabricados [Arquitecto], [Analista], [QA], [Seguridad].
+          // Se emite el texto directo (inicia con ✓ o ✗) para que el frontend lo trate como actividad
+          // en vivo en el indicador de estado sin ensuciar la burbuja del chat.
+          try { onProgress({ phase: "narration", text: texto, index: indiceDelta++ }); } catch {}
         },
         onToolProgress: (toolEvt) => {
           if (!toolEvt) return;
