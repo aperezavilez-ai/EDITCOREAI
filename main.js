@@ -5530,28 +5530,43 @@ ipcMain.handle("editor:inline-edit", async (_event, input = {}) => {
     return { ok: false, error: "ConfigurÃ¡ un modelo en Modelos antes de usar Inline Edit." };
   }
 
+  const projectRoot = String(input.projectRoot || (typeof getProjectRoot === "function" ? getProjectRoot() : "") || process.cwd()).trim();
+  const { inlineEditProvider } = require("./runtime/inline-edit-provider");
+
+  let enrichedContext = "";
+  try {
+    enrichedContext = await inlineEditProvider.enrichInlineEditPrompt({
+      filePath: relPath,
+      projectRoot,
+      selection,
+      instruction,
+      language,
+    });
+  } catch { /* resiliente */ }
+
   const system = [
-    "Sos un editor inline de cÃ³digo.",
-    "DevolvÃ©s EXCLUSIVAMENTE el cÃ³digo nuevo que reemplaza la selecciÃ³n.",
+    "Sos un editor inline de código tipo Cursor / Windsurf.",
+    "Devolvés EXCLUSIVAMENTE el código nuevo que reemplaza la selección.",
     "Reglas:",
     "- Sin markdown, sin ```, sin explicaciones, sin texto previo ni posterior.",
-    "- Sin comentarios agregados salvo que la instrucciÃ³n lo pida.",
-    "- MantenÃ© el estilo del cÃ³digo circundante (indentaciÃ³n, comillas, semicolons).",
-    "- Si la instrucciÃ³n es imposible o ambigua, devolvÃ© la selecciÃ³n sin cambios.",
-    "- PreservÃ¡ imports/exports si estÃ¡n en la selecciÃ³n.",
+    "- Sin comentarios agregados salvo que la instrucción lo pida.",
+    "- Mantené el estilo del código circundante (indentación, comillas, semicolons).",
+    "- Si la instrucción es imposible o ambigua, devolvé la selección sin cambios.",
+    "- Preservá imports/exports si están en la selección.",
   ].join("\n");
 
   const userParts = [
     `Archivo: ${relPath || "(sin path)"}`,
     `Lenguaje: ${language}`,
-    `Rango: lÃ­neas ${startLine}-${endLine}`,
+    `Rango: líneas ${startLine}-${endLine}`,
+    enrichedContext ? `\n${enrichedContext}` : "",
     before ? `\n--- CONTEXTO ANTES ---\n${before}` : "",
-    `\n--- SELECCIÃ“N A EDITAR ---\n${selection || "(cursor vacÃ­o)"}`,
-    after ? `\n--- CONTEXTO DESPUÃ‰S ---\n${after}` : "",
+    `\n--- SELECCIÓN A EDITAR ---\n${selection || "(cursor vacío)"}`,
+    after ? `\n--- CONTEXTO DESPUÉS ---\n${after}` : "",
     previousProposal ? `\n--- PROPUESTA ANTERIOR (refinar) ---\n${previousProposal}` : "",
-    `\n--- INSTRUCCIÃ“N ---\n${instruction}`,
+    `\n--- INSTRUCCIÓN ---\n${instruction}`,
     "",
-    "DevolvÃ© SOLO el cÃ³digo nuevo.",
+    "Devolvé SOLO el código nuevo.",
   ].filter(Boolean).join("\n");
 
   try {
@@ -5577,9 +5592,28 @@ ipcMain.handle("editor:inline-edit", async (_event, input = {}) => {
     proposal = proposal.replace(/^```[\w-]*\r?\n?/, "").replace(/\r?\n?```$/, "").trim();
 
     if (!proposal) {
-      return { ok: false, error: "El modelo devolviÃ³ una respuesta vacÃ­a." };
+      return { ok: false, error: "El modelo devolvió una respuesta vacía." };
     }
-    return { ok: true, proposal };
+
+    let syntaxWarning = null;
+    try {
+      const fullModified = input.fullOriginal ? inlineEditProvider.buildModifiedFull(input.fullOriginal, { startLine, endLine, selectedText: selection }, proposal) : "";
+      const syntaxResult = inlineEditProvider.validateProposalSyntax(relPath, proposal, fullModified);
+      if (!syntaxResult.valid) {
+        syntaxWarning = syntaxResult.error;
+      }
+    } catch { /* ignore */ }
+
+    let diffStats = null;
+    try {
+      const diffObj = inlineEditProvider.computeInlineDiff(selection, proposal);
+      diffStats = {
+        added: diffObj.addedCount,
+        removed: diffObj.removedCount,
+      };
+    } catch { /* ignore */ }
+
+    return { ok: true, proposal, syntaxWarning, diffStats };
   } catch (error) {
     return {
       ok: false,

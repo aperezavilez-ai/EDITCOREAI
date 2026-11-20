@@ -64,6 +64,20 @@
 .inline-edit-error {
   margin-top: 6px; color: #f87171; font-size: 12px;
 }
+.inline-edit-chips {
+  display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap;
+}
+.inline-chip {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  border-radius: 4px; color: #94a3b8; font-size: 11px;
+  padding: 2px 7px; cursor: pointer; transition: all 0.15s;
+  font-family: inherit;
+}
+.inline-chip:hover {
+  background: rgba(99, 102, 241, 0.2);
+  border-color: #6366f1; color: #e0e7ff;
+}
 .inline-edit-diff-container {
   background: #0f0f14;
   border: 1px solid rgba(255, 255, 255, 0.08);
@@ -71,9 +85,24 @@
 }
 .inline-edit-diff-host { flex: 1; min-height: 0; }
 .inline-edit-diff-actions {
-  display: flex; justify-content: flex-end; gap: 8px;
-  padding: 8px 12px; border-top: 1px solid rgba(255, 255, 255, 0.06);
-  background: rgba(20, 20, 26, 0.95);
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 8px 14px; border-top: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(20, 20, 26, 0.98);
+}
+.inline-edit-diff-meta {
+  display: flex; align-items: center; gap: 12px; font-size: 11.5px;
+}
+.inline-edit-diff-stats {
+  font-weight: 500; color: #94a3b8;
+}
+.inline-edit-diff-stats .stat-add { color: #4ade80; font-weight: 600; margin-right: 4px; }
+.inline-edit-diff-stats .stat-del { color: #f87171; font-weight: 600; }
+.inline-edit-syntax-warning {
+  background: rgba(245, 158, 11, 0.15); border: 1px solid rgba(245, 158, 11, 0.35);
+  color: #fbbf24; padding: 2px 8px; border-radius: 4px; font-size: 11px;
+}
+.inline-edit-diff-buttons {
+  display: flex; gap: 8px;
 }
 .inline-edit-btn {
   background: rgba(255, 255, 255, 0.06); color: #e2e8f0;

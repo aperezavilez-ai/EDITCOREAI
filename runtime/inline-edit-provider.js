@@ -127,6 +127,96 @@ class InlineEditProvider {
   }
 
   /**
+   * Construye el contenido del archivo completo reemplazando el rango de selección con la propuesta
+   */
+  buildModifiedFull(original = "", selection = {}, proposal = "") {
+    const lines = String(original || "").split("\n");
+    const startLine = Number(selection?.startLine || 1);
+    const endLine = Number(selection?.endLine || startLine);
+    const proposalLines = String(proposal || "").split("\n");
+
+    if (!selection?.selectedText && !String(proposal || "").trim()) {
+      return original;
+    }
+    if (!selection?.selectedText) {
+      const insertAt = Math.max(0, startLine - 1);
+      return [
+        ...lines.slice(0, insertAt),
+        ...proposalLines,
+        ...lines.slice(insertAt),
+      ].join("\n");
+    }
+    const beforeLines = lines.slice(0, Math.max(0, startLine - 1));
+    const afterLines = lines.slice(Math.max(0, endLine));
+    return [...beforeLines, ...proposalLines, ...afterLines].join("\n");
+  }
+
+  /**
+   * Enriquece la instrucción con Grafo de Código AST y menciones tipo Cursor
+   */
+  async enrichInlineEditPrompt({ filePath = "", projectRoot = "", selection = "", instruction = "", language = "" } = {}) {
+    const root = String(projectRoot || "").trim();
+    const blocks = [];
+
+    // 1. AST Code Graph para el archivo activo
+    if (root && filePath) {
+      try {
+        const { buildProjectSymbolGraph } = require("./code-graph");
+        const graph = buildProjectSymbolGraph(root, { maxFiles: 150 });
+        const fileDeps = graph.getFileDependencies(filePath);
+        if (fileDeps) {
+          const expNames = (fileDeps.exports || []).map((e) => `${e.kind} ${e.name}`).slice(0, 10);
+          const impNames = (fileDeps.imports || []).flatMap((i) => i.symbols.map((s) => s.name)).slice(0, 15);
+          if (expNames.length || impNames.length) {
+            blocks.push(
+              `--- GRAFO DE CÓDIGO AST (Contexto de dependencias) ---\n`
+              + (expNames.length ? `Símbolos definidos/exportados en este archivo: ${expNames.join(", ")}\n` : "")
+              + (impNames.length ? `Símbolos importados disponibles: ${impNames.join(", ")}\n` : "")
+            );
+          }
+        }
+      } catch { /* resiliente */ }
+    }
+
+    // 2. Menciones explícitas en la instrucción (@file:, @symbol:, @problems, etc.)
+    if (instruction && root) {
+      try {
+        const { extractMentions, resolveMentionsContext } = require("./at-mentions-resolver");
+        const mentions = extractMentions(instruction);
+        if (mentions.length > 0) {
+          const resolved = await resolveMentionsContext(mentions, root, {
+            activeSelection: selection,
+          });
+          if (resolved) blocks.push(resolved);
+        }
+      } catch { /* resiliente */ }
+    }
+
+    return blocks.filter(Boolean).join("\n\n");
+  }
+
+  /**
+   * Valida sintácticamente la propuesta con TypeScript/JSX AST para evitar errores al aplicar
+   */
+  validateProposalSyntax(filePath = "", proposal = "", fullModified = "") {
+    if (!filePath || !proposal) return { valid: true, ok: true };
+    try {
+      const { validateSyntax } = require("./syntax-validator");
+      if (fullModified) {
+        const fullCheck = validateSyntax(filePath, fullModified);
+        if (!fullCheck.valid) {
+          return { valid: false, ok: false, error: fullCheck.message, hint: fullCheck.hint };
+        }
+      }
+      const snippetCheck = validateSyntax(filePath, proposal);
+      if (!snippetCheck.valid) {
+        return { valid: false, ok: false, error: snippetCheck.message, hint: snippetCheck.hint };
+      }
+    } catch { /* ignore */ }
+    return { valid: true, ok: true };
+  }
+
+  /**
    * Genera heurísticamente una propuesta de código para Inline Edit si no hay conexión LLM
    */
   generateMockProposal(prompt = "", originalText = "") {

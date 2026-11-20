@@ -117,6 +117,14 @@
     return [...beforeLines, ...proposalLines, ...afterLines].join("\n");
   }
 
+  function escapeHtml(str = "") {
+    return String(str || "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  }
+
   async function openWidget() {
     try {
       if (typeof window.EditCoreEditor?.showCodeModeAsync === "function") {
@@ -211,7 +219,13 @@
         <button type="button" class="inline-edit-close" aria-label="Cancelar"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
       </div>
       <textarea class="inline-edit-input" rows="2"
-        placeholder="Instrucción de edición... (ej. refactoriza a TypeScript estricto)"></textarea>
+        placeholder="Instrucción de edición... ej. refactoriza a TypeScript estricto o usa @symbol:nombre"></textarea>
+      <div class="inline-edit-chips">
+        <button type="button" class="inline-chip" data-mention="@symbol:">⚡ @symbol</button>
+        <button type="button" class="inline-chip" data-mention="@file:">📄 @file</button>
+        <button type="button" class="inline-chip" data-mention="@problems">⚠️ @problems</button>
+        <button type="button" class="inline-chip" data-mention="@git">🌿 @git</button>
+      </div>
       <div class="inline-edit-footer">
         <div class="inline-edit-hints">
           <span class="hint-item"><kbd>↵</kbd> Generar</span>
@@ -238,6 +252,16 @@
     const input = widget.querySelector(".inline-edit-input");
     const btn = widget.querySelector(".inline-edit-generate");
     const closeBtn = widget.querySelector(".inline-edit-close");
+
+    // Chips de mención rápida
+    widget.querySelectorAll(".inline-chip").forEach((chip) => {
+      chip.addEventListener("click", () => {
+        const mention = chip.getAttribute("data-mention") || "";
+        const cur = input.value;
+        input.value = cur ? `${cur.trim()} ${mention}` : mention;
+        input.focus();
+      });
+    });
 
     if (state.lastInstruction) input.value = state.lastInstruction;
     input.focus();
@@ -306,6 +330,8 @@
         providerKey: creds.providerKey || "",
         apiKey: creds.apiKey || "",
         baseUrl: creds.baseUrl || "",
+        projectRoot: String(window.state?.projectRoot || "").trim(),
+        fullOriginal: state.lastSelection.fullOriginal,
       });
 
       if (reqId !== state.activeRequestId) return;
@@ -319,7 +345,7 @@
       state.generating = false;
       clearSlowTimer();
       destroyWidget();
-      showDiff(proposal);
+      showDiff(proposal, result.syntaxWarning, result.diffStats);
     } catch (err) {
       state.generating = false;
       clearSlowTimer();
@@ -338,7 +364,7 @@
     }
   }
 
-  function showDiff(proposal) {
+  function showDiff(proposal, syntaxWarning = null, diffStats = null) {
     const ctx = getEditor();
     if (!ctx) return;
     const { editor, monaco } = ctx;
@@ -362,12 +388,25 @@
     diffHost.className = "inline-edit-diff-host";
     container.appendChild(diffHost);
 
+    const statsHtml = diffStats
+      ? `<span class="inline-edit-diff-stats"><span class="stat-add">+${diffStats.added || 0}</span> <span class="stat-del">-${diffStats.removed || 0}</span> líneas</span>`
+      : "";
+    const warningHtml = syntaxWarning
+      ? `<span class="inline-edit-syntax-warning" title="${escapeHtml(syntaxWarning)}">⚠️ ${escapeHtml(syntaxWarning.slice(0, 50))}…</span>`
+      : "";
+
     const actions = document.createElement("div");
     actions.className = "inline-edit-diff-actions";
     actions.innerHTML = `
-      <button type="button" class="inline-edit-btn inline-edit-btn-reject">✗ Rechazar (Esc)</button>
-      <button type="button" class="inline-edit-btn inline-edit-btn-refine">✎ Refinar</button>
-      <button type="button" class="inline-edit-btn inline-edit-btn-accept primary">✓ Aceptar (Enter)</button>
+      <div class="inline-edit-diff-meta">
+        ${warningHtml}
+        ${statsHtml}
+      </div>
+      <div class="inline-edit-diff-buttons">
+        <button type="button" class="inline-edit-btn inline-edit-btn-reject">✗ Rechazar (Esc)</button>
+        <button type="button" class="inline-edit-btn inline-edit-btn-refine">✎ Refinar (Ctrl+K)</button>
+        <button type="button" class="inline-edit-btn inline-edit-btn-accept primary">✓ Aceptar (Enter)</button>
+      </div>
     `;
     container.appendChild(actions);
 
