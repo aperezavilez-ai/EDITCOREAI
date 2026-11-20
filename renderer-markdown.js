@@ -20,6 +20,8 @@
     ['pre', new Set(['class'])],
     ['code', new Set(['class'])],
     ['span', new Set(['class'])],
+    ['ol', new Set(['start', 'type', 'class'])],
+    ['li', new Set(['value', 'class'])],
   ]);
 
   function escapeHtml(unsafe) {
@@ -143,10 +145,10 @@
       out.push(listType === 'ul' ? '</ul>' : '</ol>');
       listType = null;
     };
-    const openList = (type) => {
+    const openList = (type, startNum = 1) => {
       if (listType === type) return;
       closeList();
-      out.push(type === 'ul' ? '<ul>' : '<ol>');
+      out.push(type === 'ul' ? '<ul>' : (startNum > 1 ? `<ol start="${startNum}">` : '<ol>'));
       listType = type;
     };
 
@@ -189,14 +191,18 @@
         out.push(`<li>${bullet[1]}</li>`);
         continue;
       }
-      const numbered = line.match(/^\d+[.)]\s+(.+)$/);
+      const numbered = line.match(/^(\d+)[.)]\s+(.+)$/);
       if (numbered) {
-        flushParagraph(); openList('ol');
-        out.push(`<li>${numbered[1]}</li>`);
+        flushParagraph();
+        const num = parseInt(numbered[1], 10);
+        if (listType !== 'ol') {
+          openList('ol', num);
+        }
+        out.push(`<li>${numbered[2]}</li>`);
         continue;
       }
-      // Continuacion de un item de lista (linea indentada bajo el item previo)
-      if (listType && /^\s{2,}/.test(rawLine) && out.length && out[out.length - 1].startsWith('<li>')) {
+      // Continuacion de un item de lista: linea indentada o descripcion inmediata sin salto de bloque
+      if (listType && out.length && out[out.length - 1].startsWith('<li')) {
         out[out.length - 1] = `${out[out.length - 1].slice(0, -5)}<br>${line}</li>`;
         continue;
       }

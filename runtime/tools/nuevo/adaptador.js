@@ -674,6 +674,10 @@ async function manejarChatNuevo(input, deps = {}) {
   // petición original del usuario — la única parte del enlatado
   // que es suya — como referencia.
   let mensajeEfectivo = textoCrudo;
+  const esAprobacionCorta = !esEnlatado && Boolean(input.projectRoot) && (
+    /^\s*(?:s[ií][,.]?\s*)?(?:procede|adelante|hazlo|dale|va|contin[uú]a|sigue|avanza|ejecuta)\b/i.test(textoCrudo)
+    || /^\s*(?:s[ií]|ok|de acuerdo|perfecto|dale|va)[.!… ]*$/i.test(textoCrudo)
+  );
   if (esEnlatado) {
     const seccion = (re) => {
       const m = textoCrudo.match(re);
@@ -685,6 +689,11 @@ async function manejarChatNuevo(input, deps = {}) {
       "El usuario autorizó con «procede» lo acordado en esta conversación. Ejecuta AHORA con herramientas, en la raíz del proyecto abierto, lo propuesto y aprobado en los mensajes anteriores de este hilo; la conversación manda sobre cualquier plan guardado fuera de ella.",
       tarea ? `La petición original del usuario fue:\n${tarea}` : "",
     ].filter(Boolean).join("\n\n");
+  } else if (esAprobacionCorta) {
+    mensajeEfectivo = [
+      textoCrudo,
+      "[Instrucción de ejecución agéntica]: El usuario ha dado luz verde para proceder ('procede'). No repitas el informe anterior, no vuelvas a preguntar qué opción prefiere y no te quedes en bucle de pasividad. Ejecuta de inmediato con las herramientas reales el siguiente paso pendiente de mayor prioridad en la lista acordada (o en secuencia lógica: dependencias con run_command, archivos, configuración). Actúa ahora.",
+    ].join("\n\n");
   }
   // La autorización fuerza ORDEN solo sobre lo que no es una
   // pregunta: si el clasificador dice CONVERSACION (pregunta o
@@ -696,8 +705,8 @@ async function manejarChatNuevo(input, deps = {}) {
     mensajeEfectivo,
     contextoDesdeHistorial(input.history || input.messages || []),
   );
-  const fuerzaOrden = ejecucionAutorizada
-    && (esEnlatado || clasificacion.carril !== "CONVERSACION");
+  const fuerzaOrden = (ejecucionAutorizada || esAprobacionCorta)
+    && (esEnlatado || esAprobacionCorta || clasificacion.carril !== "CONVERSACION");
   const carrilPrevisto = fuerzaOrden ? "ORDEN" : clasificacion.carril;
   const llamarModelo = crearLlamarModelo({
     callChat,

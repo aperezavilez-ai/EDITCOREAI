@@ -176,8 +176,14 @@
         /([.!?…])[ \t]+(?=(?:Además|También|Ahora|Luego|Después|Primero|Segundo|Tercero|Por otro lado|En resumen|El problema|La causa|Voy a |Voy |He |Entonces|Por tanto|Sin embargo|No obstante|Finalmente|Conclusión|Diagnóstico|Hallazgo|Corrección|Siguiente|Paso\s+\d|Perfecto|Entendido|Listo[,.]?\s|Bien[,.]?\s)[^\n]{8,})/g,
         "$1\n\n",
       );
-      value = value.replace(/([^\n#])[ \t]*\n+(#{1,6}[ \t])/g, "$1\n\n$2");
-      value = value.replace(/([^\n])[ \t]*\n([*-][ \t]|\d+[.)][ \t])/g, "$1\n\n$2");
+      value = value.replace(/(^|[^\n])[ \t]*\n([*-][ \t]|\d+[.)][ \t])/g, (match, prevChar, itemMarker, offset, fullText) => {
+        const before = fullText.slice(0, offset + (prevChar ? prevChar.length : 0));
+        const lastLine = before.split("\n").pop() || "";
+        if (/^\s*([*-]|\d+[.)])\s/.test(lastLine)) {
+          return `${prevChar}\n${itemMarker}`;
+        }
+        return `${prevChar}\n\n${itemMarker}`;
+      });
       const compactLen = value.replace(/\s+/g, " ").trim().length;
       const sentenceHits = (value.match(/[.!?…][ \t]+[¿¡A-ZÁÉÍÓÚÜÑ]/g) || []).length;
       if (blankBreaks < 2 && (compactLen > 160 || sentenceHits >= 2)) {

@@ -59,3 +59,22 @@ test("MarkdownRenderer: renderiza encabezados h1, h2, h3", () => {
   assert.ok(html.includes("<h2>Subtítulo 2</h2>"));
   assert.ok(html.includes("<h3>Sección 3</h3>"));
 });
+
+test("MarkdownRenderer: preserva numeración de listas con descripciones y saltos", () => {
+  const input = `
+1. Primer paso
+Descripción del primer paso.
+2. Segundo paso
+Descripción del segundo paso.
+
+3. Tercer paso tras salto
+`;
+  const html = parseMarkdown(input);
+
+  assert.ok(html.includes("<ol>"));
+  assert.ok(html.includes("<li>Primer paso<br>Descripción del primer paso.</li>"));
+  assert.ok(html.includes("<li>Segundo paso<br>Descripción del segundo paso.</li>"));
+  assert.ok(html.includes('<ol start="3">'));
+  assert.ok(html.includes("<li>Tercer paso tras salto</li>"));
+});
+
