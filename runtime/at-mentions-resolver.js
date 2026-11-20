@@ -11,7 +11,8 @@ const { execSync } = require("node:child_process");
 
 const MENTION_TYPES = [
   { prefix: "file", label: "Archivos del proyecto", icon: "📄" },
-  { prefix: "symbol", label: "Símbolos / Funciones", icon: "⚡" },
+  { prefix: "folder", label: "Carpetas del proyecto", icon: "📁" },
+  { prefix: "symbol", label: "Símbolos / Funciones AST", icon: "⚡" },
   { prefix: "problems", label: "Errores y advertencias del editor", icon: "⚠️" },
   { prefix: "git", label: "Cambios y diff en Git", icon: "🌿" },
   { prefix: "docs", label: "Documentación del Cerebro", icon: "🧠" },
@@ -24,12 +25,14 @@ const MENTION_TYPES = [
 function extractMentions(text = "") {
   const raw = String(text || "");
   const mentions = [];
-  // 1. Menciones estructuradas: @file:..., @symbol:..., @git, @problems, @docs:...
-  const structuredRegex = /@(file|symbol|problems|git|docs|selection)(?::([^\s,;]+))?/gi;
+  // 1. Menciones estructuradas: @file:..., @folder:..., @symbol:..., @git, @problems, @docs:...
+  const structuredRegex = /@(file|folder|dir|symbol|problems|git|docs|selection)(?::([^\s,;]+))?/gi;
   let match;
   while ((match = structuredRegex.exec(raw)) !== null) {
+    let type = match[1].toLowerCase();
+    if (type === "dir") type = "folder";
     mentions.push({
-      type: match[1].toLowerCase(),
+      type,
       query: match[2] || "",
       raw: match[0],
       index: match.index,
@@ -40,9 +43,23 @@ function extractMentions(text = "") {
   const fileRegex = /@([a-zA-Z0-9_\-./\\]+\.[a-zA-Z0-9]{1,10})/g;
   while ((match = fileRegex.exec(raw)) !== null) {
     const rawTarget = match[1];
-    if (!["file:", "symbol:", "problems", "git", "docs:", "selection"].some((p) => match[0].toLowerCase().startsWith("@" + p))) {
+    if (!["file:", "folder:", "dir:", "symbol:", "problems", "git", "docs:", "selection"].some((p) => match[0].toLowerCase().startsWith("@" + p))) {
       mentions.push({
         type: "file",
+        query: rawTarget,
+        raw: match[0],
+        index: match.index,
+      });
+    }
+  }
+
+  // 3. Menciones directas de carpeta: @src/components/ o @runtime/
+  const folderRegex = /@([a-zA-Z0-9_\-./\\]+\/)/g;
+  while ((match = folderRegex.exec(raw)) !== null) {
+    const rawTarget = match[1].replace(/\/+$/, "");
+    if (!["file:", "folder:", "dir:", "symbol:", "problems", "git", "docs:", "selection"].some((p) => match[0].toLowerCase().startsWith("@" + p))) {
+      mentions.push({
+        type: "folder",
         query: rawTarget,
         raw: match[0],
         index: match.index,
@@ -70,6 +87,50 @@ function queryMentionCandidates(projectRoot = "", search = "") {
   }
   if (!q || "docs".startsWith(q)) {
     candidates.push({ type: "docs", label: "@docs", detail: "Buscar en Cerebro / Brain", insertText: "@docs:" });
+  }
+  if (!q || "symbol".startsWith(q) || "sym".startsWith(q)) {
+    candidates.push({ type: "symbol", label: "@symbol", detail: "Buscar funciones y clases AST", insertText: "@symbol:" });
+  }
+  if (!q || "folder".startsWith(q) || "dir".startsWith(q)) {
+    candidates.push({ type: "folder", label: "@folder", detail: "Explorar contenido de carpeta", insertText: "@folder:" });
+  }
+
+  // Búsqueda de símbolos AST si el prefijo es symbol: o sym:
+  if (root && fs.existsSync(root) && (q.startsWith("symbol:") || q.startsWith("sym:"))) {
+    try {
+      const symQuery = q.replace(/^(symbol|sym):/, "");
+      const { buildProjectSymbolGraph } = require("./code-graph");
+      const graph = buildProjectSymbolGraph(root, { maxFiles: 200 });
+      const found = graph.searchSymbols(symQuery, 15);
+      for (const item of found) {
+        const def = item.definitions[0];
+        const detail = def ? `${def.kind} en ${def.filePath}:${def.line}${item.importedByCount ? ` (${item.importedByCount} refs)` : ""}` : "Símbolo AST";
+        candidates.push({
+          type: "symbol",
+          label: `@symbol:${item.name}`,
+          detail,
+          insertText: `@symbol:${item.name}`,
+        });
+      }
+    } catch { /* ignore */ }
+  }
+
+  // Búsqueda de carpetas si el prefijo es folder: o dir:
+  if (root && fs.existsSync(root) && (q.startsWith("folder:") || q.startsWith("dir:"))) {
+    try {
+      const folderQuery = q.replace(/^(folder|dir):/, "");
+      const dirs = listProjectFoldersFast(root, 25);
+      for (const rel of dirs) {
+        if (!folderQuery || rel.toLowerCase().includes(folderQuery)) {
+          candidates.push({
+            type: "folder",
+            label: `@folder:${rel}`,
+            detail: rel,
+            insertText: `@folder:${rel}`,
+          });
+        }
+      }
+    } catch { /* ignore */ }
   }
 
   // Búsqueda de archivos en el proyecto si hay raíz
@@ -113,6 +174,25 @@ function listProjectFilesFast(dir, max = 50, currentList = [], baseDir = dir) {
   return currentList;
 }
 
+function listProjectFoldersFast(dir, max = 30, currentList = [], baseDir = dir) {
+  if (currentList.length >= max) return currentList;
+  const IGNORED = new Set([".git", ".editcore", ".cache", ".idea", ".vscode", "node_modules", ".next", "dist", "build", "coverage", ".turbo", ".vercel"]);
+  try {
+    const entries = fs.readdirSync(dir, { withFileTypes: true });
+    for (const ent of entries) {
+      if (currentList.length >= max) break;
+      if (IGNORED.has(ent.name)) continue;
+      if (ent.isDirectory()) {
+        const full = path.join(dir, ent.name);
+        const rel = path.relative(baseDir, full).replace(/\\/g, "/");
+        currentList.push(rel);
+        listProjectFoldersFast(full, max, currentList, baseDir);
+      }
+    }
+  } catch { /* ignore */ }
+  return currentList;
+}
+
 /**
  * Resuelve el contenido real de cada mención en el proyecto.
  */
@@ -137,6 +217,32 @@ async function resolveMentionsContext(mentions = [], projectRoot = "", options =
           }
         } catch (e) {
           blocks.push(`### [Contexto @file: ${item.query}]\nError al leer: ${e.message}`);
+        }
+        break;
+      }
+
+      case "folder":
+      case "dir": {
+        if (!root) break;
+        const targetDir = path.isAbsolute(item.query) ? item.query : path.resolve(root, item.query || ".");
+        try {
+          if (fs.existsSync(targetDir) && fs.statSync(targetDir).isDirectory()) {
+            const rel = path.relative(root, targetDir).replace(/\\/g, "/") || ".";
+            const items = fs.readdirSync(targetDir, { withFileTypes: true });
+            const dirs = [];
+            const files = [];
+            for (const entry of items) {
+              if (entry.name.startsWith(".") || entry.name === "node_modules") continue;
+              if (entry.isDirectory()) dirs.push(`📁 ${entry.name}/`);
+              else files.push(`📄 ${entry.name}`);
+            }
+            const listing = [...dirs.sort(), ...files.sort()].slice(0, 40).join("\n");
+            blocks.push(`### [Contexto @folder: ${rel}]\n\`\`\`\n${listing || "(Carpeta vacía)"}\n\`\`\``);
+          } else {
+            blocks.push(`### [Contexto @folder: ${item.query}]\n(Carpeta no encontrada en el proyecto activo)`);
+          }
+        } catch (e) {
+          blocks.push(`### [Contexto @folder: ${item.query}]\nError al leer carpeta: ${e.message}`);
         }
         break;
       }
@@ -168,13 +274,46 @@ async function resolveMentionsContext(mentions = [], projectRoot = "", options =
       case "symbol": {
         if (!root || !item.query) break;
         try {
-          const found = searchSymbolInProject(root, item.query);
-          if (found) {
-            blocks.push(`### [Contexto @symbol: ${item.query} en ${found.file}:${found.line}]\n\`\`\`\n${found.code}\n\`\`\``);
-          } else {
-            blocks.push(`### [Contexto @symbol: ${item.query}]\n(Símbolo no localizado en los archivos principales)`);
+          let resolved = false;
+          try {
+            const { buildProjectSymbolGraph } = require("./code-graph");
+            const graph = buildProjectSymbolGraph(root);
+            const found = graph.findSymbol(item.query);
+            if (found && found.definitions.length > 0) {
+              const defBlocks = [];
+              for (const def of found.definitions.slice(0, 3)) {
+                let snippet = "";
+                try {
+                  const fullDefPath = path.isAbsolute(def.filePath) ? def.filePath : path.resolve(root, def.filePath);
+                  if (fs.existsSync(fullDefPath)) {
+                    const lines = fs.readFileSync(fullDefPath, "utf8").split("\n");
+                    const start = Math.max(0, def.line - 2);
+                    const end = Math.min(lines.length, def.line + 15);
+                    snippet = lines.slice(start, end).join("\n");
+                  }
+                } catch {}
+                defBlocks.push(`**Definición:** ${def.kind} en \`${def.filePath}:${def.line}\` (Exportado: ${def.exported ? "Sí" : "No"})\n\`\`\`\n${snippet}\n\`\`\``);
+              }
+              let refsBlock = "";
+              if (found.importedBy.length > 0) {
+                refsBlock = `\n**Archivos que lo importan / referencian (${found.importedBy.length}):**\n` + found.importedBy.slice(0, 8).map((f) => `- \`${f}\``).join("\n");
+              }
+              blocks.push(`### [Contexto @symbol: ${item.query} (Grafo de Código AST)]\n${defBlocks.join("\n\n")}${refsBlock}`);
+              resolved = true;
+            }
+          } catch { /* fallback a regex */ }
+
+          if (!resolved) {
+            const found = searchSymbolInProject(root, item.query);
+            if (found) {
+              blocks.push(`### [Contexto @symbol: ${item.query} en ${found.file}:${found.line}]\n\`\`\`\n${found.code}\n\`\`\``);
+            } else {
+              blocks.push(`### [Contexto @symbol: ${item.query}]\n(Símbolo no localizado en el Grafo de Código AST ni en archivos fuente)`);
+            }
           }
-        } catch { /* ignore */ }
+        } catch (e) {
+          blocks.push(`### [Contexto @symbol: ${item.query}]\nError en análisis de símbolo: ${e.message}`);
+        }
         break;
       }
 

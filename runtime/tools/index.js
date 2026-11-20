@@ -22,6 +22,19 @@ let _active = 0;
 
 async function construirMemoria(inputN, helpers) {
   const partes = [];
+  if (inputN?.message && inputN?.projectRoot) {
+    try {
+      const { extractMentions, resolveMentionsContext } = require("../at-mentions-resolver");
+      const mentions = extractMentions(inputN.message);
+      if (mentions.length > 0) {
+        const mentionsCtx = await resolveMentionsContext(mentions, inputN.projectRoot, {
+          activeSelection: inputN.activeSelection || "",
+          markers: inputN.markers || [],
+        });
+        if (mentionsCtx) partes.push(mentionsCtx);
+      }
+    } catch { /* las menciones son resilientes */ }
+  }
   try {
     const bloqueMapa = orientationMap.buildMapBlock(inputN.projectRoot, { executeTurn: false });
     if (bloqueMapa) partes.push(String(bloqueMapa).slice(0, 12000));

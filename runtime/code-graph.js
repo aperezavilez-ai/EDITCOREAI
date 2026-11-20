@@ -249,13 +249,39 @@ function buildProjectSymbolGraph(projectRoot, { maxFiles = 500 } = {}) {
     root,
     totalFilesIndexed: fileMap.size,
     findSymbol(symbolName) {
-      const defs = symbolIndex.get(symbolName) || [];
+      let defs = symbolIndex.get(symbolName) || [];
+      if (!defs.length) {
+        const target = String(symbolName || "").toLowerCase();
+        for (const [name, list] of symbolIndex.entries()) {
+          if (name.toLowerCase() === target) {
+            defs = list;
+            symbolName = name;
+            break;
+          }
+        }
+      }
       const refs = Array.from(referenceIndex.get(symbolName) || []);
       return {
         symbol: symbolName,
         definitions: defs,
         importedBy: refs,
       };
+    },
+    searchSymbols(query = "", limit = 20) {
+      const q = String(query || "").trim().toLowerCase();
+      const results = [];
+      for (const [name, defs] of symbolIndex.entries()) {
+        if (!q || name.toLowerCase().includes(q)) {
+          const refs = referenceIndex.get(name);
+          results.push({
+            name,
+            definitions: defs,
+            importedByCount: refs ? refs.size : 0,
+          });
+          if (results.length >= limit) break;
+        }
+      }
+      return results;
     },
     getFileDependencies(relPath) {
       const norm = String(relPath || "").replace(/\\/g, "/");
