@@ -102,5 +102,27 @@ async def cancel_task(task_id: str):
         return {"task_id": task_id, "status": "CANCELLED"}
     return {"task_id": task_id, "status": "NOT_RUNNING"}
 
+from tools.editcore_bridge import EditCoreBridge
+bridge = EditCoreBridge()
+
+@app.get("/api/editcore/tools", dependencies=[Depends(verify_token)])
+async def get_editcore_tools():
+    return {"tools": bridge.get_available_tools()}
+
+@app.post("/api/editcore/tools/execute", dependencies=[Depends(verify_token)])
+async def execute_editcore_tool(req: Dict[str, Any]):
+    tool_name = req.get("tool")
+    tool_args = req.get("args", {})
+    return bridge.execute_tool(tool_name, tool_args)
+
+@app.get("/api/editcore/skills", dependencies=[Depends(verify_token)])
+async def get_editcore_skills():
+    return {"skills": bridge.list_skills()}
+
+@app.get("/api/editcore/skills/{slug}", dependencies=[Depends(verify_token)])
+async def get_editcore_skill_content(slug: str):
+    content = bridge.get_skill(slug)
+    return {"slug": slug, "content": content}
+
 if __name__ == "__main__":
     uvicorn.run(app, host=args.host, port=args.port, log_level="info")

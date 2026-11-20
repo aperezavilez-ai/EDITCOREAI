@@ -9,6 +9,7 @@ const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
 const http = require('http');
+const { MultiAgentToolGateway } = require('./multiagent-tool-gateway');
 
 class MultiAgentSidecarManager {
   constructor(options = {}) {
@@ -19,6 +20,13 @@ class MultiAgentSidecarManager {
     this.isReady = false;
     this.dataDir = options.dataDir || path.join(__dirname, 'multiagent', 'data');
     this.pythonPath = this._resolvePython();
+    this.gatewayPort = options.gatewayPort || (this.port + 10);
+    this.gateway = new MultiAgentToolGateway({
+      port: this.gatewayPort,
+      host: this.host,
+      token: this.token,
+      projectRoot: options.projectRoot || path.resolve(__dirname, '..')
+    });
   }
 
   _resolvePython() {
@@ -36,6 +44,10 @@ class MultiAgentSidecarManager {
       return { status: 'already_running', port: this.port };
     }
 
+    // Start Node.js tool gateway first
+    await this.gateway.start();
+    console.log(`[MultiAgentSidecar] Tool & Skill Gateway online at http://${this.host}:${this.gatewayPort}`);
+
     if (!fs.existsSync(this.dataDir)) {
       fs.mkdirSync(this.dataDir, { recursive: true });
     }
@@ -52,6 +64,7 @@ class MultiAgentSidecarManager {
     const env = {
       ...process.env,
       EDITCORE_AGENT_TOKEN: this.token,
+      EDITCORE_GATEWAY_URL: `http://${this.host}:${this.gatewayPort}`,
       PYTHONUNBUFFERED: '1'
     };
 
@@ -162,6 +175,9 @@ class MultiAgentSidecarManager {
       }
       this.process = null;
       this.isReady = false;
+    }
+    if (this.gateway) {
+      this.gateway.stop();
     }
   }
 

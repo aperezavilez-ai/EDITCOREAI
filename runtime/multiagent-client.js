@@ -67,6 +67,22 @@ class MultiAgentClient {
   async cancelTask(taskId) {
     return this._request(`/api/tasks/${taskId}/cancel`, 'POST');
   }
+
+  async getEditCoreTools() {
+    return this._request('/api/editcore/tools');
+  }
+
+  async executeEditCoreTool(tool, args = {}) {
+    return this._request('/api/editcore/tools/execute', 'POST', { tool, args });
+  }
+
+  async getEditCoreSkills() {
+    return this._request('/api/editcore/skills');
+  }
+
+  async getEditCoreSkill(slug) {
+    return this._request(`/api/editcore/skills/${slug}`);
+  }
 }
 
 module.exports = { MultiAgentClient };
