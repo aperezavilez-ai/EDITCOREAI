@@ -5,7 +5,7 @@ from typing import Dict, Any
 
 class ExecTools:
     """
-    OpenHands-inspired execution tools running strictly inside workspace.
+    EditCoreAI execution tools running strictly inside workspace.
     """
     def __init__(self, workspace_root: Path):
         self.workspace_root = Path(workspace_root)

@@ -1,6 +1,6 @@
 /**
  * EditCore AI - MultiAgent Client
- * Communicates with the local Agno + OpenHands sidecar engine.
+ * Communicates with the local EditCoreAI MultiAgent sidecar engine.
  */
 
 class MultiAgentClient {

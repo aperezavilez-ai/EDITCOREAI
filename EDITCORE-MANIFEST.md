@@ -21,7 +21,7 @@ IDE de escritorio Electron con agente embebido: chat, preview web, explorador, p
 | `runtime/probe-endpoint.js` | Health HTTP local / proveedor |
 | `runtime/fullstack-deploy.js` | Pipeline Publicar 1 clic + `project-infra.json` |
 | `agent-core/` | Loop LLM / evidence |
-| `multiagent-engine/` | Motor Autónomo Multiagente (Agno + OpenHands) |
+| `multiagent-engine/` | Motor Autónomo Multiagente de EditCoreAI |
 | `runtime/tools/` | Herramientas nativas del sistema (74 tools + skills) |
 | `resources/ui-overlay/` | UI lean empaquetada + `rtk` |
 | `.editcore/` | Memoria local del workspace activo |

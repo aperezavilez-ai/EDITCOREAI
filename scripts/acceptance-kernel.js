@@ -3,7 +3,7 @@
 /**
  * EditCore AI - Single Brain MultiAgent Acceptance Test
  * Verifies that handleChatKernel communicates with the unified MultiAgent engine
- * (Agno + OpenHands), streams live agent messages, returns structured deliverables,
+ * Motor Multiagente de EditCoreAI, streams live agent messages, returns structured deliverables,
  * and maintains conversational thread continuity.
  *
  * Usage: node scripts/acceptance-kernel.js   (exit 0 = pass, 1 = fail)
@@ -61,7 +61,7 @@ function fail(msg) {
   }
 
   const out1Text = String(out1.text || "");
-  if (!out1Text.includes("Motor Multiagente (Agno + OpenHands)")) {
+  if (!out1Text.includes("Motor Multiagente de EditCoreAI")) {
     fail(`El resultado del turno 1 no proviene del Motor Multiagente: ${out1Text.slice(0, 150)}`);
     return;
   }
@@ -90,7 +90,7 @@ function fail(msg) {
   }
 
   const out2Text = String(out2.text || "");
-  if (!out2Text.includes("Motor Multiagente (Agno + OpenHands)")) {
+  if (!out2Text.includes("Motor Multiagente de EditCoreAI")) {
     fail(`El resultado del turno 2 no proviene del Motor Multiagente: ${out2Text.slice(0, 150)}`);
     return;
   }

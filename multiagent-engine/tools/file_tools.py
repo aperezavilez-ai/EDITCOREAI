@@ -4,7 +4,7 @@ from typing import List, Dict, Any
 
 class FileTools:
     """
-    OpenHands-inspired file tools operating within an isolated task workspace.
+    EditCoreAI file tools operating within an isolated task workspace.
     """
     def __init__(self, workspace_root: Path):
         self.workspace_root = Path(workspace_root)

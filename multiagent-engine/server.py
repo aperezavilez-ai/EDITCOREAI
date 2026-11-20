@@ -57,7 +57,7 @@ async def health_check():
     process = psutil.Process(os.getpid())
     return {
         "status": "healthy",
-        "engine": "Agno + OpenHands Core",
+        "engine": "EditCoreAI MultiAgent Engine",
         "version": "1.0.0",
         "active_workers": len(coordinator.active_workers),
         "queue_size": coordinator.task_queue.qsize(),

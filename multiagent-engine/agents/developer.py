@@ -8,7 +8,7 @@ class DeveloperAgent:
     Developer Agent:
     - Receives specifications from Architect.
     - Creates and modifies real files in the isolated workspace.
-    - Uses OpenHands-style FileTools.
+    - Uses EditCoreAI FileTools.
     - Signals completion to QA and Security.
     """
     def __init__(self, bus: AgentEventBus):

@@ -23,7 +23,7 @@ class ArchitectAgent:
 
         plan = {
             "task_id": task_id,
-            "architecture": "Autonomous MultiAgent Component",
+            "architecture": f"EditCoreAI MultiAgent Architecture: {specification[:50]}",
             "components": [
                 {
                     "name": "core_logic",

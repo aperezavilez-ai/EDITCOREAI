@@ -40,7 +40,7 @@ describe('EditCore AI - MultiAgent Engine Integration', () => {
   test('Sidecar reports healthy status and engine metadata', async () => {
     const health = await client.getHealth();
     assert.strictEqual(health.status, 'healthy');
-    assert.strictEqual(health.engine, 'Agno + OpenHands Core');
+    assert.strictEqual(health.engine, 'EditCoreAI MultiAgent Engine');
     assert.strictEqual(health.version, '1.0.0');
     assert.strictEqual(typeof health.memory_mb, 'number');
   });

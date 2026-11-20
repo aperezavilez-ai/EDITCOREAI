@@ -23,7 +23,7 @@ describe('EditCore AI - Single Brain MultiAgent Engine', () => {
     assert.strictEqual(out.kernel, true);
     assert.strictEqual(out.kind, 'DONE');
     assert(typeof out.text === 'string');
-    assert(out.text.includes('Motor Multiagente (Agno + OpenHands)'));
+    assert(out.text.includes('Motor Multiagente de EditCoreAI'));
     assert(out.text.includes('Archivos generados/modificados'));
     assert(out.text.includes('Auditoría de Seguridad'));
     assert(out.text.includes('Control de Calidad (QA)'));

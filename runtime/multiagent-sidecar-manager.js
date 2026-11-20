@@ -1,6 +1,6 @@
 /**
  * EditCore AI - MultiAgent Sidecar Process Manager
- * Manages the lifecycle of the Python Agno + OpenHands sidecar engine.
+ * Manages the lifecycle of the Python EditCoreAI MultiAgent sidecar engine.
  * Ensures strict cleanup on exit (zero orphaned processes).
  */
 
