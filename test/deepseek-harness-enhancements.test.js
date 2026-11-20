@@ -1,4 +1,4 @@
-﻿"use strict";
+"use strict";
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
@@ -66,7 +66,25 @@ test("kernel tools: writeFile y replaceInFile reportan advertencias de sintaxis 
     const fixRes = replaceInFile(tmpDir, "bad.js", "const x = ;", "const x = 42;");
     assert.equal(fixRes.ok, true);
     assert.equal(fixRes.syntaxWarning, undefined);
+
+    // Escribir archivo TSX con JSX no cerrado
+    const badTsx = writeFile(tmpDir, "component.tsx", "export function Button() { return <button>click; }");
+    assert.equal(badTsx.ok, true);
+    assert.ok(badTsx.syntaxWarning);
+    assert.match(badTsx.syntaxWarning, /token|button|tag|closing/i);
+
+    // Corregir TSX
+    const goodTsx = replaceInFile(tmpDir, "component.tsx", "<button>click; }", "<button>click</button>; }");
+    assert.equal(goodTsx.ok, true);
+    assert.equal(goodTsx.syntaxWarning, undefined);
+
+    // Validar Prisma con llave sin cerrar
+    const badPrisma = writeFile(tmpDir, "schema.prisma", "model User {\n  id String @id\n");
+    assert.equal(badPrisma.ok, true);
+    assert.ok(badPrisma.syntaxWarning);
+    assert.match(badPrisma.syntaxWarning, /llaves/i);
   } finally {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }
 });
+

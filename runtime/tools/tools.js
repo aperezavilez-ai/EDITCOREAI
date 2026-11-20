@@ -2590,6 +2590,9 @@ async function execute(name, args, root, allowWrite, helpers = {}) {
         } catch { /* el Mapa nunca tumba la búsqueda */ }
         return brainOut;
       }
+      case "query_code_graph": {
+        return extraTools.queryCodeGraph(root, a);
+      }
       // [EDITCORE-V513-W3] Herramientas del Mapa de orientación: la
       // escritura va a través del expediente (orientation-map escribe
       // en thread-memory y proyecta al Mapa), así que el asiento

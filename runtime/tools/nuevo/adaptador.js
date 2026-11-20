@@ -560,7 +560,14 @@ function crearEjecutarHerramienta({ execute, root, helpers, onActividad = null, 
       else if (Array.isArray(r?.files)) resumen = r.files.map((f) => (typeof f === "string" ? f : f?.path || f?.name || "")).filter(Boolean).join("\n");
       else if (r && typeof r === "object") {
         if (r.ok !== false && (r.path || r.snapshotId || r.reviewQueued)) {
-          resumen = `Operación completada en ${r.path || args?.path || "archivo"}.`;
+          let baseMsg = `Operación completada en ${r.path || args?.path || "archivo"}.`;
+          if (r.syntaxWarning || r.selfHealHint) {
+            baseMsg += `\n⚠️ ALERTA DE SINTAXIS (Autocorrección): ${r.syntaxWarning || ""}. ${r.selfHealHint || ""}`;
+          }
+          if (r.directionNote) {
+            baseMsg += `\n${r.directionNote}`;
+          }
+          resumen = baseMsg;
         } else {
           try { resumen = JSON.stringify(r).slice(0, 2000); } catch { resumen = ok ? "ok" : "fallo"; }
         }

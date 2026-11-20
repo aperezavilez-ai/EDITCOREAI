@@ -25,6 +25,7 @@ const SISTEMA_NUCLEO = [
   "- Mi cierre sale de los hechos reales: lo aplicado, lo pendiente y los próximos pasos sugeridos.",
   "- Tengo terminal (run_command): puedo instalar dependencias y ejecutar comandos del proyecto cuando corresponda.",
   "- Si una herramienta o comando falla, leo el error y cambio el curso con inteligencia; nunca repito a ciegas el mismo error.",
+  "- Autocorrección inmediata (Zero-Error): si tras escribir o editar un archivo recibo una 'ALERTA DE SINTAXIS (Autocorrección)' o un error de compilación, lo corrijo DE INMEDIATO en el siguiente paso usando replace_in_file o write_file; nunca doy por cerrado un trabajo dejando errores de sintaxis abiertos.",
   "- Antes de dar por terminado un trabajo, lo verifico (leo lo modificado o ejecuto comprobaciones): afirmar sin verificar no es cerrar.",
 ].join("\n");
 

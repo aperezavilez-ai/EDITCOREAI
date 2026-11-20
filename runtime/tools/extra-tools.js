@@ -111,6 +111,28 @@ async function searchBrain(root, query, helpers = {}, limit = 6) {
   return { ok: true, query: q, documents, memory, code, found: documents.length + memory.length + code.length };
 }
 
+function queryCodeGraph(root, args = {}) {
+  const { buildProjectSymbolGraph, analyzeCodeSymbols } = require("../code-graph");
+  const projectRoot = root || process.cwd();
+  if (args.filePath && !args.symbol) {
+    const full = path.resolve(projectRoot, args.filePath);
+    if (!fs.existsSync(full)) return { ok: false, error: `Archivo no encontrado: ${args.filePath}` };
+    const content = fs.readFileSync(full, "utf8");
+    const symbols = analyzeCodeSymbols(args.filePath, content);
+    return { ok: true, ...symbols };
+  }
+  const graph = buildProjectSymbolGraph(projectRoot);
+  if (args.symbol) {
+    const res = graph.findSymbol(args.symbol);
+    return { ok: true, ...res };
+  }
+  if (args.filePath) {
+    const deps = graph.getFileDependencies(args.filePath);
+    return { ok: true, ...deps };
+  }
+  return { ok: true, totalFilesIndexed: graph.totalFilesIndexed, note: "Pasa symbol o filePath para consultar el grafo." };
+}
+
 // Estado de Conexiones y del proyecto, sin tokens, con el siguiente paso concreto para guiar al usuario.
 async function checkConnections(root, helpers = {}) {
   const connections = typeof helpers.readConnections === "function" ? (helpers.readConnections() || {}) : {};
@@ -360,6 +382,7 @@ const EXTRA_DEFINITIONS = [
   { type: "function", function: { name: "check_connections", description: "Estado real de conexiones (GitHub, Vercel, SSH) y del repo: qué cuentas están conectadas en bóveda y qué huecos de conexión faltan. Devuelve services, nextSteps y report (checklist markdown). No muestra tokens.", parameters: { type: "object", properties: {} } } },
   { type: "function", function: { name: "connect_project", description: "Conecta el proyecto con las cuentas de Conexiones: git init si falta, crea o enlaza el repositorio privado en GitHub, crea el proyecto en Vercel y escribe las variables de Supabase en .env.local. Siempre pide confirmación al usuario antes de ejecutarse.", parameters: { type: "object", properties: { repoName: { type: "string" }, createGithub: { type: "boolean" }, createVercel: { type: "boolean" }, linkSupabase: { type: "boolean" } } } } },
   { type: "function", function: { name: "publish_project", description: "Publica el proyecto: commit sin secretos, push de la rama actual, migraciones Supabase si aplican y deploy. Siempre pide confirmación al usuario antes de ejecutarse.", parameters: { type: "object", properties: { commitMessage: { type: "string" }, deploy: { type: "boolean" }, supabasePush: { type: "boolean" }, skipPush: { type: "boolean" } } } } },
+  { type: "function", function: { name: "query_code_graph", description: "Consulta el Grafo de Código AST del proyecto: encuentra dónde está definido un símbolo (función, clase, interface, tipo, variable) y qué archivos lo importan o llaman en todo el proyecto. Muy superior a grep para navegación estructural de código.", parameters: { type: "object", properties: { symbol: { type: "string", description: "Nombre del símbolo o identificador a buscar (ej: 'analyzeContent', 'UserProfile', 'Button')" }, filePath: { type: "string", description: "Opcional: ruta de un archivo para inspeccionar sus exportaciones, importaciones y dependencias" } } } } },
 ];
 
 module.exports = {
@@ -373,6 +396,7 @@ module.exports = {
   screenshotPage,
   dockerPs,
   searchBrain,
+  queryCodeGraph,
   checkConnections,
   runExternalAction,
   externalActionPreview,
