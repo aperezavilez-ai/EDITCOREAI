@@ -973,3 +973,8 @@ contextBridge.exposeInMainWorld("editcoreRecovery", {
   revertTurn: (params) => ipcRenderer.invoke("recovery:revert-turn", params),
   listCheckpoints: (params) => ipcRenderer.invoke("recovery:list-checkpoints", params),
 });
+
+contextBridge.exposeInMainWorld("editcoreGuardian", {
+  inspectHealth: (input) => ipcRenderer.invoke("guardian:inspect-health", input),
+  autoFixPrompt: (report) => ipcRenderer.invoke("guardian:auto-fix-prompt", report),
+});

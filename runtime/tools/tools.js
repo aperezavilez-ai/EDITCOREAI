@@ -2606,6 +2606,9 @@ async function execute(name, args, root, allowWrite, helpers = {}) {
       case "semantic_code_search": {
         return extraTools.semanticCodeSearch(root, a);
       }
+      case "diagnose_code_health": {
+        return await extraTools.diagnoseCodeHealth(root, a);
+      }
       // [EDITCORE-V513-W3] Herramientas del Mapa de orientación: la
       // escritura va a través del expediente (orientation-map escribe
       // en thread-memory y proyecta al Mapa), así que el asiento

@@ -7015,6 +7015,29 @@ ipcMain.handle("recovery:list-checkpoints", async (_event, input = {}) => {
   }
 });
 
+ipcMain.handle("guardian:inspect-health", async (_event, input = {}) => {
+  try {
+    const root = String(input?.projectRoot || globalActiveWorkspacePath || app.getAppPath()).trim();
+    const { TestGuardian } = require("./runtime/test-guardian");
+    const guardian = new TestGuardian({ projectRoot: root });
+    const files = Array.isArray(input.files) ? input.files : (input.file ? [input.file] : []);
+    const report = await guardian.inspectHealth(files);
+    return { ok: true, report };
+  } catch (error) {
+    return { ok: false, error: error?.message || String(error) };
+  }
+});
+
+ipcMain.handle("guardian:auto-fix-prompt", async (_event, report) => {
+  try {
+    const { testGuardian } = require("./runtime/test-guardian");
+    const prompt = testGuardian.generateAutoFixPrompt(report);
+    return { ok: true, prompt };
+  } catch (error) {
+    return { ok: false, error: error?.message || String(error) };
+  }
+});
+
 ipcMain.handle("app:open-external", async (_event, url = "") => {
   const target = String(url || "").trim();
   if (!/^https:\/\//i.test(target)) throw new Error("Solo se permiten URLs https.");

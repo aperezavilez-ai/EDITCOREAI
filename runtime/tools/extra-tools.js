@@ -397,6 +397,25 @@ async function createCsv(file, args = {}) {
   return { ok: true, path: file, bytes: Buffer.byteLength(contenido), format: "csv" };
 }
 
+async function diagnoseCodeHealth(projectRoot, args = {}) {
+  const root = String(projectRoot || "").trim() || process.cwd();
+  const { TestGuardian } = require("../test-guardian");
+  const guardian = new TestGuardian({ projectRoot: root });
+  const files = Array.isArray(args.files) ? args.files : (args.file ? [args.file] : (args.path ? [args.path] : []));
+  const report = await guardian.inspectHealth(files);
+  const autoFixPrompt = report.ok ? null : guardian.generateAutoFixPrompt(report);
+  return {
+    ok: report.ok,
+    hasFailures: report.hasFailures,
+    type: report.type || "clean",
+    syntaxErrors: report.syntaxErrors || [],
+    testFailures: report.testFailures || [],
+    filesTested: report.filesTested || [],
+    autoFixPrompt,
+    note: report.ok ? "Todo el código probado se encuentra en estado saludable." : "Se encontraron fallos que requieren auto-reparación.",
+  };
+}
+
 const EXTRA_DEFINITIONS = [
   { type: "function", function: { name: "read_pdf", description: "Extrae el texto de un PDF, Word (.docx) o Excel (.xlsx) del disco. Acepta rutas absolutas o relativas.", parameters: { type: "object", properties: { path: { type: "string" }, maxChars: { type: "number" } }, required: ["path"] } } },
   { type: "function", function: { name: "create_pdf", description: "Crea un PDF real en disco con título y párrafos (librería pdfkit). Para informes, reportes y documentos entregables.", parameters: { type: "object", properties: { path: { type: "string" }, title: { type: "string" }, paragraphs: { type: "array", items: { type: "string" } }, text: { type: "string" } }, required: ["path"] } } },
@@ -413,6 +432,7 @@ const EXTRA_DEFINITIONS = [
   { type: "function", function: { name: "publish_project", description: "Publica el proyecto: commit sin secretos, push de la rama actual, migraciones Supabase si aplican y deploy. Siempre pide confirmación al usuario antes de ejecutarse.", parameters: { type: "object", properties: { commitMessage: { type: "string" }, deploy: { type: "boolean" }, supabasePush: { type: "boolean" }, skipPush: { type: "boolean" } } } } },
   { type: "function", function: { name: "query_code_graph", description: "Consulta el Grafo de Código AST del proyecto: encuentra dónde está definido un símbolo (función, clase, interface, tipo, variable) y qué archivos lo importan o llaman en todo el proyecto. Muy superior a grep para navegación estructural de código.", parameters: { type: "object", properties: { symbol: { type: "string", description: "Nombre del símbolo o identificador a buscar (ej: 'analyzeContent', 'UserProfile', 'Button')" }, filePath: { type: "string", description: "Opcional: ruta de un archivo para inspeccionar sus exportaciones, importaciones y dependencias" } } } } },
   { type: "function", function: { name: "semantic_code_search", description: "Búsqueda semántica de código mediante embeddings vectoriales locales (RAG). Localiza archivos y fragmentos por significado conceptual en lenguaje natural (ej: 'manejo de pagos webhook', 'autenticación de usuarios con Supabase', 'middleware de rutas protegidas') sin necesidad de conocer los nombres exactos.", parameters: { type: "object", properties: { query: { type: "string", description: "Descripción conceptual de lo que buscas en lenguaje natural" }, topK: { type: "number", description: "Número de fragmentos relevantes a devolver (1 a 10, por defecto 5)" } }, required: ["query"] } } },
+  { type: "function", function: { name: "diagnose_code_health", description: "Background Test Guardian: valida la sintaxis y ejecuta pruebas unitarias focalizadas sobre los archivos modificados. Si detecta errores de sintaxis o tests rotos, genera el diagnóstico exacto de causa raíz y la propuesta de auto-reparación (auto-fix).", parameters: { type: "object", properties: { files: { type: "array", items: { type: "string" }, description: "Opcional: lista de archivos modificados a diagnosticar" }, path: { type: "string", description: "Opcional: archivo único a diagnosticar" } } } } },
 ];
 
 module.exports = {
@@ -428,6 +448,7 @@ module.exports = {
   searchBrain,
   queryCodeGraph,
   semanticCodeSearch,
+  diagnoseCodeHealth,
   checkConnections,
   runExternalAction,
   externalActionPreview,
