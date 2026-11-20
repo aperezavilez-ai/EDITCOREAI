@@ -16,6 +16,8 @@ npm-debug.log*
 .turbo/
 .next/
 coverage/
+__pycache__/
+*.py[cod]
 # Env & secrets
 .env
 .env.*
