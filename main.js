@@ -10804,6 +10804,65 @@ ipcMain.handle("ecosystem:get-memory-snapshot", async (_event, projectRoot, bran
   }
 });
 
+ipcMain.handle("ecosystem:bootstrap", async (_event, projectName, options) => {
+  try {
+    if (!projectBootstrap) {
+      projectBootstrap = createProjectBootstrap({
+        getConnections: readConnections,
+        getVaultCredentials: (service) => {
+          try {
+            const conn = readConnections();
+            if (service === "github") return { githubToken: conn.githubToken };
+            if (service === "vercel") return { vercelToken: conn.vercelToken, vercelTeamId: conn.vercelTeamId };
+            if (service === "supabase") return { supabaseUrl: conn.supabaseUrl, supabaseAnonKey: conn.supabaseAnonKey };
+            if (service === "server") return { customServerUrl: conn.customServerUrl, customServerToken: conn.customServerToken };
+            return {};
+          } catch { return {}; }
+        },
+        roadmapSync,
+      });
+    }
+    return await projectBootstrap.bootstrap(projectName, options || {});
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle("ecosystem:eject", async (_event, projectRoot, target) => {
+  try {
+    if (!projectBootstrap) {
+      projectBootstrap = createProjectBootstrap({
+        getConnections: readConnections,
+        getVaultCredentials: (service) => {
+          try {
+            const conn = readConnections();
+            if (service === "github") return { githubToken: conn.githubToken };
+            if (service === "vercel") return { vercelToken: conn.vercelToken, vercelTeamId: conn.vercelTeamId };
+            if (service === "supabase") return { supabaseUrl: conn.supabaseUrl, supabaseAnonKey: conn.supabaseAnonKey };
+            if (service === "server") return { customServerUrl: conn.customServerUrl, customServerToken: conn.customServerToken };
+            return {};
+          } catch { return {}; }
+        },
+        roadmapSync,
+      });
+    }
+    return await projectBootstrap.eject(projectRoot, target || {});
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
+});
+
+ipcMain.handle("ecosystem:provisioning-status", async (_event, projectRoot) => {
+  try {
+    if (!projectBootstrap) {
+      projectBootstrap = createProjectBootstrap({ roadmapSync });
+    }
+    return projectBootstrap.getProvisioningStatus(projectRoot);
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
+});
+
 // ====================================================
 // CICLOS 40-44: HYPER-AUTONOMOUS ECOSYSTEM & BEYOND
 // ====================================================

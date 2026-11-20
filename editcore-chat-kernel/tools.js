@@ -3099,7 +3099,31 @@ async function execute(name, args, root, allowWrite, helpers = {}) {
           const { writeScaffoldState } = require("../runtime/scaffold-state");
           writeScaffoldState(creado.root || destino, { createdVia: "create_project", template: creado.template || templateId, ts: new Date().toISOString() });
         } catch { /* el estado es cortesía, no compuerta */ }
-        return { ok: true, path: relDestino, name: nombre, template: creado.template || templateId, templateIntent: intent, report: creado.report || null };
+        let bootReport = null;
+        try {
+          const { createProjectBootstrap } = require("../runtime/project-bootstrap");
+          const { createCloudVaultBridge } = require("../runtime/cloud-vault-bridge");
+          const vault = createCloudVaultBridge();
+          const bootstrapper = createProjectBootstrap({
+            getVaultCredentials: (svc) => {
+              try { return vault.getVaultCredentials(svc); } catch { return null; }
+            },
+          });
+          bootReport = await bootstrapper.bootstrap(creado.root || destino, {
+            mode: a.mode || "managed",
+            stack: templateId.includes("next") ? "nextjs" : "vite-react",
+          });
+        } catch { /* bootstrap enriquecido es tolerante a fallos */ }
+        return {
+          ok: true,
+          path: relDestino,
+          name: nombre,
+          template: creado.template || templateId,
+          templateIntent: intent,
+          report: creado.report || null,
+          provisioning: bootReport?.provisioning || "managed",
+          bootstrap: bootReport ? { steps: bootReport.steps, infra: bootReport.infra } : null,
+        };
       }
       // [FASE2-CONECTAR C-12] Grupo 1A servido por el dispatcher de
       // capacidades runtime: lecturas directas…

@@ -115,6 +115,19 @@ async function executeFullStackDeploy(projectRoot, connections = {}, {
   const manageSupabaseImpl = typeof deps.manageSupabaseProjectImpl === "function" ? deps.manageSupabaseProjectImpl : manageSupabaseProject;
   const publishImpl = typeof deps.publishProjectImpl === "function" ? deps.publishProjectImpl : publishProject;
   const root = path.resolve(String(projectRoot || ""));
+  if (String(mode || "").toLowerCase() === "eject") {
+    const { createProjectBootstrap } = require("./project-bootstrap");
+    const bootstrapper = createProjectBootstrap();
+    const result = await bootstrapper.eject(root, arguments[2]?.target || arguments[2] || {});
+    return {
+      ok: result.ok,
+      mode: "eject",
+      provisioning: "independent",
+      projectRoot: root,
+      steps: result.steps,
+      errors: result.errors,
+    };
+  }
   const isUpdate = String(mode || "full").toLowerCase() === "update";
   const stages = (isUpdate ? UPDATE_STAGES : STAGES).map((s) => ({ ...s, status: "pending", message: "" }));
   const steps = [];

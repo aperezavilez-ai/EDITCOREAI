@@ -47,6 +47,7 @@ function createDefaultRoadmap(projectName, projectRoot) {
       description: pkg.description || "",
       stack: [],
       status: "planning",
+      provisioning: "managed",
       createdAt: nowISO(),
       lastModified: nowISO(),
     },

@@ -695,9 +695,6 @@ async function manejarChatNuevo(input, deps = {}) {
     clasificacion.motivo === "pregunta" || /[¿?]/.test(textoCrudo) || /^(?:qu[eé]|cu[aá]l|c[oó]mo|d[oó]nde|por\s*qu[eé]|qui[eé]n)\b/i.test(textoCrudo.trim())
   );
   let carrilPrevisto = (ejecucionAutorizada && !esPreguntaUsuario) ? "ORDEN" : clasificacion.carril;
-  if (!input.projectRoot && carrilPrevisto === "ORDEN") {
-    carrilPrevisto = "CONVERSACION";
-  }
   const fuerzaOrden = carrilPrevisto === "ORDEN";
   const llamarModelo = crearLlamarModelo({
     callChat,
@@ -743,7 +740,7 @@ async function manejarChatNuevo(input, deps = {}) {
 
   const resultado = await ejecutarTurno({
     carrilForzado: carrilPrevisto,
-    conHerramientas: (carrilPrevisto === "ORDEN" || carrilPrevisto === "CONSULTA") && Boolean(input.projectRoot),
+    conHerramientas: carrilPrevisto === "ORDEN" || carrilPrevisto === "CONSULTA",
     texto: mensajeEfectivo,
     llamarModelo,
     ejecutarHerramienta,
