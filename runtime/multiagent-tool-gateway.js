@@ -96,13 +96,27 @@ class MultiAgentToolGateway {
         }
       });
 
-      this.server.listen(this.port, this.host, () => {
-        resolve({ status: 'running', port: this.port, host: this.host });
-      });
+      const tryListen = (p) => {
+        const onErr = (err) => {
+          this.server.removeListener('listening', onListen);
+          if (err.code === 'EADDRINUSE') {
+            this.port = p + 1;
+            tryListen(this.port);
+          } else {
+            reject(err);
+          }
+        };
+        const onListen = () => {
+          this.server.removeListener('error', onErr);
+          this.port = p;
+          resolve({ status: 'running', port: this.port, host: this.host });
+        };
+        this.server.once('error', onErr);
+        this.server.once('listening', onListen);
+        this.server.listen(p, this.host);
+      };
 
-      this.server.on('error', (err) => {
-        reject(err);
-      });
+      tryListen(this.port);
     });
   }
 

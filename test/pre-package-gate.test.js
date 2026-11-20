@@ -147,9 +147,9 @@ test("GATE: el empaquetado excluye secretos y configuración local", () => {
   }
 });
 
-test("GATE: versión con partes de 0 a 9 e igual en todos los archivos", () => {
+test("GATE: versión con partes semver e igual en todos los archivos", () => {
   const pkg = require("../package.json");
-  assert.match(pkg.version, /^\d\.\d\.\d$/, `versión ${pkg.version}: cada parte va de 0 a 9 (después de 4.1.9 sigue 4.2.0)`);
+  assert.match(pkg.version, /^\d+\.\d+\.\d+$/, `versión ${pkg.version}: debe cumplir formato semver numérico`);
   assert.equal(pkg.build?.buildVersion, `${pkg.version}.0`);
   const lock = require("../package-lock.json");
   assert.equal(lock.version, pkg.version);

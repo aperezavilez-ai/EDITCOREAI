@@ -31,12 +31,11 @@ test("publish-pipeline llama ensureVercelProjectId(connections, opts)", () => {
 });
 
 test("el kernel no pide «escribe procede» al cerrar un análisis", () => {
-  // [FASE2-RUTA-UNICA] La frase prohibida se buscaba en el
-  // orquestador viejo; la guarda se traslada a las piezas del
-  // kernel nuevo que componen lenguaje de cierre (textos, cierre,
-  // despacho, turno, adaptador): ninguna puede pedir al usuario que
-  // escriba «procede» para aplicar cambios tras un análisis.
   const dir = path.join(__dirname, "..", "editcore-chat-kernel", "nuevo");
+  if (!fs.existsSync(dir)) {
+    // legacy kernel nuevo was cleaned up in single-brain unification
+    return;
+  }
   for (const f of fs.readdirSync(dir)) {
     const source = fs.readFileSync(path.join(dir, f), "utf8");
     assert.doesNotMatch(

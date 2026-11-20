@@ -20,10 +20,21 @@ const { aplicarEdicionVisual } = require("../runtime/visual-edit");
 const RAIZ = path.join(__dirname, "..");
 const renderer = fs.readFileSync(path.join(RAIZ, "renderer.js"), "utf8");
 function extraer(nombre, esAsync) {
-  const i = renderer.indexOf((esAsync ? "async function " : "function ") + nombre);
+  const prefix = (esAsync ? "async function " : "function ") + nombre;
+  const i = renderer.indexOf(prefix);
   assert.ok(i >= 0, "función presente: " + nombre);
-  const j = renderer.indexOf("\n}\n", i);
-  return renderer.slice(i, j + 3);
+  const openBrace = renderer.indexOf("{", i);
+  let depth = 0;
+  for (let idx = openBrace; idx < renderer.length; idx++) {
+    if (renderer[idx] === "{") depth++;
+    else if (renderer[idx] === "}") {
+      depth--;
+      if (depth === 0) {
+        return renderer.slice(i, idx + 1);
+      }
+    }
+  }
+  return "";
 }
 
 test("flujo completo: apagar con el botón guarda el cambio y no recarga la vista", async (t) => {

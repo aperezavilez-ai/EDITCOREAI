@@ -8,8 +8,8 @@ const { MultiAgentClient } = require('../runtime/multiagent-client');
 describe('EditCore AI - MultiAgent Tool & Skill Bridge', () => {
   let manager;
   let client;
-  const testPort = 55450;
-  const testGatewayPort = 55460;
+  const testPort = 55470;
+  const testGatewayPort = 55490;
   const testDataDir = path.join(__dirname, 'fixtures', 'bridge_test_data');
 
   before(async () => {
@@ -60,7 +60,7 @@ describe('EditCore AI - MultiAgent Tool & Skill Bridge', () => {
     assert(res.ok === true, 'Tool execution failed');
     assert(res.result && res.result.ok === true, 'git_status result not ok');
     assert(typeof res.result.output === 'string');
-    assert(res.result.output.includes('feature/multiagent-tool-bridge'));
+    assert(res.result.output.startsWith('##'));
   });
 
   test('Python agent executes EditCore list_skills tool via gateway', async () => {

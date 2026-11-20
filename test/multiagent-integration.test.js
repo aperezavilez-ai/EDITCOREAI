@@ -7,11 +7,13 @@ const { MultiAgentClient } = require('../runtime/multiagent-client');
 describe('EditCore AI - MultiAgent Engine Integration', () => {
   let manager;
   let client;
-  const testPort = 55420;
+  const testPort = 55440;
+  const testGatewayPort = 55460;
 
   before(async () => {
     manager = new MultiAgentSidecarManager({
       port: testPort,
+      gatewayPort: testGatewayPort,
       dataDir: path.join(__dirname, 'fixtures', 'multiagent_test_data')
     });
     const info = await manager.start();

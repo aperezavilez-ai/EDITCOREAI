@@ -20,7 +20,7 @@ class MultiAgentSidecarManager {
     this.isReady = false;
     this.dataDir = options.dataDir || path.join(__dirname, 'multiagent', 'data');
     this.pythonPath = this._resolvePython();
-    this.gatewayPort = options.gatewayPort || (this.port + 10);
+    this.gatewayPort = options.gatewayPort || (this.port + 20);
     this.gateway = new MultiAgentToolGateway({
       port: this.gatewayPort,
       host: this.host,
@@ -39,6 +39,21 @@ class MultiAgentSidecarManager {
     return 'python';
   }
 
+  async _findFreePort(startingPort) {
+    const net = require('net');
+    return new Promise((resolve) => {
+      const srv = net.createServer();
+      srv.once('error', () => {
+        resolve(this._findFreePort(startingPort + 1));
+      });
+      srv.once('listening', () => {
+        const port = srv.address().port;
+        srv.close(() => resolve(port));
+      });
+      srv.listen(startingPort, this.host);
+    });
+  }
+
   async start() {
     if (this.process) {
       return { status: 'already_running', port: this.port };
@@ -46,7 +61,10 @@ class MultiAgentSidecarManager {
 
     // Start Node.js tool gateway first
     await this.gateway.start();
+    this.gatewayPort = this.gateway.port;
     console.log(`[MultiAgentSidecar] Tool & Skill Gateway online at http://${this.host}:${this.gatewayPort}`);
+
+    this.port = await this._findFreePort(this.port);
 
     if (!fs.existsSync(this.dataDir)) {
       fs.mkdirSync(this.dataDir, { recursive: true });
