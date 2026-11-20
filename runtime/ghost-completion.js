@@ -1,4 +1,4 @@
-﻿/**
+/**
  * EditCoreAI - Ghost Completion Engine (Cycle 29)
  * High-performance predictive inline completion (ghost text) provider
  * tailored for Monaco Editor.
@@ -53,8 +53,12 @@ class GhostCompletionEngine {
 
   predictHeuristicCompletion(documentContext = "", position = {}) {
     const lines = String(documentContext || "").split("\n");
-    const currentLineIdx = typeof position.lineNumber === "number" ? position.lineNumber - 1 : lines.length - 1;
-    const currentLine = lines[currentLineIdx] || "";
+    const currentLineIdx = (typeof position.lineNumber === "number" && position.lineNumber <= lines.length)
+      ? position.lineNumber - 1
+      : lines.length - 1;
+    const fullLine = lines[currentLineIdx] || "";
+    // If column is provided, inspect up to the cursor
+    const currentLine = typeof position.column === "number" ? fullLine.slice(0, position.column - 1) : fullLine;
     const trimmed = currentLine.trim();
 
     if (!trimmed) return null;
@@ -87,9 +91,55 @@ class GhostCompletionEngine {
       return "State(null);";
     }
 
-    // Pattern 6: Export default
+    // Pattern 6: React useEffect pattern
+    if (/^useEffect\s*\(\s*\(\s*\)\s*=>\s*\{?$/.test(trimmed)) {
+      if (!trimmed.endsWith("{")) return " {\n  \n}, []);";
+      return "\n  \n}, []);";
+    }
+
+    // Pattern 7: Export default
     if (trimmed === "export default") {
       return " function () {\n  \n};";
+    }
+
+    // Pattern 8: Test suites (describe, it, test)
+    const testMatch = trimmed.match(/^(?:it|test)\s*\(\s*(["'`])([^"'`]*)(["'`])?\s*,?\s*$/i);
+    if (testMatch) {
+      const quote = testMatch[1];
+      const hasClosingQuote = Boolean(testMatch[3]);
+      return hasClosingQuote ? ", async () => {\n  \n});" : `${quote}, async () => {\n  \n});`;
+    }
+    const describeMatch = trimmed.match(/^describe\s*\(\s*(["'`])([^"'`]*)(["'`])?\s*,?\s*$/i);
+    if (describeMatch) {
+      const quote = describeMatch[1];
+      const hasClosingQuote = Boolean(describeMatch[3]);
+      return hasClosingQuote ? ", () => {\n  \n});" : `${quote}, () => {\n  \n});`;
+    }
+
+    // Pattern 9: Console logging
+    if (trimmed === "console.log(") {
+      return ");";
+    }
+    if (trimmed === "console.error(") {
+      return ");";
+    }
+    if (trimmed === "console.") {
+      return "log();";
+    }
+
+    // Pattern 10: Import statement
+    if (/^import\s*\{\s*([a-zA-Z0-9_$,\s]*)$/.test(trimmed) && !trimmed.includes("from")) {
+      return ' } from "";';
+    }
+
+    // Pattern 11: Destructuring assignment
+    if (/^(?:const|let)\s*\{\s*([a-zA-Z0-9_$,\s]*)$/.test(trimmed) && !trimmed.includes("=")) {
+      return " } = ";
+    }
+
+    // Pattern 12: Loop for..of / for..in
+    if (/^for\s*\(\s*const\s+([a-zA-Z0-9_$]+)\s+of$/.test(trimmed)) {
+      return " items) {\n  \n}";
     }
 
     return null;
@@ -99,10 +149,16 @@ class GhostCompletionEngine {
     this.stats.requests += 1;
     if (!this.enabled) return null;
 
-    const currentLine = typeof documentContext === "string" ? documentContext.slice(-200) : "";
+    const lines = String(documentContext || "").split("\n");
+    const currentLineIdx = (typeof position.lineNumber === "number" && position.lineNumber <= lines.length)
+      ? position.lineNumber - 1
+      : lines.length - 1;
+    const fullLine = lines[currentLineIdx] || "";
+    const activeText = typeof position.column === "number" ? fullLine.slice(0, position.column - 1) : fullLine;
+    const cacheKey = activeText.trim() || fullLine.trim().slice(-100);
     
     // 1. Cache lookup
-    const cached = this.getCached(currentLine);
+    const cached = this.getCached(cacheKey);
     if (cached) {
       this.stats.hits += 1;
       return {
@@ -115,7 +171,7 @@ class GhostCompletionEngine {
     const heuristic = this.predictHeuristicCompletion(documentContext, position);
     if (heuristic) {
       this.stats.heuristics += 1;
-      this.cacheCompletion(currentLine, heuristic);
+      this.cacheCompletion(cacheKey, heuristic);
       return {
         insertText: heuristic,
         source: "heuristic",
@@ -128,7 +184,7 @@ class GhostCompletionEngine {
         const llmResult = await this.llmProvider(documentContext, position, options);
         if (llmResult && typeof llmResult === "string") {
           this.stats.llm += 1;
-          this.cacheCompletion(currentLine, llmResult);
+          this.cacheCompletion(cacheKey, llmResult);
           return {
             insertText: llmResult,
             source: "llm",

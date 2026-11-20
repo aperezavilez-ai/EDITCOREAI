@@ -184,6 +184,69 @@
     return loadPromise;
   }
 
+  let inlineProviderDisposable = null;
+  let ghostEnabled = true;
+
+  function registerGhostCompletionProvider(monaco) {
+    if (inlineProviderDisposable) return inlineProviderDisposable;
+    if (!monaco?.languages?.registerInlineCompletionsProvider) return null;
+
+    try {
+      inlineProviderDisposable = monaco.languages.registerInlineCompletionsProvider("*", {
+        provideInlineCompletions: async (model, position, context, token) => {
+          if (!ghostEnabled) return { items: [] };
+          if (token?.isCancellationRequested) return { items: [] };
+          if (!global.editcoreGhostCompletion?.suggest) return { items: [] };
+
+          const lineContent = model.getLineContent(position.lineNumber) || "";
+          const textBeforeCursor = lineContent.slice(0, position.column - 1);
+          if (!textBeforeCursor.trim()) return { items: [] };
+
+          const startLine = Math.max(1, position.lineNumber - 30);
+          const documentContext = model.getValueInRange({
+            startLineNumber: startLine,
+            startColumn: 1,
+            endLineNumber: position.lineNumber,
+            endColumn: position.column,
+          });
+
+          try {
+            const suggestion = await global.editcoreGhostCompletion.suggest(
+              documentContext,
+              { lineNumber: position.lineNumber, column: position.column },
+              { language: model.getLanguageId?.() || "javascript" }
+            );
+
+            if (!suggestion || !suggestion.insertText || token?.isCancellationRequested) {
+              return { items: [] };
+            }
+
+            return {
+              items: [
+                {
+                  insertText: suggestion.insertText,
+                  range: new monaco.Range(
+                    position.lineNumber,
+                    position.column,
+                    position.lineNumber,
+                    position.column
+                  ),
+                },
+              ],
+            };
+          } catch {
+            return { items: [] };
+          }
+        },
+        freeInlineCompletions: () => {},
+      });
+      return inlineProviderDisposable;
+    } catch (err) {
+      console.warn("[EditorPane] Error registrando inline completions provider:", err?.message);
+      return null;
+    }
+  }
+
   async function ensureEditor() {
     const monaco = await ensureMonaco();
     const host = hostEl();
@@ -195,6 +258,7 @@
       requestAnimationFrame(() => editor.layout());
       return editor;
     }
+    registerGhostCompletionProvider(monaco);
     editor = monaco.editor.create(host, {
       value: EMPTY_HINT,
       language: "javascript",
@@ -211,6 +275,10 @@
       wordWrap: "on",
       tabSize: 2,
       padding: { top: 8 },
+      inlineSuggest: {
+        enabled: true,
+        mode: "prefix",
+      },
     });
     editor.onDidChangeModelContent(() => {
       if (!currentPath) return;
@@ -235,6 +303,14 @@
       keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyK],
       run: () => {
         try { window.EditCoreInlineEdit?.open?.(); } catch { /* ignore */ }
+      },
+    });
+    editor.addAction({
+      id: "editcore-trigger-ghost",
+      label: "Cursor Tab: Sugerencia fantasma (Ghost Text)",
+      keybindings: [monaco.KeyMod.Alt | monaco.KeyCode.Backquote],
+      run: (ed) => {
+        try { ed.trigger("keyboard", "editor.action.inlineSuggest.trigger", {}); } catch { /* ignore */ }
       },
     });
     requestAnimationFrame(() => editor.layout());
@@ -467,5 +543,11 @@
     getCurrentPath,
     isDirty,
     layout,
+    registerGhostCompletionProvider,
+    toggleGhost: (enabled) => {
+      ghostEnabled = typeof enabled === "boolean" ? enabled : !ghostEnabled;
+      return ghostEnabled;
+    },
+    isGhostEnabled: () => ghostEnabled,
   };
 })(typeof window !== "undefined" ? window : globalThis);
