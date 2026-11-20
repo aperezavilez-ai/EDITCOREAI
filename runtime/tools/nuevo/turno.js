@@ -118,7 +118,7 @@ async function ejecutarTurno({ texto, llamarModelo, ejecutarHerramienta, herrami
   let volcadoCorregido = false;
   let respuestaContinuada = false;
   let trabajoSimuladoCorregido = false;
-  let anuncioCorregido = false;
+  let anuncioCorregido = 0;
   let herramientasEjecutadas = 0;
   // Tiempos medidos por llamada (los reporta el adaptador): la suma
   // es el tiempo de modelo del turno y el primer texto es el de la
@@ -236,14 +236,16 @@ async function ejecutarTurno({ texto, llamarModelo, ejecutarHerramienta, herrami
       // de anuncio (primera persona, futuro) no casan con la
       // forma de un reporte, así que el detector basta.
       if (!pedidos.length && herramientasDelCarril.length && herramientasEjecutadas === 0
-        && !anuncioCorregido && carril !== "PROPUESTA"
+        && anuncioCorregido < 2 && carril !== "PROPUESTA"
         && anunciaTrabajoSinEjecutar(textoFinal)) {
-        anuncioCorregido = true;
+        anuncioCorregido += 1;
         correcciones += 1;
         mensajes.push({ role: "assistant", content: textoFinal });
         mensajes.push({
           role: "user",
-          content: "Corrección del sistema: anunciaste trabajo («voy a…», «déjame…») y no ejecutaste ninguna herramienta: el anuncio no es el trabajo. Ejecuta ahora la primera acción real con las herramientas y continúa desde ahí; si el mensaje era una pregunta, respóndela directamente sin anunciar trabajo.",
+          content: `[SISTEMA — intento ${anuncioCorregido}/2] Anunciaste trabajo en futuro pero no llamaste ninguna herramienta. ` +
+            `El anuncio no cuenta como trabajo. AHORA MISMO debes llamar replace_in_file, write_file o run_command ` +
+            `con el primer cambio real de mayor prioridad. No expliques qué harás: hazlo directamente.`,
         });
         textoFinal = "";
         continue;

@@ -124,9 +124,14 @@ function esReporteDeExistencia(texto) {
 // usuario, no una promesa; y describir trabajo futuro dentro
 // de una PROPUESTA es la entrega misma — esa distinción la
 // hace el llamador (en PROPUESTA no se corrige el anuncio).
-const RE_ANUNCIO_VERBO = "(?:revisar|explorar|crear|construir|generar|implementar|armar|montar|escribir|leer|buscar|verificar|corregir|arreglar|instalar|configurar|analizar|empezar|comenzar)";
+const RE_ANUNCIO_VERBO = "(?:revisar|explorar|crear|construir|generar|implementar|armar|montar|escribir|leer|buscar|verificar|corregir|arreglar|instalar|configurar|analizar|empezar|comenzar|completar|terminar|finalizar|avanzar|desarrollar|cerrar|resolver|modificar|actualizar|editar)";
 const RE_ANUNCIO = new RegExp(
-  `\\b(?:voy|vamos) a ${RE_ANUNCIO_VERBO}\\b|\\b(?:déjame|dejame|permíteme|permiteme) ${RE_ANUNCIO_VERBO}\\b|\\b(?:me pongo a|procedo a|paso a) ${RE_ANUNCIO_VERBO}\\b`,
+  `\\b(?:voy|vamos) a ${RE_ANUNCIO_VERBO}\\b`
+  + `|\\b(?:déjame|dejame|permíteme|permiteme) ${RE_ANUNCIO_VERBO}\\b`
+  + `|\\b(?:me pongo a|procedo a|paso a) ${RE_ANUNCIO_VERBO}\\b`
+  + `|\\b(?:empiezo|comienzo)\\s+(?:ahora|ya|de inmediato|por|con)\\b`
+  + `|\\bprimero\\s+(?:voy a|cierro|creo|hago|implemento|edito|reviso|modifico|escribo|corrijo|termino|completo)\\b`
+  + `|\\b(?:a continuación|ahora mismo)\\s+(?:voy a|cierro|creo|hago|implemento|edito|reviso|modifico|escribo|corrijo|empiezo|termino|completo)\\b`,
   "i",
 );
 function anunciaTrabajoSinEjecutar(texto) {

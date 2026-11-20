@@ -4065,7 +4065,9 @@ function isPlanAuthorizedExecution(project, prompt, isAgent) {
   const text = String(prompt || "").trim();
   // CONTINUA solo reanuda analisis/checkpoint. NO autoriza correcciones.
   // PROCEDE / ADELANTE / AUTORIZO, "continua con correcciones", o pedidos explícitos de CORREGIR/ARREGLAR.
-  const strictProceed = /^\s*(?:procede|adelante|autorizo)\b/i.test(text);
+  const strictProceed = /^\s*(?:procede|adelante|autorizo)\b/i.test(text)
+    || /^\s*\?+\s*$/.test(text)
+    || /\b(?:debemos|tenemos\s+que|hay\s+que|vamos\s+a|necesitamos)\s+(?:terminar|completar|finalizar|avanzar|solucionar|arreglar|corregir|construir|implementar|hacer)\b/i.test(text);
   // Acceso completo: PROCEDE/ADELANTE autoriza siempre (sin depender de fase awaiting).
   if (strictProceed && state.permissionMode === "full") return true;
   const continuaWithFixes = /^\s*contin[uú]a\b/i.test(text)

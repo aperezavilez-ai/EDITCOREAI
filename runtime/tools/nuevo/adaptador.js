@@ -681,9 +681,14 @@ async function manejarChatNuevo(input, deps = {}) {
   // petición original del usuario — la única parte del enlatado
   // que es suya — como referencia.
   let mensajeEfectivo = textoCrudo;
+  const contextoPrevio = contextoDesdeHistorial(input.history || input.messages || []);
+  const esPreguntaContinuacion = /^[?¿.!…\s]+$/.test(textoCrudo) || /^(?:y\s*\?|qu[eé]\s*pas[oó]|contin[uú]a|sigue|dale|avanza)\b/i.test(textoCrudo);
+  const esContinuacionTrasAnuncio = esPreguntaContinuacion && (contextoPrevio.enEjecucion || contextoPrevio.respuestaAOferta);
+
   const esAprobacionCorta = !esEnlatado && Boolean(input.projectRoot) && (
-    /^\s*(?:s[ií][,.]?\s*)?(?:procede|adelante|hazlo|dale|va|contin[uú]a|sigue|avanza|ejecuta)\b/i.test(textoCrudo)
+    /^\s*(?:s[ií][,.]?\s*)?(?:procede|adelante|hazlo|dale|va|contin[uú]a|sigue|avanza|ejecuta|completa|termina)\b/i.test(textoCrudo)
     || /^\s*(?:s[ií]|ok|de acuerdo|perfecto|dale|va)[.!… ]*$/i.test(textoCrudo)
+    || esContinuacionTrasAnuncio
   );
   if (esEnlatado) {
     const seccion = (re) => {
@@ -699,18 +704,17 @@ async function manejarChatNuevo(input, deps = {}) {
   } else if (esAprobacionCorta) {
     mensajeEfectivo = [
       textoCrudo,
-      "[Instrucción de ejecución agéntica]: El usuario ha dado luz verde para proceder ('procede'). No repitas el informe anterior, no vuelvas a preguntar qué opción prefiere y no te quedes en bucle de pasividad. Ejecuta de inmediato con las herramientas reales el siguiente paso pendiente de mayor prioridad en la lista acordada (o en secuencia lógica: dependencias con run_command, archivos, configuración). Actúa ahora.",
+      "[Instrucción de ejecución agéntica]: El usuario ha dado luz verde para proceder ('procede' o '?'). No repitas el informe anterior, no vuelvas a anunciar lo que harás en futuro ni te quedes en bucle de pasividad. Ejecuta AHORA MISMO con las herramientas reales (write_file, replace_in_file, run_command) el siguiente paso pendiente de mayor prioridad en el proyecto. Actúa ahora.",
     ].join("\n\n");
   }
   // La autorización fuerza ORDEN solo sobre lo que no es una
   // pregunta: si el clasificador dice CONVERSACION (pregunta o
   // conversación), el turno se responde como conversación
   // aunque el flag venga puesto — una pregunta no se
-  // «ejecuta». El enlatado queda fuera de esta guarda: ÉL es
-  // la autorización y su mensaje efectivo ya es la orden.
+  // «ejecuta». El enlatado y la aprobación corta quedan fuera de esta guarda.
   const clasificacion = decidirTurno(
     mensajeEfectivo,
-    contextoDesdeHistorial(input.history || input.messages || []),
+    contextoPrevio,
   );
   const fuerzaOrden = (ejecucionAutorizada || esAprobacionCorta)
     && (esEnlatado || esAprobacionCorta || clasificacion.carril !== "CONVERSACION");

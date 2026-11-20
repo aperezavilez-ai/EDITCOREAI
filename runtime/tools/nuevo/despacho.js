@@ -24,16 +24,16 @@ const RE_PROPUESTA = /(?:qu[eé]\s+(?:me\s+)?propones|tu\s+(?:mejor\s+)?propuest
 // Aprobación corta para continuar lo ya planteado.
 const RE_APROBACION = /^\s*(?:s[ií][,.]?\s*)?(?:procede|adelante|hazlo|dale|va)\b/i;
 
-// Orden amable: «¿puedes corregir…?», «necesito que agregues…».
-const RE_PEDIDO_AMABLE = /\b(?:puedes|podr[ií]as|necesito\s+que|quiero\s+que|te\s+pido\s+que)\s+(?:corr\w*|arregl\w*|repar\w*|solucion\w*|implement\w*|aplic\w*|cre\w*|gener\w*|escrib\w*|modific\w*|actualiz\w*|agreg\w*|a[ñn]ad\w*|elimin\w*|borr\w*|public\w*|ejecut\w*|reemplaz\w*|instal\w*|configur\w*)/i;
+// Orden amable o colectiva: «¿puedes corregir…?», «debemos terminar…», «vamos a completar…».
+const RE_PEDIDO_AMABLE = /\b(?:debemos|tenemos\s+que|hay\s+que|vamos\s+a|necesitamos|puedes|podr[ií]as|necesito\s+que|quiero\s+que|te\s+pido\s+que)\s+(?:termin\w*|complet\w*|finaliz\w*|avanz\w*|constru\w*|desarroll\w*|cerr\w*|corr\w*|arregl\w*|repar\w*|solucion\w*|implement\w*|aplic\w*|cre\w*|gener\w*|escrib\w*|modific\w*|actualiz\w*|agreg\w*|a[ñn]ad\w*|elimin\w*|borr\w*|public\w*|ejecut\w*|reemplaz\w*|instal\w*|configur\w*)/i;
 
 // Verbo de trabajo al inicio del mensaje (imperativo directo).
-const RE_ORDEN_INICIO = /^\s*(?:por\s+favor\s+)?(?:corr[ií]j\w*|corrig\w*|arregl\w*|repar\w*|solucion\w*|implement\w*|aplic\w*|crea(?:r|me|lo|la)?\b|cre[aá]\b|genera(?:r)?\b|gener[aá]\b|escrib\w*|modific\w*|actualiz\w*|agreg\w*|a[ñn]ad\w*|elimin\w*|borr\w*|public\w*|despleg\w*|ejecut\w*|reemplaz\w*|haz(?:me|lo|la)?\b|constru\w*|instal\w*|configur\w*|sigue\b|contin[uú]a\b)/i;
+const RE_ORDEN_INICIO = /^\s*(?:por\s+favor\s+)?(?:corr[ií]j\w*|corrig\w*|arregl\w*|repar\w*|solucion\w*|implement\w*|aplic\w*|crea(?:r|me|lo|la)?\b|cre[aá]\b|genera(?:r)?\b|gener[aá]\b|escrib\w*|modific\w*|actualiz\w*|agreg\w*|a[ñn]ad\w*|elimin\w*|borr\w*|public\w*|despleg\w*|ejecut\w*|reemplaz\w*|haz(?:me|lo|la)?\b|constru\w*|instal\w*|configur\w*|sigue\b|contin[uú]a\b|termin\w*|complet\w*|finaliz\w*|avanz\w*|cierra\b)/i;
 
 // Verbo de orden directa en cualquier parte del mensaje (imperativo
 // no precedido de «se»: «porque hay una carpeta... corrije ese nombre»,
 // «hay un error, arréglalo», «elimina la carpeta tmp»).
-const RE_ORDEN_DIRECTA = /(?<!\bse\s+)\b(?:corr[ií]j\w*|corrig\w*|arregl\w*|repar\w*|solucion\w*|renombr\w*|elimin\w*|borr\w*|instal\w*|constru\w*)\b/i;
+const RE_ORDEN_DIRECTA = /(?<!\bse\s+)\b(?:corr[ií]j\w*|corrig\w*|arregl\w*|repar\w*|solucion\w*|renombr\w*|elimin\w*|borr\w*|instal\w*|constru\w*|termin\w*|complet\w*|finaliz\w*|avanz\w*)\b/i;
 
 // Pedido de un producto de trabajo: «hazme/quiero/dame … análisis/informe/…».
 // [v5.2.7 — corrección] «dame el resumen en pdf» caía fuera: ni
@@ -74,7 +74,7 @@ const RE_CONTINUACION_CORTA = /^\s*(?:\d{1,2}|s[ií]|ok|va|dale|procede|adelante
 // continuación corta también es ORDEN: caer en un carril sin
 // herramientas dejaba al modelo narrando la construcción en
 // prosa, sin ejecutar nada (juicio 2026-11-17).
-const RE_NARRACION_EJECUCION = /(?:revisando|verificando|creando|instalando|aplicando|listando|comprobando|explorando|antes de (?:crear|verificar|revisar)|voy a (?:crear|verificar|revisar|instalar|aplicar))/i;
+const RE_NARRACION_EJECUCION = /(?:revisando|verificando|creando|instalando|aplicando|listando|comprobando|explorando|terminando|completando|cerrando|antes de (?:crear|verificar|revisar|terminar|completar)|voy a (?:crear|verificar|revisar|instalar|aplicar|completar|terminar|cerrar)|empiezo (?:por|ahora|con)|primero (?:cierro|creo|hago|implemento|reviso)|archivos rotos|archivos incompletos)/i;
 
 function contextoDesdeHistorial(historial) {
   const lista = Array.isArray(historial) ? historial : [];
@@ -92,10 +92,10 @@ function decidirTurno(texto, contexto = {}) {
   if (!t) {
     return { carril: "CONVERSACION", herramientas: "ninguna", puedeEscribir: false, motivo: "mensaje_vacio" };
   }
-  if (contexto && contexto.respuestaAOferta && t.length <= 24 && RE_CONTINUACION_CORTA.test(t)) {
+  if (contexto && contexto.respuestaAOferta && t.length <= 24 && (RE_CONTINUACION_CORTA.test(t) || /^[?¿.!…\s]+$/.test(t))) {
     return { carril: "ORDEN", herramientas: "completa", puedeEscribir: true, motivo: "continuacion_aprobada" };
   }
-  if (contexto && contexto.enEjecucion && t.length <= 24 && (RE_CONTINUACION_CORTA.test(t) || /^[?¿]+$/.test(t))) {
+  if (contexto && contexto.enEjecucion && t.length <= 24 && (RE_CONTINUACION_CORTA.test(t) || /^[?¿.!…\s]+$/.test(t))) {
     return { carril: "ORDEN", herramientas: "completa", puedeEscribir: true, motivo: "continuacion_tras_corte" };
   }
   // La orden manda sobre la mención de «propuesta»: un encargo de

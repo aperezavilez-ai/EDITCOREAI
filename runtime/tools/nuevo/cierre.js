@@ -152,6 +152,13 @@ function componerCierre({ resultado, delegaciones = null }) {
     }
   }
 
+  // Sugerencia y próximos pasos: un turno que no aplicó mutaciones nunca debe dejar al usuario sin saber qué hacer.
+  const tienePreguntaOCierre = /[?¿]|\b(?:próximos pasos|sugerencia|para continuar|si deseas|puedes indicarme|dime si|quieres que|cómo continuar)\b/i.test(voz);
+  if (!tienePreguntaOCierre && (sinAplicados || sinActividad)) {
+    const sugerencia = "\n\n---\n**¿Cómo deseas continuar?**\n- Escribe **«procede»** o **«continúa»** para que ejecute y aplique los cambios directamente en el proyecto.\n- O indícame qué archivo o tarea específica prefieres que atienda primero.";
+    voz = String(voz || "").trim() + sugerencia;
+  }
+
   return { voz, vozOriginal, detalle, corregida };
 }
 
