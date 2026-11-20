@@ -2120,6 +2120,13 @@ ipcMain.handle("editcore:cancel", (event, input = {}) => {
   return true;
 });
 
+try {
+  const { registerMultiAgentIpc } = require("./runtime/multiagent-ipc");
+  registerMultiAgentIpc(ipcMain);
+} catch (err) {
+  console.warn("[MultiAgent] IPC registration failed:", err.message);
+}
+
 ipcMain.handle("metrics:cache-stats", () => ({
   responses: getResponseCache().getStats(),
   tools: getToolCache().stats(),
@@ -8765,6 +8772,10 @@ app.on("before-quit", () => {
   } catch { /* ignore */ }
   try {
     optionalJarvisLauncher()?.stopJarvis?.();
+  } catch (err) {}
+  try {
+    const { stopMultiAgentSidecar } = require("./runtime/multiagent-ipc");
+    stopMultiAgentSidecar();
   } catch (err) {}
 });
 app.on("activate", () => {

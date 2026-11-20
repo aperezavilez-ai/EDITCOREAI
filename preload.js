@@ -21,6 +21,16 @@ contextBridge.exposeInMainWorld("editcoreChat", {
   cancel: (input = {}) => ipcRenderer.invoke("editcore:cancel", input),
 });
 
+contextBridge.exposeInMainWorld("editcoreMultiAgent", {
+  health: () => ipcRenderer.invoke("multiagent:health"),
+  agents: () => ipcRenderer.invoke("multiagent:agents"),
+  submit: (input) => ipcRenderer.invoke("multiagent:submit", input),
+  status: (input) => ipcRenderer.invoke("multiagent:status", input),
+  tasks: (input) => ipcRenderer.invoke("multiagent:tasks", input),
+  messages: (input) => ipcRenderer.invoke("multiagent:messages", input),
+  cancel: (input) => ipcRenderer.invoke("multiagent:cancel", input),
+});
+
 contextBridge.exposeInMainWorld("editcoreProject", {
   pick: () => ipcRenderer.invoke("project:pick"),
   pickParent: () => ipcRenderer.invoke("project:pick-parent"),
