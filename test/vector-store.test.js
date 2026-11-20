@@ -62,3 +62,32 @@ test("VectorStore: indexa y busca similitud en un proyecto real (indexProject & 
 
   fs.rmSync(tempDir, { recursive: true, force: true });
 });
+
+test("extraTools: semanticCodeSearch encuentra código conceptual por lenguaje natural", () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "editcore-sem-"));
+  const f = path.join(tempDir, "auth.js");
+  fs.writeFileSync(f, "export function verifySessionToken(token) { return checkJwt(token); }", "utf8");
+
+  const extraTools = require("../runtime/tools/extra-tools");
+  const res = extraTools.semanticCodeSearch(tempDir, { query: "token verify jwt" });
+
+  assert.strictEqual(res.ok, true);
+  assert.ok(res.results.length > 0);
+  assert.ok(res.results[0].content.includes("verifySessionToken"));
+
+  fs.rmSync(tempDir, { recursive: true, force: true });
+});
+
+test("at-mentions: @docs:query recupera fragmentos semánticos usando VectorStore", async () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "editcore-docs-"));
+  const f = path.join(tempDir, "billing.js");
+  fs.writeFileSync(f, "export function createSubscriptionStripe(customerId) { return stripe.subscriptions.create(); }", "utf8");
+
+  const { resolveMentionsContext } = require("../runtime/at-mentions-resolver");
+  const context = await resolveMentionsContext([{ type: "docs", query: "subscription stripe" }], tempDir);
+
+  assert.ok(context.includes("RAG Semántico Vectorial"));
+  assert.ok(context.includes("createSubscriptionStripe"));
+
+  fs.rmSync(tempDir, { recursive: true, force: true });
+});

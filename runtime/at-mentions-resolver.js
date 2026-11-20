@@ -319,7 +319,26 @@ async function resolveMentionsContext(mentions = [], projectRoot = "", options =
 
       case "docs": {
         const query = item.query || "general";
-        blocks.push(`### [Contexto @docs: ${query}]\nBuscando referencias en el Cerebro para: "${query}"`);
+        if (!root) {
+          blocks.push(`### [Contexto @docs: ${query}]\nBuscando referencias en el Cerebro para: "${query}"`);
+          break;
+        }
+        try {
+          const { vectorStore } = require("./vector-store");
+          let hits = vectorStore.searchSimilar(root, query, { topK: 4 });
+          if (!hits.length) {
+            vectorStore.indexProject(root);
+            hits = vectorStore.searchSimilar(root, query, { topK: 4 });
+          }
+          if (hits.length > 0) {
+            const formatted = hits.map((h) => `**${h.filePath}:${h.startLine}-${h.endLine}** (relevancia: ${Math.round(h.score * 100)}%)\n\`\`\`\n${h.content.slice(0, 800)}\n\`\`\``).join("\n\n");
+            blocks.push(`### [Contexto @docs: "${query}" (RAG Semántico Vectorial)]\n${formatted}`);
+          } else {
+            blocks.push(`### [Contexto @docs: "${query}"]\n(No se encontraron fragmentos semánticamente coincidentes en el proyecto)`);
+          }
+        } catch {
+          blocks.push(`### [Contexto @docs: ${query}]\nBuscando referencias en el Cerebro para: "${query}"`);
+        }
         break;
       }
 

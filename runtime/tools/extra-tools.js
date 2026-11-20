@@ -133,6 +133,35 @@ function queryCodeGraph(root, args = {}) {
   return { ok: true, totalFilesIndexed: graph.totalFilesIndexed, note: "Pasa symbol o filePath para consultar el grafo." };
 }
 
+function semanticCodeSearch(root, args = {}) {
+  const query = String(args.query || "").trim();
+  if (!query) return { ok: false, error: "semantic_code_search requiere 'query'" };
+  const projectRoot = root || process.cwd();
+  try {
+    const { vectorStore } = require("../vector-store");
+    const topK = Math.min(10, Math.max(1, Number(args.topK) || 5));
+    let results = vectorStore.searchSimilar(projectRoot, query, { topK });
+    if (!results.length) {
+      vectorStore.indexProject(projectRoot);
+      results = vectorStore.searchSimilar(projectRoot, query, { topK });
+    }
+    return {
+      ok: true,
+      query,
+      count: results.length,
+      results: results.map((r) => ({
+        filePath: r.filePath,
+        startLine: r.startLine,
+        endLine: r.endLine,
+        score: r.score,
+        content: r.content.slice(0, 800),
+      })),
+    };
+  } catch (err) {
+    return { ok: false, error: `Error en búsqueda semántica: ${err.message}` };
+  }
+}
+
 // Estado de Conexiones y del proyecto, sin tokens, con el siguiente paso concreto para guiar al usuario.
 async function checkConnections(root, helpers = {}) {
   const connections = typeof helpers.readConnections === "function" ? (helpers.readConnections() || {}) : {};
@@ -383,6 +412,7 @@ const EXTRA_DEFINITIONS = [
   { type: "function", function: { name: "connect_project", description: "Conecta el proyecto con las cuentas de Conexiones: git init si falta, crea o enlaza el repositorio privado en GitHub, crea el proyecto en Vercel y escribe las variables de Supabase en .env.local. Siempre pide confirmación al usuario antes de ejecutarse.", parameters: { type: "object", properties: { repoName: { type: "string" }, createGithub: { type: "boolean" }, createVercel: { type: "boolean" }, linkSupabase: { type: "boolean" } } } } },
   { type: "function", function: { name: "publish_project", description: "Publica el proyecto: commit sin secretos, push de la rama actual, migraciones Supabase si aplican y deploy. Siempre pide confirmación al usuario antes de ejecutarse.", parameters: { type: "object", properties: { commitMessage: { type: "string" }, deploy: { type: "boolean" }, supabasePush: { type: "boolean" }, skipPush: { type: "boolean" } } } } },
   { type: "function", function: { name: "query_code_graph", description: "Consulta el Grafo de Código AST del proyecto: encuentra dónde está definido un símbolo (función, clase, interface, tipo, variable) y qué archivos lo importan o llaman en todo el proyecto. Muy superior a grep para navegación estructural de código.", parameters: { type: "object", properties: { symbol: { type: "string", description: "Nombre del símbolo o identificador a buscar (ej: 'analyzeContent', 'UserProfile', 'Button')" }, filePath: { type: "string", description: "Opcional: ruta de un archivo para inspeccionar sus exportaciones, importaciones y dependencias" } } } } },
+  { type: "function", function: { name: "semantic_code_search", description: "Búsqueda semántica de código mediante embeddings vectoriales locales (RAG). Localiza archivos y fragmentos por significado conceptual en lenguaje natural (ej: 'manejo de pagos webhook', 'autenticación de usuarios con Supabase', 'middleware de rutas protegidas') sin necesidad de conocer los nombres exactos.", parameters: { type: "object", properties: { query: { type: "string", description: "Descripción conceptual de lo que buscas en lenguaje natural" }, topK: { type: "number", description: "Número de fragmentos relevantes a devolver (1 a 10, por defecto 5)" } }, required: ["query"] } } },
 ];
 
 module.exports = {
@@ -397,6 +427,7 @@ module.exports = {
   dockerPs,
   searchBrain,
   queryCodeGraph,
+  semanticCodeSearch,
   checkConnections,
   runExternalAction,
   externalActionPreview,
