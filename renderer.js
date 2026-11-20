@@ -12503,6 +12503,76 @@ async function send(event) {
   updateSendButtonState();
   let effectivePrompt = prompt || (hasImages ? "Analiza la imagen adjunta." : "Analiza los archivos adjuntos.");
 
+  if (!hasAttachments && /^\/(?:clean|clear)\b/i.test(effectivePrompt)) {
+    appendUserWithImages(effectivePrompt, []);
+    const feed = $("feed");
+    if (feed) feed.innerHTML = "";
+    const project = activeProject();
+    if (project) {
+      project.messages = [];
+      project.turns = [];
+      try { saveProjects(); } catch {}
+    }
+    const cleanMsg = "Chat reiniciado. Historial visual y memoria de conversación limpios.";
+    const usage = { local_response: true, confirmed_input_tokens: 0, confirmed_output_tokens: 0 };
+    append("assistant", cleanMsg, usage, true, 0);
+    $("status").textContent = "Chat limpio";
+    updateSendButtonState();
+    return;
+  }
+
+  if (!hasAttachments && /^\/(?:help|ayuda|comandos)\b/i.test(effectivePrompt)) {
+    appendUserWithImages(effectivePrompt, []);
+    rememberMessage("user", effectivePrompt);
+    const helpMsg = [
+      "### Comandos Slash (/) y Menciones (@) Disponibles en EditCoreAI:",
+      "",
+      "**Comandos Rápidos (/):**",
+      "- `/plan <tarea>`: Prepara un plan de ejecución detallado paso a paso antes de aplicar cambios.",
+      "- `/test`: Diagnostica la salud del código y ejecuta pruebas del proyecto con Test Guardian.",
+      "- `/fix <error>`: Detecta y genera corrección automática de sintaxis o fallos de compilación.",
+      "- `/review`: Revisa calidad de código, sintaxis, dependencias y seguridad.",
+      "- `/health`: Comprueba el estado integral del proyecto, dependencias y base de datos.",
+      "- `/git`: Revisa el estado del repositorio Git, commits recientes y ramas.",
+      "- `/clean`: Reinicia el feed de mensajes y limpia la memoria visual del chat.",
+      "- `/help`: Muestra esta guía de ayuda.",
+      "",
+      "**Menciones de Contexto (@):**",
+      "- `@file:<archivo>` o `@archivo.ext`: Inyecta el contenido completo del archivo referenciado.",
+      "- `@folder:<carpeta>` o `@carpeta/`: Inyecta la estructura y contenido del directorio.",
+      "- `@symbol:<función/clase>`: Inyecta la definición AST y referencias cruzadas.",
+      "- `@problems`: Inyecta los errores y advertencias de sintaxis activos.",
+      "- `@git`: Inyecta el diff de cambios no guardados en Git.",
+      "- `@docs:<tema>`: Búsqueda semántica vectorial RAG en la documentación del Cerebro.",
+    ].join("\n");
+    const usage = { local_response: true, confirmed_input_tokens: 0, confirmed_output_tokens: 0 };
+    append("assistant", helpMsg, usage, true, 0);
+    rememberMessage("assistant", helpMsg, usage);
+    $("status").textContent = "Comandos de EditCoreAI";
+    updateSendButtonState();
+    return;
+  }
+
+  // Traducción semántica inteligente para comandos agénticos
+  if (/^\/plan\b/i.test(effectivePrompt)) {
+    const task = effectivePrompt.replace(/^\/plan\s*/i, "").trim();
+    effectivePrompt = task ? `Elabora un plan de acción detallado paso a paso para: ${task}` : "Elabora un plan de acción detallado paso a paso para el siguiente objetivo pendiente del proyecto.";
+    if ($("runMode")) $("runMode").value = "agent";
+  } else if (/^\/test\b/i.test(effectivePrompt)) {
+    effectivePrompt = "Diagnostica la salud del código del proyecto con Test Guardian y ejecuta las pruebas necesarias para verificar que no haya errores de compilación ni de sintaxis.";
+    if ($("runMode")) $("runMode").value = "agent";
+  } else if (/^\/fix\b/i.test(effectivePrompt)) {
+    const issue = effectivePrompt.replace(/^\/fix\s*/i, "").trim();
+    effectivePrompt = issue ? `Diagnostica y corrige el siguiente problema técnico en el proyecto de forma atómica y sin bucles: ${issue}` : "Diagnostica y corrige los errores y fallos de sintaxis o compilación detectados en el proyecto.";
+    if ($("runMode")) $("runMode").value = "agent";
+  } else if (/^\/review\b/i.test(effectivePrompt)) {
+    effectivePrompt = "Realiza una revisión técnica profunda del código del proyecto: calidad, sintaxis, arquitectura, mejores prácticas y seguridad.";
+  } else if (/^\/health\b/i.test(effectivePrompt)) {
+    effectivePrompt = "Comprueba el estado de salud integral del proyecto: dependencias instaladas, configuración, builds y conexión a servicios.";
+  } else if (/^\/git\b/i.test(effectivePrompt)) {
+    effectivePrompt = "Revisa el estado del repositorio Git del proyecto: rama actual, cambios pendientes de commit y últimos commits registrados.";
+  }
+
   if (!hasAttachments && isUserStopCommand(effectivePrompt)) {
     appendUserWithImages(effectivePrompt, []);
     rememberMessage("user", effectivePrompt);
@@ -16381,28 +16451,60 @@ function setupMentionAutocomplete(promptEl, popupEl) {
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#039;");
 
+  const SLASH_COMMANDS = [
+    { command: "/plan", label: "/plan", detail: "Crear plan de ejecución detallado paso a paso", insertText: "/plan ", icon: "📋" },
+    { command: "/test", label: "/test", detail: "Diagnosticar salud del código y ejecutar pruebas", insertText: "/test ", icon: "🧪" },
+    { command: "/fix", label: "/fix", detail: "Detectar y corregir errores automáticamente", insertText: "/fix ", icon: "🔧" },
+    { command: "/review", label: "/review", detail: "Revisar calidad, seguridad y arquitectura", insertText: "/review ", icon: "🔍" },
+    { command: "/health", label: "/health", detail: "Comprobar estado general del proyecto", insertText: "/health ", icon: "🩺" },
+    { command: "/git", label: "/git", detail: "Ver estado de Git, commits recientes y ramas", insertText: "/git ", icon: "🌿" },
+    { command: "/clean", label: "/clean", detail: "Reiniciar contexto y limpiar la vista del chat", insertText: "/clean", icon: "🧹" },
+    { command: "/help", label: "/help", detail: "Ver guía de comandos y atajos disponibles", insertText: "/help", icon: "💡" },
+  ];
+
   let mentionState = {
     active: false,
+    trigger: "",
     query: "",
     startIndex: -1,
     candidates: [],
     selectedIndex: 0,
   };
 
-  const getMentionMatch = () => {
+  const getTriggerMatch = () => {
     const text = promptEl.value || "";
     const cursor = promptEl.selectionStart || 0;
     const beforeCursor = text.slice(0, cursor);
-    const match = /(?:^|\s)@([a-zA-Z0-9_\-.:/]*)$/.exec(beforeCursor);
-    if (!match) return null;
-    const matchFull = match[0];
-    const atOffset = matchFull.indexOf("@");
-    const startIndex = match.index + atOffset;
-    return {
-      query: match[1] || "",
-      startIndex,
-      endIndex: cursor,
-    };
+
+    // 1. Detección de comando slash (/): al inicio del texto o tras un salto de línea
+    const slashMatch = /(?:^|\n)\/([a-zA-Z0-9_\-]*)$/.exec(beforeCursor);
+    if (slashMatch) {
+      const matchFull = slashMatch[0];
+      const slashOffset = matchFull.indexOf("/");
+      const startIndex = slashMatch.index + slashOffset;
+      return {
+        trigger: "/",
+        query: (slashMatch[1] || "").toLowerCase(),
+        startIndex,
+        endIndex: cursor,
+      };
+    }
+
+    // 2. Detección de mención contextual (@): al inicio o tras un espacio en blanco
+    const atMatch = /(?:^|\s)@([a-zA-Z0-9_\-.:/]*)$/.exec(beforeCursor);
+    if (atMatch) {
+      const matchFull = atMatch[0];
+      const atOffset = matchFull.indexOf("@");
+      const startIndex = atMatch.index + atOffset;
+      return {
+        trigger: "@",
+        query: atMatch[1] || "",
+        startIndex,
+        endIndex: cursor,
+      };
+    }
+
+    return null;
   };
 
   const renderCandidates = () => {
@@ -16419,11 +16521,14 @@ function setupMentionAutocomplete(promptEl, popupEl) {
       itemEl.setAttribute("role", "option");
       itemEl.setAttribute("aria-selected", idx === mentionState.selectedIndex ? "true" : "false");
 
-      const icon = cand.type === "file" ? "📄" :
+      const icon = cand.icon ? cand.icon :
+                   cand.type === "file" ? "📄" :
                    cand.type === "symbol" ? "⚡" :
                    cand.type === "problems" ? "⚠️" :
                    cand.type === "git" ? "🌿" :
-                   cand.type === "docs" ? "🧠" : "📌";
+                   cand.type === "docs" ? "🧠" :
+                   cand.type === "folder" ? "📁" :
+                   cand.type === "slash" ? "⚡" : "📌";
 
       itemEl.innerHTML = `
         <span class="mention-item-icon">${icon}</span>
@@ -16450,13 +16555,16 @@ function setupMentionAutocomplete(promptEl, popupEl) {
 
   const applyCandidate = (cand) => {
     if (!cand) return;
-    const match = getMentionMatch();
+    const match = getTriggerMatch();
     const text = promptEl.value || "";
     const start = match ? match.startIndex : mentionState.startIndex;
     const end = promptEl.selectionStart || text.length;
     if (start < 0) return;
 
-    const insert = cand.insertText ? (cand.insertText.endsWith(":") ? cand.insertText : cand.insertText + " ") : "";
+    let insert = cand.insertText || (cand.label + " ");
+    if (cand.type !== "slash" && insert && !insert.endsWith(" ") && !insert.endsWith(":")) {
+      insert += " ";
+    }
     const newText = text.slice(0, start) + insert + text.slice(end);
     promptEl.value = newText;
     const newCursor = start + insert.length;
@@ -16471,30 +16579,65 @@ function setupMentionAutocomplete(promptEl, popupEl) {
   };
 
   const updateCandidates = async () => {
-    const match = getMentionMatch();
+    const match = getTriggerMatch();
     if (!match) {
       popupEl.classList.add("hidden");
       popupEl.innerHTML = "";
       mentionState.active = false;
       return;
     }
+    mentionState.trigger = match.trigger;
     mentionState.startIndex = match.startIndex;
     mentionState.query = match.query;
-    try {
-      if (window.editcoreProject?.queryMentions) {
-        const list = await window.editcoreProject.queryMentions(state.projectRoot || "", match.query);
-        mentionState.candidates = Array.isArray(list) ? list : [];
-      } else {
-        mentionState.candidates = [];
+
+    if (match.trigger === "/") {
+      const q = match.query;
+      const filtered = SLASH_COMMANDS.filter((cmd) => !q || cmd.command.slice(1).startsWith(q) || cmd.command.startsWith(q));
+      mentionState.candidates = filtered.map((c) => ({
+        type: "slash",
+        label: c.label,
+        detail: c.detail,
+        insertText: c.insertText,
+        icon: c.icon,
+      }));
+    } else {
+      const root = String(state.projectRoot || activeProject()?.projectRoot || "").trim();
+      let list = [];
+      try {
+        if (window.editcoreProject?.queryMentions) {
+          list = await window.editcoreProject.queryMentions(root, match.query);
+        }
+      } catch {
+        list = [];
       }
-    } catch {
-      mentionState.candidates = [];
+      if (!Array.isArray(list) || !list.length) {
+        const q = match.query.toLowerCase();
+        list = [
+          { type: "problems", label: "@problems", detail: "Errores y lints activos", insertText: "@problems" },
+          { type: "git", label: "@git", detail: "Archivos modificados y diff actual", insertText: "@git" },
+          { type: "docs", label: "@docs", detail: "Buscar en Cerebro / Brain", insertText: "@docs:" },
+          { type: "symbol", label: "@symbol", detail: "Buscar funciones y clases AST", insertText: "@symbol:" },
+          { type: "folder", label: "@folder", detail: "Explorar contenido de carpeta", insertText: "@folder:" },
+        ].filter((item) => !q || item.label.slice(1).toLowerCase().startsWith(q));
+      }
+      mentionState.candidates = list;
     }
+
     mentionState.selectedIndex = 0;
     renderCandidates();
   };
 
   promptEl.addEventListener("input", () => {
+    updateCandidates().catch(() => undefined);
+  });
+  promptEl.addEventListener("keyup", (e) => {
+    if (["ArrowUp", "ArrowDown", "Enter", "Tab", "Escape"].includes(e.key)) return;
+    updateCandidates().catch(() => undefined);
+  });
+  promptEl.addEventListener("click", () => {
+    updateCandidates().catch(() => undefined);
+  });
+  promptEl.addEventListener("focus", () => {
     updateCandidates().catch(() => undefined);
   });
 

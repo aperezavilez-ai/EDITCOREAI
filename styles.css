@@ -1456,29 +1456,30 @@ main {
   border: 1px solid var(--ec-border-strong);
   border-radius: 8px;
   background: var(--ec-bg);
-  overflow: hidden;
+  overflow: visible;
   min-height: 0;
+  z-index: 50;
 }
 
 .composer-input-wrap:focus-within { border-color: var(--ec-accent); }
 
-/* ── Menú emergente de Menciones (@file, @symbol, @problems, @git, @docs) ── */
+/* ── Menú emergente de Menciones (@file, @symbol, @problems, @git, @docs) y Comandos Slash (/) ── */
 .mention-popup {
   position: absolute;
-  bottom: calc(100% + 6px);
+  bottom: calc(100% + 8px);
   left: 0;
   right: 0;
-  max-height: 240px;
+  max-height: 280px;
   background: #1e1f22;
-  border: 1px solid rgba(255, 255, 255, 0.14);
+  border: 1px solid rgba(255, 255, 255, 0.18);
   border-radius: 8px;
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(0, 0, 0, 0.25);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.65), 0 0 0 1px rgba(0, 0, 0, 0.35);
   overflow-y: auto;
   z-index: 10100;
   display: flex;
   flex-direction: column;
-  padding: 4px;
-  backdrop-filter: blur(12px);
+  padding: 6px;
+  backdrop-filter: blur(16px);
 }
 
 .mention-popup.hidden {
@@ -1489,8 +1490,8 @@ main {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 6px 10px;
-  border-radius: 5px;
+  padding: 7px 10px;
+  border-radius: 6px;
   cursor: pointer;
   color: #e0e6ed;
   font-size: 13px;
@@ -1511,6 +1512,48 @@ main {
   flex-shrink: 0;
   width: 18px;
   text-align: center;
+}
+
+.mention-item-label {
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.mention-item-detail {
+  font-size: 11px;
+  color: #8b949e;
+  margin-left: auto;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 65%;
+}
+
+/* Soporte para Tema Claro / Blanco */
+[data-theme="light"] .mention-popup,
+body.theme-light .mention-popup {
+  background: #ffffff;
+  border: 1px solid rgba(0, 0, 0, 0.15);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.18), 0 0 0 1px rgba(0, 0, 0, 0.08);
+}
+
+[data-theme="light"] .mention-item,
+body.theme-light .mention-item {
+  color: #1f2328;
+}
+
+[data-theme="light"] .mention-item-detail,
+body.theme-light .mention-item-detail {
+  color: #656d76;
+}
+
+[data-theme="light"] .mention-item:hover,
+[data-theme="light"] .mention-item.selected,
+body.theme-light .mention-item:hover,
+body.theme-light .mention-item.selected {
+  background: rgba(9, 105, 218, 0.12);
+  color: #0969da;
+  outline: 1px solid rgba(9, 105, 218, 0.3);
 }
 
 .mention-item-label {
