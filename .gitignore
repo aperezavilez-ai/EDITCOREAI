@@ -18,7 +18,7 @@ npm-debug.log*
 coverage/
 __pycache__/
 *.py[cod]
-runtime/multiagent/data/
+multiagent-engine/data/
 # Env & secrets
 .env
 .env.*

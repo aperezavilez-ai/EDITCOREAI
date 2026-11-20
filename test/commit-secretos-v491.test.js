@@ -22,7 +22,7 @@ const os = require("node:os");
 const path = require("node:path");
 const { execFileSync } = require("node:child_process");
 
-const tools = require("../editcore-chat-kernel/tools");
+const tools = require("../runtime/tools/tools");
 
 function git(root, args) {
   return execFileSync("git", args, { cwd: root, encoding: "utf8" }).trim();

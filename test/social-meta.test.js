@@ -14,8 +14,8 @@ const os = require("node:os");
 const path = require("node:path");
 
 const social = require("../runtime/social-meta");
-const tools = require("../editcore-chat-kernel/tools");
-const { READ_ONLY_TOOLS, WRITE_TOOLS } = require("../editcore-chat-kernel/classify");
+const tools = require("../runtime/tools/tools");
+const { READ_ONLY_TOOLS, WRITE_TOOLS } = require("../runtime/tools/classify");
 
 const CONFIG = { appId: "1234567890", appSecret: "secreto-de-prueba", redirectUri: "https://ejemplo.test/callback" };
 

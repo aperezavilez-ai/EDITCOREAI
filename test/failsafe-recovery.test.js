@@ -6,7 +6,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const os = require("node:os");
 
-const { createSnapshot, rollbackLastChange, listSnapshots } = require("../editcore-chat-kernel/snapshot");
+const { createSnapshot, rollbackLastChange, listSnapshots } = require("../runtime/tools/snapshot");
 const { verifySyntax } = require("../scripts/failsafe-recovery");
 
 test("snapshot engine creates backup and rolls back cleanly", () => {

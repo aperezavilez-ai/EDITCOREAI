@@ -47,7 +47,7 @@ test("Candado: admin y modo desarrollo no se bloquean", () => {
 
 test("Candado: las dos rutas de llamada a la IA pasan por el candado", () => {
   const aiCore = fs.readFileSync(path.join(ROOT, "runtime", "ai-core.js"), "utf8");
-  const kernel = fs.readFileSync(path.join(ROOT, "editcore-chat-kernel", "provider.js"), "utf8");
+  const kernel = fs.readFileSync(path.join(ROOT, "runtime", "tools", "provider.js"), "utf8");
   assert.match(aiCore, /assertProviderAllowed\(/);
   assert.match(kernel, /assertProviderAllowed\(/);
 });

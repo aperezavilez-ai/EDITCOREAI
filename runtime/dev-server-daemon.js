@@ -5,8 +5,8 @@
  * Emite eventos para UI y auto-heal del kernel (VERIFIER).
  */
 
-const { detectDevLogIssue } = require("../editcore-chat-kernel/dev-log-detector");
-const { attachProcessStreams, detectSevereIssue } = require("../editcore-chat-kernel/process-runner");
+const { detectDevLogIssue } = require("./tools/dev-log-detector");
+const { attachProcessStreams, detectSevereIssue } = require("./tools/process-runner");
 
 const DEFAULT_COOLDOWN_MS = 45_000;
 

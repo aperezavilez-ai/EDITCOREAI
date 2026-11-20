@@ -6,7 +6,7 @@
  * Eliminates legacy serial promise chains and provides true non-blocking multi-agent execution.
  */
 
-const { ensureSidecar } = require("../runtime/multiagent-ipc");
+const { ensureSidecar } = require("../multiagent-ipc");
 const { classify } = require("./classify");
 
 const QUEUE_TIMEOUT_MS = 120_000;

@@ -18,7 +18,7 @@ const path = require("node:path");
 const REPO_ROOT = path.join(__dirname, "..");
 const ProjectAnalysisRoot = require("../project-analysis");
 const ProjectAnalysisRuntime = require("../runtime/project-analysis");
-const { skillsPrompt, selectSkillsForTurn, MAX_SKILLS_IN_PROMPT } = require("../editcore-chat-kernel/skills-catalog");
+const { skillsPrompt, selectSkillsForTurn, MAX_SKILLS_IN_PROMPT } = require("../runtime/tools/skills-catalog");
 const AutoModel = require("../auto-model-selection");
 const defaults = require("../runtime/platform-defaults");
 

@@ -13,8 +13,8 @@ const os = require("node:os");
 const path = require("node:path");
 const http = require("node:http");
 
-const tools = require("../editcore-chat-kernel/tools");
-const { READ_ONLY_TOOLS, WRITE_TOOLS } = require("../editcore-chat-kernel/classify");
+const tools = require("../runtime/tools/tools");
+const { READ_ONLY_TOOLS, WRITE_TOOLS } = require("../runtime/tools/classify");
 
 const PORTADAS_1A = [
   "project_discovery", "codebase_map", "symbol_search", "dependency_search",

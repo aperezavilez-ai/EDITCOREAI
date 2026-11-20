@@ -9,13 +9,13 @@ const {
   parseProviderJsonOrThrow,
   withCacheControl,
   createIdleTimeout,
-} = require("../runtime/ai-core");
+} = require("../ai-core");
 
 const PROVIDER_MAX_TOTAL_MS = 10 * 60_000;
-const { logProviderError } = require("../runtime/provider-error-log");
-const { modelSupportsVision } = require("../runtime/vision-intake");
+const { logProviderError } = require("../provider-error-log");
+const { modelSupportsVision } = require("../vision-intake");
 // [EDITCORE-INTEGRAL-B6] Taxonomía compartida (429/401) + Retry-After.
-const { classifyHttpError, isNoSessionError, SESSION_EXPIRED_MESSAGE } = require("../runtime/http-error-taxonomy");
+const { classifyHttpError, isNoSessionError, SESSION_EXPIRED_MESSAGE } = require("../http-error-taxonomy");
 
 function messagesHaveImages(messages) {
   return (Array.isArray(messages) ? messages : []).some((m) =>
@@ -140,7 +140,7 @@ async function callChatSingleAttempt({
   // enviado (frontera del prefijo cacheable); lo calcula el kernel.
   cachePrefixEndIndex = -1,
 }) {
-  require("../runtime/platform-defaults").assertProviderAllowed(apiBaseUrl);
+  require("../platform-defaults").assertProviderAllowed(apiBaseUrl);
   const url = `${String(apiBaseUrl || "").replace(/\/$/, "")}/chat/completions`;
   const wantStream = stream !== false;
   const safeMessages = Array.isArray(messages) ? messages : [];

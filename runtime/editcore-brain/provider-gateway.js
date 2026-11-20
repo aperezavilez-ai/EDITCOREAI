@@ -12,7 +12,7 @@
 class BrainProviderGateway {
   constructor(deps = {}) {
     // Reutiliza la función probada callChat de EditCore o un adaptador inyectado
-    this.callChatFn = deps.callChat || require("../../editcore-chat-kernel/provider").callChat;
+    this.callChatFn = deps.callChat || require("../tools/provider").callChat;
   }
 
   /**

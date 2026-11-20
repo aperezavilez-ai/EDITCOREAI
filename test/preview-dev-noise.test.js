@@ -7,8 +7,8 @@ const os = require("node:os");
 const path = require("node:path");
 
 const ROOT = path.join(__dirname, "..");
-const { stripDevCacheNoise, detectDevLogIssue } = require("../editcore-chat-kernel/dev-log-detector");
-const { detectSevereIssue } = require("../editcore-chat-kernel/process-runner");
+const { stripDevCacheNoise, detectDevLogIssue } = require("../runtime/tools/dev-log-detector");
+const { detectSevereIssue } = require("../runtime/tools/process-runner");
 
 const CACHE_NOISE = [
   " ⨯ unhandledRejection: [Error: ENOENT: no such file or directory, stat 'D:\\P\\CALILI\\.next\\cache\\webpack\\server-development\\0.pack.gz'] {",

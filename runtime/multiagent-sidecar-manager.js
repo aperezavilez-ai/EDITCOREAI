@@ -17,15 +17,15 @@ class MultiAgentSidecarManager {
     this.host = options.host || '127.0.0.1';
     this.token = crypto.randomBytes(16).toString('hex');
     this.process = null;
-    this.isReady = false;
-    this.dataDir = options.dataDir || path.join(__dirname, 'multiagent', 'data');
+    this.projectRoot = options.projectRoot || path.resolve(__dirname, '..');
+    this.dataDir = options.dataDir || path.join(this.projectRoot, 'multiagent-engine', 'data');
     this.pythonPath = this._resolvePython();
     this.gatewayPort = options.gatewayPort || (this.port + 20);
     this.gateway = new MultiAgentToolGateway({
       port: this.gatewayPort,
       host: this.host,
       token: this.token,
-      projectRoot: options.projectRoot || path.resolve(__dirname, '..')
+      projectRoot: this.projectRoot
     });
   }
 
@@ -70,7 +70,7 @@ class MultiAgentSidecarManager {
       fs.mkdirSync(this.dataDir, { recursive: true });
     }
 
-    const scriptPath = path.join(__dirname, 'multiagent', 'server.py');
+    const scriptPath = path.join(this.projectRoot, 'multiagent-engine', 'server.py');
     const args = [
       scriptPath,
       '--host', this.host,

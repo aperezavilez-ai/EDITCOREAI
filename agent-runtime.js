@@ -1,7 +1,7 @@
 "use strict";
 
 const path = require("node:path");
-const { classify, isFullAccess } = require("./editcore-chat-kernel/classify");
+const { classify, isFullAccess } = require("./runtime/tools/classify");
 
 // Convergencia: los cargadores perezosos del kernel (getChatSession/getTools/
 // getCallChat/...) solo los usaba la clase ChatOrchestrator muerta de este

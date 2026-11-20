@@ -5,7 +5,7 @@
  */
 
 const http = require('http');
-const { DEFINITIONS, execute } = require('../editcore-chat-kernel/tools');
+const { DEFINITIONS, execute } = require('./tools/tools');
 const { listAllSkills, loadSkillBody } = require('./skills-engine');
 
 class MultiAgentToolGateway {

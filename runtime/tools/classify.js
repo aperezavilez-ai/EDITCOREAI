@@ -295,7 +295,7 @@ function classify(message, opts = {}) {
 }
 
 function loadProjectMapHelpers() {
-  try { return require("../runtime/project-map"); }
+  try { return require("../project-map"); }
   catch { try { return require("./project-map"); } catch { return null; } }
 }
 

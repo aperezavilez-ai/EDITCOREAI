@@ -183,7 +183,7 @@ module.exports = {
 // =====================================================================
 let _ecVector = null;
 try {
-  const { VectorMemory } = require("../runtime/vector-memory");
+  const { VectorMemory } = require("../vector-memory");
   _ecVector = new VectorMemory(path.join(os.homedir(), ".editcore", "global-memory", "vectors"));
 } catch (_) { _ecVector = null; }
 

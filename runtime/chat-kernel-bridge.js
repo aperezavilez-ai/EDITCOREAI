@@ -11,7 +11,7 @@ const {
   steerChat,
   isChatRunning,
   classify,
-} = require("../editcore-chat-kernel/index");
+} = require("./tools/index");
 
 const KERNEL_TIMEOUT_MS = 60 * 60 * 1000; // 60 min — el agente nunca se queda sin tiempo en tareas complejas
 // [EDITCORE-INTEGRAL-B7] El plazo de COLA vive en el kernel
@@ -258,7 +258,7 @@ async function runKernelChat({
     } catch { /* recordar nunca bloquea el cierre */ }
     try {
       if (projectRoot) {
-        const orientationMap = require("../editcore-chat-kernel/orientation-map");
+        const orientationMap = require("./tools/orientation-map");
         const maintained = orientationMap.maintainProjectMap(projectRoot, {
           steps: out.steps, finalText: out.text, userText: message,
         });

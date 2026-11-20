@@ -7,7 +7,7 @@ const path = require("node:path");
 const os = require("node:os");
 
 const { validateSyntax, compactCommandOutput } = require("../runtime/syntax-validator");
-const { writeFile, replaceInFile } = require("../editcore-chat-kernel/tools");
+const { writeFile, replaceInFile } = require("../runtime/tools/tools");
 
 test("syntax-validator: detecta JS syntax errors con linea y mensaje", () => {
   const badJs = "function test() { const a = ; return a; }";

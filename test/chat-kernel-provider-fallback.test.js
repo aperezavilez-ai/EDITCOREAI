@@ -9,7 +9,7 @@ const path = require("path");
 const logDir = fs.mkdtempSync(path.join(os.tmpdir(), "ec-provider-log-"));
 process.env.EDITCORE_USER_DATA_PATH = logDir;
 
-const { callChat, orderProfiles, rejectedKeys } = require("../editcore-chat-kernel/provider");
+const { callChat, orderProfiles, rejectedKeys } = require("../runtime/tools/provider");
 // [FASE2-RUTA-UNICA] thread-core.js se retiró con el kernel viejo:
 // sus 3 pruebas de este archivo (contexto del sistema y
 // buildMessageList) se retiran con él — la construcción de

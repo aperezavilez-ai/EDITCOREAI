@@ -4,8 +4,8 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const path = require("node:path");
 const fs = require("node:fs");
-const { buildProjectGraph, categorizeNode, extractImports } = require("../editcore-chat-kernel/graphify-runner");
-const tools = require("../editcore-chat-kernel/tools");
+const { buildProjectGraph, categorizeNode, extractImports } = require("../runtime/tools/graphify-runner");
+const tools = require("../runtime/tools/tools");
 
 test("categorizeNode identifica correctamente tipos de archivos", () => {
   assert.equal(categorizeNode("src/components/Header.jsx"), "component");

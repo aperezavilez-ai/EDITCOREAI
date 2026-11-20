@@ -62,9 +62,9 @@ process.env.EDITCORE_AGENT_NETWORK_PATH = path.join(tmpBase, "agent-network.json
 // kernel nuevo vive en cierre.js (batería kernel-nuevo-cierre).
 const {
   successfulMemoryWrites,
-} = require("../editcore-chat-kernel/subagent-distill");
-const orientationMap = require("../editcore-chat-kernel/orientation-map");
-const { distillTurnForBrain } = require("../editcore-chat-kernel/subagent-distill");
+} = require("../runtime/tools/subagent-distill");
+const orientationMap = require("../runtime/tools/orientation-map");
+const { distillTurnForBrain } = require("../runtime/tools/subagent-distill");
 
 const BASE_ARGS = {
   apiKey: "sk-fake-cierre-memoria",

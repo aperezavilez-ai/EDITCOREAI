@@ -22,8 +22,8 @@ if not exist "main.js" (
   pause
   exit /b 1
 )
-if not exist "editcore-chat-kernel\index.js" (
-  echo ERROR: falta editcore-chat-kernel en EDITCOREAI
+if not exist "multiagent-engine\server.py" (
+  echo ERROR: falta multiagent-engine en EDITCOREAI
   pause
   exit /b 1
 )

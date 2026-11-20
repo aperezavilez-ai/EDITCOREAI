@@ -10,10 +10,10 @@
 
 const fs = require("fs");
 const path = require("path");
-const { runProcess } = require("../editcore-chat-kernel/process-runner");
-const { createSnapshot } = require("../editcore-chat-kernel/snapshot");
-const { recordSolution, promptBlock } = require("../editcore-chat-kernel/global-memory");
-const { capture_preview_screenshot } = require("../editcore-chat-kernel/vision-inspector");
+const { runProcess } = require("./tools/process-runner");
+const { createSnapshot } = require("./tools/snapshot");
+const { recordSolution, promptBlock } = require("./tools/global-memory");
+const { capture_preview_screenshot } = require("./tools/vision-inspector");
 
 const NEXT_SERVER_ENOENT_RE = new RegExp(
   String.raw`ENOENT[\s\S]{0,180}?[\\/]\.next[\\/](?:server|cache)[\\/]`

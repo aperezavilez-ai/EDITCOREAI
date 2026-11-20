@@ -12,7 +12,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 
-const { traducirParaPowerShell } = require("../editcore-chat-kernel/process-runner");
+const { traducirParaPowerShell } = require("../runtime/tools/process-runner");
 
 test("el comando exacto del registro: cd /d + && se vuelve PowerShell válido", () => {
   const original = 'cd /d "D:\\PROGRAMAS IA\\sistemas contino\\rental-equipment-saas" && npm install';

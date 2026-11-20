@@ -2,7 +2,7 @@
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { classify } = require("../editcore-chat-kernel/classify");
+const { classify } = require("../runtime/tools/classify");
 
 test("crear/mover/analizá activan tools (no chat ciego)", () => {
   const cases = [

@@ -220,7 +220,7 @@ const { createProjectBootstrap } = require("./runtime/project-bootstrap");
 const { createSupabaseProject } = require("./runtime/supabase-provision");
 const { checkForUpdates } = require("./runtime/update-check");
 const { authManager } = require("./runtime/auth-manager");
-const { createSnapshot, rollbackLastChange, listSnapshots } = require("./editcore-chat-kernel/snapshot");
+const { createSnapshot, rollbackLastChange, listSnapshots } = require("./runtime/tools/snapshot");
 const { Phase1Audit } = require("./runtime/phase1-audit");
 const { TokenLedger } = require("./runtime/token-ledger");
 // [FASE2-BORRAR B-2] El alias taskDigest sale del require: exportación fantasma.
@@ -234,7 +234,7 @@ const { WorkerSupervisor } = require("./runtime/worker-supervisor");
 const { EditCoreClaudeAdapter } = require("./runtime/editcore-claude-adapter");
 const { ActionRegistry } = require("./runtime/action-registry");
 const { resolveUnifiedAgentPlan, resolveAgentRunProfile, applyRunProfile } = require("./runtime/intent-orchestrator");
-const { MODES, TOOL_ALLOWLIST } = require("./editcore-chat-kernel/classify");
+const { MODES, TOOL_ALLOWLIST } = require("./runtime/tools/classify");
 const { filesChangedPayload, clipMutationProgressForUi } = require("./runtime/project-files-ui");
 const { localConversationResponse, isCasualPrompt } = require("./runtime/chat-local");
 const {
@@ -752,7 +752,7 @@ function publishAgentProgress(sender, payload = {}) {
     try {
       // Convergencia: la limpieza de marcado de herramientas vive en el kernel
       // (parse-text-tools). Antes se importaba del controlador Cline, ya retirado.
-      const { stripTextToolMarkup } = require("./editcore-chat-kernel/parse-text-tools");
+      const { stripTextToolMarkup } = require("./runtime/tools/parse-text-tools");
       if (typeof stripTextToolMarkup === "function") {
         safePayload = { ...safePayload, text: stripTextToolMarkup(safePayload.text) };
       }
@@ -7471,7 +7471,7 @@ ipcMain.handle("agent:run", async (event, input = {}) => {
         const mutations = Array.isArray(out?.mutations) ? out.mutations.filter((m) => m && m.path) : [];
         let filesForCheckpoint = mutations;
         if (!filesForCheckpoint.length && changedFiles.length) {
-          const { resolveSnapshotBackupAbs, listSnapshots } = require("./editcore-chat-kernel/snapshot");
+          const { resolveSnapshotBackupAbs, listSnapshots } = require("./runtime/tools/snapshot");
           // listSnapshots devuelve newest-first
           const listed = listSnapshots(rootPath);
           const snapList = Array.isArray(listed?.snapshots) ? listed.snapshots : [];
@@ -7666,7 +7666,7 @@ ipcMain.handle("agent:undo-last-run", (_event, input = {}) => {
   const preferSnapshot = input.preferSnapshot === true || input.source === "snapshot";
 
   const runSnapshotRollback = () => {
-    const { rollbackLastChange } = require("./editcore-chat-kernel/snapshot");
+    const { rollbackLastChange } = require("./runtime/tools/snapshot");
     const snap = rollbackLastChange(root, input.snapshotId || null);
     if (snap?.ok) {
       return {
@@ -8919,8 +8919,8 @@ ipcMain.handle("inspector:local-heal", async (event, target, requestedRoot, runI
 ipcMain.handle("inspector:kernel-status", async (_event, target, requestedRoot) => {
   const root = inspectorTargetRoot(target, requestedRoot);
   const { detectNextCacheCorruption } = require("./runtime/inspector-local-heal");
-  const { listSnapshots } = require("./editcore-chat-kernel/snapshot");
-  const { promptBlock, listSolutions } = require("./editcore-chat-kernel/global-memory");
+  const { listSnapshots } = require("./runtime/tools/snapshot");
+  const { promptBlock, listSolutions } = require("./runtime/tools/global-memory");
   const detection = detectNextCacheCorruption(root);
   return {
     ok: true,

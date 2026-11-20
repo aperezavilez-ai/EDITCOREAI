@@ -16,10 +16,10 @@ const fs = require("fs");
 const os = require("os");
 const path = require("path");
 
-const vision = require("../editcore-chat-kernel/vision-inspector");
-const stock = require("../editcore-chat-kernel/stock-photos");
-const tools = require("../editcore-chat-kernel/tools");
-const { WRITE_TOOLS } = require("../editcore-chat-kernel/classify");
+const vision = require("../runtime/tools/vision-inspector");
+const stock = require("../runtime/tools/stock-photos");
+const tools = require("../runtime/tools/tools");
+const { WRITE_TOOLS } = require("../runtime/tools/classify");
 
 test("ojos: el motor Electron se descarta con error claro fuera de la app (no explota)", async () => {
   await assert.rejects(

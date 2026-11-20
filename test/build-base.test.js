@@ -15,9 +15,9 @@ const fs = require("fs");
 const os = require("os");
 const path = require("path");
 
-const guard = require("../editcore-chat-kernel/build-base-guard");
-const tools = require("../editcore-chat-kernel/tools");
-const stock = require("../editcore-chat-kernel/stock-photos");
+const guard = require("../runtime/tools/build-base-guard");
+const tools = require("../runtime/tools/tools");
+const stock = require("../runtime/tools/stock-photos");
 
 function tmpDir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), "ec-base-"));

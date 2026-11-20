@@ -16,7 +16,7 @@ const MANIFEST_NAMES = ["SKILL.md", "README.md", "CLAUDE.md", "mcp.json"];
 // ("colores", "layout", "gradientes"…) casi nunca aparecen en un pedido normal
 // ("créame una landing para mi taller"), así que por ranking nunca entraban.
 let eliteUiPolicyForSkills = null;
-try { eliteUiPolicyForSkills = require("../runtime/elite-ui-policy"); } catch (_) { eliteUiPolicyForSkills = null; }
+try { eliteUiPolicyForSkills = require("../elite-ui-policy"); } catch (_) { eliteUiPolicyForSkills = null; }
 let repairGuardForSkills = null;
 try { repairGuardForSkills = require("./repair-guard"); } catch (_) { repairGuardForSkills = null; }
 const DESIGN_SKILL_IDS = ["antislop-ui", "frontend-design"];

@@ -14,7 +14,7 @@
       "branch": "main",
       "remoteUrl": null,
       "hasLocalGit": false,
-      "lastPush": "2026-11-20T15:20:03.026Z"
+      "lastPush": "2026-11-20T15:30:10.183Z"
     },
     "vercel": {
       "projectId": null,
@@ -226,6 +226,12 @@
       "date": "2026-11-20T15:20:03.027Z",
       "action": "modified",
       "details": "git push main (0dd25ca): feat(multiagent): unify single autonomous brain (Agno + OpenHands) and cleanup legacy antecedents",
+      "by": "editcore"
+    },
+    {
+      "date": "2026-11-20T15:30:10.185Z",
+      "action": "modified",
+      "details": "git push main (3ffc618): release(v5.3.0): bump version to 5.3.0, recompile EDITCOREAI.exe, and remove all legacy antecedents and test-quarantine",
       "by": "editcore"
     }
   ],

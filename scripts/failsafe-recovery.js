@@ -9,7 +9,7 @@ const path = require("node:path");
 const { execSync } = require("node:child_process");
 
 const PROJECT_ROOT = path.resolve(__dirname, "..");
-const { rollbackLastChange, listSnapshots, createSnapshot } = require("../editcore-chat-kernel/snapshot");
+const { rollbackLastChange, listSnapshots, createSnapshot } = require("../runtime/tools/snapshot");
 
 function verifySyntax() {
   console.log("🔍 Verificando integridad sintáctica de archivos del núcleo...");

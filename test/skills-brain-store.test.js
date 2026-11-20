@@ -35,7 +35,7 @@ fs.writeFileSync(path.join(userDataPath, "editcore-brain", "brain-store", "insta
 }));
 
 const engine = require("../runtime/skills-engine");
-const tools = require("../editcore-chat-kernel/tools");
+const tools = require("../runtime/tools/tools");
 
 test("listAllSkills incluye las skills de los repos del Cerebro sin pisar las locales", () => {
   const all = engine.listAllSkills({ projectRoot, userDataPath });

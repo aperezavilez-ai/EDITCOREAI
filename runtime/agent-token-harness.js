@@ -135,7 +135,7 @@ class RunReadCache {
 // =====================================================================
 
 function threadMemoryStore() {
-  try { return require("../editcore-chat-kernel/thread-memory"); } catch { return null; }
+  try { return require("./tools/thread-memory"); } catch { return null; }
 }
 
 function normalizeReceiptPath(relPath) {

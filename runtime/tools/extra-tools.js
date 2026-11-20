@@ -114,7 +114,7 @@ async function searchBrain(root, query, helpers = {}, limit = 6) {
 // Estado de Conexiones y del proyecto, sin tokens, con el siguiente paso concreto para guiar al usuario.
 async function checkConnections(root, helpers = {}) {
   const connections = typeof helpers.readConnections === "function" ? (helpers.readConnections() || {}) : {};
-  const { assessProjectConnections } = require("../runtime/project-connect");
+  const { assessProjectConnections } = require("../project-connect");
   const a = await assessProjectConnections(root, connections);
   const services = {
     github: Boolean(a.connections?.github?.configured),
@@ -158,7 +158,7 @@ function externalActionPreview(name, args, root) {
   if (name === "connect_project") {
     lines.push(`Conectar \`${path.basename(root)}\`: git init si falta, crear o enlazar el repositorio privado en GitHub${args.createVercel === false ? "" : ", crear el proyecto en Vercel"}${args.linkSupabase === false ? "" : " y escribir las variables de Supabase en .env.local"}.`);
   } else if (name === "deploy_one_click") {
-    const { detectProvider } = require("../runtime/deploy-one-click");
+    const { detectProvider } = require("../deploy-one-click");
     lines.push(`Deploy de \`${path.basename(root)}\` a **${detectProvider(root, args.provider)}**${args.production === false ? " (preview)" : " (producción)"}.`);
   } else {
     lines.push(`Publicar \`${path.basename(root)}\` (modo ${args.mode || "project"}): commit sin secretos${args.skipPush ? "" : ", push de la rama actual"}${args.supabasePush === false ? "" : ", migraciones de Supabase si aplican"}${args.deploy === false ? "" : " y deploy"}.`);
@@ -193,7 +193,7 @@ async function runExternalAction(name, args, root, helpers = {}) {
   let connections = typeof helpers.readConnections === "function" ? (helpers.readConnections() || {}) : {};
   if (!connections.githubToken) {
     try {
-      const { readConnections } = require("../runtime/cloud-vault-bridge");
+      const { readConnections } = require("../cloud-vault-bridge");
       connections = { ...(readConnections() || {}), ...connections };
     } catch { /* ignore */ }
   }
@@ -202,7 +202,7 @@ async function runExternalAction(name, args, root, helpers = {}) {
     if (typeof impls.deployOneClick === "function") {
       result = await impls.deployOneClick(root, args, { connections, signal });
     } else {
-      const { deployOneClick } = require("../runtime/deploy-one-click");
+      const { deployOneClick } = require("../deploy-one-click");
       result = await deployOneClick(root, args, { connections, signal });
     }
   } else if (name === "connect_project") {
@@ -210,7 +210,7 @@ async function runExternalAction(name, args, root, helpers = {}) {
     if (typeof impls.connectProject === "function") {
       out = await impls.connectProject(root, connections, { signal });
     } else {
-      const { connectProject } = require("../runtime/project-connect");
+      const { connectProject } = require("../project-connect");
       out = await connectProject(root, connections, {
         createGithub: args.createGithub !== false,
         createVercel: args.createVercel !== false,
@@ -225,7 +225,7 @@ async function runExternalAction(name, args, root, helpers = {}) {
     if (typeof impls.publishProject === "function") {
       result = await impls.publishProject(root, { connections, signal });
     } else {
-      const { publishProject } = require("../runtime/publish-pipeline");
+      const { publishProject } = require("../publish-pipeline");
       result = await publishProject(root, {
         mode: String(args.mode || "project"),
         connections,

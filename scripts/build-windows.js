@@ -75,10 +75,9 @@ if (mismatches.length) {
 }
 
 // Candado de release: nunca publicar un ASAR sin el kernel de chat / chrome Chat.
-{
-  const kernelPacked = asar.extractFile(archivePath, "editcore-chat-kernel/index.js").toString("utf8");
-  if (!/manejarChatNuevo/.test(kernelPacked)) {
-    throw new Error("ASAR inválido: falta manejarChatNuevo en editcore-chat-kernel/index.js");
+  const kernelPacked = asar.extractFile(archivePath, "runtime/tools/index.js").toString("utf8");
+  if (!/handleChat/.test(kernelPacked)) {
+    throw new Error("ASAR inválido: falta handleChat en runtime/tools/index.js");
   }
   const htmlPacked = asar.extractFile(archivePath, "index.html").toString("utf8");
   const topPacked = (htmlPacked.match(/chat-home-top-actions[\s\S]*?<\/div>/) || [""])[0];

@@ -13,7 +13,7 @@ const path = require("path");
 const raizRepo = path.join(__dirname, "..");
 
 test("create_csv genera el entregable en .editcore/entregables, no en la raíz", async () => {
-  const tools = require("../editcore-chat-kernel/tools");
+  const tools = require("../runtime/tools/tools");
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "ec-entregables-"));
   try {
     const r = await tools.execute("create_csv", { path: "resumen.csv", rows: [["a", "b"], ["1", "2"]] }, root, true, {});

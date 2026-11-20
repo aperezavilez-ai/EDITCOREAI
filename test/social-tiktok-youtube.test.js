@@ -17,8 +17,8 @@ const path = require("node:path");
 
 const tiktok = require("../runtime/social-tiktok");
 const youtube = require("../runtime/social-youtube");
-const tools = require("../editcore-chat-kernel/tools");
-const { READ_ONLY_TOOLS, WRITE_TOOLS } = require("../editcore-chat-kernel/classify");
+const tools = require("../runtime/tools/tools");
+const { READ_ONLY_TOOLS, WRITE_TOOLS } = require("../runtime/tools/classify");
 
 const CONFIG_TT = { clientKey: "aw_tiktok_key", clientSecret: "secreto-tiktok", redirectUri: "https://ejemplo.test/tiktok" };
 const CONFIG_YT = { clientId: "123.apps.googleusercontent.com", clientSecret: "secreto-google", redirectUri: "https://ejemplo.test/google" };

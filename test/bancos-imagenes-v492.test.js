@@ -17,7 +17,7 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 
-const stock = require("../editcore-chat-kernel/stock-photos");
+const stock = require("../runtime/tools/stock-photos");
 
 const JPEG = Buffer.alloc(20480, 9);
 const jpegDownload = async () => ({

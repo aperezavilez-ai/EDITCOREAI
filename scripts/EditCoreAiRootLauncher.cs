@@ -66,9 +66,9 @@ internal static class Program
         string electron = Path.Combine(dist, "electron.exe");
         string runtime = File.Exists(host) ? host : electron;
         string mainJs = Path.Combine(root, "main.js");
-        string kernel = Path.Combine(root, "editcore-chat-kernel", "index.js");
+        string engine = Path.Combine(root, "multiagent-engine", "server.py");
 
-        if (!File.Exists(mainJs) || !File.Exists(kernel))
+        if (!File.Exists(mainJs) || !File.Exists(engine))
         {
             MessageBox.Show(
                 "Este EDITCOREAI.exe debe estar en la carpeta raíz del proyecto.\n\nRuta actual:\n" + root,

@@ -5,7 +5,7 @@ const assert = require("node:assert/strict");
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
-const { replaceInFile } = require("../editcore-chat-kernel/tools");
+const { replaceInFile } = require("../runtime/tools/tools");
 
 function tmpProject(files) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "ec-replace-"));

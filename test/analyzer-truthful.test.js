@@ -6,8 +6,7 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 
-const tools = require("../editcore-chat-kernel/tools");
-const { runAnalyst } = require("../editcore-chat-kernel/subagents/analyst");
+const tools = require("../runtime/tools/tools");
 const {
   syncProjectRoadmap,
   appendPatchSummaryToRoadmap,
@@ -80,25 +79,6 @@ test("el recorte de payload de tools aclara que no es un problema del archivo", 
   assert.match(out, /no un problema del archivo/);
 });
 
-test("el analista entrega encabezados de integridad reales y reglas de evidencia", () => withTempDir(async (dir) => {
-  fs.writeFileSync(path.join(dir, "package.json"), JSON.stringify({ name: "demo", scripts: { test: "node --test" } }, null, 2));
-  fs.writeFileSync(path.join(dir, "main.js"), bigModule());
-  const out = await runAnalyst({ projectRoot: dir, maxReads: 6, userMessage: "analiza el proyecto" });
-  assert.match(out.report, /### main\.js — 1201 líneas, \d+ bytes · extracto: líneas 1-\d+ \(el archivo continúa\) · sintaxis JS OK \(archivo completo\)/);
-  assert.match(out.report, /### package\.json — .*JSON válido/);
-  assert.doesNotMatch(out.report, /\[truncado\]/);
-  assert.match(out.report, /No ejecutado en este análisis/);
-  assert.match(out.report, /## Reglas de evidencia/);
-}));
-
-test("el analista detecta un archivo realmente cortado", () => withTempDir(async (dir) => {
-  fs.writeFileSync(path.join(dir, "package.json"), JSON.stringify({ name: "demo" }));
-  fs.writeFileSync(path.join(dir, "main.js"), "function ok() {\n  return 1;\n}\nfunction roto() {\n  if (true) {\n    return 2;\n");
-  const out = await runAnalyst({ projectRoot: dir, maxReads: 4, userMessage: "analiza" });
-  assert.match(out.report, /### main\.js — .*ERROR: el archivo termina a mitad de código/);
-  assert.match(out.report, /package\.json no define script `test`/);
-}));
-
 test("un listado parcial se declara parcial: nadie reporta un extracto como el total", async () => {
   // [FASE2-RUTA-UNICA] La versión anterior leía la prosa del prompt
   // de análisis del orquestador viejo («PROHIBIDO reportar un
@@ -112,7 +92,7 @@ test("un listado parcial se declara parcial: nadie reporta un extracto como el t
   const osx = require("node:os");
   const tmp = fsx.mkdtempSync(path.join(osx.tmpdir(), "ec-truthful-"));
   for (let i = 0; i < 90; i += 1) fsx.writeFileSync(path.join(tmp, `f${String(i).padStart(3, "0")}.txt`), "x");
-  const tools = require("../editcore-chat-kernel/tools");
+  const tools = require("../runtime/tools/tools");
   const out = await tools.execute("list_files", { path: "." }, tmp, false, {});
   assert.equal(out.totalFiles, 90, "el total real viaja en el resultado");
   assert.equal(out.truncated, true, "y el corte se declara, no se disfraza");

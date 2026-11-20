@@ -41,8 +41,8 @@ test("H2: un turno sin escritura no recibe NI ejecuta herramientas de escritura"
   // contiene NINGUNA WRITE_TOOLS de la clasificación (la fuente
   // única), y (2) los cases de escritura cortan en su propio cuerpo
   // sin allowWrite (probado a fondo en kernel-conectar-fantasmas).
-  const { WRITE_TOOLS } = require("../editcore-chat-kernel/classify");
-  const tools = require("../editcore-chat-kernel/tools");
+  const { WRITE_TOOLS } = require("../runtime/tools/classify");
+  const tools = require("../runtime/tools/tools");
   const servidasSin = new Set(tools.getToolDefinitions({ allowWrite: false }).map((d) => d.function.name));
   for (const nombre of WRITE_TOOLS) {
     assert.ok(!servidasSin.has(nombre), `${nombre} no se sirve en un turno sin escritura`);

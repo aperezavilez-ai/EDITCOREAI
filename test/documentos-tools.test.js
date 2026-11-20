@@ -15,7 +15,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
-const tools = require("../editcore-chat-kernel/tools");
+const tools = require("../runtime/tools/tools");
 
 function raizTemporal() {
   return fs.mkdtempSync(path.join(os.tmpdir(), "editcore-docs-"));

@@ -45,7 +45,7 @@ let runReadCache = null;
 // escritura completa) para medir el desperdicio de tokens de salida.
 let tokenHarness = null;
 try {
-  tokenHarness = require("../runtime/agent-token-harness");
+  tokenHarness = require("../agent-token-harness");
   runReadCache = new tokenHarness.RunReadCache();
 } catch {
   runReadCache = null;
@@ -229,8 +229,8 @@ function listFiles(root, rel = ".", max = 80, opts = {}) {
     || requested === ".." || requested.startsWith("../") || requested.startsWith("..\\");
   if (!forceReal && (requested === "." || requested === "/" || requested === "")) {
     try {
-      const { readRoadmap, isStubRoadmap, formatRoadmapForPrompt } = require("../runtime/project-roadmap");
-      const { formatSessionStateForPrompt, ensureSessionState, loadSessionState } = require("../runtime/session-state");
+      const { readRoadmap, isStubRoadmap, formatRoadmapForPrompt } = require("../project-roadmap");
+      const { formatSessionStateForPrompt, ensureSessionState, loadSessionState } = require("../session-state");
       const loaded = readRoadmap(root);
       if (loaded.exists && loaded.content && !isStubRoadmap(loaded.content)) {
         ensureSessionState(root);
@@ -343,7 +343,7 @@ function readFile(root, rel, maxChars = TOOL_RESULT_CAP, opts = {}) {
  */
 function acquireWriteLock(root, rel, op, coordCtx) {
   try {
-    const { getCoordination } = require("../runtime/agent-coordination");
+    const { getCoordination } = require("../agent-coordination");
     const coord = getCoordination(root);
     const g = global.__editcoreCoord || {};
     const threadId = String(coordCtx?.threadId || g.threadId || "default");
@@ -362,7 +362,7 @@ function acquireWriteLock(root, rel, op, coordCtx) {
 // liberar con cualquier rol de la misma corrida funciona.
 function releaseWriteLock(root, rel, coordCtx) {
   try {
-    const { getCoordination } = require("../runtime/agent-coordination");
+    const { getCoordination } = require("../agent-coordination");
     const coord = getCoordination(root);
     const g = global.__editcoreCoord || {};
     const threadId = String(coordCtx?.threadId || g.threadId || "default");
@@ -412,7 +412,7 @@ function writeFile(root, rel, content, coordCtx) {
     };
   }
   try {
-    const { looksIncomplete } = require("../runtime/transactional-engine");
+    const { looksIncomplete } = require("../transactional-engine");
     if (typeof looksIncomplete === "function" && body.trim() && looksIncomplete(body)) {
       return {
         ok: false,
@@ -452,7 +452,7 @@ function writeFile(root, rel, content, coordCtx) {
   invalidateReadCache(file);
   let syntaxCheck = null;
   try {
-    const { validateSyntax } = require("../runtime/syntax-validator");
+    const { validateSyntax } = require("../syntax-validator");
     syntaxCheck = validateSyntax(rel, body);
   } catch {}
   // [EDITCORE-V500-A] ESCRITURA JUSTA sobre archivo existente: si la
@@ -487,7 +487,7 @@ function writeFile(root, rel, content, coordCtx) {
     } : {}),
   };
   try {
-    const { noteSuccessfulPatch } = require("../runtime/session-state");
+    const { noteSuccessfulPatch } = require("../session-state");
     noteSuccessfulPatch(root, {
       path: String(rel || "").replace(/\\/g, "/"),
       action: "write_file",
@@ -512,7 +512,7 @@ function writeFile(root, rel, content, coordCtx) {
       global.__editcoreFullAccess ||
       (typeof global.__editcoreCoord !== "undefined" && global.__editcoreCoord?.fullAccess)
     );
-    const unified = require("../runtime/unified-review");
+    const unified = require("../unified-review");
     unified.enqueueFromWrite(root, {
       path: rel,
       before: typeof _beforeForReview !== "undefined" ? _beforeForReview : "",
@@ -527,7 +527,7 @@ function writeFile(root, rel, content, coordCtx) {
   } catch { /* no bloquear escritura */ }
   
   try {
-    const { updateFileInIndex } = require("../runtime/codebase-indexer");
+    const { updateFileInIndex } = require("../codebase-indexer");
     updateFileInIndex(root, rel, body);
     out.indexUpdated = true;
   } catch { /* no bloquear */ }
@@ -631,7 +631,7 @@ function replaceInFile(root, rel, oldText, newText, coordCtx) {
   let syntaxCheck = null;
   let syntaxBefore = null;
   try {
-    const { validateSyntax } = require("../runtime/syntax-validator");
+    const { validateSyntax } = require("../syntax-validator");
     syntaxCheck = validateSyntax(rel, next);
     if (syntaxCheck && !syntaxCheck.ok) syntaxBefore = validateSyntax(rel, current);
   } catch {}
@@ -660,7 +660,7 @@ function replaceInFile(root, rel, oldText, newText, coordCtx) {
     } : {}),
   };
   try {
-    const { noteSuccessfulPatch } = require("../runtime/session-state");
+    const { noteSuccessfulPatch } = require("../session-state");
     noteSuccessfulPatch(root, {
       path: String(rel || "").replace(/\\/g, "/"),
       action: "replace_in_file",
@@ -673,7 +673,7 @@ function replaceInFile(root, rel, oldText, newText, coordCtx) {
       global.__editcoreFullAccess ||
       (typeof global.__editcoreCoord !== "undefined" && global.__editcoreCoord?.fullAccess)
     );
-    const unified = require("../runtime/unified-review");
+    const unified = require("../unified-review");
     unified.enqueueFromWrite(root, {
       path: rel,
       before: current,
@@ -688,7 +688,7 @@ function replaceInFile(root, rel, oldText, newText, coordCtx) {
   } catch { /* no bloquear */ }
   
   try {
-    const { updateFileInIndex } = require("../runtime/codebase-indexer");
+    const { updateFileInIndex } = require("../codebase-indexer");
     updateFileInIndex(root, rel, next);
     out.indexUpdated = true;
   } catch { /* no bloquear */ }
@@ -1238,7 +1238,7 @@ async function gitCommit(root, options = {}) {
     // retry de lock): el commit del kernel usa la MISMA pila que
     // agent-git/publish-pipeline. Los secretos bloqueados al stagear
     // se declaran en el resultado, nunca se commitean en silencio.
-    const gitMgr = require("../runtime/git-manager");
+    const gitMgr = require("../git-manager");
     const files = Array.isArray(options.files) && options.files.length ? options.files : ["."];
     const stage = await gitMgr.stageFiles(files, root);
     // [EDITCORE-V491-E] El resultado SIEMPRE declara blockedSecrets y
@@ -1271,7 +1271,7 @@ async function gitCommit(root, options = {}) {
 
 async function gitPush(root, options = {}) {
   try {
-    const gitMgr = require("../runtime/git-manager");
+    const gitMgr = require("../git-manager");
     const remote = String(options.remote || "origin").trim();
     const branch = String(options.branch || "").trim();
     const res = await gitMgr.push(remote, branch, root);
@@ -1338,7 +1338,7 @@ async function installSkillLocked(root, url, name) {
   const relTarget = path.relative(root, target).replace(/\\/g, "/");
   const detected = () => {
     try {
-      const { scanSkillDir } = require("../runtime/skills-engine");
+      const { scanSkillDir } = require("../skills-engine");
       const prefix = path.resolve(target).toLowerCase() + path.sep;
       return scanSkillDir(skillsRoot, "project")
         .filter((s) => path.resolve(s.filePath).toLowerCase().startsWith(prefix))
@@ -1377,7 +1377,7 @@ function skillsUserDataPath(helpers = {}) {
 
 function listSkills(root, helpers = {}, query = "") {
   try {
-    const engine = require("../runtime/skills-engine");
+    const engine = require("../skills-engine");
     const all = engine.listAllSkills({ projectRoot: root, userDataPath: skillsUserDataPath(helpers) });
     const count = all.length;
     const byScope = {};
@@ -2231,7 +2231,7 @@ const DEFINITIONS = [
 
 function resolveListPath(root, requested) {
   try {
-    const mapApi = require("../runtime/project-map");
+    const mapApi = require("../project-map");
     mapApi.ensureProjectMap?.(root, { maxAgeMs: 5 * 60_000 });
     const resolved = mapApi.resolveExistingTarget(root, requested || ".");
     return resolved;
@@ -2272,7 +2272,7 @@ async function execute(name, args, root, allowWrite, helpers = {}) {
   // venzan a los 120 s con el dueño trabajando en su turno.
   try {
     if (coordCtx.threadId) {
-      const { getCoordination } = require("../runtime/agent-coordination");
+      const { getCoordination } = require("../agent-coordination");
       getCoordination(root).renewThreadLocks(String(coordCtx.threadId));
     }
   } catch { /* coordinación opcional */ }
@@ -2377,7 +2377,7 @@ async function execute(name, args, root, allowWrite, helpers = {}) {
             // Sin autorización de escritura no hay ejecutor: la
             // tarea se reporta como no corrida, nunca se disfraza.
             writer: allowWrite ? (task) => {
-              const { runSubagent } = require("../runtime/subagent-runner");
+              const { runSubagent } = require("../subagent-runner");
               return runSubagent(root, {
                 role: "writer",
                 task: task.question || `Aplicar los parches acotados a la zona ${task.target}.`,
@@ -2453,7 +2453,7 @@ async function execute(name, args, root, allowWrite, helpers = {}) {
       case "analyze_circular_dependencies":
         return detectCircularDependencies(root, { path: a.path || undefined });
       case "read_roadmap": {
-        const { readRoadmap } = require("../runtime/project-roadmap");
+        const { readRoadmap } = require("../project-roadmap");
         const found = readRoadmap(root);
         if (!found.exists) return { ok: false, error: "Este proyecto no tiene ROADMAP.md (ni equivalente detectado)." };
         return { ok: true, path: found.relative || found.absolute, content: found.content };
@@ -2554,7 +2554,7 @@ async function execute(name, args, root, allowWrite, helpers = {}) {
           "scaffold_project", coordCtx);
         if (scaffoldLocks.blocked) return scaffoldLocks.blocked;
         try {
-          const { scaffoldGreenfieldApp } = require("../runtime/greenfield-builder");
+          const { scaffoldGreenfieldApp } = require("../greenfield-builder");
           const built = scaffoldGreenfieldApp(root, {
             prompt: String(a.prompt || ""),
             appName: String(a.name || "").trim() || path.basename(root),
@@ -2628,7 +2628,7 @@ async function execute(name, args, root, allowWrite, helpers = {}) {
       // tokens al chat.
       case "social_conectar": {
         if (!allowWrite) return { ok: false, error: "social_conectar guarda credenciales en la bóveda: requiere modo escritura." };
-        const social = require("../runtime/social-meta");
+        const social = require("../social-meta");
         const base = social.createClientFromHelpers(helpers);
         if (!base.ok) return { ok: false, error: base.error };
         const code = String(a.code || "").trim();
@@ -2667,7 +2667,7 @@ async function execute(name, args, root, allowWrite, helpers = {}) {
         };
       }
       case "social_estado": {
-        const social = require("../runtime/social-meta");
+        const social = require("../social-meta");
         const connections = social.readConnectionsSafe(helpers);
         const config = social.resolveMetaConfig({ connections, env: process.env });
         const estado = social.readSocialState(connections);
@@ -2685,7 +2685,7 @@ async function execute(name, args, root, allowWrite, helpers = {}) {
       }
       case "social_publicar": {
         if (!allowWrite) return { ok: false, error: "social_publicar publica de verdad en la red social: requiere modo escritura." };
-        const social = require("../runtime/social-meta");
+        const social = require("../social-meta");
         const base = social.createClientFromHelpers(helpers);
         if (!base.ok) return { ok: false, error: base.error };
         const estado = social.readSocialState(base.connections);
@@ -2733,7 +2733,7 @@ async function execute(name, args, root, allowWrite, helpers = {}) {
       // resultado devuelve tokens al chat.
       case "tiktok_conectar": {
         if (!allowWrite) return { ok: false, error: "tiktok_conectar guarda credenciales en la bóveda: requiere modo escritura." };
-        const tt = require("../runtime/social-tiktok");
+        const tt = require("../social-tiktok");
         const base = tt.createClientFromHelpers(helpers);
         if (!base.ok) return { ok: false, error: base.error };
         const code = String(a.code || "").trim();
@@ -2763,7 +2763,7 @@ async function execute(name, args, root, allowWrite, helpers = {}) {
         };
       }
       case "tiktok_estado": {
-        const tt = require("../runtime/social-tiktok");
+        const tt = require("../social-tiktok");
         const connections = tt.readConnectionsSafe(helpers);
         const config = tt.resolveTiktokConfig({ connections, env: process.env });
         const estado = tt.readTiktokState(connections);
@@ -2780,7 +2780,7 @@ async function execute(name, args, root, allowWrite, helpers = {}) {
       }
       case "tiktok_publicar": {
         if (!allowWrite) return { ok: false, error: "tiktok_publicar publica de verdad en TikTok: requiere modo escritura." };
-        const tt = require("../runtime/social-tiktok");
+        const tt = require("../social-tiktok");
         const base = tt.createClientFromHelpers(helpers);
         if (!base.ok) return { ok: false, error: base.error };
         const estado = tt.readTiktokState(base.connections);
@@ -2818,7 +2818,7 @@ async function execute(name, args, root, allowWrite, helpers = {}) {
       }
       case "youtube_conectar": {
         if (!allowWrite) return { ok: false, error: "youtube_conectar guarda credenciales en la bóveda: requiere modo escritura." };
-        const yt = require("../runtime/social-youtube");
+        const yt = require("../social-youtube");
         const base = yt.createClientFromHelpers(helpers);
         if (!base.ok) return { ok: false, error: base.error };
         const code = String(a.code || "").trim();
@@ -2851,7 +2851,7 @@ async function execute(name, args, root, allowWrite, helpers = {}) {
         };
       }
       case "youtube_estado": {
-        const yt = require("../runtime/social-youtube");
+        const yt = require("../social-youtube");
         const connections = yt.readConnectionsSafe(helpers);
         const config = yt.resolveGoogleConfig({ connections, env: process.env });
         const estado = yt.readYoutubeState(connections);
@@ -2868,7 +2868,7 @@ async function execute(name, args, root, allowWrite, helpers = {}) {
       }
       case "youtube_subir": {
         if (!allowWrite) return { ok: false, error: "youtube_subir sube un video real a YouTube: requiere modo escritura." };
-        const yt = require("../runtime/social-youtube");
+        const yt = require("../social-youtube");
         const fsYt = require("node:fs");
         const base = yt.createClientFromHelpers(helpers);
         if (!base.ok) return { ok: false, error: base.error };
@@ -2941,7 +2941,7 @@ async function execute(name, args, root, allowWrite, helpers = {}) {
         if (!allowWrite) return { ok: false, error: "publish_project requiere modo escritura." };
         return await extraTools.runExternalAction("publish_project", a, root, helpers);
       case "invoke_subagent": {
-        const { runSubagent } = require("../runtime/subagent-runner");
+        const { runSubagent } = require("../subagent-runner");
         const subRole = String(a.role || "explorer").toLowerCase();
         // [EDITCORE-INTEGRAL-B5] Mapa ÚNICO de clasificación: la
         // compuerta del orquestador clasifica invoke_subagent como
@@ -3081,7 +3081,7 @@ async function execute(name, args, root, allowWrite, helpers = {}) {
         if (!allowWrite) return { ok: false, error: "create_project requiere modo escritura." };
         const nombre = String(a.name || "").trim();
         if (!nombre) return { ok: false, error: "create_project requiere «name» (nombre de la carpeta del proyecto nuevo)." };
-        const { resolveTemplateIntent } = require("../runtime/template-intent");
+        const { resolveTemplateIntent } = require("../template-intent");
         const intent = resolveTemplateIntent(String(a.prompt || a.brief || ""), { template: a.template });
         const templateId = intent.id || "blank";
         const padreRel = String(a.path || a.parent || "").trim();
@@ -3096,13 +3096,13 @@ async function execute(name, args, root, allowWrite, helpers = {}) {
           {}
         );
         try {
-          const { writeScaffoldState } = require("../runtime/scaffold-state");
+          const { writeScaffoldState } = require("../scaffold-state");
           writeScaffoldState(creado.root || destino, { createdVia: "create_project", template: creado.template || templateId, ts: new Date().toISOString() });
         } catch { /* el estado es cortesía, no compuerta */ }
         let bootReport = null;
         try {
-          const { createProjectBootstrap } = require("../runtime/project-bootstrap");
-          const { createCloudVaultBridge } = require("../runtime/cloud-vault-bridge");
+          const { createProjectBootstrap } = require("../project-bootstrap");
+          const { createCloudVaultBridge } = require("../cloud-vault-bridge");
           const vault = createCloudVaultBridge();
           const bootstrapper = createProjectBootstrap({
             getVaultCredentials: (svc) => {
@@ -3174,7 +3174,7 @@ async function readSkillByName(root, wanted, helpers) {
     if (hit && hit.available) return { ok: true, name: wanted, source: "catalogo", content: String(hit.body || "").slice(0, 30000) };
   } catch { /* sin catálogo */ }
   try {
-    const engine = require("../runtime/skills-engine");
+    const engine = require("../skills-engine");
     const lista = engine.listAllSkills({ projectRoot: root, userDataPath: skillsUserDataPath(helpers) }) || [];
     const objetivo = String(wanted).toLowerCase();
     const skill = lista.find((s) => {
@@ -3211,8 +3211,8 @@ const CAPABILITY_PORTED_TOOLS = [
   "generate_video", "add_erp_module", "fullstack_deploy", "run_e2e_pipeline",
 ];
 try {
-  const { ToolDispatcher } = require("../runtime/tool-dispatcher");
-  const { registerAgentCapabilityTools } = require("../runtime/register-agent-capability-tools");
+  const { ToolDispatcher } = require("../tool-dispatcher");
+  const { registerAgentCapabilityTools } = require("../register-agent-capability-tools");
   const definicionesCap = new ToolDispatcher({ authorize: async () => true });
   registerAgentCapabilityTools(definicionesCap, { rootPath: process.cwd(), canWrite: true });
   for (const def of definicionesCap.definitions()) {
@@ -3223,8 +3223,8 @@ try {
 } catch { /* si la superficie runtime no carga, el kernel conserva su set propio */ }
 
 async function dispatchCapabilityTool(nombre, a, root, allowWrite, helpers) {
-  const { ToolDispatcher } = require("../runtime/tool-dispatcher");
-  const { registerAgentCapabilityTools } = require("../runtime/register-agent-capability-tools");
+  const { ToolDispatcher } = require("../tool-dispatcher");
+  const { registerAgentCapabilityTools } = require("../register-agent-capability-tools");
   const dispatcher = new ToolDispatcher({ authorize: async () => allowWrite === true });
   registerAgentCapabilityTools(dispatcher, {
     rootPath: root,

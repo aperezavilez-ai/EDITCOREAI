@@ -34,7 +34,7 @@ const { execFileSync } = require("node:child_process");
 // nuevo el cierre se compone desde los hechos en cierre.js
 // (batería kernel-nuevo-cierre). Quedan las de módulo vivo: el
 // destilado al Mapa (subagent-distill) y deploy/publish-pipeline.
-const { distillTurnForBrain } = require("../editcore-chat-kernel/subagent-distill");
+const { distillTurnForBrain } = require("../runtime/tools/subagent-distill");
 const { deployOneClick, extractDeploymentId } = require("../runtime/deploy-one-click");
 const { publishProject } = require("../runtime/publish-pipeline");
 
