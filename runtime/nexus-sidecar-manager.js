@@ -40,6 +40,32 @@ async function startNexus() {
   const alreadyUp = await checkHealth();
   if (alreadyUp) return true;
 
+  const LLAMA_SERVER = path.join(NEXUS_ROOT, 'bin', 'llama-server.exe');
+  const MODEL_7B = path.join(NEXUS_ROOT, 'models', 'qwen2.5-coder-7b-instruct-q4_k_m.gguf');
+
+  if (fs.existsSync(LLAMA_SERVER) && fs.existsSync(MODEL_7B)) {
+    console.log('[EditCore Nexus] Iniciando motor 7B nativo en GPU (puerto 11435)...');
+    nexusProcess = spawn(LLAMA_SERVER, [
+      '-m', MODEL_7B,
+      '--port', String(PORT),
+      '-ngl', '33',
+      '-c', '4096',
+      '--alias', 'editcore-nexus',
+      '--host', '0.0.0.0'
+    ], {
+      cwd: NEXUS_ROOT,
+      windowsHide: true,
+      stdio: 'ignore'
+    });
+
+    nexusProcess.on('exit', () => {
+      nexusProcess = null;
+      starting = false;
+    });
+
+    return true;
+  }
+
   if (!fs.existsSync(PYTHON_PATH)) {
     console.warn('[EditCore Nexus] Python local no encontrado en:', PYTHON_PATH);
     return false;

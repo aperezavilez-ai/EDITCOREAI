@@ -21,17 +21,19 @@ const PROVIDERS = {
   anthropic:{ label: "Anthropic", baseUrl: "https://api.anthropic.com/v1", model: "claude-sonnet-4-6" },
   gemini:   { label: "Gemini",    baseUrl: "https://generativelanguage.googleapis.com/v1beta", model: "gemini-2.5-pro" },
   meai:     { label: "ME AI Cloud", baseUrl: "https://api.meai.cloud/v1", model: "claude-sonnet-4-6" },
+  nexus:    { label: "EditCore Nexus Local", baseUrl: "http://127.0.0.1:11435/api", model: "editcore-nexus-v4" },
 };
 // Proveedores de IA principales disponibles directamente para el administrador
-const PRIMARY_PROVIDER_KEYS = ["meai"];
+const PRIMARY_PROVIDER_KEYS = ["meai", "nexus"];
 const HIDDEN_PROVIDER_KEYS = [];
-const SINGLE_KEY_PROVIDER_KEYS = ["meai"];
+const SINGLE_KEY_PROVIDER_KEYS = ["meai", "nexus"];
 
 const PROVIDER_MODELS = {
   openai: ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo"],
   anthropic: ["claude-sonnet-4-6", "claude-opus-4-7", "claude-haiku-4-5"],
   gemini: ["gemini-2.5-pro", "gemini-2.5-flash", "gemini-1.5-pro"],
   meai: [],
+  nexus: ["editcore-nexus-v4"],
   kimi: [
     "moonshot-v1-8k", "moonshot-v1-32k", "moonshot-v1-128k",
     "kimi-k2-0711-preview",

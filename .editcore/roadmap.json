@@ -6,7 +6,7 @@
     "stack": [],
     "status": "active",
     "createdAt": "2026-10-12T15:23:08.072Z",
-    "lastModified": "2026-11-21T18:53:36.737Z",
+    "lastModified": "2026-11-21T20:12:37.463Z",
     "version": "5.3.1"
   },
   "connections": {
@@ -22,8 +22,8 @@
       "projectName": "editcoreai",
       "liveUrl": "https://editcore.mx",
       "linked": true,
-      "lastDeploy": "2026-11-21T18:53:36.738Z",
-      "deploymentId": "dpl_4a9pk4Mw9pP8VwNjpiAMudWNFuFo"
+      "lastDeploy": "2026-11-21T20:12:37.465Z",
+      "deploymentId": "dpl_DWWNxTtNBeEjR9nPbJbPvxeFN6GM"
     },
     "supabase": {
       "url": "https://ycftycizdgbboojfdtkz.supabase.co",
@@ -40,13 +40,19 @@
   "deployment": {
     "pipeline": "vercel",
     "lastDeploy": {
-      "timestamp": "2026-11-21T18:53:36.738Z",
-      "deploymentId": "dpl_4a9pk4Mw9pP8VwNjpiAMudWNFuFo",
+      "timestamp": "2026-11-21T20:12:37.465Z",
+      "deploymentId": "dpl_DWWNxTtNBeEjR9nPbJbPvxeFN6GM",
       "url": "https://editcore.mx",
       "status": "READY"
     }
   },
   "history": [
+    {
+      "date": "2026-11-21T20:12:37.465Z",
+      "action": "release",
+      "details": "v5.3.1: deploy en Vercel dpl_DWWNxTtNBeEjR9nPbJbPvxeFN6GM con soporte integrado para EditCore Nexus v4 en picker de modelos y ejecutable sincronizado",
+      "by": "editcore"
+    },
     {
       "date": "2026-11-21T18:53:36.738Z",
       "action": "release",
