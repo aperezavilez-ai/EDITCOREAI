@@ -21,7 +21,7 @@ const PROVIDERS = {
   anthropic:{ label: "Anthropic", baseUrl: "https://api.anthropic.com/v1", model: "claude-sonnet-4-6" },
   gemini:   { label: "Gemini",    baseUrl: "https://generativelanguage.googleapis.com/v1beta", model: "gemini-2.5-pro" },
   meai:     { label: "ME AI Cloud", baseUrl: "https://api.meai.cloud/v1", model: "claude-sonnet-4-6" },
-  nexus:    { label: "EditCore Nexus Local", baseUrl: "http://127.0.0.1:11435/api", model: "editcore-nexus-v4" },
+  nexus:    { label: "EditCore Nexus Local", baseUrl: "http://127.0.0.1:11435/v1", model: "editcore-nexus" },
 };
 // Proveedores de IA principales disponibles directamente para el administrador
 const PRIMARY_PROVIDER_KEYS = ["meai", "nexus"];
@@ -33,7 +33,7 @@ const PROVIDER_MODELS = {
   anthropic: ["claude-sonnet-4-6", "claude-opus-4-7", "claude-haiku-4-5"],
   gemini: ["gemini-2.5-pro", "gemini-2.5-flash", "gemini-1.5-pro"],
   meai: [],
-  nexus: ["editcore-nexus-v4"],
+  nexus: ["editcore-nexus", "editcore-nexus-v4"],
   kimi: [
     "moonshot-v1-8k", "moonshot-v1-32k", "moonshot-v1-128k",
     "kimi-k2-0711-preview",
@@ -3588,8 +3588,11 @@ function isIntentionalProjectlessConversation() {
 
 function updateAgentCount() {
   const option = $("runMode")?.querySelector('option[value="agent"]');
-  if (option) option.textContent = "Agente";
-  if ($("runMode")) $("runMode").title = "Selecciona Chat o Agente. La coordinacion de agentes es interna.";
+  if (option) option.textContent = "Inteligente Universal";
+  if ($("runMode")) {
+    $("runMode").value = "agent";
+    $("runMode").title = "Modo Inteligente Universal: responde como chat o aplica cambios según tu requerimiento.";
+  }
 }
 
 function ensureProjectAgent(project) {
@@ -13087,7 +13090,7 @@ async function send(event) {
       // Si no existe, permanecer en el proyecto actual (no crear "porque").
     }
   }
-  const selectedRunMode = $("runMode").value;
+  const selectedRunMode = $("runMode")?.value || "agent";
   const initialModeDecision = ProjectAnalysis.resolveExecutionMode(effectivePrompt, {
     requestedAgent: selectedRunMode === "agent",
     runMode: selectedRunMode,
@@ -13461,7 +13464,7 @@ function promptJobFingerprint(job = {}) {
 
 function buildPromptJob(prompt) {
   const autoMode = isChatModelAutoMode();
-  const requestedAgent = $("runMode").value === "agent";
+  const requestedAgent = ($("runMode")?.value || "agent") === "agent";
   const project = activeProject();
   const workflowPhase = project?.agentWorkflow?.phase || "";
   const resumableTask = hasResumableAgentTask(project);
@@ -13894,9 +13897,11 @@ function updateSendButtonState() {
   }
   const running = activePromptRequests.size > 0 || promptQueue.some((item) => !item.cancelled);
   const hasDraft = Boolean($("prompt").value.trim()) || state.attachments.length > 0;
-  const agentNeedsProject = $("runMode").value === "agent"
+  const agentNeedsProject = ($("runMode")?.value || "agent") === "agent"
     && !state.projectRoot
-    && !ProjectAnalysis.hasUsableAbsolutePath?.($("prompt").value || "");
+    && !ProjectAnalysis.hasUsableAbsolutePath?.($("prompt")?.value || "")
+    && ProjectAnalysis.classifyPromptIntent?.($("prompt")?.value || "") === "task"
+    && !/^\s*(?:hola|hi|hello|ayuda|help|quien\s+eres|que\s+es|como\s+funciona|explica|diferencia|por\s+que)/i.test($("prompt")?.value || "");
   const showStop = running && !hasDraft;
 
   if (!button) return;
