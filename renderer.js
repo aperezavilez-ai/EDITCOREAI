@@ -1638,10 +1638,6 @@ async function saveProviders() {
 }
 
 function openProviders() {
-  if (!isCurrentUserAdmin()) {
-    $("status").textContent = "La configuración de modelos es solo para el administrador";
-    return;
-  }
   renderDialogAfterOpen($("providersDialog"), () => {
     renderCustomProviders();
     loadProviders();
@@ -2369,11 +2365,9 @@ function renderModelPickerMenu() {
   searchWrap.appendChild(searchInput);
   menu.appendChild(searchWrap);
 
-  const isAdmin = isCurrentUserAdmin();
-  const autoScopes = isAdmin && PRIMARY_PROVIDER_KEYS.length > 1 ? [
-    { scope: "all", title: "Auto", hint: "EditCoreAI elige el modelo ideal de ME AI para cada tarea." },
-    { scope: "meai", title: "Auto · ME AI", hint: "Solo modelos de ME AI." },
-  ] : [{ scope: "meai", title: "Auto", hint: "EditCoreAI elige automáticamente el modelo ideal para cada tarea." }];
+  const autoScopes = [
+    { scope: "meai", title: "Auto · ME AI Cloud", hint: "EditCoreAI elige automáticamente el mejor modelo para cada tarea." },
+  ];
   autoScopes.forEach(({ scope, title, hint }) => {
     const autoRow = document.createElement("div");
     autoRow.className = "model-picker-auto-row";
@@ -2401,9 +2395,6 @@ function renderModelPickerMenu() {
         if (!menu.classList.contains("hidden")) renderModelPickerMenu();
       });
     });
-    // El renglón entero es el blanco del clic, no solo el
-    // interruptor: pulsar «Auto» sobre su título no hacía
-    // nada y el usuario terminaba pulsando un modelo.
     autoCopy.addEventListener("click", () => toggle.click());
     autoRow.append(autoCopy, toggle);
     menu.appendChild(autoRow);
@@ -2415,9 +2406,7 @@ function renderModelPickerMenu() {
 
     const scroll = document.createElement("div");
     scroll.className = "model-picker-scroll";
-    const catalog = isAdmin
-      ? catalogChatModelOptions()
-      : catalogChatModelOptions().filter((entry) => entry.enabled);
+    const catalog = catalogChatModelOptions();
     const normalizedSearch = searchTerm.trim().toLowerCase();
     const filtered = !normalizedSearch
       ? catalog
@@ -2434,7 +2423,7 @@ function renderModelPickerMenu() {
       empty.className = "model-picker-empty";
       empty.textContent = catalog.length
         ? "Ningún modelo coincide con la búsqueda"
-        : (isAdmin ? "Verifica un modelo en Administrar modelos…" : "No hay modelos disponibles por ahora");
+        : "Verifica un modelo en Administrar modelos…";
       scroll.appendChild(empty);
     } else {
       let lastGroup = "";
@@ -2495,27 +2484,24 @@ function renderModelPickerMenu() {
           });
         });
 
-        if (isAdmin) row.append(pick, toggle);
-        else row.append(pick);
+        row.append(pick, toggle);
         scroll.appendChild(row);
       });
     }
 
     menu.appendChild(scroll);
-    if (isAdmin) {
-      const footer = document.createElement("div");
-      footer.className = "model-picker-footer";
-      const manageBtn = document.createElement("button");
-      manageBtn.type = "button";
-      manageBtn.className = "model-picker-manage";
-      manageBtn.textContent = "Administrar modelos…";
-      manageBtn.addEventListener("click", () => {
-        setModelPickerOpen(false);
-        openProviders();
-      });
-      footer.appendChild(manageBtn);
-      menu.appendChild(footer);
-    }
+    const footer = document.createElement("div");
+    footer.className = "model-picker-footer";
+    const manageBtn = document.createElement("button");
+    manageBtn.type = "button";
+    manageBtn.className = "model-picker-manage";
+    manageBtn.textContent = "Administrar modelos…";
+    manageBtn.addEventListener("click", () => {
+      setModelPickerOpen(false);
+      openProviders();
+    });
+    footer.appendChild(manageBtn);
+    menu.appendChild(footer);
     positionFloatingMenu(menu, $("modelPickerBtn"), { align: "right", gap: 8 });
   };
 
@@ -3614,11 +3600,8 @@ function isIntentionalProjectlessConversation() {
 
 function updateAgentCount() {
   const option = $("runMode")?.querySelector('option[value="agent"]');
-  if (option) option.textContent = "Inteligente Universal";
-  if ($("runMode")) {
-    $("runMode").value = "agent";
-    $("runMode").title = "Modo Inteligente Universal: responde como chat o aplica cambios según tu requerimiento.";
-  }
+  if (option) option.textContent = "Agente";
+  if ($("runMode")) $("runMode").title = "Selecciona Chat o Agente. La coordinacion de agentes es interna.";
 }
 
 function ensureProjectAgent(project) {
