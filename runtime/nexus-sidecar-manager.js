@@ -52,6 +52,7 @@ async function startNexus() {
       '-c', '4096',
       '--alias', 'editcore-nexus-v4',
       '--alias', 'editcore-nexus',
+      '--spec-type', 'ngram-mod',
       '--host', '0.0.0.0'
     ], {
       cwd: NEXUS_ROOT,
