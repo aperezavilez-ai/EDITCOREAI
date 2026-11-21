@@ -20,8 +20,8 @@ const PROVIDERS = {
   openai:   { label: "OpenAI",    baseUrl: "https://api.openai.com/v1", model: "gpt-4o" },
   anthropic:{ label: "Anthropic", baseUrl: "https://api.anthropic.com/v1", model: "claude-sonnet-4-6" },
   gemini:   { label: "Gemini",    baseUrl: "https://generativelanguage.googleapis.com/v1beta", model: "gemini-2.5-pro" },
-  meai:     { label: "ME AI Cloud", baseUrl: "https://api.meai.cloud/v1", model: "claude-sonnet-4-6" },
-  nexus:    { label: "EditCore Nexus Local", baseUrl: "http://127.0.0.1:11435/v1", model: "editcore-nexus" },
+  meai:     { label: "ME AI Cloud", baseUrl: "https://api.meai.cloud/v1", model: "claude-sonnet-4.6" },
+  nexus:    { label: "EditCore Nexus Local", baseUrl: "http://127.0.0.1:11435/v1", model: "editcore-nexus-v4" },
 };
 // Proveedores de IA principales disponibles directamente para el administrador
 const PRIMARY_PROVIDER_KEYS = ["meai", "nexus"];
@@ -33,7 +33,7 @@ const PROVIDER_MODELS = {
   anthropic: ["claude-sonnet-4-6", "claude-opus-4-7", "claude-haiku-4-5"],
   gemini: ["gemini-2.5-pro", "gemini-2.5-flash", "gemini-1.5-pro"],
   meai: [],
-  nexus: ["editcore-nexus", "editcore-nexus-v4"],
+  nexus: ["editcore-nexus-v4", "editcore-nexus"],
   kimi: [
     "moonshot-v1-8k", "moonshot-v1-32k", "moonshot-v1-128k",
     "kimi-k2-0711-preview",
@@ -1568,7 +1568,10 @@ async function saveProviderForm(key, extra = {}) {
 async function verifyProvider(key) {
   renderProviderStatus(key, { status: "checking" });
   const provider = await saveProviderForm(key, { status: "checking", error: "" });
-  if (!String(provider.apiKey || "").trim()) {
+  if (key === "nexus" && !String(provider.apiKey || "").trim()) {
+    provider.apiKey = "local-no-key";
+  }
+  if (!String(provider.apiKey || "").trim() && key !== "nexus") {
     const message = "Falta la API key. Pégala en Modelos y vuelve a verificar.";
     await saveProviderForm(key, { status: "inactive", checkedAt: Date.now(), error: message });
     renderProviderStatus(key, { status: "inactive", error: message });
@@ -1715,8 +1718,9 @@ function ensureDefaultProviderProfiles(profiles = []) {
       }
     }
 
-    const defaultProvKey = provConfig.apiKey || gafSaved.apiKey || existingForProv.find((p) => p.apiKey)?.apiKey || "";
-    const defaultProvStatus = ((provConfig.status === "active" || gafSaved.apiKey || existingForProv.some((p) => ["active", "enabled"].includes(p.status))) && defaultProvKey) ? "active" : "";
+    const isPrimaryAlwaysActive = provKey === "meai" || provKey === "nexus";
+    const defaultProvKey = provConfig.apiKey || gafSaved.apiKey || existingForProv.find((p) => p.apiKey)?.apiKey || (provKey === "nexus" ? "local-no-key" : "");
+    const defaultProvStatus = (isPrimaryAlwaysActive || provConfig.status === "active" || gafSaved.apiKey || existingForProv.some((p) => ["active", "enabled"].includes(p.status))) ? "active" : "";
 
     for (const m of catalog) {
       const mLower = m.toLowerCase();
@@ -1725,25 +1729,35 @@ function ensureDefaultProviderProfiles(profiles = []) {
         const fam = getModelFamilyKey(m);
         const famInfo = familyKeyMap.get(fam);
         const inheritedKey = famInfo?.apiKey || defaultProvKey;
-        const inheritedStatus = (famInfo?.status || (inheritedKey ? defaultProvStatus : "")) && inheritedKey ? "active" : "";
+        const inheritedStatus = isPrimaryAlwaysActive ? "active" : ((famInfo?.status || (inheritedKey ? defaultProvStatus : "")) && inheritedKey ? "active" : "");
         const newProfile = {
           id: `${provKey}:${m}`,
           providerKey: provKey,
-          providerName: provKey === "meai" ? "ME AI Cloud" : provKey,
+          providerName: provKey === "meai" ? "ME AI Cloud" : (provKey === "nexus" ? "EditCore Nexus Local" : provKey),
           baseUrl: provConfig.baseUrl || gafSaved.baseUrl || PROVIDERS[provKey]?.baseUrl || "",
           apiKey: inheritedKey,
           model: m,
           status: inheritedStatus,
+          chatVerified: isPrimaryAlwaysActive ? true : false,
+          catalogConfirmed: isPrimaryAlwaysActive ? true : false,
           models: [],
         };
         current.push(newProfile);
         existingModelsMap.set(mLower, newProfile);
-      } else if (!existing.apiKey && defaultProvKey) {
-        const fam = getModelFamilyKey(m);
-        const famInfo = familyKeyMap.get(fam);
-        existing.apiKey = famInfo?.apiKey || defaultProvKey;
-        if (!existing.status && (famInfo?.status || defaultProvStatus)) {
-          existing.status = (famInfo?.status || defaultProvStatus) && existing.apiKey ? "active" : "";
+      } else {
+        if (isPrimaryAlwaysActive) {
+          if (!existing.status) existing.status = "active";
+          if (provKey === "nexus" && !existing.apiKey) existing.apiKey = "local-no-key";
+          existing.chatVerified = true;
+          existing.catalogConfirmed = true;
+        }
+        if (!existing.apiKey && defaultProvKey) {
+          const fam = getModelFamilyKey(m);
+          const famInfo = familyKeyMap.get(fam);
+          existing.apiKey = famInfo?.apiKey || defaultProvKey;
+          if (!existing.status && (famInfo?.status || defaultProvStatus)) {
+            existing.status = (famInfo?.status || defaultProvStatus) ? "active" : "";
+          }
         }
       }
     }
@@ -2084,11 +2098,22 @@ function resolveActiveChatProfile(context = {}) {
   const selectedModel = selectedOption?.dataset.model?.trim() || config.model || "";
   const selectedProviderKey = selectedOption?.dataset.providerKey || config.providerKey || providerKeyForEndpoint(config.baseUrl);
   const selectedProfileId = selectedOption?.dataset.profileId || config.providerProfileId || "";
-  return loadProviderProfiles().find((profile) =>
+  const allProfiles = loadProviderProfiles();
+  return allProfiles.find((profile) =>
     profile.id === selectedProfileId
     && profile.providerKey === selectedProviderKey
     && ["active", "enabled"].includes(profile.status)
     && profile.model === selectedModel
+  ) || allProfiles.find((profile) =>
+    profile.providerKey === selectedProviderKey
+    && ["active", "enabled"].includes(profile.status)
+    && profile.model === selectedModel
+  ) || allProfiles.find((profile) =>
+    ["active", "enabled"].includes(profile.status)
+    && profile.model === selectedModel
+  ) || allProfiles.find((profile) =>
+    ["active", "enabled"].includes(profile.status)
+    && (profile.providerKey === "meai" || profile.providerKey === "nexus")
   ) || null;
 }
 
@@ -2548,18 +2573,13 @@ async function selectModelFromPicker({ auto = false, autoScope = "", entry, keep
   }
   const option = [...select.options].find((item) =>
     item.dataset.model === entry.model && item.dataset.profileId === entry.profileId
+  ) || [...select.options].find((item) =>
+    item.dataset.model === entry.model && item.dataset.providerKey === entry.providerKey
   );
   if (!option) {
-    // La entrada viene del catálogo (p. ej. un modelo de la
-    // nube distinto al que su perfil trae como modelo
-    // «actual»): el <select> lleva un solo modelo por perfil,
-    // así que esa opción no existe — pero el perfil verificado
-    // SÍ, y el change del select ya sabe activar por
-    // providerKey+modelo. Antes este hueco abría el modal de
-    // proveedores sin decir por qué: elegir un modelo del
-    // menú terminaba en la pantalla de administración.
     const profile = loadProviderProfiles().find((item) => item.id === entry.profileId && item.status === "active")
-      || verifiedProfileForModel(entry.providerKey, entry.model);
+      || verifiedProfileForModel(entry.providerKey, entry.model)
+      || loadProviderProfiles().find((item) => item.model === entry.model && ["active", "enabled"].includes(item.status));
     if (profile) {
       const providerData = loadJson("editcore-providers", {})[entry.providerKey] || {};
       const baseUrl = profile.baseUrl || providerData.baseUrl || PROVIDERS[entry.providerKey]?.baseUrl || "";
@@ -2620,9 +2640,14 @@ function filterModelOptionsForRole(options) {
     .filter(isUserVisibleModelOption)
     .filter((entry) => {
       const group = entry.modelProviderGroup || (String(entry.model || "").startsWith("meai/") ? "meai" : entry.providerKey);
-      return group === "meai";
+      return group === "meai" || group === "nexus";
     })
-    .map((entry) => ({ ...entry, providerLabel: USER_MODEL_GROUP_LABEL }));
+    .map((entry) => {
+      if (entry.providerKey === "nexus" || entry.modelProviderGroup === "nexus") {
+        return { ...entry, providerLabel: "EditCore Nexus" };
+      }
+      return { ...entry, providerLabel: USER_MODEL_GROUP_LABEL };
+    });
 }
 
 function catalogChatModelOptions() {
@@ -2711,6 +2736,7 @@ async function setChatModelEnabled(entry, enabled) {
 // chat lo dejaba «Funcional» en el modal de Modelos pero
 // invisible en el selector (2026-11-18).
 function perfilUtilizableSinClave(profile) {
+  if (profile?.providerKey === "nexus") return true;
   return profile?.chatVerified === true && profile?.catalogConfirmed === true;
 }
 
@@ -3221,9 +3247,9 @@ async function autoDetectIntegratedProvider(key) {
   const urlEl = document.querySelector(`[data-prov-url="${key}"]`);
   const keyEl = document.querySelector(`[data-prov-key="${key}"]`);
   const baseUrl = (urlEl?.value.trim() || provConfig.baseUrl || PROVIDERS[key]?.baseUrl || "").replace(/\/+$/, "");
-  const apiKey = keyEl?.value.trim() || provConfig.apiKey || "";
+  const apiKey = keyEl?.value.trim() || provConfig.apiKey || (key === "nexus" ? "local-no-key" : "");
 
-  if (!apiKey) {
+  if (!apiKey && key !== "nexus") {
     alert("Por favor pega primero tu API Key en el campo correspondiente.");
     keyEl?.focus();
     return;

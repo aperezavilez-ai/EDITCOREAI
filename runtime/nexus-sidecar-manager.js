@@ -50,6 +50,7 @@ async function startNexus() {
       '--port', String(PORT),
       '-ngl', '33',
       '-c', '4096',
+      '--alias', 'editcore-nexus-v4',
       '--alias', 'editcore-nexus',
       '--host', '0.0.0.0'
     ], {
