@@ -25,7 +25,7 @@ const path = require("path");
 const { ejecutarTurno } = require("./turno");
 const { decidirTurno, contextoDesdeHistorial } = require("./despacho");
 const { componerCierre } = require("./cierre");
-const { SISTEMA_NUCLEO } = require("./textos");
+const { SISTEMA_NUCLEO, SISTEMA_NEXUS_V4 } = require("./textos");
 const { parseTextToolCalls, stripTextToolMarkup } = require("../parse-text-tools");
 
 function totalDeUso(usage) {
@@ -745,7 +745,11 @@ async function manejarChatNuevo(input, deps = {}) {
   const tMemoria = Date.now();
   const memoriaExtra = typeof deps.construirMemoria === "function" ? await deps.construirMemoria(input) : "";
   const memoriaMs = Date.now() - tMemoria;
-  const memoria = [SISTEMA_NUCLEO, memoriaExtra, String(input.skillsPrompt || "")]
+  const esNexus = String(input.providerKey || "").toLowerCase() === "nexus"
+    || String(input.model || "").toLowerCase().includes("nexus")
+    || String(perfil.model || "").toLowerCase().includes("nexus");
+  const bloqueNexus = esNexus ? SISTEMA_NEXUS_V4 : "";
+  const memoria = [bloqueNexus, SISTEMA_NUCLEO, memoriaExtra, String(input.skillsPrompt || "")]
     .map((s) => String(s || "").trim())
     .filter(Boolean)
     .join("\n\n");

@@ -7294,7 +7294,8 @@ ipcMain.handle("agent:run", async (event, input = {}) => {
 
   if (!task) throw new Error("Falta tarea.");
 
-  if (isCasualPrompt(task)) {
+  const isNexusRun = providerKey === "nexus" || String(model || "").toLowerCase().includes("nexus");
+  if (isCasualPrompt(task) && !isNexusRun) {
     const casualText = (typeof localConversationResponse === "function" ? localConversationResponse(task) : "") || "Hola. ¿En qué te ayudo?";
     return {
       text: casualText,
