@@ -4379,6 +4379,11 @@ function scrubGatewayFromSecureState() {
     if (profile && profile.providerKey === "meai") {
       return ALLOWED_MEAI.has(String(profile.model || "").trim().toLowerCase());
     }
+    const modelLower = String(profile?.model || "").toLowerCase();
+    const pKeyLower = String(profile?.providerKey || "").toLowerCase();
+    if (modelLower.includes("nexus") || pKeyLower.includes("nexus")) {
+      return modelLower === "editcore-nexus-v4";
+    }
     return true;
   });
   if (cleanedProfiles.length !== rawProfiles.length) {
@@ -4386,6 +4391,12 @@ function scrubGatewayFromSecureState() {
     changed = true;
   }
   const chat = secure["editcore-chat-config"];
+  if (chat && String(chat.model || "").toLowerCase() === "editcore-nexus") {
+    chat.model = "editcore-nexus-v4";
+    chat.providerKey = "nexus";
+    chat.providerProfileId = "nexus:editcore-nexus-v4";
+    changed = true;
+  }
   if (chat && (isGatewayResidueProfile(chat) || String(chat.baseUrl || "").toLowerCase().includes("gafcore-gateway") || (chat.providerKey === "meai" && !ALLOWED_MEAI.has(String(chat.model || "").trim().toLowerCase())))) {
     const fallback = cleanedProfiles.find((profile) =>
       profile.providerKey === "meai"

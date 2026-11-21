@@ -79,5 +79,5 @@ test("panel: ME AI con una sola clave como único proveedor principal", () => {
   assert.match(renderer, /const SINGLE_KEY_PROVIDER_KEYS = \["meai"(?:,\s*"nexus")?\];/);
   assert.match(renderer, /api\.hidden = true;/);
   assert.match(renderer, /async function verifyAllSingleKeyModels\(key\)/);
-  assert.match(renderer, /const autoScopes = isAdmin\s*(?:&&\s*PRIMARY_PROVIDER_KEYS\.length\s*>\s*1\s*)?\? \[[\s\S]{0,300}scope: "meai", title: "Auto · ME AI"[\s\S]{0,200}: \[\{ scope: "meai", title: "Auto"/);
+  assert.match(renderer, /const autoScopes = isAdmin\s*(?:&&\s*PRIMARY_PROVIDER_KEYS\.length\s*>\s*1\s*)?\? \[[\s\S]*?\]\s*: \[\{ scope: "meai", title: "Auto"/);
 });

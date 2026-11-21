@@ -1689,7 +1689,10 @@ function ensureDefaultProviderProfiles(profiles = []) {
   const current = (Array.isArray(profiles) ? [...profiles] : [])
     .filter((p) => p && isKnownProviderProfile(p))
     .filter((p) => p.providerKey !== "meai" || allowedMeai.has(String(p.model).toLowerCase()))
-    .filter((p) => p.providerKey !== "nexus" || String(p.model).toLowerCase() === "editcore-nexus-v4");
+    .filter((p) => {
+      const isNexus = p.providerKey === "nexus" || String(p.model || "").toLowerCase().includes("nexus") || String(p.providerName || "").toLowerCase().includes("nexus");
+      return !isNexus || String(p.model || "").toLowerCase() === "editcore-nexus-v4";
+    });
   const providers = loadJson("editcore-providers", {});
 
   for (const provKey of PRIMARY_PROVIDER_KEYS) {
@@ -2178,17 +2181,38 @@ function rememberAutoResolvedProfile(profile) {
 
 function updateModelPickerLabel() {
   const label = $("modelPickerLabel");
+  const btn = $("modelPickerBtn");
   if (!label) return;
-  if (isChatModelAutoMode()) {
-    label.textContent = autoLabelForRole();
+  const isAuto = isChatModelAutoMode();
+  if (isAuto) {
+    label.textContent = "Auto";
+    if (btn) {
+      btn.className = "model-picker-btn is-auto";
+      btn.setAttribute("data-mode", "auto");
+      btn.setAttribute("data-provider", "auto");
+    }
     return;
   }
   const option = $("chatModelSelect")?.selectedOptions?.[0];
   if (!option || AutoModel.isAutoModelSelection(option) || option.dataset?.configure === "1") {
-    label.textContent = autoLabelForRole();
+    label.textContent = "Auto";
+    if (btn) {
+      btn.className = "model-picker-btn is-auto";
+      btn.setAttribute("data-mode", "auto");
+      btn.setAttribute("data-provider", "auto");
+    }
     return;
   }
-  label.textContent = modelNameForDisplay(option.dataset.model || "", option.dataset.providerKey || "") || "Modelo";
+  const modelText = modelNameForDisplay(option.dataset.model || "", option.dataset.providerKey || "") || "Modelo";
+  label.textContent = modelText;
+  if (btn) {
+    const modelLower = String(option.dataset.model || "").toLowerCase();
+    const provLower = String(option.dataset.providerKey || "").toLowerCase();
+    const isNexus = modelLower.includes("nexus") || provLower.includes("nexus");
+    btn.className = `model-picker-btn is-selected-model ${isNexus ? "is-nexus" : "is-cloud"}`;
+    btn.setAttribute("data-mode", "model");
+    btn.setAttribute("data-provider", isNexus ? "nexus" : "cloud");
+  }
 }
 
 function autoLabelForRole() {
@@ -2374,12 +2398,12 @@ function renderModelPickerMenu() {
 
   const isAdmin = isCurrentUserAdmin();
   const autoScopes = isAdmin && PRIMARY_PROVIDER_KEYS.length > 1 ? [
-    { scope: "all", title: "Auto", hint: "EditCoreAI elige el modelo ideal de ME AI para cada tarea." },
-    { scope: "meai", title: "Auto · ME AI", hint: "Solo modelos de ME AI." },
+    { scope: "all", title: "Auto", hint: "EditCoreAI elige automáticamente el mejor modelo para cada tarea." },
   ] : [{ scope: "meai", title: "Auto", hint: "EditCoreAI elige automáticamente el mejor modelo para cada tarea." }];
   autoScopes.forEach(({ scope, title, hint }) => {
+    const on = autoActive && AutoModel.normalizeAutoProviderScope(activeAutoScope) === scope;
     const autoRow = document.createElement("div");
-    autoRow.className = "model-picker-auto-row";
+    autoRow.className = `model-picker-auto-row${on ? " active" : ""}`;
     const autoCopy = document.createElement("div");
     autoCopy.className = "model-picker-auto-copy";
     autoCopy.innerHTML = `<strong>${title}</strong><span>${hint}</span>`;
@@ -2387,7 +2411,6 @@ function renderModelPickerMenu() {
     toggle.type = "button";
     toggle.className = "model-toggle";
     toggle.setAttribute("role", "switch");
-    const on = autoActive && AutoModel.normalizeAutoProviderScope(activeAutoScope) === scope;
     toggle.setAttribute("aria-checked", on ? "true" : "false");
     toggle.setAttribute("aria-label", `Activar ${title}`);
     toggle.addEventListener("click", (event) => {
@@ -2596,16 +2619,20 @@ async function selectModelFromPicker({ auto = false, autoScope = "", entry, keep
 }
 
 function mapProfileToModelOption(profile, customProvidersByKey) {
-  return {
-    providerKey: profile.providerKey,
-    providerLabel: profile.providerKey === "custom:gafcore-gateway"
+  const isNexus = profile.providerKey === "nexus" || String(profile.model || "").toLowerCase().includes("nexus") || String(profile.providerName || "").toLowerCase().includes("nexus");
+  const pLabel = isNexus
+    ? "EditCore Nexus v4"
+    : (profile.providerKey === "custom:gafcore-gateway"
       ? ({ meai: "ME AI Cloud" }[String(profile.model).split("/", 1)[0]] || "Proveedor")
       : (PRIMARY_PROVIDER_KEYS.includes(profile.providerKey)
         ? PROVIDERS[profile.providerKey]?.label
-        : customProvidersByKey.get(profile.providerKey)?.name || profile.providerName || profile.providerKey),
-    modelProviderGroup: profile.providerKey === "custom:gafcore-gateway" ? String(profile.model).split("/", 1)[0] : profile.providerKey,
+        : customProvidersByKey.get(profile.providerKey)?.name || profile.providerName || profile.providerKey));
+  return {
+    providerKey: isNexus ? "nexus" : profile.providerKey,
+    providerLabel: pLabel,
+    modelProviderGroup: isNexus ? "nexus" : (profile.providerKey === "custom:gafcore-gateway" ? String(profile.model).split("/", 1)[0] : profile.providerKey),
     profileId: profile.id,
-    model: profile.model,
+    model: isNexus ? "editcore-nexus-v4" : profile.model,
     profileStatus: profile.status,
     enabled: ["active", "enabled"].includes(profile.status),
   };
@@ -2649,6 +2676,12 @@ function catalogChatModelOptions() {
   const customProvidersByKey = new Map(loadCustomProviders().map((provider) => [`custom:${provider.id}`, provider]));
   const profiles = loadProviderProfiles().filter((profile) => {
     if (!profile || !profile.model) return false;
+    const modelLower = String(profile.model).toLowerCase();
+    const pKeyLower = String(profile.providerKey || "").toLowerCase();
+    const pNameLower = String(profile.providerName || "").toLowerCase();
+    if (modelLower.includes("nexus") || pKeyLower.includes("nexus") || pNameLower.includes("nexus")) {
+      if (modelLower !== "editcore-nexus-v4") return false;
+    }
     const effectiveKey = profile.apiKey || resolveProviderApiKey(profile.providerKey, "");
     return Boolean(effectiveKey) || PRIMARY_PROVIDER_KEYS.includes(profile.providerKey) || perfilUtilizableSinClave(profile);
   });
@@ -2669,8 +2702,14 @@ function catalogChatModelOptions() {
   return filterModelOptionsForRole([...uniqueByModel.values()]
     .map((profile) => mapProfileToModelOption(profile, customProvidersByKey))
     .sort((a, b) => {
-      const gatewayRank = (entry) => entry.providerKey === "custom:gafcore-gateway" ? 0 : 1;
-      return gatewayRank(a) - gatewayRank(b)
+      const groupRank = (entry) => {
+        const group = String(entry.modelProviderGroup || entry.providerKey || "").toLowerCase();
+        const label = String(entry.providerLabel || "").toLowerCase();
+        if (group === "nexus" || label.includes("nexus")) return 0;
+        if (group === "meai" || label.includes("me ai")) return 1;
+        return 2;
+      };
+      return groupRank(a) - groupRank(b)
         || a.providerLabel.localeCompare(b.providerLabel, undefined, { sensitivity: "base" })
         || a.model.localeCompare(b.model, undefined, { sensitivity: "base", numeric: true });
     }));
@@ -2736,7 +2775,17 @@ function perfilUtilizableSinClave(profile) {
 }
 
 function verifiedChatModelOptions() {
-  const verifiedProfiles = loadProviderProfiles().filter((profile) => ["active", "enabled"].includes(profile.status) && profile.model && (profile.apiKey || perfilUtilizableSinClave(profile)));
+  const verifiedProfiles = loadProviderProfiles().filter((profile) => {
+    if (!profile || !profile.model) return false;
+    if (!["active", "enabled"].includes(profile.status)) return false;
+    const modelLower = String(profile.model).toLowerCase();
+    const pKeyLower = String(profile.providerKey || "").toLowerCase();
+    const pNameLower = String(profile.providerName || "").toLowerCase();
+    if (modelLower.includes("nexus") || pKeyLower.includes("nexus") || pNameLower.includes("nexus")) {
+      if (modelLower !== "editcore-nexus-v4") return false;
+    }
+    return Boolean(profile.apiKey || perfilUtilizableSinClave(profile));
+  });
   const customProvidersByKey = new Map(loadCustomProviders().map((provider) => [`custom:${provider.id}`, provider]));
   return filterModelOptionsForRole(verifiedProfiles
     .filter((profile) => {
@@ -2747,8 +2796,14 @@ function verifiedChatModelOptions() {
     })
     .map((profile) => mapProfileToModelOption(profile, customProvidersByKey))
     .sort((a, b) => {
-      const gatewayRank = (entry) => entry.providerKey === "custom:gafcore-gateway" ? 0 : 1;
-      return gatewayRank(a) - gatewayRank(b)
+      const groupRank = (entry) => {
+        const group = String(entry.modelProviderGroup || entry.providerKey || "").toLowerCase();
+        const label = String(entry.providerLabel || "").toLowerCase();
+        if (group === "nexus" || label.includes("nexus")) return 0;
+        if (group === "meai" || label.includes("me ai")) return 1;
+        return 2;
+      };
+      return groupRank(a) - groupRank(b)
         || a.providerLabel.localeCompare(b.providerLabel, undefined, { sensitivity: "base" })
         || a.model.localeCompare(b.model, undefined, { sensitivity: "base", numeric: true });
     }));
@@ -15165,7 +15220,12 @@ function appendUserMessageImmediate(text, images = [], documents = []) {
 
 async function migrateConfig() {
   const config = loadJson("editcore-chat-config", null);
-  if (!config) return;
+  if (config.model === "editcore-nexus" || (String(config.model || "").toLowerCase().includes("nexus") && config.model !== "editcore-nexus-v4")) {
+    config.model = "editcore-nexus-v4";
+    config.providerKey = "nexus";
+    config.providerProfileId = "nexus:editcore-nexus-v4";
+    await saveSecureJson("editcore-chat-config", config);
+  }
   const profiles = loadProviderProfiles().filter((profile) => profile.status === "active");
   const providerKey = config.providerKey || providerKeyForEndpoint(config.baseUrl);
   const legacyClaudeModel = /^claude-(?:3-|3\.|3_)/i.test(String(config.model || ""));
@@ -15238,6 +15298,10 @@ async function cleanupObsoleteProviders() {
     const key = String(profile.providerKey || '');
     const url = String(profile.baseUrl || '').toLowerCase();
     if (REMOVED_PROVIDER_KEYS.has(key) || String(profile.model || "").toLowerCase().startsWith("chatgptpro4all/")) { changed = true; return false; }
+    const modelLower = String(profile.model || "").toLowerCase();
+    if (modelLower.includes("nexus") || key.includes("nexus")) {
+      if (modelLower !== "editcore-nexus-v4") { changed = true; return false; }
+    }
     // Solo eliminar perfiles con URLs claramente obsoletas
     if (badSubstrings.some((bad) => url.includes(bad))) { changed = true; return false; }
     // Eliminar perfiles de custom providers eliminados arriba
