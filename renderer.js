@@ -18145,7 +18145,6 @@ window.EditCoreModels = {
   isOpen: () => !$("modelPickerMenu")?.classList.contains("hidden"),
   openProviders: () => openProviders(),
   refreshForRole: async () => {
-    if (!isCurrentUserAdmin()) $("providersDialog")?.close?.();
     if (isCloudUser()) await loadCloudModels();
     syncChatModelFromConfig();
     updateStatus();
