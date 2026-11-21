@@ -5924,6 +5924,14 @@ function optionalJarvisLauncher() {
   }
 }
 
+function optionalNexusLauncher() {
+  try {
+    return require("./runtime/nexus-sidecar-manager");
+  } catch {
+    return null;
+  }
+}
+
 // [FASE2-BORRAR B-7] Retirado el handler agent:restart-backend:
 // sin método de preload ni llamante; el sidecar opcional se gestiona
 // por su propio ciclo de arranque/parada.
@@ -8818,6 +8826,12 @@ app.whenReady().then(async () => {
         logStartup("Jarvis sidecar opcional no iniciado", err);
       }
     }
+
+    try {
+      optionalNexusLauncher()?.startNexus?.();
+    } catch (err) {
+      logStartup("EditCore Nexus no iniciado automaticamente", err);
+    }
   });
 });
 app.on("window-all-closed", () => {
@@ -8829,6 +8843,9 @@ app.on("window-all-closed", () => {
   } catch (err) {
     console.error("Error stopping Jarvis sidecar", err);
   }
+  try {
+    optionalNexusLauncher()?.stopNexus?.();
+  } catch (err) {}
   for (const runtime of previewProcesses.values()) stopPreviewRuntime(runtime);
   if (process.platform !== "darwin") app.quit();
 });
@@ -8846,6 +8863,9 @@ app.on("before-quit", () => {
   } catch { /* ignore */ }
   try {
     optionalJarvisLauncher()?.stopJarvis?.();
+  } catch (err) {}
+  try {
+    optionalNexusLauncher()?.stopNexus?.();
   } catch (err) {}
   try {
     const { stopMultiAgentSidecar } = require("./runtime/multiagent-ipc");
