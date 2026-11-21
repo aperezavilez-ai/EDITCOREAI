@@ -6,7 +6,7 @@
     "stack": [],
     "status": "active",
     "createdAt": "2026-10-12T15:23:08.072Z",
-    "lastModified": "2026-11-21T20:12:37.463Z",
+    "lastModified": "2026-11-21T20:35:44.601Z",
     "version": "5.3.1"
   },
   "connections": {
@@ -22,8 +22,8 @@
       "projectName": "editcoreai",
       "liveUrl": "https://editcore.mx",
       "linked": true,
-      "lastDeploy": "2026-11-21T20:12:37.465Z",
-      "deploymentId": "dpl_DWWNxTtNBeEjR9nPbJbPvxeFN6GM"
+      "lastDeploy": "2026-11-21T20:35:44.602Z",
+      "deploymentId": "dpl_DkP4jHseF8GZzdxHD8WKnqjqpK9p"
     },
     "supabase": {
       "url": "https://ycftycizdgbboojfdtkz.supabase.co",
@@ -40,13 +40,19 @@
   "deployment": {
     "pipeline": "vercel",
     "lastDeploy": {
-      "timestamp": "2026-11-21T20:12:37.465Z",
-      "deploymentId": "dpl_DWWNxTtNBeEjR9nPbJbPvxeFN6GM",
+      "timestamp": "2026-11-21T20:35:44.602Z",
+      "deploymentId": "dpl_DkP4jHseF8GZzdxHD8WKnqjqpK9p",
       "url": "https://editcore.mx",
       "status": "READY"
     }
   },
   "history": [
+    {
+      "date": "2026-11-21T20:35:44.602Z",
+      "action": "release",
+      "details": "v5.3.1: corregido texto de descarga estatico en web-portal (de 4.4.5 y 5.2.8 a 5.3.1) y desplegado en Vercel dpl_DkP4jHseF8GZzdxHD8WKnqjqpK9p",
+      "by": "editcore"
+    },
     {
       "date": "2026-11-21T20:12:37.465Z",
       "action": "release",
