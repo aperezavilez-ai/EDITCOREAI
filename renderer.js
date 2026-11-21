@@ -1504,13 +1504,14 @@ function renderProviderStatus(key, status = {}) {
   if (status.error) badge.title = String(status.error).slice(0, 240);
 }
 
-function resolveProviderApiKey(key, formKey = "") {
+function resolveProviderApiKey(key, formKey = "", profiles = null) {
   const typed = String(formKey || "").trim();
   if (typed) return typed;
   const saved = loadJson("editcore-providers", {})[key] || {};
   if (String(saved.apiKey || "").trim()) return String(saved.apiKey).trim();
-  const profile = loadProviderProfiles().find((item) =>
-    item.providerKey === key && String(item.apiKey || "").trim(),
+  const list = Array.isArray(profiles) ? profiles : loadJson("editcore-provider-profiles", []);
+  const profile = list.find((item) =>
+    item && item.providerKey === key && String(item.apiKey || "").trim(),
   );
   if (profile) return String(profile.apiKey).trim();
   const chat = loadJson("editcore-chat-config", {});
@@ -1765,10 +1766,11 @@ function ensureDefaultProviderProfiles(profiles = []) {
 function loadProviderProfiles() {
   if (isCloudUser()) return cloudProviderProfiles();
   const raw = loadJson("editcore-provider-profiles", []);
-  return ensureDefaultProviderProfiles(raw)
+  const defaulted = ensureDefaultProviderProfiles(raw);
+  return defaulted
     .filter((profile) => !isHiddenProviderProfile(profile))
     .map((profile) => (SINGLE_KEY_PROVIDER_KEYS.includes(profile?.providerKey)
-      ? { ...profile, apiKey: resolveProviderApiKey(profile.providerKey, "") || profile.apiKey || "" }
+      ? { ...profile, apiKey: resolveProviderApiKey(profile.providerKey, "", defaulted) || profile.apiKey || "" }
       : profile));
 }
 function isHiddenProviderProfile(profile) {
