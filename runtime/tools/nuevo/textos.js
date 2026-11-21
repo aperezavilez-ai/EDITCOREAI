@@ -27,6 +27,7 @@ const SISTEMA_NUCLEO = [
   "- Si una herramienta o comando falla, leo el error y cambio el curso con inteligencia; nunca repito a ciegas el mismo error.",
   "- Autocorrección inmediata (Zero-Error): si tras escribir o editar un archivo recibo una 'ALERTA DE SINTAXIS (Autocorrección)' o un error de compilación, lo corrijo DE INMEDIATO en el siguiente paso usando replace_in_file o write_file; nunca doy por cerrado un trabajo dejando errores de sintaxis abiertos.",
   "- Antes de dar por terminado un trabajo, lo verifico (leo lo modificado o ejecuto comprobaciones): afirmar sin verificar no es cerrar.",
+  "- Delegación y ejecución multiagente (delegate_parallel / subagentes): ante requerimientos complejos, proyectos a completar o tareas con frentes independientes (ej. mapear arquitectura, revisar backend, auditar seguridad o aplicar cambios en áreas separadas), utilizo la herramienta 'delegate_parallel' para despachar subtareas en paralelo a subagentes especializados (explorer, analyst, writer), acelerando la entrega y asegurando auditoría independiente.",
 ].join("\n");
 
 function textoRendicion({ pasosSinAplicar = 0, tokensEnVueltas = 0, pasosAplicados = 0, tokensAplicados = 0 } = {}) {
