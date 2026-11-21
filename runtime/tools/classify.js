@@ -424,6 +424,7 @@ const READ_ONLY_TOOLS = [
   // Herramientas extra del kernel (extra-tools.js): lectura pura, sin guardia
   // de escritura en el despachador. Faltaban aquí y la clasificación derivaba.
   "read_pdf", "docker_ps", "screenshot_page",
+  "query_code_graph", "semantic_code_search", "diagnose_code_health",
   // [EDITCORE-DESBLOQUEOS] capture_preview_screenshot es OBSERVACIÓN, como
   // screenshot_page: su único efecto en disco es la carpeta de visión del
   // propio agente (.editcore/vision — contabilidad interna, igual que el

@@ -24,7 +24,7 @@ async function readPdf(file, { maxChars = DOCUMENT_TEXT_CAP } = {}) {
   if (fs.statSync(file).isDirectory()) return { ok: false, error: `Es carpeta: ${file}` };
   const ext = path.extname(file).toLowerCase();
   if (![".pdf", ".docx", ".xlsx"].includes(ext)) return { ok: false, error: "read_pdf acepta .pdf, .docx o .xlsx; para texto plano usa read_file." };
-  const { extractDocumentFromBuffer } = require("../document-attachments");
+  const { extractDocumentFromBuffer } = require("../../document-attachments");
   const doc = await extractDocumentFromBuffer(path.basename(file), fs.readFileSync(file));
   if (!doc.supported) return { ok: false, error: doc.error || "No se pudo leer el documento." };
   const text = String(doc.text || "");

@@ -1,6 +1,6 @@
 /**
- * EditCore AI - Nexus Local Model Sidecar Manager
- * Controla el ciclo de vida automático e invisible de EditCore Nexus (1.5B).
+ * EditCore AI - Nexus Sidecar Manager
+ * Controla el ciclo de vida automático e invisible de EditCore Nexus v4.
  * - Se inicia silenciosamente cuando EditCoreAI se abre.
  * - Se cierra automáticamente cuando EditCoreAI se cierra (cero procesos huérfanos).
  * - Cero archivos .bat requeridos.
@@ -41,14 +41,19 @@ async function startNexus() {
   if (alreadyUp) return true;
 
   const LLAMA_SERVER = path.join(NEXUS_ROOT, 'bin', 'llama-server.exe');
+  const MODEL_14B = path.join(NEXUS_ROOT, 'models', 'qwen2.5-coder-14b-instruct-q4_k_m.gguf');
   const MODEL_7B = path.join(NEXUS_ROOT, 'models', 'qwen2.5-coder-7b-instruct-q4_k_m.gguf');
 
-  if (fs.existsSync(LLAMA_SERVER) && fs.existsSync(MODEL_7B)) {
-    console.log('[EditCore Nexus] Iniciando motor 7B nativo en GPU (puerto 11435)...');
+  const modelToRun = fs.existsSync(MODEL_14B) ? MODEL_14B : (fs.existsSync(MODEL_7B) ? MODEL_7B : null);
+  const is14B = modelToRun === MODEL_14B;
+
+  if (fs.existsSync(LLAMA_SERVER) && modelToRun) {
+    const ngl = is14B ? '24' : '33'; // 14B: 24 capas en VRAM GPU (4.8 GB) + resto en RAM (Split-Offload)
+    console.log(`[EditCore Nexus] Iniciando motor ${is14B ? '14B' : '7B'} nativo (puerto ${PORT}, -ngl ${ngl})...`);
     nexusProcess = spawn(LLAMA_SERVER, [
-      '-m', MODEL_7B,
+      '-m', modelToRun,
       '--port', String(PORT),
-      '-ngl', '33',
+      '-ngl', ngl,
       '-c', '4096',
       '--alias', 'editcore-nexus-v4',
       '--alias', 'editcore-nexus',

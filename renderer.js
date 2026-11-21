@@ -21,7 +21,7 @@ const PROVIDERS = {
   anthropic:{ label: "Anthropic", baseUrl: "https://api.anthropic.com/v1", model: "claude-sonnet-4-6" },
   gemini:   { label: "Gemini",    baseUrl: "https://generativelanguage.googleapis.com/v1beta", model: "gemini-2.5-pro" },
   meai:     { label: "ME AI Cloud", baseUrl: "https://api.meai.cloud/v1", model: "claude-sonnet-4.6" },
-  nexus:    { label: "EditCore Nexus Local", baseUrl: "http://127.0.0.1:11435/v1", model: "editcore-nexus-v4" },
+  nexus:    { label: "EditCore Nexus v4", baseUrl: "http://127.0.0.1:11435/v1", model: "editcore-nexus-v4" },
 };
 // Proveedores de IA principales disponibles directamente para el administrador
 const PRIMARY_PROVIDER_KEYS = ["meai", "nexus"];
@@ -33,7 +33,7 @@ const PROVIDER_MODELS = {
   anthropic: ["claude-sonnet-4-6", "claude-opus-4-7", "claude-haiku-4-5"],
   gemini: ["gemini-2.5-pro", "gemini-2.5-flash", "gemini-1.5-pro"],
   meai: [],
-  nexus: ["editcore-nexus-v4", "editcore-nexus"],
+  nexus: ["editcore-nexus-v4"],
   kimi: [
     "moonshot-v1-8k", "moonshot-v1-32k", "moonshot-v1-128k",
     "kimi-k2-0711-preview",
@@ -1639,6 +1639,10 @@ async function saveProviders() {
 }
 
 function openProviders() {
+  if (!isCurrentUserAdmin()) {
+    $("status").textContent = "La configuración de modelos es solo para el administrador";
+    return;
+  }
   renderDialogAfterOpen($("providersDialog"), () => {
     renderCustomProviders();
     loadProviders();
@@ -1684,7 +1688,8 @@ function ensureDefaultProviderProfiles(profiles = []) {
   const allowedMeai = new Set(MEAI_PROVIDER_MODELS.map((m) => m.toLowerCase()));
   const current = (Array.isArray(profiles) ? [...profiles] : [])
     .filter((p) => p && isKnownProviderProfile(p))
-    .filter((p) => p.providerKey !== "meai" || allowedMeai.has(String(p.model).toLowerCase()));
+    .filter((p) => p.providerKey !== "meai" || allowedMeai.has(String(p.model).toLowerCase()))
+    .filter((p) => p.providerKey !== "nexus" || String(p.model).toLowerCase() === "editcore-nexus-v4");
   const providers = loadJson("editcore-providers", {});
 
   for (const provKey of PRIMARY_PROVIDER_KEYS) {
@@ -1730,7 +1735,7 @@ function ensureDefaultProviderProfiles(profiles = []) {
         const newProfile = {
           id: `${provKey}:${m}`,
           providerKey: provKey,
-          providerName: provKey === "meai" ? "ME AI Cloud" : (provKey === "nexus" ? "EditCore Nexus Local" : provKey),
+          providerName: provKey === "meai" ? "ME AI Cloud" : (provKey === "nexus" ? "EditCore Nexus v4" : provKey),
           baseUrl: provConfig.baseUrl || gafSaved.baseUrl || PROVIDERS[provKey]?.baseUrl || "",
           apiKey: inheritedKey,
           model: m,
@@ -2367,9 +2372,11 @@ function renderModelPickerMenu() {
   searchWrap.appendChild(searchInput);
   menu.appendChild(searchWrap);
 
-  const autoScopes = [
-    { scope: "meai", title: "Auto · ME AI Cloud", hint: "EditCoreAI elige automáticamente el mejor modelo para cada tarea." },
-  ];
+  const isAdmin = isCurrentUserAdmin();
+  const autoScopes = isAdmin && PRIMARY_PROVIDER_KEYS.length > 1 ? [
+    { scope: "all", title: "Auto", hint: "EditCoreAI elige el modelo ideal de ME AI para cada tarea." },
+    { scope: "meai", title: "Auto · ME AI", hint: "Solo modelos de ME AI." },
+  ] : [{ scope: "meai", title: "Auto", hint: "EditCoreAI elige automáticamente el mejor modelo para cada tarea." }];
   autoScopes.forEach(({ scope, title, hint }) => {
     const autoRow = document.createElement("div");
     autoRow.className = "model-picker-auto-row";
@@ -2632,7 +2639,7 @@ function filterModelOptionsForRole(options) {
     })
     .map((entry) => {
       if (entry.providerKey === "nexus" || entry.modelProviderGroup === "nexus") {
-        return { ...entry, providerLabel: "EditCore Nexus" };
+        return { ...entry, providerLabel: "EditCore Nexus v4" };
       }
       return { ...entry, providerLabel: USER_MODEL_GROUP_LABEL };
     });

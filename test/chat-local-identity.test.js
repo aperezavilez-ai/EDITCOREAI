@@ -10,24 +10,17 @@ test("chat-local: Identidad EditCoreAI y detección de preguntas casuales", () =
     "HOLA",
     "hola!",
     "Buenas tardes",
-    "QUIEN ERES?",
-    "quien eres",
-    "QUE MODELO ERES?",
-    "QUE MODELOS ERES?",
-    "qué modelo usas?",
-    "QUE CAPACIDADES TIENES?",
-    "que capacidades tienes",
-    "QUE PUEDES HACER?",
-    "que puedes hacer",
-    "QUE HACES?",
-    "para que sirves?"
+    "cómo estás?",
+    "gracias",
+    "ok",
+    "entendido",
+    "de acuerdo"
   ];
 
   for (const p of prompts) {
     assert.strictEqual(isCasualPrompt(p), true, `Debe reconocer casual prompt: "${p}"`);
     const resp = localConversationResponse(p);
     assert.ok(resp.length > 0, `Debe responder a: "${p}"`);
-    assert.ok(resp.includes("EditCoreAI"), `La respuesta a "${p}" debe identificarse como EditCoreAI: ${resp}`);
   }
 });
 

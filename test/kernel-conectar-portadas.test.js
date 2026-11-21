@@ -47,8 +47,8 @@ test("las 17 portadas del Grupo 1A están clasificadas y servidas", () => {
     assert.ok(clasificadas.has(nombre), `${nombre} clasificada`);
     assert.ok(servidas.has(nombre), `${nombre} servida`);
   }
-  assert.equal(servidas.size, 74, "el set servido completo son 74 herramientas");
-  assert.equal(clasificadas.size, 74, "la clasificación promete exactamente 74");
+  assert.equal(servidas.size, 77, "el set servido completo son 77 herramientas");
+  assert.equal(clasificadas.size, 77, "la clasificación promete exactamente 77");
 });
 
 test("las lecturas portadas responden con datos del proyecto real", async () => {
@@ -108,7 +108,7 @@ test("brain_tools inventaría lo servido y las skills instaladas de verdad", asy
   const ud = userDataConSkillGlobal();
   const inv = await tools.execute("brain_tools", {}, tmp, false, { userDataPath: ud });
   assert.equal(inv.ok, true);
-  assert.equal(inv.agentToolsTotal, 74);
+  assert.equal(inv.agentToolsTotal, 77);
   assert.ok(inv.skills.total >= 1);
   assert.ok(inv.skills.names.includes("skill-global-prueba"), "la skill global aparece en el inventario");
 });

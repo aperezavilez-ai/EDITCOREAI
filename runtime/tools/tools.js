@@ -3109,7 +3109,7 @@ async function execute(name, args, root, allowWrite, helpers = {}) {
         const destino = safe(root, path.join(padreRel || ".", nombre));
         const relDestino = path.relative(path.resolve(root), destino).replace(/\\/g, "/");
         if (!relDestino || relDestino.startsWith("..")) return { ok: false, error: "Ruta de proyecto inválida (fuera del proyecto abierto)." };
-        const { ProjectScaffoldService } = require("../project-scaffold-service");
+        const { ProjectScaffoldService } = require("../../project-scaffold-service");
         const creado = await new ProjectScaffoldService().create(
           { name: nombre, template: templateId, parentPath: padre, install: a.install !== false && templateId !== "blank" },
           {}
