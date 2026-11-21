@@ -6,26 +6,28 @@
     "stack": [],
     "status": "active",
     "createdAt": "2026-10-12T15:23:08.072Z",
-    "lastModified": "2026-11-15T22:17:00.000Z"
+    "lastModified": "2026-11-21T18:53:36.737Z",
+    "version": "5.3.1"
   },
   "connections": {
     "github": {
-      "repo": null,
+      "repo": "aperezavilez-ai/EDITCOREAI",
       "branch": "main",
-      "remoteUrl": null,
-      "hasLocalGit": false,
-      "lastPush": "2026-11-20T15:30:10.183Z"
+      "remoteUrl": "https://github.com/aperezavilez-ai/EDITCOREAI.git",
+      "hasLocalGit": true,
+      "lastPush": "2026-11-21T18:53:36.738Z"
     },
     "vercel": {
-      "projectId": null,
-      "projectName": null,
+      "projectId": "prj_7yoYHyRB6AHAqW3TL4jihIrLNNIU",
+      "projectName": "editcoreai",
       "liveUrl": "https://editcore.mx",
       "linked": true,
-      "lastDeploy": "2026-10-14T21:48:47.966Z"
+      "lastDeploy": "2026-11-21T18:53:36.738Z",
+      "deploymentId": "dpl_4a9pk4Mw9pP8VwNjpiAMudWNFuFo"
     },
     "supabase": {
-      "url": null,
-      "projectRef": null,
+      "url": "https://ycftycizdgbboojfdtkz.supabase.co",
+      "projectRef": "ycftycizdgbboojfdtkz",
       "hasMigrations": false,
       "lastMigration": null
     },
@@ -38,10 +40,19 @@
   "deployment": {
     "pipeline": "vercel",
     "lastDeploy": {
-      "timestamp": "2026-11-03T18:09:46.832Z"
+      "timestamp": "2026-11-21T18:53:36.738Z",
+      "deploymentId": "dpl_4a9pk4Mw9pP8VwNjpiAMudWNFuFo",
+      "url": "https://editcore.mx",
+      "status": "READY"
     }
   },
   "history": [
+    {
+      "date": "2026-11-21T18:53:36.738Z",
+      "action": "release",
+      "details": "v5.3.1: enforce autonomous execution loop — anuncioCorregido x2, collective orders as ORDEN, next-steps fallback in cierre, renderer authorization extended. 170+ tests pass. Web portal deployed to editcore.mx",
+      "by": "editcore"
+    },
     {
       "date": "2026-11-16T21:30:00.000Z",
       "action": "release",
