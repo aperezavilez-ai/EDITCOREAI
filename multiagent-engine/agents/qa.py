@@ -1,4 +1,4 @@
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 from pathlib import Path
 from core.bus import AgentEventBus
 from tools.file_tools import FileTools
@@ -8,14 +8,15 @@ class QAAgent:
     """
     QA Agent:
     - Inspects code written by Developer.
-    - Generates unit test suite in workspace.
+    - Generates unit test suite dynamically using ModelRouter.
     - Executes test suite using ExecTools.
     - Validates exit code and test assertions.
     - Publishes verdict back to team.
     """
-    def __init__(self, bus: AgentEventBus):
+    def __init__(self, bus: AgentEventBus, router: Optional[Any] = None):
         self.name = "QA"
         self.bus = bus
+        self.router = router
 
     async def inspect_and_test(self, task_id: str, workspace_root: Path) -> Dict[str, Any]:
         file_tools = FileTools(workspace_root)
@@ -29,12 +30,17 @@ class QAAgent:
         )
 
         code_content = file_tools.read_file("service.py")
-        if "def process_item" not in code_content or "def sanitize_id" not in code_content:
-            verdict = {"task_id": task_id, "verdict": "FAIL", "reason": "Missing required service functions"}
-            await self.bus.publish(self.name, "Architect", "qa:verdict", verdict)
-            return verdict
 
-        test_code = '''import unittest
+        test_code = None
+        if self.router:
+            prompt = f"Dado este código en service.py:\n{code_content}\nGenera un archivo test_service.py con pruebas unitarias usando unittest. Únicamente código Python válido."
+            llm_test = await self.router.complete_prompt("qa", "Eres un Ingeniero QA de EditCoreAI especializado en testing unitario automatizado.", prompt)
+            if llm_test and "unittest" in llm_test:
+                clean_test = llm_test.replace("```python", "").replace("```", "").strip()
+                test_code = clean_test
+
+        if not test_code:
+            test_code = '''import unittest
 from service import process_item, calculate_total, sanitize_id
 
 class TestService(unittest.TestCase):
@@ -57,6 +63,7 @@ class TestService(unittest.TestCase):
 if __name__ == "__main__":
     unittest.main()
 '''
+
         file_tools.write_file("test_service.py", test_code)
 
         test_run = exec_tools.run_tests("test_service.py")

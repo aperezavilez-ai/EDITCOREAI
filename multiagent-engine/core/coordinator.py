@@ -31,9 +31,9 @@ class MultiAgentCoordinator:
         self.registry = AgentRegistry()
         self.router = ModelRouter()
 
-        self.architect = ArchitectAgent(self.bus)
-        self.developer = DeveloperAgent(self.bus)
-        self.qa = QAAgent(self.bus)
+        self.architect = ArchitectAgent(self.bus, router=self.router)
+        self.developer = DeveloperAgent(self.bus, router=self.router)
+        self.qa = QAAgent(self.bus, router=self.router)
         self.security = SecurityAgent(self.bus)
         self.analyst = AnalystAgent(self.bus)
 
