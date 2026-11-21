@@ -7276,6 +7276,18 @@ ipcMain.handle("agent:run", async (event, input = {}) => {
   if (docContext) {
     task = task ? `${task}\n\n${docContext}` : docContext;
   }
+  if (providerKey === "nexus" && input.projectRoot) {
+    try {
+      const { querySemanticCodebase } = require("./runtime/codebase-indexer");
+      const hits = querySemanticCodebase(input.projectRoot, task, 4);
+      if (hits && hits.length) {
+        const contextBlock = hits.map((h) => `[Archivo: ${h.file}]\n${h.text}`).join("\n\n---\n\n");
+        task = `${task}\n\n[Contexto Relevante del Proyecto Indexado]:\n${contextBlock}`;
+      }
+    } catch {
+      // Indexación no disponible o proyecto no inicializado
+    }
+  }
   if (!task && (runImages.length || (Array.isArray(input.documents) && input.documents.length))) {
     task = runImages.length ? "Analiza la imagen adjunta." : "Analiza el documento adjunto.";
   }
