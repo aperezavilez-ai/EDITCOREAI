@@ -428,6 +428,21 @@ function writeFile(root, rel, content, coordCtx) {
   // el lock de ESTA escritura (ver releaseWriteLock).
   const finish = (r) => { releaseWriteLock(root, rel, coordCtx); return r; };
 
+  // [EDITCORE-SECURITY-SHIELD] Bloqueo proactivo permanente de fugas de secretos
+  try {
+    const { scanContentForSecrets } = require("../security-shield");
+    const secScan = scanContentForSecrets(body, rel);
+    if (secScan.blocked) {
+      return finish({
+        ok: false,
+        securityBlocked: true,
+        path: rel,
+        error: secScan.message,
+        findings: secScan.findings,
+      });
+    }
+  } catch { /* escudo no bloquea en caso de fallo inesperado */ }
+
   let _beforeForReview = "";
   let _fileExisted = false;
   try {
@@ -645,6 +660,21 @@ function replaceInFile(root, rel, oldText, newText, coordCtx) {
       hint: "Relee el archivo con read_file e incluye en oldText/newText el bloque completo (llaves de apertura y cierre).",
     });
   }
+
+  // [EDITCORE-SECURITY-SHIELD] Bloqueo proactivo en reemplazo
+  try {
+    const { scanContentForSecrets } = require("../security-shield");
+    const secScan = scanContentForSecrets(next, rel);
+    if (secScan.blocked) {
+      return finish({
+        ok: false,
+        securityBlocked: true,
+        path: rel,
+        error: secScan.message,
+        findings: secScan.findings,
+      });
+    }
+  } catch { /* escudo no bloquea en caso de fallo inesperado */ }
 
   const snap = snapshotBeforeWrite(root, rel, "replace_in_file", coordCtx);
   fs.writeFileSync(file, next, "utf8");
@@ -2585,8 +2615,22 @@ async function execute(name, args, root, allowWrite, helpers = {}) {
             prompt: String(a.prompt || ""),
             appName: String(a.name || "").trim() || path.basename(root),
           });
+          // [EDITCORE-SECURITY-SHIELD] Auto-inyectar .gitignore seguro y .env.example
+          try {
+            const { generateSafeGitignore } = require("../security-shield");
+            const gitignoreFile = path.join(root, ".gitignore");
+            if (!fs.existsSync(gitignoreFile)) {
+              fs.writeFileSync(gitignoreFile, generateSafeGitignore(), "utf8");
+            }
+            const envExampleFile = path.join(root, ".env.example");
+            if (!fs.existsSync(envExampleFile)) {
+              fs.writeFileSync(envExampleFile, "# EditCore Security Shield — Variables de entorno públicas\nVITE_APP_TITLE=" + path.basename(root) + "\n", "utf8");
+            }
+          } catch {}
+
           return {
             ...built,
+            shieldProtected: true,
             nextSteps: "Base sentada. Ahora: (1) ejecuta npm install con run_command; (2) personaliza src/App.tsx, src/components/sections/Hero.tsx y Showcase.tsx con el contenido real del negocio; (3) fotos reales con fetch_stock_photo en public/assets; (4) verifica con capture_preview_screenshot.",
           };
         } finally {

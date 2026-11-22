@@ -105,6 +105,10 @@ function gitCommit(projectRoot, message, { addPaths = [] } = {}) {
 
   let isSecretPath = (rel) => /(^|[\\/])(\.env([.\\].*)?|.*\.(pem|key|p12|pfx)|credentials\.json|secrets?\.json|id_rsa|id_ed25519)([\\/]|$)/i.test(String(rel || ""));
   try {
+    const { isSensitiveFile } = require("./security-shield");
+    if (typeof isSensitiveFile === "function") isSecretPath = isSensitiveFile;
+  } catch { /* fallback regex arriba */ }
+  try {
     ({ isSecretPath } = require("./publish-pipeline"));
   } catch { /* fallback regex arriba */ }
 
@@ -132,6 +136,24 @@ function gitCommit(projectRoot, message, { addPaths = [] } = {}) {
   for (const file of blocked) {
     try { runGit(projectRoot, ["reset", "HEAD", "--", file]); } catch { /* ignore */ }
   }
+
+  // [EDITCORE-SECURITY-SHIELD] Inspección de diff staged antes de commit
+  try {
+    const { scanContentForSecrets } = require("./security-shield");
+    const stagedDiff = runGit(projectRoot, ["diff", "--cached", "-U0"]).stdout || "";
+    if (stagedDiff) {
+      const shieldCheck = scanContentForSecrets(stagedDiff, "git:staged-diff");
+      if (shieldCheck.blocked) {
+        try { runGit(projectRoot, ["reset", "HEAD"]); } catch {}
+        return {
+          ok: false,
+          securityBlocked: true,
+          message: "Commit cancelado por EditCore Security Shield: se detectó un secreto privado (" + (shieldCheck.findings[0]?.patternName || "clave privada") + ") en los cambios listos para commit. Mueve la clave a .env.local antes de hacer commit.",
+          findings: shieldCheck.findings,
+        };
+      }
+    }
+  } catch { /* escudo no bloquea en caso de fallo inesperado de diff */ }
 
   const fs = require("node:fs");
   const msgFile = path.join(projectRoot, ".git", "EDITCOREAI_AGENT_COMMIT_MSG.tmp");

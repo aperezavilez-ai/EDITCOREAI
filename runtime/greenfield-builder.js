@@ -915,6 +915,8 @@ function scaffoldGreenfieldApp(projectRoot, { prompt = "", appName = "ProApp" } 
     "src/components/sections/Showcase.tsx": generateShowcaseComponent(prompt),
     "src/App.tsx": generateAppTsx(appName, prompt),
     "src/main.tsx": generateMainTsx(),
+    ".gitignore": require("./security-shield").generateSafeGitignore(),
+    ".env.example": "# EditCore Security Shield — Variables de entorno de ejemplo\nVITE_APP_TITLE=" + appName + "\n",
     "README.md": `# ${appName}\n\nAplicación profesional creada con EDITCOREAI (animated PWA).\n\n## Tecnologías\n- React + Vite + TypeScript\n- Tailwind CSS (transition utilities)\n- Framer Motion\n- PWA shell (\`public/manifest.webmanifest\`, \`public/sw.js\`)\n- Lucide Icons\n\n## Assets\nGuarda imagenes/videos generados en \`public/assets/\` (herramientas \`generate_image\` / \`generate_video\`).\n\n## Ejecución\n\`\`\`bash\nnpm install\nnpm run dev\n\`\`\`\n`,
     ...animatedPwaStaticFiles(appName),
   };

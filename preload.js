@@ -723,8 +723,15 @@ contextBridge.exposeInMainWorld("editcoreI18n", {
 contextBridge.exposeInMainWorld("editcoreSecurity", {
   scanFile: (filePath) => ipcRenderer.invoke("security:scan-file", filePath),
   scanWorkspace: (workspaceRoot, options) => ipcRenderer.invoke("security:scan-workspace", workspaceRoot, options),
+  scanProject: (projectRoot) => ipcRenderer.invoke("security:scan-project", projectRoot),
+  getShieldStatus: () => ipcRenderer.invoke("security:get-shield-status"),
   predictRefactor: (filePath) => ipcRenderer.invoke("security:predict-refactor", filePath),
   applyRefactor: (filePath) => ipcRenderer.invoke("security:apply-refactor", filePath),
+  onShieldAlert: (callback) => {
+    const listener = (_event, val) => callback(val);
+    ipcRenderer.on("security:shield-alert", listener);
+    return () => ipcRenderer.removeListener("security:shield-alert", listener);
+  },
 });
 
 contextBridge.exposeInMainWorld("editcoreMemoryLedger", {

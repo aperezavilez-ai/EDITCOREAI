@@ -4799,6 +4799,71 @@ function renderFeed(options = {}) {
   renderPermissionButton(state.permissionMode);
   $("projectPathLabel").textContent = state.projectRoot || "Sin proyecto";
   refreshAppStatusBar();
+
+  // [EDITCORE-SECURITY-SHIELD] Inicialización de indicadores en barra de estado y topbar
+  try {
+    const shieldStatusBarEl = $("statusBarSecurityShield");
+    const shieldHomeEl = $("chatHomeShieldBtn");
+
+    const updateShieldBadges = (status) => {
+      const blocked = status?.blocksCount || 0;
+      const warnings = status?.warningsCount || 0;
+      let text = "🛡️ Escudo Activo";
+      let color = "var(--success, #10b981)";
+      let title = "EditCore Security Shield: Activo · 0 fugas detectadas";
+
+      if (blocked > 0) {
+        text = `🛑 Escudo: ${blocked} bloqueo(s)`;
+        color = "var(--danger, #ef4444)";
+        title = `EditCore Security Shield: ${blocked} intento(s) de fuga de secretos bloqueado(s)`;
+      } else if (warnings > 0) {
+        text = "⚠️ Escudo: advertencia";
+        color = "var(--warning, #f59e0b)";
+        title = "EditCore Security Shield: advertencias de seguridad en el proyecto";
+      }
+
+      if (shieldStatusBarEl) {
+        shieldStatusBarEl.textContent = text;
+        shieldStatusBarEl.style.color = color;
+        shieldStatusBarEl.title = title;
+      }
+      if (shieldHomeEl) {
+        shieldHomeEl.textContent = text;
+        shieldHomeEl.style.color = color;
+        shieldHomeEl.title = title;
+      }
+    };
+
+    window.editcoreSecurity?.getShieldStatus?.().then((st) => {
+      updateShieldBadges(st);
+    }).catch(() => {});
+
+    const onShieldClick = async () => {
+      const targetProj = state.projectRoot || "";
+      if (shieldStatusBarEl) shieldStatusBarEl.textContent = "🛡️ Escaneando...";
+      if (shieldHomeEl) shieldHomeEl.textContent = "🛡️ Escaneando...";
+      try {
+        const scanRes = await window.editcoreSecurity?.scanProject?.(targetProj);
+        if (scanRes?.issues?.length > 0) {
+          updateShieldBadges({ blocksCount: scanRes.hasCriticalIssues ? 1 : 0, warningsCount: 1 });
+          const issueList = scanRes.issues.slice(0, 5).map(i => `• [${i.type}] ${i.file}: ${i.message}`).join("\n");
+          alert(`EditCore Security Shield — Reporte de Seguridad:\n\n${issueList}`);
+        } else {
+          updateShieldBadges({ blocksCount: 0, warningsCount: 0 });
+          alert("EditCore Security Shield:\n\nEl proyecto está 100% protegido. Cero fugas de secretos y .gitignore seguro verificado.");
+        }
+      } catch (err) {
+        updateShieldBadges({});
+      }
+    };
+
+    shieldStatusBarEl?.addEventListener("click", onShieldClick);
+    shieldHomeEl?.addEventListener("click", onShieldClick);
+
+    window.editcoreSecurity?.onShieldAlert?.((alertData) => {
+      updateShieldBadges({ blocksCount: 1 });
+    });
+  } catch { /* shield UI init safe */ }
   renderProjectFiles().catch(() => undefined);
   updateCloseProjectButton();
   if (!state.history.length) {

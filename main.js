@@ -10090,6 +10090,25 @@ ipcMain.handle("security:apply-refactor", async (_event, filePath) => {
     return { ok: false, error: error.message };
   }
 });
+// EditCore Security Shield v5.3.2 handlers
+ipcMain.handle("security:get-shield-status", async () => {
+  try {
+    const { getShieldStatus } = require("./runtime/security-shield");
+    return getShieldStatus();
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
+});
+
+ipcMain.handle("security:scan-project", async (_event, projectRoot) => {
+  try {
+    const { scanProjectForSecurity } = require("./runtime/security-shield");
+    const target = projectRoot || (activeProjectState && activeProjectState.root) || process.cwd();
+    return scanProjectForSecurity(target);
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
+});
 
 // Ciclo 29: Memory Ledger, Peer Review Swarm & Ghost Completion
 ipcMain.handle("memory-ledger:get", async (_event, projectRoot, branch) => {

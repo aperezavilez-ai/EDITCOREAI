@@ -483,7 +483,12 @@ class ProjectBootstrap {
       files.push("app/layout.js", "app/page.js");
     }
 
-    fs.writeFileSync(path.join(projectRoot, ".gitignore"), "node_modules/\n.env*\n!.env.example\n.next/\nbuild/\ndist/\n.vercel/\n.editcore/\n*.log\n", "utf8");
+    try {
+      const { generateSafeGitignore } = require("./security-shield");
+      fs.writeFileSync(path.join(projectRoot, ".gitignore"), generateSafeGitignore(), "utf8");
+    } catch {
+      fs.writeFileSync(path.join(projectRoot, ".gitignore"), "node_modules/\n.env*\n!.env.example\n.next/\nbuild/\ndist/\n.vercel/\n.editcore/\n*.log\n", "utf8");
+    }
     files.push(".gitignore");
 
     return files;
