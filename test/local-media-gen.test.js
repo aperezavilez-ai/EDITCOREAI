@@ -6,9 +6,24 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
+const http = require("node:http");
 const { generateImage, generateVideo } = require("../runtime/image-gen");
 
-test("Nexus Media Studio: generateImage genera y guarda PNG localmente", async () => {
+function isMediaStudioRunning() {
+  return new Promise((resolve) => {
+    const req = http.get("http://127.0.0.1:11436/health", { timeout: 1000 }, (res) => {
+      resolve(res.statusCode === 200);
+    });
+    req.on("error", () => resolve(false));
+    req.on("timeout", () => { req.destroy(); resolve(false); });
+  });
+}
+
+test("Nexus Media Studio: generateImage genera y guarda PNG localmente", async (t) => {
+  if (!(await isMediaStudioRunning())) {
+    t.skip("Nexus Media Studio no está activo en puerto 11436");
+    return;
+  }
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "nexus-media-test-"));
   const res = await generateImage(tmpDir, {
     prompt: "Cyberpunk logo for EditCore Nexus",
@@ -27,7 +42,11 @@ test("Nexus Media Studio: generateImage genera y guarda PNG localmente", async (
   fs.rmSync(tmpDir, { recursive: true, force: true });
 });
 
-test("Nexus Media Studio: generateVideo genera y guarda MP4 localmente", async () => {
+test("Nexus Media Studio: generateVideo genera y guarda MP4 localmente", async (t) => {
+  if (!(await isMediaStudioRunning())) {
+    t.skip("Nexus Media Studio no está activo en puerto 11436");
+    return;
+  }
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "nexus-video-test-"));
   const res = await generateVideo(tmpDir, {
     prompt: "Futuristic animated banner in motion",
