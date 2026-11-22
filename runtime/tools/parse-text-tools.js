@@ -258,22 +258,28 @@ function extraerObjetosJson(src) {
 // ¿Este objeto JSON es una llamada a herramienta en dialecto
 // JSON? Llaves vistas en vivo: {"tool": "bash", "args": {...}}
 // (el «Auto» de la pasarela), {"name": ..., "arguments": ...},
-// {"function": ..., "parameters": ...}.
+// {"function": ..., "parameters": ...}, y formato plano de modelos
+// locales: {"tool": "write_file", "path": "...", "content": "..."}.
 function llamadaDesdeJson(obj) {
   if (!obj || typeof obj !== "object") return null;
   const nombre = obj.tool || obj.name || obj.function;
   if (typeof nombre !== "string" || !nombre.trim()) return null;
-  let crudos = obj.args != null ? obj.args
-    : obj.arguments != null ? obj.arguments
-    : obj.input != null ? obj.input
-    : obj.parameters != null ? obj.parameters
-    : {};
+  const isDirectFlat = obj.args == null && obj.arguments == null && obj.input == null && obj.parameters == null;
+  let crudos = isDirectFlat ? obj
+    : (obj.args != null ? obj.args
+      : obj.arguments != null ? obj.arguments
+      : obj.input != null ? obj.input
+      : obj.parameters != null ? obj.parameters
+      : {});
   if (typeof crudos === "string") {
     try { crudos = JSON.parse(crudos); } catch { crudos = {}; }
   }
   if (!crudos || typeof crudos !== "object" || Array.isArray(crudos)) crudos = {};
   const args = {};
-  for (const [k, v] of Object.entries(crudos)) assignArg(args, k, v);
+  for (const [k, v] of Object.entries(crudos)) {
+    if (isDirectFlat && (k === "tool" || k === "name" || k === "function")) continue;
+    assignArg(args, k, v);
+  }
   return { nombre, args };
 }
 
@@ -400,12 +406,45 @@ function parseTextToolCalls(text, { projectRoot } = {}) {
     }
   }
 
-  // Formato clásico: <read_file>...</read_file>
+  // Formato clásico y con atributos: <read_file path="...">...</read_file> o <write_file path="...">
   const names = TOOL_TAG_NAMES.join("|");
-  const blockRe = new RegExp(`<(${names})>\\s*([\\s\\S]*?)\\s*<\\/\\1>`, "gi");
+  const blockRe = new RegExp(`<(${names})(?:\\s+(?:path|file|filepath)=["']([^"']+)["'])?[^>]*>([\\s\\S]*?)<\\/\\1>`, "gi");
   while ((m = blockRe.exec(src))) {
-    pushCall(calls, m[1], parseInnerArgs(m[2] || ""), projectRoot);
+    const rawTag = m[1];
+    const attrPath = m[2] ? m[2].trim() : "";
+    const body = m[3] || "";
+    const args = parseInnerArgs(body);
+    if (attrPath && !args.path) args.path = attrPath;
+    const norm = normalizeToolName(rawTag);
+    if (norm === "write_file" && !args.content && body && !body.includes("<parameter")) {
+      args.content = unescapeTextBlob(body);
+    } else if (norm === "run_command" && !args.command && body && !body.includes("<parameter")) {
+      args.command = body.trim();
+    }
+    pushCall(calls, norm, args, projectRoot);
   }
+
+  // Detección dirigida para modelos locales (Nexus / Qwen):
+  // Si no hubo llamadas estructuradas previas, pero el modelo generó un bloque de código
+  // cercado (```js ... ```) y el texto indica una ruta destino ("crea src/App.js", "archivo: index.html"),
+  // se rescata como write_file para que el archivo se escriba en disco y encienda los indicadores.
+  if (!calls.length) {
+    const pathMatch = src.match(/(?:(?:en|gu[aá]rdalo en|archivo|crea|modifica|path[:=]|escribe en|en el archivo|ruta|creando|guardando)\s*[`'"]?([a-zA-Z0-9_\-\.\/]+\.[a-zA-Z0-9]{1,6})[`'"]?)|(?:```[a-zA-Z0-9_-]*\s*[:\/\/\s]*([a-zA-Z0-9_\-\.\/]+\.[a-zA-Z0-9]{1,6}))/i);
+    if (pathMatch) {
+      const targetPath = (pathMatch[1] || pathMatch[2] || "").trim();
+      const codeBlocks = [];
+      const codeRe = /```(?:[a-zA-Z0-9_-]+)?\s*\n([\s\S]*?)\n```/g;
+      let cb;
+      while ((cb = codeRe.exec(src))) {
+        if (cb[1] && cb[1].trim().length > 10) codeBlocks.push(cb[1].trim());
+      }
+      if (targetPath && codeBlocks.length > 0) {
+        const largestCode = codeBlocks.reduce((a, b) => (a.length >= b.length ? a : b));
+        pushCall(calls, "write_file", { path: targetPath, content: largestCode }, projectRoot);
+      }
+    }
+  }
+
   return calls;
 }
 
@@ -461,7 +500,7 @@ function stripTextToolMarkup(text) {
   out = out.replace(/<function\s*=\s*[a-zA-Z_][\w-]*\s*>[\s\S]*?<\/function>/gi, "");
   out = out.replace(/<parameter\s*=\s*[a-zA-Z_][\w-]*\s*>[\s\S]*?<\/parameter>/gi, "");
   const names = TOOL_TAG_NAMES.join("|");
-  const re = new RegExp(`<(${names})>\\s*[\\s\\S]*?\\s*<\\/\\1>`, "gi");
+  const re = new RegExp(`<(${names})[^>]*>[\\s\\S]*?<\\/\\1>`, "gi");
   out = out.replace(re, "");
   out = out.replace(/<\/?(?:dots_function_call|invoke|parameter|tool_call|tool_use|tool_code|tools)\b[^>]*>/gi, "");
   // Incompletos / stream cortado

@@ -26,3 +26,38 @@ test("Qwen 2.5 Coder Tool Calling: isToolProtocolText detecta <tools>", () => {
   const qwenOutput = '<tools>\n{\n  "name": "read_file",\n  "arguments": {\n    "path": "package.json"\n  }\n}\n</tools>';
   assert.equal(isToolProtocolText(qwenOutput), true);
 });
+
+test("EditCore Nexus Tool Calling: parseTextToolCalls extrae objetos JSON planos con path y content", () => {
+  const nexusFlatJson = 'He generado la solución:\n```json\n{\n  "tool": "write_file",\n  "path": "src/utils/math.js",\n  "content": "export function sum(a, b) { return a + b; }"\n}\n```\nListo.';
+  const calls = parseTextToolCalls(nexusFlatJson);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].function.name, "write_file");
+  const args = JSON.parse(calls[0].function.arguments);
+  assert.equal(args.path, "src/utils/math.js");
+  assert.equal(args.content, "export function sum(a, b) { return a + b; }");
+
+  const normalizados = normalizarToolCalls(calls);
+  assert.equal(normalizados[0].nombre, "write_file");
+  assert.equal(normalizados[0].args.path, "src/utils/math.js");
+});
+
+test("EditCore Nexus Tool Calling: parseTextToolCalls extrae etiquetas XML con atributos tipo path", () => {
+  const nexusXml = '<write_file path="src/index.js">console.log("EditCore Nexus v4");</write_file>';
+  const calls = parseTextToolCalls(nexusXml);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].function.name, "write_file");
+  const args = JSON.parse(calls[0].function.arguments);
+  assert.equal(args.path, "src/index.js");
+  assert.equal(args.content, 'console.log("EditCore Nexus v4");');
+});
+
+test("EditCore Nexus Tool Calling: rescate de bloque de código dirigido con ruta mencionada", () => {
+  const nexusDirected = 'Voy a crear el archivo src/App.jsx con el componente:\n```jsx\nexport default function App() {\n  return <h1>Hola Mundo</h1>;\n}\n```\nVerifica el resultado.';
+  const calls = parseTextToolCalls(nexusDirected);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].function.name, "write_file");
+  const args = JSON.parse(calls[0].function.arguments);
+  assert.equal(args.path, "src/App.jsx");
+  assert.match(args.content, /<h1>Hola Mundo<\/h1>/);
+});
+

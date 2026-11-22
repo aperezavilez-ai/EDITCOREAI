@@ -4382,7 +4382,15 @@ function scrubGatewayFromSecureState() {
     const modelLower = String(profile?.model || "").toLowerCase();
     const pKeyLower = String(profile?.providerKey || "").toLowerCase();
     if (modelLower.includes("nexus") || pKeyLower.includes("nexus")) {
-      return modelLower === "editcore-nexus-v4";
+      const isV4 = modelLower === "editcore-nexus-v4";
+      const targetModel = isV4 ? "editcore-nexus-v4" : "editcore-nexus-v5";
+      if (profile) {
+        profile.model = targetModel;
+        profile.id = `nexus:${targetModel}`;
+        profile.providerName = isV4 ? "EditCore Nexus v4" : "EditCore Nexus v5";
+        profile.providerKey = "nexus";
+      }
+      return true;
     }
     return true;
   });

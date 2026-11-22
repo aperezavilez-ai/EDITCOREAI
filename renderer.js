@@ -21,7 +21,7 @@ const PROVIDERS = {
   anthropic:{ label: "Anthropic", baseUrl: "https://api.anthropic.com/v1", model: "claude-sonnet-4-6" },
   gemini:   { label: "Gemini",    baseUrl: "https://generativelanguage.googleapis.com/v1beta", model: "gemini-2.5-pro" },
   meai:     { label: "ME AI Cloud", baseUrl: "https://api.meai.cloud/v1", model: "claude-sonnet-4.6" },
-  nexus:    { label: "EditCore Nexus v4", baseUrl: "http://127.0.0.1:11435/v1", model: "editcore-nexus-v4" },
+  nexus:    { label: "EditCore Nexus v5", baseUrl: "http://127.0.0.1:11435/v1", model: "editcore-nexus-v5" },
 };
 // Proveedores de IA principales disponibles directamente para el administrador
 const PRIMARY_PROVIDER_KEYS = ["meai", "nexus"];
@@ -33,7 +33,7 @@ const PROVIDER_MODELS = {
   anthropic: ["claude-sonnet-4-6", "claude-opus-4-7", "claude-haiku-4-5"],
   gemini: ["gemini-2.5-pro", "gemini-2.5-flash", "gemini-1.5-pro"],
   meai: [],
-  nexus: ["editcore-nexus-v4"],
+  nexus: ["editcore-nexus-v5", "editcore-nexus-v4"],
   kimi: [
     "moonshot-v1-8k", "moonshot-v1-32k", "moonshot-v1-128k",
     "kimi-k2-0711-preview",
@@ -1689,9 +1689,20 @@ function ensureDefaultProviderProfiles(profiles = []) {
   const current = (Array.isArray(profiles) ? [...profiles] : [])
     .filter((p) => p && isKnownProviderProfile(p))
     .filter((p) => p.providerKey !== "meai" || allowedMeai.has(String(p.model).toLowerCase()))
-    .filter((p) => {
+    .map((p) => {
       const isNexus = p.providerKey === "nexus" || String(p.model || "").toLowerCase().includes("nexus") || String(p.providerName || "").toLowerCase().includes("nexus");
-      return !isNexus || String(p.model || "").toLowerCase() === "editcore-nexus-v4";
+      if (isNexus) {
+        return {
+          ...p,
+          id: "nexus:editcore-nexus-v5",
+          providerKey: "nexus",
+          providerName: "EditCore Nexus v5",
+          model: "editcore-nexus-v5",
+          baseUrl: p.baseUrl || "http://127.0.0.1:11435/v1",
+          status: "active"
+        };
+      }
+      return p;
     });
   const providers = loadJson("editcore-providers", {});
 
@@ -1738,7 +1749,7 @@ function ensureDefaultProviderProfiles(profiles = []) {
         const newProfile = {
           id: `${provKey}:${m}`,
           providerKey: provKey,
-          providerName: provKey === "meai" ? "ME AI Cloud" : (provKey === "nexus" ? "EditCore Nexus v4" : provKey),
+          providerName: provKey === "meai" ? "ME AI Cloud" : (provKey === "nexus" ? "EditCore Nexus v5" : provKey),
           baseUrl: provConfig.baseUrl || gafSaved.baseUrl || PROVIDERS[provKey]?.baseUrl || "",
           apiKey: inheritedKey,
           model: m,
@@ -2620,19 +2631,21 @@ async function selectModelFromPicker({ auto = false, autoScope = "", entry, keep
 
 function mapProfileToModelOption(profile, customProvidersByKey) {
   const isNexus = profile.providerKey === "nexus" || String(profile.model || "").toLowerCase().includes("nexus") || String(profile.providerName || "").toLowerCase().includes("nexus");
+  const isV4 = String(profile.model || "").toLowerCase() === "editcore-nexus-v4";
   const pLabel = isNexus
-    ? "EditCore Nexus v4"
+    ? (isV4 ? "EditCore Nexus v4" : "EditCore Nexus v5")
     : (profile.providerKey === "custom:gafcore-gateway"
       ? ({ meai: "ME AI Cloud" }[String(profile.model).split("/", 1)[0]] || "Proveedor")
       : (PRIMARY_PROVIDER_KEYS.includes(profile.providerKey)
         ? PROVIDERS[profile.providerKey]?.label
         : customProvidersByKey.get(profile.providerKey)?.name || profile.providerName || profile.providerKey));
+  const effectiveModel = isNexus ? (isV4 ? "editcore-nexus-v4" : "editcore-nexus-v5") : profile.model;
   return {
     providerKey: isNexus ? "nexus" : profile.providerKey,
     providerLabel: pLabel,
     modelProviderGroup: isNexus ? "nexus" : (profile.providerKey === "custom:gafcore-gateway" ? String(profile.model).split("/", 1)[0] : profile.providerKey),
-    profileId: profile.id,
-    model: isNexus ? "editcore-nexus-v4" : profile.model,
+    profileId: isNexus ? `nexus:${effectiveModel}` : profile.id,
+    model: effectiveModel,
     profileStatus: profile.status,
     enabled: ["active", "enabled"].includes(profile.status),
   };
@@ -2666,7 +2679,8 @@ function filterModelOptionsForRole(options) {
     })
     .map((entry) => {
       if (entry.providerKey === "nexus" || entry.modelProviderGroup === "nexus") {
-        return { ...entry, providerLabel: "EditCore Nexus v4" };
+        const isV4 = String(entry.model || "").toLowerCase() === "editcore-nexus-v4";
+        return { ...entry, providerLabel: isV4 ? "EditCore Nexus v4" : "EditCore Nexus v5" };
       }
       return { ...entry, providerLabel: USER_MODEL_GROUP_LABEL };
     });
@@ -2680,7 +2694,11 @@ function catalogChatModelOptions() {
     const pKeyLower = String(profile.providerKey || "").toLowerCase();
     const pNameLower = String(profile.providerName || "").toLowerCase();
     if (modelLower.includes("nexus") || pKeyLower.includes("nexus") || pNameLower.includes("nexus")) {
-      if (modelLower !== "editcore-nexus-v4") return false;
+      const isV4 = modelLower === "editcore-nexus-v4";
+      profile.model = isV4 ? "editcore-nexus-v4" : "editcore-nexus-v5";
+      profile.id = `nexus:${profile.model}`;
+      profile.providerName = isV4 ? "EditCore Nexus v4" : "EditCore Nexus v5";
+      profile.providerKey = "nexus";
     }
     const effectiveKey = profile.apiKey || resolveProviderApiKey(profile.providerKey, "");
     return Boolean(effectiveKey) || PRIMARY_PROVIDER_KEYS.includes(profile.providerKey) || perfilUtilizableSinClave(profile);
@@ -2782,7 +2800,10 @@ function verifiedChatModelOptions() {
     const pKeyLower = String(profile.providerKey || "").toLowerCase();
     const pNameLower = String(profile.providerName || "").toLowerCase();
     if (modelLower.includes("nexus") || pKeyLower.includes("nexus") || pNameLower.includes("nexus")) {
-      if (modelLower !== "editcore-nexus-v4") return false;
+      profile.model = "editcore-nexus-v5";
+      profile.id = "nexus:editcore-nexus-v5";
+      profile.providerName = "EditCore Nexus v5";
+      profile.providerKey = "nexus";
     }
     return Boolean(profile.apiKey || perfilUtilizableSinClave(profile));
   });
@@ -15220,10 +15241,10 @@ function appendUserMessageImmediate(text, images = [], documents = []) {
 
 async function migrateConfig() {
   const config = loadJson("editcore-chat-config", null);
-  if (config.model === "editcore-nexus" || (String(config.model || "").toLowerCase().includes("nexus") && config.model !== "editcore-nexus-v4")) {
-    config.model = "editcore-nexus-v4";
+  if (config && (config.model === "editcore-nexus" || config.model === "editcore-nexus-v4" || (String(config.model || "").toLowerCase().includes("nexus") && config.model !== "editcore-nexus-v5"))) {
+    config.model = "editcore-nexus-v5";
     config.providerKey = "nexus";
-    config.providerProfileId = "nexus:editcore-nexus-v4";
+    config.providerProfileId = "nexus:editcore-nexus-v5";
     await saveSecureJson("editcore-chat-config", config);
   }
   const profiles = loadProviderProfiles().filter((profile) => profile.status === "active");
@@ -15300,7 +15321,11 @@ async function cleanupObsoleteProviders() {
     if (REMOVED_PROVIDER_KEYS.has(key) || String(profile.model || "").toLowerCase().startsWith("chatgptpro4all/")) { changed = true; return false; }
     const modelLower = String(profile.model || "").toLowerCase();
     if (modelLower.includes("nexus") || key.includes("nexus")) {
-      if (modelLower !== "editcore-nexus-v4") { changed = true; return false; }
+      profile.model = "editcore-nexus-v5";
+      profile.id = "nexus:editcore-nexus-v5";
+      profile.providerName = "EditCore Nexus v5";
+      profile.providerKey = "nexus";
+      changed = true;
     }
     // Solo eliminar perfiles con URLs claramente obsoletas
     if (badSubstrings.some((bad) => url.includes(bad))) { changed = true; return false; }

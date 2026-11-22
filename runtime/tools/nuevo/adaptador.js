@@ -748,7 +748,7 @@ async function manejarChatNuevo(input, deps = {}) {
   const esNexus = String(input.providerKey || "").toLowerCase() === "nexus"
     || String(input.model || "").toLowerCase().includes("nexus")
     || String(perfil.model || "").toLowerCase().includes("nexus");
-  const bloqueNexus = esNexus ? `${SISTEMA_NEXUS_V5}\n\n${SISTEMA_NEXUS_V4}` : "";
+  const bloqueNexus = esNexus ? SISTEMA_NEXUS_V5 : "";
   const memoria = [bloqueNexus, SISTEMA_NUCLEO, memoriaExtra, String(input.skillsPrompt || "")]
     .map((s) => String(s || "").trim())
     .filter(Boolean)

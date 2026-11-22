@@ -28,7 +28,7 @@ class ModelRouter:
 
     def get_model_name(self, provider: str, role: str) -> str:
         if provider == "editcore_nexus":
-            return "editcore-nexus-v4"
+            return "editcore-nexus-v5"
         elif provider == "anthropic":
             if role in ("architect", "analyst"):
                 return "claude-3-7-sonnet-20250219"
@@ -39,7 +39,7 @@ class ModelRouter:
 
     async def complete_prompt(self, role: str, system_prompt: str, user_prompt: str) -> Optional[str]:
         """
-        Executes a real LLM prompt using configured credentials or EditCore Nexus v4.
+        Executes a real LLM prompt using configured credentials or EditCore Nexus v5.
         Returns the text completion or None if no keys/server or call fails.
         """
         import urllib.request
@@ -50,11 +50,11 @@ class ModelRouter:
 
         try:
             if provider == "editcore_nexus":
-                # EditCore Nexus v4 local endpoint (Ollama / OpenAI compatible)
+                # EditCore Nexus v5 local endpoint (Ollama / OpenAI compatible)
                 url = f"{self.nexus_url}/api/chat"
                 headers = {"Content-Type": "application/json"}
                 body = {
-                    "model": "editcore-nexus-v4",
+                    "model": model,
                     "messages": [
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": user_prompt}

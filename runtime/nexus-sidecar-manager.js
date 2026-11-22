@@ -1,6 +1,6 @@
 /**
  * EditCore AI - Nexus Sidecar Manager
- * Controla el ciclo de vida automático e invisible de EditCore Nexus v4.
+ * Controla el ciclo de vida automático e invisible de EditCore Nexus v5.
  * - Se inicia silenciosamente cuando EditCoreAI se abre.
  * - Se cierra automáticamente cuando EditCoreAI se cierra (cero procesos huérfanos).
  * - Cero archivos .bat requeridos.
