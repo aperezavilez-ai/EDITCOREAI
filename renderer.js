@@ -33,7 +33,7 @@ const PROVIDER_MODELS = {
   anthropic: ["claude-sonnet-4-6", "claude-opus-4-7", "claude-haiku-4-5"],
   gemini: ["gemini-2.5-pro", "gemini-2.5-flash", "gemini-1.5-pro"],
   meai: [],
-  nexus: ["editcore-nexus-v5", "editcore-nexus-v4"],
+  nexus: ["editcore-nexus-v5"],
   kimi: [
     "moonshot-v1-8k", "moonshot-v1-32k", "moonshot-v1-128k",
     "kimi-k2-0711-preview",
