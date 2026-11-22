@@ -44,26 +44,30 @@ async function startNexus() {
   const MODEL_14B = path.join(NEXUS_ROOT, 'models', 'qwen2.5-coder-14b-instruct-q4_k_m.gguf');
   const MODEL_7B = path.join(NEXUS_ROOT, 'models', 'qwen2.5-coder-7b-instruct-q4_k_m.gguf');
 
-  const modelToRun = fs.existsSync(MODEL_14B) ? MODEL_14B : (fs.existsSync(MODEL_7B) ? MODEL_7B : null);
+  const tier = (process.env.NEXUS_MODEL_TIER || '7B').toUpperCase();
+  const want14B = tier === '14B' && fs.existsSync(MODEL_14B);
+  const modelToRun = want14B ? MODEL_14B : (fs.existsSync(MODEL_7B) ? MODEL_7B : (fs.existsSync(MODEL_14B) ? MODEL_14B : null));
   const is14B = modelToRun === MODEL_14B;
 
   if (fs.existsSync(LLAMA_SERVER) && modelToRun) {
-    const ngl = is14B ? '16' : '33'; // 14B: 16 capas en VRAM (3.5 GB) + resto en RAM con 8 hilos CPU
+    // Para GTX 1060 (6 GB VRAM Pascal):
+    // 7B: 20 capas en VRAM (3.4 GB), 4 hilos CPU físicos, -np 1 slot dedicado, f16 nativo (4.25 tokens/s)
+    // 14B: 16 capas en VRAM, 8 hilos CPU híbrido, desatendido/offline
+    const ngl = is14B ? '16' : '20';
+    const threads = is14B ? '8' : '4';
     const loraAdapter = path.join(NEXUS_ROOT, 'checkpoints', 'nexus_14b_lora', 'adapter.gguf');
-    const extraArgs = fs.existsSync(loraAdapter) ? ['--lora', loraAdapter] : [];
-    console.log(`[EditCore Nexus] Iniciando motor ${is14B ? '14B' : '7B'} nativo (puerto ${PORT}, -ngl ${ngl})...`);
+    const extraArgs = (is14B && fs.existsSync(loraAdapter)) ? ['--lora', loraAdapter] : [];
+    console.log(`[EditCore Nexus V5] Iniciando motor principal ${is14B ? '14B (Modo Deep)' : '7B (Modo Fast)'} (puerto ${PORT}, -ngl ${ngl}, threads ${threads})...`);
     nexusProcess = spawn(LLAMA_SERVER, [
       '-m', modelToRun,
       '--port', String(PORT),
       '-ngl', ngl,
-      '-c', '4096',
-      '--cache-type-k', 'q8_0',
-      '--cache-type-v', 'q8_0',
+      '-c', '2048',
+      '-np', '1',
       '--jinja',
-      '--threads', '8',
-      '--alias', 'editcore-nexus-v4,editcore-nexus',
-      '--spec-type', 'ngram-mod',
-      '--host', '0.0.0.0',
+      '--threads', threads,
+      '--alias', 'editcore-nexus-v5,editcore-nexus-v4,editcore-nexus',
+      '--host', '127.0.0.1',
       ...extraArgs
     ], {
       cwd: NEXUS_ROOT,
