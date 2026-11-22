@@ -2631,21 +2631,19 @@ async function selectModelFromPicker({ auto = false, autoScope = "", entry, keep
 
 function mapProfileToModelOption(profile, customProvidersByKey) {
   const isNexus = profile.providerKey === "nexus" || String(profile.model || "").toLowerCase().includes("nexus") || String(profile.providerName || "").toLowerCase().includes("nexus");
-  const isV4 = String(profile.model || "").toLowerCase() === "editcore-nexus-v4";
   const pLabel = isNexus
-    ? (isV4 ? "EditCore Nexus v4" : "EditCore Nexus v5")
+    ? "EditCore Nexus v5"
     : (profile.providerKey === "custom:gafcore-gateway"
       ? ({ meai: "ME AI Cloud" }[String(profile.model).split("/", 1)[0]] || "Proveedor")
       : (PRIMARY_PROVIDER_KEYS.includes(profile.providerKey)
         ? PROVIDERS[profile.providerKey]?.label
         : customProvidersByKey.get(profile.providerKey)?.name || profile.providerName || profile.providerKey));
-  const effectiveModel = isNexus ? (isV4 ? "editcore-nexus-v4" : "editcore-nexus-v5") : profile.model;
   return {
     providerKey: isNexus ? "nexus" : profile.providerKey,
     providerLabel: pLabel,
     modelProviderGroup: isNexus ? "nexus" : (profile.providerKey === "custom:gafcore-gateway" ? String(profile.model).split("/", 1)[0] : profile.providerKey),
-    profileId: isNexus ? `nexus:${effectiveModel}` : profile.id,
-    model: effectiveModel,
+    profileId: isNexus ? "nexus:editcore-nexus-v5" : profile.id,
+    model: isNexus ? "editcore-nexus-v5" : profile.model,
     profileStatus: profile.status,
     enabled: ["active", "enabled"].includes(profile.status),
   };
@@ -2679,8 +2677,7 @@ function filterModelOptionsForRole(options) {
     })
     .map((entry) => {
       if (entry.providerKey === "nexus" || entry.modelProviderGroup === "nexus") {
-        const isV4 = String(entry.model || "").toLowerCase() === "editcore-nexus-v4";
-        return { ...entry, providerLabel: isV4 ? "EditCore Nexus v4" : "EditCore Nexus v5" };
+        return { ...entry, providerLabel: "EditCore Nexus v5", model: "editcore-nexus-v5" };
       }
       return { ...entry, providerLabel: USER_MODEL_GROUP_LABEL };
     });
@@ -2694,10 +2691,9 @@ function catalogChatModelOptions() {
     const pKeyLower = String(profile.providerKey || "").toLowerCase();
     const pNameLower = String(profile.providerName || "").toLowerCase();
     if (modelLower.includes("nexus") || pKeyLower.includes("nexus") || pNameLower.includes("nexus")) {
-      const isV4 = modelLower === "editcore-nexus-v4";
-      profile.model = isV4 ? "editcore-nexus-v4" : "editcore-nexus-v5";
-      profile.id = `nexus:${profile.model}`;
-      profile.providerName = isV4 ? "EditCore Nexus v4" : "EditCore Nexus v5";
+      profile.model = "editcore-nexus-v5";
+      profile.id = "nexus:editcore-nexus-v5";
+      profile.providerName = "EditCore Nexus v5";
       profile.providerKey = "nexus";
     }
     const effectiveKey = profile.apiKey || resolveProviderApiKey(profile.providerKey, "");
