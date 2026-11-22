@@ -49,6 +49,8 @@ async function startNexus() {
 
   if (fs.existsSync(LLAMA_SERVER) && modelToRun) {
     const ngl = is14B ? '16' : '33'; // 14B: 16 capas en VRAM (3.5 GB) + resto en RAM con 8 hilos CPU
+    const loraAdapter = path.join(NEXUS_ROOT, 'checkpoints', 'nexus_14b_lora', 'adapter.gguf');
+    const extraArgs = fs.existsSync(loraAdapter) ? ['--lora', loraAdapter] : [];
     console.log(`[EditCore Nexus] Iniciando motor ${is14B ? '14B' : '7B'} nativo (puerto ${PORT}, -ngl ${ngl})...`);
     nexusProcess = spawn(LLAMA_SERVER, [
       '-m', modelToRun,
@@ -61,7 +63,8 @@ async function startNexus() {
       '--threads', '8',
       '--alias', 'editcore-nexus-v4,editcore-nexus',
       '--spec-type', 'ngram-mod',
-      '--host', '0.0.0.0'
+      '--host', '0.0.0.0',
+      ...extraArgs
     ], {
       cwd: NEXUS_ROOT,
       windowsHide: true,
