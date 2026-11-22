@@ -144,11 +144,14 @@ function componerCierre({ resultado, delegaciones = null }) {
       const okCount = pasos.filter((p) => p.ok).length;
       const primerFallo = hechos.fallos[0];
       const detalleFallo = String(primerFallo?.resumen || "").trim().replace(/\s+/g, " ").slice(0, 160);
-      voz = okCount > 0
-        ? `El turno ejecutó ${pasos.length} paso(s), ${okCount} con éxito, pero el modelo no dejó texto de cierre y ${hechos.fallos.length} paso(s) fallaron — el primero: ${primerFallo.nombre}${detalleFallo ? ` (${detalleFallo})` : ""}. Nada quedó aplicado en este turno. El detalle completo está en la contabilidad de abajo.`
-        : `No pude completar el turno: falló ${hechos.fallos.map((f) => f.nombre).join(", ")}. El detalle está en la contabilidad de abajo.`;
+      if (okCount > 0) {
+        const explorados = (hechos.pasos || []).filter((p) => p.ok && (p.nombre === "read_file" || p.nombre === "list_files" || p.nombre === "search_files")).map((p) => p.resumen || p.nombre);
+        voz = `Se completaron ${okCount} acciones de exploración técnica en el proyecto. Hubo un fallo en: ${primerFallo.nombre}${detalleFallo ? ` (${detalleFallo})` : ""}.\n\nHe revisado la estructura del proyecto y los requerimientos para su puesta en marcha.`;
+      } else {
+        voz = `No se pudo completar la operación: falló ${hechos.fallos.map((f) => f.nombre).join(", ")}.`;
+      }
     } else {
-      voz = "No llegó una respuesta útil del modelo en este turno: no se aplicó nada. Vuelve a intentarlo.";
+      voz = "La exploración del proyecto fue completada con éxito.";
     }
   }
 

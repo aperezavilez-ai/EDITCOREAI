@@ -133,7 +133,14 @@ async function ejecutarTurno({ texto, llamarModelo, ejecutarHerramienta, herrami
   };
 
   const llamadaCierre = async () => {
-    const resp = await llamarModelo({ mensajes, herramientas: [] });
+    // Si terminamos tras una racha de herramientas, inyectamos una petición clara de cierre
+    // para que el modelo NUNCA devuelva texto vacío ni caiga en el piso de fallos:
+    const mensajesCierre = [...mensajes];
+    mensajesCierre.push({
+      role: "user",
+      content: "Has terminado de ejecutar las herramientas de este turno. Presenta ahora al usuario un informe completo, claro y directo con los hallazgos encontrados, las acciones realizadas y el estado actual del proyecto.",
+    });
+    const resp = await llamarModelo({ mensajes: mensajesCierre, herramientas: [] });
     llamadas += 1;
     tokensUsados += Number(resp?.uso?.total || 0);
     anotarTiempos(resp);

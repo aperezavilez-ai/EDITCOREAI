@@ -28,7 +28,7 @@ const RE_APROBACION = /^\s*(?:s[ií][,.]?\s*)?(?:procede|adelante|hazlo|dale|va)
 const RE_PEDIDO_AMABLE = /\b(?:debemos|tenemos\s+que|hay\s+que|vamos\s+a|necesitamos|puedes|podr[ií]as|necesito\s+que|quiero\s+que|te\s+pido\s+que)\s+(?:termin\w*|complet\w*|finaliz\w*|avanz\w*|constru\w*|desarroll\w*|cerr\w*|corr\w*|arregl\w*|repar\w*|solucion\w*|implement\w*|aplic\w*|cre\w*|gener\w*|escrib\w*|modific\w*|actualiz\w*|agreg\w*|a[ñn]ad\w*|elimin\w*|borr\w*|public\w*|ejecut\w*|reemplaz\w*|instal\w*|configur\w*|deleg\w*|coordin\w*|enjambre|multiagente)/i;
 
 // Verbo de trabajo al inicio del mensaje (imperativo directo).
-const RE_ORDEN_INICIO = /^\s*(?:por\s+favor\s+)?(?:corr[ií]j\w*|corrig\w*|arregl\w*|repar\w*|solucion\w*|implement\w*|aplic\w*|crea(?:r|me|lo|la)?\b|cre[aá]\b|genera(?:r)?\b|gener[aá]\b|escrib\w*|modific\w*|actualiz\w*|agreg\w*|a[ñn]ad\w*|elimin\w*|borr\w*|public\w*|despleg\w*|ejecut\w*|reemplaz\w*|haz(?:me|lo|la)?\b|constru\w*|instal\w*|configur\w*|sigue\b|contin[uú]a\b|termin\w*|complet\w*|finaliz\w*|avanz\w*|cierra\b|delega(?:r)?\b|coordin\w*)/i;
+const RE_ORDEN_INICIO = /^\s*(?:por\s+favor\s+)?(?:analiz\w*|revis\w*|inspeccion\w*|corr[ií]j\w*|corrig\w*|arregl\w*|repar\w*|solucion\w*|implement\w*|aplic\w*|crea(?:r|me|lo|la)?\b|cre[aá]\b|genera(?:r)?\b|gener[aá]\b|escrib\w*|modific\w*|actualiz\w*|agreg\w*|a[ñn]ad\w*|elimin\w*|borr\w*|public\w*|despleg\w*|ejecut\w*|reemplaz\w*|haz(?:me|lo|la)?\b|constru\w*|instal\w*|configur\w*|sigue\b|contin[uú]a\b|termin\w*|complet\w*|finaliz\w*|avanz\w*|cierra\b|delega(?:r)?\b|coordin\w*)/i;
 
 // Verbo de orden directa en cualquier parte del mensaje (imperativo
 // no precedido de «se»: «porque hay una carpeta... corrije ese nombre»,
@@ -47,8 +47,10 @@ const RE_PEDIDO_TRABAJO = /\b(?:hazme|dame|quiero|necesito|elab[oó]rame|prep[a�
 const RE_PREGUNTA_META = /\b(?:realizaste|le[ií]ste|hiciste|dijiste|escribiste|generaste|aplicaste)\b[^.?!]*\b(?:o|u)\b/i;
 const RE_RECLAMO = /no\s+es\s+lo\s+que\s+te\s+ped[ií]|no\s+te\s+ped[ií]\s+eso|por\s*qu[eé]\s+no\s+(?:me\s+)?respond\w*/i;
 
-// Forma interrogativa.
-const RE_INTERROGATIVA = /(?:^|[¿\s])(?:qu[eé]|cu[aá]l(?:es)?|c[oó]mo|d[oó]nde|por\s*qu[eé]|qui[eé]n(?:es)?|cu[aá]ndo|cu[aá]nto)\b/i;
+// Forma interrogativa estricta: pronombres/adverbios interrogativos acentuados
+// o preguntas directas. "que" sin acento es una conjunción/relativo ("haz que funcione"),
+// NUNCA un interrogativo.
+const RE_INTERROGATIVA = /(?:^|[¿\s])(?:qu[é]|cu[á]l(?:es)?|c[ó]mo|d[ó]nde|por\s*qu[é]|qui[é]n(?:es)?|cu[á]ndo|cu[á]nto)\b/i;
 
 // Consulta puntual de código: pide localizar algo concreto.
 const RE_CONSULTA_LOCALIZA = /\b(?:d[oó]nde\s+est[aá]|en\s+qu[eé]\s+archivo|busca(?:r)?\b|encuentra\b|localiza\b)/i;
