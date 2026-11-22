@@ -15,7 +15,7 @@
       "branch": "main",
       "remoteUrl": "https://github.com/aperezavilez-ai/EDITCOREAI.git",
       "hasLocalGit": true,
-      "lastPush": "2026-11-21T18:53:36.738Z"
+      "lastPush": "2026-11-22T20:30:12.165Z"
     },
     "vercel": {
       "projectId": "prj_7yoYHyRB6AHAqW3TL4jihIrLNNIU",
@@ -255,6 +255,12 @@
       "date": "2026-11-20T15:30:10.185Z",
       "action": "modified",
       "details": "git push main (3ffc618): release(v5.3.0): bump version to 5.3.0, recompile EDITCOREAI.exe, and remove all legacy antecedents and test-quarantine",
+      "by": "editcore"
+    },
+    {
+      "date": "2026-11-22T20:30:12.166Z",
+      "action": "modified",
+      "details": "git push main (a1f60d2): fix(nexus): resolve visual file tree indicators for EditCore Nexus tool calling",
       "by": "editcore"
     }
   ],
