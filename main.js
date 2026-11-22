@@ -8852,7 +8852,9 @@ app.whenReady().then(async () => {
     }
 
     try {
-      optionalNexusLauncher()?.startNexus?.();
+      const nexusLauncher = optionalNexusLauncher();
+      nexusLauncher?.startNexus?.();
+      nexusLauncher?.startMediaStudio?.();
     } catch (err) {
       logStartup("EditCore Nexus no iniciado automaticamente", err);
     }
