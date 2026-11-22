@@ -149,14 +149,22 @@ function traducirComandoWindows(command) {
 
 // Traducción cmd → PowerShell para el spawn con powershell.exe
 // (el run_command del kernel): el modelo emite «cd /d "ruta" &&
-// npm install» y en Windows PowerShell 5.1 «/d» no existe y «&&»
-// no separa comandos — el comando moría al instante y el turno
-// cerraba con «falló run_command» (registro de turnos de Luis,
-// 2026-11-17). Se adaptan SOLO esas dos formas.
+// npm install», «npm install 2>&1 | tail -20» o «grep», y en Windows
+// PowerShell 5.1 «/d» no existe, «&&» no separa comandos y «tail»
+// no es un comando nativo (Get-Content o Select-Object -Last N).
 function traducirParaPowerShell(command) {
   let cmd = String(command || "");
   cmd = cmd.replace(/\s*&&\s*/g, "; ");
   cmd = cmd.replace(/(^|;)\s*cd\s+\/d\s+/gi, (m, sep) => (sep ? "; " : "") + "cd ");
+  // Traducir pipes Unix comunes que los LLMs emiten a PowerShell nativo:
+  // | tail -n 20  o  | tail -20  ->  | Select-Object -Last 20
+  cmd = cmd.replace(/\|\s*tail\s+(?:-n\s+|-)?(\d+)/gi, "| Select-Object -Last $1");
+  // | head -n 20  o  | head -20  ->  | Select-Object -First 20
+  cmd = cmd.replace(/\|\s*head\s+(?:-n\s+|-)?(\d+)/gi, "| Select-Object -First $1");
+  // | grep -i "pattern" -> | Select-String -Pattern "pattern"
+  cmd = cmd.replace(/\|\s*grep\s+(?:-i\s+)?["']?([^"'|\r\n]+)["']?/gi, '| Select-String -Pattern "$1"');
+  // tail a secas al final del pipeline -> Select-Object -Last 20
+  cmd = cmd.replace(/\|\s*tail\s*$/gi, "| Select-Object -Last 20");
   return cmd;
 }
 
