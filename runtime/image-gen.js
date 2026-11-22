@@ -65,7 +65,17 @@ function readAssetGenConfig(projectRoot, kind = "image") {
       },
     };
   }
-  return { file: "", config: null };
+  // [EDITCORE-NEXUS-V4] Motor multimedia local soberano (sin APIs externas, 100% en localhost:11436)
+  return {
+    file: "nexus-local-studio",
+    config: {
+      enabled: true,
+      provider: "openai-compatible",
+      baseUrl: "http://127.0.0.1:11436/v1",
+      apiKey: "editcore-nexus-sovereign",
+      model: kind === "video" ? "nexus-video-v1" : "nexus-image-v1",
+    },
+  };
 }
 
 /** @deprecated use readAssetGenConfig */

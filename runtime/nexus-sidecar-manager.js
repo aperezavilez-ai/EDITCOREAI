@@ -112,6 +112,45 @@ async function startNexus() {
   }
 }
 
+let mediaProcess = null;
+const MEDIA_PORT = 11436;
+
+function checkMediaHealth() {
+  return new Promise((resolve) => {
+    const req = http.get(
+      { host: '127.0.0.1', port: MEDIA_PORT, path: '/health', timeout: 1500 },
+      (res) => resolve(res.statusCode === 200)
+    );
+    req.on('error', () => resolve(false));
+    req.on('timeout', () => {
+      req.destroy();
+      resolve(false);
+    });
+  });
+}
+
+async function startMediaStudio() {
+  if (mediaProcess && !mediaProcess.killed) return true;
+  const alreadyUp = await checkMediaHealth();
+  if (alreadyUp) return true;
+
+  const MEDIA_SCRIPT = path.join(NEXUS_ROOT, 'inference', 'media_server.py');
+  if (fs.existsSync(MEDIA_SCRIPT)) {
+    try {
+      mediaProcess = spawn('py', ['-3.12', MEDIA_SCRIPT, '--port', String(MEDIA_PORT)], {
+        cwd: NEXUS_ROOT,
+        windowsHide: true,
+        stdio: 'ignore'
+      });
+      mediaProcess.on('exit', () => { mediaProcess = null; });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  return false;
+}
+
 function stopNexus() {
   if (nexusProcess && nexusProcess.pid) {
     const pid = nexusProcess.pid;
@@ -128,10 +167,18 @@ function stopNexus() {
     nexusProcess = null;
     starting = false;
   }
+  if (mediaProcess && mediaProcess.pid) {
+    try {
+      execSync(`taskkill /F /T /PID ${mediaProcess.pid}`, { stdio: 'ignore' });
+    } catch {}
+    mediaProcess = null;
+  }
 }
 
 module.exports = {
   startNexus,
   stopNexus,
-  checkHealth
+  checkHealth,
+  startMediaStudio,
+  checkMediaHealth
 };
