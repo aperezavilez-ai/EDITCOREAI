@@ -13,7 +13,7 @@ const http = require('http');
 let nexusProcess = null;
 let starting = false;
 
-const NEXUS_ROOT = path.resolve('D:', 'PROGRAMAS IA', 'EDITCORE-MODEL');
+const NEXUS_ROOT = path.join('D:\\', 'PROGRAMAS IA', 'EDITCORE-MODEL');
 const PYTHON_PATH = path.join(NEXUS_ROOT, '.venv', 'Scripts', 'python.exe');
 const SCRIPT_PATH = path.join(NEXUS_ROOT, 'inference', 'serve_nexus_1_5b.py');
 const FALLBACK_SCRIPT_PATH = path.join(NEXUS_ROOT, 'inference', 'serve.py');
@@ -48,15 +48,18 @@ async function startNexus() {
   const is14B = modelToRun === MODEL_14B;
 
   if (fs.existsSync(LLAMA_SERVER) && modelToRun) {
-    const ngl = is14B ? '24' : '33'; // 14B: 24 capas en VRAM GPU (4.8 GB) + resto en RAM (Split-Offload)
+    const ngl = is14B ? '16' : '33'; // 14B: 16 capas en VRAM (3.5 GB) + resto en RAM con 8 hilos CPU
     console.log(`[EditCore Nexus] Iniciando motor ${is14B ? '14B' : '7B'} nativo (puerto ${PORT}, -ngl ${ngl})...`);
     nexusProcess = spawn(LLAMA_SERVER, [
       '-m', modelToRun,
       '--port', String(PORT),
       '-ngl', ngl,
       '-c', '4096',
-      '--alias', 'editcore-nexus-v4',
-      '--alias', 'editcore-nexus',
+      '--cache-type-k', 'q8_0',
+      '--cache-type-v', 'q8_0',
+      '--jinja',
+      '--threads', '8',
+      '--alias', 'editcore-nexus-v4,editcore-nexus',
       '--spec-type', 'ngram-mod',
       '--host', '0.0.0.0'
     ], {

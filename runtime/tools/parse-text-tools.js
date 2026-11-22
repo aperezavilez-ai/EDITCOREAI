@@ -50,7 +50,7 @@ const NATIVE = [
 const TOOL_TAG_NAMES = [...new Set([...NATIVE, ...Object.keys(ALIAS)])];
 
 /** Marca el inicio de protocolo tool/XML/JSON que no debe verse en el chat. */
-const TOOL_MARKUP_START_RE = /<\s*\/?\s*[|｜\uFF5C]\s*DSML\b|<\|tool_call\|>|<(?:dots_function_call|tool_code|tool_call|tool_use|tool_invocation|function_calls?|function\s*=|parameter\s*=|invoke\b)\b|<\/?(?:dots_function_call|tool_code|tool_call|tool_use|function|parameter)\b|```(?:json|xml)?\s*\n\s*\{\s*"(?:tool|function)"\s*:|```(?:json|xml)?\s*\n\s*\{\s*"name"\s*:[^}]*?"(?:args|arguments|input|parameters)"\s*:|\{\s*"(?:tool|function)"\s*:/i;
+const TOOL_MARKUP_START_RE = /<\s*\/?\s*[|｜\uFF5C]\s*DSML\b|<\|tool_call\|>|<(?:dots_function_call|tool_code|tool_call|tool_use|tool_invocation|function_calls?|function\s*=|parameter\s*=|invoke|tools)\b|<\/?(?:dots_function_call|tool_code|tool_call|tool_use|function|parameter|tools)\b|```(?:json|xml)?\s*\n\s*\{\s*"(?:tool|function)"\s*:|```(?:json|xml)?\s*\n\s*\{\s*"name"\s*:[^}]*?"(?:args|arguments|input|parameters)"\s*:|\{\s*"(?:tool|function)"\s*:/i;
 
 function normalizeToolName(name) {
   const raw = String(name || "").trim().toLowerCase().replace(/[-\s]+/g, "_");
@@ -432,7 +432,7 @@ function stripTextToolMarkup(text) {
   // nombre conocido o no: un {"tool": ...} jamás es prosa).
   const spansJson = extraerObjetosJson(out)
     .filter(({ obj }) => obj && typeof obj === "object"
-      && (typeof obj.tool === "string" || typeof obj.function === "string"))
+      && (typeof obj.tool === "string" || typeof obj.function === "string" || (typeof obj.name === "string" && obj.arguments)))
     .map(({ inicio, fin }) => [inicio, fin])
     .sort((a, b) => b[0] - a[0]);
   for (const [inicio, fin] of spansJson) {
@@ -455,6 +455,7 @@ function stripTextToolMarkup(text) {
   out = out.replace(/<tool_code>[\s\S]*?<\/tool_code>/gi, "");
   // tool_code sin cierre (stream cortado): se corta la cola entera.
   out = out.replace(/<tool_code>[\s\S]*$/i, "");
+  out = out.replace(/<tools>[\s\S]*?<\/tools>/gi, "");
   out = out.replace(/<tool_call>[\s\S]*?<\/tool_call>/gi, "");
   out = out.replace(/<tool_use>[\s\S]*?<\/tool_use>/gi, "");
   out = out.replace(/<function\s*=\s*[a-zA-Z_][\w-]*\s*>[\s\S]*?<\/function>/gi, "");
@@ -462,7 +463,7 @@ function stripTextToolMarkup(text) {
   const names = TOOL_TAG_NAMES.join("|");
   const re = new RegExp(`<(${names})>\\s*[\\s\\S]*?\\s*<\\/\\1>`, "gi");
   out = out.replace(re, "");
-  out = out.replace(/<\/?(?:dots_function_call|invoke|parameter|tool_call|tool_use|tool_code)\b[^>]*>/gi, "");
+  out = out.replace(/<\/?(?:dots_function_call|invoke|parameter|tool_call|tool_use|tool_code|tools)\b[^>]*>/gi, "");
   // Incompletos / stream cortado
   out = visibleNarrationText(out);
   return out.replace(/\n{3,}/g, "\n\n").trim();
