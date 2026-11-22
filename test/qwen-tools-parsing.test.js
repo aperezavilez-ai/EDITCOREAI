@@ -42,13 +42,13 @@ test("EditCore Nexus Tool Calling: parseTextToolCalls extrae objetos JSON planos
 });
 
 test("EditCore Nexus Tool Calling: parseTextToolCalls extrae etiquetas XML con atributos tipo path", () => {
-  const nexusXml = '<write_file path="src/index.js">console.log("EditCore Nexus v4");</write_file>';
+  const nexusXml = '<write_file path="src/index.js">console.log("EditCore Nexus v5");</write_file>';
   const calls = parseTextToolCalls(nexusXml);
   assert.equal(calls.length, 1);
   assert.equal(calls[0].function.name, "write_file");
   const args = JSON.parse(calls[0].function.arguments);
   assert.equal(args.path, "src/index.js");
-  assert.equal(args.content, 'console.log("EditCore Nexus v4");');
+  assert.equal(args.content, 'console.log("EditCore Nexus v5");');
 });
 
 test("EditCore Nexus Tool Calling: rescate de bloque de código dirigido con ruta mencionada", () => {
