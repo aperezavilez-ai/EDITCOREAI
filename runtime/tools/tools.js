@@ -2163,6 +2163,22 @@ const DEFINITIONS = [
   {
     type: "function",
     function: {
+      name: "brain_remember",
+      description: "Guarda un aprendizaje clave, decisión arquitectónica, corrección o regla de diseño en el Cerebro persistente del proyecto. El conocimiento queda indexado semánticamente para los siguientes turnos del agente.",
+      parameters: {
+        type: "object",
+        properties: {
+          title: { type: "string", description: "Título breve del aprendizaje (ej: 'Estructura de base de datos' o 'Regla de componentes UI')." },
+          content: { type: "string", description: "El contenido detallado o lección aprendida que debe recordarse permanentemente." },
+          type: { type: "string", enum: ["learning", "decision", "bugfix", "architecture"], description: "Categoría del recuerdo (defecto learning)." }
+        },
+        required: ["content"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
       name: "brain_skill",
       // [FASE2-CONECTAR C-12] Portado del Grupo 1A: en la superficie
       // del Cerebro abría skills por nombre; en el kernel comparte la
@@ -3061,6 +3077,21 @@ async function execute(name, args, root, allowWrite, helpers = {}) {
           } catch { /* cae al índice local */ }
         }
         return await extraTools.searchBrain(root, q, helpers, limit);
+      }
+      case "brain_remember": {
+        const content = String(a.content || "").trim();
+        if (!content) return { ok: false, error: "brain_remember requiere «content»." };
+        const title = String(a.title || "Aprendizaje de Nexus").trim();
+        const type = ["learning", "decision", "bugfix", "architecture"].includes(String(a.type || "")) ? String(a.type) : "learning";
+        if (typeof helpers?.brainRemember === "function") {
+          try {
+            await helpers.brainRemember(root, { title, content, type });
+            return { ok: true, saved: true, title, type };
+          } catch (e) {
+            return { ok: false, error: e.message };
+          }
+        }
+        return { ok: false, error: "Cerebro persistente no disponible en esta sesión." };
       }
       // [FASE2-CONECTAR C-12] brain_tools: inventario compuesto de
       // los registros reales de ESTA superficie (definiciones

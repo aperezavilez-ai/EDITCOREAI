@@ -510,6 +510,7 @@ const WRITE_TOOLS = [
   // ESCRIBEN en el mundo exterior (un video real publicado/subido):
   // las cuatro son ESCRITURA.
   "tiktok_conectar", "tiktok_publicar", "youtube_conectar", "youtube_subir",
+  "brain_remember",
 ];
 
 // Subconjunto curado para MODO CHARLA: lectura ligera, sin análisis pesado.
