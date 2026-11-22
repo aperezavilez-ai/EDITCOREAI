@@ -41,30 +41,41 @@ async function startNexus() {
   if (alreadyUp) return true;
 
   const LLAMA_SERVER = path.join(NEXUS_ROOT, 'bin', 'llama-server.exe');
+  const MODEL_32B = process.env.NEXUS_MODEL_32B || path.join(NEXUS_ROOT, 'models', 'qwen2.5-coder-32b-instruct-q4_k_m.gguf');
   const MODEL_14B = path.join(NEXUS_ROOT, 'models', 'qwen2.5-coder-14b-instruct-q4_k_m.gguf');
   const MODEL_7B = path.join(NEXUS_ROOT, 'models', 'qwen2.5-coder-7b-instruct-q4_k_m.gguf');
 
   const tier = (process.env.NEXUS_MODEL_TIER || '7B').toUpperCase();
+  const want32B = tier === '32B' && fs.existsSync(MODEL_32B);
   const want14B = tier === '14B' && fs.existsSync(MODEL_14B);
-  const modelToRun = want14B ? MODEL_14B : (fs.existsSync(MODEL_7B) ? MODEL_7B : (fs.existsSync(MODEL_14B) ? MODEL_14B : null));
+  const modelToRun = want32B ? MODEL_32B : (want14B ? MODEL_14B : (fs.existsSync(MODEL_7B) ? MODEL_7B : (fs.existsSync(MODEL_14B) ? MODEL_14B : null)));
+  const is32B = modelToRun === MODEL_32B;
   const is14B = modelToRun === MODEL_14B;
 
   if (fs.existsSync(LLAMA_SERVER) && modelToRun) {
-    // Para GTX 1060 (6 GB VRAM Pascal):
-    // 7B: 20 capas en VRAM (3.4 GB), 4 hilos CPU físicos, -np 1 slot dedicado, f16 nativo (4.25 tokens/s)
-    // 14B: 16 capas en VRAM, 8 hilos CPU híbrido, desatendido/offline
-    const ngl = is14B ? '16' : '20';
-    const threads = is14B ? '8' : '4';
+    // Configuración optimizada por perfil para GTX 1060 (6 GB VRAM Pascal):
+    // 7B: 20 capas en VRAM (3.4 GB), 4 hilos CPU físicos, -np 1 slot dedicado (4.25 tokens/s)
+    // 14B: 16 capas en VRAM, 8 hilos CPU híbrido, split-offload
+    // 32B: 8 capas en VRAM, streaming NVMe C/mmap continuo sin OOM
+    const ngl = is32B ? '8' : (is14B ? '16' : '20');
+    const threads = is32B ? '6' : (is14B ? '8' : '4');
+    const batch = is32B ? '128' : (is14B ? '256' : '512');
     const loraAdapter = path.join(NEXUS_ROOT, 'checkpoints', 'nexus_14b_lora', 'adapter.gguf');
     const extraArgs = (is14B && fs.existsSync(loraAdapter)) ? ['--lora', loraAdapter] : [];
-    console.log(`[EditCore Nexus V5] Iniciando motor principal ${is14B ? '14B (Modo Deep)' : '7B (Modo Fast)'} (puerto ${PORT}, -ngl ${ngl}, threads ${threads})...`);
+    if (is32B) {
+      extraArgs.push('--ctk', 'q8_0', '--ctv', 'q8_0');
+    }
+    const modeDesc = is32B ? '32B (Modo Master Streaming NVMe)' : (is14B ? '14B (Modo Deep Hybrid)' : '7B (Modo Fast VRAM)');
+    console.log(`[EditCore Nexus V5] Iniciando motor principal ${modeDesc} (puerto ${PORT}, -ngl ${ngl}, threads ${threads}, --mmap)...`);
     nexusProcess = spawn(LLAMA_SERVER, [
       '-m', modelToRun,
       '--port', String(PORT),
       '-ngl', ngl,
       '-c', '2048',
+      '-b', batch,
       '-np', '1',
       '--jinja',
+      '--mmap',
       '--threads', threads,
       '--alias', 'editcore-nexus-v5,editcore-nexus-v4,editcore-nexus',
       '--host', '127.0.0.1',
