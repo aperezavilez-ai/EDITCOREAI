@@ -22,7 +22,7 @@
       "projectName": "editcoreai",
       "liveUrl": "https://editcore.mx",
       "linked": true,
-      "lastDeploy": "2026-11-21T20:35:44.602Z",
+      "lastDeploy": "2026-11-22T23:01:33.222Z",
       "deploymentId": "dpl_DkP4jHseF8GZzdxHD8WKnqjqpK9p"
     },
     "supabase": {
@@ -261,6 +261,12 @@
       "date": "2026-11-22T20:30:12.166Z",
       "action": "modified",
       "details": "git push main (a1f60d2): fix(nexus): resolve visual file tree indicators for EditCore Nexus tool calling",
+      "by": "editcore"
+    },
+    {
+      "date": "2026-11-22T23:01:33.223Z",
+      "action": "deployed",
+      "details": "Vercel deploy: https://editcore.mx",
       "by": "editcore"
     }
   ],
