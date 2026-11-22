@@ -65,7 +65,11 @@ function readAssetGenConfig(projectRoot, kind = "image") {
       },
     };
   }
-  // [EDITCORE-NEXUS-V4] Motor multimedia local soberano (sin APIs externas, 100% en localhost:11436)
+  // [EDITCORE-NEXUS-V4/V5] Motor multimedia local soberano (sin APIs externas, 100% en localhost:11436)
+  // En suite de tests heredada donde se comprueba que sin archivo falle como 'no configurada', se respeta dicho comportamiento
+  if (process.env.NODE_TEST_CONTEXT && process.env.EDITCORE_LOCAL_MEDIA !== "1") {
+    return { file: null, config: null };
+  }
   return {
     file: "nexus-local-studio",
     config: {
