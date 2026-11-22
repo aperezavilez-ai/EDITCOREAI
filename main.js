@@ -4382,12 +4382,10 @@ function scrubGatewayFromSecureState() {
     const modelLower = String(profile?.model || "").toLowerCase();
     const pKeyLower = String(profile?.providerKey || "").toLowerCase();
     if (modelLower.includes("nexus") || pKeyLower.includes("nexus")) {
-      const isV4 = modelLower === "editcore-nexus-v4";
-      const targetModel = isV4 ? "editcore-nexus-v4" : "editcore-nexus-v5";
       if (profile) {
-        profile.model = targetModel;
-        profile.id = `nexus:${targetModel}`;
-        profile.providerName = isV4 ? "EditCore Nexus v4" : "EditCore Nexus v5";
+        profile.model = "editcore-nexus-v5";
+        profile.id = "nexus:editcore-nexus-v5";
+        profile.providerName = "EditCore Nexus v5";
         profile.providerKey = "nexus";
       }
       return true;
@@ -4399,10 +4397,10 @@ function scrubGatewayFromSecureState() {
     changed = true;
   }
   const chat = secure["editcore-chat-config"];
-  if (chat && String(chat.model || "").toLowerCase() === "editcore-nexus") {
-    chat.model = "editcore-nexus-v4";
+  if (chat && (String(chat.model || "").toLowerCase() === "editcore-nexus" || String(chat.model || "").toLowerCase() === "editcore-nexus-v4" || (String(chat.model || "").toLowerCase().includes("nexus") && chat.model !== "editcore-nexus-v5"))) {
+    chat.model = "editcore-nexus-v5";
     chat.providerKey = "nexus";
-    chat.providerProfileId = "nexus:editcore-nexus-v4";
+    chat.providerProfileId = "nexus:editcore-nexus-v5";
     changed = true;
   }
   if (chat && (isGatewayResidueProfile(chat) || String(chat.baseUrl || "").toLowerCase().includes("gafcore-gateway") || (chat.providerKey === "meai" && !ALLOWED_MEAI.has(String(chat.model || "").trim().toLowerCase())))) {
