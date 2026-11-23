@@ -28,7 +28,7 @@ const { decidirTurno, contextoDesdeHistorial } = require("./despacho");
 const { componerCierre } = require("./cierre");
 const { SISTEMA_NUCLEO, SISTEMA_NEXUS_V4, SISTEMA_NEXUS_V5, RESPUESTA_ADN_NEXUS_V5, esConsultaDeIdentidad } = require("./textos");
 const { parseTextToolCalls, stripTextToolMarkup } = require("../parse-text-tools");
-const { VISION_ACK_RULE } = require("../vision-intake");
+const { VISION_ACK_RULE } = require("../../vision-intake");
 
 function obtenerGroqApiKey() {
   if (process.env.GROQ_API_KEY) return process.env.GROQ_API_KEY.trim();
