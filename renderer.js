@@ -16515,7 +16515,11 @@ function wireComposerControls() {
   $("voiceBtn")?.addEventListener("click", (event) => {
     event.preventDefault();
     event.stopPropagation();
-    void _toggleLiveVoiceDictation();
+    if (typeof window.EditCoreVoiceMode?.toggle === "function") {
+      window.EditCoreVoiceMode.toggle();
+    } else {
+      void _toggleLiveVoiceDictation();
+    }
   });
   // chatHomeMicBtn → chat-home.js → EditCoreDictation.toggle (sin doble toggle).
   $("stopBtn")?.addEventListener("click", (event) => {

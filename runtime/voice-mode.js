@@ -59,11 +59,14 @@
     clean = clean.replace(/```[\s\S]*?```/g, " Bloque de código. ");
     clean = clean.replace(/`([^`]+)`/g, "$1");
     clean = clean.replace(/\[([^\]]+)\]\([^)]+\)/g, "$1");
-    clean = clean.replace(/https?:\/\/\S+/gi, "enlace web");
+    clean = clean.replace(/https?:\/\/\S+/gi, "");
+    clean = clean.replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F700}-\u{1F77F}\u{1F780}-\u{1F7FF}\u{1F800}-\u{1F8FF}\u{1F900}-\u{1F9FF}\u{1FA00}-\u{1FA6F}\u{1FA70}-\u{1FAFF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, "");
+    clean = clean.replace(/^[*-•]\s+/gm, "");
     clean = clean.replace(/^#+\s+/gm, "");
     clean = clean.replace(/[*_~#>]/g, "");
     clean = clean.replace(/\|[^\n]+\|/g, "");
     clean = clean.replace(/\n+/g, ". ");
+    clean = clean.replace(/\.{2,}/g, ".");
     clean = clean.replace(/\s{2,}/g, " ").trim();
     return clean;
   }
@@ -72,7 +75,11 @@
     if (!speechSynth) return null;
     const voices = speechSynth.getVoices();
     if (!voices || !voices.length) return null;
-    const preferredNames = ["Sabina", "Helena", "Laura", "Raul", "Pablo", "Monica", "Jorge", "Google español", "Microsoft"];
+    const preferredNames = [
+      "Natural", "Neural", "Online (Natural)",
+      "Sabina", "Helena", "Raul", "Laura", "Pablo", "Monica", "Jorge", "Alvaro", "Dalia",
+      "Google español", "Microsoft"
+    ];
     for (const name of preferredNames) {
       const found = voices.find((v) => (v.lang.startsWith("es") || v.lang === "spa") && v.name.toLowerCase().includes(name.toLowerCase()));
       if (found) return found;
@@ -281,18 +288,20 @@
     }
 
     const dom = getDom();
+    const voicePrompt = `${cleaned}\n\n[Modo de Voz Activo]: Responde de manera concisa, conversacional, cálida y natural en español (máximo 2 a 4 oraciones directas), razonando de forma lógica y clara como en ChatGPT Voice. No uses tablas, bloques de código largos ni formato markdown complejo.`;
     writePromptValue(cleaned);
 
     // Misma ruta que escribir en el chat: steer si hay agente en curso; si no, send/Agente.
     liveTranscript = "";
-    if (typeof optionsCallbacks.onSteer === "function" && optionsCallbacks.onSteer(cleaned)) {
+    if (typeof optionsCallbacks.onSteer === "function" && optionsCallbacks.onSteer(voicePrompt)) {
       return true;
     }
     if (typeof optionsCallbacks.onSend === "function") {
-      optionsCallbacks.onSend(cleaned);
+      optionsCallbacks.onSend(voicePrompt);
       return true;
     }
     if (dom.form) {
+      writePromptValue(voicePrompt);
       dom.form.dispatchEvent(new Event("submit", { cancelable: true, bubbles: true }));
       return true;
     }

@@ -1832,6 +1832,14 @@
   }
 
   function triggerMic() {
+    if (typeof window.EditCoreVoiceMode?.toggle === "function") {
+      try {
+        window.EditCoreVoiceMode.toggle();
+        return;
+      } catch (err) {
+        console.warn("[chat-home] EditCoreVoiceMode.toggle", err?.message || err);
+      }
+    }
     const run = () => {
       if (typeof window.EditCoreDictation?.toggle === "function") {
         try {
