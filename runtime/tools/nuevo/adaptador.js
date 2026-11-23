@@ -22,11 +22,36 @@
 // reales.
 // ============================================================
 const path = require("path");
+const fs = require("fs");
 const { ejecutarTurno } = require("./turno");
 const { decidirTurno, contextoDesdeHistorial } = require("./despacho");
 const { componerCierre } = require("./cierre");
 const { SISTEMA_NUCLEO, SISTEMA_NEXUS_V4, SISTEMA_NEXUS_V5, RESPUESTA_ADN_NEXUS_V5, esConsultaDeIdentidad } = require("./textos");
 const { parseTextToolCalls, stripTextToolMarkup } = require("../parse-text-tools");
+
+function obtenerGroqApiKey() {
+  if (process.env.GROQ_API_KEY) return process.env.GROQ_API_KEY.trim();
+  const envPaths = [
+    path.join("D:\\", "PROGRAMAS IA", "EDITCORE-MODEL", ".env"),
+    path.join(__dirname, "..", "..", ".env"),
+    path.join(__dirname, "..", "..", ".env.local"),
+  ];
+  for (const p of envPaths) {
+    try {
+      if (fs.existsSync(p)) {
+        const content = fs.readFileSync(p, "utf8");
+        for (const line of content.split("\n")) {
+          const trimmed = line.trim();
+          if (trimmed.startsWith("GROQ_API_KEY=")) {
+            const val = trimmed.split("=", 2)[1]?.trim().replace(/^["']|["']$/g, "");
+            if (val && !val.includes("pega_aqui") && val.startsWith("gsk_")) return val;
+          }
+        }
+      }
+    } catch { /* ignore */ }
+  }
+  return null;
+}
 
 function totalDeUso(usage) {
   if (!usage || typeof usage !== "object") return 0;
@@ -700,11 +725,20 @@ async function manejarChatNuevo(input, deps = {}) {
   }
   const herramientasCompletas = definiciones.map((d) => d?.function?.name).filter(Boolean);
 
+  const groqKey = esNexus ? obtenerGroqApiKey() : null;
   const perfil = {
-    apiBaseUrl: input.apiBaseUrl,
-    apiKey: input.apiKey,
-    model: input.model,
-    fallbackProfiles: input.fallbackProfiles || [],
+    apiBaseUrl: (groqKey ? "https://api.groq.com/openai/v1" : input.apiBaseUrl) || "http://127.0.0.1:11435/v1",
+    apiKey: groqKey || input.apiKey || "",
+    model: groqKey ? "openai/gpt-oss-120b" : (input.model || "editcore-nexus-v5"),
+    fallbackProfiles: [
+      ...(Array.isArray(input.fallbackProfiles) ? input.fallbackProfiles : []),
+      // Fallback automático transparente al motor local 14B en GPU GTX 1060 si falla la conexión externa
+      ...(groqKey ? [{
+        apiBaseUrl: input.apiBaseUrl || "http://127.0.0.1:11435/v1",
+        apiKey: input.apiKey || "",
+        model: "editcore-nexus-v5",
+      }] : []),
+    ],
     signal: input.helpers?.abortSignal || null,
     refreshAccessToken: input.helpers?.refreshAccessToken || null,
     // Solo data:/http(s): una ruta local no es una imagen válida
