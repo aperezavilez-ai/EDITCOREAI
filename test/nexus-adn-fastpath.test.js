@@ -32,8 +32,8 @@ describe("EditCore Nexus v5 - ADN Fast-Path & 32B/14B Identity", () => {
     assert.strictEqual(typeof res.text, "string");
     assert.ok(elapsed < 50, `Debe responder en < 50ms (tardó ${elapsed}ms)`);
     assert.ok(res.text.includes("EditCore Nexus v5"));
-    assert.ok(res.text.includes("32B / 14B"));
-    assert.ok(res.text.includes("Zero-OOM"));
+    assert.ok(res.text.includes("14B"));
+    assert.ok(res.text.includes("NVIDIA GeForce GTX 1060"));
     assert.ok(res.text.includes("Nexus Media Studio"));
     assert.ok(res.text.includes("Orquestación Multiagente Paralela"));
   });
