@@ -4,7 +4,7 @@
  * Vision intake: normalize pasted/uploaded images and format provider payloads.
  */
 
-const VISION_MODEL_PATTERN = /vision|nexus|editcore|claude|gpt-4o|gpt-4\.1|gpt-5|o4-mini|gemini|llava|qwen-vl|qwen2\.5-vl|moonshot|kimi|haiku|sonnet|opus|pixtral|mistral-large|yi-vl|deepseek-vl|internvl|minicpm-v|fable/i;
+const VISION_MODEL_PATTERN = /vision|claude|gpt-4o|gpt-4\.1|gpt-5|o4-mini|gemini|llava|qwen-vl|qwen2\.5-vl|moonshot|kimi|haiku|sonnet|opus|pixtral|mistral-large|yi-vl|deepseek-vl|internvl|minicpm-v|fable/i;
 
 const VISION_ACK_RULE = [
   "## VISION OBLIGATORIA (imagen adjunta)",
@@ -144,7 +144,21 @@ function ensureVisionRoute({ model, images, candidates = [] } = {}) {
   if (modelSupportsVision(model)) {
     return { model, images: normalized, routed: false, reason: "already-vision" };
   }
-  const pick = pickVisionModelCandidate(candidates, model);
+  let pick = pickVisionModelCandidate(candidates, model);
+  if (!pick) {
+    try {
+      const { resolveMeaiEnvKey, MEAI_BASE_URL } = require("./meai-single-key");
+      const meaiKey = resolveMeaiEnvKey();
+      if (meaiKey) {
+        pick = {
+          model: "claude-sonnet-4-6",
+          apiKey: meaiKey,
+          baseUrl: MEAI_BASE_URL,
+          providerKey: "meai",
+        };
+      }
+    } catch { /* ignore */ }
+  }
   if (pick?.model) {
     return {
       model: String(pick.model),

@@ -711,8 +711,10 @@ async function manejarChatNuevo(input, deps = {}) {
     const CORE_NEXUS_TOOLS = new Set([
       "read_file", "write_file", "replace_in_file", "list_files", "run_command",
       "search_files", "delegate_parallel", "invoke_subagent", "search_brain",
-      "list_skills", "read_skill", "git_status", "git_diff", "git_commit",
+      "list_skills", "read_skill", "git_status", "git_diff", "git_commit", "git_push",
       "capture_preview_screenshot", "audit_env",
+      "web_search", "web_scrape",
+      "read_pdf", "create_pdf", "create_word", "create_excel", "create_csv",
     ]);
     const lowerTxt = (textoCrudo + " " + String(input.message || "")).toLowerCase();
     if (/image|foto|diseñ|visual|icono|logo/i.test(lowerTxt)) CORE_NEXUS_TOOLS.add("generate_image");
@@ -726,14 +728,42 @@ async function manejarChatNuevo(input, deps = {}) {
   }
   const herramientasCompletas = definiciones.map((d) => d?.function?.name).filter(Boolean);
 
-  const groqKey = esNexus ? obtenerGroqApiKey() : null;
+  const imagenesNormalizadas = (Array.isArray(input.images) ? input.images : [])
+    .map((u) => (typeof u === "string" ? u : (u?.dataUrl || u?.url || "")))
+    .filter((u) => typeof u === "string" && /^(data:|https?:\/\/)/.test(u));
+  const hayImagenes = imagenesNormalizadas.length > 0;
+
+  let meaiKey = "";
+  try {
+    const { resolveMeaiEnvKey } = require("../../meai-single-key");
+    meaiKey = resolveMeaiEnvKey();
+  } catch {}
+
+  const usarMeaiVision = hayImagenes && Boolean(meaiKey);
+  const groqKey = (!usarMeaiVision && esNexus) ? obtenerGroqApiKey() : null;
+
   const perfil = {
-    apiBaseUrl: (groqKey ? "https://api.groq.com/openai/v1" : input.apiBaseUrl) || "http://127.0.0.1:11435/v1",
-    apiKey: groqKey || input.apiKey || "",
-    model: groqKey ? "openai/gpt-oss-120b" : (input.model || "editcore-nexus-v5"),
+    apiBaseUrl: usarMeaiVision
+      ? "https://api.meai.cloud/v1"
+      : ((groqKey ? "https://api.groq.com/openai/v1" : input.apiBaseUrl) || "http://127.0.0.1:11435/v1"),
+    apiKey: usarMeaiVision
+      ? meaiKey
+      : (groqKey || input.apiKey || ""),
+    model: usarMeaiVision
+      ? "claude-sonnet-4-6"
+      : (groqKey ? "openai/gpt-oss-120b" : (input.model || "editcore-nexus-v5")),
     fallbackProfiles: [
       ...(Array.isArray(input.fallbackProfiles) ? input.fallbackProfiles : []),
-      // Fallback automático transparente al motor local 14B en GPU GTX 1060 si falla la conexión externa
+      ...(usarMeaiVision && groqKey ? [{
+        apiBaseUrl: "https://api.groq.com/openai/v1",
+        apiKey: groqKey,
+        model: "openai/gpt-oss-120b",
+      }] : []),
+      ...(!usarMeaiVision && meaiKey ? [{
+        apiBaseUrl: "https://api.meai.cloud/v1",
+        apiKey: meaiKey,
+        model: "claude-sonnet-4-6",
+      }] : []),
       ...(groqKey ? [{
         apiBaseUrl: input.apiBaseUrl || "http://127.0.0.1:11435/v1",
         apiKey: input.apiKey || "editcore-nexus-local",
@@ -742,11 +772,7 @@ async function manejarChatNuevo(input, deps = {}) {
     ],
     signal: input.helpers?.abortSignal || null,
     refreshAccessToken: input.helpers?.refreshAccessToken || null,
-    // Solo data:/http(s): una ruta local no es una imagen válida
-    // para el proveedor y no se disfraza como tal.
-    imagenes: (Array.isArray(input.images) ? input.images : [])
-      .map((u) => (typeof u === "string" ? u : (u?.dataUrl || u?.url || "")))
-      .filter((u) => typeof u === "string" && /^(data:|https?:\/\/)/.test(u)),
+    imagenes: imagenesNormalizadas,
   };
   // El texto enlatado del flujo de análisis («AUTORIZACION DE
   // EJECUCION (PROCEDE): …») SOLO lo produce la ruta autorizada

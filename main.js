@@ -1865,8 +1865,24 @@ ipcMain.handle("editcore:chat", async (_event, input = {}) => {
   ).toLowerCase();
   const fullAccess = permissionHint === "full";
 
-  if (!prompt && !images.length) throw new Error("Escribe un mensaje.");
-  const effectivePrompt = prompt || (images.length ? "Analiza la imagen adjunta." : "");
+  // Extraer documentos adjuntos (PDF, DOCX, XLSX, CSV, TXT)
+  let docContext = "";
+  if (Array.isArray(input.documents) && input.documents.length) {
+    try {
+      const extractedDocs = await normalizeDocuments(input.documents);
+      docContext = documentContext(extractedDocs);
+    } catch (err) {
+      console.warn("[document-attachments] Error extrayendo documentos:", err);
+    }
+  }
+
+  let promptWithDocs = prompt;
+  if (docContext) {
+    promptWithDocs = promptWithDocs ? `${promptWithDocs}\n\n${docContext}` : docContext;
+  }
+
+  if (!promptWithDocs && !images.length) throw new Error("Escribe un mensaje.");
+  const effectivePrompt = promptWithDocs || (images.length ? "Analiza la imagen adjunta." : "");
 
   let cloudRoute = null;
   const isCustomOrDirect = input.providerKey?.startsWith("custom:") || 

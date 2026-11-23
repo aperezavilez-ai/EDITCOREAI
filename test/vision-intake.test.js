@@ -43,14 +43,23 @@ const tinyPng = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfF
 }
 
 assert.equal(modelSupportsVision("gpt-4o"), true);
-assert.equal(modelSupportsVision("editcore-nexus-v5"), true);
-assert.equal(modelSupportsVision("nexus-v5"), true);
+assert.equal(modelSupportsVision("claude-sonnet-4-6"), true);
+assert.equal(modelSupportsVision("editcore-nexus-v5"), false);
 assert.equal(modelSupportsVision("text-only-7b"), false);
 
 {
   const imagesFromStrings = normalizeImages([tinyPng]);
   assert.equal(imagesFromStrings.length, 1);
   assert.equal(imagesFromStrings[0].mimeType, "image/png");
+}
+
+{
+  const routedNexus = ensureVisionRoute({
+    model: "editcore-nexus-v5",
+    images: [{ dataUrl: tinyPng }],
+  });
+  assert.equal(routedNexus.routed, true);
+  assert.equal(routedNexus.model, "claude-sonnet-4-6");
 }
 
 {
