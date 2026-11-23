@@ -25,7 +25,7 @@ const path = require("path");
 const { ejecutarTurno } = require("./turno");
 const { decidirTurno, contextoDesdeHistorial } = require("./despacho");
 const { componerCierre } = require("./cierre");
-const { SISTEMA_NUCLEO, SISTEMA_NEXUS_V4, SISTEMA_NEXUS_V5 } = require("./textos");
+const { SISTEMA_NUCLEO, SISTEMA_NEXUS_V4, SISTEMA_NEXUS_V5, RESPUESTA_ADN_NEXUS_V5, esConsultaDeIdentidad } = require("./textos");
 const { parseTextToolCalls, stripTextToolMarkup } = require("../parse-text-tools");
 
 function totalDeUso(usage) {
@@ -632,6 +632,34 @@ function seleccionarHistorial(crudo) {
 }
 
 async function manejarChatNuevo(input, deps = {}) {
+  const textoCrudo = String(
+    input?.message
+    || (Array.isArray(input?.messages) && input.messages.length ? input.messages[input.messages.length - 1]?.content : "")
+    || ""
+  );
+
+  const esNexus = String(input?.providerKey || "").toLowerCase() === "nexus"
+    || String(input?.model || "").toLowerCase().includes("nexus")
+    || String(input?.profile?.model || "").toLowerCase().includes("nexus");
+
+  // VÍA RÁPIDA DE IDENTIDAD Y HABILIDADES (ADN SOBERANO DE EDITCORE NEXUS V5)
+  // Las preguntas sobre qué modelo es, quién es o cuáles son sus habilidades
+  // se responden instantáneamente (< 2ms) desde su ADN nativo, sin latencias ni sobrecarga.
+  if (esNexus && esConsultaDeIdentidad(textoCrudo)) {
+    return {
+      ok: true,
+      text: RESPUESTA_ADN_NEXUS_V5,
+      vozOriginal: RESPUESTA_ADN_NEXUS_V5,
+      detalle: "Identidad y capacidades oficiales despachadas instantáneamente desde el ADN nativo de EditCore Nexus v5.",
+      cierreCorregida: false,
+      kind: "CONVERSACION",
+      steps: [],
+      usage: { total_tokens: 0, kernel_nuevo: true },
+      mutations: 0,
+      archivos: []
+    };
+  }
+
   const callChat = deps.callChat || require("../provider").callChat;
   const toolsMod = deps.toolsMod || require("../tools");
   const execute = deps.execute || toolsMod.execute;
@@ -661,11 +689,6 @@ async function manejarChatNuevo(input, deps = {}) {
     imagenes: (Array.isArray(input.images) ? input.images : [])
       .filter((u) => typeof u === "string" && /^(data:|https?:\/\/)/.test(u)),
   };
-  // El carril se decide dos veces con la MISMA función pura (aquí
-  // para el tope de salida, dentro del bucle para el mecanismo):
-  // decidirTurno es determinista, así que ambas decisiones coinciden
-  // siempre.
-  const textoCrudo = String(input.message || "");
   // El texto enlatado del flujo de análisis («AUTORIZACION DE
   // EJECUCION (PROCEDE): …») SOLO lo produce la ruta autorizada
   // del renderer: su sola presencia ya es la autorización como
@@ -707,6 +730,7 @@ async function manejarChatNuevo(input, deps = {}) {
       "[Instrucción de ejecución agéntica]: El usuario ha dado luz verde para proceder ('procede' o '?'). No repitas el informe anterior, no vuelvas a anunciar lo que harás en futuro ni te quedes en bucle de pasividad. Ejecuta AHORA MISMO con las herramientas reales (write_file, replace_in_file, run_command) el siguiente paso pendiente de mayor prioridad en el proyecto. Actúa ahora.",
     ].join("\n\n");
   }
+
   // La autorización fuerza ORDEN solo sobre lo que no es una
   // pregunta: si el clasificador dice CONVERSACION (pregunta o
   // conversación), el turno se responde como conversación
@@ -745,9 +769,6 @@ async function manejarChatNuevo(input, deps = {}) {
   const tMemoria = Date.now();
   const memoriaExtra = typeof deps.construirMemoria === "function" ? await deps.construirMemoria(input) : "";
   const memoriaMs = Date.now() - tMemoria;
-  const esNexus = String(input.providerKey || "").toLowerCase() === "nexus"
-    || String(input.model || "").toLowerCase().includes("nexus")
-    || String(perfil.model || "").toLowerCase().includes("nexus");
   const bloqueNexus = esNexus ? SISTEMA_NEXUS_V5 : "";
   const memoria = [bloqueNexus, SISTEMA_NUCLEO, memoriaExtra, String(input.skillsPrompt || "")]
     .map((s) => String(s || "").trim())
