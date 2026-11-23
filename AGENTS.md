@@ -45,6 +45,12 @@ Cuando se cree un proyecto nuevo desde cero:
 4. Crear `.editcore/roadmap.json` con toda la informacion recolectada
 5. Marcar estado como `planning` si no se conecta nada, `active` si se conecta
 
+### 6. PROTECCIÓN DEL MOTOR SOBERANO EDITCORE NEXUS V5 (14B)
+- **Zona Protegida de Inferencia:** `runtime/nexus-sidecar-manager.js`, `runtime/tools/nuevo/adaptador.js` y `runtime/tools/nuevo/textos.js`.
+- **Inmutabilidad del ADN Fast-Path:** El desvío ultrarrápido (< 2ms) en `manejarChatNuevo` de `adaptador.js` para responder a preguntas de identidad NUNCA debe ser eliminado ni movido después del empaquetado de herramientas.
+- **Identidad Soberana Única:** EditCore Nexus v5 es un modelo fundacional de **14B parámetros reales** en GPU GTX 1060 (6 GB). Prohibido reportar 32B/7B o inventar nombres de modelos comerciales de terceros (ni Qwen, ni Kimi, ni Llama).
+- **Conexión con EDITCORE-MODEL:** Los pesos y datasets residen en `D:\PROGRAMAS IA\EDITCORE-MODEL`. No moverlos ni intentar versionarlos dentro de EDITCOREAI.
+
 ### 4. SAFE WORKFLOW
 **BEFORE touching code:**
 1. `git checkout -b feature/<name>` or `backup/<name>`

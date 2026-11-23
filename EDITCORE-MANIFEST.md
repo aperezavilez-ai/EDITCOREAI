@@ -73,3 +73,16 @@ Visión: paste/drop imágenes + auto-route multimodal. Clone: tool `clone_web_pa
 - **Web Portal saneado**: Retiro completo de endpoints legados de checkout, webhooks y chat server-side expuestos; verificación externa con respuesta 404 en rutas retiradas.
 - **Balance y cobro corregidos**: Transacciones y saldo protegidos ante fallos de cobro de IA vía migración y ledger atómico.
 - **Suite de pruebas**: 1067 tests automatizados en verde (0 fallos).
+
+## EditCore Nexus v5 — Motor Neuronal Local Soberano (PROTEGIDO)
+⚠️ **DIRECTIVA CRÍTICA PARA AGENTES Y CHATS EN EDITCOREAI:**
+1. **Identidad Soberana Única:** EditCore Nexus v5 es el modelo fundacional y motor de IA local de 14 mil millones de parámetros (**14B**) ejecutándose en GPU NVIDIA GTX 1060 (6 GB) con split-offload en CPU. Está conectado a la carpeta hermana `D:\PROGRAMAS IA\EDITCORE-MODEL`.
+2. **Archivos Protegidos (NO MODIFICAR NI ELIMINAR):**
+   - `runtime/nexus-sidecar-manager.js`: Orquestador de arranque del servidor llama-server en puerto 11435 con flags `--flash-attn`, `--mmap` y modelo 14B por defecto.
+   - `runtime/tools/nuevo/adaptador.js`: Contiene el **ADN Fast-Path** en `manejarChatNuevo` que responde a consultas sobre identidad, habilidades o modelo en < 2ms sin sobrecargar el prompt con esquemas de herramientas.
+   - `runtime/tools/nuevo/textos.js`: Define `SISTEMA_NEXUS_V5`, `RESPUESTA_ADN_NEXUS_V5` y `esConsultaDeIdentidad`.
+3. **Reglas de Oro Inmutables:**
+   - PROHIBIDO alterar o saltarse el ADN Fast-Path de Nexus v5.
+   - PROHIBIDO introducir nombres o marcas de modelos externos de terceros (ni Qwen, ni Kimi, ni Llama). La identidad soberana es exclusivamente **EditCore Nexus v5**.
+   - PROHIBIDO reportar cifras dobles o infladas; la escala física y arquitectónica real es estrictamente **14B**.
+   - PROHIBIDO romper o reescribir `runtime/nexus-sidecar-manager.js` durante refactorizaciones generales.
