@@ -10090,7 +10090,7 @@ ipcMain.handle("security:apply-refactor", async (_event, filePath) => {
     return { ok: false, error: error.message };
   }
 });
-// EditCore Security Shield v5.3.2 handlers
+// EditCore Security Shield v5.3.3 handlers
 ipcMain.handle("security:get-shield-status", async () => {
   try {
     const { getShieldStatus } = require("./runtime/security-shield");

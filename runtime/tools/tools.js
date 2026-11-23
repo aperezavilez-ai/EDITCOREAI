@@ -2427,11 +2427,11 @@ async function execute(name, args, root, allowWrite, helpers = {}) {
           runners: {
             explorer: (task) => runExplorer({ projectRoot: root, target: task.target || ".", signal: helpers?.abortSignal || null, memoryContext }),
             analyst: (task) => runAnalyst({ projectRoot: root, userMessage: task.question || "", signal: helpers?.abortSignal || null, memoryContext }),
-            // [EDITCORE-V510-B6] Writer: el implementer acotado de
-            // siempre, con los locks de coordinación de ESTA corrida
-            // (los helpers traen applyWrite/applyReplace del turno).
-            // Sin autorización de escritura no hay ejecutor: la
-            // tarea se reporta como no corrida, nunca se disfraza.
+            security: (task) => require("./subagents/security").runSecuritySubagent({ projectRoot: root, target: task.target || ".", signal: helpers?.abortSignal || null, memoryContext }),
+            database: (task) => require("./subagents/database").runDatabaseSubagent({ projectRoot: root, target: task.target || ".", signal: helpers?.abortSignal || null, memoryContext }),
+            ui_ux: (task) => require("./subagents/ui_ux").runUiUxSubagent({ projectRoot: root, target: task.target || ".", signal: helpers?.abortSignal || null, memoryContext }),
+            devops: (task) => require("./subagents/devops").runDevopsSubagent({ projectRoot: root, target: task.target || ".", signal: helpers?.abortSignal || null, memoryContext }),
+            verifier: (task) => require("./subagents/verifier").runVerifierSubagent({ projectRoot: root, target: task.target || ".", signal: helpers?.abortSignal || null, memoryContext }),
             writer: allowWrite ? (task) => {
               const { runSubagent } = require("../subagent-runner");
               return runSubagent(root, {
@@ -3036,14 +3036,9 @@ async function execute(name, args, root, allowWrite, helpers = {}) {
         if ((subRole === "implementer" || subRole === "writer") && !allowWrite) {
           return { ok: false, error: "Subagente implementer requiere modo escritura." };
         }
-        // [EDITCORE-INTEGRAL-B1] Rol especialista NO implementado: no se
-        // disfraza — el resultado ANUNCIA que ese rol no existe y que lo
-        // que sigue es exploración de solo lectura (el cierre del
-        // orquestador además lo audita y lo declara en el resumen).
-        const degradedRoles = new Set(["security", "database", "ui_ux", "devops", "analyst", "verifier"]);
-        const degraded = degradedRoles.has(subRole);
-        // [EDITCORE-V510-B5] MEMORIA COMPARTIDA (ida): el subagente
-        // recibe el bloque del expediente + Cerebro + Mapa acotado.
+        // [EDITCORE-V533] Subagentes especialistas reales:
+        // security, database, ui_ux, devops, analyst, verifier, writer, explorer.
+        // Cada rol ejecuta su analizador especializado sin degradación.
         let memoryContext = "";
         try {
           const { buildSharedMemoryBlock } = require("./concierge");
@@ -3057,33 +3052,26 @@ async function execute(name, args, root, allowWrite, helpers = {}) {
           patches: Array.isArray(a.patches) ? a.patches : undefined,
           memoryContext,
         }, helpers);
-        // [EDITCORE-V510-B5] MEMORIA COMPARTIDA (vuelta): el
-        // destilado de su informe entra en el expediente con
-        // procedencia, igual que en delegate_parallel.
+        // Memoria compartida de vuelta
         let memoryRecorded = 0;
         try {
           const { recordSubagentDistillates } = require("./subagent-distill");
           const exploredFiles = Array.isArray(subResult?.mergedFiles) ? subResult.mergedFiles.map((f) => String(f?.path || f?.title || "")).filter(Boolean) : [];
           memoryRecorded = recordSubagentDistillates(root, [{
-            role: degraded ? "explorer" : subRole,
+            role: subRole,
             target: a.target || "",
             question: a.task || "",
             text: String(subResult?.summary || subResult?.report || subResult?.text || exploredFiles.join("\n") || ""),
             ok: subResult?.ok !== false,
           }]);
         } catch { /* la memoria nunca tumba el despacho */ }
-        if (degraded) {
-          return {
-            ...subResult,
-            ok: subResult?.ok !== false,
-            requestedRole: subRole,
-            effectiveRole: "explorer",
-            degradedRole: true,
-            ...(memoryRecorded ? { memoryRecorded } : {}),
-            roleNotice: `El rol «${subRole}» no existe como subagente especialista en EditCoreAI: lo ejecutado fue exploración de solo lectura, NO una tarea de ${subRole}. Repórtalo así, no como una auditoría ni un trabajo especializado.`,
-          };
-        }
-        return { ...subResult, requestedRole: subRole, effectiveRole: subRole === "writer" ? "implementer" : subRole, ...(memoryRecorded ? { memoryRecorded } : {}) };
+        return {
+          ...subResult,
+          ok: subResult?.ok !== false,
+          requestedRole: subRole,
+          effectiveRole: subRole === "writer" ? "implementer" : subRole,
+          ...(memoryRecorded ? { memoryRecorded } : {}),
+        };
       }
       case "install_skill":
         if (!allowWrite) return { ok: false, error: "install_skill requiere modo escritura." };

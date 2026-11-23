@@ -63,6 +63,19 @@ async function construirMemoria(inputN, helpers) {
       if (textoHits) partes.push(`Memoria del proyecto (Cerebro Semántico Neuronal):\n${textoHits.slice(0, 6000)}`);
     } catch { /* la memoria es opcional */ }
   }
+  if (inputN?.projectRoot) {
+    try {
+      const { loadProjectMemory } = require("../project-memory");
+      const mem = loadProjectMemory(inputN.projectRoot);
+      if (mem && (mem.decisions?.length || mem.recentTasks?.length || mem.architectureRules?.length)) {
+        const lineasMem = [];
+        if (mem.decisions?.length) lineasMem.push(`Decisiones previas: ${mem.decisions.slice(-5).map((d) => (typeof d === "string" ? d : d.decision || d.text || "")).filter(Boolean).join("; ")}`);
+        if (mem.recentTasks?.length) lineasMem.push(`Tareas recientes: ${mem.recentTasks.slice(-3).map((t) => (typeof t === "string" ? t : t.task || t.summary || "")).filter(Boolean).join("; ")}`);
+        if (mem.architectureRules?.length) lineasMem.push(`Reglas de arquitectura: ${mem.architectureRules.slice(0, 5).join("; ")}`);
+        if (lineasMem.length) partes.push(`Memoria del proyecto (.editcore/memory.json):\n${lineasMem.join("\n")}`);
+      }
+    } catch { /* memoria local opcional */ }
+  }
   if (!partes.length) return "";
   const MARCO_MEMORIA = "Material de referencia del proyecto (Mapa de orientación y Cerebro): NO son palabras del usuario en esta conversación; es contexto acumulado que puede estar desactualizado. Verifícalo contra los hechos y el código antes de darlo por cierto, y nunca atribuyas al usuario síntomas, frases o pedidos que no haya escrito en este chat.";
   return [MARCO_MEMORIA, ...partes].join("\n\n");

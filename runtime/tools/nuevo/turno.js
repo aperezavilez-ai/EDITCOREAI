@@ -251,8 +251,9 @@ async function ejecutarTurno({ texto, llamarModelo, ejecutarHerramienta, herrami
         mensajes.push({
           role: "user",
           content: `[SISTEMA — intento ${anuncioCorregido}/2] Anunciaste trabajo en futuro pero no llamaste ninguna herramienta. ` +
-            `El anuncio no cuenta como trabajo. AHORA MISMO debes llamar replace_in_file, write_file o run_command ` +
-            `con el primer cambio real de mayor prioridad. No expliques qué harás: hazlo directamente.`,
+            `El anuncio no cuenta como trabajo. AHORA MISMO debes llamar la herramienta correspondiente ` +
+            `(replace_in_file, write_file, run_command, delegate_parallel o invoke_subagent) ` +
+            `con la acción real de mayor prioridad. No expliques qué harás: hazlo directamente.`,
         });
         textoFinal = "";
         continue;

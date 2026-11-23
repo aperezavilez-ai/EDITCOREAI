@@ -85,14 +85,11 @@ async function runParallelExplore(projectRoot, input = {}, { brain = null } = {}
 
 async function runSubagent(projectRoot, input = {}, ctx = {}) {
   const role = String(input.role || "explorer").toLowerCase();
-  // [EDITCORE-V510-B5] Memoria compartida RECIBIDA al despacharse: el
-  // bloque (expediente + Cerebro + Mapa) viaja en el input o en el
-  // ctx y el implementer lo lleva en el contexto de su tarea; el
-  // resultado declara si la recibió (sharedMemory) para que el
-  // despacho y las pruebas puedan verificar la ida.
   const sharedMemory = String(ctx?.memoryContext || input?.memoryContext || "");
+  const target = String(input.target || ".").trim();
+  const taskText = String(input.task || input.goal || input.query || "");
+
   if (role === "implementer" || role === "writer") {
-    const taskText = String(input.task || input.goal || input.query || "");
     const res = await runBoundedImplement(projectRoot, sharedMemory
       ? { ...input, task: `${taskText}\n\n[Memoria compartida del proyecto — expediente, Cerebro y Mapa]\n${sharedMemory.slice(0, 2400)}` }
       : input, ctx);
@@ -109,6 +106,39 @@ async function runSubagent(projectRoot, input = {}, ctx = {}) {
     }
     return { ...res, sharedMemory: Boolean(sharedMemory) };
   }
+
+  // Despacho a especialistas reales de EditCoreAI
+  if (role === "security") {
+    const { runSecuritySubagent } = require("./tools/subagents/security");
+    const res = await runSecuritySubagent({ projectRoot, target, signal: ctx?.signal || null, memoryContext: sharedMemory });
+    return { ...res, ok: res.ok !== false, sharedMemory: Boolean(sharedMemory) };
+  }
+  if (role === "database") {
+    const { runDatabaseSubagent } = require("./tools/subagents/database");
+    const res = await runDatabaseSubagent({ projectRoot, target, signal: ctx?.signal || null, memoryContext: sharedMemory });
+    return { ...res, ok: res.ok !== false, sharedMemory: Boolean(sharedMemory) };
+  }
+  if (role === "ui_ux") {
+    const { runUiUxSubagent } = require("./tools/subagents/ui_ux");
+    const res = await runUiUxSubagent({ projectRoot, target, signal: ctx?.signal || null, memoryContext: sharedMemory });
+    return { ...res, ok: res.ok !== false, sharedMemory: Boolean(sharedMemory) };
+  }
+  if (role === "devops") {
+    const { runDevopsSubagent } = require("./tools/subagents/devops");
+    const res = await runDevopsSubagent({ projectRoot, target, signal: ctx?.signal || null, memoryContext: sharedMemory });
+    return { ...res, ok: res.ok !== false, sharedMemory: Boolean(sharedMemory) };
+  }
+  if (role === "analyst") {
+    const { runAnalyst } = require("./tools/subagents/analyst");
+    const res = await runAnalyst({ projectRoot, userMessage: taskText, signal: ctx?.signal || null, memoryContext: sharedMemory });
+    return { ...res, ok: res.ok !== false, sharedMemory: Boolean(sharedMemory) };
+  }
+  if (role === "verifier") {
+    const { runVerifierSubagent } = require("./tools/subagents/verifier");
+    const res = await runVerifierSubagent({ projectRoot, target, signal: ctx?.signal || null, memoryContext: sharedMemory });
+    return { ...res, ok: res.ok !== false, sharedMemory: Boolean(sharedMemory) };
+  }
+
   const explored = await runParallelExplore(projectRoot, {
     query: input.query || input.goal || input.task,
     includeGithub: input.includeGithub === true,

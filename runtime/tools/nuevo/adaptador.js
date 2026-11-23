@@ -672,9 +672,32 @@ async function manejarChatNuevo(input, deps = {}) {
   // 65 herramientas; dietado, 23.386. Era maquinaria del
   // orquestador viejo y el kernel nuevo la hereda aquí, en su
   // único punto de construcción de definiciones.
-  const definiciones = typeof toolsMod.slimToolDefinitions === "function"
+  const definicionesDietadas = typeof toolsMod.slimToolDefinitions === "function"
     ? toolsMod.slimToolDefinitions(definicionesCrudas)
     : definicionesCrudas;
+
+  // [EDITCORE-V533] Poda dinámica intencional para modelos locales (Nexus):
+  // 65 esquemas saturan los 8k/16k tokens de un modelo 7B/14B local provocando
+  // alucinaciones o respuestas en texto plano sin invocar tools.
+  // Nexus recibe su conjunto núcleo de alto rendimiento + herramientas especializadas bajo demanda.
+  let definiciones = definicionesDietadas;
+  if (esNexus) {
+    const CORE_NEXUS_TOOLS = new Set([
+      "read_file", "write_file", "replace_in_file", "list_files", "run_command",
+      "search_files", "delegate_parallel", "invoke_subagent", "search_brain",
+      "list_skills", "read_skill", "git_status", "git_diff", "git_commit",
+      "capture_preview_screenshot", "audit_env",
+    ]);
+    const lowerTxt = (textoCrudo + " " + String(input.message || "")).toLowerCase();
+    if (/image|foto|diseñ|visual|icono|logo/i.test(lowerTxt)) CORE_NEXUS_TOOLS.add("generate_image");
+    if (/video|clip|mp4/i.test(lowerTxt)) CORE_NEXUS_TOOLS.add("generate_video");
+    if (/preview|vista\s+previa|servidor|puerto/i.test(lowerTxt)) CORE_NEXUS_TOOLS.add("start_preview");
+    if (/database|base\s+de\s+datos|tabla|sql|migra/i.test(lowerTxt)) CORE_NEXUS_TOOLS.add("supabase_migrate");
+    if (/scaffold|nuevo\s+proyecto|plantilla/i.test(lowerTxt)) CORE_NEXUS_TOOLS.add("scaffold_project");
+    if (/clone|clonar|web/i.test(lowerTxt)) CORE_NEXUS_TOOLS.add("clone_web_page");
+
+    definiciones = definicionesDietadas.filter((d) => CORE_NEXUS_TOOLS.has(d?.function?.name));
+  }
   const herramientasCompletas = definiciones.map((d) => d?.function?.name).filter(Boolean);
 
   const perfil = {
