@@ -735,7 +735,7 @@ async function manejarChatNuevo(input, deps = {}) {
       // Fallback automático transparente al motor local 14B en GPU GTX 1060 si falla la conexión externa
       ...(groqKey ? [{
         apiBaseUrl: input.apiBaseUrl || "http://127.0.0.1:11435/v1",
-        apiKey: input.apiKey || "",
+        apiKey: input.apiKey || "editcore-nexus-local",
         model: "editcore-nexus-v5",
       }] : []),
     ],
@@ -851,6 +851,21 @@ async function manejarChatNuevo(input, deps = {}) {
     steeringQueue: input.steeringQueue || deps.steeringQueue || [],
   });
   const cierre = componerCierre({ resultado });
+
+  if (esNexus) {
+    try {
+      const { registrarExperienciaNexus } = require("../../nexus-continuous-learner");
+      registrarExperienciaNexus({
+        prompt: textoCrudo,
+        respuesta: cierre.voz || resultado.texto,
+        kind: resultado.carril,
+        steps: resultado.hechos?.pasos,
+        archivos: resultado.hechos?.archivos,
+        mutations: (resultado.hechos?.aplicados || []).length,
+        verifiedSuccess: (resultado.hechos?.fallos || []).length === 0,
+      });
+    } catch { /* fire-and-forget */ }
+  }
 
   return {
     ok: true,

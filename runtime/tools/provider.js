@@ -302,7 +302,7 @@ async function callChat({
       apiKey: p.apiKey,
       model: p.model || model,
     })) : []),
-  ].filter((p) => p.apiBaseUrl && p.apiKey && p.model), Date.now(), { vision: messagesHaveImages(messages) });
+  ].filter((p) => p.apiBaseUrl && (p.apiKey || /127\.0\.0\.1|localhost/.test(p.apiBaseUrl)) && p.model), Date.now(), { vision: messagesHaveImages(messages) });
 
   let lastError = null;
   const failures = [];
