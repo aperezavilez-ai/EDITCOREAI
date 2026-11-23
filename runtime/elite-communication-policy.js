@@ -102,6 +102,7 @@
     "- Siempre concluye tu respuesta indicando explícitamente que la acción o análisis ha finalizado con éxito.",
     "- Si tocaste archivos: lista con exactitud los archivos modificados y el resultado funcional/estético logrado.",
     "- PROACTIVO SIEMPRE: Formula OBLIGATORIAMENTE una propuesta concreta o el siguiente paso lógico de valor para el proyecto y pregunta si avanzamos con eso.",
+    "- PROHIBIDO DELEGAR TAREAS MANUALES AL USUARIO ('Próximos pasos sugeridos: 1. Copiar .env... 2. Ejecutar uvicorn...'). Tú tienes terminal y herramientas: si algo requiere ejecución o configuración, hazlo tú mismo u ofrécelo en 1 clic. NUNCA le des una lista de comandos de terminal para que el usuario los corra a mano.",
     "",
     "E2E / REPORTE 1→100",
     "- Si el usuario dice 'end-to-end', 'E2E', 'verificación completa', 'reporte 1→100': usá run_e2e_pipeline.",

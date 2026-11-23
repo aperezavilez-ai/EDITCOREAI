@@ -237,12 +237,16 @@
     if (hasConcreteProductHint(prompt)) return false;
     if (prompt.length > 140) return false;
     if (/\b(ahora|ya|inmediatamente|empieza a crear|crea el|implementa en disco|escribe el archivo|procede)\b/i.test(prompt)) return false;
-    const futureIntent = /\b(vamos a|iremos a|voy a|queremos|vamos a hacer|pensemos en|hagamos|trabajemos en)\b/i.test(prompt);
-    const createVerb = /\b(crear|hacer|montar|armar|desarrollar|construir)\b/i.test(prompt);
+    // Disposición o apertura de trabajo en proyecto: "vamos a trabajar en este proyecto", "vamos trabajar...", "arranquemos con...", etc.
+    if (/^\s*(?:vamos\s+(?:a\s+)?(?:trabajar|darle|avanzar|empezar|comenzar)|arranquemos|comencemos|listo\s+para\s+trabajar)\s+(?:en|con)?\s*(?:este\s+)?(?:proyecto|repo|app)?[.!?\s]*$/i.test(prompt)) {
+      return true;
+    }
+    const futureIntent = /\b(vamos(?:\s+a)?|iremos a|voy a|queremos|vamos a hacer|pensemos en|hagamos|trabajemos en|arranquemos con)\b/i.test(prompt);
+    const createVerb = /\b(crear|hacer|montar|armar|desarrollar|construir|trabajar|avanzar)\b/i.test(prompt);
     const projectNoun = /\b(proyecto|app|aplicaci[oó]n|sistema)\b/i.test(prompt);
     if (futureIntent && createVerb && projectNoun) return true;
     if (/^\s*quiero\s+crear\s+(?:un\s+)?(?:proyecto|app|aplicaci[oó]n)\s*(?:nuevo)?\s*[.!?]*$/i.test(prompt)) return true;
-    if (/^\s*vamos\s+a\s+crear\s+(?:un\s+)?(?:proyecto|app)\s*(?:nuevo)?\s*[.!?]*$/i.test(prompt)) return true;
+    if (/^\s*vamos\s+(?:a\s+)?crear\s+(?:un\s+)?(?:proyecto|app)\s*(?:nuevo)?\s*[.!?]*$/i.test(prompt)) return true;
     return false;
   }
 
@@ -815,6 +819,7 @@
   function classifyPromptIntent(value, hasAnalysis = false) {
     const prompt = text(value);
     if (isAuthorization(prompt)) return "authorization";
+    if (isPreviewRequest(prompt)) return "preview";
     // Consultas informativas sobre la app/agente: NUNCA análisis ni tools
     if (/\b(?:para\s+qu[eé]\s+(?:sirve|funciona|es)|qu[eé]\s+(?:hace|es|es\s+esta)|qui[eé]n\s+eres|c[oó]mo\s+te\s+llamas|ayuda)\b/i.test(prompt)
       && !/\b(?:corrije|corrige|arregla|implementa|analiza|audita|crea\s+un|modifica)\b/i.test(prompt)) {
@@ -1118,6 +1123,16 @@
     return hasUsableAbsolutePath(prompt);
   }
 
+  /** "quiero ver todo el proyecto en el navegador interno" / "abre el preview" — accion de UI directa. */
+  function isPreviewRequest(value) {
+    const prompt = text(value);
+    if (!prompt) return false;
+    if (prompt.length > 220) return false;
+    return /\b(?:ver\s+(?:todo\s+)?el\s+proyecto\s+en\s+(?:el\s+)?navegador|navegador\s+interno|ver\s+en\s+(?:el\s+)?navegador|(?:mostrar?|muestra|mu[eé]strame)\s+(?:todo\s+)?(?:el\s+)?proyecto\s+en\s+(?:el\s+)?navegador|abrir?\s+(?:el\s+)?navegador\s+interno|abrir?\s+(?:el\s+)?preview|abrir?\s+vista\s+previa|ver\s+(?:la\s+)?app\s+en\s+(?:la\s+)?vista\s+web|arranca(?:r)?\s+(?:el\s+)?servidor\s+y\s+muestra)\b/i.test(prompt)
+      || /^\s*(?:quiero\s+)?ver\s+(?:todo\s+)?el\s+proyecto\s+en\s+el\s+navegador\b/i.test(prompt)
+      || /^\s*(?:abre|abrir|mostrar?|muestra|mu[eé]strame|ver)\s+(?:el\s+)?(?:preview|vista\s+previa|navegador\s+interno)\s*[.!]?$/i.test(prompt);
+  }
+
   /** Solo "abre X" sin pedido de analisis/trabajo: UI local. Si hay analiza/revisa/etc., el chat debe continuar con el agente. */
   function isPureOpenProjectRequest(value) {
     if (isSwitchProjectRequest(value)) return false;
@@ -1348,6 +1363,7 @@
     isCreateProjectRequest,
     isOpenNamedProjectRequest,
     isPureOpenProjectRequest,
+    isPreviewRequest,
     wantsAuthorizedFinish,
     isCloseProjectRequest,
     isSwitchProjectRequest,

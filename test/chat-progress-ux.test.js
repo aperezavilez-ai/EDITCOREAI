@@ -17,10 +17,24 @@ test("extractReferencedProjectName saca el proyecto del pedido de analisis", () 
   assert.equal(ProjectAnalysis.extractReferencedProjectName("revisa el proyecto CALILI"), "CALILI");
 });
 
+test("isPreviewRequest detecta pedidos de ver el proyecto en navegador interno", () => {
+  assert.equal(ProjectAnalysis.isPreviewRequest("QUIERO VER TODO EL PROYECTO EN EL NAVEGADOR INTERNO DE EDITCOREAI"), true);
+  assert.equal(ProjectAnalysis.isPreviewRequest("abre el navegador interno"), true);
+  assert.equal(ProjectAnalysis.isPreviewRequest("muestra el proyecto en el navegador"), true);
+  assert.equal(ProjectAnalysis.isPreviewRequest("modifica el archivo package.json"), false);
+});
+
+test("isProjectIntentComment detecta apertura de trabajo natural", () => {
+  assert.equal(ProjectAnalysis.isProjectIntentComment("VAMOS TRABAJAR EN ESTE PROYECTO"), true);
+  assert.equal(ProjectAnalysis.isProjectIntentComment("vamos a trabajar en este proyecto"), true);
+  assert.equal(ProjectAnalysis.isProjectIntentComment("arranquemos con este proyecto"), true);
+});
+
 test("renderer ya no vuelca Carpeta abierta con ruta en openNamedProject", () => {
   const source = fs.readFileSync(path.join(__dirname, "..", "renderer.js"), "utf8");
   assert.doesNotMatch(source, /Carpeta abierta: \*\*\$\{projectDisplayName/);
   assert.match(source, /isPureOpenProjectRequest/);
+  assert.match(source, /isPreviewRequest/);
   assert.match(source, /continueWork: true/);
   assert.match(source, /silent: true/);
   assert.match(source, /Pensando \/ razonando/);

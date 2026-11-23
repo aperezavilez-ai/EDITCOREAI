@@ -13305,6 +13305,21 @@ async function send(event) {
     await handleCloseProjectFromPrompt(effectivePrompt);
     return;
   }
+  if (!hasAttachments && ProjectAnalysis.isPreviewRequest?.(effectivePrompt)) {
+    appendUserWithImages(effectivePrompt, []);
+    rememberMessage("user", effectivePrompt);
+    $("prompt").value = "";
+    updateSendButtonState();
+    setPreviewMode("web");
+    const response = "Abriendo el proyecto en el navegador interno de EditCoreAI...";
+    const usage = { local_response: true, confirmed_input_tokens: 0, confirmed_output_tokens: 0 };
+    append("assistant", response, usage, true, 0);
+    rememberMessage("assistant", response, usage);
+    notifyVoiceAssistant(response);
+    notifyVoiceTurnComplete();
+    await refreshPreview();
+    return;
+  }
   // Solo "abre X" puro corta el chat. Si hay analisa/revisa/reporte, se abre en silencio y SIGUE el agente.
   // Pedidos "analiza unicamente package.json" NUNCA deben cambiar el proyecto abierto.
   const scopedDiskOnly = ProjectAnalysis.isScopedDiskFileRequest?.(effectivePrompt) === true;
