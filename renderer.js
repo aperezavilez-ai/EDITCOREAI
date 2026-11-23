@@ -547,9 +547,14 @@ async function persistAgentOriginalRequest(project, prompt, { taskId } = {}) {
 function resolveStoredAgentTask(project, prompt, taskId = "") {
   const id = String(taskId || project?.agentWorkflow?.taskId || "").trim();
   const fromStore = id ? agentTaskPrompt(id, "") : "";
-  return ProjectAnalysis.findOriginalUserRequest(project, { storedPrompt: fromStore })
-    || String(project?.agentWorkflow?.task || project?.analysisMemory?.request || "").trim()
-    || (ProjectAnalysis.isAuthorization(prompt) ? "" : String(prompt || "").trim());
+  const isCompleted = String(project?.agentWorkflow?.phase || "").toLowerCase() === "completed";
+  const found = ProjectAnalysis.findOriginalUserRequest(project, { storedPrompt: fromStore });
+  if (found) return found;
+  if (!isCompleted) {
+    const activeTask = String(project?.agentWorkflow?.task || project?.analysisMemory?.request || "").trim();
+    if (activeTask && !ProjectAnalysis.isAuthorization(activeTask)) return activeTask;
+  }
+  return (ProjectAnalysis.isAuthorization(prompt) ? "" : String(prompt || "").trim());
 }
 
 async function deleteAgentTaskPrompt(taskId) {
@@ -4163,8 +4168,15 @@ function isPlanAuthorizedExecution(project, prompt, isAgent) {
   const strictProceed = /^\s*(?:procede|adelante|autorizo)\b/i.test(text)
     || /^\s*\?+\s*$/.test(text)
     || /\b(?:debemos|tenemos\s+que|hay\s+que|vamos\s+a|necesitamos)\s+(?:terminar|completar|finalizar|avanzar|solucionar|arreglar|corregir|construir|implementar|hacer)\b/i.test(text);
-  // Acceso completo: PROCEDE/ADELANTE autoriza siempre (sin depender de fase awaiting).
-  if (strictProceed && state.permissionMode === "full") return true;
+  // Acceso completo: PROCEDE/ADELANTE autoriza si hay un plan pendiente real o tarea no completada.
+  if (strictProceed && state.permissionMode === "full") {
+    const isCompleted = String(project?.agentWorkflow?.phase || "").toLowerCase() === "completed";
+    const hasPendingPlan = Boolean(String(project?.agentWorkflow?.plan || project?.analysisMemory?.resultSummary || "").trim());
+    if (hasPendingPlan && !isCompleted) return true;
+    if (!isCompleted && hasResumableAgentTask(project)) return true;
+    if (isCompleted && !hasPendingPlan) return false;
+    return true;
+  }
   const continuaWithFixes = /^\s*contin[uú]a\b/i.test(text)
     && /\b(correcciones?|cambios?|el plan|la propuesta|implementaci[oó]n|arregla|corrige|corrije|crear?|construir)\b/i.test(text);
   // Usuario pide corregir directamente (con o sin plan previo): "corrije A", "corrige el error", "arregla X"

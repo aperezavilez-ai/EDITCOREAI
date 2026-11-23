@@ -163,6 +163,12 @@ function traducirParaPowerShell(command) {
   cmd = cmd.replace(/\|\s*head\s+(?:-n\s+|-)?(\d+)/gi, "| Select-Object -First $1");
   // | grep -i "pattern" -> | Select-String -Pattern "pattern"
   cmd = cmd.replace(/\|\s*grep\s+(?:-i\s+)?["']?([^"'|\r\n]+)["']?/gi, '| Select-String -Pattern "$1"');
+  // En Windows: los LLMs emiten 'python3' o 'pip3' (dialecto Unix).
+  // En PowerShell de Windows, 'python3' no existe por defecto y causa
+  // "no se reconoce como comando", haciendo creer falsamente al modelo
+  // que no hay Python instalado aunque Python 3.12 esté presente.
+  cmd = cmd.replace(/(^|[;&|(\s])python3(?=\s|$|[;&|)])/gi, "$1python");
+  cmd = cmd.replace(/(^|[;&|(\s])pip3(?=\s|$|[;&|)])/gi, "$1pip");
   // tail a secas al final del pipeline -> Select-Object -Last 20
   cmd = cmd.replace(/\|\s*tail\s*$/gi, "| Select-Object -Last 20");
   return cmd;
@@ -226,6 +232,36 @@ function runProcess({
     let stderr = "";
     let timedOut = false;
 
+    const userHome = process.env.USERPROFILE || process.env.HOME || "";
+    const extraPythonPaths = process.platform === "win32" ? [
+      path.join(userHome, "AppData", "Local", "Programs", "Python", "Python312"),
+      path.join(userHome, "AppData", "Local", "Programs", "Python", "Python312", "Scripts"),
+      path.join(userHome, "AppData", "Local", "Programs", "Python", "Launcher"),
+      path.join(userHome, "AppData", "Local", "Programs", "Python", "Python311"),
+      path.join(userHome, "AppData", "Local", "Programs", "Python", "Python311", "Scripts"),
+      path.join(userHome, "AppData", "Local", "Programs", "Python", "Python310"),
+      path.join(userHome, "AppData", "Local", "Programs", "Python", "Python310", "Scripts"),
+      "C:\\Program Files\\Python312",
+      "C:\\Program Files\\Python312\\Scripts",
+      "C:\\Program Files\\nodejs",
+      path.join(userHome, "AppData", "Roaming", "npm"),
+    ].filter((p) => {
+      try { return fs.existsSync(p); } catch { return false; }
+    }) : [];
+
+    const rawPath = process.env.PATH || process.env.Path || "";
+    const existingParts = new Set(rawPath.split(path.delimiter).map(p => p.toLowerCase()));
+    const missingPython = extraPythonPaths.filter(p => !existingParts.has(p.toLowerCase()));
+    const fullPath = missingPython.length ? [rawPath, ...missingPython].join(path.delimiter) : rawPath;
+
+    const childEnv = {
+      ...process.env,
+      PATH: fullPath,
+      Path: fullPath,
+      FORCE_COLOR: "0",
+      ...(env || {}),
+    };
+
     // [EDITCORE-INTEGRAL-B4] Una sola vía de spawn: shell del sistema por
     // defecto, o powershell.exe en Windows cuando el llamador lo pide
     // (run_command del kernel).
@@ -234,14 +270,14 @@ function runProcess({
         cwd: root,
         windowsHide: true,
         stdio: ["ignore", "pipe", "pipe"],
-        env: { ...process.env, FORCE_COLOR: "0", ...(env || {}) },
+        env: childEnv,
       })
       : spawn(cmd, {
         cwd: root,
         shell: true,
         windowsHide: true,
         stdio: ["ignore", "pipe", "pipe"],
-        env: { ...process.env, FORCE_COLOR: "0", ...(env || {}) },
+        env: childEnv,
       });
 
     const streams = attachProcessStreams(child, {

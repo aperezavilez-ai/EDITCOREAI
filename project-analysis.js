@@ -346,11 +346,13 @@
 
   function findOriginalUserRequest(project, options = {}) {
     const stored = text(options.storedPrompt || "");
-    // Prioridad: tarea activa / memoria actual — NUNCA el mensaje mas largo del historial
-    // (eso reactivaba auditorias viejas y FOCO sticky en CONTINUA/PROCEDE).
-    const active = text(project?.agentWorkflow?.task)
-      || text(project?.analysisMemory?.request)
-      || text(project?.durableWorkflow?.goal)
+    const workflowPhase = String(project?.agentWorkflow?.phase || "").toLowerCase();
+    const isCompleted = workflowPhase === "completed";
+    // Prioridad: tarea activa / memoria actual — NUNCA una tarea ya completada ni el mensaje mas largo del historial
+    // (eso reactivaba auditorias viejas y tareas zombis en CONTINUA/PROCEDE).
+    const active = (!isCompleted ? text(project?.agentWorkflow?.task) : "")
+      || (!isCompleted ? text(project?.analysisMemory?.request) : "")
+      || (!isCompleted ? text(project?.durableWorkflow?.goal) : "")
       || stored;
     if (active && !isAuthorization(active)) return active;
 

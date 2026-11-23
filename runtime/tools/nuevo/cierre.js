@@ -155,10 +155,11 @@ function componerCierre({ resultado, delegaciones = null }) {
     }
   }
 
-  // Sugerencia y próximos pasos: un turno que no aplicó mutaciones nunca debe dejar al usuario sin saber qué hacer.
-  const tienePreguntaOCierre = /[?¿]|\b(?:próximos pasos|sugerencia|para continuar|si deseas|puedes indicarme|dime si|quieres que|cómo continuar)\b/i.test(voz);
+  // Sugerencia y próximos pasos: un turno que no aplicó mutaciones nunca debe dejar al usuario sin saber qué hacer,
+  // pero NUNCA debe invitar a "procede" si el modelo ya hizo una pregunta de menú, alcance o elección de área.
+  const tienePreguntaOCierre = /[?¿]|\b(?:próximos pasos|sugerencia|para continuar|si deseas|puedes indicarme|ind[ií]came|dime\s+(?:si|cu[aá]l)|quieres que|c[oó]mo continuar|cu[aá]l de estos|prioridad|qu[eé]\s+(?:hacemos|haremos|prefieres))\b/i.test(voz);
   if (!tienePreguntaOCierre && (sinAplicados || sinActividad)) {
-    const sugerencia = "\n\n---\n**¿Cómo deseas continuar?**\n- Escribe **«procede»** o **«continúa»** para que ejecute y aplique los cambios directamente en el proyecto.\n- O indícame qué archivo o tarea específica prefieres que atienda primero.";
+    const sugerencia = "\n\n---\n**¿Cómo deseas continuar?**\n- Indícame qué tarea específica o requerimiento deseas abordar en el proyecto.";
     voz = String(voz || "").trim() + sugerencia;
   }
 
