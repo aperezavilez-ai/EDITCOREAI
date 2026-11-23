@@ -855,7 +855,7 @@ async function manejarChatNuevo(input, deps = {}) {
   const memoriaExtra = typeof deps.construirMemoria === "function" ? await deps.construirMemoria(input) : "";
   const memoriaMs = Date.now() - tMemoria;
   const bloqueNexus = esNexus ? SISTEMA_NEXUS_V5 : "";
-  const reglaVision = proveedor.imagenes.length > 0 ? VISION_ACK_RULE : "";
+  const reglaVision = (perfil.imagenes && perfil.imagenes.length > 0) ? VISION_ACK_RULE : "";
   const memoria = [bloqueNexus, SISTEMA_NUCLEO, memoriaExtra, reglaVision, String(input.skillsPrompt || "")]
     .map((s) => String(s || "").trim())
     .filter(Boolean)
