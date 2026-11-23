@@ -41,12 +41,25 @@ function safeRel(projectRoot, rel) {
   const target = path.resolve(root, rel || ".");
   const rootL = root.toLowerCase();
   const tgtL = target.toLowerCase();
-  if (tgtL !== rootL && !tgtL.startsWith(rootL + path.sep) && !tgtL.startsWith(`${rootL}/`)) {
-    throw new Error("Ruta fuera del proyecto");
+  if (tgtL === rootL || tgtL.startsWith(rootL + path.sep) || tgtL.startsWith(`${rootL}/`)) {
+    return {
+      abs: target,
+      rel: path.relative(root, target).replace(/\\/g, "/") || ".",
+    };
+  }
+  const parent = path.dirname(root);
+  const parentL = parent.toLowerCase();
+  const isDriveRoot = path.parse(parent).root.toLowerCase() === parentL;
+  if (!isDriveRoot && (tgtL === parentL || tgtL.startsWith(parentL + path.sep) || tgtL.startsWith(`${parentL}/`))) {
+    const relFromParent = path.relative(parent, target).replace(/\\/g, "/");
+    return {
+      abs: target,
+      rel: `../${relFromParent}`,
+    };
   }
   return {
     abs: target,
-    rel: path.relative(root, target).replace(/\\/g, "/") || ".",
+    rel: path.basename(target),
   };
 }
 

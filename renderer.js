@@ -5100,6 +5100,11 @@ function handleProjectFilesChanged(payload = {}) {
     const currentView = String(state.fileListRelativePath || "");
     const viewDir = !currentView ? "" : String(nav.viewDir || currentView);
     refreshProjectFilesFromDisk({ viewDir, highlightNames: nav.highlightNames });
+    // [MEJORA 2] Sincronización reactiva con Monaco Editor: recarga el modelo si está abierto
+    const touchedPath = writtenPath || String(payload.relativePath || "");
+    if (touchedPath && window.EditCoreEditor?.reloadIfCurrent) {
+      window.EditCoreEditor.reloadIfCurrent(state.projectRoot, touchedPath).catch(() => undefined);
+    }
     if (payload.autoPreview || ProjectFilesUi?.shouldAutoStartPreview?.(fileName)) {
       maybeRefreshPreviewAfterWrite(fileName).catch(() => undefined);
     } else if (payload.hotReload || ProjectFilesUi?.shouldHotReloadPreview?.(fileName)) {
@@ -9264,6 +9269,88 @@ function hidePreviewHealBanner() {
     previewHealBannerTimer = null;
   }
 }
+
+// [MEJORA 4] HUD flotante de diagnóstico y errores visibles (Cero errores mudos)
+let diagnosticHudContainer = null;
+function getDiagnosticHudContainer() {
+  if (!diagnosticHudContainer || !diagnosticHudContainer.isConnected) {
+    let existing = document.getElementById("editcoreDiagnosticHud");
+    if (!existing) {
+      existing = document.createElement("div");
+      existing.id = "editcoreDiagnosticHud";
+      existing.className = "editcore-diagnostic-hud";
+      existing.setAttribute("role", "region");
+      existing.setAttribute("aria-label", "Diagnósticos y errores");
+      document.body.appendChild(existing);
+    }
+    diagnosticHudContainer = existing;
+  }
+  return diagnosticHudContainer;
+}
+
+function showDiagnosticHUD({ title, message, tone = "error", details = null, ttlMs = 8000 } = {}) {
+  try {
+    const container = getDiagnosticHudContainer();
+    if (!container) return;
+    const toast = document.createElement("div");
+    toast.className = `editcore-diagnostic-toast tone-${tone}`;
+    toast.setAttribute("role", "alert");
+
+    const body = document.createElement("div");
+    body.className = "editcore-diagnostic-body";
+
+    const titleEl = document.createElement("div");
+    titleEl.className = "editcore-diagnostic-title";
+    const icon = tone === "error" ? "⛔" : (tone === "warn" ? "⚠️" : (tone === "ok" ? "✅" : "ℹ️"));
+    titleEl.textContent = `${icon} ${title || "Diagnóstico"}`;
+    body.appendChild(titleEl);
+
+    if (message) {
+      const msgEl = document.createElement("div");
+      msgEl.className = "editcore-diagnostic-msg";
+      msgEl.textContent = String(message).slice(0, 320);
+      body.appendChild(msgEl);
+    }
+
+    if (details) {
+      const detEl = document.createElement("div");
+      detEl.className = "editcore-diagnostic-details";
+      detEl.textContent = String(typeof details === "string" ? details : JSON.stringify(details, null, 2)).slice(0, 500);
+      body.appendChild(detEl);
+    }
+
+    const closeBtn = document.createElement("button");
+    closeBtn.className = "editcore-diagnostic-close";
+    closeBtn.textContent = "×";
+    closeBtn.setAttribute("aria-label", "Cerrar diagnóstico");
+    closeBtn.addEventListener("click", () => {
+      toast.style.opacity = "0";
+      toast.style.transform = "translateY(-8px) scale(0.95)";
+      setTimeout(() => toast.remove(), 200);
+    });
+
+    toast.appendChild(body);
+    toast.appendChild(closeBtn);
+    container.appendChild(toast);
+
+    while (container.children.length > 4) {
+      container.firstElementChild?.remove();
+    }
+
+    if (ttlMs > 0) {
+      setTimeout(() => {
+        if (toast.isConnected) {
+          toast.style.opacity = "0";
+          toast.style.transform = "translateY(-8px) scale(0.95)";
+          setTimeout(() => toast.remove(), 200);
+        }
+      }, ttlMs);
+    }
+  } catch (err) {
+    console.error("[Diagnostic HUD error]", err);
+  }
+}
+window.showDiagnosticHUD = showDiagnosticHUD;
 
 async function restoreSnapshotFromUi() {
   const root = String(state.projectRoot || "").trim();
@@ -17440,6 +17527,17 @@ window.editcoreAgent.onProgress((progress) => {
     }
     if (progress.ok === false && (isToolStep || isLogPhase)) {
       $("status").textContent = `Agente encontro un error en ${progress.name || "una accion"}; ajustando la ejecucion`;
+      const errDetail = String(progress.error || progress.result?.error || progress.stderr || "").trim();
+      const isSoft = /oldText|no existe|not a git repo/i.test(errDetail);
+      if (errDetail && !isSoft) {
+        showDiagnosticHUD({
+          title: `Acción fallida: ${progress.name || "herramienta"}`,
+          message: errDetail,
+          tone: "warn",
+          details: progress.input?.path || progress.input?.command || null,
+          ttlMs: 7000,
+        });
+      }
     }
     if (["confirm", "repair", "human_intervention", "direction"].includes(progress?.phase)) {
       if (narrative) {
@@ -17538,8 +17636,25 @@ if (window.editcoreProject.onPreviewLog) {
           ttlMs: 16000,
         });
       }
+      showDiagnosticHUD({
+        title: payload.issue.kind === "fatal" ? "Error crítico del preview" : "Error de compilación",
+        message: payload.issue.summary,
+        tone: payload.issue.kind === "fatal" ? "error" : "warn",
+        details: payload.issue.excerpt || null,
+        ttlMs: 9000,
+      });
     } else if (payload.type === "process-log" && payload.chunk) {
-      // streaming de run_command / process-runner (no spamear status)
+      // streaming de run_command / process-runner: enviar a la terminal interactiva
+      try {
+        if (window.EditCoreTerminal?.writeOutput) {
+          window.EditCoreTerminal.writeOutput(payload.chunk);
+        }
+      } catch (_) {}
+      const lastLine = String(payload.chunk).trim().split(/\r?\n/).pop() || "";
+      if (lastLine && $("status")) {
+        const cmdTag = payload.command ? `[${payload.command.slice(0, 25)}] ` : "";
+        $("status").textContent = `⚡ ${cmdTag}${lastLine.slice(0, 90)}`;
+      }
     } else if (payload.type === "preview-heal-start") {
       $("status").textContent = "Auto-heal · VERIFIER en curso…";
       setAgentSpecialistBadge("auto-heal", payload.issue?.summary || "");

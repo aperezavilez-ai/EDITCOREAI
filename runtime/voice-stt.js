@@ -187,7 +187,7 @@ function collectWhisperCandidates(secure = {}, userDataPath = "") {
   if (meaiKey) push({ providerKey: "meai", label: "meai", apiKey: meaiKey, baseUrl: "https://api.meai.cloud/v1" });
 
   let groqKey = providers?.groq?.apiKey || secure?.keys?.groq || process.env.GROQ_API_KEY || "";
-  if (!groqKey) {
+  if (!groqKey && (userDataPath || process.env.GROQ_API_KEY)) {
     try {
       const fs = require("fs");
       const path = require("path");

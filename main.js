@@ -2881,19 +2881,42 @@ if (
 function buildKernelProcessHooks(projectRoot, event = null) {
   const root = typeof projectRoot === "string" ? projectRoot : (projectRoot?.projectRoot || "");
   const ev = event || (typeof projectRoot === "object" ? projectRoot?.event : null);
+  let chunkBuffer = "";
+  let lastStream = "stdout";
+  let lastCommand = "";
+  let flushTimer = null;
+
+  const flush = () => {
+    if (flushTimer) { clearTimeout(flushTimer); flushTimer = null; }
+    if (!chunkBuffer || !root) return;
+    const toSend = chunkBuffer.slice(-4000);
+    chunkBuffer = "";
+    emitPreviewDaemonEvent(root, {
+      type: "process-log",
+      stream: lastStream,
+      chunk: toSend,
+      command: lastCommand,
+      at: Date.now(),
+    });
+  };
+
   return {
     onProcessChunk: (evChunk) => {
       if (!root) return;
-      emitPreviewDaemonEvent(root, {
-        type: "process-log",
-        stream: evChunk?.stream || "stdout",
-        chunk: String(evChunk?.chunk || "").slice(-2000),
-        command: evChunk?.command || "",
-        at: Date.now(),
-      });
+      const text = String(evChunk?.chunk || "");
+      if (!text) return;
+      lastStream = evChunk?.stream || "stdout";
+      lastCommand = evChunk?.command || "";
+      chunkBuffer += text;
+      if (chunkBuffer.length >= 2000) {
+        flush();
+      } else if (!flushTimer) {
+        flushTimer = setTimeout(flush, 40);
+      }
     },
     onProcessSevereError: (issue) => {
       if (!root) return;
+      flush();
       const nextServerEnoent = issue?.nextServerEnoent === true
         || issue?.healStrategy === "next-cache-rebuild"
         || /ENOENT[\s\S]{0,180}?[\\/]\.next[\\/]server[\\/]|routes-manifest\.json/i.test(`${issue?.summary || ""}\n${issue?.excerpt || ""}`);
@@ -6361,8 +6384,16 @@ ipcMain.handle("project:create", async (event, input = {}) => {
 ipcMain.handle("project:list", (_event, rootPath, relativePath = "") => listEntries(rootPath, relativePath));
 
 function assertSafeProjectRel(rel = "") {
-  const normalized = String(rel || "").replace(/\\/g, "/").replace(/^\/+/, "").trim();
-  if (!normalized || normalized === "." || normalized.includes("..")) {
+  let normalized = String(rel || "").replace(/\\/g, "/").trim();
+  if (/^[a-zA-Z]:\//i.test(normalized)) {
+    return normalized;
+  }
+  normalized = normalized.replace(/^\/+/, "");
+  if (!normalized || normalized === ".") {
+    throw new Error("Ruta invalida.");
+  }
+  const upMatches = normalized.match(/\.\.\//g);
+  if (upMatches && upMatches.length > 3) {
     throw new Error("Ruta invalida.");
   }
   return normalized;

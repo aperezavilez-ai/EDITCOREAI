@@ -71,3 +71,23 @@ test("sin Acceso completo no sale del proyecto abierto", (t) => {
     /fuera del alcance|fuera del proyecto/i,
   );
 });
+
+test("resolveInside y safeRel permiten transparentemente rutas de proyectos hermanos", (t) => {
+  const { parent, a, b } = tempTree(t);
+  const { resolveInside, toProjectRelativePath } = require("../project-path-policy");
+  const { snapshotBeforeWrite } = require("../runtime/tools/snapshot");
+
+  // resolveInside con ruta relativa al hermano
+  const siblingRelative = `../${path.basename(b)}/b.js`;
+  const resolved = resolveInside(a, siblingRelative);
+  assert.equal(resolved.toLowerCase(), path.join(b, "b.js").toLowerCase());
+
+  // toProjectRelativePath
+  const rel = toProjectRelativePath(a, path.join(b, "b.js"));
+  assert.equal(rel.replace(/\\/g, "/"), `../${path.basename(b)}/b.js`);
+
+  // snapshotBeforeWrite en hermano
+  const snap = snapshotBeforeWrite(a, siblingRelative, "test-write");
+  assert.equal(snap.ok, true);
+});
+

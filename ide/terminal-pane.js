@@ -240,12 +240,19 @@
     }
   }
 
+  function writeOutput(chunk = "") {
+    if (!term || !chunk) return;
+    const formatted = String(chunk).replace(/\r?\n/g, "\r\n");
+    term.write(formatted);
+  }
+
   global.EditCoreTerminal = {
     show,
     hide,
     start,
     fit,
     writeAgentCommand,
+    writeOutput,
     ensureTerminal,
   };
 })(typeof window !== "undefined" ? window : globalThis);

@@ -79,8 +79,11 @@ function assertWritableProjectRoot(rootPath) {
 function assertNoSymlinkPath(rootPath, targetPath) {
   const root = normalizeDriveLetter(rootPath);
   let current = normalizeDriveLetter(targetPath);
+  const boundary = current.toLowerCase().startsWith(root.toLowerCase())
+    ? root
+    : (workspaceParentRoot(root) || root);
   const chain = [];
-  while (current.length >= root.length) {
+  while (current.length >= boundary.length) {
     chain.push(current);
     const parent = path.dirname(current);
     if (parent === current) break;
@@ -127,13 +130,28 @@ function resolveInside(rootPath, relativePath = "") {
 
   const target = normalizeDriveLetter(path.resolve(root, cleanRel || "."));
   const relative = path.relative(root, target);
-  if (relative.startsWith("..") || path.isAbsolute(relative)) throw new Error("Ruta fuera del proyecto.");
+  if (relative.startsWith("..") || path.isAbsolute(relative)) {
+    // Si sale de root, comprobar si pertenece al workspace parent (hermanos) o espacio de usuario permitido
+    const parent = workspaceParentRoot(root);
+    const isSibling = Boolean(parent && !isDeniedSystemPath(target) && !path.relative(parent, target).startsWith("..") && !path.isAbsolute(path.relative(parent, target)));
+    const isAllowedUser = Boolean(!isDeniedSystemPath(target) && isUnderAllowedUserSpace(target));
+    if (!isSibling && !isAllowedUser) {
+      throw new Error("Ruta fuera del proyecto.");
+    }
+  }
   let existing = target;
   while (!fs.existsSync(existing)) { const parent = path.dirname(existing); if (parent === existing) break; existing = parent; }
   const realRoot = normalizeDriveLetter(fs.realpathSync.native(root));
   const realExisting = normalizeDriveLetter(fs.realpathSync.native(existing));
   const realRelative = path.relative(realRoot, realExisting);
-  if (realRelative.startsWith("..") || path.isAbsolute(realRelative)) throw new Error("La ruta enlazada sale del proyecto.");
+  if (realRelative.startsWith("..") || path.isAbsolute(realRelative)) {
+    const parent = workspaceParentRoot(root);
+    const isSibling = Boolean(parent && !isDeniedSystemPath(realExisting) && !path.relative(normalizeDriveLetter(fs.realpathSync.native(parent)), realExisting).startsWith("..") && !path.isAbsolute(path.relative(normalizeDriveLetter(fs.realpathSync.native(parent)), realExisting)));
+    const isAllowedUser = Boolean(!isDeniedSystemPath(realExisting) && isUnderAllowedUserSpace(realExisting));
+    if (!isSibling && !isAllowedUser) {
+      throw new Error("La ruta enlazada sale del proyecto.");
+    }
+  }
   return target;
 }
 
@@ -147,6 +165,13 @@ function toProjectRelativePath(rootPath, maybePath = "") {
     : normalizeDriveLetter(path.resolve(root, raw));
   const relative = path.relative(root, abs);
   if (relative.startsWith("..") || path.isAbsolute(relative)) {
+    const parent = workspaceParentRoot(root);
+    if (parent && !isDeniedSystemPath(abs)) {
+      const parentRel = path.relative(parent, abs);
+      if (!parentRel.startsWith("..") && !path.isAbsolute(parentRel)) {
+        return `../${parentRel.replace(/\\/g, "/")}`;
+      }
+    }
     throw new Error(`Ruta fuera del proyecto: ${raw}`);
   }
   return relative.replace(/\\/g, "/");

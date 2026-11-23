@@ -2663,6 +2663,103 @@ body.ide-code-mode .viewer-action-group {
   opacity: 1;
 }
 
+/* [MEJORA 4] HUD flotante de diagnóstico y errores visibles (Cero errores mudos) */
+.editcore-diagnostic-hud {
+  position: fixed;
+  top: 18px;
+  right: 22px;
+  max-width: 440px;
+  min-width: 300px;
+  z-index: 2147483647;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: none;
+}
+.editcore-diagnostic-toast {
+  pointer-events: auto;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, system-ui, sans-serif;
+  font-size: 12px;
+  line-height: 1.4;
+  box-shadow: 0 10px 32px rgba(0, 0, 0, 0.45);
+  animation: hudToastSlideIn 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: opacity 0.2s, transform 0.2s;
+}
+.editcore-diagnostic-toast.tone-error {
+  background: #1c1316;
+  border: 1px solid #ef4444;
+  color: #fecaca;
+}
+.editcore-diagnostic-toast.tone-warn {
+  background: #1c1811;
+  border: 1px solid #f59e0b;
+  color: #fde68a;
+}
+.editcore-diagnostic-toast.tone-info {
+  background: #101928;
+  border: 1px solid #3b82f6;
+  color: #bfdbfe;
+}
+.editcore-diagnostic-toast.tone-ok {
+  background: #0d1e19;
+  border: 1px solid #10b981;
+  color: #a7f3d0;
+}
+.editcore-diagnostic-body {
+  flex: 1;
+  min-width: 0;
+}
+.editcore-diagnostic-title {
+  font-weight: 700;
+  font-size: 13px;
+  margin-bottom: 3px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.editcore-diagnostic-msg {
+  word-break: break-word;
+  opacity: 0.95;
+}
+.editcore-diagnostic-details {
+  margin-top: 6px;
+  padding: 6px;
+  background: rgba(0, 0, 0, 0.35);
+  border-radius: 4px;
+  font-size: 11px;
+  max-height: 100px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+}
+.editcore-diagnostic-close {
+  flex: 0 0 auto;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font-size: 16px;
+  opacity: 0.7;
+  padding: 0 2px;
+}
+.editcore-diagnostic-close:hover {
+  opacity: 1;
+}
+@keyframes hudToastSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-10px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
 .subagent-rail,
 .subagent-pill,
 .agent-specialist-badge,

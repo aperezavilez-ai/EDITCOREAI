@@ -6,8 +6,8 @@ EditCore actualiza este archivo tras cambios. No pedirlo al usuario. No pegar co
 
 ## Proceso
 - Fase: produccion
-- Estado: v5.2.8 — Kernel de chat con carril concurrente de subagentes, dirección en vuelo (steerChat viva), cerebro con memoria semántica neuronal Transformers/VectorMemory, token harness con readCache local y persistencia de entregables en historial.
-- Actualizado: 2026-11-18 15:15
+- Estado: Patch OK: src/HighPrecisionTokenBucket.ts (2026-11-23 15:12)
+- Actualizado: 2026-11-23 15:12
 - Stack: Electron + TypeScript
 - Entry: index.html
 - Entry: main.js
@@ -15,6 +15,7 @@ EditCore actualiza este archivo tras cambios. No pedirlo al usuario. No pegar co
 - Preview: desconocido — usa el preview del IDE, no inventes puertos
 
 ## Mapa
+- src/HighPrecisionTokenBucket.ts
 - package.json — editcoreai · scripts: start, postinstall, setup, supabase:check, supabase:plan, supabase:rotate, brand:electron, sync, test, test:e2e
 - stack: Electron + TypeScript
 - entry: index.html
@@ -57,13 +58,14 @@ EditCore actualiza este archivo tras cambios. No pedirlo al usuario. No pegar co
 - logs-panel.css
 
 ## Archivos clave (no reexplorar)
+- src/HighPrecisionTokenBucket.ts
 - Usar el Mapa; no list_files('.') si ya hay rutas aqui
 
 ## Tarea activa
 - Completada: v4.6.0 Release oficial — convergencia total: motor único, ME AI único, dinero y web corregidos (suite 1067/0).
 
 ## Bloqueos / bugs conocidos
-- Ninguno. Tests pasando (1067/1067) y verificación de sintaxis limpia.
+- Ninguno registrado
 
 ## Decisiones
 - Convergencia Total: migración completa de `agent:run` al kernel unificado (`ChatOrchestrator`), neutralización de `useLegacyAdapter`, eliminación de código y despachadores duplicados.
@@ -72,6 +74,7 @@ EditCore actualiza este archivo tras cambios. No pedirlo al usuario. No pegar co
 - Manejo resiliente de fallos de cobro de IA vía migración y persistencia de ledger.
 
 ## Cambios recientes
+- src/HighPrecisionTokenBucket.ts — archivo escrito (kernel) (2026-11-23 15:12)
 - v4.6.0 versión empaquetada e instalador Setup generado y verificado.
 - Migración de Modo Agente (`agent:run`) al kernel manteniendo contrato completo de eventos y persistencia de tareas.
 - Suite de pruebas ampliada y 100% verde (1067 tests pasando).

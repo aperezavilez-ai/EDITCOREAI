@@ -354,6 +354,43 @@
     return { path: rel, bytes: content.length };
   }
 
+  async function reloadIfCurrent(projectRoot, targetPath) {
+    if (!editor || !currentPath) return false;
+    const normCurrent = currentPath.replace(/\\/g, "/").toLowerCase();
+    const rawTarget = String(targetPath || "").replace(/\\/g, "/");
+    const normTarget = rawTarget.toLowerCase();
+
+    const isMatch = normTarget === normCurrent
+      || normTarget.endsWith("/" + normCurrent)
+      || normCurrent.endsWith("/" + normTarget)
+      || (projectRoot && normTarget === `${String(projectRoot).replace(/\\/g, "/").toLowerCase()}/${normCurrent}`);
+
+    if (!isMatch) return false;
+
+    try {
+      const root = String(projectRoot || window.state?.projectRoot || "").trim();
+      if (!window.editcoreProject?.readText) return false;
+      const payload = await window.editcoreProject.readText({ projectRoot: root, path: currentPath });
+      const content = String(payload?.content ?? "");
+      const model = editor.getModel();
+      if (model) {
+        const currentVal = model.getValue();
+        if (currentVal !== content) {
+          const viewState = editor.saveViewState();
+          model.setValue(content);
+          if (viewState) editor.restoreViewState(viewState);
+          dirty = false;
+          setPathLabel(currentPath, false);
+          setStatus(`Sincronizado con cambios en disco: ${currentPath}`);
+          return true;
+        }
+      }
+    } catch (err) {
+      console.warn("[EditorPane] No se pudo recargar archivo en Monaco:", err);
+    }
+    return false;
+  }
+
   function applyGutterDiffs(marks = []) {
     if (!editor || !monacoApi) return;
     const decorations = [];
@@ -532,6 +569,7 @@
   global.EditCoreEditor = {
     ensureEditor,
     openFile,
+    reloadIfCurrent,
     saveCurrent,
     goToDefinition,
     applyGutterDiffs,
