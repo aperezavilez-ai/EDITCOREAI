@@ -28,6 +28,16 @@ test("isProjectIntentComment detecta apertura de trabajo natural", () => {
   assert.equal(ProjectAnalysis.isProjectIntentComment("VAMOS TRABAJAR EN ESTE PROYECTO"), true);
   assert.equal(ProjectAnalysis.isProjectIntentComment("vamos a trabajar en este proyecto"), true);
   assert.equal(ProjectAnalysis.isProjectIntentComment("arranquemos con este proyecto"), true);
+  assert.equal(ProjectAnalysis.isProjectIntentComment("vamos a chambear en este repo"), true);
+  assert.equal(ProjectAnalysis.isProjectIntentComment("a darle al proyecto"), true);
+  assert.equal(ProjectAnalysis.isProjectIntentComment("manos a la obra"), true);
+});
+
+test("isChangeRequest detecta acciones de git y scraping", () => {
+  assert.equal(ProjectAnalysis.isChangeRequest("haz commit de los cambios"), true);
+  assert.equal(ProjectAnalysis.isChangeRequest("haz push al repo"), true);
+  assert.equal(ProjectAnalysis.isChangeRequest("hazle scraping a esta página web"), true);
+  assert.equal(ProjectAnalysis.isChangeRequest("clona esta plantilla"), true);
 });
 
 test("renderer ya no vuelca Carpeta abierta con ruta en openNamedProject", () => {
