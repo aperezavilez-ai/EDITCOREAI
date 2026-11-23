@@ -150,7 +150,14 @@ function isPlaceholderOrTest(sample) {
     s.includes("xxxx") ||
     s.includes("00000000") ||
     s.includes("my_secret") ||
-    s.includes("insert_here")
+    s.includes("insert_here") ||
+    s.includes("<password>") ||
+    s.includes("<ref>") ||
+    s.includes("<region>") ||
+    s.includes("<user>") ||
+    s.includes("<token>") ||
+    s.includes("<key>") ||
+    s.includes("<dbname>")
   );
 }
 
@@ -163,6 +170,11 @@ function scanContentForSecrets(content, filePath = "") {
 
   const normPath = String(filePath || "").replace(/\\/g, "/");
   const baseName = getBaseName(normPath).toLowerCase();
+
+  // Metadatos internos de EditCoreAI (índices, cola de revisión, snapshots): omitir
+  if (normPath.includes("/.editcore/") || normPath.startsWith(".editcore/")) {
+    return { blocked: false, findings: [] };
+  }
 
   // Permitir templates .env.example
   if (
@@ -279,7 +291,7 @@ service-account.json
 serviceaccount.json
 .htpasswd
 .npmrc
-.editcore/vault/
+.editcore/
 
 # Plantilla pública permitida
 !.env.example
@@ -403,7 +415,7 @@ function scanProjectForSecurity(projectRoot) {
   }
 
   // 2. Escanear archivos en disco
-  const excludeDirs = new Set(["node_modules", ".git", "dist", "build", "out", ".next", ".nuxt", "coverage", "public"]);
+  const excludeDirs = new Set(["node_modules", ".git", "dist", "build", "out", ".next", ".nuxt", "coverage", "public", ".editcore", ".turbo", ".cache"]);
   const codeExts = new Set([".js", ".ts", ".jsx", ".tsx", ".py", ".json", ".html", ".vue", ".php", ".sh", ".yml", ".yaml"]);
 
   function walk(dir, depth = 0) {
