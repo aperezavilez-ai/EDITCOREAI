@@ -4,7 +4,7 @@
  * Vision intake: normalize pasted/uploaded images and format provider payloads.
  */
 
-const VISION_MODEL_PATTERN = /vision|claude|gpt-4o|gpt-4\.1|gpt-5|o4-mini|gemini|llava|qwen-vl|qwen2\.5-vl|moonshot|kimi|haiku|sonnet|opus|pixtral|mistral-large|yi-vl|deepseek-vl|internvl|minicpm-v|fable/i;
+const VISION_MODEL_PATTERN = /vision|nexus|editcore|claude|gpt-4o|gpt-4\.1|gpt-5|o4-mini|gemini|llava|qwen-vl|qwen2\.5-vl|moonshot|kimi|haiku|sonnet|opus|pixtral|mistral-large|yi-vl|deepseek-vl|internvl|minicpm-v|fable/i;
 
 const VISION_ACK_RULE = [
   "## VISION OBLIGATORIA (imagen adjunta)",
@@ -25,7 +25,12 @@ function normalizeImages(images = []) {
   if (!Array.isArray(images)) return [];
   const out = [];
   for (const image of images.slice(0, 8)) {
-    let dataUrl = String(image?.dataUrl || image?.url || "").trim();
+    let dataUrl = String(
+      (typeof image === "string" ? image : "") ||
+      image?.dataUrl ||
+      image?.url ||
+      ""
+    ).trim();
     if (!dataUrl) continue;
     if (!/^data:/i.test(dataUrl) && /^[A-Za-z0-9+/=\r\n]+$/.test(dataUrl.slice(0, 80))) {
       dataUrl = `data:image/png;base64,${dataUrl.replace(/\s+/g, "")}`;

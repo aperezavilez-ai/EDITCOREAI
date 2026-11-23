@@ -28,6 +28,7 @@ const { decidirTurno, contextoDesdeHistorial } = require("./despacho");
 const { componerCierre } = require("./cierre");
 const { SISTEMA_NUCLEO, SISTEMA_NEXUS_V4, SISTEMA_NEXUS_V5, RESPUESTA_ADN_NEXUS_V5, esConsultaDeIdentidad } = require("./textos");
 const { parseTextToolCalls, stripTextToolMarkup } = require("../parse-text-tools");
+const { VISION_ACK_RULE } = require("../vision-intake");
 
 function obtenerGroqApiKey() {
   if (process.env.GROQ_API_KEY) return process.env.GROQ_API_KEY.trim();
@@ -744,6 +745,7 @@ async function manejarChatNuevo(input, deps = {}) {
     // Solo data:/http(s): una ruta local no es una imagen válida
     // para el proveedor y no se disfraza como tal.
     imagenes: (Array.isArray(input.images) ? input.images : [])
+      .map((u) => (typeof u === "string" ? u : (u?.dataUrl || u?.url || "")))
       .filter((u) => typeof u === "string" && /^(data:|https?:\/\/)/.test(u)),
   };
   // El texto enlatado del flujo de análisis («AUTORIZACION DE
@@ -827,7 +829,8 @@ async function manejarChatNuevo(input, deps = {}) {
   const memoriaExtra = typeof deps.construirMemoria === "function" ? await deps.construirMemoria(input) : "";
   const memoriaMs = Date.now() - tMemoria;
   const bloqueNexus = esNexus ? SISTEMA_NEXUS_V5 : "";
-  const memoria = [bloqueNexus, SISTEMA_NUCLEO, memoriaExtra, String(input.skillsPrompt || "")]
+  const reglaVision = proveedor.imagenes.length > 0 ? VISION_ACK_RULE : "";
+  const memoria = [bloqueNexus, SISTEMA_NUCLEO, memoriaExtra, reglaVision, String(input.skillsPrompt || "")]
     .map((s) => String(s || "").trim())
     .filter(Boolean)
     .join("\n\n");
