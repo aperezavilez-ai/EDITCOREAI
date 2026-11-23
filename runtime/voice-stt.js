@@ -139,7 +139,7 @@ function collectWhisperCandidates(secure = {}, userDataPath = "") {
       apiKey,
       baseUrl,
       url: transcriptionUrl(baseUrl),
-      preferred: isPreferredUserHost(baseUrl),
+      preferred: entry.preferred !== undefined ? Boolean(entry.preferred) : isPreferredUserHost(baseUrl),
     });
   };
 
@@ -186,7 +186,35 @@ function collectWhisperCandidates(secure = {}, userDataPath = "") {
   const meaiKey = providers?.meai?.apiKey || secure?.keys?.meai || "";
   if (meaiKey) push({ providerKey: "meai", label: "meai", apiKey: meaiKey, baseUrl: "https://api.meai.cloud/v1" });
 
-  const groqKey = providers?.groq?.apiKey || secure?.keys?.groq || "";
+  let groqKey = providers?.groq?.apiKey || secure?.keys?.groq || process.env.GROQ_API_KEY || "";
+  if (!groqKey) {
+    try {
+      const fs = require("fs");
+      const path = require("path");
+      const envPaths = [
+        path.join("D:\\", "PROGRAMAS IA", "EDITCORE-MODEL", ".env"),
+        path.join(__dirname, "..", ".env"),
+        path.join(__dirname, "..", ".env.local"),
+      ];
+      for (const p of envPaths) {
+        if (fs.existsSync(p)) {
+          const content = fs.readFileSync(p, "utf8");
+          for (const line of content.split("\n")) {
+            const trimmed = line.trim();
+            if (trimmed.startsWith("GROQ_API_KEY=")) {
+              const val = trimmed.split("=", 2)[1]?.trim().replace(/^["']|["']$/g, "");
+              if (val && !val.includes("pega_aqui") && val.startsWith("gsk_")) {
+                groqKey = val;
+                break;
+              }
+            }
+          }
+          if (groqKey) break;
+        }
+      }
+    } catch { /* ignore */ }
+  }
+
   if (groqKey) {
     push({
       providerKey: "groq",
