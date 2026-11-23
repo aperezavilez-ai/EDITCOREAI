@@ -702,27 +702,50 @@ async function manejarChatNuevo(input, deps = {}) {
     ? toolsMod.slimToolDefinitions(definicionesCrudas)
     : definicionesCrudas;
 
-  // [EDITCORE-V533] Poda dinámica intencional para modelos locales (Nexus):
-  // 65 esquemas saturan los 8k/16k tokens de un modelo 7B/14B local provocando
-  // alucinaciones o respuestas en texto plano sin invocar tools.
-  // Nexus recibe su conjunto núcleo de alto rendimiento + herramientas especializadas bajo demanda.
+  // [EDITCORE-V533] Poda dinámica intencional para modelos locales/Groq (Nexus):
+  // Solo se ofrecen las herramientas relevantes para la tarea, evitando saturar tokens.
   let definiciones = definicionesDietadas;
   if (esNexus) {
     const CORE_NEXUS_TOOLS = new Set([
-      "read_file", "write_file", "replace_in_file", "list_files", "run_command",
-      "search_files", "delegate_parallel", "invoke_subagent", "search_brain",
-      "list_skills", "read_skill", "git_status", "git_diff", "git_commit", "git_push",
-      "capture_preview_screenshot", "audit_env",
-      "web_search", "web_scrape",
-      "read_pdf", "create_pdf", "create_word", "create_excel", "create_csv",
+      "read_file", "write_file", "replace_in_file", "list_files", "run_command", "search_files",
     ]);
     const lowerTxt = (textoCrudo + " " + String(input.message || "")).toLowerCase();
+    if (/commit|git|push|branch|repo|diff|status/i.test(lowerTxt)) {
+      CORE_NEXUS_TOOLS.add("git_status");
+      CORE_NEXUS_TOOLS.add("git_diff");
+      CORE_NEXUS_TOOLS.add("git_commit");
+      CORE_NEXUS_TOOLS.add("git_push");
+    }
+    if (/pdf|word|excel|csv|document|informe|reporte/i.test(lowerTxt)) {
+      CORE_NEXUS_TOOLS.add("read_pdf");
+      CORE_NEXUS_TOOLS.add("create_pdf");
+      CORE_NEXUS_TOOLS.add("create_word");
+      CORE_NEXUS_TOOLS.add("create_excel");
+      CORE_NEXUS_TOOLS.add("create_csv");
+    }
+    if (/subagent|paralel|deleg|agente|multiagent/i.test(lowerTxt)) {
+      CORE_NEXUS_TOOLS.add("delegate_parallel");
+      CORE_NEXUS_TOOLS.add("invoke_subagent");
+    }
+    if (/brain|cerebro|recuerdo|memoria/i.test(lowerTxt)) CORE_NEXUS_TOOLS.add("search_brain");
+    if (/skill|habilidad/i.test(lowerTxt)) {
+      CORE_NEXUS_TOOLS.add("list_skills");
+      CORE_NEXUS_TOOLS.add("read_skill");
+    }
+    if (/preview|vista\s+previa|servidor|puerto/i.test(lowerTxt)) {
+      CORE_NEXUS_TOOLS.add("start_preview");
+      CORE_NEXUS_TOOLS.add("capture_preview_screenshot");
+    }
+    if (/env|secreto|clave|token/i.test(lowerTxt)) CORE_NEXUS_TOOLS.add("audit_env");
+    if (/search|buscar|google|web|scrape|extraer|clon/i.test(lowerTxt)) {
+      CORE_NEXUS_TOOLS.add("web_search");
+      CORE_NEXUS_TOOLS.add("web_scrape");
+      CORE_NEXUS_TOOLS.add("clone_web_page");
+    }
     if (/image|foto|diseñ|visual|icono|logo/i.test(lowerTxt)) CORE_NEXUS_TOOLS.add("generate_image");
     if (/video|clip|mp4/i.test(lowerTxt)) CORE_NEXUS_TOOLS.add("generate_video");
-    if (/preview|vista\s+previa|servidor|puerto/i.test(lowerTxt)) CORE_NEXUS_TOOLS.add("start_preview");
     if (/database|base\s+de\s+datos|tabla|sql|migra/i.test(lowerTxt)) CORE_NEXUS_TOOLS.add("supabase_migrate");
     if (/scaffold|nuevo\s+proyecto|plantilla/i.test(lowerTxt)) CORE_NEXUS_TOOLS.add("scaffold_project");
-    if (/clone|clonar|web/i.test(lowerTxt)) CORE_NEXUS_TOOLS.add("clone_web_page");
 
     definiciones = definicionesDietadas.filter((d) => CORE_NEXUS_TOOLS.has(d?.function?.name));
   }
@@ -740,30 +763,32 @@ async function manejarChatNuevo(input, deps = {}) {
   } catch {}
 
   const usarMeaiVision = hayImagenes && Boolean(meaiKey);
-  const groqKey = (!usarMeaiVision && esNexus) ? obtenerGroqApiKey() : null;
+  const groqKey = esNexus ? obtenerGroqApiKey() : null;
 
   const perfil = {
     apiBaseUrl: usarMeaiVision
       ? "https://api.meai.cloud/v1"
-      : ((groqKey ? "https://api.groq.com/openai/v1" : input.apiBaseUrl) || "http://127.0.0.1:11435/v1"),
+      : ((groqKey ? "https://api.groq.com/openai/v1" : (input.apiBaseUrl || "http://127.0.0.1:11435/v1"))),
     apiKey: usarMeaiVision
       ? meaiKey
       : (groqKey || input.apiKey || ""),
     model: usarMeaiVision
-      ? "claude-sonnet-4-6"
-      : (groqKey ? "openai/gpt-oss-120b" : (input.model || "editcore-nexus-v5")),
+      ? "glm-5.2"
+      : (groqKey ? "qwen/qwen3.8-27b" : (input.model || "editcore-nexus-v5")),
     fallbackProfiles: [
+      ...(groqKey ? [
+        {
+          apiBaseUrl: "https://api.groq.com/openai/v1",
+          apiKey: groqKey,
+          model: "openai/gpt-oss-20b",
+        },
+        {
+          apiBaseUrl: "https://api.groq.com/openai/v1",
+          apiKey: groqKey,
+          model: "openai/gpt-oss-120b",
+        },
+      ] : []),
       ...(Array.isArray(input.fallbackProfiles) ? input.fallbackProfiles : []),
-      ...(usarMeaiVision && groqKey ? [{
-        apiBaseUrl: "https://api.groq.com/openai/v1",
-        apiKey: groqKey,
-        model: "openai/gpt-oss-120b",
-      }] : []),
-      ...(!usarMeaiVision && meaiKey ? [{
-        apiBaseUrl: "https://api.meai.cloud/v1",
-        apiKey: meaiKey,
-        model: "claude-sonnet-4-6",
-      }] : []),
       ...(groqKey ? [{
         apiBaseUrl: input.apiBaseUrl || "http://127.0.0.1:11435/v1",
         apiKey: input.apiKey || "editcore-nexus-local",
@@ -854,15 +879,23 @@ async function manejarChatNuevo(input, deps = {}) {
   const tMemoria = Date.now();
   const memoriaExtra = typeof deps.construirMemoria === "function" ? await deps.construirMemoria(input) : "";
   const memoriaMs = Date.now() - tMemoria;
-  const bloqueNexus = esNexus ? SISTEMA_NEXUS_V5 : "";
+  const bloqueSistema = esNexus ? SISTEMA_NEXUS_V5 : SISTEMA_NUCLEO;
   const reglaVision = (perfil.imagenes && perfil.imagenes.length > 0) ? VISION_ACK_RULE : "";
-  const memoria = [bloqueNexus, SISTEMA_NUCLEO, memoriaExtra, reglaVision, String(input.skillsPrompt || "")]
+  const memoria = [bloqueSistema, memoriaExtra, reglaVision, String(input.skillsPrompt || "")]
     .map((s) => String(s || "").trim())
     .filter(Boolean)
     .join("\n\n");
 
   const historialCrudo = Array.isArray(input.history) ? input.history : (Array.isArray(input.messages) ? input.messages : []);
   const historial = seleccionarHistorial(historialCrudo);
+
+  if (typeof deps.onAviso === "function" && input.projectRoot) {
+    const lineas = textoCrudo.split("\n").map((l) => l.trim()).filter((l) => /^[-*•\d]|\b(?:cambiar|conectar|añadir|crear|modificar|revisar|ajustar)\b/i.test(l));
+    const resumenItems = lineas.length > 0 ? lineas.slice(0, 3).join(" · ") : textoCrudo.slice(0, 100);
+    try {
+      deps.onAviso(`📋 Requerimientos analizados: ${resumenItems}\n🚀 Iniciando ejecución técnica agéntica en el proyecto...`);
+    } catch {}
+  }
 
   const resultado = await ejecutarTurno({
     ...(fuerzaOrden ? { carrilForzado: "ORDEN" } : {}),

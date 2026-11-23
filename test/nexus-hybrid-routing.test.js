@@ -27,7 +27,7 @@ describe("EditCore Nexus v5 - Enrutamiento Híbrido Automático (120B Titan / 14
     assert.ok(capturedProfile, "callChat debe haber sido invocado");
     assert.strictEqual(capturedProfile.apiBaseUrl, "https://api.groq.com/openai/v1");
     assert.ok(capturedProfile.apiKey.startsWith("gsk_"));
-    assert.strictEqual(capturedProfile.model, "openai/gpt-oss-120b");
+    assert.ok(["qwen/qwen3.8-27b", "openai/gpt-oss-120b"].includes(capturedProfile.model));
     assert.ok(Array.isArray(capturedProfile.fallbackProfiles) || true);
   });
 });

@@ -47,6 +47,11 @@ function parseRetryAfterMs(headersOrValue, nowMs = Date.now()) {
     if (delta <= 0) return 0;
     return Math.min(delta, MAX_RETRY_AFTER_MS);
   }
+  const msgMatch = text.match(/try again in ([\d.]+)s/i);
+  if (msgMatch) {
+    const sec = parseFloat(msgMatch[1]);
+    if (Number.isFinite(sec) && sec >= 0) return Math.min(Math.round(sec * 1000) + 200, MAX_RETRY_AFTER_MS);
+  }
   return null;
 }
 

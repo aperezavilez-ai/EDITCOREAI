@@ -149,6 +149,7 @@ async function ejecutarTurno({ texto, llamarModelo, ejecutarHerramienta, herrami
   };
 
   let correcciones = 0;
+  let lecturasConsecutivas = 0;
   while (llamadas < presupuesto.maxLlamadas + correcciones) {
     if (Array.isArray(steeringQueue) && steeringQueue.length > 0) {
       while (steeringQueue.length > 0) {
@@ -162,7 +163,22 @@ async function ejecutarTurno({ texto, llamarModelo, ejecutarHerramienta, herrami
         }
       }
     }
-    const resp = await llamarModelo({ mensajes, herramientas: herramientasDelCarril });
+
+    // [ANTI-LOOP DE LECTURA]: En turnos de ORDEN, si el agente ya leyó 2 veces seguidas
+    // sin mutar, se fuerza la transición a herramientas de mutación/acción para evitar
+    // bucles pasivos de lectura masiva que consumen tokens y tiempo.
+    let herramientasPaso = herramientasDelCarril;
+    if (carril === "ORDEN" && lecturasConsecutivas >= 2) {
+      herramientasPaso = herramientasDelCarril.filter((h) => !["read_file", "list_files", "search_files"].includes(h));
+      if (!mensajes[mensajes.length - 1]?.content?.includes("[Límite de exploración alcanzado]")) {
+        mensajes.push({
+          role: "user",
+          content: "[SISTEMA — Límite de exploración alcanzado]: Ya has obtenido el contexto de los archivos. Procede AHORA MISMO a aplicar las modificaciones solicitadas usando replace_in_file o write_file directamente. No leas más archivos.",
+        });
+      }
+    }
+
+    const resp = await llamarModelo({ mensajes, herramientas: herramientasPaso });
     llamadas += 1;
     tokensUsados += Number(resp?.uso?.total || 0);
     anotarTiempos(resp);
@@ -298,6 +314,11 @@ async function ejecutarTurno({ texto, llamarModelo, ejecutarHerramienta, herrami
       }
       const paso = { nombre, ok: resultado?.ok !== false, resumen: String(resultado?.resumen || "") };
       hechos.pasos.push(paso);
+      if (["read_file", "list_files", "search_files"].includes(nombre)) {
+        lecturasConsecutivas += 1;
+      } else if (["replace_in_file", "write_file", "run_command"].includes(nombre) && paso.ok) {
+        lecturasConsecutivas = 0;
+      }
       if (paso.ok && resultado?.archivoAplicado) {
         const rutaArchivo = String(resultado.archivoAplicado);
         hechos.aplicados.push(rutaArchivo);

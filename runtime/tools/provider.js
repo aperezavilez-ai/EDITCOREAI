@@ -311,7 +311,7 @@ async function callChat({
 
   for (let pIdx = 0; pIdx < profileList.length; pIdx++) {
     const currentProfile = profileList[pIdx];
-    const maxRetries = pIdx === 0 ? 2 : 1;
+    const maxRetries = 2;
 
     if (pIdx > 0) {
       try {

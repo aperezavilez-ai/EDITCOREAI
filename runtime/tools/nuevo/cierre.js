@@ -151,15 +151,20 @@ function componerCierre({ resultado, delegaciones = null }) {
         voz = `No se pudo completar la operación: falló ${hechos.fallos.map((f) => f.nombre).join(", ")}.`;
       }
     } else {
-      voz = "La exploración del proyecto fue completada con éxito.";
+      const explorados = (hechos.pasos || []).filter((p) => p.ok && (p.nombre === "read_file" || p.nombre === "list_files" || p.nombre === "search_files"));
+      if (explorados.length > 0) {
+        const rutas = [...new Set(explorados.map((p) => p.resumen || p.nombre))].filter(Boolean);
+        voz = `He analizado la estructura y los archivos del proyecto (${rutas.slice(0, 3).join(", ")}). La solución técnica está lista para ejecutarse directamente en el código.`;
+      } else {
+        voz = "Revisión técnica del proyecto completada.";
+      }
     }
   }
 
-  // Sugerencia y próximos pasos: un turno que no aplicó mutaciones nunca debe dejar al usuario sin saber qué hacer,
-  // pero NUNCA debe invitar a "procede" si el modelo ya hizo una pregunta de menú, alcance o elección de área.
-  const tienePreguntaOCierre = /[?¿]|\b(?:próximos pasos|sugerencia|para continuar|si deseas|puedes indicarme|ind[ií]came|dime\s+(?:si|cu[aá]l)|quieres que|c[oó]mo continuar|cu[aá]l de estos|prioridad|qu[eé]\s+(?:hacemos|haremos|prefieres))\b/i.test(voz);
+  // Sugerencia y próximos pasos: un turno sin mutaciones orienta al usuario
+  const tienePreguntaOCierre = /[?¿]|\b(?:próximos pasos|sugerencia|para continuar|si deseas|puedes indicarme|ind[ií]came|dime\s+(?:si|cu[aá]l)|quieres que|c[oó]mo continuar|cu[aá]l de estos|prioridad|qu[eé]\s+(?:hacemos|haremos|prefieres)|procede)\b/i.test(voz);
   if (!tienePreguntaOCierre && (sinAplicados || sinActividad)) {
-    const sugerencia = "\n\n---\n**¿Cómo deseas continuar?**\n- Indícame qué tarea específica o requerimiento deseas abordar en el proyecto.";
+    const sugerencia = "\n\n---\n**¿Cómo deseas continuar?**\n- Escribe «procede» para continuar con la ejecución o indícame qué tarea específica prefieres.";
     voz = String(voz || "").trim() + sugerencia;
   }
 

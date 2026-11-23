@@ -59,7 +59,7 @@ assert.equal(modelSupportsVision("text-only-7b"), false);
     images: [{ dataUrl: tinyPng }],
   });
   assert.equal(routedNexus.routed, true);
-  assert.equal(routedNexus.model, "claude-sonnet-4-6");
+  assert.equal(routedNexus.model, "glm-5.2");
 }
 
 {

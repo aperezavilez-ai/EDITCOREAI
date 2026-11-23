@@ -151,7 +151,7 @@ function ensureVisionRoute({ model, images, candidates = [] } = {}) {
       const meaiKey = resolveMeaiEnvKey();
       if (meaiKey) {
         pick = {
-          model: "claude-sonnet-4-6",
+          model: "glm-5.2",
           apiKey: meaiKey,
           baseUrl: MEAI_BASE_URL,
           providerKey: "meai",

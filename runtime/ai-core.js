@@ -84,7 +84,7 @@ async function parseProviderJsonOrThrow(response) {
     let retryAfterMs = null;
     try {
       const { parseRetryAfterMs } = require("./http-error-taxonomy");
-      retryAfterMs = parseRetryAfterMs(response?.headers);
+      retryAfterMs = parseRetryAfterMs(response?.headers) || parseRetryAfterMs(rawMsg);
     } catch { /* ignore */ }
     try {
       const { sanitizeChatProviderError } = require("./chat-error-sanitize");
