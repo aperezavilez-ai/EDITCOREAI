@@ -18,11 +18,41 @@
 //  4. El adaptador ya no lee el .env de EDITCORE-MODEL.
 // ============================================================
 const test = require("node:test");
+const { before, after } = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const { manejarChatNuevo } = require("../runtime/tools/nuevo/adaptador");
+
+// Hermeticidad de la batería COMPLETA: si la máquina trae .env o
+// .env.local en la raíz de la app (en la de Luis SÍ: su llave vive
+// ahí), se apartan antes de las pruebas y se restauran intactos
+// al final. El resolver lee AMBOS archivos: apartar solo el .env
+// dejó la batería a merced del .env.local (fallo en vivo del
+// parche C1B, C1-4). Si un archivo no se puede apartar, el hook
+// lo dice en voz alta en vez de disfrazarlo de fallo de prueba.
+const RAIZ_APP = path.join(__dirname, "..");
+const ARCHIVOS_ENV = [".env", ".env.local"].map((n) => ({
+  ruta: path.join(RAIZ_APP, n),
+  apartado: path.join(RAIZ_APP, n + ".bateria-bak"),
+}));
+before(() => {
+  for (const a of ARCHIVOS_ENV) {
+    if (fs.existsSync(a.ruta) && !fs.existsSync(a.apartado)) fs.renameSync(a.ruta, a.apartado);
+    if (fs.existsSync(a.ruta)) throw new Error(`No se pudo apartar ${a.ruta}: la batería no es hermética en esta máquina.`);
+  }
+});
+after(() => {
+  for (const a of ARCHIVOS_ENV) {
+    try {
+      if (fs.existsSync(a.apartado)) {
+        if (fs.existsSync(a.ruta)) fs.unlinkSync(a.ruta);
+        fs.renameSync(a.apartado, a.ruta);
+      }
+    } catch { /* restaurar nunca tumba la batería */ }
+  }
+});
 
 const LLAVE_FALSA = "gsk_" + "x".repeat(24);
 
@@ -157,7 +187,9 @@ test("C1-8: la llave en el .env de la RAIZ de la app enruta a Groq (fuente: arch
   // buscaba en runtime/.env — la raíz queda a 3 niveles.
   const raiz = path.join(__dirname, "..");
   const envPath = path.join(raiz, ".env");
-  assert.ok(!fs.existsSync(envPath), "la raíz del repo de prueba no debe traer .env previo");
+  // El hook before() ya apartó el .env real de la máquina (si lo
+  // había): aquí se escribe el de mentira y se borra al salir; el
+  // real vuelve a su sitio en el hook after().
   fs.writeFileSync(envPath, "GROQ_API_KEY=" + "gsk_" + "w".repeat(24) + "\n", "utf8");
   t.after(() => { try { fs.unlinkSync(envPath); } catch {} });
   const { res, perfil } = await turnoNexus();
