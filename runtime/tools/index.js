@@ -273,6 +273,10 @@ async function handleChat(input = {}) {
       registro.anotar({
         tipo: "fin_turno",
         carril: out?.kind || null,
+        // [CORRECCIÓN 1] La ruta de Nexus queda en el registro del
+        // turno: destino, fuente de la llave y si el turno corrió
+        // degradado (local sin llave de Groq). Nada en silencio.
+        ruta: out?.ruta || null,
         pasos: (out?.steps || []).length,
         aplicados: (out?.mutations || []).length,
         texto: String(out?.text || "").slice(0, 300),

@@ -79,6 +79,9 @@ async function runKernelChat({
   projectRoot,
   apiBaseUrl,
   apiKey,
+  // [CORRECCIÓN 1] Llave de Groq resuelta por main desde la bóveda
+  // de la app: viaja al kernel para el ruteo de Nexus.
+  groqApiKey,
   model,
   images,
   onProgress,
@@ -227,6 +230,7 @@ async function runKernelChat({
       projectRoot,
       apiBaseUrl,
       apiKey,
+      groqApiKey,
       model,
       images: Array.isArray(images) ? images : [],
       onProgress: emitProgress,

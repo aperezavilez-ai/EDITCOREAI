@@ -2026,6 +2026,8 @@ ipcMain.handle("editcore:chat", async (_event, input = {}) => {
       projectRoot: rootPath,
       apiBaseUrl: baseUrl,
       apiKey: chatApiKey,
+      // [CORRECCIÓN 1] Llave de Groq desde la bóveda de la app.
+      groqApiKey: resolveGroqKeyFromSecureState(),
       model,
       images,
       fallbackProfiles: cloudRoute ? [] : fallbackProviderProfiles({ providerKey, baseUrl, model, apiKey: chatApiKey }),
@@ -4266,6 +4268,36 @@ function readSecureState() {
   }
 }
 
+// [CORRECCIÓN 1 — RUTEO NEXUS, auditoría 2026-11-24]
+// La llave de Groq de la app vive en esta bóveda (secure-config):
+// el renderer la guarda con la configuración de proveedores. El
+// kernel la recibía SOLO si aparecía en el .env de otro proyecto;
+// ahora main la resuelve aquí y la pasa al bridge en cada turno.
+// Escaneo tolerante: keys.groq, el mapa de proveedores, o
+// cualquier lista de perfiles guardada que traiga un perfil Groq.
+function resolveGroqKeyFromSecureState() {
+  try {
+    const state = readSecureState() || {};
+    const esGroq = (v) => typeof v === "string" && v.trim().startsWith("gsk_");
+    if (esGroq(state.keys?.groq)) return state.keys.groq.trim();
+    for (const mapa of [state["editcore-providers"], state.providers]) {
+      const k = mapa && typeof mapa === "object" ? mapa.groq?.apiKey : "";
+      if (esGroq(k)) return k.trim();
+    }
+    for (const valor of Object.values(state)) {
+      if (!Array.isArray(valor)) continue;
+      for (const p of valor) {
+        if (!p || typeof p !== "object") continue;
+        const url = String(p.apiBaseUrl || p.baseUrl || "");
+        if ((p.providerKey === "groq" || /api\.groq\.com/i.test(url)) && esGroq(p.apiKey)) {
+          return p.apiKey.trim();
+        }
+      }
+    }
+  } catch { /* sin bóveda legible, el turno sigue sin llave de Groq */ }
+  return "";
+}
+
 function writeSecureState(value) {
   if (!safeStorage.isEncryptionAvailable()) throw new Error("El almacenamiento seguro de Windows no esta disponible.");
   const normalized = require("./runtime/meai-single-key").unifyMeaiSecureState(value && typeof value === "object" ? value : {}).state;
@@ -4274,8 +4306,7 @@ function writeSecureState(value) {
   const tempPath = `${filePath}.${process.pid}.tmp`;
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   fs.writeFileSync(tempPath, payload, { mode: 0o600 });
-  fs.renameSync(tempPath, filePath);
-  try {
+  fs.renameSync(tempPath, filePath);  try {
     _cachedSecureState = normalizeSecureState(normalized);
     _cachedSecureStateMtime = fs.statSync(filePath).mtimeMs;
   } catch {
@@ -7579,6 +7610,8 @@ ipcMain.handle("agent:run", async (event, input = {}) => {
         projectRoot: rootPath,
         apiBaseUrl: baseUrl,
         apiKey,
+        // [CORRECCIÓN 1] Llave de Groq desde la bóveda de la app.
+        groqApiKey: resolveGroqKeyFromSecureState(),
         model,
         images: runImages,
         helpers,

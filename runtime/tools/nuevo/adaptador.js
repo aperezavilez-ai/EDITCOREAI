@@ -30,28 +30,76 @@ const { SISTEMA_NUCLEO, SISTEMA_NEXUS_V4, SISTEMA_NEXUS_V5, RESPUESTA_ADN_NEXUS_
 const { parseTextToolCalls, stripTextToolMarkup } = require("../parse-text-tools");
 const { VISION_ACK_RULE } = require("../../vision-intake");
 
-function obtenerGroqApiKey() {
-  if (process.env.GROQ_API_KEY) return process.env.GROQ_API_KEY.trim();
-  const envPaths = [
-    path.join("D:\\", "PROGRAMAS IA", "EDITCORE-MODEL", ".env"),
-    path.join(__dirname, "..", "..", ".env"),
-    path.join(__dirname, "..", "..", ".env.local"),
-  ];
-  for (const p of envPaths) {
-    try {
-      if (fs.existsSync(p)) {
-        const content = fs.readFileSync(p, "utf8");
-        for (const line of content.split("\n")) {
-          const trimmed = line.trim();
-          if (trimmed.startsWith("GROQ_API_KEY=")) {
-            const val = trimmed.split("=", 2)[1]?.trim().replace(/^["']|["']$/g, "");
-            if (val && !val.includes("pega_aqui") && val.startsWith("gsk_")) return val;
-          }
-        }
+// [CORRECCIÓN 1 — RUTEO NEXUS, auditoría 2026-11-24]
+// La llave de Groq se resuelve desde la configuración de la PROPIA
+// app, en este orden:
+//   1. input.groqApiKey — lo que main.js resolvió de la bóveda
+//      (secure-config) al abrir el turno.
+//   2. helpers.groqApiKey / helpers.resolveGroqApiKey — la misma
+//      costura vía helpers del bridge.
+//   3. La llave del propio turno, si ya es de Groq (gsk_): es la
+//      que la app configuró para este proveedor.
+//   4. Un perfil de Groq entre los perfiles que la app pasa
+//      (fallbackProfiles / providerProfiles).
+//   5. GROQ_API_KEY del entorno del proceso.
+//   6. El .env / .env.local de la RAÍZ DE ESTA APP (desarrollo).
+// Lo que se elimina: leer el .env de EDITCORE-MODEL — Nexus no
+// puede depender del archivo de otro proyecto; si ese archivo no
+// está, el ruteo caía al local chico EN SILENCIO (el fallo que
+// esta corrección cierra). La fuente queda registrada en la ruta
+// del turno para que cualquier degradación sea visible.
+function esLlaveGroq(valor) {
+  return typeof valor === "string" && valor.trim().startsWith("gsk_");
+}
+
+function leerLlaveGroqDeArchivo(rutaArchivo) {
+  try {
+    if (!fs.existsSync(rutaArchivo)) return "";
+    const content = fs.readFileSync(rutaArchivo, "utf8");
+    for (const line of content.split("\n")) {
+      const trimmed = line.trim();
+      if (trimmed.startsWith("GROQ_API_KEY=")) {
+        const val = trimmed.split("=", 2)[1]?.trim().replace(/^["']|["']$/g, "");
+        if (val && !val.includes("pega_aqui") && val.startsWith("gsk_")) return val;
       }
-    } catch { /* ignore */ }
+    }
+  } catch { /* ignore */ }
+  return "";
+}
+
+function resolverLlaveGroq(input = {}) {
+  const deInput = typeof input.groqApiKey === "string" ? input.groqApiKey.trim() : "";
+  if (esLlaveGroq(deInput)) return { llave: deInput, fuente: "app" };
+  const helpers = input.helpers && typeof input.helpers === "object" ? input.helpers : {};
+  const deHelpers = typeof helpers.groqApiKey === "string" ? helpers.groqApiKey.trim() : "";
+  if (esLlaveGroq(deHelpers)) return { llave: deHelpers, fuente: "app" };
+  if (typeof helpers.resolveGroqApiKey === "function") {
+    try {
+      const resuelta = String(helpers.resolveGroqApiKey() || "").trim();
+      if (esLlaveGroq(resuelta)) return { llave: resuelta, fuente: "app" };
+    } catch { /* la costura nunca tumba el turno */ }
   }
-  return null;
+  const delTurno = typeof input.apiKey === "string" ? input.apiKey.trim() : "";
+  if (esLlaveGroq(delTurno)) return { llave: delTurno, fuente: "turno" };
+  const perfiles = [
+    ...(Array.isArray(input.fallbackProfiles) ? input.fallbackProfiles : []),
+    ...(Array.isArray(input.providerProfiles) ? input.providerProfiles : []),
+  ];
+  for (const p of perfiles) {
+    const url = String(p?.apiBaseUrl || p?.baseUrl || "");
+    const clave = typeof p?.apiKey === "string" ? p.apiKey.trim() : "";
+    if (/api\.groq\.com/i.test(url) && esLlaveGroq(clave)) return { llave: clave, fuente: "perfil" };
+  }
+  const deEntorno = typeof process.env.GROQ_API_KEY === "string" ? process.env.GROQ_API_KEY.trim() : "";
+  if (esLlaveGroq(deEntorno)) return { llave: deEntorno, fuente: "entorno" };
+  // La raíz de la app queda a TRES niveles desde runtime/tools/nuevo
+  // (nuevo → tools → runtime → raíz). Con dos niveles el lector caía
+  // en runtime/.env y la llave de la raíz jamás se encontraba — el
+  // defecto que el juicio en vivo del 2026-11-24 dejó al descubierto.
+  const deArchivo = leerLlaveGroqDeArchivo(path.join(__dirname, "..", "..", "..", ".env"))
+    || leerLlaveGroqDeArchivo(path.join(__dirname, "..", "..", "..", ".env.local"));
+  if (deArchivo) return { llave: deArchivo, fuente: "archivo-app" };
+  return { llave: "", fuente: null };
 }
 
 function totalDeUso(usage) {
@@ -763,7 +811,22 @@ async function manejarChatNuevo(input, deps = {}) {
   } catch {}
 
   const usarMeaiVision = hayImagenes && Boolean(meaiKey);
-  const groqKey = esNexus ? obtenerGroqApiKey() : null;
+  // [CORRECCIÓN 1] La llave sale de la configuración de la app
+  // (resolverLlaveGroq), y la ruta del turno queda DECLARADA en el
+  // resultado: si Nexus debía escalar a Groq y no pudo, el turno
+  // lo dice (degradado) en vez de caer al local en silencio.
+  const groqResuelto = esNexus ? resolverLlaveGroq(input) : { llave: "", fuente: null };
+  const groqKey = groqResuelto.llave || null;
+  const rutaNexus = esNexus
+    ? {
+        destino: usarMeaiVision ? "meai-vision" : (groqKey ? "groq" : "local"),
+        fuenteLlave: groqResuelto.fuente,
+        degradado: !usarMeaiVision && !groqKey,
+        motivo: !usarMeaiVision && !groqKey
+          ? "Sin llave de Groq en la configuración de la app: el turno corre con el modelo local."
+          : null,
+      }
+    : null;
 
   const perfil = {
     apiBaseUrl: usarMeaiVision
@@ -780,12 +843,12 @@ async function manejarChatNuevo(input, deps = {}) {
         {
           apiBaseUrl: "https://api.groq.com/openai/v1",
           apiKey: groqKey,
-          model: "openai/gpt-oss-20b",
+          model: "openai/gpt-oss-120b",
         },
         {
           apiBaseUrl: "https://api.groq.com/openai/v1",
           apiKey: groqKey,
-          model: "openai/gpt-oss-120b",
+          model: "openai/gpt-oss-20b",
         },
       ] : []),
       ...(Array.isArray(input.fallbackProfiles) ? input.fallbackProfiles : []),
@@ -950,10 +1013,14 @@ async function manejarChatNuevo(input, deps = {}) {
     incomplete: resultado.presupuestoAgotado === true || resultado.respuestaParcial === true,
     // Desglose medido del turno (también va en el detalle de hechos).
     tiempos: resultado.tiempos || null,
+    // [CORRECCIÓN 1] Ruta declarada del turno Nexus: destino,
+    // fuente de la llave y degradación visible. El registro de
+    // turnos (.editcore/turnos.jsonl) la anota en el fin de turno.
+    ruta: rutaNexus,
     threadId: String(input.threadId || input.chatId || ""),
     runId: String(input.runId || ""),
     kernelNuevo: true,
   };
 }
 
-module.exports = { manejarChatNuevo, crearLlamarModelo, crearEjecutarHerramienta, normalizarToolCalls, aMensajesProveedor, totalDeUso, seleccionarHistorial, TOPE_SALIDA_POR_CARRIL };
+module.exports = { manejarChatNuevo, crearLlamarModelo, crearEjecutarHerramienta, normalizarToolCalls, aMensajesProveedor, totalDeUso, seleccionarHistorial, resolverLlaveGroq, TOPE_SALIDA_POR_CARRIL };
