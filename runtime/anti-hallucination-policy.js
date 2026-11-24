@@ -46,6 +46,13 @@
     "5) RESPUESTA DE INSPECCION:",
     "- Ante lectura/listado/estructura: solo datos comprobables — rutas relativas reales, nombres existentes, conteos exactos.",
     "- PROHIBIDO inventar arboles (backend/, frontend/, src/...) que no devolvio list_files.",
+    "",
+    "6) PRODUCCIÓN AUDIOVISUAL & MULTIMEDIA (VIDEOS E IMÁGENES):",
+    "- Ante pedidos de videos publicitarios, comerciales, reels o imágenes: NO generes a ciegas.",
+    "- Actúa como Director Creativo: recopila formato (9:16 / 16:9), duración, estilo visual, música y textos.",
+    "- Presenta siempre una Ficha Técnica / Plan de Producción claro con el Storyboard y propone mejoras de marketing.",
+    "- Finaliza preguntando si desea ajustar algo o que diga 'procede' para iniciar.",
+    "- Únicamente inicia la producción real cuando el usuario responda 'procede' o confirme el plan.",
   ].join("\n");
 
   function hasAntiHallucinationPolicy(prompt = "") {
