@@ -126,7 +126,11 @@ async function runDelegatedTasks({
           return {
             ...task,
             ok: out?.ok !== false && Boolean(text || applied.length),
-            text: text ? text.slice(0, 4000) : String(out?.error || "El subagente completó la inspección sin hallazgos negativos.").slice(0, 500),
+            // [CORRECCIÓN 2 — auditoría 2026-11-24] Sin informe
+            // se dice sin informe: la frase anterior («completó
+            // la inspección sin hallazgos negativos») convertía
+            // una NO entrega en un pase limpio que nadie ganó.
+            text: text ? text.slice(0, 4000) : String(out?.error || "El subagente no entregó informe: no hay evidencia de que haya inspeccionado nada.").slice(0, 500),
             ...(applied.length ? { applied } : {}),
           };
         } catch (err) {
@@ -149,7 +153,11 @@ async function runDelegatedTasks({
   });
 
   return {
-    ok: done > 0,
+    // [CORRECCIÓN 2] La delegación solo es ok si TODOS
+    // entregaron: con 1 de 4 el resultado parcial se reporta
+    // como lo que es (completa:false), no como éxito.
+    ok: results.length > 0 && done === results.length,
+    completa: results.length > 0 && done === results.length,
     delegated: results.length,
     completed: done,
     threadId,

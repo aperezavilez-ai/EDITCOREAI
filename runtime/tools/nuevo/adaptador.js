@@ -705,6 +705,64 @@ function seleccionarHistorial(crudo) {
   return elegidos;
 }
 
+// ============================================================
+// [CORRECCIÓN 2 — auditoría 2026-11-24] DELEGACIÓN REAL EN EL
+// KERNEL NEXUS. delegate_parallel / invoke_subagent ya no caen
+// en el despachador viejo (tools.js → parallel-delegate con
+// «especialistas» que no llamaban a ningún modelo): se traducen
+// a tareas del motor nuevo/subagentes.js y corren como llamadas
+// REALES al modelo del propio turno, en paralelo, cada una con
+// su prompt de rol y solo sus herramientas. El resultado que
+// vuelve al agente principal lleva la auditoría de entregas:
+// quien no entregó informe queda nombrado y el paso marca
+// ok:false — «sin informe» jamás se disfraza de «sin hallazgos».
+// ============================================================
+function traducirTareasDelegadas(nombre, args) {
+  const { ROLES_SUBAGENTE } = require("./subagentes");
+  const notas = [];
+  const tareas = [];
+  const crudas = nombre === "invoke_subagent"
+    ? [{ role: args?.role, target: args?.target, question: args?.task || args?.question, patches: args?.patches }]
+    : (Array.isArray(args?.tasks) ? args.tasks : []);
+  for (const c of crudas) {
+    let rol = String(c?.role || "explorer").trim().toLowerCase();
+    if (rol === "implementer") rol = "writer"; // nombre heredado de la oferta vieja
+    const def = ROLES_SUBAGENTE[rol];
+    if (!def) {
+      notas.push(`Tarea descartada: rol no reconocido «${c?.role || ""}». Roles reales: ${Object.keys(ROLES_SUBAGENTE).join(", ")}.`);
+      continue;
+    }
+    const target = String(c?.target || ".").trim() || ".";
+    let instruccion = String(c?.question || c?.task || "").trim()
+      || "Analiza el ámbito asignado y entrega tu informe con evidencia.";
+    instruccion += `\nÁmbito de trabajo: ${target} (dentro del proyecto abierto).`;
+    if (Array.isArray(c?.patches) && c.patches.length) {
+      instruccion += `\nParches explícitos a aplicar en tu ámbito: ${JSON.stringify(c.patches).slice(0, 3000)}`;
+    }
+    tareas.push({ id: `${rol}-${tareas.length + 1}`, rol, instruccion, herramientas: def.herramientas.slice() });
+  }
+  return { tareas, notas };
+}
+
+async function ejecutarDelegacionNexus(nombre, args, { llamarModelo, ejecutarHerramienta }) {
+  const { delegar, delegacionCompleta, lineaAuditoria } = require("./subagentes");
+  const { tareas, notas } = traducirTareasDelegadas(nombre, args || {});
+  if (!tareas.length) {
+    return {
+      ok: false,
+      resumen: ["La delegación no corrió: ninguna tarea válida.", ...notas].join("\n"),
+    };
+  }
+  const resultados = await delegar(tareas, { llamarModelo, ejecutarHerramienta });
+  const lineas = [lineaAuditoria(resultados), ...notas];
+  for (const r of resultados) {
+    lineas.push(r.entrego
+      ? `\n[${r.rol}] Informe:\n${String(r.texto || "").slice(0, 3500)}`
+      : `\n[${r.rol}] SIN INFORME (${r.motivoNoEntrega || "sin_informe"}): este frente NO entregó — no des por revisado lo que no se revisó.`);
+  }
+  return { ok: delegacionCompleta(resultados), resumen: lineas.join("\n").slice(0, 12000) };
+}
+
 async function manejarChatNuevo(input, deps = {}) {
   const textoCrudo = String(
     input?.message
@@ -756,6 +814,19 @@ async function manejarChatNuevo(input, deps = {}) {
   if (esNexus) {
     const CORE_NEXUS_TOOLS = new Set([
       "read_file", "write_file", "replace_in_file", "list_files", "run_command", "search_files",
+      // [CORRECCIÓN 2 — auditoría 2026-11-24] Núcleo SIEMPRE
+      // disponible, sin palabra mágica del usuario: delegar,
+      // consultar el Cerebro y las skills es decisión del
+      // AGENTE, no un truco que el usuario deba conocer. Antes
+      // estas herramientas solo existían si el mensaje traía
+      // «subagent|deleg|agente», «cerebro|memoria» o «skill»:
+      // el agente principal no podía delegar ni recordar por
+      // iniciativa propia, y delete/build/create/publish jamás
+      // se ofrecían en Nexus contra la regla del producto
+      // (todos los permisos, siempre).
+      "delegate_parallel", "invoke_subagent",
+      "search_brain", "list_skills", "read_skill",
+      "delete_file", "build_project", "create_project", "publish_project",
     ]);
     const lowerTxt = (textoCrudo + " " + String(input.message || "")).toLowerCase();
     if (/commit|git|push|branch|repo|diff|status/i.test(lowerTxt)) {
@@ -770,15 +841,6 @@ async function manejarChatNuevo(input, deps = {}) {
       CORE_NEXUS_TOOLS.add("create_word");
       CORE_NEXUS_TOOLS.add("create_excel");
       CORE_NEXUS_TOOLS.add("create_csv");
-    }
-    if (/subagent|paralel|deleg|agente|multiagent/i.test(lowerTxt)) {
-      CORE_NEXUS_TOOLS.add("delegate_parallel");
-      CORE_NEXUS_TOOLS.add("invoke_subagent");
-    }
-    if (/brain|cerebro|recuerdo|memoria/i.test(lowerTxt)) CORE_NEXUS_TOOLS.add("search_brain");
-    if (/skill|habilidad/i.test(lowerTxt)) {
-      CORE_NEXUS_TOOLS.add("list_skills");
-      CORE_NEXUS_TOOLS.add("read_skill");
     }
     if (/preview|vista\s+previa|servidor|puerto/i.test(lowerTxt)) {
       CORE_NEXUS_TOOLS.add("start_preview");
@@ -931,13 +993,27 @@ async function manejarChatNuevo(input, deps = {}) {
     ...(Number(deps.latidoMs) > 0 ? { latidoMs: Number(deps.latidoMs) } : {}),
     onRespuestaCruda: typeof deps.onRespuestaCruda === "function" ? deps.onRespuestaCruda : null,
   });
-  const ejecutarHerramienta = crearEjecutarHerramienta({
+  const ejecutarHerramientaBase = crearEjecutarHerramienta({
     execute,
     root: input.projectRoot || process.cwd(),
     helpers: input.helpers || {},
     onActividad: typeof deps.onActividad === "function" ? deps.onActividad : null,
     onToolProgress: typeof deps.onToolProgress === "function" ? deps.onToolProgress : null,
   });
+  // [CORRECCIÓN 2] La delegación se intercepta AQUÍ, en el
+  // kernel Nexus: los subagentes corren con el llamarModelo del
+  // propio turno (su mismo ruteo ya corregido) y con el ejecutor
+  // base para sus herramientas — sin delegación anidada: un
+  // subagente no puede delegar.
+  const ejecutarHerramienta = async (nombre, args) => {
+    if (nombre === "delegate_parallel" || nombre === "invoke_subagent") {
+      if (typeof deps.onActividad === "function") {
+        try { deps.onActividad(`⇶ ${nombre} · subagentes trabajando en paralelo…`); } catch { /* narrar nunca tumba el turno */ }
+      }
+      return ejecutarDelegacionNexus(nombre, args || {}, { llamarModelo, ejecutarHerramienta: ejecutarHerramientaBase });
+    }
+    return ejecutarHerramientaBase(nombre, args);
+  };
 
   const tMemoria = Date.now();
   const memoriaExtra = typeof deps.construirMemoria === "function" ? await deps.construirMemoria(input) : "";

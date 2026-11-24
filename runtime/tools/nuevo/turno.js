@@ -173,7 +173,7 @@ async function ejecutarTurno({ texto, llamarModelo, ejecutarHerramienta, herrami
       if (!mensajes[mensajes.length - 1]?.content?.includes("[Límite de exploración alcanzado]")) {
         mensajes.push({
           role: "user",
-          content: "[SISTEMA — Límite de exploración alcanzado]: Ya has obtenido el contexto de los archivos. Procede AHORA MISMO a aplicar las modificaciones solicitadas usando replace_in_file o write_file directamente. No leas más archivos.",
+          content: "[SISTEMA — Límite de exploración alcanzado]: Ya has obtenido el contexto de los archivos. Procede AHORA MISMO a aplicar las modificaciones solicitadas usando replace_in_file o write_file directamente. No leas más archivos. Si quedan frentes independientes por revisar, delégalos con delegate_parallel en vez de leerlos tú en serie.",
         });
       }
     }

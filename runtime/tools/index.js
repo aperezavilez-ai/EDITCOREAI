@@ -14,6 +14,10 @@ const orientationMap = require("./orientation-map");
 
 const QUEUE_TIMEOUT_MS = 120_000;
 const BUSQUEDA_CEREBRO_MS = 8_000;
+// [CORRECCIÓN 2] Centinela de timeout del Cerebro: distinguir
+// «no hubo recuerdos» de «el Cerebro no respondió» — el segundo
+// caso se DECLARA en la memoria del turno, no se calla.
+const CEREBRO_SIN_RESPUESTA = Symbol("cerebro-sin-respuesta");
 
 const _runs = new Map(); // runId -> { controller, threadId, runId, steeringQueue }
 const _activeTaskRuns = new Set();
@@ -43,8 +47,15 @@ async function construirMemoria(inputN, helpers) {
     try {
       const out = await Promise.race([
         helpers.brainSearch(inputN.projectRoot, String(inputN.message).slice(0, 200), { scope: "memory", limit: 6 }),
-        new Promise((resolve) => setTimeout(() => resolve(null), BUSQUEDA_CEREBRO_MS)),
+        new Promise((resolve) => setTimeout(() => resolve(CEREBRO_SIN_RESPUESTA), BUSQUEDA_CEREBRO_MS)),
       ]);
+      if (out === CEREBRO_SIN_RESPUESTA) {
+        // [CORRECCIÓN 2] Degradación DECLARADA, como la ruta de
+        // Nexus en la Corrección 1: el turno sabe que trabaja
+        // sin recuerdos semánticos y puede decirlo si importa,
+        // en vez de «olvidar» en silencio.
+        partes.push(`Aviso del sistema: la búsqueda del Cerebro no respondió en ${BUSQUEDA_CEREBRO_MS / 1000} s en este turno; el turno trabaja sin recuerdos semánticos. La memoria local del proyecto (.editcore/memory.json), si existe, sí viene incluida en este bloque.`);
+      }
       const textos = [];
       if (Array.isArray(out)) {
         for (const h of out) {
@@ -364,6 +375,7 @@ function steerChat(instruction, targetRunId = null) {
 
 module.exports = {
   handleChat,
+  construirMemoria,
   stopChat,
   cancelChatRun,
   QUEUE_TIMEOUT_MS,

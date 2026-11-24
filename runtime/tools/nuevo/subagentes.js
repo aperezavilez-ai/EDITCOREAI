@@ -21,12 +21,62 @@ const { ejecutarTurno } = require("./turno");
 const MAX_PASOS_SUBAGENTE = 6;
 const TIMEOUT_DEFECTO_MS = 60000;
 
+// [CORRECCIÓN 2 — auditoría 2026-11-24] Roles REALES del motor:
+// cada especialista es una llamada al modelo del turno con su
+// prompt de rol y SOLO sus herramientas. Los roles de lectura
+// no escriben jamás; devops/verifier pueden ejecutar comandos
+// de validación (sin escribir archivos); writer es el único que
+// escribe, acotado a su ámbito. Esto sustituye a los «especialistas»
+// de runtime/tools/subagents/*, que no llamaban a ningún modelo.
+const HERRAMIENTAS_LECTURA = ["read_file", "list_files", "search_files"];
+const ROLES_SUBAGENTE = {
+  explorer: {
+    responsabilidad: "Mapear la estructura del ámbito asignado: carpetas, archivos clave y cómo se conectan. No opines sobre calidad: describe lo que hay, con rutas.",
+    herramientas: HERRAMIENTAS_LECTURA,
+  },
+  analyst: {
+    responsabilidad: "Analizar arquitectura y lógica del ámbito: cómo funciona, qué depende de qué, dónde están los riesgos de diseño. Cada afirmación con su evidencia (archivo y dato).",
+    herramientas: HERRAMIENTAS_LECTURA,
+  },
+  security: {
+    responsabilidad: "Auditoría de seguridad: credenciales o secretos quemados en código, archivos .env expuestos o versionados, configuraciones inseguras, superficies de ataque. Reporta solo hallazgos con evidencia (archivo y línea o patrón), nunca sospechas sin prueba.",
+    herramientas: HERRAMIENTAS_LECTURA,
+  },
+  database: {
+    responsabilidad: "Auditoría de datos: esquemas, migraciones, modelos Prisma/Drizzle/SQL, políticas RLS y conexiones. Verifica que el esquema declarado y el código que lo usa coincidan.",
+    herramientas: HERRAMIENTAS_LECTURA,
+  },
+  ui_ux: {
+    responsabilidad: "Inspección de interfaz: componentes, estilos, consistencia visual y accesibilidad del ámbito. Describe lo que el usuario realmente ve y dónde se rompe.",
+    herramientas: HERRAMIENTAS_LECTURA,
+  },
+  devops: {
+    responsabilidad: "Validación de operación: scripts de package.json, CI/CD, Docker y configuración de despliegue. Puedes EJECUTAR comandos de validación (nunca de despliegue ni destructivos) para comprobar, no para cambiar.",
+    herramientas: [...HERRAMIENTAS_LECTURA, "run_command"],
+  },
+  verifier: {
+    responsabilidad: "Verificación de integridad: sintaxis, JSON válido, coherencia entre lo declarado y lo real. Puedes EJECUTAR comandos de chequeo (node --check, tests acotados) y reportar su salida exacta.",
+    herramientas: [...HERRAMIENTAS_LECTURA, "run_command"],
+  },
+  writer: {
+    responsabilidad: "Implementar cambios acotados SOLO dentro del ámbito asignado, con las herramientas de escritura. Nada fuera de tu ámbito: si algo necesario vive fuera, repórtalo en tu informe en vez de tocarlo.",
+    herramientas: [...HERRAMIENTAS_LECTURA, "write_file", "replace_in_file"],
+  },
+};
+
+function herramientasParaRol(rol) {
+  const def = ROLES_SUBAGENTE[String(rol || "").trim().toLowerCase()];
+  return def ? def.herramientas.slice() : null;
+}
+
 function construirPromptSubagente(tarea, permitidas) {
   const listaHerramientas = permitidas.size ? [...permitidas].join(", ") : "ninguna (solo análisis)";
   const puedeEscribir = [...permitidas].some((h) => /write|replace|delete|create_/.test(h));
 
+  const defRol = ROLES_SUBAGENTE[String(tarea.rol || "").trim().toLowerCase()];
   return `<subagente_editcore>
 <rol>Subagente de EditCoreAI. Rol: ${tarea.rol}.</rol>
+<responsabilidad>${defRol ? defRol.responsabilidad : "Trabajar exclusivamente en el encargo asignado."}</responsabilidad>
 <coordinador>Tu único interlocutor es el Agente Coordinador de EditCoreAI. No hables directamente con el usuario final ni pidas datos sensibles.</coordinador>
 <responsabilidad_unica>
 Trabajar exclusivamente en el encargo asignado sin solaparte con otros agentes ni asumir funciones ajenas.
@@ -153,4 +203,4 @@ async function atenderEnParalelo({ texto, llamarModelo, ejecutarHerramienta, mem
   return { atendido: true, resultado };
 }
 
-module.exports = { delegar, delegacionCompleta, lineaAuditoria, atenderEnParalelo, MAX_PASOS_SUBAGENTE };
+module.exports = { delegar, delegacionCompleta, lineaAuditoria, atenderEnParalelo, MAX_PASOS_SUBAGENTE, ROLES_SUBAGENTE, herramientasParaRol };
