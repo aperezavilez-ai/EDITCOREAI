@@ -114,8 +114,8 @@ class MultiAgentSidecarManager {
     // Cleanup hook on Node exit
     this._setupCleanupHooks();
 
-    // Poll health until online (up to 15s)
-    const online = await this._waitForHealth(15000);
+    // Poll health until online (up to 45s to tolerate parallel test load)
+    const online = await this._waitForHealth(45000);
     if (!online) {
       this.stop();
       throw new Error('[MultiAgentSidecar] Timeout waiting for engine to become healthy');
