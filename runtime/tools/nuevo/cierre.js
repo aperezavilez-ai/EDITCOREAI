@@ -55,6 +55,47 @@ const RE_DECLARA_ARTEFACTO = /(?:\bhe\s+(?:creado|generado|escrito|exportado|gua
 const RE_ARCHIVO_DOC = /\b[\w\-.]+\.(?:pdf|docx?|xlsx?|csv)\b/i;
 
 
+function componerRecibo(hechos, delegaciones, vozActual) {
+  const pasos = Array.isArray(hechos?.pasos) ? hechos.pasos : [];
+  const aplicados = hechos?.aplicados || [];
+  const fallos = hechos?.fallos || [];
+  const voz = String(vozActual || "");
+  const lineas = [];
+  const explorados = pasos.filter((p) => p.ok && ["read_file", "list_files", "search_files", "read_pdf"].includes(p.nombre));
+  if (explorados.length && !/Exploré|Se completaron|He analizado/.test(voz)) {
+    lineas.push(`Exploré ${explorados.length} archivos y carpetas del proyecto.`);
+  }
+  const delegacionesLista = Array.isArray(delegaciones) ? delegaciones : [];
+  if (delegacionesLista.length && !voz.includes("Subagentes:")) {
+    const entregaron = delegacionesLista.filter((d) => d.entrego).length;
+    lineas.push(`Delegué en ${delegacionesLista.length} especialistas: ${entregaron} entregaron.`);
+  }
+  if (aplicados.length && !voz.includes("Apliqué")) {
+    lineas.push(`Apliqué ${aplicados.length} archivo(s): ${aplicados.join(", ")}.`);
+  }
+  if (fallos.length && !voz.includes(fallos[0].nombre)) {
+    const detalleFallo = String(fallos[0].resumen || "").trim().replace(/\s+/g, " ").slice(0, 140);
+    lineas.push(`Falló ${fallos[0].nombre}${detalleFallo ? ` (${detalleFallo})` : ""}.`);
+  }
+  // La propuesta: la primera que los hechos sostienen, en orden
+  // de lo que el turno dejó pendiente.
+  let propuesta = "";
+  const delegacionSinEntregar = delegacionesLista.some((d) => !d.entrego)
+    || pasos.some((p) => (p.nombre === "delegate_parallel" || p.nombre === "invoke_subagent") && p.ok === false);
+  if (delegacionSinEntregar) {
+    propuesta = "Siguiente paso que propongo: leo directamente los frentes que faltaron y te traigo el diagnóstico completo de cada frente.";
+  } else if (fallos.length) {
+    propuesta = `Siguiente paso que propongo: corregir el fallo en ${fallos[0].nombre} y completar esa parte.`;
+  } else if (aplicados.length) {
+    propuesta = "Siguiente paso que propongo: verificar el resultado con el build y la vista, y corregir lo que no cuadre.";
+  } else if (explorados.length) {
+    propuesta = "Siguiente paso que propongo: aplicar las correcciones que salen de esta revisión, frente por frente, empezando por el más crítico.";
+  } else if (pasos.length) {
+    propuesta = "Siguiente paso que propongo: seguir avanzando sobre lo trabajado en este turno.";
+  }
+  return { lineas, propuesta };
+}
+
 function componerCierre({ resultado, delegaciones = null }) {
   const hechos = resultado?.hechos || { aplicados: [], fallos: [], denegadas: [] };
   const vozOriginal = String(resultado?.textoFinal || "");
@@ -180,16 +221,37 @@ function componerCierre({ resultado, delegaciones = null }) {
     }
   }
 
-  // Sugerencia y próximos pasos: un turno sin mutaciones orienta al usuario
-  // [CORRECCIÓN 7] Si la voz salió de informes reales, el turno
-  // ENTREGÓ: no se le cose el «procede» enlatado.
+  // [CORRECCIÓN 8 — 2026-11-26] El menú «¿Cómo deseas
+  // continuar? / Escribe procede» MUERE. Se cosía a todo turno
+  // sin archivos aplicados cuya voz no trajera ya una pregunta:
+  // un diagnóstico — que por naturaleza no aplica archivos —
+  // siempre terminaba en el menú y el informe nunca llegaba
+  // (turno real con Groq, AI ANALYTICS 2026-11-26: 74 archivos
+  // explorados y cierre enlatado). En su lugar, el cierre
+  // garantiza el CONTRATO del turno: si el modelo no propuso,
+  // el agente propone desde los hechos (componerRecibo); y si
+  // la voz la compuso el piso, va además el recibo del turno —
+  // lo explorado, lo aplicado, lo que falló — sin duplicar lo
+  // que la voz ya dice. Con informes reales (C7) basta la
+  // propuesta: el informe ya ES el reporte.
   const tienePreguntaOCierre = /[?¿]|\b(?:próximos pasos|sugerencia|para continuar|si deseas|puedes indicarme|ind[ií]came|dime\s+(?:si|cu[aá]l)|quieres que|c[oó]mo continuar|cu[aá]l de estos|prioridad|qu[eé]\s+(?:hacemos|haremos|prefieres)|procede)\b/i.test(voz);
-  if (!vozDesdeInformes && !tienePreguntaOCierre && (sinAplicados || sinActividad)) {
-    const sugerencia = "\n\n---\n**¿Cómo deseas continuar?**\n- Escribe «procede» para continuar con la ejecución o indícame qué tarea específica prefieres.";
-    voz = String(voz || "").trim() + sugerencia;
+  if (!tienePreguntaOCierre) {
+    const { lineas, propuesta } = componerRecibo(hechos, delegaciones, voz);
+    const hayInformesReales = vozDesdeInformes && /Informe:/.test(voz);
+    const esVozDelPiso = !String(vozOriginal || "").trim() || corregida;
+    if (hayInformesReales) {
+      if (propuesta) voz = `${String(voz || "").trim()}\n\n${propuesta}`;
+    } else if (esVozDelPiso) {
+      const partes = [];
+      if (lineas.length) partes.push(lineas.join("\n"));
+      if (propuesta) partes.push(propuesta);
+      if (partes.length) voz = `${String(voz || "").trim()}\n\n---\n${partes.join("\n\n")}`;
+    } else if (propuesta) {
+      voz = `${String(voz || "").trim()}\n\n${propuesta}`;
+    }
   }
 
   return { voz, vozOriginal, detalle, corregida };
 }
 
-module.exports = { componerCierre, esVolcadoDeCodigo };
+module.exports = { componerCierre, componerRecibo, esVolcadoDeCodigo };

@@ -127,10 +127,12 @@ test("E2E forense→plan→PROCEDE→mutacion en disco (headless)", () => {
   });
   assert.ok(plan.planId);
   assert.ok(Array.isArray(plan.fixQueue) && plan.fixQueue.length >= 1);
-  assert.equal(manager.getTask(analysis.taskId).status, "AWAITING_AUTHORIZATION");
+  // [RE-APUNTADO 2026-11-26 — Corrección 12] El análisis deja la
+  // tarea PLAN_READY y describeWorkflow ya no reporta aparcado.
+  assert.equal(manager.getTask(analysis.taskId).status, "PLAN_READY");
 
   const described = workflow.describeWorkflow(analysis.taskId);
-  assert.equal(described.awaitingAuthorization, true);
+  assert.equal(described.awaitingAuthorization, false);
   assert.ok((described.fixQueue || []).length >= 1);
 
   const exec = workflow.prepareAgentRun({

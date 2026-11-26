@@ -8,18 +8,22 @@
   const AUTO_MODEL_SELECTION = "__auto__";
   const CAPABILITY_FAIL_TTL_MS = 20 * 60 * 1000;
   const SLOW_MODEL_MS = 90_000;
-  const UPSTREAM_ORDER = ["meai"];
-  const AUTO_SCOPE_LABELS = { all: "Todos", meai: "ME AI" };
+  // [GROQ EN AUTO — 2026-11-26, orden de Luis] Groq («EditCore
+  // Nube») es el SEGUNDO upstream del Auto: sus modelos de chat
+  // trabajan por tarea en los mismos carriles que ME AI. Nexus
+  // queda fuera del Auto (es el motor local fijo, sin bucket).
+  const UPSTREAM_ORDER = ["meai", "groq"];
+  const AUTO_SCOPE_LABELS = { all: "Todos", meai: "ME AI", groq: "EditCore Nube" };
 
   function normalizeAutoProviderScope(scope) {
     const value = String(scope || "").trim().toLowerCase();
-    if (value === "meai") return value;
+    if (value === "meai" || value === "groq") return value;
     return "all";
   }
 
   function isScopedAutoProvider(scope) {
     const normalized = normalizeAutoProviderScope(scope);
-    return normalized === "meai";
+    return normalized === "meai" || normalized === "groq";
   }
 
   function autoSelectionValue(scope = "") {
@@ -50,12 +54,16 @@
   }
 
   function entryUpstreamBucket(entry) {
+    // La procedencia manda: el proveedor declarado de la entrada
+    // decide el bucket antes que adivinar por el nombre (los
+    // modelos de Groq no llevan prefijo de proveedor y uno se
+    // llama «openai/…» sin ser de OpenAI).
+    const group = String(entry?.modelProviderGroup || "").toLowerCase();
+    if (group === "meai" || group === "groq") return group;
+    const key = String(entry?.providerKey || "").toLowerCase();
+    if (key === "meai" || key === "groq") return key;
     const fromModel = autoRotationBucket(entry?.model);
     if (fromModel) return fromModel;
-    const group = String(entry?.modelProviderGroup || "").toLowerCase();
-    if (group === "meai") return group;
-    const key = String(entry?.providerKey || "").toLowerCase();
-    if (key === "meai") return key;
     return "";
   }
 
@@ -67,15 +75,21 @@
     /deepseek-v4-pro/i,
     /qwen3\.6-plus/i,
     /glm-5\.2/i,
+    /llama-3\.3-70b-versatile/i,
+    /gpt-oss-120b/i,
+    /llama-3\.1-8b-instant/i,
   ];
 
   const TIER_SCORES = [
     ["claude-opus-4.8", 100],
     ["claude-sonnet-4.6", 96],
+    ["openai/gpt-oss-120b", 88],
     ["deepseek-v4-pro", 85],
+    ["llama-3.3-70b-versatile", 82],
     ["qwen3.6-plus", 80],
     ["glm-5.2", 75],
     ["claude-haiku-4.5", 70],
+    ["llama-3.1-8b-instant", 55],
   ];
 
   // ---------------------------------------------------------------------------
@@ -88,7 +102,15 @@
     { id: "meai/deepseek-v4-pro", family: "deepseek", duty: "implement-alt", purpose: "Razonamiento lógico-matemático y desarrollo backend alternativo." },
     { id: "meai/qwen3.6-plus", family: "qwen", duty: "implement-alt", purpose: "Alternativa full-stack potente para desarrollo web y frontend." },
     { id: "meai/glm-5.2", family: "glm", duty: "implement-alt", purpose: "Modelo robusto de soporte y desarrollo general." },
+    { id: "groq/llama-3.3-70b-versatile", family: "llama", duty: "implement+analyze", purpose: "Motor de nube rápido para desarrollar y analizar con herramientas." },
+    { id: "groq/openai/gpt-oss-120b", family: "gpt-oss", duty: "verify+hard-implement", purpose: "Razonamiento fuerte: auditorías, arquitectura y problemas duros." },
+    { id: "groq/llama-3.1-8b-instant", family: "llama", duty: "chat+fast-analyze", purpose: "Respuestas inmediatas y consultas ligeras." },
   ];
+
+  // Modelos que NO son de chat (voz, guardias, moderación): el
+  // Auto jamás los elige, en ningún carril. Groq detecta su
+  // catálogo entero y estos conviven en la lista de perfiles.
+  const NON_CHAT_MODEL_PATTERNS = [/orpheus/, /prompt-guard/, /safeguard/, /whisper/];
 
   /**
    * Carriles por rol. Orden = prioridad de USO (no score).
@@ -97,38 +119,38 @@
   const ROLE_LANES = {
     build: {
       purpose: "Crear un producto desde cero (greenfield: app/web/SaaS/landing). Solo modelos de máxima capacidad.",
-      primary: [/claude-sonnet/, /claude-opus/],
-      secondary: [/deepseek-v4/, /qwen3/],
+      primary: [/claude-sonnet/, /claude-opus/, /gpt-oss-120b/],
+      secondary: [/deepseek-v4/, /qwen3/, /llama-3\.3-70b/],
       reserve: [/glm-5/],
-      forbid: [/claude-haiku/, /kimi/, /minimax/, /step/, /mimo/],
+      forbid: [/claude-haiku/, /kimi/, /minimax/, /step/, /mimo/, ...NON_CHAT_MODEL_PATTERNS],
     },
     implement: {
       purpose: "Crear/editar/arreglar codigo con write_file y tools.",
-      primary: [/claude-sonnet/, /claude-opus/, /qwen3/],
+      primary: [/claude-sonnet/, /claude-opus/, /qwen3/, /llama-3\.3-70b/, /gpt-oss-120b/],
       secondary: [/deepseek-v4/, /glm-5/],
       reserve: [],
-      forbid: [/claude-haiku/, /kimi/, /minimax/, /step/, /mimo/],
+      forbid: [/claude-haiku/, /kimi/, /minimax/, /step/, /mimo/, ...NON_CHAT_MODEL_PATTERNS],
     },
     analyze: {
       purpose: "Leer, diagnosticar, planear, reportes (sin mutar o antes de PROCEDE).",
-      primary: [/claude-sonnet/, /claude-haiku/, /qwen3/, /glm-5/],
-      secondary: [/deepseek-v4/, /claude-opus/],
+      primary: [/claude-sonnet/, /claude-haiku/, /qwen3/, /glm-5/, /llama-3\.3-70b/, /llama-3\.1-8b/],
+      secondary: [/deepseek-v4/, /claude-opus/, /gpt-oss-120b/],
       reserve: [],
-      forbid: [/kimi/, /minimax/, /step/, /mimo/],
+      forbid: [/kimi/, /minimax/, /step/, /mimo/, ...NON_CHAT_MODEL_PATTERNS],
     },
     chat: {
       purpose: "Mensajes cortos de conversación, dudas o consultas conceptuales.",
-      primary: [/claude-haiku/, /qwen3/, /glm-5/],
-      secondary: [/claude-sonnet/, /deepseek-v4/],
+      primary: [/claude-haiku/, /qwen3/, /glm-5/, /llama-3\.1-8b/],
+      secondary: [/claude-sonnet/, /deepseek-v4/, /llama-3\.3-70b/],
       reserve: [/claude-opus/],
-      forbid: [/kimi/, /minimax/, /step/, /mimo/],
+      forbid: [/kimi/, /minimax/, /step/, /mimo/, ...NON_CHAT_MODEL_PATTERNS],
     },
     verify: {
       purpose: "Auditoria, seguridad, produccion, go/no-go.",
-      primary: [/claude-opus/, /claude-sonnet/, /deepseek-v4/],
-      secondary: [/qwen3/, /glm-5/],
+      primary: [/claude-opus/, /claude-sonnet/, /deepseek-v4/, /gpt-oss-120b/],
+      secondary: [/qwen3/, /glm-5/, /llama-3\.3-70b/],
       reserve: [],
-      forbid: [/claude-haiku/, /kimi/, /minimax/, /step/, /mimo/],
+      forbid: [/claude-haiku/, /kimi/, /minimax/, /step/, /mimo/, ...NON_CHAT_MODEL_PATTERNS],
     },
   };
 
@@ -232,10 +254,17 @@
     return deepseekUsageShare(context, list) >= DEEPSEEK_MAX_SHARE;
   }
 
-  /** Buckets de rotacion por upstream: un solo gateway (ME AI). */
+  /** Buckets de rotacion por upstream: ME AI (prefijo) y Groq (sus modelos de chat curados). */
   function autoRotationBucket(model) {
-    const upstream = gatewayUpstreamGroup(model);
-    if (upstream === "meai") return upstream;
+    const normalized = String(model || "").toLowerCase();
+    const upstream = gatewayUpstreamGroup(normalized);
+    if (upstream === "meai" || upstream === "groq") return upstream;
+    // Los modelos de Groq viajan sin prefijo de proveedor en los
+    // perfiles (y gpt-oss trae prefijo «openai/» sin ser OpenAI):
+    // se reconocen por su id exacto del catálogo curado.
+    if (normalized === "llama-3.3-70b-versatile"
+      || normalized === "llama-3.1-8b-instant"
+      || normalized === "openai/gpt-oss-120b") return "groq";
     return "";
   }
 
@@ -245,6 +274,7 @@
       : {};
     return {
       meai: Math.max(0, Number(raw.meai) || 0),
+      groq: Math.max(0, Number(raw.groq) || 0),
     };
   }
 
@@ -727,9 +757,10 @@
   function bumpUpstreamUsage(usage, model) {
     const next = {
       meai: Math.max(0, Number(usage?.meai) || 0),
+      groq: Math.max(0, Number(usage?.groq) || 0),
     };
     const bucket = autoRotationBucket(model);
-    if (bucket === "meai") next[bucket] += 1;
+    if (bucket) next[bucket] += 1;
     return next;
   }
 

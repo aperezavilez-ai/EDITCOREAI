@@ -849,9 +849,12 @@ test("procede despues de analisis activa reparacion autorizada", () => {
   assert.match(source, /autoResumeRecommended/);
   assert.match(source, /effectiveAnalysisMode/);
   assert.match(source, /function analysisRepairPrompt/);
-  assert.match(source, /analysisRepairAuthorization = true;/);
-  assert.match(source, /effectivePrompt = analysisRepairPrompt\(project\.analysisMemory, effectivePrompt\);/);
-  assert.match(source, /job\.continueAuthorized = true;/);
+  // [RE-APUNTADO 2026-11-26 — Corrección 12] El intercambio del
+  // mensaje por el prompt de reparación murió: la palabra
+  // «procede» ya no reescribe lo que el usuario escribió.
+  assert.doesNotMatch(source, /analysisRepairAuthorization = true;/);
+  assert.doesNotMatch(source, /effectivePrompt = analysisRepairPrompt\(project\.analysisMemory, effectivePrompt\);/);
+  assert.doesNotMatch(source, /job\.continueAuthorized = true;/);
   assert.match(source, /job\.directReadOnly = false;/);
   assert.doesNotMatch(source, /El analisis de \$\{project\.analysisMemory\.projectName/);
 });

@@ -22,11 +22,12 @@ const PROVIDERS = {
   gemini:   { label: "Gemini",    baseUrl: "https://generativelanguage.googleapis.com/v1beta", model: "gemini-2.5-pro" },
   meai:     { label: "ME AI Cloud", baseUrl: "https://api.meai.cloud/v1", model: "claude-sonnet-4.6" },
   nexus:    { label: "EditCore Nexus v5", baseUrl: "http://127.0.0.1:11435/v1", model: "editcore-nexus-v5" },
+  groq:     { label: "EditCore Nube", baseUrl: "https://api.groq.com/openai/v1", model: "llama-3.3-70b-versatile" },
 };
 // Proveedores de IA principales disponibles directamente para el administrador
-const PRIMARY_PROVIDER_KEYS = ["meai", "nexus"];
+const PRIMARY_PROVIDER_KEYS = ["meai", "nexus", "groq"];
 const HIDDEN_PROVIDER_KEYS = [];
-const SINGLE_KEY_PROVIDER_KEYS = ["meai", "nexus"];
+const SINGLE_KEY_PROVIDER_KEYS = ["meai", "nexus", "groq"];
 
 const PROVIDER_MODELS = {
   openai: ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo"],
@@ -34,6 +35,7 @@ const PROVIDER_MODELS = {
   gemini: ["gemini-2.5-pro", "gemini-2.5-flash", "gemini-1.5-pro"],
   meai: [],
   nexus: ["editcore-nexus-v5"],
+  groq: ["llama-3.3-70b-versatile", "openai/gpt-oss-120b", "llama-3.1-8b-instant"],
   kimi: [
     "moonshot-v1-8k", "moonshot-v1-32k", "moonshot-v1-128k",
     "kimi-k2-0711-preview",
@@ -244,6 +246,46 @@ function updateAgentPlanPanel({ steps = null, planText = "", checkpoints = null 
   panel.classList.add("hidden");
   panel.setAttribute("hidden", "true");
   return;
+}
+
+// [CORRECCIÓN 10 — 2026-11-26] El plan del turno (C9) se pinta
+// como TARJETA con lista de estados dentro del chat — no como
+// prosa (así se rompía: números huérfanos, texto plano) y no en
+// el panel lateral, que sigue apagado a propósito. Los estados
+// salen de las herramientas reales del turno (marcarPasosPlan):
+// la tarjeta nace con el aviso del plan, se actualiza con cada
+// herramienta terminada y se cierra en settleAgentTurnChrome.
+function renderAgentPlanBlock(thinkingItem) {
+  if (!thinkingItem || !thinkingItem._planText) return;
+  const log = thinkingItem._narrativeLog || thinkingItem.querySelector?.(".agent-narrative-log");
+  if (!log) return;
+  let block = thinkingItem._planBlock;
+  if (!block) {
+    block = document.createElement("div");
+    block.className = "agent-plan-inline";
+    if (thinkingItem._streamRow?.parentNode === log) log.insertBefore(block, thinkingItem._streamRow);
+    else log.appendChild(block);
+    thinkingItem._planBlock = block;
+  }
+  const marcados = AgentPlanView?.marcarPasosPlan
+    ? AgentPlanView.marcarPasosPlan(thinkingItem._planText, thinkingItem._planPasos || [], Boolean(thinkingItem._planCerrado))
+    : [];
+  if (!marcados.length) return;
+  const hechos = marcados.filter((t) => t.status === "done").length;
+  block.replaceChildren();
+  const head = document.createElement("div");
+  head.className = "agent-plan-inline-head";
+  head.textContent = `Plan · ${hechos}/${marcados.length}`;
+  block.appendChild(head);
+  const ul = document.createElement("ul");
+  ul.className = "agent-plan-inline-list";
+  for (const todo of marcados) {
+    const li = document.createElement("li");
+    li.dataset.status = todo.status;
+    li.textContent = todo.label;
+    ul.appendChild(li);
+  }
+  block.appendChild(ul);
 }
 
 $("agentPlanToggle")?.addEventListener("click", () => {
@@ -2413,9 +2455,28 @@ function renderModelPickerMenu() {
   menu.appendChild(searchWrap);
 
   const isAdmin = isCurrentUserAdmin();
-  const autoScopes = isAdmin && PRIMARY_PROVIDER_KEYS.length > 1 ? [
-    { scope: "all", title: "Auto", hint: "EditCoreAI elige automáticamente el mejor modelo para cada tarea." },
-  ] : [{ scope: "meai", title: "Auto", hint: "EditCoreAI elige automáticamente el mejor modelo para cada tarea." }];
+  // [CORRECCIÓN 11 — 2026-11-26] El menú solo ofrecía el Auto
+  // general (una fila fija, scope "all"): las filas por
+  // proveedor (Auto · ME AI, Auto · EditCore Nube) existían en
+  // el selector de listas pero nunca en este menú, así que no
+  // había forma de poner SOLO los modelos de Groq a rotar por
+  // tarea. Ahora las filas se construyen desde los proveedores
+  // primarios que tienen ámbito Auto real (isScopedAutoProvider).
+  const autoScopes = [{ scope: "meai", title: "Auto", hint: "EditCoreAI elige automáticamente el mejor modelo para cada tarea." }];
+  if (isAdmin && PRIMARY_PROVIDER_KEYS.length > 1) {
+    autoScopes.length = 0;
+    autoScopes.push({ scope: "all", title: "Auto", hint: "EditCoreAI elige automáticamente el mejor modelo para cada tarea." });
+    for (const key of PRIMARY_PROVIDER_KEYS) {
+      const scope = AutoModel.isScopedAutoProvider?.(key) ? AutoModel.normalizeAutoProviderScope(key) : "";
+      if (scope && scope !== "all") {
+        autoScopes.push({
+          scope,
+          title: AutoModel.formatAutoLabel(scope),
+          hint: `EditCoreAI elige automáticamente solo entre modelos ${AutoModel.AUTO_SCOPE_LABELS[scope] || scope}.`,
+        });
+      }
+    }
+  }
   autoScopes.forEach(({ scope, title, hint }) => {
     const on = autoActive && AutoModel.normalizeAutoProviderScope(activeAutoScope) === scope;
     const autoRow = document.createElement("div");
@@ -4246,7 +4307,10 @@ async function syncDurableWorkflow(project) {
     project.agentWorkflow = {
       ...(project.agentWorkflow || {}),
       taskId: durable.taskId,
-      phase: "awaiting_authorization",
+      // [CORRECCIÓN 12 — 2026-11-26] Un aparcado legado se drena
+      // como contexto de análisis listo: la fase
+      // «awaiting_authorization» ya no se escribe ni se espeja.
+      phase: "analysis_ready",
       task: durable.goal || project.agentWorkflow?.task || "",
       plan: durable.planContent || project.agentWorkflow?.plan || "",
       planId: durable.planId || project.agentWorkflow?.planId || "",
@@ -4320,7 +4384,10 @@ function markWorkflowAwaitingAuthorization(project, { taskId, task, plan, planId
     ...(project.agentWorkflow || {}),
     taskId: taskId || project.agentWorkflow?.taskId || "",
     planId: planId || project.agentWorkflow?.planId || "",
-    phase: "awaiting_authorization",
+    // [CORRECCIÓN 12 — 2026-11-26] El análisis se registra como
+    // contexto listo para el siguiente turno del chat, no como
+    // un plan aparcado esperando la palabra «procede».
+    phase: "analysis_ready",
     task: String(task || project.agentWorkflow?.task || "").trim(),
     plan: ProjectAnalysis.redactCredentials(reportText),
     fixQueue: queue,
@@ -4345,9 +4412,9 @@ function agentWorkflowStatusText(workflow) {
   }
   if (workflow?.phase === "interrupted") {
     const error = String(workflow.error || "La ejecucion se interrumpio antes de terminar.").trim();
-    return `La tarea quedo interrumpida, no se marco como completada.\n\nTarea conservada: ${task}\nProgreso verificado: ${checkpoints.length} accion(es), ${changedFiles.size} archivo(s) modificado(s).\nUltimo error: ${error}\n\nEscribe CONTINUA o PROCEDE para reanudar desde este punto.`;
+    return `La tarea quedo interrumpida, no se marco como completada.\n\nTarea conservada: ${task}\nProgreso verificado: ${checkpoints.length} accion(es), ${changedFiles.size} archivo(s) modificado(s).\nUltimo error: ${error}\n\nPideme que la reanude y sigo desde este punto.`;
   }
-  return `La tarea esta lista. Con Acceso completo se aplican correcciones sin pedir PROCEDE; si el modo es paso a paso, escribe **procede**, **autorizo** o **continua**.\n\nTarea: ${task}`;
+  return `La tarea esta lista y el agente continua en el chat con acceso completo.\n\nTarea: ${task}`;
 }
 
 async function durableAgentWorkflowStatusText(project) {
@@ -9835,6 +9902,14 @@ function addAgentNarrationDelta(thinkingItem, text) {
 function addAgentNarration(thinkingItem, text) {
   const value = humanizeAgentNarration(stripAgentToolXml(String(text || ""))).trim();
   if (!thinkingItem || !value) return;
+  // [CORRECCIÓN 10] El plan del turno no va a la prosa: es la
+  // tarjeta con estados (renderAgentPlanBlock).
+  if (/^Voy a trabajar así:/.test(value)) {
+    thinkingItem._planText = value;
+    thinkingItem._planPasos = thinkingItem._planPasos || [];
+    renderAgentPlanBlock(thinkingItem);
+    return;
+  }
   if (looksLikeAgentToolDump(text) && value.length < 8) return;
   // Líneas de acción del orquestador y avisos de progreso: actualizar actividad en vivo sin ensuciar la caja de pensamiento ni la prosa
   if (/^(?:\[[^\]]+\]\s*)?[⚙️🔍📂✓○→✗]/.test(value)
@@ -9911,6 +9986,18 @@ function progressRowKey(progress) {
 
 function addAgentStepToThinking(thinkingItem, progress) {
   if (!thinkingItem) return;
+  // [CORRECCIÓN 10] Alimentar los estados de la tarjeta del
+  // plan con cada herramienta terminada (sin duplicar eventos).
+  if (thinkingItem._planText && String(progress?.phase || "") === "tool"
+    && (progress?.stage === "done" || progress?.ok !== undefined)) {
+    const clave = `${progressRowKey(progress)}:${progress?.ok === false ? "x" : "ok"}`;
+    thinkingItem._planClaves = thinkingItem._planClaves || new Set();
+    if (!thinkingItem._planClaves.has(clave)) {
+      thinkingItem._planClaves.add(clave);
+      (thinkingItem._planPasos = thinkingItem._planPasos || []).push({ name: String(progress?.name || ""), ok: progress?.ok !== false });
+      renderAgentPlanBlock(thinkingItem);
+    }
+  }
   const text = agentProgressText(progress);
   if (!text) return;
   const cleanText = text.replace(/^[✓○→✗]\s*/, "");
@@ -10146,6 +10233,12 @@ function settleAgentTurnChrome(thinking, { failed = false, force = false } = {})
     return;
   }
   thinking._settled = true;
+  // [CORRECCIÓN 10] Cierre de la tarjeta del plan con los
+  // estados finales del turno.
+  if (thinking._planBlock) {
+    thinking._planCerrado = true;
+    renderAgentPlanBlock(thinking);
+  }
   stopThinkingAnimations(thinking);
   thinking.classList.remove("thinking-msg", "is-thinking-live");
   thinking.classList.add("assistant", "agent-execution-done");
@@ -13473,7 +13566,6 @@ async function send(event) {
     updateSendButtonState();
     return;
   }
-  let analysisRepairAuthorization = false;
   const userAuthorized = isAgentAuthorization(effectivePrompt);
   const userVisiblePrompt = String(effectivePrompt || "").trim();
   const queuedImages = [...(state.attachments || []).filter((a) => isImageAttachment(a))];
@@ -13486,18 +13578,11 @@ async function send(event) {
     $("prompt").value = "";
     updateSendButtonState();
   }
-  if (userAuthorized && project) await ensureWorkflowFromPendingPlan(project, effectivePrompt);
-  if (!hasAttachments && project?.analysisMemory && userAuthorized && !hasResumableAgentTask(project)) {
-    analysisRepairAuthorization = true;
-    // Instrucción limpia: preferir la tarea pendiente original; si no, solo "PROCEDE".
-    const pendingGoal = String(
-      project.agentWorkflow?.task
-      || project.durableWorkflow?.goal
-      || project.analysisMemory?.originalRequest
-      || "",
-    ).trim();
-    effectivePrompt = analysisRepairPrompt(project.analysisMemory, effectivePrompt);
-  }
+  // [CORRECCIÓN 12 — 2026-11-26] La palabra «procede» ya no
+  // intercambia el mensaje del usuario por un prompt de
+  // reparación ni resucita planes aparcados: el mensaje viaja
+  // tal cual y el agente —con el análisis en contexto y acceso
+  // completo— decide como en cualquier turno.
   const activeAgent = [...activePromptRequests.values()].find((job) =>
     (job.isAgent || job.usesProjectTools || job.runId)
       && normalizeProjectRoot(job.projectRoot) === normalizeProjectRoot(state.projectRoot)
@@ -13583,15 +13668,6 @@ async function send(event) {
     $("runMode").value = "agent";
     updateSendButtonState();
     $("status").textContent = "Solicitud de cambio enviada al Agente";
-  }
-  if (analysisRepairAuthorization) {
-    job.continueAuthorized = true;
-    job.planAuthorizedExecution = true;
-    job.directReadOnly = false;
-    job.readOnlyChat = false;
-    job.requireEvidence = true;
-    job.analysisContext = ProjectAnalysis.analysisContext(project.analysisMemory);
-    job.authorizationSource = "analysisMemory";
   }
   // PROCEDE cancela corrida previa solo si hay plan autorizado de correccion.
   // CONTINUA a mitad NO debe matar el thinking (borra el analisis del chat).
@@ -14684,7 +14760,6 @@ async function executePromptJob(job) {
           }
         }
       }
-      if (isAgent && isAgentAuthorization(prompt)) await ensureWorkflowFromPendingPlan(project, prompt);
       const immediateExecution = allowsImmediateAgentExecution(job, project, prompt, isAgent, {
         continueAuthorized,
         authorizedContinuation,
@@ -14942,7 +15017,7 @@ async function executePromptJob(job) {
             projectName: projectDisplayName(project),
             projectRoot: job.projectRoot,
             request: executionPrompt,
-            resultText: memoryReportText || reportText || "Analisis parcial: evidencia de herramientas guardada. Escribe CONTINUA para el reporte final.",
+            resultText: memoryReportText || reportText || "Analisis parcial: evidencia de herramientas guardada.",
             model: job.model,
             steps: result.steps,
             report: result.report,
@@ -14975,19 +15050,19 @@ async function executePromptJob(job) {
           const queueLen = Array.isArray(project.agentWorkflow?.fixQueue) ? project.agentWorkflow.fixQueue.length : 0;
           updateAgentPipelineUi({
             queue: queueLen
-              ? `0/${queueLen} · listo para PROCEDE`
+              ? `0/${queueLen} · correcciones identificadas`
               : "Sin correcciones pendientes",
             queueState: queueLen ? "warn" : "ok",
           });
           $("status").textContent = queueLen
-            ? "Análisis listo · escribe procede, autorizo o continua"
-            : "Análisis listo · sin correcciones pendientes (no uses procede vacio)";
+            ? "Análisis listo · correcciones identificadas en el informe"
+            : "Análisis listo · sin correcciones pendientes";
         } else if (!result.report?.completed && project.agentWorkflow) {
           project.agentWorkflow.phase = "interrupted";
           project.agentWorkflow.error = "";
           project.agentWorkflow.updatedAt = Date.now();
           if (memoryReportText) project.agentWorkflow.plan = memoryReportText.slice(0, 8000);
-          $("status").textContent = "Analisis interrumpido · escribe CONTINUA para el reporte";
+          $("status").textContent = "Analisis interrumpido";
         }
       } else if (analysisReportReady && targetRun === project.agentWorkflow) {
         project.analysisMemory = ProjectAnalysis.buildAnalysisMemory({
@@ -15024,18 +15099,18 @@ async function executePromptJob(job) {
         await saveAgentTaskPrompt(project.agentWorkflow.taskId, project.agentWorkflow.task).catch(() => undefined);
         updateAgentPipelineUi({
           queue: Array.isArray(project.agentWorkflow?.fixQueue) && project.agentWorkflow.fixQueue.length
-            ? `0/${project.agentWorkflow.fixQueue.length} · listo para PROCEDE`
-            : "Plan listo · PROCEDE",
+            ? `0/${project.agentWorkflow.fixQueue.length} · correcciones identificadas`
+            : "Plan listo",
           queueState: "warn",
         });
-        $("status").textContent = "Análisis listo · escribe procede, autorizo o continua";
+        $("status").textContent = "Análisis listo · informe en el chat";
       }
       saveProjects();
       elapsedSeconds = stopTimer();
       const finalText = String(result.text || "").trim()
-        || (result.report?.stopReason ? `## Resultado\n\n${result.report.stopReason}\n\nEscribe **CONTINUA** para profundizar.` : "")
+        || (result.report?.stopReason ? `## Resultado\n\n${result.report.stopReason}\n\nPideme que profundice y sigo.` : "")
         || extractThinkingNarrativeFallback(thinking)
-        || "## Resultado\n\nEl agente termino sin generar un reporte visible. Escribe **CONTINUA** para reintentar.";
+        || "## Resultado\n\nEl agente termino sin generar un reporte visible. Pideme que lo reintente y sigo.";
       // [EDITCORE-INTEGRAL-B7] Éxito de AGENTE: persiste en el chat
       // de origen del trabajo, aunque el visible ahora sea otro.
       rememberMessage("assistant", finalText, result.usage, [], [], turnTarget);

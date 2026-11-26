@@ -56,7 +56,7 @@ class WorkflowOrchestrator {
       taskId,
       projectId: String(input.projectId || task.projectId || ""),
       version: Math.max(1, Number(input.version) || 1),
-      status: String(input.status || "PENDING_APPROVAL"),
+      status: String(input.status || "READY"),
       content: String(input.content || ""),
       summary: String(input.summary || "").slice(0, 4000),
       createdAt: input.createdAt,
@@ -68,36 +68,27 @@ class WorkflowOrchestrator {
       planReference: plan.planId,
       currentStage: "plan_ready",
     };
+    // [CORRECCIÓN 12 — 2026-11-26] El análisis ya NO aparca la
+    // tarea esperando autorización: con todos los permisos
+    // siempre, el plan nace listo (PLAN_READY) y su siguiente
+    // acción es CONTINUAR en el chat, no AUTHORIZE. El estado
+    // AWAITING_AUTHORIZATION queda solo como dato legado.
+    const nextContinue = {
+      type: "CONTINUE",
+      description: "Plan listo. El agente continua en el chat con acceso completo.",
+      status: "READY",
+    };
     if (task.status === "ANALYZING" || task.status === "DISCOVERY") {
-      this.manager.transition(taskId, "PLAN_READY", patch, "PLAN_CREATED");
-      this.manager.transition(taskId, "AWAITING_AUTHORIZATION", {
+      this.manager.transition(taskId, "PLAN_READY", {
         ...patch,
-        currentStage: "awaiting_authorization",
-        nextAction: {
-          type: "AUTHORIZE",
-          description: "Esperar autorizacion del usuario para ejecutar el plan.",
-          status: "WAITING",
-        },
-      }, "ANALYSIS_AWAITING_AUTHORIZATION");
+        nextAction: nextContinue,
+      }, "ANALYSIS_PLAN_READY");
     } else if (AWAITING_STATES.has(task.status) || task.status === "READY") {
       this.manager.updateTask(taskId, {
         ...patch,
-        status: task.status === "READY" ? "AWAITING_AUTHORIZATION" : task.status,
-        currentStage: "awaiting_authorization",
-        nextAction: {
-          type: "AUTHORIZE",
-          description: "Esperar autorizacion del usuario para ejecutar el plan.",
-          status: "WAITING",
-        },
+        currentStage: "plan_ready",
+        nextAction: nextContinue,
       });
-      if (task.status === "READY") {
-        this.manager.store.appendTaskEvent(taskId, {
-          type: "ANALYSIS_AWAITING_AUTHORIZATION",
-          previousState: previous,
-          newState: "AWAITING_AUTHORIZATION",
-          payloadReference: plan.planId,
-        });
-      }
     } else {
       this.manager.updateTask(taskId, patch);
     }
@@ -105,7 +96,7 @@ class WorkflowOrchestrator {
       taskId,
       planId: plan.planId,
       previousState: previous,
-      nextState: "AWAITING_AUTHORIZATION",
+      nextState: this.manager.getTask(taskId)?.status || "PLAN_READY",
     });
     return plan;
   }
@@ -128,14 +119,14 @@ class WorkflowOrchestrator {
           projectId: task.projectId,
           content: recoveredContent,
           summary: recoveredContent.slice(0, 4000),
-          status: "PENDING_APPROVAL",
+          status: "READY",
         });
         resolvedPlanId = persisted.planId;
         plan = this.manager.store.getPlan(taskId, resolvedPlanId);
       } else if (resolvedPlanId) {
         this.manager.updateTask(taskId, { planId: "", planReference: "" });
         throw Object.assign(
-          new Error("El plan anterior ya no está en memoria (se reinició EDITCOREAI). Escribe CONTINUA para retomar el análisis, o un análisis nuevo; cuando haya reporte escribe PROCEDE."),
+          new Error("El plan anterior ya no está en memoria (se reinició EDITCOREAI). Pide un análisis nuevo y el agente retoma desde la evidencia guardada."),
           { code: "WORKFLOW_PLAN_MISSING", recoverable: true },
         );
       }
@@ -187,7 +178,10 @@ class WorkflowOrchestrator {
       },
     };
 
-    // Un solo camino de autorizacion: dejar la tarea en APPROVED siempre.
+    // [CORRECCIÓN 12 — 2026-11-26] Sin aparcado en el camino de
+    // aprobación: de ANALYZING/DISCOVERY se pasa a PLAN_READY y
+    // el bloque siguiente lleva directo a APPROVED. El paso por
+    // AWAITING_AUTHORIZATION desapareció del flujo.
     const { canTransition } = require("./task-models");
     if (task.status === "ANALYZING" || task.status === "DISCOVERY") {
       this.manager.transition(taskId, "PLAN_READY", {
@@ -195,23 +189,6 @@ class WorkflowOrchestrator {
         planReference: resolvedPlanId,
         currentStage: "plan_ready",
       }, "PLAN_CREATED");
-      this.manager.transition(taskId, "AWAITING_AUTHORIZATION", {
-        planId: resolvedPlanId,
-        currentStage: "awaiting_authorization",
-      }, "ANALYSIS_AWAITING_AUTHORIZATION");
-      task = this.manager.getTask(taskId);
-    } else if (task.status === "PLAN_READY") {
-      this.manager.transition(taskId, "AWAITING_AUTHORIZATION", {
-        planId: resolvedPlanId,
-        currentStage: "awaiting_authorization",
-      }, "ANALYSIS_AWAITING_AUTHORIZATION");
-      task = this.manager.getTask(taskId);
-    } else if (!["AWAITING_AUTHORIZATION", "APPROVED", "EXECUTING"].includes(task.status)
-      && canTransition(task.status, "AWAITING_AUTHORIZATION")) {
-      this.manager.transition(taskId, "AWAITING_AUTHORIZATION", {
-        planId: resolvedPlanId,
-        currentStage: "awaiting_authorization",
-      }, "ANALYSIS_AWAITING_AUTHORIZATION");
       task = this.manager.getTask(taskId);
     }
 
@@ -251,9 +228,9 @@ class WorkflowOrchestrator {
   beginAnalysisRun(taskId, input = {}) {
     const task = this.manager.getTask(taskId);
     if (!task) throw new Error(`Tarea no encontrada: ${taskId}`);
-    if (AWAITING_STATES.has(task.status) || task.status === "AWAITING_AUTHORIZATION") {
-      throw Object.assign(new Error("La tarea ya tiene un plan pendiente de autorizacion."), { code: "WORKFLOW_AWAITING_APPROVAL", task });
-    }
+    // [CORRECCIÓN 12 — 2026-11-26] Un plan listo (o un aparcado
+    // legado) ya no bloquea un análisis nuevo: la tarea se
+    // reabre como cualquier otra; nadie espera autorización.
     if (EXECUTION_ACTIVE_STATES.has(task.status) && task.activeRunId) {
       throw Object.assign(new Error("La tarea ya tiene una ejecucion activa."), { code: "WORKFLOW_RUN_ACTIVE", task });
     }
@@ -267,6 +244,14 @@ class WorkflowOrchestrator {
     }
     const current = this.manager.getTask(taskId);
     if (current.status !== "ANALYZING") {
+      // [CORRECCIÓN 12 — 2026-11-26] Desde un plan listo (o un
+      // aparcado legado) se reabre vía DISCOVERY: la máquina de
+      // estados no permite PLAN_READY→ANALYZING directo.
+      if (current.status === "PLAN_READY" || current.status === "AWAITING_AUTHORIZATION") {
+        this.manager.transition(taskId, "DISCOVERY", {
+          currentStage: "discovery",
+        }, "ANALYSIS_REOPENED");
+      }
       this.manager.transition(taskId, "ANALYZING", {
         currentStage: "analysis",
         nextAction: { type: "ANALYZE", description: "Analizar el proyecto.", status: "RUNNING" },
@@ -326,10 +311,8 @@ class WorkflowOrchestrator {
         current = this.manager.getTask(taskId);
       }
       if (approval && ["AWAITING_AUTHORIZATION", "PLAN_READY"].includes(current.status)) {
-        if (current.status === "PLAN_READY") {
-          this.manager.transition(taskId, "AWAITING_AUTHORIZATION", { currentStage: "awaiting_authorization" });
-          current = this.manager.getTask(taskId);
-        }
+        // [CORRECCIÓN 12 — 2026-11-26] De PLAN_READY se aprueba
+        // directo: el desvío por AWAITING_AUTHORIZATION murió.
         this.manager.transition(taskId, "APPROVED", {
           approvalId: approval.approvalId,
           currentStage: "approved",
@@ -391,7 +374,7 @@ class WorkflowOrchestrator {
       projectId: metadata.projectId,
       content: String(content || ""),
       summary: String(content || "").slice(0, 4000),
-      status: "PENDING_APPROVAL",
+      status: "READY",
       fixQueue,
     });
   }
@@ -451,13 +434,19 @@ class WorkflowOrchestrator {
       currentStage: task.currentStage || "",
       nextAction: task.nextAction || null,
       awaitingAuthorization: task.status === "AWAITING_AUTHORIZATION",
-      canApprove: task.status === "AWAITING_AUTHORIZATION" && Boolean(task.planId || plan),
+      // [CORRECCIÓN 12 — 2026-11-26] «canApprove» hoy significa
+      // «hay un plan listo para ejecutar»: PLAN_READY (el estado
+      // nuevo de todo análisis) o un aparcado legado.
+      canApprove: AWAITING_STATES.has(task.status) && Boolean(task.planId || plan),
     };
   }
 
   findAwaitingTask({ projectId = "", projectRoot = "" } = {}) {
     const tasks = this.manager.listTasks({ projectId, projectRoot });
-    return tasks.find((task) => task.status === "AWAITING_AUTHORIZATION" && (task.planId || task.planReference)) || null;
+    // [CORRECCIÓN 12 — 2026-11-26] La tarea con plan listo para
+    // ejecutar puede estar en PLAN_READY (ya nadie aparca) o en
+    // AWAITING_AUTHORIZATION (dato legado).
+    return tasks.find((task) => AWAITING_STATES.has(task.status) && (task.planId || task.planReference)) || null;
   }
 
   prepareAgentRun(input = {}) {
@@ -512,7 +501,7 @@ class WorkflowOrchestrator {
             taskId,
             goal: task.goal,
             content: `Plan de ejecución autorizado para: ${task.goal || "Crear proyecto"}`,
-            status: "PENDING_APPROVAL",
+            status: "READY",
             createdAt: now(),
           });
           plan = autoPlan;

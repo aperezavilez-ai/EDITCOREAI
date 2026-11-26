@@ -78,7 +78,8 @@ test("Paso3: analisis → fixQueue durable → PROCEDE muta y evidencia OK", () 
     evidence,
   });
   assert.ok((persisted?.fixQueue || []).length >= 1, JSON.stringify(persisted));
-  assert.equal(manager.getTask(prepared.taskId).status, "AWAITING_AUTHORIZATION");
+  // [RE-APUNTADO 2026-11-26 — Corrección 12] PLAN_READY, no aparcado.
+  assert.equal(manager.getTask(prepared.taskId).status, "PLAN_READY");
 
   workflow.recordPlanApproval(prepared.taskId, persisted.planId, { source: "procede" });
   workflow.beginAuthorizedExecution(prepared.taskId, "R-fix");

@@ -74,6 +74,52 @@
     return [...todos.slice(0, 12), ...live];
   }
 
+  // [CORRECCIÓN 10 — 2026-11-26] Estados del plan desde los
+  // pasos REALES del turno. Cada paso del plan se clasifica por
+  // su verbo (explorar/revisar → lecturas y delegación;
+  // construir/aplicar → escrituras; verificar → comandos y
+  // diagnósticos; el último «Reportar…» → el cierre del turno)
+  // y su estado sale de las herramientas de su clase: hecho si
+  // alguna salió bien, error si su clase solo falló (al cerrar),
+  // activo el primer pendiente con el turno en marcha. Los
+  // frentes de una revisión son secuenciales: el frente j está
+  // hecho si hubo más lecturas buenas que j, o si la delegación
+  // entregó (un delegate cubre todos los frentes).
+  function marcarPasosPlan(planText = "", pasos = [], cerrado = false) {
+    const todos = extractPlanTodos(planText);
+    const lista = (Array.isArray(pasos) ? pasos : []).filter(Boolean);
+    const nombreDe = (p) => String(p?.nombre || p?.name || "");
+    const EXPLORAR = ["list_files", "read_file", "search_files", "read_pdf", "delegate_parallel", "invoke_subagent"];
+    const ESCRIBIR = ["write_file", "replace_in_file", "apply_diff", "create_project"];
+    const VERIFICAR = ["run_command", "run_diagnostics", "inspect_preview", "inspect_browser", "browser_interact"];
+    const okDe = (clase) => lista.some((p) => clase.includes(nombreDe(p)) && p?.ok !== false);
+    const falloDe = (clase) => lista.some((p) => clase.includes(nombreDe(p)) && p?.ok === false);
+    const okExplorar = lista.filter((p) => EXPLORAR.includes(nombreDe(p)) && p?.ok !== false).length;
+    const delegacionOk = lista.some((p) => (nombreDe(p) === "delegate_parallel" || nombreDe(p) === "invoke_subagent") && p?.ok !== false);
+    let frenteIdx = 0;
+    const marcados = todos.map((todo, idx) => {
+      const label = todo.label || "";
+      let status = "pending";
+      if (idx === todos.length - 1 && /reportar|reporte|diagn[oó]stico/i.test(label)) {
+        status = cerrado ? "done" : "pending";
+      } else if (/verific/i.test(label)) {
+        status = falloDe(VERIFICAR) && !okDe(VERIFICAR) ? "error" : okDe(VERIFICAR) ? "done" : "pending";
+      } else if (/construir|escrib|aplicar|crear|agregar|a[ñn]adir|modific|cambi|implement|correg|generar/i.test(label)) {
+        status = falloDe(ESCRIBIR) && !okDe(ESCRIBIR) ? "error" : okDe(ESCRIBIR) ? "done" : "pending";
+      } else {
+        const j = frenteIdx++;
+        if (delegacionOk || okExplorar > j) status = "done";
+        else if (cerrado && falloDe(EXPLORAR) && okExplorar <= j) status = "error";
+      }
+      return { ...todo, status };
+    });
+    if (!cerrado && lista.length) {
+      const primero = marcados.find((t) => t.status === "pending");
+      if (primero) primero.status = "active";
+    }
+    return marcados;
+  }
+
   function formatCheckpoints(checkpoints = []) {
     return (Array.isArray(checkpoints) ? checkpoints : []).slice(-8).map((row, index) => ({
       id: `cp-${index}`,
@@ -86,6 +132,7 @@
   return {
     extractPlanTodos,
     buildLiveTodosFromSteps,
+    marcarPasosPlan,
     formatCheckpoints,
     isRoadmapStep,
     isRoadmapReadStep,

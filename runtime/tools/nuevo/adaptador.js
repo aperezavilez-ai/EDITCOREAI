@@ -26,6 +26,7 @@ const fs = require("fs");
 const { ejecutarTurno } = require("./turno");
 const { decidirTurno, contextoDesdeHistorial } = require("./despacho");
 const { componerCierre } = require("./cierre");
+const { componerPlanTurno } = require("./plan");
 const { SISTEMA_NUCLEO, SISTEMA_NEXUS_V4, SISTEMA_NEXUS_V5, SISTEMA_NEXUS_LOCAL, RESPUESTA_ADN_NEXUS_V5, esConsultaDeIdentidad } = require("./textos");
 const { parseTextToolCalls, stripTextToolMarkup } = require("../parse-text-tools");
 const { VISION_ACK_RULE } = require("../../vision-intake");
@@ -1067,12 +1068,18 @@ async function manejarChatNuevo(input, deps = {}) {
     historial.pop();
   }
 
+  // [CORRECCIÓN 9 — 2026-11-26] El turno abre con su PLAN,
+  // compuesto desde el encargo (plan.js): un paso por frente o
+  // por viñeta, pasos por intención, y el cierre del contrato
+  // como último paso. Sustituye al eco enlatado «Requerimientos
+  // analizados: <el texto del usuario> / Iniciando ejecución
+  // técnica agéntica», que no decía qué haría el agente. Sin
+  // plan componible no se anuncia nada: la actividad narra.
   if (typeof deps.onAviso === "function" && input.projectRoot) {
-    const lineas = textoCrudo.split("\n").map((l) => l.trim()).filter((l) => /^[-*•\d]|\b(?:cambiar|conectar|añadir|crear|modificar|revisar|ajustar)\b/i.test(l));
-    const resumenItems = lineas.length > 0 ? lineas.slice(0, 3).join(" · ") : textoCrudo.slice(0, 100);
-    try {
-      deps.onAviso(`📋 Requerimientos analizados: ${resumenItems}\n🚀 Iniciando ejecución técnica agéntica en el proyecto...`);
-    } catch {}
+    const plan = componerPlanTurno({ texto: textoCrudo, conProyecto: true });
+    if (plan) {
+      try { deps.onAviso(plan); } catch { /* narrar nunca tumba el turno */ }
+    }
   }
 
   const resultado = await ejecutarTurno({

@@ -109,7 +109,9 @@ test("isAutoModelSelection detecta la opcion Auto", () => {
   assert.equal(AutoModel.parseAutoSelectionScope(AutoModel.autoSelectionValue(RETIRED_SCOPE)), "all");
   assert.equal(AutoModel.formatAutoLabel(RETIRED_SCOPE), "Auto");
   assert.equal(AutoModel.isScopedAutoProvider(RETIRED_SCOPE), false);
-  assert.deepEqual(AutoModel.UPSTREAM_ORDER, ["meai"]);
+  // [ACTUALIZADO 2026-11-26 — decisión de Luis] Groq es el segundo
+  // upstream del Auto («EditCore Nube»): UPSTREAM_ORDER lo incluye.
+  assert.deepEqual(AutoModel.UPSTREAM_ORDER, ["meai", "groq"]);
 });
 
 test("Auto con scope all rota entre modelos ME AI", () => {
@@ -488,8 +490,10 @@ test("Auto clasifica roles tipo Cursor y rota aptos por tarea", () => {
 test("Catalogo explicito: implement usa carril primario, no pelea con DeepSeek", () => {
   assert.ok(Array.isArray(AutoModel.MODEL_DUTY_CATALOG) && AutoModel.MODEL_DUTY_CATALOG.length >= 6);
   assert.ok(AutoModel.ROLE_LANES?.implement?.primary?.length >= 3);
-  // El catálogo ya solo trae filas del gateway único.
-  assert.ok(AutoModel.MODEL_DUTY_CATALOG.every((row) => row.id.startsWith("meai/")));
+  // El catálogo trae filas de los dos upstreams del Auto.
+  // [ACTUALIZADO 2026-11-26] Antes solo «meai/»; Groq («groq/»)
+  // entró como segundo upstream por decisión de Luis.
+  assert.ok(AutoModel.MODEL_DUTY_CATALOG.every((row) => row.id.startsWith("meai/") || row.id.startsWith("groq/")));
   assert.match(AutoModel.describeModelDuty("meai/deepseek-v4-pro").duty, /implement-alt/i);
   assert.match(AutoModel.describeModelDuty("meai/claude-sonnet-4.6").duty, /implement|analyze/i);
 
@@ -577,7 +581,9 @@ test("Auto rota con least-used en el pool ME AI ampliado", () => {
     modelUsage = AutoModel.bumpModelUsage(modelUsage, profile.model);
   }
   assert.equal(usage.meai, turns);
-  assert.deepEqual(Object.keys(usage), ["meai"]);
+  // [ACTUALIZADO 2026-11-26] El mapa de uso por upstream ahora
+  // lleva los dos buckets (meai y groq) aunque solo rote ME AI.
+  assert.deepEqual(Object.keys(usage), ["meai", "groq"]);
   // Carril implement primario: Claude/Qwen — sin DeepSeek (reserva).
   assert.ok(new Set(picked).size >= 3, `pocos modelos distintos: ${new Set(picked).size} -> ${picked.join(", ")}`);
   assert.ok(picked.every((model) => !/deepseek/i.test(model)), "DeepSeek no pertenece al carril primario de implement");

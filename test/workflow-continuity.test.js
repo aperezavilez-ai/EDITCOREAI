@@ -22,7 +22,9 @@ function session(t) {
   return { store, manager, workflow };
 }
 
-test("TEST 1-3: analisis crea una Task, un Plan y queda AWAITING_AUTHORIZATION", (t) => {
+// [RE-APUNTADO 2026-11-26 — Corrección 12] El análisis ya no
+// aparca la tarea en AWAITING_AUTHORIZATION: queda PLAN_READY.
+test("TEST 1-3: analisis crea una Task, un Plan y queda PLAN_READY", (t) => {
   const { manager, workflow } = session(t);
   const prepared = workflow.prepareAgentRun({
     projectId: "proj-1",
@@ -35,7 +37,7 @@ test("TEST 1-3: analisis crea una Task, un Plan y queda AWAITING_AUTHORIZATION",
   const plan = workflow.completeAnalysisRun(prepared.taskId, "## Analisis\nProblemas encontrados.\n## Recomendaciones\nCorregir A.");
   assert.ok(plan.planId);
   const task = manager.getTask(prepared.taskId);
-  assert.equal(task.status, "AWAITING_AUTHORIZATION");
+  assert.equal(task.status, "PLAN_READY");
   assert.equal(task.planId, plan.planId);
   assert.equal(manager.listTasks().length, 1);
 });
@@ -92,7 +94,7 @@ test("TEST 10: doble procede no duplica aprobacion activa", (t) => {
   assert.equal(first.approvalId, second.approval.approvalId);
 });
 
-test("TEST 11-12: recovery describeWorkflow expone plan pendiente", (t) => {
+test("TEST 11-12: recovery describeWorkflow expone el plan listo", (t) => {
   const { workflow } = session(t);
   const prepared = workflow.prepareAgentRun({
     projectId: "proj-1",
@@ -102,7 +104,9 @@ test("TEST 11-12: recovery describeWorkflow expone plan pendiente", (t) => {
   });
   const plan = workflow.completeAnalysisRun(prepared.taskId, "Plan recuperable");
   const described = workflow.describeWorkflow(prepared.taskId);
-  assert.equal(described.state, "AWAITING_AUTHORIZATION");
+  // [RE-APUNTADO 2026-11-26 — Corrección 12] El estado expuesto
+  // es PLAN_READY; canApprove sigue en true (hay plan listo).
+  assert.equal(described.state, "PLAN_READY");
   assert.equal(described.planId, plan.planId);
   assert.equal(described.planContent, "Plan recuperable");
   assert.equal(described.canApprove, true);
@@ -142,7 +146,8 @@ test("TEST 16: workflow completo sin regresar a ANALYZING", (t) => {
   });
   assert.equal(manager.getTask(prepared.taskId).status, "ANALYZING");
   const plan = workflow.completeAnalysisRun(prepared.taskId, "Reporte");
-  assert.equal(manager.getTask(prepared.taskId).status, "AWAITING_AUTHORIZATION");
+  // [RE-APUNTADO 2026-11-26 — Corrección 12] PLAN_READY, no aparcado.
+  assert.equal(manager.getTask(prepared.taskId).status, "PLAN_READY");
   workflow.prepareAgentRun({
     taskId: prepared.taskId,
     planId: plan.planId,
@@ -242,8 +247,10 @@ test("procede desde RECOVERABLE no lanza Transicion invalida", (t) => {
   assert.equal(manager.getTask(prepared.taskId).status, "EXECUTING");
 });
 
-test("no inicia analisis si la Task espera autorizacion", (t) => {
-  const { workflow } = session(t);
+// [RE-APUNTADO 2026-11-26 — Corrección 12] Un plan listo ya no
+// bloquea un análisis nuevo: beginAnalysisRun reabre la tarea.
+test("un plan listo no bloquea un analisis nuevo", (t) => {
+  const { manager, workflow } = session(t);
   const prepared = workflow.prepareAgentRun({
     projectId: "proj-1",
     projectRoot: "D:/demo",
@@ -251,10 +258,9 @@ test("no inicia analisis si la Task espera autorizacion", (t) => {
     analysisMode: true,
   });
   workflow.completeAnalysisRun(prepared.taskId, "Plan");
-  assert.throws(
-    () => workflow.beginAnalysisRun(prepared.taskId),
-    /autorizacion/,
-  );
+  assert.equal(manager.getTask(prepared.taskId).status, "PLAN_READY");
+  const reopened = workflow.beginAnalysisRun(prepared.taskId);
+  assert.equal(reopened.status, "ANALYZING");
 });
 
 test("PROCEDE desde ANALYZING con plan recuperado pasa a EXECUTING (sin estado stale)", (t) => {

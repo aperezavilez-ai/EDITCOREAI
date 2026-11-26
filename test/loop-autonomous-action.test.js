@@ -88,10 +88,16 @@ describe("anunciaTrabajoSinEjecutar — frases del caso real", () => {
 });
 
 // ---------------------------------------------------------------------------
-// 4. componerCierre — appends next-steps when 0 mutations
+// 4. componerCierre — cierre-recibo (Corrección 8, 2026-11-26)
 //    La función recibe { resultado, delegaciones }
+//    [RE-APUNTADO 2026-11-26] Estas pruebas codificaban el menú
+//    enlatado «¿Cómo deseas continuar? / Escribe procede», que la
+//    Corrección 8 eliminó por orden de Luis (contrato de turno).
+//    El contrato nuevo: sin trabajo no se cose nada; con trabajo
+//    y sin propuesta del modelo, el cierre propone desde los
+//    hechos — nunca el menú.
 // ---------------------------------------------------------------------------
-describe("componerCierre — agrega sugerencias cuando no hay mutaciones", () => {
+describe("componerCierre — cierre-recibo C8 sin menú «procede»", () => {
   function mkResultado(overrides = {}) {
     return {
       textoFinal: "He analizado el proyecto.",
@@ -103,25 +109,32 @@ describe("componerCierre — agrega sugerencias cuando no hay mutaciones", () =>
     };
   }
 
-  it("incluye prompt de continuación cuando no hay aplicados ni actividad", () => {
+  it("sin trabajo no cose ni menú ni recibo: la voz queda tal cual", () => {
     const { voz } = componerCierre({ resultado: mkResultado() });
-    assert.ok(
-      /procede|contin[uú]a/i.test(voz),
-      `El cierre debería incluir sugerencia de «procede» o «continúa». Obtenido: "${voz.slice(0, 200)}"`
-    );
+    assert.equal(voz, "He analizado el proyecto.");
+    assert.ok(!voz.includes("¿Cómo deseas continuar?"), "el menú enlatado murió con la C8");
+    assert.ok(!voz.includes("«procede»"), "nada de «procede» enlatado");
   });
 
-  it("incluye prompt de continuación en carril ORDEN sin aplicados", () => {
+  it("en ORDEN con exploración y sin aplicados, el cierre propone desde los hechos", () => {
     const { voz } = componerCierre({
       resultado: mkResultado({
         textoFinal: "Voy a revisar el schema.",
         carril: "ORDEN",
+        herramientasEjecutadas: 2,
+        hechos: {
+          aplicados: [], fallos: [], denegadas: [],
+          pasos: [
+            { nombre: "read_file", ok: true, resumen: "Leído: prisma/schema.prisma" },
+            { nombre: "list_files", ok: true, resumen: "Carpeta .: 6 carpetas, 17 archivos" },
+          ],
+        },
       }),
     });
-    assert.ok(
-      /procede|contin[uú]a/i.test(voz),
-      `El cierre debería incluir sugerencia cuando no hubo actividad. Obtenido: "${voz.slice(0, 200)}"`
-    );
+    assert.ok(voz.startsWith("Voy a revisar el schema."), "la voz del modelo se conserva");
+    assert.ok(voz.includes("Siguiente paso que propongo"), "el cierre propone desde los hechos");
+    assert.ok(!voz.includes("¿Cómo deseas continuar?"), "sin menú enlatado");
+    assert.ok(!voz.includes("«procede»"), "sin «procede» enlatado");
   });
 
   it("retorna un objeto con campo voz de tipo string", () => {

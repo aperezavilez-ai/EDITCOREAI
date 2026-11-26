@@ -72,12 +72,20 @@ test("main aplica la regla al leer y al guardar la bóveda", () => {
 // [PROVEEDOR RETIRADO — decisión del dueño 2026-11-09] El panel ya solo
 // ofrece ME AI: PRIMARY_PROVIDER_KEYS = ["meai"] y los scopes Auto del admin
 // son "all" y "meai" (el scope del gateway retirado desapareció).
+// [ACTUALIZADO 2026-11-26 — decisión de Luis] Groq entra como motor
+// de nube APARTE («EditCore Nube»), sin mezclarse con Nexus: pasa a
+// ser proveedor principal y de llave única junto a meai y nexus.
+// [RE-APUNTADO 2026-11-26 — Corrección 11] El menú del chat
+// construye las filas Auto POR PROVEEDOR (Auto · ME AI, Auto ·
+// EditCore Nube) desde PRIMARY_PROVIDER_KEYS con
+// isScopedAutoProvider; la aserción de autoScopes sigue la
+// construcción nueva (arreglo base + filas por ámbito).
 test("panel: ME AI con una sola clave como único proveedor principal", () => {
   const renderer = fs.readFileSync(path.join(root, "renderer.js"), "utf8");
-  assert.match(renderer, /const PRIMARY_PROVIDER_KEYS = \["meai"(?:,\s*"nexus")?\];/);
+  assert.match(renderer, /const PRIMARY_PROVIDER_KEYS = \["meai"(?:,\s*"nexus")?(?:,\s*"groq")?\];/);
   assert.match(renderer, /const HIDDEN_PROVIDER_KEYS = \[\];/);
-  assert.match(renderer, /const SINGLE_KEY_PROVIDER_KEYS = \["meai"(?:,\s*"nexus")?\];/);
+  assert.match(renderer, /const SINGLE_KEY_PROVIDER_KEYS = \["meai"(?:,\s*"nexus")?(?:,\s*"groq")?\];/);
   assert.match(renderer, /api\.hidden = true;/);
   assert.match(renderer, /async function verifyAllSingleKeyModels\(key\)/);
-  assert.match(renderer, /const autoScopes = isAdmin\s*(?:&&\s*PRIMARY_PROVIDER_KEYS\.length\s*>\s*1\s*)?\? \[[\s\S]*?\]\s*: \[\{ scope: "meai", title: "Auto"/);
+  assert.match(renderer, /const autoScopes = \[\{ scope: "meai", title: "Auto"[\s\S]*?isScopedAutoProvider/);
 });

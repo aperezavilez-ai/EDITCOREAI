@@ -1847,6 +1847,13 @@ ipcMain.handle("editcore:chat", async (_event, input = {}) => {
   if (providerKey === "meai" && (!chatApiKey || !chatApiKey.startsWith("sk-"))) {
     chatApiKey = require("./runtime/meai-single-key").pickMeaiKey({ apiKey: chatApiKey }, []) || chatApiKey;
   }
+  // [GROQ MOTOR APARTE — 2026-11-26] Groq es un motor de nube
+  // aparte, sin mezclarse con Nexus: si el turno es suyo y la
+  // llave no llegó cargada en el perfil, se resuelve desde la
+  // bóveda de la app (la misma que ya alimenta la voz).
+  if (providerKey === "groq" && (!chatApiKey || !chatApiKey.startsWith("gsk_"))) {
+    chatApiKey = resolveGroqKeyFromSecureState() || chatApiKey;
+  }
   const rootPath = String(input.projectRoot || "").trim();
   const images = normalizeImages(input.images);
   // El menú Permisos manda sobre el permissionMode del payload: el renderer
@@ -7354,6 +7361,11 @@ ipcMain.handle("agent:run", async (event, input = {}) => {
   let model = String(input.model || "").trim();
   let baseUrl = normalizeBaseUrl(input.baseUrl, input.providerKey);
   let providerKey = String(input.providerKey || "");
+  // [GROQ MOTOR APARTE — 2026-11-26] La ruta agente aplica la
+  // misma regla que el chat: la llave de Groq sale de la bóveda.
+  if (providerKey === "groq" && (!apiKey || !apiKey.startsWith("gsk_"))) {
+    apiKey = resolveGroqKeyFromSecureState() || apiKey;
+  }
   const runImages = normalizeImages(input.images);
 
   // Extraer documentos adjuntos (PDF, DOCX, XLSX, CSV, TXT)
@@ -7705,8 +7717,8 @@ ipcMain.handle("agent:run", async (event, input = {}) => {
         changedFiles,
         stopReason: out?.kind === "STOP" ? "Detenido." : `editcore-chat-kernel:${out?.kind || kernelDecision.kind}`,
         kernel: true,
-        outcome: out?.kind === "ANALYZE" ? "awaiting_authorization" : "completed",
-        awaitingAuthorization: out?.kind === "ANALYZE",
+        outcome: "completed",
+        awaitingAuthorization: false,
       };
       try {
         if (!event.sender.isDestroyed()) {
