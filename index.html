@@ -634,7 +634,12 @@
     </div>
 
     <!-- Portal de Autenticación / Inicio de Sesión / Registro -->
-    <div id="authPortalOverlay" class="ec-auth-portal-overlay" aria-hidden="true" hidden>
+    <!-- [CORRECCIÓN 14 — 2026-11-26] La primera pintura ES la
+         cubierta de arranque: visible desde el markup, con el
+         aviso de comprobación fuera de la caja y el formulario
+         de Google oculto. La app nunca se pinta antes de que
+         la sesión se resuelva. -->
+    <div id="authPortalOverlay" class="ec-auth-portal-overlay" aria-hidden="false">
       <div class="ec-auth-card" role="dialog" aria-label="Autenticación EditCoreAI">
         <div class="ec-auth-brand">
           <div class="ec-auth-logo">⚡</div>
@@ -642,7 +647,9 @@
           <p>Plataforma Autónoma de Desarrollo, Arquitectura e Inteligencia Artificial</p>
         </div>
 
-        <div class="ec-auth-form" id="authGoogleBox">
+        <div id="authBootStatus" class="ec-auth-boot-status">Comprobando tu sesión…</div>
+
+        <div class="ec-auth-form" id="authGoogleBox" hidden>
           <p class="ec-auth-google-hint">Inicia sesión o crea tu cuenta con tu correo de Google. EditCoreAI nunca ve tu contraseña: se escribe solo en la página de Google.</p>
           <button type="button" id="authGoogleBtn" class="ec-btn-primary ec-auth-submit-btn ec-auth-google-btn">
             <span class="ec-auth-google-g" aria-hidden="true">G</span>

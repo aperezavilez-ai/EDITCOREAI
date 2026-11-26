@@ -3416,6 +3416,8 @@
 
   function setupAuthPortal() {
     const googleBtn = $("authGoogleBtn");
+    const googleBox = $("authGoogleBox");
+    const bootStatus = $("authBootStatus");
     const googleLabel = $("authGoogleBtnLabel");
     const cancelBtn = $("authGoogleCancelBtn");
     const loginStatus = $("authLoginStatus");
@@ -3432,7 +3434,24 @@
       if (cancelBtn) cancelBtn.hidden = !busy;
     };
 
+    // [CORRECCIÓN 13 — 2026-11-26] Modo «comprobando» de la
+    // cubierta de arranque: oculta la caja de Google mientras
+    // la sesión se resuelve. Sin esto, el portal se mostraba
+    // tal cual al arrancar y un usuario con sesión válida veía
+    // la pantalla de Google durante todo el refresco (~2 s)
+    // para luego volver solo al selector de proyecto.
+    // [CORRECCIÓN 14 — 2026-11-26] El aviso «Comprobando tu
+    // sesión…» vive en su propio elemento FUERA de la caja
+    // (authBootStatus, ya visible en el markup desde la
+    // primera pintura): setChecking gobierna caja y aviso
+    // como espejos.
+    const setChecking = (checking) => {
+      if (googleBox) googleBox.hidden = checking;
+      if (bootStatus) bootStatus.hidden = !checking;
+    };
+
     const applySession = (sessionData) => {
+      setChecking(false);
       if (!sessionData?.isAuthenticated) {
         if (sessionData?.configured === false) setStatus("danger", "El servidor de cuentas no está configurado en esta instalación.");
         showAuthPortal();
@@ -3506,6 +3525,10 @@
     });
 
     // Sesión obligatoria: sin sesión válida la app queda cubierta por esta pantalla.
+    // [CORRECCIÓN 13 — 2026-11-26] La cubierta nace en modo
+    // «comprobando»: el botón de Google solo aparece cuando una
+    // comprobación real resuelve «no autenticado».
+    setChecking(true);
     showAuthPortal();
     if (typeof window !== "undefined" && window.location?.protocol?.startsWith("http")) {
       const backLink = $("authBackToHomeLink");
@@ -3515,9 +3538,15 @@
       window.editcoreAuth.getSession({ refresh: true }).then((sessionData) => {
         if (applySession(sessionData)) void refreshCreditsAndProfileUI();
       }).catch(() => {
+        setChecking(false);
         setStatus("danger", "No se pudo comprobar tu sesión. Inténtalo de nuevo.");
         showAuthPortal();
       });
+    } else {
+      // [CORRECCIÓN 14 — 2026-11-26] Sin puente de sesión la
+      // cubierta no puede quedarse en «comprobando»: se
+      // muestra el login y que el usuario decida.
+      setChecking(false);
     }
   }
 

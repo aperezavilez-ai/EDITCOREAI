@@ -2196,6 +2196,20 @@ html[data-theme="azul"] .diff-decision-card {
   gap: 14px;
 }
 
+/* [CORRECCIÓN 14 — 2026-11-26] Aviso de la cubierta de
+   arranque: vive fuera de la caja de Google y es lo único
+   que se lee mientras la sesión se resuelve. */
+.ec-auth-boot-status {
+  text-align: center;
+  color: var(--ec-text-muted, #71717a);
+  font-size: 13.5px;
+  padding: 2px 0 4px;
+}
+
+.ec-auth-boot-status[hidden] {
+  display: none !important;
+}
+
 .ec-auth-form.is-hidden,
 .ec-auth-form[hidden] {
   display: none !important;
