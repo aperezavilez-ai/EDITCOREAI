@@ -1,7 +1,7 @@
 "use strict";
 
 /**
- * EditCore Security Shield (v5.3.6)
+ * EditCore Security Shield (v5.3.7)
  *
  * Módulo nativo de ciberseguridad proactiva permanente.
  * Protege contra:
@@ -14,7 +14,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 
-const SHIELD_VERSION = "5.3.6";
+const SHIELD_VERSION = "5.3.7";
 
 // Patrones de secretos conocidos en código fuente
 const SECRET_PATTERNS = [
