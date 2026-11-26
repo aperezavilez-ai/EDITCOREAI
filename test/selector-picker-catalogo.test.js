@@ -43,7 +43,11 @@ test("con un solo proveedor primario no se ofrece el Auto de ámbito «all» (su
   // la opción Auto de ámbito «meai». La fila «all» ponía un
   // valor inexistente, el change caía en «sin modelo» y abría
   // el modal — el clic en «Auto» de Luis, probado en vivo.
-  assert.match(fuente, /const autoScopes = isAdmin && PRIMARY_PROVIDER_KEYS\.length > 1 \?/);
+  // [RE-APUNTADO 2026-11-26 — Corrección 11] La construcción
+  // cambió (arreglo base «meai» + filas por proveedor), pero el
+  // invariante es el mismo: la fila «all» solo nace dentro de
+  // la compuerta isAdmin && PRIMARY_PROVIDER_KEYS.length > 1.
+  assert.match(fuente, /const autoScopes = \[\{ scope: "meai", title: "Auto"[\s\S]*?if \(isAdmin && PRIMARY_PROVIDER_KEYS\.length > 1\)/);
 });
 
 test("la rama Auto cae en la primera opción Auto existente si el valor pedido no está en el select", () => {
