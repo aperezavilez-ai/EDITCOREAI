@@ -16,11 +16,11 @@ const {
   getShieldStatus,
 } = require("../runtime/security-shield");
 
-test("security-shield: version is 5.3.7 and shield is active", () => {
-  assert.equal(SHIELD_VERSION, "5.3.7");
+test("security-shield: version is 5.3.8 and shield is active", () => {
+  assert.equal(SHIELD_VERSION, "5.3.8");
   const status = getShieldStatus();
   assert.equal(status.active, true);
-  assert.equal(status.version, "5.3.7");
+  assert.equal(status.version, "5.3.8");
 });
 
 test("security-shield: isSensitiveFile identifies credentials, keys and env files", () => {
