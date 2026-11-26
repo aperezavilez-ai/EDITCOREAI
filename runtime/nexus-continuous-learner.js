@@ -3,7 +3,14 @@
 const fs = require("fs");
 const path = require("path");
 
-const NEXUS_MODEL_DIR = path.join("D:\\", "PROGRAMAS IA", "EDITCORE-MODEL");
+// La casa del modelo propio: EDITCORE NEXUS V5 (antes EDITCORE-MODEL).
+// Se aceptan ambos nombres: el que exista en disco manda, para que el
+// renombrado de la carpeta sea seguro en cualquier orden.
+const RAICES_NEXUS = [
+  path.join("D:\\", "PROGRAMAS IA", "EDITCORE NEXUS V5"),
+  path.join("D:\\", "PROGRAMAS IA", "EDITCORE-MODEL"),
+];
+const NEXUS_MODEL_DIR = RAICES_NEXUS.find((r) => { try { return fs.existsSync(r); } catch { return false; } }) || RAICES_NEXUS[0];
 const EXPERIENCE_FILE = path.join(NEXUS_MODEL_DIR, "data", "autonomous_experience.jsonl");
 
 /**

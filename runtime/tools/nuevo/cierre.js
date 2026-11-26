@@ -130,9 +130,28 @@ function componerCierre({ resultado, delegaciones = null }) {
   // Piso anti-mudo: la voz nunca sale vacía. Si el modelo no dijo
   // nada útil, el kernel habla desde los hechos — el agente de
   // EditCoreAI nunca se queda mudo.
+  // [CORRECCIÓN 7 — 2026-11-26] Antes de cualquier línea genérica:
+  // el trabajo YA entregado manda. Si el turno delegó, los
+  // informes de los especialistas viven en el resumen del paso
+  // (ejecutarDelegacionNexus los compone con su auditoría) — y
+  // ese resumen ES la respuesta, aunque el modelo se haya
+  // descarrilado después y su voz haya vuelto vacía (visto en
+  // vivo: delegación corrida, pasos:1, y el turno cerró con la
+  // línea hueca + «procede», tirando los informes reales).
+  let vozDesdeInformes = false;
   if (!String(voz || "").trim()) {
     corregida = true;
-    if ((hechos.aplicados || []).length) {
+    const informes = (hechos.pasos || [])
+      .filter((p) => (p.nombre === "delegate_parallel" || p.nombre === "invoke_subagent")
+        && String(p.resumen || "").trim().length > 0)
+      .map((p) => String(p.resumen).trim());
+    if (informes.length) {
+      vozDesdeInformes = true;
+      voz = informes.join("\n\n");
+      if ((hechos.aplicados || []).length) {
+        voz += `\n\nApliqué ${hechos.aplicados.length} archivo(s): ${hechos.aplicados.join(", ")}.`;
+      }
+    } else if ((hechos.aplicados || []).length) {
       voz = `Apliqué ${hechos.aplicados.length} archivo(s): ${hechos.aplicados.join(", ")}.`;
     } else if ((hechos.fallos || []).length) {
       // El piso habla DESDE los hechos: un turno que exploró y
@@ -162,8 +181,10 @@ function componerCierre({ resultado, delegaciones = null }) {
   }
 
   // Sugerencia y próximos pasos: un turno sin mutaciones orienta al usuario
+  // [CORRECCIÓN 7] Si la voz salió de informes reales, el turno
+  // ENTREGÓ: no se le cose el «procede» enlatado.
   const tienePreguntaOCierre = /[?¿]|\b(?:próximos pasos|sugerencia|para continuar|si deseas|puedes indicarme|ind[ií]came|dime\s+(?:si|cu[aá]l)|quieres que|c[oó]mo continuar|cu[aá]l de estos|prioridad|qu[eé]\s+(?:hacemos|haremos|prefieres)|procede)\b/i.test(voz);
-  if (!tienePreguntaOCierre && (sinAplicados || sinActividad)) {
+  if (!vozDesdeInformes && !tienePreguntaOCierre && (sinAplicados || sinActividad)) {
     const sugerencia = "\n\n---\n**¿Cómo deseas continuar?**\n- Escribe «procede» para continuar con la ejecución o indícame qué tarea específica prefieres.";
     voz = String(voz || "").trim() + sugerencia;
   }

@@ -45,6 +45,14 @@ const NATIVE = [
   // (capture_preview es la deriva de capture_preview_screenshot;
   // list_brain no existe en ningún conjunto). La vía texto ya solo
   // promete nombres con case real en tools.execute.
+  // [CORRECCIÓN 6 — 2026-11-26] Entran delegate_parallel e
+  // invoke_subagent: SÍ tienen destino real (el adaptador las
+  // intercepta por nombre y las ejecuta el motor de subagentes),
+  // pero faltaban en esta lista — y el modelo propio SOLO habla
+  // la vía texto, así que su delegación se descartaba en silencio
+  // emitiera el bloque perfecto o no (visto en vivo: bloque
+  // delegate_parallel emitido y turno cerrado con pasos:0).
+  "delegate_parallel", "invoke_subagent",
 ];
 
 const TOOL_TAG_NAMES = [...new Set([...NATIVE, ...Object.keys(ALIAS)])];

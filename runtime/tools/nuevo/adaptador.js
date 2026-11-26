@@ -26,7 +26,7 @@ const fs = require("fs");
 const { ejecutarTurno } = require("./turno");
 const { decidirTurno, contextoDesdeHistorial } = require("./despacho");
 const { componerCierre } = require("./cierre");
-const { SISTEMA_NUCLEO, SISTEMA_NEXUS_V4, SISTEMA_NEXUS_V5, RESPUESTA_ADN_NEXUS_V5, esConsultaDeIdentidad } = require("./textos");
+const { SISTEMA_NUCLEO, SISTEMA_NEXUS_V4, SISTEMA_NEXUS_V5, SISTEMA_NEXUS_LOCAL, RESPUESTA_ADN_NEXUS_V5, esConsultaDeIdentidad } = require("./textos");
 const { parseTextToolCalls, stripTextToolMarkup } = require("../parse-text-tools");
 const { VISION_ACK_RULE } = require("../../vision-intake");
 
@@ -205,6 +205,29 @@ const TOPE_SALIDA_POR_CARRIL = { CONVERSACION: 1500, PROPUESTA: 8000, CONSULTA: 
 // muda de hasta 5 minutos por intento.
 const TIMEOUT_INTENTO_MS = 90_000;
 
+// [CORRECCIÓN 4 — DIETA LOCAL, 2026-11-24] Definiciones a dieta
+// para el modelo propio: descripción de una frase y esquema sin
+// descripciones por propiedad. delegate_parallel e invoke_subagent
+// viajan ÍNTEGRAS: su esquema es el contrato de la delegación
+// (Corrección 2) y recortarlo rompería la forma de las tareas.
+const DEFINICIONES_INTACTAS_LOCAL = new Set(["delegate_parallel", "invoke_subagent"]);
+function slimDefinicionesLocal(definiciones) {
+  return (definiciones || []).map((d) => {
+    const f = d?.function;
+    if (!f || DEFINICIONES_INTACTAS_LOCAL.has(f.name)) return d;
+    const props = {};
+    const src = f.parameters?.properties || {};
+    for (const k of Object.keys(src)) props[k] = { type: src[k]?.type || "string" };
+    return {
+      type: "function",
+      function: {
+        name: f.name,
+        description: String(f.description || "").split(". ")[0].slice(0, 110),
+        parameters: { type: "object", properties: props, required: f.parameters?.required || [] },
+      },
+    };
+  });
+}
 function crearLlamarModelo({ callChat, perfil, definiciones, projectRoot, onTextDelta, maxTokens = 0, onAviso = null, latidoMs = 15000, onRespuestaCruda = null }) {
   const porNombre = new Map();
   for (const d of definiciones || []) {
@@ -873,53 +896,42 @@ async function manejarChatNuevo(input, deps = {}) {
   } catch {}
 
   const usarMeaiVision = hayImagenes && Boolean(meaiKey);
-  // [CORRECCIÓN 1] La llave sale de la configuración de la app
-  // (resolverLlaveGroq), y la ruta del turno queda DECLARADA en el
-  // resultado: si Nexus debía escalar a Groq y no pudo, el turno
-  // lo dice (degradado) en vez de caer al local en silencio.
-  const groqResuelto = esNexus ? resolverLlaveGroq(input) : { llave: "", fuente: null };
-  const groqKey = groqResuelto.llave || null;
+  // [CORRECCIÓN 3 — NEXUS INDEPENDIENTE, decisión de Luis 2026-11-24]
+  // Nexus V5 corre SOLO con el modelo propio servido en local
+  // («editcore-nexus» en 127.0.0.1:11435). Groq sale de los turnos
+  // de Nexus por completo: ni principal ni respaldos, haya o no
+  // llave guardada — esta ruta ya no consulta resolverLlaveGroq
+  // (la utilidad queda para otros usos, fuera de la ruta Nexus).
+  // El destino local no es una degradación: es EL destino, y la
+  // ruta lo declara destino="local", degradado=false. La única
+  // salida externa que subsiste es la visión por ME AI cuando el
+  // turno trae imágenes (el modelo propio aún no tiene visión;
+  // excepción declarada, no un respaldo silencioso). El destino
+  // se fuerza: ni un apiBaseUrl ni un modelo impuestos desde
+  // fuera pueden sacar a Nexus de casa.
   const rutaNexus = esNexus
     ? {
-        destino: usarMeaiVision ? "meai-vision" : (groqKey ? "groq" : "local"),
-        fuenteLlave: groqResuelto.fuente,
-        degradado: !usarMeaiVision && !groqKey,
-        motivo: !usarMeaiVision && !groqKey
-          ? "Sin llave de Groq en la configuración de la app: el turno corre con el modelo local."
-          : null,
+        destino: usarMeaiVision ? "meai-vision" : "local",
+        fuenteLlave: null,
+        degradado: false,
+        motivo: null,
       }
     : null;
 
+  const respaldosDelTurno = Array.isArray(input.fallbackProfiles) ? input.fallbackProfiles : [];
   const perfil = {
     apiBaseUrl: usarMeaiVision
       ? "https://api.meai.cloud/v1"
-      : ((groqKey ? "https://api.groq.com/openai/v1" : (input.apiBaseUrl || "http://127.0.0.1:11435/v1"))),
+      : (esNexus ? "http://127.0.0.1:11435/v1" : (input.apiBaseUrl || "http://127.0.0.1:11435/v1")),
     apiKey: usarMeaiVision
       ? meaiKey
-      : (groqKey || input.apiKey || ""),
+      : (esNexus ? "" : (input.apiKey || "")),
     model: usarMeaiVision
       ? "glm-5.2"
-      : (groqKey ? "qwen/qwen3.8-27b" : (input.model || "editcore-nexus-v5")),
-    fallbackProfiles: [
-      ...(groqKey ? [
-        {
-          apiBaseUrl: "https://api.groq.com/openai/v1",
-          apiKey: groqKey,
-          model: "openai/gpt-oss-120b",
-        },
-        {
-          apiBaseUrl: "https://api.groq.com/openai/v1",
-          apiKey: groqKey,
-          model: "openai/gpt-oss-20b",
-        },
-      ] : []),
-      ...(Array.isArray(input.fallbackProfiles) ? input.fallbackProfiles : []),
-      ...(groqKey ? [{
-        apiBaseUrl: input.apiBaseUrl || "http://127.0.0.1:11435/v1",
-        apiKey: input.apiKey || "editcore-nexus-local",
-        model: "editcore-nexus-v5",
-      }] : []),
-    ],
+      : (esNexus ? "editcore-nexus" : (input.model || "editcore-nexus-v5")),
+    fallbackProfiles: esNexus
+      ? respaldosDelTurno.filter((p) => !String(p?.apiBaseUrl || "").includes("api.groq.com"))
+      : respaldosDelTurno,
     signal: input.helpers?.abortSignal || null,
     refreshAccessToken: input.helpers?.refreshAccessToken || null,
     imagenes: imagenesNormalizadas,
@@ -978,10 +990,12 @@ async function manejarChatNuevo(input, deps = {}) {
   const fuerzaOrden = (ejecucionAutorizada || esAprobacionCorta)
     && (esEnlatado || esAprobacionCorta || clasificacion.carril !== "CONVERSACION");
   const carrilPrevisto = fuerzaOrden ? "ORDEN" : clasificacion.carril;
+  // [CORRECCIÓN 4] Con el modelo propio, las definiciones viajan a dieta.
+  const definicionesTurno = esNexus && !usarMeaiVision ? slimDefinicionesLocal(definiciones) : definiciones;
   const llamarModelo = crearLlamarModelo({
     callChat,
     perfil,
-    definiciones,
+    definiciones: definicionesTurno,
     projectRoot: input.projectRoot || process.cwd(),
     onTextDelta: typeof deps.onTextDelta === "function" ? deps.onTextDelta : null,
     // Con proyecto abierto el tope de salida es el de ORDEN
@@ -1018,15 +1032,40 @@ async function manejarChatNuevo(input, deps = {}) {
   const tMemoria = Date.now();
   const memoriaExtra = typeof deps.construirMemoria === "function" ? await deps.construirMemoria(input) : "";
   const memoriaMs = Date.now() - tMemoria;
-  const bloqueSistema = esNexus ? SISTEMA_NEXUS_V5 : SISTEMA_NUCLEO;
+  // [CORRECCIÓN 4] Dieta local: con el modelo propio, el sistema
+  // es el compacto (SISTEMA_NEXUS_LOCAL), la memoria del Cerebro
+  // viaja acotada y las skills NO se inyectan — se consultan con
+  // list_skills/read_skill, que siguen ofrecidas. La visión (ME AI)
+  // y los turnos que no son Nexus conservan el sistema completo.
+  const esDietaLocal = esNexus && !usarMeaiVision;
+  const bloqueSistema = esNexus ? (esDietaLocal ? SISTEMA_NEXUS_LOCAL : SISTEMA_NEXUS_V5) : SISTEMA_NUCLEO;
   const reglaVision = (perfil.imagenes && perfil.imagenes.length > 0) ? VISION_ACK_RULE : "";
-  const memoria = [bloqueSistema, memoriaExtra, reglaVision, String(input.skillsPrompt || "")]
+  const memoria = [bloqueSistema, esDietaLocal ? String(memoriaExtra || "").slice(0, 800) : memoriaExtra, reglaVision, esDietaLocal ? "" : String(input.skillsPrompt || "")]
     .map((s) => String(s || "").trim())
     .filter(Boolean)
     .join("\n\n");
 
   const historialCrudo = Array.isArray(input.history) ? input.history : (Array.isArray(input.messages) ? input.messages : []);
   const historial = seleccionarHistorial(historialCrudo);
+  // [CORRECCIÓN 5 — 2026-11-26] El historial trae turnos YA
+  // cerrados; el mensaje actual NO es un turno cerrado. Hay
+  // llamadores que lo incluyen también como último mensaje del
+  // historial (la interfaz lo recuerda antes de despachar) y
+  // ejecutarTurno lo agrega otra vez: el modelo recibía el
+  // encargo DOS veces seguidas como dos turnos de usuario.
+  // Medido en vivo: prompt de 28 tokens contra 17 del encargo
+  // simple, y el modelo propio respondía el artefacto
+  // «- [] - []» en vez del bloque de herramienta — replicado
+  // fuera de la app con el encargo duplicado (28 tokens y el
+  // texto exacto). Invariante de esta costura: si el historial
+  // TERMINA con el mensaje actual, esa copia sobra; el turno
+  // lo agrega una sola vez. Un turno anterior idéntico pero
+  // cerrado con respuesta del asistente NO se toca.
+  while (historial.length
+    && historial[historial.length - 1].role === "user"
+    && historial[historial.length - 1].content === textoCrudo) {
+    historial.pop();
+  }
 
   if (typeof deps.onAviso === "function" && input.projectRoot) {
     const lineas = textoCrudo.split("\n").map((l) => l.trim()).filter((l) => /^[-*•\d]|\b(?:cambiar|conectar|añadir|crear|modificar|revisar|ajustar)\b/i.test(l));

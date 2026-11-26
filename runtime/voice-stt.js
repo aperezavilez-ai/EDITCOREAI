@@ -192,6 +192,7 @@ function collectWhisperCandidates(secure = {}, userDataPath = "") {
       const fs = require("fs");
       const path = require("path");
       const envPaths = [
+        path.join("D:\\", "PROGRAMAS IA", "EDITCORE NEXUS V5", ".env"),
         path.join("D:\\", "PROGRAMAS IA", "EDITCORE-MODEL", ".env"),
         path.join(__dirname, "..", ".env"),
         path.join(__dirname, "..", ".env.local"),
